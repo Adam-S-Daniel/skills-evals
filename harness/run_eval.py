@@ -6,6 +6,16 @@ Usage:
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...]
         [--roster PATH] [--no-judge]
     python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
+    python3 harness/run_eval.py evals/<skill> --arm both [--fixture NAME]
+        [--trials N]
+
+`evals/<skill>` is either one flat fixture (`evals/<skill>/fixture.yaml`) or
+a skill directory of nested ones (`evals/<skill>/<name>/fixture.yaml`, each
+with its own `seed/`), never both. Named as a skill directory, every nested
+fixture runs, or the one `--fixture NAME` selects; a nested fixture can also
+be named by its own directory. `--trials N` (default 1) runs each arm N times
+and writes the aggregate beside the per-trial summaries — see "Fixture layout"
+and "Trials" below (#66).
 
 For a skill fixture, the model precedence is `--model` > the fixture's
 `model:` > the committed roster > error.
@@ -31,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -47,6 +58,14 @@ import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
 
+FIXTURE_FILE = "fixture.yaml"
+SEED_DIR = "seed"
+
+# The run directory's name: UTC, second resolution, sortable as text.
+TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+_TIMESTAMP_RE = re.compile(r"\d{8}T\d{6}Z")
+
+
 def load_fixture(eval_dir: Path) -> dict:
     """The fixture, or a named configuration error.
 
@@ -58,7 +77,7 @@ def load_fixture(eval_dir: Path) -> dict:
     both outside the rc-2 contract, and the second one inside the very
     predicate added to keep shapes out of the harness.
     """
-    path = eval_dir / "fixture.yaml"
+    path = eval_dir / FIXTURE_FILE
     with open(path, encoding="utf-8") as f:
         doc = yaml.safe_load(f)
     if not isinstance(doc, dict):
@@ -1366,7 +1385,8 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    extra: dict | None = None, *,
                    harness_version: str | None = None,
                    models: list | None = None,
-                   judge_models: list | None = None) -> None:
+                   judge_models: list | None = None,
+                   arm_dir: Path | None = None) -> None:
     """One arm's summary.json (+ raw transcript).
 
     `key` is the results-tree path for this subject — a skill's own name, or
@@ -1378,8 +1398,14 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     read once per run, or null) and `models_used` / `judge_models_used`
     (`models_used()` of the agent's and the judge's results; empty when that
     call never ran) — #202.
+
+    `arm_dir` (#66) names the directory to write into when it is not the
+    default `<results>/<key or skill>/<timestamp>/<arm>/`: a nested fixture's
+    arm directory, or one trial's `trial-<k>/` inside an arm directory. Left
+    as None, the path is the one every caller before #66 got.
     """
-    arm_dir = results_dir / (key or skill) / timestamp / arm_name
+    if arm_dir is None:
+        arm_dir = results_dir / (key or skill) / timestamp / arm_name
     arm_dir.mkdir(parents=True, exist_ok=True)
     summary = {}
     if skill is not None:
@@ -1441,28 +1467,297 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         turns_str = str(agent.get("num_turns")) if agent.get("num_turns") is not None else "-"
         duration_str = str(agent.get("duration_ms")) if agent.get("duration_ms") is not None else "-"
 
-        err = s.get("error")
-        # Error details can carry multiline stderr or `|`s — keep the table
-        # intact. The cut is marked: an error cut off mid-sentence at
-        # exactly 200 characters reads as the whole error, and the reader
-        # has no way to tell there is more of it in summary.json, which
-        # keeps the detail in full.
-        err_str = ""
-        if err:
-            err_str = " ".join(
-                f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")
-            if len(err_str) > _REPORT_CELL_CHARS:
-                err_str = err_str[:_REPORT_CELL_CHARS - 1] + "…"
+        err_str = _error_cell(s.get("error"))
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
     return "\n".join(lines) + "\n"
 
 
+def _error_cell(err: dict | None) -> str:
+    """One error, as report text that cannot break a table or a list.
+
+    Error details can carry multiline stderr or `|`s — keep the table
+    intact. The cut is marked: an error cut off mid-sentence at exactly 200
+    characters reads as the whole error, and the reader has no way to tell
+    there is more of it in summary.json, which keeps the detail in full.
+    """
+    if not err:
+        return ""
+    err_str = " ".join(
+        f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")
+    if len(err_str) > _REPORT_CELL_CHARS:
+        err_str = err_str[:_REPORT_CELL_CHARS - 1] + "…"
+    return err_str
+
+
+# ---------------------------------------------------------------------------
+# Trials (#66). One trial is one `_run_arm` call: a fresh workspace, a fresh
+# agent call, the judge on that trial alone. The CLI has no temperature flag,
+# so repeating the arm is the only way to see run-to-run spread (DESIGN.md,
+# "Harness-wide rules").
+#
+# ON DISK, by the number of trials asked for:
+#
+#   --trials 1 (the default)   <arm>/summary.json            that trial, plus `n: 1`
+#                              <arm>/transcripts/raw.json
+#   --trials N, N > 1          <arm>/trial-<k>/summary.json  each trial, plus `trial: k`
+#                              <arm>/trial-<k>/transcripts/raw.json
+#                              <arm>/summary.json            the aggregate
+#
+# At N = 1 the arm summary IS the trial, field for field what this harness
+# wrote before trials existed, with `n: 1` appended; no `trial-1/` copy of it
+# is written. At N > 1 the arm summary describes no single trial, so the four
+# single-trial fields carry what stays true of the whole arm: `error` is null
+# only when NO trial errored, and `agent`, `objective_checks` and `judge` are
+# null — the numbers are under `aggregate`. A reader of the single-trial
+# shape therefore finds no check list and no judge result there, rather than
+# one trial's standing in for the arm.
+# ---------------------------------------------------------------------------
+
+TRIAL_DIR_PREFIX = "trial-"
+
+# A typo guard, not a statistical claim: every trial is a paid agent call and
+# a paid judge call, per arm, per fixture. DESIGN.md asks for N >= 3.
+MAX_TRIALS = 20
+
+
+def _is_number(value) -> bool:
+    """A finite real number, and not a bool. A judge's `overall`, a
+    dimension's score and a cost are all read off JSON a model or a CLI
+    produced; anything else there is left out of the statistics rather than
+    averaged. `math.isfinite` raises on an int too large for a float."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _stats(values: list) -> dict | None:
+    """`n`, `mean`, `min`, `max` and `sum` of a list of numbers, or None for
+    an empty one — there is no mean of nothing, and a 0.0 there would read as
+    a score."""
+    if not values:
+        return None
+    total = sum(values)
+    return {"n": len(values), "mean": total / len(values),
+            "min": min(values), "max": max(values), "sum": total}
+
+
+def aggregate_trials(trials: list[dict]) -> dict:
+    """One arm's trial summaries, reduced to the fields an aggregate carries.
+
+    `trials` is the list of per-trial summaries in trial order (trial 1
+    first), each in the shape `_write_summary` writes.
+
+    EVERY TRIAL COUNTS IN `n`. A trial whose `error` is set is counted in
+    `errors` and listed in `trial_errors`; it is in no mean, no pass rate and
+    no sum. `scored` is `n - errors`, the number of trials the objective
+    figures are over. Each statistic also carries its own `n`, because the
+    three are not always over the same trials: a scored trial whose judge
+    call failed is in the objective and cost figures and not in the judge's.
+
+    The `aggregate` block:
+
+      * `objective` — null when no trial was scored. Otherwise its own `n`
+        (the scored trials), `passed` and `total` (integer counts summed
+        over them), `mean_passed` and `mean_total` (those counts divided by
+        that `n`), and `checks`: one entry per check id in first-seen order,
+        with how many times it was scored (`n` — once per scored trial,
+        unless the fixture uses one id for several checks), how many of
+        those passed, and `pass_rate`.
+      * `judge` — null when no scored trial has a judge result (`--no-judge`,
+        or nothing was scored). Otherwise `n` (results with a numeric
+        `overall`), `errors` (results without one: the judge call failed or
+        answered something unusable), `overall` (`_stats`, or null when
+        `n` is 0) and `dimensions`: `_stats` per dimension name, matched
+        trimmed and casefolded, over the results counted in `n`.
+      * `cost_usd` — `_stats` over the scored trials' agent cost, or null
+        when none reported a number. An errored trial is not in it, whatever
+        its own `agent` block carries.
+    """
+    scored = [t for t in trials if not t.get("error")]
+    trial_errors = [
+        {"trial": index, "type": t["error"].get("type"),
+         "detail": t["error"].get("detail", "")}
+        for index, t in enumerate(trials, start=1) if t.get("error")]
+
+    objective_stats = None
+    if scored:
+        by_id: dict = {}
+        passed = total = 0
+        for trial in scored:
+            for check in trial.get("objective_checks") or []:
+                # Keyed by the id's repr: a fixture may write any YAML value
+                # as an id, a list included, and a list is not a dict key.
+                entry = by_id.setdefault(
+                    repr(check["id"]), {"id": check["id"], "n": 0, "passed": 0})
+                entry["n"] += 1
+                total += 1
+                if check.get("passed"):
+                    entry["passed"] += 1
+                    passed += 1
+        for entry in by_id.values():
+            entry["pass_rate"] = entry["passed"] / entry["n"]
+        objective_stats = {
+            "n": len(scored), "passed": passed, "total": total,
+            "mean_passed": passed / len(scored),
+            "mean_total": total / len(scored),
+            "checks": list(by_id.values())}
+
+    judge_stats = None
+    judged = [t["judge"] for t in scored if isinstance(t.get("judge"), dict)]
+    if judged:
+        usable = [j for j in judged
+                  if "error" not in j and _is_number(j.get("overall"))]
+        by_name: dict = {}
+        for result in usable:
+            for dim in result.get("dimensions") or []:
+                if not isinstance(dim, dict) or not _is_number(dim.get("score")):
+                    continue
+                name = str(dim.get("name", "")).strip()
+                by_name.setdefault(name.casefold(),
+                                   {"name": name, "scores": []})["scores"].append(
+                                       dim["score"])
+        judge_stats = {
+            "n": len(usable), "errors": len(judged) - len(usable),
+            "overall": _stats([j["overall"] for j in usable]),
+            "dimensions": [{"name": d["name"], **_stats(d["scores"])}
+                           for d in by_name.values()]}
+
+    costs = [t["agent"]["cost_usd"] for t in scored
+             if isinstance(t.get("agent"), dict)
+             and _is_number(t["agent"].get("cost_usd"))]
+
+    return {"n": len(trials), "errors": len(trial_errors),
+            "scored": len(scored), "trial_errors": trial_errors,
+            "aggregate": {"objective": objective_stats, "judge": judge_stats,
+                          "cost_usd": _stats(costs)}}
+
+
+def _trials_error(stats: dict) -> dict | None:
+    """The aggregate summary's `error`: null only when no trial errored.
+
+    Deliberately not "null while some trial was scored". `error` is the field
+    every reader of the single-trial shape already treats as "this arm has no
+    clean score", and an arm with an errored trial has a mean over the
+    survivors, which is not the same measurement as its sibling arm's.
+    """
+    if not stats["errors"]:
+        return None
+    kinds: dict = {}
+    for entry in stats["trial_errors"]:
+        kinds[entry["type"]] = kinds.get(entry["type"], 0) + 1
+    listed = ", ".join(f"{kind} x{count}" for kind, count in kinds.items())
+    tail = (f"every mean is over the {stats['scored']} that did not"
+            if stats["scored"] else "no trial was scored")
+    return {"type": "trial_errors",
+            "detail": f"{stats['errors']} of {stats['n']} trials errored "
+                      f"({listed}); {tail}"}
+
+
+def _fmt_mean(value: float) -> str:
+    """One decimal, but an integral mean prints as an integer (`7`, not
+    `7.0`) — the same rule scripts/make_badge.py prints its means by."""
+    rounded = round(value, 1)
+    return str(int(rounded)) if rounded == int(rounded) else f"{rounded:.1f}"
+
+
+def _render_trials_report(skill: str, timestamp: str, trials: int,
+                          sections: list[dict],
+                          harness_version: str | None = None) -> str:
+    """report.md for a run with more than one trial, or with nested fixtures.
+
+    One section per fixture, its header carrying `n`. `sections` is a list of
+    `{"label", "prompt", "arms"}`, each arm `{"arm", "models_used", "stats"}`
+    with `stats` as `aggregate_trials` returns it. The single-fixture,
+    single-trial run of a flat fixture does not come through here: it keeps
+    `_render_report`'s page, byte for byte.
+    """
+    lines = [f"# Eval report: {skill}", "",
+             f"- Timestamp: {timestamp}",
+             f"- Trials per arm: {trials}"]
+    for section in sections:
+        arms = section["arms"]
+        lines += ["",
+                  f"## Fixture: {section['label']} (n={trials})", "",
+                  f"- Prompt: {section['prompt'].strip()}",
+                  _harness_line(harness_version, arms), "",
+                  "| Arm | n | Errors | Objective (mean) | Judge overall "
+                  "(mean, min to max) | Cost USD (mean / sum) |",
+                  "| --- | --- | --- | --- | --- | --- |"]
+        for arm in arms:
+            stats = arm["stats"]
+            block = stats["aggregate"]
+            objective_stats = block["objective"]
+            if objective_stats and objective_stats["total"]:
+                objective_str = (f"{_fmt_mean(objective_stats['mean_passed'])}/"
+                                 f"{_fmt_mean(objective_stats['mean_total'])}")
+            else:
+                objective_str = "-"
+            judge_stats = block["judge"]
+            if not judge_stats:
+                judge_str = "-"
+            elif not judge_stats["overall"]:
+                judge_str = "error"
+            else:
+                overall = judge_stats["overall"]
+                judge_str = (f"{overall['mean']:.1f} ({overall['min']:.1f} to "
+                             f"{overall['max']:.1f}, {overall['n']} judged)")
+                if judge_stats["errors"]:
+                    judge_str += f"; {judge_stats['errors']} judge error(s)"
+            cost = block["cost_usd"]
+            cost_str = (f"{cost['mean']:.4f} / {cost['sum']:.4f}"
+                        if cost else "-")
+            lines.append(f"| {arm['arm']} | {stats['n']} | {stats['errors']} | "
+                         f"{objective_str} | {judge_str} | {cost_str} |")
+
+        errored = [(arm["arm"], entry) for arm in arms
+                   for entry in arm["stats"]["trial_errors"]]
+        if errored:
+            lines += ["",
+                      "Errored trials are counted in n and excluded from "
+                      "every mean:", ""]
+            lines += [f"- {arm_name} trial {entry['trial']}: "
+                      f"{_error_cell(entry)}" for arm_name, entry in errored]
+
+        check_ids: list = []
+        for arm in arms:
+            for check in (arm["stats"]["aggregate"]["objective"] or {}).get(
+                    "checks", []):
+                if check["id"] not in check_ids:
+                    check_ids.append(check["id"])
+        if check_ids:
+            lines += ["",
+                      "| Check (passed / scored) | "
+                      + " | ".join(arm["arm"] for arm in arms) + " |",
+                      "| --- |" + " --- |" * len(arms)]
+            for check_id in check_ids:
+                cells = []
+                for arm in arms:
+                    checks = (arm["stats"]["aggregate"]["objective"]
+                              or {}).get("checks", [])
+                    match = next((c for c in checks if c["id"] == check_id), None)
+                    cells.append(f"{match['passed']}/{match['n']}"
+                                 if match else "-")
+                lines.append(f"| {str(check_id).replace('|', chr(92) + '|')} | "
+                             + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str,
-            selection: tuple | None = None) -> dict:
+            selection: tuple | None = None, *,
+            out_dir: Path | None = None, extra: dict | None = None) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up.
+
+    ONE TRIAL (#66). A fresh workspace, one agent call, one judge call, one
+    summary.json. `out_dir` and `extra` are how `_run_arm_trials` points that
+    summary at a trial directory and labels it (`trial`, `fixture`, `n`); a
+    caller that passes neither gets the path and the fields this function
+    wrote before trials existed.
 
     `selection` is `select_models()`'s answer, resolved ONCE by main() and
     passed in: the roster is one file describing one run, and re-reading it per
@@ -1485,8 +1780,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         # init/add/commit only to shutil.rmtree it two lines later.
         error = {"type": "model-selection", "detail": selection_error}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, None, None, None, None,
-                       harness_version=harness_version)
+                       error, None, None, None, None, extra=extra,
+                       harness_version=harness_version, arm_dir=out_dir)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": []}
 
@@ -1505,8 +1800,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     except SetupFailedError as exc:
         error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, None, None, None, None,
-                       harness_version=harness_version)
+                       error, None, None, None, None, extra=extra,
+                       harness_version=harness_version, arm_dir=out_dir)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": []}
@@ -1607,8 +1902,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 error = {"type": "invalid_fixture", "detail": str(exc)}
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
                                timestamp, error, agent_summary, None, None, raw,
-                               harness_version=harness_version,
-                               models=agent_models)
+                               extra=extra, harness_version=harness_version,
+                               models=agent_models, arm_dir=out_dir)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
                         "judge": None, "models_used": agent_models}
@@ -1640,8 +1935,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, objective_checks, judge_result, raw,
-                       harness_version=harness_version, models=agent_models,
-                       judge_models=judge_models)
+                       extra=extra, harness_version=harness_version,
+                       models=agent_models, judge_models=judge_models,
+                       arm_dir=out_dir)
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
@@ -1650,8 +1946,75 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def _unit_dir(results_dir: Path, skill: str, timestamp: str,
+              fixture_name: str | None) -> Path:
+    """Where one fixture's arm directories go: the run directory itself for a
+    flat fixture (the path every run before #66 wrote), `<run>/<fixture>/`
+    for a nested one — so two fixtures of one skill never share an arm
+    directory."""
+    run_dir = results_dir / skill / timestamp
+    return run_dir / fixture_name if fixture_name else run_dir
+
+
+def _read_summary(arm_dir: Path) -> dict:
+    with open(arm_dir / "summary.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _union(summaries: list[dict], key: str) -> list[str]:
+    """The sorted, capped union of one model-list field across trials."""
+    found = {model for summary in summaries for model in summary.get(key) or []}
+    return sorted(found)[:MODELS_USED_MAX]
+
+
+def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
+                    args: argparse.Namespace, timestamp: str,
+                    selection: tuple | None) -> dict:
+    """Run `args.trials` trials of one arm of one fixture, and aggregate.
+
+    `item` is one prepared fixture: `{"fixture", "seed", "name"}`, `name`
+    being the nested fixture's name or None for a flat one.
+
+    Returns `{"arm", "models_used", "stats", "results"}`: `stats` is
+    `aggregate_trials` over the trial summaries AS WRITTEN (read back from
+    disk, so the aggregate cannot describe anything a reader of the trial
+    files would not find there), and `results` the in-memory `_run_arm`
+    returns, which the single-trial report is rendered from.
+    """
+    fixture = item["fixture"]
+    arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
+                        item["name"]) / arm_name
+    label = {"fixture": item["name"]} if item["name"] else {}
+    results, written = [], []
+    if args.trials == 1:
+        results.append(_run_arm(arm_name, fixture, item["seed"], registries,
+                                args, timestamp, selection, out_dir=arm_dir,
+                                extra={**label, "n": 1}))
+        written.append(_read_summary(arm_dir))
+        stats = aggregate_trials(written)
+    else:
+        for index in range(1, args.trials + 1):
+            trial_dir = arm_dir / f"{TRIAL_DIR_PREFIX}{index}"
+            results.append(_run_arm(arm_name, fixture, item["seed"], registries,
+                                    args, timestamp, selection,
+                                    out_dir=trial_dir,
+                                    extra={**label, "trial": index}))
+            written.append(_read_summary(trial_dir))
+        stats = aggregate_trials(written)
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       _trials_error(stats), None, None, None, None,
+                       extra={**label, **stats},
+                       harness_version=getattr(args, "harness_version", None),
+                       models=_union(written, "models_used"),
+                       judge_models=_union(written, "judge_models_used"),
+                       arm_dir=arm_dir)
+    return {"arm": arm_name, "models_used": _union(written, "models_used"),
+            "stats": stats, "results": results}
+
+
 def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
-                         error_type: str, detail: str) -> str:
+                         error_type: str, detail: str,
+                         fixture_name: str | None = None) -> str:
     """Record a fixture-level error as the artifacts a run would have left.
 
     A pre-run refusal that only printed to stdout left `results/` with
@@ -1662,15 +2025,25 @@ def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
 
     The harness version is recorded as null here: a pre-run refusal never
     invokes the CLI, so it does not spawn one just to ask its version.
+
+    No trial is attempted, so the summaries carry no `n` (#66): they are the
+    ones this function always wrote. A nested fixture's go under its own
+    `<run>/<fixture>/` directory and the report names it.
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = args.run_timestamp
     error = {"type": error_type, "detail": detail}
     arm_names = (["with_skill", "without_skill"] if args.arm == "both"
                  else [args.arm])
+    unit_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
+                         fixture_name)
     for arm_name in arm_names:
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, None, None, None, None)
-    report = _render_report(fixture["skill"], fixture.get("prompt", ""),
+                       error, None, None, None, None,
+                       extra={"fixture": fixture_name} if fixture_name else None,
+                       arm_dir=unit_dir / arm_name)
+    title = (f"{fixture['skill']}/{fixture_name}" if fixture_name
+             else fixture["skill"])
+    report = _render_report(title, fixture.get("prompt", ""),
                             timestamp,
                             [{"arm": name, "error": error} for name in arm_names])
     report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
@@ -2258,6 +2631,171 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Fixture layout (#66). A skill's fixtures live in ONE of two shapes:
+#
+#   flat     <skill>/fixture.yaml               one fixture; results under
+#            <skill>/seed/                      results/<skill>/<ts>/<arm>/
+#
+#   nested   <skill>/<fixture-name>/fixture.yaml   several; results under
+#            <skill>/<fixture-name>/seed/          results/<skill>/<ts>/<fixture-name>/<arm>/
+#
+# THE RULE IS POSITIONAL. A fixture directory whose PARENT directory is named
+# exactly the fixture's own `skill:` is a nested fixture, named after its own
+# directory; any other fixture directory is a flat one and writes the paths
+# every run before #66 wrote. `run_eval.py evals/<skill>/<name>` and
+# `run_eval.py evals/<skill> --fixture <name>` name the same fixture and write
+# the same paths, which is what stops two fixtures of one skill sharing
+# `results/<skill>/<ts>/<arm>/`.
+#
+# The position is read off the path AS NAMED — made absolute and normalized,
+# symlinks not followed (`fixture_position`). A fixture is the directory entry
+# an operator points at, and two entries of one skill directory are two
+# fixtures whatever they link to; following links let two of them resolve to
+# one name and one results directory.
+#
+# What the rule cannot see is intent: a flat fixture kept in a directory whose
+# parent happens to carry the skill's own name (`<skill>/<skill>/fixture.yaml`)
+# reads as a nested fixture called `<skill>`. `evals/<skill>/fixture.yaml` is
+# never that — its parent is `evals`.
+#
+# NEVER BOTH. A directory holding a `fixture.yaml` is a fixture and may not
+# also hold fixture subdirectories (its own `seed/` excepted, whatever the
+# seed contains), nor sit directly inside another fixture. The two shapes
+# write different trees under the same `results/<skill>/`, so a skill that
+# had both would publish runs a reader cannot tell apart by path. Every
+# fixture directory an invocation selects is checked both ways before it is
+# loaded (`check_fixture_dir`).
+# ---------------------------------------------------------------------------
+
+# A nested fixture's name becomes a directory BESIDE report.md, and a flat
+# fixture's arm directories sit at that same level — so a fixture may not be
+# called what a run-directory file or a skill arm's directory is called.
+# `seed` is refused because a flat fixture's own seed directory is skipped by
+# name.
+RESERVED_FIXTURE_NAMES = (SEED_DIR, "with_skill", "without_skill",
+                          "objective-only", *RUN_DIR_FILES)
+
+
+class FixtureLayoutError(guidance.GuidanceError):
+    """The directory named on the command line is not a layout this runner
+    can run: no fixture, a flat fixture and nested ones together, a fixture
+    name that cannot be a results directory, a `--fixture` naming nothing."""
+
+
+def _validate_fixture_name(name: str) -> None:
+    """`name` is an existing directory's own name, so it is already one path
+    segment of a length the filesystem takes; what is left to refuse is the
+    characters results/ paths are held to, and the names already taken."""
+    if not _ARM_NAME_RE.fullmatch(name):
+        raise FixtureLayoutError(
+            f"invalid fixture name {name!r}: a nested fixture is named after "
+            "its directory and that name becomes a directory under results/, "
+            "so it may only use letters, digits, `.`, `_` and `-`")
+    # Casefolded: on a filesystem that folds case, `Report.md/` and
+    # `report.md` are one name.
+    if name.casefold() in RESERVED_FIXTURE_NAMES:
+        raise FixtureLayoutError(
+            f"invalid fixture name {name!r}: reserved "
+            f"({', '.join(RESERVED_FIXTURE_NAMES)}). A nested fixture's "
+            "results directory sits beside report.md, where a flat fixture's "
+            "arm directories also go, and `seed` is a flat fixture's own seed")
+
+
+def nested_fixture_names(directory: Path) -> list[str]:
+    """The sorted names of `directory`'s immediate subdirectories that hold a
+    fixture.yaml. Immediate only: a fixture two levels down is not this
+    directory's."""
+    if not directory.is_dir():
+        return []
+    return sorted(child.name for child in directory.iterdir()
+                  if child.is_dir() and (child / FIXTURE_FILE).is_file())
+
+
+def _mixed_layout_error(directory: Path, nested: list[str]) -> FixtureLayoutError:
+    return FixtureLayoutError(
+        f"{directory} holds a {FIXTURE_FILE} AND fixture subdirectories "
+        f"({', '.join(nested)}). A skill directory holds one flat fixture or "
+        "nested ones, never both: the two write different trees under the "
+        "same results/<skill>/. Move the flat fixture into a subdirectory of "
+        "its own, or remove the nested ones")
+
+
+def fixture_position(eval_dir: Path) -> Path:
+    """`eval_dir` as named: absolute and normalized (`.`, `..`, a trailing
+    slash), symlinks NOT followed. The layout rule reads a fixture's name and
+    its parent's off this path."""
+    return Path(os.path.abspath(eval_dir))
+
+
+def check_fixture_dir(eval_dir: Path) -> None:
+    """Refuse a fixture directory that is half of a mixed layout: one that
+    holds fixture subdirectories of its own (`seed/` excepted), or one that
+    sits directly inside another fixture."""
+    inner = [name for name in nested_fixture_names(eval_dir) if name != SEED_DIR]
+    if inner:
+        raise _mixed_layout_error(eval_dir, inner)
+    position = fixture_position(eval_dir)
+    if (position.parent / FIXTURE_FILE).is_file():
+        raise _mixed_layout_error(position.parent, [position.name])
+
+
+def resolve_fixture_dirs(eval_dir: Path, selected: str | None) -> list[Path]:
+    """The fixture directories one invocation runs, in name order, each one
+    already checked by `check_fixture_dir`.
+
+    `eval_dir` holding a fixture.yaml is that one fixture — today's shape,
+    and the only one `--fixture` does not apply to. Otherwise it is a skill
+    directory and every `<name>/fixture.yaml` beneath it is run, or the one
+    `--fixture NAME` selects.
+    """
+    if (eval_dir / FIXTURE_FILE).is_file():
+        check_fixture_dir(eval_dir)
+        if selected is not None:
+            raise FixtureLayoutError(
+                f"--fixture {selected!r} selects one of a skill directory's "
+                f"nested fixtures, and {eval_dir} is itself a fixture. Drop "
+                "the flag, or name the skill directory")
+        return [eval_dir]
+    nested = nested_fixture_names(eval_dir)
+    if not nested:
+        raise FixtureLayoutError(
+            f"{eval_dir} holds no {FIXTURE_FILE}, and no "
+            f"<name>/{FIXTURE_FILE} beneath it")
+    for name in nested:
+        _validate_fixture_name(name)
+        check_fixture_dir(eval_dir / name)
+    if selected is None:
+        return [eval_dir / name for name in nested]
+    if selected not in nested:
+        raise FixtureLayoutError(
+            f"--fixture {selected!r} names no fixture under {eval_dir} "
+            f"(found: {', '.join(nested)})")
+    return [eval_dir / selected]
+
+
+def nested_fixture_name(eval_dir: Path, skill: str) -> str | None:
+    """The nested fixture's name, or None for a flat fixture — the positional
+    rule above, applied to one fixture directory whose `skill:` is known."""
+    position = fixture_position(eval_dir)
+    if position.parent.name != skill:
+        return None
+    _validate_fixture_name(position.name)
+    return position.name
+
+
+def _valid_timestamp(value: str) -> bool:
+    """`--timestamp` is a results/ path segment, so it is held to the exact
+    shape the wall-clock default produces and must be a real date and time."""
+    if not _TIMESTAMP_RE.fullmatch(value):
+        return False
+    try:
+        datetime.strptime(value, TIMESTAMP_FORMAT)
+    except ValueError:
+        return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
@@ -2308,6 +2846,22 @@ def main() -> int:
                              "the fixture's own `timeout_s:` is held to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summaries + reports)")
+    parser.add_argument("--fixture", default=None, metavar="NAME",
+                        help="when eval_dir is a skill directory holding "
+                             "nested fixtures (<name>/fixture.yaml), run only "
+                             "this one; without it, every nested fixture runs")
+    parser.add_argument("--trials", type=int, default=1,
+                        help="trials per arm, each a fresh workspace, a fresh "
+                             "agent call and its own judge call "
+                             f"(default 1; 1..{MAX_TRIALS}). Above 1, each "
+                             "trial is written under <arm>/trial-<k>/ and "
+                             "<arm>/summary.json carries the aggregate")
+    parser.add_argument("--timestamp", default=None,
+                        help="the run directory's name, as YYYYMMDDTHHMMSSZ, "
+                             "instead of the current UTC time — for tests and "
+                             "wrappers that need a deterministic path. Refused "
+                             "when that run directory already holds one of "
+                             "the arms this invocation would write")
     args = parser.parse_args()
 
     # S1-a. The FLAG is checked before anything else — before the fixture is
@@ -2336,158 +2890,231 @@ def main() -> int:
             print(f"configuration error: {exc}")
             return 2
 
-    fixture = None
-    try:
-        fixture = load_fixture(args.eval_dir)
-        validate_mapping_keys(fixture, args.eval_dir / "fixture.yaml")
-        validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
-    except MappingFixtureKeyError as exc:
-        # A malformed `judge:` is #81's `invalid_judge_block` — named in
-        # stdout AND recorded as report.md plus one summary.json per arm, so
-        # a run that produced no numbers says why in `results/` rather than
-        # only to whoever watched it. The load-time guard here refuses it
-        # before the later `isinstance(judge_cfg, dict)` check can, so that
-        # check would otherwise never be reached for a non-mapping and the
-        # artifacts would silently stop being written. Only when the fixture
-        # is well-formed enough to have a usable `skill:` — `_write_pre_run_
-        # error` derives every path it writes from that name.
-        skill_name = fixture.get("skill") if isinstance(fixture, dict) else None
-        usable_skill = isinstance(skill_name, str)
-        if usable_skill:
-            try:
-                _validate_skill_name(skill_name)
-            except ValueError:
-                usable_skill = False
-        if exc.key == "judge" and usable_skill:
-            print(f"invalid_judge_block: {exc}")
-            _write_pre_run_error(args, fixture, "invalid_judge_block", str(exc))
-            return 2
-        print(f"fixture configuration error: {exc}")
+    # #66. Checked before any fixture is read, like the flag above: both are
+    # operator input that decides what gets spent or where it gets written.
+    # `type=int` bounds nothing, so `--trials 0`, a negative and an absurd
+    # count are refused by name rather than run as zero or as a bill.
+    if not 1 <= args.trials <= MAX_TRIALS:
+        print(f"configuration error: --trials must be between 1 and "
+              f"{MAX_TRIALS}, got {args.trials}. Every trial is a paid agent "
+              "call and a paid judge call per arm")
         return 2
-    except guidance.GuidanceError as exc:
-        print(f"fixture configuration error: {exc}")
+    if args.trials > 1 and args.arm == "objective-only":
+        print("configuration error: --trials applies to the agent arms. "
+              "objective-only scores one workspace with no agent call, so N "
+              "trials of it would be N copies of one answer")
         return 2
-    seed = args.eval_dir / "seed"
+    if args.timestamp is not None and not _valid_timestamp(args.timestamp):
+        print(f"configuration error: --timestamp {args.timestamp!r} is not a "
+              "UTC time written as YYYYMMDDTHHMMSSZ (for example "
+              "20260716T070000Z). It becomes the run directory's name under "
+              "results/")
+        return 2
+    # ONE timestamp per invocation: every fixture, arm and trial of this run
+    # shares one run directory.
+    args.run_timestamp = (args.timestamp
+                          or datetime.now(timezone.utc).strftime(TIMESTAMP_FORMAT))
 
-    # Two subjects: a skill copied into the workspace (the original, and
-    # untouched by #97), and the fleet guidance delivered into user memory by
-    # the real fleet-memory.sh hook. Everything below this branch is the skill
-    # path exactly as it was.
-    subject = fixture.get("subject", "skill")
-    if subject == "guidance":
+    try:
+        eval_dirs = resolve_fixture_dirs(args.eval_dir, args.fixture)
+    except FixtureLayoutError as exc:
+        print(f"fixture configuration error: {exc}")
+        return 2
+    # A fixture found beneath the directory named on the command line, rather
+    # than named by it.
+    discovered = eval_dirs != [args.eval_dir]
+
+    # EVERY selected fixture is loaded and checked before ANY arm of any of
+    # them starts: the first refusal ends the invocation with nothing spent.
+    prepared = []
+    for eval_dir in eval_dirs:
+        fixture = None
         try:
-            return _run_guidance(args, fixture)
-        except guidance.GuidanceError as exc:
-            # The sink checks (S1-a-2) raise from inside whichever function
-            # was about to spawn. Caught HERE so every one of them lands on
-            # the rc-2 configuration contract instead of a traceback.
-            print(f"configuration error: {exc}")
+            fixture = load_fixture(eval_dir)
+            validate_mapping_keys(fixture, eval_dir / FIXTURE_FILE)
+            validate_timeouts(fixture, eval_dir / FIXTURE_FILE)
+        except MappingFixtureKeyError as exc:
+            # A malformed `judge:` is #81's `invalid_judge_block` — named in
+            # stdout AND recorded as report.md plus one summary.json per arm, so
+            # a run that produced no numbers says why in `results/` rather than
+            # only to whoever watched it. The load-time guard here refuses it
+            # before the later `isinstance(judge_cfg, dict)` check can, so that
+            # check would otherwise never be reached for a non-mapping and the
+            # artifacts would silently stop being written. Only when the fixture
+            # is well-formed enough to have a usable `skill:` — `_write_pre_run_
+            # error` derives every path it writes from that name.
+            skill_name = fixture.get("skill") if isinstance(fixture, dict) else None
+            usable_skill = isinstance(skill_name, str)
+            if usable_skill:
+                try:
+                    _validate_skill_name(skill_name)
+                except ValueError:
+                    usable_skill = False
+            if exc.key == "judge" and usable_skill:
+                try:
+                    name = nested_fixture_name(eval_dir, skill_name)
+                except FixtureLayoutError as layout_exc:
+                    print(f"fixture configuration error: {layout_exc}")
+                    return 2
+                print(f"invalid_judge_block: {exc}")
+                _write_pre_run_error(args, fixture, "invalid_judge_block", str(exc),
+                                     fixture_name=name)
+                return 2
+            print(f"fixture configuration error: {exc}")
             return 2
-    if subject != "skill":
-        print(f"{args.eval_dir / 'fixture.yaml'} has unknown subject "
-              f"{subject!r} — expected 'skill' or 'guidance'")
-        return 2
-    if args.arm not in SKILL_ARMS:
-        print(f"--arm {args.arm!r} is not valid for a skill fixture "
-              f"(expected one of {', '.join(SKILL_ARMS)})")
-        return 2
+        except guidance.GuidanceError as exc:
+            print(f"fixture configuration error: {exc}")
+            return 2
 
-    # Validated ONCE, here, before any path is derived from the fixture:
-    # `_write_summary` and `report_path` below both build a filesystem path
-    # out of `fixture["skill"]` unconditionally, for every arm — a fixture
-    # missing "skill" or "prompt" used to die with a bare KeyError deep
-    # inside _run_arm/_render_report, and a `skill:` containing `../` was
-    # never rejected before those paths were built (run_agent's own check
-    # only fires for the with_skill arm, by which point _write_summary has
-    # already used the raw name for with_skill AND without_skill). Presence
-    # first (a genuinely absent or blank field, same as
-    # _load_registries_config's own missing check), then type — a TRUTHY
-    # non-string `skill:`/`prompt:` (a list, an int) used to sail past a
-    # bare `not fixture.get(f)` check and die later with an uncaught
-    # TypeError from re.fullmatch or subprocess.run.
-    required = ["skill"] if args.arm == "objective-only" else ["skill", "prompt"]
-    missing = [f for f in required
-              if fixture.get(f) is None or fixture.get(f) == ""]
-    if missing:
-        print(f"{args.eval_dir / 'fixture.yaml'} is missing required "
-              f"field(s): {', '.join(missing)}")
-        return 2
-    bad_type = [f for f in required if not isinstance(fixture.get(f), str)]
-    if bad_type:
-        print(f"{args.eval_dir / 'fixture.yaml'} field(s) must be strings: " +
-              ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
-        return 2
+        # Two subjects: a skill copied into the workspace (the original, and
+        # untouched by #97), and the fleet guidance delivered into user memory by
+        # the real fleet-memory.sh hook. Everything below this branch is the skill
+        # path exactly as it was.
+        subject = fixture.get("subject", "skill")
+        if subject == "guidance":
+            # #66 is the skill subject's: a guidance fixture is run by its own
+            # directory, one trial per arm, under the wall clock's timestamp,
+            # as before. Refused by name rather than run with a flag that
+            # asked for something else quietly ignored.
+            if discovered or args.trials > 1 or args.timestamp is not None:
+                print(f"configuration error: {eval_dir / FIXTURE_FILE} is a "
+                      "guidance fixture. Nested-fixture discovery, --trials "
+                      "above 1 and --timestamp apply to skill fixtures only; "
+                      "run it by its own directory without them")
+                return 2
+            try:
+                return _run_guidance(args, fixture)
+            except guidance.GuidanceError as exc:
+                # The sink checks (S1-a-2) raise from inside whichever function
+                # was about to spawn. Caught HERE so every one of them lands on
+                # the rc-2 configuration contract instead of a traceback.
+                print(f"configuration error: {exc}")
+                return 2
+        if subject != "skill":
+            print(f"{eval_dir / FIXTURE_FILE} has unknown subject "
+                  f"{subject!r} — expected 'skill' or 'guidance'")
+            return 2
+        if args.arm not in SKILL_ARMS:
+            print(f"--arm {args.arm!r} is not valid for a skill fixture "
+                  f"(expected one of {', '.join(SKILL_ARMS)})")
+            return 2
 
-    # Validated HERE, before anything derives a path from it. It used to
-    # run after the judge-mode guard below, and only for a non-objective-only
-    # arm — so a fixture carrying both `skill: ../../ESCAPED` and a judge
-    # mode this runner refuses had `_write_pre_run_error` build
-    # `<results-dir>/../../ESCAPED/<timestamp>/report.md` and write it,
-    # two directories above where the operator pointed the run. Every path
-    # this function builds comes off this name, so the check comes first
-    # and applies to every arm.
-    try:
-        _validate_skill_name(fixture["skill"])
-    except ValueError as exc:
-        print(f"invalid fixture: {exc}")
-        return 2
+        # Validated ONCE, here, before any path is derived from the fixture:
+        # `_write_summary` and `report_path` below both build a filesystem path
+        # out of `fixture["skill"]` unconditionally, for every arm — a fixture
+        # missing "skill" or "prompt" used to die with a bare KeyError deep
+        # inside _run_arm/_render_report, and a `skill:` containing `../` was
+        # never rejected before those paths were built (run_agent's own check
+        # only fires for the with_skill arm, by which point _write_summary has
+        # already used the raw name for with_skill AND without_skill). Presence
+        # first (a genuinely absent or blank field, same as
+        # _load_registries_config's own missing check), then type — a TRUTHY
+        # non-string `skill:`/`prompt:` (a list, an int) used to sail past a
+        # bare `not fixture.get(f)` check and die later with an uncaught
+        # TypeError from re.fullmatch or subprocess.run.
+        required = ["skill"] if args.arm == "objective-only" else ["skill", "prompt"]
+        missing = [f for f in required
+                  if fixture.get(f) is None or fixture.get(f) == ""]
+        if missing:
+            print(f"{eval_dir / FIXTURE_FILE} is missing required "
+                  f"field(s): {', '.join(missing)}")
+            return 2
+        bad_type = [f for f in required if not isinstance(fixture.get(f), str)]
+        if bad_type:
+            print(f"{eval_dir / FIXTURE_FILE} field(s) must be strings: " +
+                  ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
+            return 2
 
-    # `judge:` written as anything but a mapping — a list, a string, a
-    # number, a bare `true`; YAML hands over all of them — used to reach
-    # `.get("mode")` and raise an uncaught AttributeError: exit 1, a
-    # traceback, and none of the artifacts a fixture-level refusal is
-    # supposed to leave. Named and recorded like every other pre-run
-    # refusal, and for every arm: a malformed block is malformed whether or
-    # not this run would have reached the judge.
-    judge_cfg = fixture.get("judge")
-    if judge_cfg is None or judge_cfg == "":
-        judge_cfg = {}
-    if not isinstance(judge_cfg, dict):
-        detail = (f"fixture's `judge:` block is a {type(judge_cfg).__name__}, "
-                  "not a mapping: it must carry keys like `mode:`, `model:` "
-                  "and `references:`, or be left out entirely")
-        print(f"invalid_judge_block: {detail}")
-        _write_pre_run_error(args, fixture, "invalid_judge_block", detail)
-        return 2
+        # Validated HERE, before anything derives a path from it. It used to
+        # run after the judge-mode guard below, and only for a non-objective-only
+        # arm — so a fixture carrying both `skill: ../../ESCAPED` and a judge
+        # mode this runner refuses had `_write_pre_run_error` build
+        # `<results-dir>/../../ESCAPED/<timestamp>/report.md` and write it,
+        # two directories above where the operator pointed the run. Every path
+        # this function builds comes off this name, so the check comes first
+        # and applies to every arm.
+        try:
+            _validate_skill_name(fixture["skill"])
+        except ValueError as exc:
+            print(f"invalid fixture: {exc}")
+            return 2
 
-    # A fixture whose `judge:` block asks for an instrument this runner
-    # cannot drive is refused before any arm starts, rather than scored with
-    # the wrong one. `_run_arm` still calls `judge.score()` with the three
-    # keywords it knew before #81 — no mode, no references — so a
-    # `judge.mode: pairwise` fixture used to be scored by the ABSOLUTE judge
-    # against a ranking rubric: measured on recruiter-reply, exit 0 and a
-    # report reading "Judge overall | 7.5", which is not a rank and means
-    # nothing there. Wiring `_run_arm` onto `judge.score_fixture` belongs to
-    # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
-    # then the run either passes --no-judge or does not happen.
-    #
-    # The mode is casefolded, exactly as `judge.score()` casefolds it, so
-    # `mode: Absolute` is absolute rather than "a mode this runner cannot
-    # drive yet" — which said nothing true about a spelling of the mode the
-    # runner does drive.
-    #
-    # objective-only is exempt because it runs no judge at all: these
-    # fixtures are meant to exit 1 there with "no transcript", which is the
-    # documented asymmetry rather than a runner error.
-    judge_mode = judge_cfg.get("mode", "absolute")
-    normalised_mode = (judge_mode.strip().casefold()
-                       if isinstance(judge_mode, str) else judge_mode)
-    if (args.arm != "objective-only" and not args.no_judge
-            and normalised_mode not in (None, "", "absolute")):
-        # Front-loaded: `_render_report` truncates this cell to 200
-        # characters, and the three sentences of provenance that used to
-        # open it pushed the issue, its URL and the flag that makes the run
-        # work off the end of the report a reader actually sees.
-        detail = (f"cannot drive judge mode {judge_mode!r} yet: re-run with "
-                  "--no-judge and read the objective column. #97 "
-                  "https://github.com/Adam-S-Daniel/skills-evals/issues/97 "
-                  "wires the call site onto judge.score_fixture(); until "
-                  "then _run_arm still calls judge.score() with the "
-                  "arguments it knew before #81, so scoring this fixture "
-                  "here would rank it with the absolute judge.")
-        print(f"judge_mode_unsupported: {detail}")
-        _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail)
-        return 2
+        # Flat or nested (#66), decided by where the fixture sits and before any
+        # results path is built: every path below hangs off this name.
+        try:
+            name = nested_fixture_name(eval_dir, fixture["skill"])
+        except FixtureLayoutError as exc:
+            print(f"fixture configuration error: {exc}")
+            return 2
+        if discovered and name is None:
+            print(f"fixture configuration error: {eval_dir / FIXTURE_FILE} "
+                  f"declares `skill: {fixture['skill']}`, but it was found as a "
+                  f"nested fixture of {fixture_position(eval_dir).parent.name!r}. A "
+                  "skill directory's nested fixtures all carry the directory's "
+                  "own name as their `skill:`")
+            return 2
+
+        # `judge:` written as anything but a mapping — a list, a string, a
+        # number, a bare `true`; YAML hands over all of them — used to reach
+        # `.get("mode")` and raise an uncaught AttributeError: exit 1, a
+        # traceback, and none of the artifacts a fixture-level refusal is
+        # supposed to leave. Named and recorded like every other pre-run
+        # refusal, and for every arm: a malformed block is malformed whether or
+        # not this run would have reached the judge.
+        judge_cfg = fixture.get("judge")
+        if judge_cfg is None or judge_cfg == "":
+            judge_cfg = {}
+        if not isinstance(judge_cfg, dict):
+            detail = (f"fixture's `judge:` block is a {type(judge_cfg).__name__}, "
+                      "not a mapping: it must carry keys like `mode:`, `model:` "
+                      "and `references:`, or be left out entirely")
+            print(f"invalid_judge_block: {detail}")
+            _write_pre_run_error(args, fixture, "invalid_judge_block", detail,
+                                 fixture_name=name)
+            return 2
+
+        # A fixture whose `judge:` block asks for an instrument this runner
+        # cannot drive is refused before any arm starts, rather than scored with
+        # the wrong one. `_run_arm` still calls `judge.score()` with the three
+        # keywords it knew before #81 — no mode, no references — so a
+        # `judge.mode: pairwise` fixture used to be scored by the ABSOLUTE judge
+        # against a ranking rubric: measured on recruiter-reply, exit 0 and a
+        # report reading "Judge overall | 7.5", which is not a rank and means
+        # nothing there. Wiring `_run_arm` onto `judge.score_fixture` belongs to
+        # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
+        # then the run either passes --no-judge or does not happen.
+        #
+        # The mode is casefolded, exactly as `judge.score()` casefolds it, so
+        # `mode: Absolute` is absolute rather than "a mode this runner cannot
+        # drive yet" — which said nothing true about a spelling of the mode the
+        # runner does drive.
+        #
+        # objective-only is exempt because it runs no judge at all: these
+        # fixtures are meant to exit 1 there with "no transcript", which is the
+        # documented asymmetry rather than a runner error.
+        judge_mode = judge_cfg.get("mode", "absolute")
+        normalised_mode = (judge_mode.strip().casefold()
+                           if isinstance(judge_mode, str) else judge_mode)
+        if (args.arm != "objective-only" and not args.no_judge
+                and normalised_mode not in (None, "", "absolute")):
+            # Front-loaded: `_render_report` truncates this cell to 200
+            # characters, and the three sentences of provenance that used to
+            # open it pushed the issue, its URL and the flag that makes the run
+            # work off the end of the report a reader actually sees.
+            detail = (f"cannot drive judge mode {judge_mode!r} yet: re-run with "
+                      "--no-judge and read the objective column. #97 "
+                      "https://github.com/Adam-S-Daniel/skills-evals/issues/97 "
+                      "wires the call site onto judge.score_fixture(); until "
+                      "then _run_arm still calls judge.score() with the "
+                      "arguments it knew before #81, so scoring this fixture "
+                      "here would rank it with the absolute judge.")
+            print(f"judge_mode_unsupported: {detail}")
+            _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail,
+                                 fixture_name=name)
+            return 2
+
+        prepared.append({"fixture": fixture, "seed": eval_dir / SEED_DIR,
+                         "name": name})
 
     # Resolved and validated before ANY arm starts, including objective-only:
     # a bad --registry/$SKILLS_EVALS_REGISTRIES override used to be silently
@@ -2503,6 +3130,15 @@ def main() -> int:
         return 2
 
     if args.arm == "objective-only":
+        # One JSON document about one workspace: a skill directory holding
+        # several nested fixtures has no single answer to print.
+        if len(prepared) != 1:
+            print("configuration error: --arm objective-only scores one "
+                  f"fixture, and {args.eval_dir} holds "
+                  f"{len(prepared)} ({', '.join(i['name'] for i in prepared)}). "
+                  "Pass --fixture NAME")
+            return 2
+        fixture, seed = prepared[0]["fixture"], prepared[0]["seed"]
         # `objective.FixtureError` — a `strip_seed:` written as anything but
         # a boolean, a seed file over the provenance read cap — is a fixture
         # error, and every other fixture error here is a named line and exit
@@ -2536,25 +3172,48 @@ def main() -> int:
         except objective.FixtureError as exc:
             # `SeedTooLarge` is a `FixtureError`, so one clause covers both.
             print(f"invalid_fixture: {exc}")
-            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc))
+            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc),
+                                 fixture_name=prepared[0]["name"])
             return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))
         return 0 if all(r["passed"] for r in results) else 1
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = args.run_timestamp
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
+    # The wall clock never names a run directory twice in practice; a
+    # `--timestamp` can. Written into again, an arm directory would keep the
+    # earlier run's `trial-<k>/` beside this run's aggregate, so the reuse is
+    # refused before anything is spent — for the flag only, which leaves the
+    # default path as it was.
+    if args.timestamp is not None:
+        taken = [str(arm_dir) for item in prepared for arm_dir in (
+                     _unit_dir(args.results_dir, item["fixture"]["skill"],
+                               timestamp, item["name"]) / name
+                     for name in arm_names) if arm_dir.exists()]
+        if taken:
+            print(f"configuration error: --timestamp {timestamp} names a run "
+                  f"that already holds {', '.join(taken)}. A run never writes "
+                  "over another; pick another timestamp or results directory")
+            return 2
+    # Every prepared fixture carries the same `skill:` — a leaf is one
+    # fixture, and a skill directory's nested ones are held to its name.
+    skill = prepared[0]["fixture"]["skill"]
+    outcomes = []
     try:
         # Read once per run, before any arm (#202): every arm's summary.json
         # records the same version, and a run whose version could not be
         # read still runs and records null.
         args.harness_version = claude_version()
-        # Resolved once: one trusted-roster read, one model choice, both arms.
-        selection = select_models(fixture, args)
-        arm_summaries = [_run_arm(name, fixture, seed, registries, args,
-                                  timestamp, selection)
-                         for name in arm_names]
+        for item in prepared:
+            # Resolved once per fixture: one trusted-roster read, one model
+            # choice, every arm and every trial of that fixture.
+            selection = select_models(item["fixture"], args)
+            outcomes.append((item, [
+                _run_arm_trials(name, item, registries, args, timestamp,
+                                selection)
+                for name in arm_names]))
     except guidance.GuidanceError as exc:
         # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,
         # _nested_repo_diff, judge.score, the objective git checks — checks
@@ -2563,14 +3222,43 @@ def main() -> int:
         print(f"configuration error: {exc}")
         return 2
 
-    report = _render_report(fixture["skill"], fixture["prompt"], timestamp,
-                            arm_summaries, args.harness_version)
-    report_path = args.results_dir / fixture["skill"] / timestamp / REPORT_NAME
+    # The page a run has always left, byte for byte, for the run it has
+    # always been: one flat fixture, one trial per arm. Anything else — more
+    # trials, or a nested fixture — gets one section per fixture with `n` in
+    # its header.
+    single_trial_flat = (len(outcomes) == 1 and outcomes[0][0]["name"] is None
+                         and args.trials == 1)
+    if single_trial_flat:
+        item, arms = outcomes[0]
+        report = _render_report(skill, item["fixture"]["prompt"], timestamp,
+                                [arm["results"][0] for arm in arms],
+                                args.harness_version)
+    else:
+        report = _render_trials_report(
+            skill, timestamp, args.trials,
+            [{"label": item["name"] or skill,
+              "prompt": item["fixture"]["prompt"], "arms": arms}
+             for item, arms in outcomes],
+            args.harness_version)
+    report_path = args.results_dir / skill / timestamp / REPORT_NAME
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
 
-    errored_arms = [s["arm"] for s in arm_summaries if s["error"]]
+    # ANY errored trial is a runner-level error and exit 2, as an errored arm
+    # always was: an arm whose mean is over the survivors is not the
+    # measurement that was asked for.
+    errored_arms = []
+    for item, arms in outcomes:
+        for arm in arms:
+            stats = arm["stats"]
+            if not stats["errors"]:
+                continue
+            label = (f"{item['name']}/{arm['arm']}" if item["name"]
+                     else arm["arm"])
+            if args.trials > 1:
+                label += f" ({stats['errors']} of {stats['n']} trials)"
+            errored_arms.append(label)
     if errored_arms:
         print(f"Runner-level error in arm(s): {', '.join(errored_arms)}")
         return 2
