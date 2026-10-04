@@ -164,8 +164,13 @@ class _Home:
 
 
 def _signal_group(proc: subprocess.Popen, sig: int) -> None:
+    pid = proc.pid
+    # killpg(1, sig) is kill(-1, sig): it signals every process the user owns.
+    # Cleanup is best effort, so an unsafe pid is skipped rather than raised.
+    if type(pid) is not int or pid <= 1:
+        return
     try:
-        os.killpg(proc.pid, sig)
+        os.killpg(pid, sig)
     except (ProcessLookupError, PermissionError):
         try:
             proc.send_signal(sig)
@@ -189,10 +194,13 @@ def _stop(proc: subprocess.Popen) -> None:
         except subprocess.TimeoutExpired:
             _signal_group(proc, signal.SIGKILL)
             proc.wait()
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+    pid = proc.pid
+    # Same refusal as `_signal_group`: never killpg(1, sig) == kill(-1, sig).
+    if type(pid) is int and pid > 1:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
     if proc.stdout is not None:
         proc.stdout.close()
 
