@@ -3,12 +3,12 @@
 Fake binaries shared across fixtures. A Class B eval (DESIGN.md, "Four
 instruments") decides correctness by whether the agent reached a recorded root
 cause, so its instrument is a stand-in for the tool the skill consults —
-answering from canned payloads, refusing to mutate anything, and logging what
+answering from canned payloads, refusing remote writes, and logging what
 was asked. Same substitution move as `$CLAUDE_BIN` / `test/fake-claude`.
 
 One fake lives here per faked tool. A fixture supplies **payloads**, never
 code: it symlinks the binary onto its seed's `bin/` and ships its own payload
-directory, so a behaviour fixed here is fixed for every fixture at once.
+directory, so a behavior fixed here is fixed for every fixture at once.
 
 | Fake | Stands in for | Payload dir |
 |---|---|---|
@@ -27,7 +27,7 @@ fixture reuses it.)
 env:
   PATH: "$WORKSPACE/bin:$PATH"          # the fake shadows any real gh
   GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"   # a dot-dir: see below
-  GH_REPO: "example-org/example-site"   # only shapes the 403's URL
+  GH_REPO: "example-org/example-site"   # read repository and fallback 403 URL
 ```
 
 ```bash
@@ -156,6 +156,81 @@ same file.
   and can derail a run before it reaches the fixture's own surface.
   `gh pr list --help` is still an ordinary `pr-list.json` read.
 
+### Optional local label writes
+
+The default remains read-only. Without `write-policy.json` in the payload
+directory, every write gets the original 403 response, and reads return the
+original payload bytes. Any existing local label state is ignored.
+
+A fixture can opt into specific label additions by supplying this JSON:
+
+```json
+{
+  "pr_edit_add_label": [
+    {"repo": "example-org/example-site", "number": 512, "label": "decap-cms/draft"},
+    {"repo": "example-org/example-site", "number": 518, "label": "decap-cms/pending_publish"}
+  ]
+}
+```
+
+Those numbers and labels are examples, not built-in exceptions. The top-level
+key and the three entry keys are exact; unknown keys, duplicate JSON keys,
+duplicate entries, non-list collections and invalid values fail closed.
+Repositories must be canonical `owner/name` strings with ASCII letters,
+digits, underscores, periods or hyphens, with each component starting with a
+letter or digit. Numbers are positive JSON integers, excluding booleans.
+Labels are nonempty printable strings without surrounding whitespace or
+commas. An empty policy permits no writes.
+
+Only `gh pr edit <number> --repo <repo> --add-label <label>` can succeed,
+and its entire repository/number/label tuple must match an entry exactly.
+The PR argument is a positive decimal integer of at most 20 digits with no
+leading zeros. URLs and alternate path spellings do not match. The repository
+must be explicit: `GH_REPO` cannot authorize an edit. Flag order is flexible;
+`--repo value`, `--repo=value`, `-R value`, `-Rvalue` and `-R=value` work.
+Label spellings `--add-label value` and `--add-label=value` work. The `-l`
+spelling is rejected, including attached values. Repeated repositories are last-wins,
+but any missing or empty repository value rejects the edit. Exactly one label
+flag is allowed; repeated labels (including duplicates or mixed spellings)
+and comma-separated labels reject the edit. Extra flags or positional
+arguments, other write verbs, and REST or GraphQL mutations still get a 403.
+
+Each permitted target needs `pr-view-<number>.json` containing an object with
+a `labels` array. Labels may be strings or objects with a nonempty printable
+`name`; object metadata and all other fields are preserved. Empty arrays use
+gh's normal label-object representation for additions. If supplied, `number`
+must match and `state` must be `OPEN`. Labels-only views work: the policy
+author grants the target as open when state is omitted. If `pr-list.json`
+exists, its matching rows must also have valid labels and an open state when
+state is present. No list payload is required to edit.
+
+Successful edits return exit 0 with empty output and append a `class=write`
+record with `exit=0`. They atomically replace `.gh-label-state.json` in the
+anchored log workspace, using the same JSON schema as the policy; stored
+tuples must be a subset of the current policy. An exclusive lock on the
+workspace's dedicated `.gh-label-state.lock` covers re-reading the current
+policy and state, validating the grant, and replacing the state. Concurrent
+edits therefore preserve each other's additions. The lock is released before
+output or logging; payload validation happens before locking. Lock failures,
+links, and non-file lock paths fail closed. With no policy, no lock is created.
+Original payload files are never changed, and no network call is made.
+Repeating an authorized edit is
+idempotent. Subsequent `pr view` and `pr list` reads merge additions for the
+effective repository (`--repo`/`-R`, else `GH_REPO`). Lists need an array of
+objects with integer `number` fields to identify affected rows. Affected rows
+require valid labels and any supplied state must be open. Unrelated repository
+reads and reads with no applicable additions preserve their original bytes.
+The existing whole-payload behavior still applies: `--json`, `--jq` and
+`--template` do not select or transform fields.
+
+Malformed policy, state or affected responses return a safe `gh:` error,
+exit 1, and a record with the actual failure code. Policy and state paths
+that resolve outside their respective payload directory or workspace fail
+closed, including broken symlinks. State updates use atomic replacement under
+the dedicated lock. Policy, state and the workspace anchor
+remain ordinary local files, with the same evidence-editing trust boundary
+described below.
+
 ### Classes, and what each one does
 
 Every invocation is appended to `.gh-invocations.log` at the root of the
@@ -280,7 +355,7 @@ writes the anchor by hand — one line, the workspace's absolute path, at
 | Class | When | Result |
 |---|---|---|
 | `read` | a non-mutating call with a payload | the payload on stdout, exit 0 |
-| `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1. Nothing is ever mutated |
+| `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1; only policy-authorized `pr edit` label additions update local state and exit 0 |
 | `unknown` | a read with no payload, or one that will not decode as UTF-8 | `gh: Not Found (HTTP 404)`, exit 1 |
 
 `gh api graphql` is decided by its DOCUMENT, not by its method or its body
