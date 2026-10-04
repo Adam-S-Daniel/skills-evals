@@ -24645,6 +24645,10 @@ class TestIssue83(unittest.TestCase):
         # objective verdict check by design, even though its prose contradicts it.
         accepted = {
             "Yes": ("Yes", "Yes — needs OCR", "Yes (needs OCR)",
+                    "Yes — no text layer", "Yes — no embedded text",
+                    "Yes — no pages have text", "Yes — see Partial table",
+                    "Yes — skip none", "Yes — may", "Yes — may needful",
+                    "Yes — may requireable",
                     "Yes (all pages image-only)",
                     "Yes — not searchable", "Yes — image-only scan",
                     "Yes — 0/2 pages have text", "Yes; scanned",
@@ -24654,7 +24658,13 @@ class TestIssue83(unittest.TestCase):
                     "Yes (fully searchable)", "Yes — does not need OCR",
                     "Yes — has text layer", "Yes — has text-layer",
                     "Yes — digitally created"),
-            "No": ("No", "No — fully searchable", "No (already searchable)",
+            "No": ("No", "No — May 2024 scan with text layer",
+                   "No — no OCR needed", "No (no OCR needed)",
+                   "No — 2/2 pages have text, no OCR required", "No — skip none",
+                   "No — may", "No — may needful", "No — may beaker",
+                   "No — may notepad", "No — may haveful", "No — may requireable",
+                   "No — May 2026",
+                   "No — fully searchable", "No (already searchable)",
                    "No (does not need OCR)", "No — has text",
                    "No — all pages have text", "No — digitally created",
                    "No — unscanned text", "No — text layer present",
@@ -24662,20 +24672,28 @@ class TestIssue83(unittest.TestCase):
                    "No — despite scanned-looking name", "No — needs OCR",
                    "No (needs OCR)", "No — image-only", "No — should be OCR'd",
                    "No — scanned", "No — not searchable", "No — image only"),
-            "Partial": ("Partial", "Partial — cover page is image-only",
+            "Partial": ("Partial", "Partial — no text on page 2",
+                        "Partial — cover page is image-only",
                         "Partial (some pages searchable)",
                         "Partial — needs OCR on pages 2-3", "Partial — page 2 needs OCR",
                         "Partial — 1/2 pages have text", "Partial — not fully searchable",
                         "Partial — fully searchable", "Partial — all pages image-only",
-                        "Partial — all pages image only"),
-            "Inaccessible": ("Inaccessible", "Inaccessible — could not be read",
-                             "Inaccessible — corrupted", "Inaccessible (error)",
+                        "Partial — all pages image only", "Partial — may"),
+            "Inaccessible": ("Inaccessible", "Inaccessible — no text could be extracted",
+                             "Inaccessible — could not be read",
+                             "Inaccessible — corrupted", "Inaccessible — may",
+                             "Inaccessible (error)",
                              "Inaccessible — read error", "Inaccessible — truncated",
                              "Inaccessible - corrupt PDF", "Inaccessible — needs OCR"),
         }
         for filename, (_case, correct) in self.FILES.items():
-            variants = (*accepted[correct], correct + ".", correct + ",",
-                        correct + ";", correct + ":", correct + "!",
+            variants = (*accepted[correct], correct + " — skip",
+                        correct + " — May 2, 2024", correct + " — see Partial table",
+                        correct + " — may", correct + " — may needful",
+                        correct + " — may beaker", correct + " — may notepad",
+                        correct + " — may haveful", correct + " — may requireable",
+                        correct + ".", correct + ",", correct + ";",
+                        correct + ":", correct + "!",
                         correct + " — audit complete", correct + " (audit complete)",
                         *(f"{correct} — {suffix}" for suffix in
                           ("could require inspection", "Mayflower scan",
@@ -24699,17 +24717,18 @@ class TestIssue83(unittest.TestCase):
                        f"Maybe {correct}", f"{correct} — page counts available?",
                        f"{correct} — OCR unnecessary? no",
                        f"{correct} — probably corrupt", f"{correct}, but may need OCR",
+                       f"{correct}, but Yes on page 2",
                        f"{correct} — may need OCR",
-                       f"{correct} — no OCR needed", f"{correct} — no text layer",
-                       f"{correct} — scanned, no text layer",
-                       f"{correct} — leave as is", f"{correct} — skip",
+                       f"{correct} — leave as is",
                        *(f"{correct} — {word}" for word in
                          ("probably", "maybe", "perhaps", "possibly", "unsure",
-                          "may", "might", "not sure", "NOT\tSURE", "uncertain", "unclear")),
+                          "might", "not sure", "NOT\tSURE", "uncertain", "unclear",
+                          "may need", "may be", "may not", "may have", "may require")),
                        *(f"{correct}{separator}{second}" for second in
                          ("Yes", "No", "Partial", "Inaccessible")
-                         for separator in ("/", " or ", ", but ", " — ")),
-                       f"{correct} — {correct.swapcase()}")
+                         for separator in ("/", " or ", " OR ", ",but ",
+                                           ", but ", ",\tbut\t", " vs ",
+                                           " vs. ", " VS.\t")))
             for verdict in invalid:
                 with self.subTest(filename=filename, verdict=verdict):
                     ws = self._ws()
