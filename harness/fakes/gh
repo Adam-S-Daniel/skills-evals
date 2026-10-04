@@ -225,7 +225,7 @@ def _is_value(token: str) -> bool:
     return token == "-" or not token.startswith("-")
 
 
-def parse_argv(argv: list[str], label_edit: bool = False) -> tuple[list[str], dict[str, list]]:
+def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
     """Split argv into positionals and flags.
 
     Flags are dropped from the payload key entirely, which is what makes
@@ -251,10 +251,7 @@ def parse_argv(argv: list[str], label_edit: bool = False) -> tuple[list[str], di
             positionals.extend(argv[i + 1:])
             break
         if arg.startswith("-") and arg != "-":
-            attached = (split_attached(arg) or
-                        (("-l", arg[2:].removeprefix("="))
-                         if label_edit and arg.startswith("-l") and not arg.startswith("--")
-                         and len(arg) > 2 else None))
+            attached = split_attached(arg)
             if attached:
                 flags.setdefault(SHORTHAND_ALIASES.get(attached[0], attached[0]),
                                  []).append(attached[1])
@@ -734,10 +731,10 @@ def pr_row(row, number: int) -> dict:
 def permitted_label_edit(positionals: list[str], flags: dict, policy: set):
     if (len(positionals) != 3 or positionals[:2] != ["pr", "edit"]
             or not re.fullmatch(r"[1-9][0-9]{0,19}", positionals[2])
-            or not set(flags) <= {"--repo", "--add-label", "-l"}):
+            or not set(flags) <= {"--repo", "--add-label"}):
         return None
     repos = flags.get("--repo", [])
-    labels = flags.get("--add-label", []) + flags.get("-l", [])
+    labels = flags.get("--add-label", [])
     if (not repos or any(not isinstance(r, str) or not r for r in repos)
             or len(labels) != 1 or not isinstance(labels[0], str)):
         return None
@@ -851,11 +848,6 @@ def main(argv: list[str]) -> int:
     except LabelPolicyError:
         return label_error(argv, klass, key)
 
-    if label_policy is not None:
-        edit_positionals, edit_flags = parse_argv(argv, label_edit=True)
-        if edit_positionals[:2] == ["pr", "edit"]:
-            positionals, flags = edit_positionals, edit_flags
-            key, klass = payload_key(positionals, flags), "write"
 
     if klass == "write":
         if label_policy is not None:

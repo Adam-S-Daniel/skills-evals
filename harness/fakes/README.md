@@ -188,9 +188,8 @@ The PR argument is a positive decimal integer of at most 20 digits with no
 leading zeros. URLs and alternate path spellings do not match. The repository
 must be explicit: `GH_REPO` cannot authorize an edit. Flag order is flexible;
 `--repo value`, `--repo=value`, `-R value`, `-Rvalue` and `-R=value` work.
-Label spellings `--add-label value`, `--add-label=value`, `-l value`, `-lvalue`
-and `-l=value` work. Attached `-l` parsing is enabled only for opted-in PR
-edits, preserving the default parser. Repeated repositories are last-wins,
+Label spellings `--add-label value` and `--add-label=value` work. The `-l`
+spelling is rejected, including attached values. Repeated repositories are last-wins,
 but any missing or empty repository value rejects the edit. Exactly one label
 flag is allowed; repeated labels (including duplicates or mixed spellings)
 and comma-separated labels reject the edit. Extra flags or positional

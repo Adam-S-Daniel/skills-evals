@@ -8020,9 +8020,7 @@ class TestGhWriteAllowlist(unittest.TestCase):
         self._policy()
         for repo in (["--repo", self.REPO], ["--repo=" + self.REPO], ["-R", self.REPO],
                      ["-R" + self.REPO], ["-R=" + self.REPO]):
-            for label in (["--add-label", "decap-cms/draft"], ["--add-label=decap-cms/draft"],
-                          ["-l", "decap-cms/draft"], ["-l=decap-cms/draft"],
-                          ["-ldecap-cms/draft"]):
+            for label in (["--add-label", "decap-cms/draft"], ["--add-label=decap-cms/draft"]):
                 for args in (["pr", "edit", "512", *repo, *label],
                              [*repo, "pr", *label, "edit", "512"],
                              ["pr", "edit", "512", "--repo", "other-org/other-site", *repo, *label]):
@@ -8030,6 +8028,13 @@ class TestGhWriteAllowlist(unittest.TestCase):
                         self.assertEqual(self._call(args).returncode, 0)
         row = json.loads(self._call(["pr", "view", "512"]).stdout)
         self.assertEqual(len(row["labels"]), 2, "repeated successful edits are idempotent")
+
+    def test_nonexistent_short_label_spellings_are_refused(self):
+        self._policy()
+        for label in (["-l", "decap-cms/draft"], ["-l=decap-cms/draft"],
+                      ["-ldecap-cms/draft"]):
+            with self.subTest(label=label):
+                self._reject(["pr", "edit", "512", "--repo", self.REPO, *label])
 
     def test_wrong_tuple_extra_flags_positionals_and_missing_values_refused(self):
         self._policy()
