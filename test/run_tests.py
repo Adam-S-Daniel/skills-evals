@@ -17106,7 +17106,9 @@ class TestIssue81(unittest.TestCase):
 
 
 class TestIssue80(unittest.TestCase):
-    """evals/writing-adrs: two fixtures for the writing-adrs skill (issue #80).
+    """evals/writing-adrs: the first two of three fixtures for the writing-adrs
+    skill (issue #80); the third, `supersede`, has its own tests in
+    test/issues/test_issue_80_supersede.py.
 
     `existing-convention` (Class A, format half) — a repo that already has
     docs/decisions/ in a house Status/Context/Decision/Consequences format;
