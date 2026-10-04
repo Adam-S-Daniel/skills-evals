@@ -1565,8 +1565,9 @@ def aggregate_trials(trials: list[dict]) -> dict:
         (the scored trials), `passed` and `total` (integer counts summed
         over them), `mean_passed` and `mean_total` (those counts divided by
         that `n`), and `checks`: one entry per check id in first-seen order,
-        with the number of scored trials that ran it (`n`), how many passed,
-        and `pass_rate`.
+        with how many times it was scored (`n` — once per scored trial,
+        unless the fixture uses one id for several checks), how many of
+        those passed, and `pass_rate`.
       * `judge` — null when no scored trial has a judge result (`--no-judge`,
         or nothing was scored). Otherwise `n` (results with a numeric
         `overall`), `errors` (results without one: the judge call failed or
@@ -1589,8 +1590,10 @@ def aggregate_trials(trials: list[dict]) -> dict:
         passed = total = 0
         for trial in scored:
             for check in trial.get("objective_checks") or []:
+                # Keyed by the id's repr: a fixture may write any YAML value
+                # as an id, a list included, and a list is not a dict key.
                 entry = by_id.setdefault(
-                    check["id"], {"id": check["id"], "n": 0, "passed": 0})
+                    repr(check["id"]), {"id": check["id"], "n": 0, "passed": 0})
                 entry["n"] += 1
                 total += 1
                 if check.get("passed"):
@@ -1728,7 +1731,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                     check_ids.append(check["id"])
         if check_ids:
             lines += ["",
-                      "| Check (trials passed / trials scored) | "
+                      "| Check (passed / scored) | "
                       + " | ".join(arm["arm"] for arm in arms) + " |",
                       "| --- |" + " --- |" * len(arms)]
             for check_id in check_ids:
@@ -2640,10 +2643,17 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
 # THE RULE IS POSITIONAL. A fixture directory whose PARENT directory is named
 # exactly the fixture's own `skill:` is a nested fixture, named after its own
 # directory; any other fixture directory is a flat one and writes the paths
-# every run before #66 wrote. That holds however the fixture was reached —
-# `run_eval.py evals/<skill>/<name>` and `run_eval.py evals/<skill> --fixture
-# <name>` name the same fixture and write the same paths — which is what
-# stops two fixtures of one skill sharing `results/<skill>/<ts>/<arm>/`.
+# every run before #66 wrote. `run_eval.py evals/<skill>/<name>` and
+# `run_eval.py evals/<skill> --fixture <name>` name the same fixture and write
+# the same paths, which is what stops two fixtures of one skill sharing
+# `results/<skill>/<ts>/<arm>/`.
+#
+# The position is read off the path AS NAMED — made absolute and normalized,
+# symlinks not followed (`fixture_position`). A fixture is the directory entry
+# an operator points at, and two entries of one skill directory are two
+# fixtures whatever they link to; following links let two of them resolve to
+# one name and one results directory.
+#
 # What the rule cannot see is intent: a flat fixture kept in a directory whose
 # parent happens to carry the skill's own name (`<skill>/<skill>/fixture.yaml`)
 # reads as a nested fixture called `<skill>`. `evals/<skill>/fixture.yaml` is
@@ -2651,9 +2661,11 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
 #
 # NEVER BOTH. A directory holding a `fixture.yaml` is a fixture and may not
 # also hold fixture subdirectories (its own `seed/` excepted, whatever the
-# seed contains). The two shapes write different trees under the same
-# `results/<skill>/`, so a skill that had both would publish runs a reader
-# cannot tell apart by path; the refusal is at load, from either side.
+# seed contains), nor sit directly inside another fixture. The two shapes
+# write different trees under the same `results/<skill>/`, so a skill that
+# had both would publish runs a reader cannot tell apart by path. Every
+# fixture directory an invocation selects is checked both ways before it is
+# loaded (`check_fixture_dir`).
 # ---------------------------------------------------------------------------
 
 # A nested fixture's name becomes a directory BESIDE report.md, and a flat
@@ -2680,7 +2692,9 @@ def _validate_fixture_name(name: str) -> None:
             f"invalid fixture name {name!r}: a nested fixture is named after "
             "its directory and that name becomes a directory under results/, "
             "so it may only use letters, digits, `.`, `_` and `-`")
-    if name in RESERVED_FIXTURE_NAMES:
+    # Casefolded: on a filesystem that folds case, `Report.md/` and
+    # `report.md` are one name.
+    if name.casefold() in RESERVED_FIXTURE_NAMES:
         raise FixtureLayoutError(
             f"invalid fixture name {name!r}: reserved "
             f"({', '.join(RESERVED_FIXTURE_NAMES)}). A nested fixture's "
@@ -2707,31 +2721,50 @@ def _mixed_layout_error(directory: Path, nested: list[str]) -> FixtureLayoutErro
         "its own, or remove the nested ones")
 
 
+def fixture_position(eval_dir: Path) -> Path:
+    """`eval_dir` as named: absolute and normalized (`.`, `..`, a trailing
+    slash), symlinks NOT followed. The layout rule reads a fixture's name and
+    its parent's off this path."""
+    return Path(os.path.abspath(eval_dir))
+
+
+def check_fixture_dir(eval_dir: Path) -> None:
+    """Refuse a fixture directory that is half of a mixed layout: one that
+    holds fixture subdirectories of its own (`seed/` excepted), or one that
+    sits directly inside another fixture."""
+    inner = [name for name in nested_fixture_names(eval_dir) if name != SEED_DIR]
+    if inner:
+        raise _mixed_layout_error(eval_dir, inner)
+    position = fixture_position(eval_dir)
+    if (position.parent / FIXTURE_FILE).is_file():
+        raise _mixed_layout_error(position.parent, [position.name])
+
+
 def resolve_fixture_dirs(eval_dir: Path, selected: str | None) -> list[Path]:
-    """The fixture directories one invocation runs, in name order.
+    """The fixture directories one invocation runs, in name order, each one
+    already checked by `check_fixture_dir`.
 
     `eval_dir` holding a fixture.yaml is that one fixture — today's shape,
     and the only one `--fixture` does not apply to. Otherwise it is a skill
     directory and every `<name>/fixture.yaml` beneath it is run, or the one
     `--fixture NAME` selects.
     """
-    nested = nested_fixture_names(eval_dir)
     if (eval_dir / FIXTURE_FILE).is_file():
-        others = [name for name in nested if name != SEED_DIR]
-        if others:
-            raise _mixed_layout_error(eval_dir, others)
+        check_fixture_dir(eval_dir)
         if selected is not None:
             raise FixtureLayoutError(
                 f"--fixture {selected!r} selects one of a skill directory's "
                 f"nested fixtures, and {eval_dir} is itself a fixture. Drop "
                 "the flag, or name the skill directory")
         return [eval_dir]
+    nested = nested_fixture_names(eval_dir)
     if not nested:
         raise FixtureLayoutError(
             f"{eval_dir} holds no {FIXTURE_FILE}, and no "
             f"<name>/{FIXTURE_FILE} beneath it")
     for name in nested:
         _validate_fixture_name(name)
+        check_fixture_dir(eval_dir / name)
     if selected is None:
         return [eval_dir / name for name in nested]
     if selected not in nested:
@@ -2744,13 +2777,11 @@ def resolve_fixture_dirs(eval_dir: Path, selected: str | None) -> list[Path]:
 def nested_fixture_name(eval_dir: Path, skill: str) -> str | None:
     """The nested fixture's name, or None for a flat fixture — the positional
     rule above, applied to one fixture directory whose `skill:` is known."""
-    resolved = eval_dir.resolve()
-    if resolved.parent.name != skill:
+    position = fixture_position(eval_dir)
+    if position.parent.name != skill:
         return None
-    if (resolved.parent / FIXTURE_FILE).is_file():
-        raise _mixed_layout_error(resolved.parent, [resolved.name])
-    _validate_fixture_name(resolved.name)
-    return resolved.name
+    _validate_fixture_name(position.name)
+    return position.name
 
 
 def _valid_timestamp(value: str) -> bool:
@@ -2828,8 +2859,9 @@ def main() -> int:
     parser.add_argument("--timestamp", default=None,
                         help="the run directory's name, as YYYYMMDDTHHMMSSZ, "
                              "instead of the current UTC time — for tests and "
-                             "wrappers that need a deterministic path; a "
-                             "reused one writes into the same run directory")
+                             "wrappers that need a deterministic path. Refused "
+                             "when that run directory already holds one of "
+                             "the arms this invocation would write")
     args = parser.parse_args()
 
     # S1-a. The FLAG is checked before anything else — before the fixture is
@@ -3017,7 +3049,7 @@ def main() -> int:
         if discovered and name is None:
             print(f"fixture configuration error: {eval_dir / FIXTURE_FILE} "
                   f"declares `skill: {fixture['skill']}`, but it was found as a "
-                  f"nested fixture of {eval_dir.resolve().parent.name!r}. A "
+                  f"nested fixture of {fixture_position(eval_dir).parent.name!r}. A "
                   "skill directory's nested fixtures all carry the directory's "
                   "own name as their `skill:`")
             return 2
@@ -3150,6 +3182,21 @@ def main() -> int:
 
     timestamp = args.run_timestamp
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
+    # The wall clock never names a run directory twice in practice; a
+    # `--timestamp` can. Written into again, an arm directory would keep the
+    # earlier run's `trial-<k>/` beside this run's aggregate, so the reuse is
+    # refused before anything is spent — for the flag only, which leaves the
+    # default path as it was.
+    if args.timestamp is not None:
+        taken = [str(arm_dir) for item in prepared for arm_dir in (
+                     _unit_dir(args.results_dir, item["fixture"]["skill"],
+                               timestamp, item["name"]) / name
+                     for name in arm_names) if arm_dir.exists()]
+        if taken:
+            print(f"configuration error: --timestamp {timestamp} names a run "
+                  f"that already holds {', '.join(taken)}. A run never writes "
+                  "over another; pick another timestamp or results directory")
+            return 2
     # Every prepared fixture carries the same `skill:` — a leaf is one
     # fixture, and a skill directory's nested ones are held to its name.
     skill = prepared[0]["fixture"]["skill"]

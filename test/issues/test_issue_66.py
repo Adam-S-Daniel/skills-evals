@@ -27,9 +27,11 @@ injected with `--timestamp`), or touches the network.
 
 A child process gets the environment `_child_env` builds and nothing else:
 the operator's `PATH` (to find python3 and git) and values this module
-writes. `HOME` and `TMPDIR` point inside the test's own `mkdtemp`, so the
-harness's workspaces, the scripted CLI's notes and every result land under
-it and are removed with it.
+writes. `HOME` and `TMPDIR` point inside the test's own `mkdtemp`, and so do
+the results directory and the scripted CLI's notes, so the harness's
+workspaces and everything a run writes land under it and are removed with
+it; `PYTHONDONTWRITEBYTECODE` keeps a child from leaving `__pycache__` in the
+checkout.
 
 Discovered and run by test/run_tests.py; also runnable on its own with
 `python3 test/issues/test_issue_66.py`.
@@ -159,6 +161,7 @@ def _child_env(tmp: Path, **extra: str) -> dict:
     scratch.mkdir(exist_ok=True)
     env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(home),
            "TMPDIR": str(scratch), "LANG": "C.UTF-8",
+           "PYTHONDONTWRITEBYTECODE": "1",
            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto",
            "GIT_CONFIG_VALUE_0": "false"}
     env.update(extra)
@@ -444,6 +447,56 @@ class TestIssue66NestedFixtures(_HarnessCase):
                 self._refused(self._run(eval_dir, *self.ARM),
                               "fixture configuration error:", "never both")
 
+    def test_a_fixture_inside_a_nested_fixture_is_refused(self):
+        # alpha/inner is a fixture directly inside the fixture alpha. Named
+        # as the skill directory, as alpha, or as inner, it is the same
+        # mixed layout and is refused.
+        _write_fixture(self.skill_dir / "alpha" / "inner", self.SKILL)
+        self._script(agents=[{}, {}, {}])
+        for eval_dir in (self.skill_dir, self.skill_dir / "alpha",
+                         self.skill_dir / "alpha" / "inner"):
+            with self.subTest(eval_dir=eval_dir.name):
+                self._refused(self._run(eval_dir, *self.ARM),
+                              "fixture configuration error:", "never both")
+
+    def test_the_position_is_the_path_as_named_not_what_it_links_to(self):
+        # A skill directory reached through a symlink, and holding two
+        # entries that link to directories of the SAME name elsewhere. The
+        # fixtures are the entries: `one` and `two`, under the skill the
+        # link is named for — not `shared` twice, and not flat.
+        for holder in ("x", "y"):
+            _write_fixture(self.tmp / holder / "shared", "linked-skill")
+        real = self.tmp / "impl"
+        real.mkdir()
+        (real / "one").symlink_to(self.tmp / "x" / "shared")
+        (real / "two").symlink_to(self.tmp / "y" / "shared")
+        (self.evals / "linked-skill").symlink_to(real)
+        linked = self.evals / "linked-skill"
+        by_dir, by_leaf = self.tmp / "by-dir", self.tmp / "by-leaf"
+        self._script(agents=[{}] * 4)
+        proc = self._run(linked, *self.ARM, results=by_dir)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for name in ("one", "two"):
+            proc = self._run(linked / name, *self.ARM, results=by_leaf)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        expected = sorted(
+            [f"linked-skill/{TS}/report.md"]
+            + [f"linked-skill/{TS}/{name}/without_skill/{leaf}"
+               for name in ("one", "two")
+               for leaf in ("summary.json", "transcripts/raw.json")])
+        self.assertEqual(_tree(by_dir), expected)
+        self.assertEqual(_tree(by_leaf), expected)
+
+    def test_an_entry_linking_to_another_skills_fixture_is_refused(self):
+        _write_fixture(self.tmp / "elsewhere" / "another-skill" / "theirs",
+                       "another-skill")
+        (self.skill_dir / "gamma").symlink_to(
+            self.tmp / "elsewhere" / "another-skill" / "theirs")
+        self._script(agents=[{}, {}, {}])
+        self._refused(self._run(self.skill_dir, *self.ARM),
+                      "declares `skill: another-skill`",
+                      f"nested fixture of {self.SKILL!r}")
+
     def test_a_flat_fixtures_seed_is_not_a_nested_fixture(self):
         # A seed may contain anything, a fixture.yaml included; `seed/` is
         # the flat fixture's own and is not read as a second fixture.
@@ -498,9 +551,9 @@ class TestIssue66NestedFixtures(_HarnessCase):
         # fixture's arm directories go; `seed` is a flat fixture's own.
         self._script(agents=[{}])
         for name in ("with_skill", "without_skill", "objective-only",
-                     "report.md", "seed", "has space"):
+                     "report.md", "Report.md", "seed", "has space"):
             with self.subTest(name=name):
-                skill_dir = self.evals / f"skill-{len(name)}-{name[:1]}"
+                skill_dir = self.evals / f"skill-{len(name)}-{ord(name[0])}"
                 skill = skill_dir.name
                 _write_fixture(skill_dir / name, skill)
                 # As a discovered fixture, and named by its own directory.
@@ -566,7 +619,7 @@ class TestIssue66NestedFixtures(_HarnessCase):
         report = (self.run_dir / "report.md").read_text(encoding="utf-8")
         self.assertIn("- without_skill trial 1: nonzero_exit:", report)
 
-    def test_a_guidance_fixture_is_not_discovered_or_trialled(self):
+    def test_a_guidance_fixture_is_not_discovered_or_trialed(self):
         guidance_dir = self.evals / "guidance" / "some-section"
         guidance_dir.mkdir(parents=True)
         (guidance_dir / "fixture.yaml").write_text(yaml.safe_dump(
@@ -623,7 +676,7 @@ class TestIssue66Trials(_HarnessCase):
             ["summary.json"]
             + [f"{prefix}{k}/summary.json" for k in (1, 2, 3)]
             + [f"{prefix}{k}/transcripts/raw.json" for k in (1, 2, 3)]))
-        # Each trial is a whole single-trial summary, labelled with its index.
+        # Each trial is a whole single-trial summary, labeled with its index.
         for k, overall, marker in ((1, 6.0, True), (2, 9.0, False),
                                    (3, 7.5, True)):
             trial = json.loads((self.arm_dir / f"{prefix}{k}" / "summary.json")
@@ -852,7 +905,7 @@ class TestIssue66Trials(_HarnessCase):
         self.assertIn("| without_skill | 2 | 0 | 1/2 | - | "
                       "0.0400 / 0.0800 |", self._report())
 
-    def test_both_arms_are_trialled_and_aggregated_separately(self):
+    def test_both_arms_are_trialed_and_aggregated_separately(self):
         self._script(agents=[{"write": "marker.txt"}] * 2 + [{}] * 2,
                      judges=[{"overall": 9.0}] * 2 + [{"overall": 4.0}] * 2)
         proc = self._run(self.fixture_dir, "--arm", "both", "--trials", "2",
@@ -909,6 +962,54 @@ class TestIssue66Trials(_HarnessCase):
         proc = self._trials(run_eval.MAX_TRIALS, "--no-judge")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(self._aggregate()["n"], run_eval.MAX_TRIALS)
+
+    def test_a_reused_timestamp_never_writes_over_a_run(self):
+        # Three trials, then two under the same --timestamp: written into
+        # again, the arm would keep trial-3/ beside an aggregate saying n=2.
+        self._script(agents=[{}] * 5)
+        first = self._trials(3, "--no-judge")
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        before = {rel: (self.results / rel).read_bytes()
+                  for rel in _tree(self.results)}
+        second = self._trials(2, "--no-judge")
+        self.assertEqual(second.returncode, 2, second.stdout + second.stderr)
+        self.assertIn(f"configuration error: --timestamp {TS} names a run "
+                      "that already holds", second.stdout)
+        self.assertIn(str(self.arm_dir), second.stdout)
+        self.assertEqual(len(self._calls("agents")), 3)
+        self.assertEqual({rel: (self.results / rel).read_bytes()
+                          for rel in _tree(self.results)}, before)
+        # The other arm of the same run directory is not taken, and runs.
+        third = self._run(self.fixture_dir, "--arm", "with_skill", "--no-judge",
+                          "--timestamp", TS, "--registry",
+                          f"adam-agentskills={self._registry(self.SKILL)}")
+        self.assertEqual(third.returncode, 0, third.stdout + third.stderr)
+
+    def test_a_check_id_that_is_not_a_string_is_still_aggregated(self):
+        # YAML hands over any value as an id. `main` scored such a fixture
+        # and exited 0; so does the default path here, and so do trials.
+        odd = _write_fixture(
+            self.evals / "odd-skill", "odd-skill",
+            objective_checks=[dict(CHECKS[0], id=["readme", "kept"]),
+                              dict(CHECKS[1], id=7)])
+        self._script(agents=[{}] * 3)
+        single = self._run(odd, "--arm", "without_skill", "--no-judge",
+                           "--timestamp", TS)
+        self.assertEqual(single.returncode, 0, single.stdout + single.stderr)
+        self.assertNotIn("Traceback", single.stderr)
+        self.assertEqual(
+            [c["id"] for c in self._json("odd-skill", TS, "without_skill",
+                                         "summary.json")["objective_checks"]],
+            [["readme", "kept"], 7])
+        later = "20260717T070000Z"
+        trials = self._run(odd, "--arm", "without_skill", "--no-judge",
+                           "--trials", "2", "--timestamp", later)
+        self.assertEqual(trials.returncode, 0, trials.stdout + trials.stderr)
+        self.assertEqual(
+            self._json("odd-skill", later, "without_skill",
+                       "summary.json")["aggregate"]["objective"]["checks"],
+            [{"id": ["readme", "kept"], "n": 2, "passed": 2, "pass_rate": 1.0},
+             {"id": 7, "n": 2, "passed": 0, "pass_rate": 0.0}])
 
     def test_a_timestamp_that_is_not_one_is_refused(self):
         self._script(agents=[{}])
@@ -992,6 +1093,20 @@ class TestIssue66Statistics(unittest.TestCase):
             {"name": "Tone", "n": 1, "mean": 9.0, "min": 9, "max": 9,
              "sum": 9}])
 
+    def test_an_id_used_for_two_checks_is_counted_each_time(self):
+        # One id on two checks of one fixture: its `n` is how many times it
+        # was scored, which is then twice per trial.
+        twice = {"error": None, "agent": {"cost_usd": 0.5}, "judge": None,
+                 "objective_checks": [
+                     {"id": "same", "passed": True, "detail": ""},
+                     {"id": "same", "passed": False, "detail": ""}]}
+        stats = run_eval.aggregate_trials([twice] * 3)
+        self.assertEqual(stats["aggregate"]["objective"], {
+            "n": 3, "passed": 3, "total": 6, "mean_passed": 1.0,
+            "mean_total": 2.0,
+            "checks": [{"id": "same", "n": 6, "passed": 3,
+                        "pass_rate": 0.5}]})
+
     def test_an_errored_trial_never_leaves_n(self):
         error = {"type": "timeout", "detail": "agent timed out after 600s"}
         # The third errored after its agent call was paid for (the shape an
@@ -1035,7 +1150,7 @@ class TestIssue66Badge(_HarnessCase):
                 **extra}
 
     @staticmethod
-    def _trialled(trials: list[dict]) -> dict:
+    def _trialed(trials: list[dict]) -> dict:
         """The aggregate arm summary `--trials N` writes for these trial
         summaries — built by the harness's own functions, so this test and
         the writer cannot disagree about the shape."""
@@ -1103,10 +1218,10 @@ class TestIssue66Badge(_HarnessCase):
     def test_n_is_trials_times_runs(self):
         for ts in ("20260709T070000Z", TS):
             self._write(ts,
-                        self._trialled([self._single(5, 5, 9.0),
+                        self._trialed([self._single(5, 5, 9.0),
                                         self._single(4, 5, 8.0),
                                         self._single(5, 5, 7.0)]),
-                        self._trialled([self._single(3, 5, 5.0)] * 3))
+                        self._trialed([self._single(3, 5, 5.0)] * 3))
         badge = self._badge()
         # with: (5+4+5)*2 / 6 trials = 4.67 -> 4.7; without: 3.
         self.assertEqual(badge["message"],
@@ -1118,10 +1233,10 @@ class TestIssue66Badge(_HarnessCase):
     def test_the_window_averages_over_every_fixture_of_the_skill(self):
         # One run of two nested fixtures at two trials each, and an older
         # single-trial flat run: 2 + 2 + 1 trials per arm.
-        self._write(TS, self._trialled([self._single(4, 4)] * 2),
-                    self._trialled([self._single(2, 4)] * 2), fixture="alpha")
-        self._write(TS, self._trialled([self._single(1, 2)] * 2),
-                    self._trialled([self._single(1, 2)] * 2), fixture="beta")
+        self._write(TS, self._trialed([self._single(4, 4)] * 2),
+                    self._trialed([self._single(2, 4)] * 2), fixture="alpha")
+        self._write(TS, self._trialed([self._single(1, 2)] * 2),
+                    self._trialed([self._single(1, 2)] * 2), fixture="beta")
         self._write("20260709T070000Z", self._single(3, 4),
                     self._single(0, 4))
         # with: (8 + 2 + 3) / 5 = 2.6 of (8 + 4 + 4) / 5 = 3.2
@@ -1135,32 +1250,32 @@ class TestIssue66Badge(_HarnessCase):
     def test_the_judge_mean_is_over_every_judged_trial(self):
         # Objective tied; the judge decides between yellow and red. The
         # with-arm's judge mean is (9 + 3 + 3) / 3 = 5, below without's 6.
-        self._write(TS, self._trialled([self._single(4, 5, 9.0),
+        self._write(TS, self._trialed([self._single(4, 5, 9.0),
                                         self._single(4, 5, 3.0),
                                         self._single(4, 5, 3.0)]),
-                    self._trialled([self._single(4, 5, 6.0)] * 3))
+                    self._trialed([self._single(4, 5, 6.0)] * 3))
         self.assertEqual(self._badge()["color"], "red")
         # A newer run in which one with-arm trial has no judge result: the
         # mean is over the two that do, (8 + 8) / 2 = 8, above without's 6 —
         # not (8 + 8) / 3, which would be below it.
         newer = "20260723T070000Z"
-        self._write(newer, self._trialled([self._single(4, 5, 8.0),
+        self._write(newer, self._trialed([self._single(4, 5, 8.0),
                                            self._single(4, 5),
                                            self._single(4, 5, 8.0)]),
-                    self._trialled([self._single(4, 5, 6.0)] * 3))
+                    self._trialed([self._single(4, 5, 6.0)] * 3))
         self.assertEqual(self._badge("--window", "1")["color"], "yellow")
 
     def test_an_aggregate_with_an_unusable_judge_block_still_counts(self):
         # The judge can only demote. A judge block the badge cannot read is
         # "no judge", and the objective comparison stands.
-        without = self._trialled([self._single(3, 5, 9.0)] * 2)
+        without = self._trialed([self._single(3, 5, 9.0)] * 2)
         # -inf and 10**400 are both JSON a file can carry (`-Infinity`, and
         # an integer with no float): neither is a sum to divide.
         for index, (field, value) in enumerate(
                 (("sum", "high"), ("sum", None), ("sum", True),
                  ("sum", float("-inf")), ("sum", 10 ** 400), ("n", None),
                  ("n", 0), ("n", 1.5))):
-            with_arm = self._trialled([self._single(5, 5, 1.0)] * 2)
+            with_arm = self._trialed([self._single(5, 5, 1.0)] * 2)
             with_arm["aggregate"]["judge"]["overall"][field] = value
             ts = f"202607{10 + index}T070000Z"
             with self.subTest(field=field, value=str(value)[:12]):
@@ -1173,16 +1288,15 @@ class TestIssue66Badge(_HarnessCase):
                 # yellow; unreadable, the objective win stands.
                 self.assertEqual(badge["color"], "green")
         self._write("20260720T070000Z",
-                    self._trialled([self._single(5, 5, 1.0)] * 2), without)
+                    self._trialed([self._single(5, 5, 1.0)] * 2), without)
         self.assertEqual(self._badge("--window", "1")["color"], "yellow")
 
     def test_equal_pass_counts_are_a_tie_whatever_the_trial_order(self):
-        # 7 of 9 on both sides, reached through different thirds. Summed as
-        # integer counts this is an exact tie; a mean of per-trial rates
-        # would be at the mercy of float rounding.
-        self._write(TS, self._trialled([self._single(2, 3), self._single(2, 3),
+        # 7 of 9 on both sides, reached through different trials: a tie on
+        # the objective checks, so yellow, in whatever order the passes came.
+        self._write(TS, self._trialed([self._single(2, 3), self._single(2, 3),
                                         self._single(3, 3)]),
-                    self._trialled([self._single(3, 3), self._single(2, 3),
+                    self._trialed([self._single(3, 3), self._single(2, 3),
                                     self._single(2, 3)]))
         badge = self._badge()
         self.assertEqual(badge["color"], "yellow")
@@ -1191,10 +1305,10 @@ class TestIssue66Badge(_HarnessCase):
 
     def test_a_pair_with_an_errored_trial_is_dropped_not_averaged(self):
         error = {"type": "timeout", "detail": "agent timed out after 600s"}
-        errored = self._trialled([self._single(5, 5), self._single(5, 5),
+        errored = self._trialed([self._single(5, 5), self._single(5, 5),
                                   {"error": error, "agent": None,
                                    "objective_checks": None, "judge": None}])
-        self._write(TS, errored, self._trialled([self._single(0, 5)] * 3))
+        self._write(TS, errored, self._trialed([self._single(0, 5)] * 3))
         self.assertEqual(self._badge(), {
             "schemaVersion": 1, "label": f"skill eval: {self.SKILL}",
             "message": f"no data · {DATE}", "color": "lightgrey"})
@@ -1205,12 +1319,12 @@ class TestIssue66Badge(_HarnessCase):
                          "with 4/5 vs without 4/5 · 2026-07-09")
 
     def test_arms_with_different_trial_counts_are_not_a_pair(self):
-        self._write(TS, self._trialled([self._single(5, 5)] * 3),
-                    self._trialled([self._single(0, 5)] * 2))
+        self._write(TS, self._trialed([self._single(5, 5)] * 3),
+                    self._trialed([self._single(0, 5)] * 2))
         self.assertEqual(self._badge()["message"], f"no data · {DATE}")
 
     def test_a_malformed_aggregate_reads_as_missing(self):
-        good = self._trialled([self._single(5, 5)] * 2)
+        good = self._trialed([self._single(5, 5)] * 2)
 
         def broken(**changes):
             doc = json.loads(json.dumps(good))
