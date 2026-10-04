@@ -1109,6 +1109,8 @@ class TestIssue66Timeouts(_HarnessCase):
                       mock.patch.object(run_eval, "assert_stand_ins_on_path"),
                       mock.patch.object(run_eval, "agent_env",
                                         return_value=_child_env(case_dir)),
+                      mock.patch.dict(os.environ,
+                                      {"CLAUDE_BIN": str(FAKE_CLAUDE)}),
                       mock.patch.object(subprocess, "Popen", InstantChild),
                       mock.patch.object(run_eval.objective, "run_checks",
                                         return_value=[{"id": "only",
