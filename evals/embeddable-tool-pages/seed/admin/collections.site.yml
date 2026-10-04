@@ -1,0 +1,14 @@
+- name: tools
+  label: Tools
+  folder: _tools
+  create: true
+  delete: true
+  slug: "{{slug}}"
+  fields:
+    - {name: title, label: Title, widget: string}
+    - {name: slug, label: Slug, widget: string}
+    - {name: description, label: Description, widget: text}
+    - {name: featured, label: Featured, widget: boolean, default: false}
+    - {name: embed_src, label: Embed source, widget: string}
+    - {name: source_url, label: Source URL, widget: string, required: false}
+    - {name: body, label: Body, widget: markdown}
