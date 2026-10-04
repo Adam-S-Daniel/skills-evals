@@ -255,7 +255,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ## 6. What is finished
 
-- The harness, scorers, roster, propagation audit and seventeen A/B fixtures are
+- The harness, scorers, roster, propagation audit and sixteen A/B fixtures (the seventeenth section in the inventory, `guidance/_delivery`, is the delivery canary) are
   merged on `main` with CI green.
 - The roster redesign (PR #153) merged on 2026-09-21, the first real proposal
   run succeeded, and the census was published on 2026-09-22 so proposals are
