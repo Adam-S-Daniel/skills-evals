@@ -25,7 +25,9 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    begins `ANTHROPIC_`, `CLAUDE_CODE_USE_`, `AWS_`, `GOOGLE_`, `GCLOUD_`,
    `CLOUDSDK_` or `AZURE_`; is `CLAUDE_CODE_OAUTH_TOKEN` or
    `CLAUDE_CONFIG_DIR`; or contains `API_KEY`, `AUTH_TOKEN`, `ACCESS_KEY`,
-   `SECRET` or `BEARER`. Empty counts. The message names the variable, never
+   `SECRET` or `BEARER` (the one tool toggle in that family,
+   `CLAUDE_CODE_USE_POWERSHELL_TOOL`, is not a provider and passes). Empty
+   counts. The message names the variable, never
    its value; `env -u NAME` clears it. A run under `/login` needs none of them,
    and each one either bills a dollar or cloud account, re-routes the CLI to
    another provider, or puts a credential in reach of an arm.
@@ -51,8 +53,29 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    variable rule 1 refuses, or when one cannot be read or parsed as a JSON
    object. It names the file and the key, never a value. The same check runs
    on every `**/.claude/settings*.json` inside each selected fixture's `seed/`
-   (the arms load those as project settings) and on each registry checkout's
-   root `.claude/settings*.json`.
+   (the arms load those as project settings), following symlinks as the
+   workspace copy does, and on each registry checkout's root
+   `.claude/settings*.json`. This early check reads SOURCE files only.
+1c. The launch-time guard, which checks what the CLI will actually read. A
+   source check cannot see a symlink resolved later or a fixture `setup:`
+   command that writes `.claude/settings.json` into the workspace. So main()
+   writes a small launcher (`scripts/local_eval_guard.py`, `launcher_source`)
+   as `claude` in a private 0700 temp directory, points CLAUDE_BIN at it for
+   every child and puts that directory first on PATH. Every child kind starts
+   the CLI through it: the version call (run_eval.claude_version), the probe
+   (init_probe), each arm (run_eval.run_agent) and the judge (judge.py reads
+   CLAUDE_BIN too). In the instant before the real CLI starts it runs the
+   same settings check on its own cwd: `.claude/settings*.json` there, the
+   project's `settings.json` and `settings.local.json` in each parent up to
+   the project root (the nearest `.git`), and `.claude/settings*.json`
+   beneath the cwd, following symlinks with loop protection. The harness
+   checkout's own tree (the judge's cwd) is not walked beneath, only its
+   `.claude/` is read; its source was checked in 1b. On a refusal it prints
+   the file and key to stderr, records it, exits 87 and does NOT start the
+   CLI; otherwise it execs the real CLI with argv and environment unchanged.
+   A bare `--version` is not checked (it loads no settings). local_eval turns
+   any refusal into exit 2, names the trial and fixture(s), and runs no
+   further trial.
 2. Refuses a `--results-dir` that resolves (symlinks followed) inside this
    checkout, or inside any other git work tree or `.git` directory, or that
    already holds files; a git that cannot answer (dubious ownership,
@@ -125,15 +148,16 @@ Limits a reader must know:
   the refusals and the settings pre-flight cannot see, and so stays
   unverified: `~/.claude.json`, the system keychain, and
   `~/.claude/.credentials.json` (the interactive login itself, which is the
-  intended credential), and any settings key or variable a future CLI release
-  adds. The interactive login is the only credential the judge is left able
+  intended credential), any settings key or variable a future CLI release
+  adds, a settings file created AFTER the CLI has started (by its own child
+  processes), and anything the agent itself runs (it can edit files, PATH or
+  CLAUDE_BIN for the commands it spawns). The interactive login is the only credential the judge is left able
   to use, if those checks and the CLI's documented precedence hold.
 """
 
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import os
 import shutil
@@ -150,19 +174,14 @@ RUN_EVAL = HARNESS_DIR / "run_eval.py"
 sys.path.insert(0, str(HARNESS_DIR))
 import guidance  # noqa: E402
 import run_eval  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import local_eval_guard  # noqa: E402
+from local_eval_guard import (GUARD_EXIT, Refused, check_settings_file,  # noqa: E402,F401
+                              proxy_userinfo_names, refused_env_names,
+                              settings_in_tree)
 from propagation import init_probe  # noqa: E402
 
 EXHIBIT = "local — not badge input"
-
-#: Refused when present in the environment at all. A PREFIX for the
-#: `ANTHROPIC_` family (the CLI's credential, endpoint, header and model
-#: overrides all live there, and new members arrive with CLI releases), and
-#: the one `CLAUDE_` name that is a credential.
-REFUSED_ENV_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_USE_", "AWS_", "GOOGLE_",
-                        "GCLOUD_", "CLOUDSDK_", "AZURE_")
-REFUSED_ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
-REFUSED_ENV_SUBSTRINGS = ("API_KEY", "AUTH_TOKEN", "ACCESS_KEY", "SECRET",
-                          "BEARER")
 
 #: What every child may inherit; nothing else survives `child_environment`.
 CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
@@ -172,16 +191,14 @@ CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
                    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR")
 CHILD_ENV_PREFIXES = ("LC_",)
-#: Proxy variables passed on; one whose URL embeds userinfo is refused.
-PROXY_URL_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 
 #: Written at the results dir's root and in each trial dir before the trial
 #: launches; scripts/make_badge.py refuses a results dir at or below one.
 EXHIBIT_MARKER = "LOCAL_EXHIBIT"
 
-#: Settings keys that name a credential source. A settings `env` object is held
-#: to the environment rule above.
-REFUSED_SETTINGS_KEYS = ("apiKeyHelper", "awsAuthRefresh", "awsCredentialExport")
+#: The guard launcher's refusal log, in its private directory.
+GUARD_RECORD = "refusals.jsonl"
+
 #: Where a managed policy lives (the CLI's documented locations).
 MANAGED_SETTINGS_FILES = (
     Path("/etc/claude-code/managed-settings.json"),
@@ -205,37 +222,8 @@ TRANSCRIPTS_NOTE = (
     "not commit, publish or attach them.")
 
 
-class Refused(Exception):
-    """A preflight refusal: printed, exit 2, no trial run."""
-
-
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def refused_env_names(environ) -> list[str]:
-    """Every name in `environ` this wrapper refuses to run under (the rule in
-    the module docstring, rule 1). Names only: a value is never read."""
-    refused = []
-    for name in environ:
-        upper = str(name).upper()
-        if (upper in REFUSED_ENV_NAMES or upper.startswith(REFUSED_ENV_PREFIXES)
-                or any(part in upper for part in REFUSED_ENV_SUBSTRINGS)):
-            refused.append(str(name))
-    return sorted(refused)
-
-
-def proxy_userinfo_names(environ) -> list[str]:
-    """Names of the proxy variables whose URL embeds `user[:pass]@`. Names
-    only; the value is parsed but never reported."""
-    named = []
-    for name in PROXY_URL_NAMES:
-        value = environ.get(name)
-        if value:
-            authority = value.split("://", 1)[-1].split("/", 1)[0]
-            if "@" in authority:
-                named.append(name)
-    return sorted(named)
 
 
 def child_environment(environ) -> dict:
@@ -257,37 +245,6 @@ def settings_files(home: Path) -> list[Path]:
     return files
 
 
-def check_settings_file(path: Path) -> None:
-    """Raise Refused when the settings file at `path` names a credential
-    source or cannot be shown not to. A missing file passes. Reports the file
-    and the key, never a value."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return
-    except (OSError, ValueError) as exc:
-        raise Refused(f"cannot read settings file {path} "
-                      f"({type(exc).__name__}); cannot show it names no "
-                      "credential") from exc
-    try:
-        settings = json.loads(text)
-    except ValueError as exc:
-        raise Refused(f"settings file {path} is not valid JSON; cannot "
-                      "show it names no credential") from exc
-    if not isinstance(settings, dict):
-        raise Refused(f"settings file {path} is not a JSON object; cannot "
-                      "show it names no credential")
-    keys = [k for k in REFUSED_SETTINGS_KEYS if k in settings]
-    env_block = settings.get("env")
-    if isinstance(env_block, dict):
-        keys += [f"env.{name}" for name in refused_env_names(env_block)]
-    if keys:
-        raise Refused(f"settings file {path} sets {', '.join(keys)}: the "
-                      "CLI loads it, and it names a credential source "
-                      "or provider. Remove the key (or run elsewhere); "
-                      "a local exhibit runs under the interactive login.")
-
-
 def check_user_settings(home: Path) -> None:
     """Refuse when a settings file the judge would load names a credential
     source."""
@@ -295,24 +252,12 @@ def check_user_settings(home: Path) -> None:
         check_settings_file(path)
 
 
-def _settings_in_tree(root: Path) -> list[Path]:
-    """Every `.claude/settings*.json` at any depth under `root` (symlinked
-    directories are not followed; a settings* directory is returned too, so
-    the check refuses what it cannot read)."""
-    found = []
-    for directory, dirs, files in os.walk(root):
-        if os.path.basename(directory) == ".claude":
-            found += [Path(directory, name) for name in (*dirs, *files)
-                      if fnmatch.fnmatch(name, "settings*.json")]
-    return sorted(found)
-
-
 def check_fixture_settings(seeds: list[Path], registries: list[Path]) -> None:
     """Refuse a credential source in settings an ARM loads as project
     settings: any depth under each fixture's seed, and the root `.claude/` of
     each registry checkout."""
     for seed in seeds:
-        for path in _settings_in_tree(seed):
+        for path in settings_in_tree(seed):
             check_settings_file(path)
     for registry in registries:
         for path in sorted((registry / ".claude").glob("settings*.json")):
@@ -732,8 +677,70 @@ def _manifest_fixture(item: dict) -> dict:
     }
 
 
+def install_guard_launcher(guard_dir: Path) -> str:
+    """Write the launch-time guard launcher as `<guard_dir>/claude` (mode
+    0700) and put it in front of every child: CLAUDE_BIN names it, and
+    `guard_dir` heads PATH, so a child that looks `claude` up reaches it too.
+    Returns the real CLI's absolute path, which the launcher execs."""
+    wanted = os.environ.get("CLAUDE_BIN") or "claude"
+    real = shutil.which(wanted)
+    if real is None:
+        raise Refused(f"cannot find the claude CLI ({wanted!r} is not "
+                      "executable or on PATH); set CLAUDE_BIN")
+    real = os.path.abspath(real)
+    launcher = guard_dir / "claude"
+    launcher.write_text(local_eval_guard.launcher_source(
+        python=sys.executable, scripts_dir=str(Path(__file__).resolve().parent),
+        real_cli=real, repo_root=str(REPO_ROOT),
+        record=str(guard_dir / GUARD_RECORD)), encoding="utf-8")
+    launcher.chmod(0o700)
+    os.environ["CLAUDE_BIN"] = str(launcher)
+    os.environ["PATH"] = str(guard_dir) + os.pathsep + os.environ.get("PATH", "")
+    return real
+
+
+def guard_refusals(guard_dir: Path) -> list[dict]:
+    """What the launcher recorded when it refused to start the CLI."""
+    try:
+        lines = (guard_dir / GUARD_RECORD).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    found = []
+    for line in lines:
+        try:
+            found.append(json.loads(line))
+        except ValueError:
+            found.append({"message": "(unreadable guard record)"})
+    return found
+
+
+def _guard_refused(manifest: dict, manifest_path: Path, guard_dir: Path,
+                   fixtures: list, where: str) -> int | None:
+    """EXIT_REFUSED (after saying so) when the launcher refused any launch."""
+    refusals = guard_refusals(guard_dir)
+    if not refusals:
+        return None
+    names = ", ".join(f["name"] or FLAT_NAME for f in fixtures)
+    manifest["status"] = f"refused: the launch-time settings guard, {where}"
+    manifest["guard_refusal"] = {"where": where, "fixtures": names,
+                                 "message": refusals[0].get("message")}
+    _write_json(manifest_path, manifest)
+    print(f"local_eval: the launch-time settings guard refused to start the "
+          f"CLI during {where} (fixture(s): {names}): "
+          f"{refusals[0].get('message')} Nothing further run.", file=sys.stderr)
+    return EXIT_REFUSED
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
+    guard_dir = Path(tempfile.mkdtemp(prefix="local-eval-guard-"))
+    try:
+        return _run(args, guard_dir)
+    finally:
+        shutil.rmtree(guard_dir, ignore_errors=True)
+
+
+def _run(args: argparse.Namespace, guard_dir: Path) -> int:
     try:
         refused = refused_env_names(os.environ)
         if refused:
@@ -768,6 +775,7 @@ def main(argv=None) -> int:
             [item["dir"] / run_eval.SEED_DIR for item in fixtures],
             [Path(f.split("=", 1)[1]) for f in registry_flags]
             + [item["registry"]["path"] for item in fixtures if item["registry"]])
+        real_cli = install_guard_launcher(guard_dir)
     except Refused as exc:
         print(f"local_eval: {exc}", file=sys.stderr)
         return EXIT_REFUSED
@@ -784,7 +792,11 @@ def main(argv=None) -> int:
         "invocation": {"trials": args.trials, "arm": args.arm,
                        "no_judge": args.no_judge, "fixture": args.fixture,
                        "registries": [f.split("=", 1)[0] for f in registry_flags]},
-        "harness": {"claude_version": run_eval.claude_version()},
+        "harness": {"claude_version": run_eval.claude_version(),
+                    "claude_path": real_cli,
+                    "claude_guard": "a temporary launcher checks the settings "
+                                    "in each CLI launch's directory, then "
+                                    "execs claude_path; removed at exit"},
         "fixtures": [_manifest_fixture(item) for item in fixtures],
         "skills_evals": git_identity(REPO_ROOT),
         "contamination_probe": None,
@@ -803,6 +815,10 @@ def main(argv=None) -> int:
         probe = contamination_probe(fixture)
     except (init_probe.ProbeError, guidance.GuidanceError, OSError,
             subprocess.SubprocessError) as exc:
+        guarded = _guard_refused(manifest, manifest_path, guard_dir, fixtures,
+                                 "the contamination probe")
+        if guarded is not None:
+            return guarded
         manifest["status"] = "refused: the contamination probe could not observe the CLI"
         manifest["contamination_probe"] = {"error": str(exc)}
         _write_json(manifest_path, manifest)
@@ -846,6 +862,10 @@ def main(argv=None) -> int:
             "error": None if proc.returncode == 0
             else f"run_eval.py exited {proc.returncode}; see t{k}/run_eval.log"})
         _write_json(manifest_path, manifest)
+        guarded = _guard_refused(manifest, manifest_path, guard_dir, fixtures,
+                                 f"trial {k}")
+        if guarded is not None:
+            return guarded
 
     aggregate = build_aggregate(out, skill, [f["name"] for f in fixtures], arms,
                                 args.trials)

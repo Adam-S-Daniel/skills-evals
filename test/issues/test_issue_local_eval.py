@@ -65,6 +65,8 @@ with open(path, "w") as f:
     f.write(str(n))
 record = {{"role": role, "n": n, "argv": argv, "cwd": os.getcwd(),
           "env_names": sorted(os.environ),
+          "claude_bin": os.environ.get("CLAUDE_BIN"),
+          "path_head": os.environ.get("PATH", "").split(os.pathsep)[0],
           "secret_env": sorted(k for k in os.environ
                                if k.startswith("ANTHROPIC_")
                                or k == "CLAUDE_CODE_OAUTH_TOKEN")}}
@@ -134,13 +136,19 @@ class TestLocalEval(unittest.TestCase):
 
     @staticmethod
     def _temp_base():
-        """A temp parent with no `.git` entry in it or above it: the runner
-        refuses a results dir under one, and a shared or dotfile-managed temp
-        dir can have one (an empty `.git` in /tmp is enough)."""
-        for base in (tempfile.gettempdir(), "/dev/shm"):
+        """A temp parent no other process writes to, with no `.git` entry in
+        it or above it: the runner refuses a results dir under one, and a
+        shared temp dir can grow one at any moment (an empty `.git` in /tmp
+        is enough). /dev/shm first, when it is writable and allows exec."""
+        for base in ("/dev/shm", tempfile.gettempdir()):
             path = Path(base).resolve()
-            if path.is_dir() and not any((p / ".git").exists()
-                                         for p in (path, *path.parents)):
+            try:
+                usable = (path.is_dir() and os.access(path, os.W_OK | os.X_OK)
+                          and not os.statvfs(path).f_flag & os.ST_NOEXEC)
+            except OSError:
+                usable = False
+            if usable and not any((p / ".git").exists()
+                                  for p in (path, *path.parents)):
                 return str(path)
         raise unittest.SkipTest("no temp directory outside a git repository")
 
@@ -176,10 +184,20 @@ class TestLocalEval(unittest.TestCase):
              results_dir=None):
         env = self._env(self._dispatcher(fail_agent_call), **(env_extra or {}))
         out = self.out if results_dir is None else results_dir
-        return subprocess.run(
-            [sys.executable, str(LOCAL_EVAL), *args, "--results-dir", str(out)],
-            capture_output=True, text=True, env=env, cwd=str(self.root),
-            timeout=600)
+        for attempt in (1, 2):
+            proc = subprocess.run(
+                [sys.executable, str(LOCAL_EVAL), *args, "--results-dir", str(out)],
+                capture_output=True, text=True, env=env, cwd=str(self.root),
+                timeout=600)
+            # A `.git` that appeared in a directory ABOVE this test's own tree
+            # (another process, a shared /tmp) is not what a test is about:
+            # run once more. A `.git` the test planted is never retried.
+            hit = re.search(r"resolves inside (\S+), which holds a git repository",
+                            proc.stderr)
+            foreign = bool(hit) and Path(hit.group(1)) in self.root.parents
+            if attempt == 2 or not (proc.returncode == 2 and foreign):
+                return proc
+            self.log.unlink(missing_ok=True)
 
     def _calls(self) -> list:
         if not self.log.exists():
@@ -1088,6 +1106,193 @@ class TestLocalEval(unittest.TestCase):
         if os.geteuid() == 0:
             print("skipped the permission-denied case: running as root",
                   file=sys.stderr)
+
+    # -- review round 3: the launch-time guard ---------------------------
+
+    def _fixture_copy(self, name="fixture-copy", **extra) -> Path:
+        eval_dir = self.root / name
+        shutil.copytree(EVAL_DIR, eval_dir)
+        if extra:
+            path = eval_dir / "fixture.yaml"
+            fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+            fixture.update(extra)
+            path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def test_symlinked_settings_in_a_seed_are_refused_before_anything_runs(self):
+        hostile = self.root / "hostile-claude"
+        hostile.mkdir()
+        (hostile / "settings.json").write_text(
+            json.dumps({"apiKeyHelper": "sentinel-helper"}), encoding="utf-8")
+        tree = self.root / "hostile-tree"
+        (tree / ".claude").mkdir(parents=True)
+        (tree / ".claude" / "settings.local.json").write_text(
+            json.dumps({"env": {"AWS_PROFILE": "x"}}), encoding="utf-8")
+        registry = self._registry()
+        for label, link, target in (("a .claude link", ".claude", hostile),
+                                    ("a linked tree", "linked", tree)):
+            with self.subTest(case=label):
+                eval_dir = self._fixture_copy(f"fx-{link.strip('.')}")
+                (eval_dir / "seed" / link).symlink_to(target,
+                                                      target_is_directory=True)
+                proc = self._run(str(eval_dir), "--trials", "1", "--registry",
+                                 f"adam-agentskills={registry}")
+                self._assert_nothing_ran(proc)
+                self.assertIn("settings", proc.stderr)
+                self.assertNotIn("sentinel-helper", proc.stderr)
+                self.assertFalse(self.out.exists())
+
+    def test_a_symlink_loop_in_a_seed_does_not_hang_the_walk(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval_guard
+        seed = self.root / "loopy-seed"
+        (seed / "a" / ".claude").mkdir(parents=True)
+        (seed / "a" / ".claude" / "settings.json").write_text("{}", encoding="utf-8")
+        (seed / "a" / "back").symlink_to(seed, target_is_directory=True)
+        (seed / "self").symlink_to(seed / "a", target_is_directory=True)
+        found = local_eval_guard.settings_in_tree(seed)
+        self.assertEqual([p.relative_to(seed).as_posix() for p in found],
+                         ["a/.claude/settings.json"])
+
+    def test_setup_that_writes_settings_is_caught_when_the_cli_launches(self):
+        eval_dir = self._fixture_copy(
+            setup="mkdir -p .claude && printf '%s' "
+                  "'{\"apiKeyHelper\": \"sentinel-helper\"}' "
+                  "> .claude/settings.json")
+        proc = self._run(str(eval_dir), "--trials", "3", "--no-judge",
+                         "--arm", "without_skill")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        roles = [c["role"] for c in self._calls()]
+        self.assertNotIn("agent", roles, "the fake CLI must never be reached")
+        self.assertIn("launch-time settings guard", proc.stderr)
+        self.assertIn("trial 1", proc.stderr)
+        self.assertIn("(flat)", proc.stderr)
+        self.assertIn("apiKeyHelper", proc.stderr)
+        self.assertIn("settings.json", proc.stderr)
+        self.assertNotIn("sentinel-helper", proc.stderr)
+        manifest = self._json("manifest.json")
+        self.assertTrue(manifest["status"].startswith(
+            "refused: the launch-time settings guard"))
+        self.assertEqual([t["trial"] for t in manifest["trials"]], [1])
+        self.assertFalse((self.out / "t2").exists(), "no further trial")
+        self.assertFalse((self.out / "aggregate.json").exists())
+
+    def test_a_guard_refusal_at_the_judge_stops_the_run(self):
+        # The judge runs from the harness checkout. Point that at a stand-in
+        # whose own .claude names a credential source: only the judge (and
+        # run_eval itself) start there, so the judge is the call refused.
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        fake_root = self.root / "harness-checkout"
+        (fake_root / ".claude").mkdir(parents=True)
+        (fake_root / ".claude" / "settings.local.json").write_text(
+            json.dumps({"apiKeyHelper": "sentinel-helper"}), encoding="utf-8")
+        env = self._env(self._dispatcher())
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(local_eval, "REPO_ROOT", fake_root), \
+                mock.patch.object(local_eval, "settings_files", lambda home: []), \
+                contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(stderr):
+            code = local_eval.main(
+                [str(EVAL_DIR), "--results-dir", str(self.out), "--trials", "2",
+                 "--arm", "without_skill"])
+        self.assertEqual(code, 2, stderr.getvalue())
+        roles = [c["role"] for c in self._calls()]
+        self.assertIn("agent", roles, "the arm (in its own workspace) ran")
+        self.assertNotIn("judge", roles, "the judge never reached the CLI")
+        self.assertIn("trial 1", stderr.getvalue())
+        self.assertIn("settings.local.json", stderr.getvalue())
+        self.assertNotIn("sentinel-helper", stderr.getvalue())
+        self.assertFalse((self.out / "t2").exists())
+
+    def test_every_child_kind_reaches_the_cli_through_the_guard(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            with self.subTest(role=call["role"], n=call["n"]):
+                guard_bin = Path(call["claude_bin"])
+                self.assertEqual(guard_bin.name, "claude")
+                self.assertTrue(guard_bin.parent.name.startswith("local-eval-guard-"))
+                self.assertNotEqual(str(guard_bin), str(self.root / "claude-dispatch"))
+                self.assertEqual(call["path_head"], str(guard_bin.parent))
+        self.assertFalse(guard_bin.parent.exists(), "removed at exit")
+        manifest_text = (self.out / "manifest.json").read_text(encoding="utf-8")
+        self.assertNotIn("local-eval-guard-", manifest_text)
+        manifest = json.loads(manifest_text)
+        self.assertEqual(manifest["harness"]["claude_path"],
+                         str(self.root / "claude-dispatch"))
+        version = subprocess.run([sys.executable, str(FAKE_CLAUDE), "--version"],
+                                 capture_output=True, text=True).stdout
+        self.assertEqual(manifest["harness"]["claude_version"],
+                         version.splitlines()[0].strip())
+
+    def test_the_cli_receives_the_same_argv_with_and_without_the_guard(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--arm", "without_skill")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        guarded = [c["argv"] for c in self._calls() if c["role"] == "agent"]
+        self.log.unlink()
+        shutil.rmtree(self.state)
+        self.state.mkdir()
+        direct = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "harness" / "run_eval.py"),
+             str(EVAL_DIR), "--arm", "without_skill", "--no-judge",
+             "--results-dir", str(self.root / "direct-results")],
+            capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=600,
+            env=self._env(self._dispatcher()))
+        self.assertEqual(direct.returncode, 0, direct.stdout + direct.stderr)
+        unguarded = [c["argv"] for c in self._calls() if c["role"] == "agent"]
+        self.assertEqual(len(guarded), 1)
+        self.assertEqual(guarded, unguarded)
+
+    def test_proxy_userinfo_is_read_from_the_url_not_from_any_at_sign(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        for value in ("http://h.example.com:80?x=a@b", "http://h.example.com/p#a@b",
+                      "http://h.example.com:3128", "h.example.com:3128"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    local_eval.proxy_userinfo_names({"HTTPS_PROXY": value}), [])
+        for value in ("http://u:p@h.example.com:80", "http://u@h.example.com",
+                      "u:p@h.example.com:3128"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    local_eval.proxy_userinfo_names({"HTTPS_PROXY": value}),
+                    ["HTTPS_PROXY"])
+
+    def test_a_tool_toggle_in_the_use_family_is_not_a_provider(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self._settings({"env": {"CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"}})
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}",
+                         results_dir=self.root / "second")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_a_symlinked_results_dir_is_still_a_local_exhibit_to_make_badge(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self._unstamp_summaries()
+        link = self.root / "innocent-looking"
+        # Only a PARENT of the target carries the marker, so the link's own
+        # path shows none: refusing needs the real path.
+        link.symlink_to(self.out / "t1" / SKILL, target_is_directory=True)
+        badge_proc, badge = self._make_badge(SKILL, link)
+        self.assertNotEqual(badge_proc.returncode, 0)
+        self.assertIn("inside a local exhibit", badge_proc.stderr)
+        self.assertFalse(badge.exists())
 
 
 if __name__ == "__main__":
