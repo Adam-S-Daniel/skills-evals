@@ -10,7 +10,8 @@ behaviours, and nothing else:
     (see payload_key), and classed read.
   * WRITES -- pr merge, pr close, workflow run, api with a POST method, and
     friends -- are refused with a real-shaped HTTP 403, the way a read-only
-    token is refused, and classed write. Nothing here can mutate anything.
+    token is refused, and classed write. No remote state is changed.
+    An optional write-policy.json permits specified local label additions.
     The class records INTENT: a verb that would reach the network or write
     the working tree (pr checkout, repo clone, run download) is refused
     the same way, because what matters afterwards is what was reached for.
@@ -72,10 +73,13 @@ needs a system jq.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
+import stat
 import sys
+import tempfile
 
 # Flags that take no value. Everything else that looks like a flag consumes
 # the next token unless that token is itself a flag — which is why this set
@@ -628,6 +632,221 @@ def no_repository() -> int:
     return 1
 
 
+class LabelPolicyError(ValueError):
+    """An invalid local label configuration; never expose its contents."""
+
+
+def local_path(root: str, name: str) -> str:
+    base = os.path.realpath(root)
+    path = os.path.join(base, name)
+    resolved = os.path.realpath(path)
+    if not resolved.startswith(base + os.sep):
+        raise LabelPolicyError()
+    return path
+
+
+def unique_object(pairs: list) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise LabelPolicyError()
+        result[key] = value
+    return result
+
+
+def read_label_json(path: str):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle, object_pairs_hook=unique_object)
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        raise LabelPolicyError() from None
+
+
+def label_entries(document) -> set[tuple[str, int, str]]:
+    if not isinstance(document, dict) or set(document) != {"pr_edit_add_label"}:
+        raise LabelPolicyError()
+    rows = document["pr_edit_add_label"]
+    if not isinstance(rows, list):
+        raise LabelPolicyError()
+    entries = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"repo", "number", "label"}:
+            raise LabelPolicyError()
+        repo, number, label = row["repo"], row["number"], row["label"]
+        if (not isinstance(repo, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo)
+                or type(number) is not int or number <= 0
+                or not isinstance(label, str) or not label or label != label.strip()
+                or "," in label or any(not c.isprintable() for c in label)):
+            raise LabelPolicyError()
+        entry = (repo, number, label)
+        if entry in entries:
+            raise LabelPolicyError()
+        entries.add(entry)
+    return entries
+
+
+def label_document(entries: set) -> dict:
+    return {"pr_edit_add_label": [dict(repo=r, number=n, label=l)
+                                  for r, n, l in sorted(entries)]}
+
+
+def load_label_policy(payload_dir: str | None):
+    if not payload_dir:
+        return None
+    # With no policy, even a stale or invalid state file is irrelevant.
+    candidate = os.path.join(os.path.realpath(payload_dir), "write-policy.json")
+    if not os.path.lexists(candidate):
+        return None
+    policy = label_entries(read_label_json(local_path(payload_dir, "write-policy.json")))
+    path = local_path(LOG_DIR, ".gh-label-state.json")
+    state = label_entries(read_label_json(path)) if os.path.lexists(path) else set()
+    if not state <= policy:
+        raise LabelPolicyError()
+    return policy, state
+
+
+def label_names(row: dict) -> set[str]:
+    labels = row.get("labels")
+    if not isinstance(labels, list):
+        raise LabelPolicyError()
+    names = set()
+    for label in labels:
+        name = label.get("name") if isinstance(label, dict) else label
+        if not isinstance(name, str) or not name or any(not c.isprintable() for c in name):
+            raise LabelPolicyError()
+        names.add(name)
+    return names
+
+
+def pr_row(row, number: int) -> dict:
+    if not isinstance(row, dict):
+        raise LabelPolicyError()
+    if "number" in row and (type(row["number"]) is not int or row["number"] != number):
+        raise LabelPolicyError()
+    if "state" in row and row["state"] != "OPEN":
+        raise LabelPolicyError()
+    label_names(row)
+    return row
+
+
+def permitted_label_edit(positionals: list[str], flags: dict, policy: set):
+    if (len(positionals) != 3 or positionals[:2] != ["pr", "edit"]
+            or not re.fullmatch(r"[1-9][0-9]{0,19}", positionals[2])
+            or not set(flags) <= {"--repo", "--add-label"}):
+        return None
+    repos = flags.get("--repo", [])
+    labels = flags.get("--add-label", [])
+    if (not repos or any(not isinstance(r, str) or not r for r in repos)
+            or len(labels) != 1 or not isinstance(labels[0], str)):
+        return None
+    entry = (repos[-1], int(positionals[2]), labels[0])
+    return entry if entry in policy else None
+
+
+def add_local_label(payload_dir: str, entry: tuple) -> None:
+    path = resolve_payload(payload_dir, f"pr-view-{entry[1]}.json")
+    if path is None:
+        raise LabelPolicyError()
+    pr_row(read_label_json(path), entry[1])
+    listing = resolve_payload(payload_dir, "pr-list.json")
+    if listing is not None:
+        rows = read_label_json(listing)
+        if not isinstance(rows, list):
+            raise LabelPolicyError()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise LabelPolicyError()
+            if row.get("number") == entry[1]:
+                pr_row(row, entry[1])
+    temporary = None
+    try:
+        # Lock a separate inode: replacing the state file must not release
+        # serialization. Reject links and non-files rather than lock a path
+        # outside the workspace or block while opening a FIFO.
+        lock_path = local_path(LOG_DIR, ".gh-label-state.lock")
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW
+                             | os.O_NONBLOCK, 0o600)
+        with os.fdopen(descriptor, "r+b") as lock:
+            opened = os.fstat(lock.fileno())
+            if not stat.S_ISREG(opened.st_mode):
+                raise LabelPolicyError()
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            current = os.lstat(lock_path)
+            if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+                raise LabelPolicyError()
+            # Startup policy/state are only a preliminary check. Another
+            # process may have committed an edit or revoked this grant.
+            latest = load_label_policy(payload_dir)
+            if latest is None or entry not in latest[0]:
+                raise LabelPolicyError()
+            state = latest[1] | {entry}
+            path = local_path(LOG_DIR, ".gh-label-state.json")
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=LOG_DIR,
+                                             prefix=".gh-label-", delete=False) as handle:
+                temporary = handle.name
+                json.dump(label_document(state), handle)
+                handle.write("\n")
+            # Recheck before replacement; never follow a planted external link.
+            local_path(LOG_DIR, ".gh-label-state.json")
+            os.replace(temporary, path)
+    except (OSError, UnicodeError):
+        raise LabelPolicyError() from None
+    finally:
+        if temporary and os.path.exists(temporary):
+            try:
+                os.unlink(temporary)
+            except OSError:
+                raise LabelPolicyError() from None
+
+
+def overlay_labels(payload: str, positionals: list, flags: dict, state: set) -> str:
+    repo = last(flags, "--repo") or os.environ.get("GH_REPO")
+    additions = [(n, l) for r, n, l in sorted(state) if r == repo]
+    pair = positionals[:2]
+    if not additions or pair not in (["pr", "view"], ["pr", "list"]):
+        return payload
+    if pair == ["pr", "view"]:
+        if len(positionals) != 3 or not re.fullmatch(r"[1-9][0-9]{0,19}", positionals[2]):
+            return payload
+        number = int(positionals[2])
+        additions = [(n, l) for n, l in additions if n == number]
+        if not additions:
+            return payload
+    try:
+        data = json.loads(payload, object_pairs_hook=unique_object)
+    except (ValueError, RecursionError):
+        raise LabelPolicyError() from None
+    if pair == ["pr", "view"]:
+        rows = [pr_row(data, number)]
+    else:
+        if not isinstance(data, list):
+            raise LabelPolicyError()
+        rows = []
+        for row in data:
+            if not isinstance(row, dict) or type(row.get("number")) is not int:
+                raise LabelPolicyError()
+            if any(n == row["number"] for n, _ in additions):
+                rows.append(pr_row(row, row["number"]))
+    for row in rows:
+        number = row.get("number", int(positionals[2]) if pair == ["pr", "view"] else None)
+        names = label_names(row)
+        for n, label in additions:
+            if n == number and label not in names:
+                # Empty lists use gh's normal object representation. Strings
+                # remain strings when that is how the response was recorded.
+                row["labels"].append(label if row["labels"] and isinstance(row["labels"][0], str)
+                                     else {"name": label})
+                names.add(label)
+    return json.dumps(data) + "\n"
+
+
+def label_error(argv: list, klass: str, key: str | None) -> int:
+    log_invocation(argv, klass, key, 1)
+    sys.stderr.write("gh: invalid local label configuration or response\n")
+    return 1
+
+
 def main(argv: list[str]) -> int:
     if LOG_DIR is None:
         return no_repository()
@@ -645,7 +864,22 @@ def main(argv: list[str]) -> int:
     key = payload_key(positionals, flags)
     klass = classify(positionals, flags)
 
+    try:
+        label_policy = load_label_policy(payload_dir)
+    except LabelPolicyError:
+        return label_error(argv, klass, key)
+
     if klass == "write":
+        if label_policy is not None:
+            policy, _ = label_policy
+            entry = permitted_label_edit(positionals, flags, policy)
+            if entry is not None:
+                try:
+                    add_local_label(payload_dir, entry)
+                except LabelPolicyError:
+                    return label_error(argv, klass, key)
+                log_invocation(argv, "write", key, 0)
+                return 0
         log_invocation(argv, "write", key, 1)
         return refuse_write(positionals, flags)
 
@@ -663,6 +897,12 @@ def main(argv: list[str]) -> int:
     if path is None:
         log_invocation(argv, "unknown", key, 1)
         return not_found()
+
+    if label_policy is not None:
+        try:
+            payload = overlay_labels(payload, positionals, flags, label_policy[1])
+        except LabelPolicyError:
+            return label_error(argv, "read", key)
 
     # The record goes down before the payload does: an output that fails
     # (a closed pipe, a full disk) must not cost the log its evidence. If
