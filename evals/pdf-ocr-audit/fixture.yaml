@@ -19,11 +19,12 @@
 # judged. Solution-mutation tests prove each check can fail by its exact id.
 #
 # Report patterns anchor to table rows and bare verdict words. They accept whitespace,
-# optional outer pipes, quote prefixes, backticks/bold, punctuation, and neutral
-# dash/parenthesis suffixes. Paths must be absolute with the exact archive/name
-# suffix. Duplicate-row guards apply to recognized verdicts in rows with a
-# rationale column. Verdict-cell suffixes reject hedges and OCR/searchability
-# contradictions; rationale prose is left to the judge.
+# optional outer pipes, quote prefixes, backticks/bold, punctuation except ?,
+# and neutral dash/parenthesis suffixes. Verdict-specific allow-lists admit only
+# complete, compatible OCR explanations in the verdict cell; same-verdict
+# must_not_match guards reject invalid duplicates after a valid row. Paths must
+# be absolute with the exact archive/name suffix. Rationale prose stays
+# qualitative for the judge; the damaged PDF row needs only its verdict.
 # The summary follows the skill example's count-before-label order (8 files
 # total: 4 No, 2 Yes, 1 Partial, 1 Inaccessible), with a colon or dash before
 # counts and a comma or conjunction before the last count. Additional summary
@@ -73,10 +74,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/signed\-lease\-scan\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/signed\-lease\-scan\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/signed\-lease\-scan\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:Yes|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/signed\-lease\-scan\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/signed\-lease\-scan\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-02
     description: quarterly-report.pdf has the Yes verdict.
     type: file_matches
@@ -84,10 +85,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/quarterly\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/quarterly\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/quarterly\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:No|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/quarterly\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/quarterly\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-03
     description: project-brief.pdf has the Partial verdict.
     type: file_matches
@@ -95,10 +96,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/project\-brief\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Partial[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/project\-brief\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Partial[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:cover[ \t]+page[ \t]+is[ \t]+image[ \t-]+only|some[ \t]+pages[ \t]+searchable|some[ \t]+pages[ \t]+image[ \t-]+only|partially[ \t]+searchable|mixed[ \t]+text[ \t]+and[ \t]+image[ \t]+pages))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:cover[ \t]+page[ \t]+is[ \t]+image[ \t-]+only|some[ \t]+pages[ \t]+searchable|some[ \t]+pages[ \t]+image[ \t-]+only|partially[ \t]+searchable|mixed[ \t]+text[ \t]+and[ \t]+image[ \t]+pages))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/project\-brief\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:No|Yes|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/project\-brief\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Partial\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/project\-brief\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Partial\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:cover[ \t]+page[ \t]+is[ \t]+image[ \t-]+only|some[ \t]+pages[ \t]+searchable|some[ \t]+pages[ \t]+image[ \t-]+only|partially[ \t]+searchable|mixed[ \t]+text[ \t]+and[ \t]+image[ \t]+pages))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:cover[ \t]+page[ \t]+is[ \t]+image[ \t-]+only|some[ \t]+pages[ \t]+searchable|some[ \t]+pages[ \t]+image[ \t-]+only|partially[ \t]+searchable|mixed[ \t]+text[ \t]+and[ \t]+image[ \t]+pages))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-04
     description: meeting-notes.pdf has the Inaccessible verdict.
     type: file_matches
@@ -106,10 +107,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/meeting\-notes\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Inaccessible[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/meeting\-notes\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Inaccessible[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:could[ \t]+not[ \t]+be[ \t]+read|could[ \t]+not[ \t]+read|cannot[ \t]+read|could[ \t]+not[ \t]+open|unreadable|failed[ \t]+to[ \t]+parse|read[ \t]+failed))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:could[ \t]+not[ \t]+be[ \t]+read|could[ \t]+not[ \t]+read|cannot[ \t]+read|could[ \t]+not[ \t]+open|unreadable|failed[ \t]+to[ \t]+parse|read[ \t]+failed))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/meeting\-notes\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:No|Yes|Partial)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/meeting\-notes\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Inaccessible\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/meeting\-notes\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Inaccessible\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:could[ \t]+not[ \t]+be[ \t]+read|could[ \t]+not[ \t]+read|cannot[ \t]+read|could[ \t]+not[ \t]+open|unreadable|failed[ \t]+to[ \t]+parse|read[ \t]+failed))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:could[ \t]+not[ \t]+be[ \t]+read|could[ \t]+not[ \t]+read|cannot[ \t]+read|could[ \t]+not[ \t]+open|unreadable|failed[ \t]+to[ \t]+parse|read[ \t]+failed))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*\|?[ \t]*$'
   - id: verdict-05
     description: scanned-invoice.pdf has the No verdict.
     type: file_matches
@@ -117,10 +118,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/scanned\-invoice\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/scanned\-invoice\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/scanned\-invoice\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:Yes|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/scanned\-invoice\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/scanned\-invoice\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-06
     description: annual-report.pdf has the No verdict.
     type: file_matches
@@ -128,10 +129,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/annual\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/annual\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/annual\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:Yes|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/annual\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/annual\-report\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*No\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-07
     description: statement-2024-q1.pdf has the Yes verdict.
     type: file_matches
@@ -139,10 +140,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/statement\-2024\-q1\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/statement\-2024\-q1\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/statement\-2024\-q1\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*(?:No|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/statement\-2024\-q1\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/statement\-2024\-q1\.pdf)[`*]*[ \t]*\|[ \t]*[`*]*Yes\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:needs?[ \t]+OCR|OCR[ \t]+needed|all[ \t]+pages[ \t]+image[ \t-]+only|(?:scanned|image[ \t-]+only|images[ \t]+only)(?:,[ \t]+no[ \t]+text[ \t-]+layer)?|no[ \t]+text[ \t-]+layer|text[ \t-]+layer[ \t]+missing))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: verdict-08
     description: POLICY.PDF has the No verdict.
     type: file_matches
@@ -150,10 +151,10 @@ objective_checks:
       - audit.md
     require_present: true
     must_match:
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/POLICY\.PDF)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!?]*(?:[ \t]+(?:[—–-][ \t]*[^|`\r\n]*|\([^|`\r\n]*\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/POLICY\.PDF)[`*]*[ \t]*\|[ \t]*[`*]*No[.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
     must_not_match:
       - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/POLICY\.PDF)[`*]*[ \t]*\|[ \t]*[`*]*(?:Yes|Partial|Inaccessible)\b[^|\r\n]*[`*]*[ \t]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
-      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/POLICY\.PDF)[`*]*[ \t]*\|[ \t]*[`*]*No\b[^|\r\n]*(?:\b(?:probably|maybe|perhaps|possibly|unsure|may|might|uncertain|could(?![ \t]+not[ \t]+(?:be[ \t]+)?(?:read|open|parsed?)\b)|searchab\w*|images?|OCR|text[ \t-]+layers?)\b)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
+      - '(?i)^[ \t]*(?:>[ \t]*)*\|?[ \t]*[`*]*/(?:[^|`\r\n]*?/)?(?-i:archive/POLICY\.PDF)[`*]*[ \t]*\|[ \t]*[`*]*No\b(?![.,;:!]*(?:[ \t]+(?:[—–-][ \t]*(?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))|\((?:(?:reviewed|checked|see[ \t]+page[ \t]+2)|(?:fully[ \t]+searchable|already[ \t]+searchable|searchable|no[ \t]+OCR[ \t]+needed|(?:does[ \t]+not|doesn\x27t)[ \t]+need[ \t]+OCR|OCR[ \t]+not[ \t]+needed|OCR[ \t]+complete|has[ \t]+(?:embedded[ \t]+)?text|text[ \t-]+layers?[ \t]+(?:exists?|present)))\)))?[`*]*[ \t]*\|)[^|\r\n]*\|[ \t]*[^|\r\n]*[^|\r\n \t][^|\r\n]*\|?[ \t]*$'
   - id: report-summary
     description: One summary line states 8 files total, 4 No, 2 Yes, 1 Partial, and 1 Inaccessible.
     type: file_matches

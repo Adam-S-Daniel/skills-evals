@@ -24115,7 +24115,7 @@ class TestIssue83(unittest.TestCase):
                 self._assert_failed(ws, "verdict-02")
 
     def test_verdict_words_are_anchored_and_allow_neutral_suffixes(self):
-        neutral = (".", ";", ":", "!", "?", " — reviewed", " – checked",
+        neutral = (".", ",", ";", ":", "!", " — reviewed", " – checked",
                    " - see page 2", " (reviewed)")
         for filename, (_case, correct) in self.FILES.items():
             for verdict in (correct, *(correct + suffix for suffix in neutral)):
@@ -24124,48 +24124,72 @@ class TestIssue83(unittest.TestCase):
                     (ws / "audit.md").write_text(
                         self._report(ws, {filename: verdict}), encoding="utf-8")
                     self._assert_failed(ws)
+                    row = (f"| {ws.resolve() / 'archive' / filename} | {verdict} "
+                           f"| {self.RATIONALES[filename]} |\n")
+                    (ws / "audit.md").write_text(self._report(ws) + row,
+                                                  encoding="utf-8")
+                    self._assert_failed(ws)
         ws = self._ws()
         (ws / "audit.md").write_text(
             self._report(ws, {"meeting-notes.pdf": "Inaccessible — could not read"}),
             encoding="utf-8")
         self._assert_failed(ws)
-        for verdict in ("Probably Yes", "never Yes", "Not Yes", "Yesness", "Yes or No", "Yes; scanned"):
+        for verdict in ("Probably Yes", "never Yes", "Not Yes", "Yesness", "Yes or No",
+                        "Yes; scanned", "Yes?"):
             with self.subTest(invalid_verdict=verdict):
                 ws = self._ws()
                 (ws / "audit.md").write_text(
                     self._report(ws, {"quarterly-report.pdf": verdict}), encoding="utf-8")
                 self._assert_failed(ws, "verdict-02")
 
-    def test_verdict_suffix_contradictions_and_hedges_fail(self):
-        contradictions = (
-            ("signed-lease-scan.pdf", "No — image-only"),
-            ("signed-lease-scan.pdf", "No — should be OCR'd"),
-            ("quarterly-report.pdf", "Yes — already searchable"),
-            ("quarterly-report.pdf", "Yes (fully searchable)"),
-            ("project-brief.pdf", "Partial — fully searchable"),
-            ("meeting-notes.pdf", "Inaccessible — needs OCR"),
-        )
-        lexical_suffixes = (
-            " — searchable", " — image only", " — OCR not needed",
-            " — text-layer exists", " — images only", " — text\tlayer present",
-            " (searchable)", " (image-only)", " (OCR complete)", " (text layers present)",
-        )
-        bad_cases = list(contradictions)
+    def test_verdict_suffixes_accept_matching_explanations_on_single_and_duplicate_rows(self):
+        accepted = {
+            "Yes": ("Yes", "Yes — needs OCR", "Yes (needs OCR)", "Yes (all pages image-only)",
+                    "Yes — scanned, no text layer"),
+            "No": ("No", "No — fully searchable", "No (already searchable)",
+                   "No — no OCR needed", "No (does not need OCR)", "No — has text"),
+            "Partial": ("Partial", "Partial — cover page is image-only",
+                        "Partial (some pages searchable)"),
+            "Inaccessible": ("Inaccessible", "Inaccessible — could not be read"),
+        }
         for filename, (_case, correct) in self.FILES.items():
-            bad_cases.extend((filename, correct + suffix) for suffix in lexical_suffixes)
-            bad_cases.extend((filename, f"{correct} — {word}") for word in
-                             ("probably", "maybe", "perhaps", "possibly", "unsure", "may", "might", "could", "uncertain"))
-        for filename, verdict in bad_cases:
-            with self.subTest(filename=filename, verdict=verdict):
-                ws = self._ws()
-                (ws / "audit.md").write_text(
-                    self._report(ws, {filename: verdict}), encoding="utf-8")
-                self._assert_failed(ws, self.CHECK_BY_FILE[filename])
-                report = self._report(ws) + (
-                    f"| {ws.resolve() / 'archive' / filename} | {verdict} "
-                    f"| {self.RATIONALES[filename]} |\n")
-                (ws / "audit.md").write_text(report, encoding="utf-8")
-                self._assert_failed(ws, self.CHECK_BY_FILE[filename])
+            for verdict in accepted[correct]:
+                with self.subTest(filename=filename, verdict=verdict):
+                    ws = self._ws()
+                    row = (f"| {ws.resolve() / 'archive' / filename} | {verdict} "
+                           f"| {self.RATIONALES[filename]} |\n")
+                    (ws / "audit.md").write_text(
+                        self._report(ws, {filename: verdict}), encoding="utf-8")
+                    self._assert_failed(ws)
+                    (ws / "audit.md").write_text(self._report(ws) + row, encoding="utf-8")
+                    self._assert_failed(ws)
+
+    def test_verdict_suffix_contradictions_and_hedges_fail_alone_and_after_good_rows(self):
+        contradictions = {
+            "No": ("No — needs OCR", "No (needs OCR)", "No — image-only",
+                   "No — should be OCR'd"),
+            "Yes": ("Yes — no OCR needed", "Yes (probably not; no OCR needed)",
+                    "Yes — already searchable", "Yes (fully searchable)",
+                    "Yes — leave as is", "Yes?"),
+            "Partial": ("Partial — fully searchable",),
+            "Inaccessible": ("Inaccessible — needs OCR",),
+        }
+        for filename, (_case, correct) in self.FILES.items():
+            invalid = (*contradictions[correct], correct + "?",
+                       *(f"{correct} — {word}" for word in
+                         ("probably", "maybe", "perhaps", "possibly", "unsure",
+                          "may", "might", "could", "uncertain")))
+            for verdict in invalid:
+                with self.subTest(filename=filename, verdict=verdict):
+                    ws = self._ws()
+                    (ws / "audit.md").write_text(
+                        self._report(ws, {filename: verdict}), encoding="utf-8")
+                    self._assert_failed(ws, self.CHECK_BY_FILE[filename])
+                    row = (f"| {ws.resolve() / 'archive' / filename} | {verdict} "
+                           f"| {self.RATIONALES[filename]} |\n")
+                    (ws / "audit.md").write_text(self._report(ws) + row,
+                                                  encoding="utf-8")
+                    self._assert_failed(ws, self.CHECK_BY_FILE[filename])
 
     def test_all_non_damaged_rationale_prose_remains_qualitative(self):
         cases = (
