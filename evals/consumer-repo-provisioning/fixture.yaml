@@ -39,6 +39,8 @@ objective_checks:
   - (?i)^(?![ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Missing secret[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*(?:Set\b[ \t]+)?[*_`]*CMS_E2E_PAT[*_`]*[ \t]+[*_`]*(?:as\b[ \t]+(?:an?[ \t]+)?|[-–—][ \t]+)(?:GitHub[ \t]+)?Actions[ \t]+(?:repository|repo)[ \t]+secret[*_`]*[ \t]*\.?[ \t]*(?:\|[^\n]*)?$)[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Missing secret[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*[^\n]+$
   - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:However,[ \t]*|But[ \t]+)?(?:Maybe[ \t]+|Perhaps[ \t]+)?(?:never|do[ \t]+not|don[\x27’]t|no[ \t]+need[ \t]+to|(?:it[ \t]+is[ \t]+)?not[ \t]+necessary[ \t]+to)[ \t]+(?:set\b|create\b|add\b)[ \t]+(?:the[ \t]+)?[`*_]*CMS_E2E_PAT\b[^\n]*$
   - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:However,[ \t]*|But[ \t]+)?(?:Maybe[ \t]+|Perhaps[ \t]+)?[`*_]*CMS_E2E_PAT[`*_]*[ \t]+(?:is[ \t]+)?(?:unnecessary|not[ \t]+(?:needed|required|necessary))\b[^\n]*$
+  - (?i)^[^\n]*\b(?:you[ \t]+)?should(?:[ \t]+not|n[\x27’]t)[ \t]+(?:set\b|create\b|add\b)[ \t]+(?:the[ \t]+)?[`*_]*CMS_E2E_PAT\b[^\n]*$
+  - (?i)^[^\n]*\bCMS_E2E_PAT[`*_]*[ \t]+is[ \t]+not[ \t]+(?:the[ \t]+)?missing[ \t]+secret\b[^\n]*$
 - id: fine-grained-pat
   description: Requires a fine-grained personal access token
   type: transcript_matches
@@ -85,6 +87,7 @@ objective_checks:
   must_not_match:
   - (?i)^(?![ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Issues[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*(?:Read[ \t]+(?:and|&)[ \t]+write|Read[ \t]*/[ \t]*write|R/W|write)[*_`]*[ \t]*\.?[ \t]*(?:\|[^\n]*)?$)[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Issues[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*[^\n]+$
   - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:However,[ \t]*|But[ \t]+)?(?:Maybe[ \t]+|Perhaps[ \t]+)?(?:never|do[ \t]+not|don[\x27’]t|no[ \t]+need[ \t]+to|(?:it[ \t]+is[ \t]+)?not[ \t]+necessary[ \t]+to)[ \t]+(?:grant\b|give\b|enable\b)[ \t]+(?:the[ \t]+)?[`*_]*Issues\b[^\n]*$
+  - (?i)^[^\n]*\bIssues[`*_]*[ \t]+write[`*_]*[ \t]+is[ \t]+not[ \t]+(?:needed|required|necessary)\b[^\n]*$
 - id: actions-write
   description: States the precise Actions permission
   type: transcript_matches
@@ -116,8 +119,8 @@ objective_checks:
   - (?i)^[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Other permissions[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*(?:None|No[ \t]+(?:Workflows,[ \t]*Deployments,[ \t]*(?:or[ \t]+)?Checks))[*_`]*[ \t]*\.?[ \t]*(?:\|[^\n]*)?$
   must_not_match:
   - (?i)^(?![ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Other permissions[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*(?:None|No[ \t]+(?:Workflows,[ \t]*Deployments,[ \t]*(?:or[ \t]+)?Checks))[*_`]*[ \t]*\.?[ \t]*(?:\|[^\n]*)?$)[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*Other permissions[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*[^\n]+$
-  - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*(?:Workflows|Deployments|Checks)[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*(?:Read|write|R/W|grant\b|enable\b)[^\n]*$
-  - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:However,[ \t]*|But[ \t]+)?(?:Maybe[ \t]+|Perhaps[ \t]+)?(?:Grant\b|Give\b|Enable\b)[ \t]+(?:the[ \t]+)?(?:Workflows|Deployments|Checks)\b[^\n]*$
+  - (?i)^(?:[^\n]*\|[ \t]*)?[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?(?:\|[ \t]*)?[*_`]*(?:Workflows|Deployments|Checks)[*_`]*[ \t]*(?:[:|][ \t]*)[*_`]*[ \t]*(?:Read|write|R/W|grant\b|enable\b)[^\n]*$
+  - (?i)^(?:(?!\b(?:not|never|don[\x27’]t|shouldn[\x27’]t|no[ \t]+need)\b)[^\n])*?\b(?:Grant\b|Give\b|Enable\b)[ \t]+(?:the[ \t]+)?(?:Workflows|Deployments|Checks)\b[^\n]*$
 - id: secret-listing-unavailable
   description: Reports listing visibility, not an empty list or proof of absence
   type: transcript_matches

@@ -235,6 +235,23 @@ def _check_excess_permission_recommendations_fail(case, grant):
         assert failures(case, GOOD + "\n" + row) == {"no-extra-grants"}
 
 
+@cases("row", ["- **Workflows:** Read and write", "> **Deployments:** Read and write", "- **Checks:** Read"])
+def _check_bold_extra_permission_labels_fail(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == {"no-extra-grants"}
+
+
+@cases("check_id,row", [
+    ("missing-actions-secret", "Actually, CMS_E2E_PAT is not the missing secret."),
+    ("missing-actions-secret", "On reflection you should not create CMS_E2E_PAT."),
+    ("issues-write", "Issues write is not needed."),
+    ("no-extra-grants", "Also grant Workflows: write so platform-bump works."),
+])
+def _check_prose_contradictions_after_good_answer_fail(case, check_id, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == {check_id}
+
+
 def _check_listing_denial_is_preserved_not_replaced_by_an_empty_list(case):
     root, ws, _, env = case
     proc = subprocess.run([str(ws / "bin/gh"), *READS["secrets-read"]],
