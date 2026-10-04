@@ -252,6 +252,92 @@ def _check_prose_contradictions_after_good_answer_fail(case, check_id, row):
     assert failures(case, GOOD + "\n" + row) == {check_id}
 
 
+@cases("grant", ["Workflows", "Deployments", "Checks"])
+@cases("separator", [":", "|", "-", "–", "—"])
+def _check_extra_permission_access_levels_after_separators_fail(case, grant, separator):
+    read_evidence(case)
+    for label in (grant, f"- **{grant}**"):
+        for level in ("Read", "write", "read/write", "Read and write"):
+            assert failures(case, GOOD + f"\n{label} {separator} {level}") == {"no-extra-grants"}
+
+
+@cases("row", [
+    "Workflows — read/write",
+    "- **Workflows** — Read and write",
+    "**Workflows—read/write**",
+    "Workflows-**write**",
+    "- **Workflows —** **Read and write**",
+    "**Workflows** **—** **Read and write**",
+])
+def _check_extra_permission_dash_and_bold_variants_fail(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == {"no-extra-grants"}
+
+
+@cases("row", [
+    "Do not grant Workflows",
+    "You should not grant Checks",
+    "There is no need to grant Deployments",
+    "Workflows is not granted",
+    "Not needed: Workflows...",
+    "Not needed: Workflows, Deployments, or Checks.",
+    "Checks — fine-grained PATs have no Checks permission",
+    "Workflows — readership does not describe an access level",
+    "Workflows — writer does not describe an access level",
+])
+def _check_explanations_and_denied_extra_grants_still_pass(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == set()
+
+
+@cases("row", [
+    "you don't need CMS_E2E_PAT",
+    "You don’t need CMS_E2E_PAT",
+    "You do not need CMS_E2E_PAT",
+    "The caller doesn't need CMS_E2E_PAT",
+    "The caller doesn’t need CMS_E2E_PAT",
+    "The caller does not need CMS_E2E_PAT",
+    "No need CMS_E2E_PAT",
+    "No need to set CMS_E2E_PAT",
+    "CMS_E2E_PAT isn't missing",
+    "CMS_E2E_PAT isn’t missing",
+    "CMS_E2E_PAT is not missing",
+    "CMS_E2E_PAT isn't the missing secret",
+    "CMS_E2E_PAT is not the missing secret",
+    "CMS_E2E_PAT isn't needed",
+    "CMS_E2E_PAT isn't required",
+    "CMS_E2E_PAT isn't necessary",
+])
+def _check_secret_need_and_missing_denials_fail(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == {"missing-actions-secret"}
+
+
+PERMISSION_CASES = [
+    (check_id, label, ["write", "Read and write", "read/write", "R/W"]
+     if check_id.endswith("-write") else ["Read", "read-only", "read only"])
+    for check_id, label in [("contents-write", "Contents"), ("pull-requests-write", "Pull requests"),
+                            ("issues-write", "Issues"), ("actions-write", "Actions"),
+                            ("commit-statuses-read", "Commit statuses"), ("metadata-read", "Metadata")]
+]
+
+
+@cases("check_id,label,levels", PERMISSION_CASES)
+@cases("denial", ["isn't needed", "isn’t required", "isn't necessary", "is unnecessary", "is not needed"])
+def _check_required_permission_need_denials_fail(case, check_id, label, levels, denial):
+    read_evidence(case)
+    for level in levels:
+        assert failures(case, GOOD + f"\n{label} {level} {denial}") == {check_id}
+
+
+@cases("check_id,label,levels", PERMISSION_CASES)
+@cases("negation", ["You don't", "You don’t", "You do not", "The token doesn't", "The token doesn’t", "The token does not", "No"])
+def _check_negative_need_for_required_permission_fails(case, check_id, label, levels, negation):
+    read_evidence(case)
+    for level in levels:
+        assert failures(case, GOOD + f"\n{negation} need {label} {level}") == {check_id}
+
+
 def _check_listing_denial_is_preserved_not_replaced_by_an_empty_list(case):
     root, ws, _, env = case
     proc = subprocess.run([str(ws / "bin/gh"), *READS["secrets-read"]],
