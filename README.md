@@ -59,6 +59,8 @@ evals/
     existing-convention/   # docs/decisions/ already has a house format
     supersede/             # replace an accepted decision and update its pointers
     why-no-comment-trail/  # "why did we do X?": record the relayed reason as an ADR
+    trigger-eval-set.json  # reviewed should/should-not-trigger queries for
+                           # propose_skill_edit.py --trigger-eval-set
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in

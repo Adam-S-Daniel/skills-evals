@@ -114,7 +114,7 @@ this harness or it is not measured the way every other number here is.
 | `agents/grader.md` | An LLM grader of expectations. The behavior half is scored by `scorers/objective.py` and this harness's judge, which already run with N trials. |
 | `scripts/aggregate_benchmark.py` | Reads skill-creator's `grading.json` layout. `run_eval.aggregate_trials` already aggregates this harness's trials, and the decision reads that. |
 | `agents/comparator.md` / `analyzer.md` | Blind A/B needs subagents and a reader; a candidate here is accepted on numbers, and the record carries both tables for the human reviewing it. |
-| skill-creator's own query-writing step (a reviewed ~20-query set) | Not automated. The fixture-derived default is thin (the train fixtures' distinct prompts as positives, other skills' prompts as negatives, few of them near-misses) and is refused when either of skill-creator's splits lacks a class (first-trial addendum); a reviewed set can be passed with `--trigger-eval-set`. |
+| skill-creator's own query-writing step (a reviewed ~20-query set) | Not automated. The fixture-derived default is thin (the train fixtures' distinct prompts as positives, other skills' prompts as negatives, few of them near-misses) and is refused when either of skill-creator's splits lacks a class (first-trial addendum); a reviewed set can be passed with `--trigger-eval-set`; `writing-adrs` ships one at `evals/writing-adrs/trigger-eval-set.json`. |
 
 ### Alternatives considered
 
