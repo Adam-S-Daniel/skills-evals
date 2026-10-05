@@ -464,6 +464,23 @@ is objectively decidable from the resulting files alone.
   json` payload: `total_cost_usd`, `usage`, `num_turns`, `duration_ms`.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
+- **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's
+  result objects, so beside it the harness writes
+  `transcripts/tool_trace.json` (`schema_version` 1): one event per tool call
+  (`name`, an input summary such as a Bash command, `subagent`) and per tool
+  result (`is_error`, `output_chars`, the head of the output), tagged with the
+  CLI call (`call` 0 is the prompt, then each follow-up). Inputs are cut to 200
+  characters, outputs to 300, and one trial's events to 64 KiB; events past
+  the cap are counted in `omitted_events`. Every string is redacted first
+  (`cli_json.redact`): the values of credential-named variables in the
+  arm's environment, credential shapes (`gh*_`, `sk-`, `AKIA`, JWTs,
+  `Authorization:` headers, `NAME=value` where the name says token, secret,
+  password, key, credential, auth or cookie) and absolute paths (the same
+  patterns `failed_run_detail` applies). The file is gitignored like
+  `raw.json` and never reaches `persistent/eval-results`, but eval.yml uploads
+  `results/` as a workflow artifact, which is public on this repository. No
+  scorer reads it: `run_agent` returns it under `tool_trace`, beside the
+  unchanged `transcript` and `raw`.
 
 ### Skill install path (corrected)
 
