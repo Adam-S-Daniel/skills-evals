@@ -117,7 +117,7 @@ Raw transcripts are deliberately never published (public repository).
 
 ## 5. What is measured today
 
-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). Seventeen fixtures are listed.
+Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
 
 Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
@@ -255,11 +255,19 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Record a snapshot-retention decision that reverses an accepted ADR. Good output writes ADR 0004, marks 0002 as superseded, updates both index rows and the script's ADR pointer, and preserves the old decision as history.
 - Objective (13): a new ADR with the required sections and a mention of 0002; 0002's status and index row point to 0004; the old decision text and unaffected rows stay intact; links resolve; a script comment points to 0004; the retention decision stays intact; exactly four ADR files exist; unrelated files stay byte-identical. These checks establish a format floor; the judge decides whether the prose explains the reversal.
 - Judge: weighted — `replacement-explains-the-reversal` 0.5, `audit-trail-preserved` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture: its objective checks are a format floor, and the README files all three `writing-adrs` fixtures under Class A (format half). No real run yet.
+- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture: its objective checks are a format floor, and the README files every `writing-adrs` fixtures under Class A (format half). No real run yet.
+
+### writing-adrs/why-no-comment-trail
+
+- `writing-adrs` (registry: `adam-agentskills`) — [evals/writing-adrs/why-no-comment-trail](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/why-no-comment-trail)
+- The user asks why an export script ends every CSV line with CRLF, says nothing in the repo explains it, and relays the reason and two rejected alternatives from the person who wrote it. Good output records that as ADR 0003 in the repo's house format, adds its index row, points the script at it, and leaves the line endings and everything else alone.
+- Objective (11): a new house-format ADR that is not a pasted seed ADR; non-heading lines name the line-ending rule and the importer, and each rejected alternative; index gained a row for 0003 and kept the other two; links resolve; a script comment points to 0003; both CRLF printf lines stay; exactly three ADR files exist; unrelated files stay byte-identical.
+- Judge: weighted — `adr-records-the-reason` 0.5, `next-reader-finds-it` 0.3, `restraint` 0.2.
+- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture, filed with its siblings under Class A (format half). No real run yet.
 
 ## 6. What is finished
 
-- The harness, scorers, roster, propagation audit and sixteen A/B fixtures (the seventeenth section in the inventory, `guidance/_delivery`, is the delivery canary) are
+- The harness, scorers, roster, propagation audit and seventeen A/B fixtures (the eighteenth section in the inventory, `guidance/_delivery`, is the delivery canary) are
   merged on `main` with CI green.
 - The roster redesign (PR #153) merged on 2026-09-21, the first real proposal
   run succeeded, and the census was published on 2026-09-22 so proposals are
