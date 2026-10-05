@@ -165,7 +165,7 @@ def _unsafe_capture(root):
     return _flow(root, {False}, {})[1]
 
 
-def _mentions_dispatch(text):
+def _mentions_dispatch(text, *, unverifiable=False):
     r"""Lexical over-approximation of a `gh workflow run` token sequence.
 
     Used only to select reply snippets and to decide whether a body that
@@ -176,6 +176,13 @@ def _mentions_dispatch(text):
     The $'...' scan ignores shell quoting, so a literal "$'" inside double
     quotes can open a bogus span over a real dispatch; decoding therefore
     only adds matches: the raw and quote-stripped texts are searched too.
+
+    For an unverifiable body (unparseable or over the analysis bound),
+    `workflow run` after any command spelling is enough: that fallback exists
+    to be conservative, a lexical decoder cannot follow shell quoting well
+    enough to rule out a disguised `gh`, and a legitimate unverifiable body
+    mentioning "workflow run" is rare. The spelling-aware scan stays as an
+    additional match, never as a filter.
     """
     def ansi(found):
         decoded = _ansi_c(found.group(1))
@@ -185,7 +192,10 @@ def _mentions_dispatch(text):
         return re.sub(r'''['"\\]''', '', value.replace('$"', '"'))
     decoded = re.sub(r"\$'((?:[^'\\]|\\.)*)'", ansi, text, flags=re.S)
     pattern = re.compile(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])')
-    return any(pattern.search(form) for form in (text, unquote(text), unquote(decoded)))
+    forms = (text, unquote(text), unquote(decoded))
+    if unverifiable and any(re.search(r'\bworkflow\b\s+\brun\b', form) for form in forms):
+        return True
+    return any(pattern.search(form) for form in forms)
 
 
 def _substitutions(text, *, prose=False):
@@ -432,6 +442,6 @@ def shell_capture_safe(workspace: str, patterns: list[str], source='files',
                     return False, f'{name}: dispatch and discovery share a command substitution'
                 continue
             # An unverifiable body fails closed only if it may dispatch.
-            if _mentions_dispatch(body):
+            if _mentions_dispatch(body, unverifiable=True):
                 return False, f'{name}: {reason}'
     return True, 'no concatenated dispatch/discovery capture'

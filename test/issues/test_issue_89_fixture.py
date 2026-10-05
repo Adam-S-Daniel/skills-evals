@@ -487,7 +487,7 @@ class TestCiWatcherShellCapture(unittest.TestCase):
         mutations = [
             ('shell_capture_safe', '_substitutions(text, prose=prose)', '[(text, True)]',
              lambda: self.assertTrue(self._reply('```bash\nif true; then\n' + GOOD_SCRIPT + '```'))),
-            ('shell_capture_safe', '_mentions_dispatch(body)', 'True',
+            ('shell_capture_safe', '_mentions_dispatch(body, unverifiable=True)', 'True',
              lambda: self.assertTrue(self._reply('```bash\nx=$(echo one &&\n```'))),
             ('_transcript_shell', "label in {'bash', 'sh', 'shell', 'console', 'zsh'}", 'True',
              lambda: self.assertTrue(self._reply('```python\n' + TRAP + '```'))),
@@ -628,6 +628,22 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertTrue(shell_capture._mentions_dispatch(body))
                 self.assertFalse(self._reply(reply.format(body)))
+        # A bogus span can pair with the quote that opens a disguised name, so
+        # an unverifiable body fails closed on `workflow run` alone.
+        bogus = 'echo "$\'\\n"; '
+        for script in ['x=$(' + bogus + '"gh" workflow run d; gh run list; echo \'x\'; if)',
+                       'x=$(' + bogus + '$\'\\x67h\' workflow run d; gh run list; if)',
+                       'x=$(' + bogus + '$\'\\147h\' workflow run d; gh run list; if)',
+                       'x=$(' + nested + bogus + '$\'\\x67h\' workflow run d; gh run list)',
+                       'x=$(' + nested + bogus + '$\'\\147h\' workflow run d; gh run list)']:
+            with self.subTest(script=script):
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+        # The spelling-aware scan alone still sees a quoted name in a bogus span.
+        self.assertTrue(shell_capture._mentions_dispatch(
+            bogus + '"gh" workflow run d; gh run list; echo \'x\''))
+        # A verifiable body that only mentions "workflow run" is decided by
+        # the AST, not the fallback, so it stays clean.
+        self.assertTrue(self._reply('```bash\nx=$(echo "$\'\\n workflow run"; gh run list)\n```'))
         # A parsed $"gh" is the literal word gh.
         self.assertFalse(self._reply('```bash\nx=$($"gh" workflow run d; gh run list)\n```'))
         self.assertTrue(self._reply('```bash\nx=$($"gh" workflow run d)\n```'))
