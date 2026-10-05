@@ -211,9 +211,18 @@ class TestIssue97(unittest.TestCase):
     # test/issues/test_issue_*.py in addition to its own classes, and this
     # file is the first module to arrive that way. The two tests below are
     # the pin: a planted module with one failing test must make the runner
-    # exit 1, and removing it must put it back to 0. They shell out to the
-    # whole suite, so they skip inside a child run (or they would fork the
-    # suite forever).
+    # exit 1, and removing it must put it back to 0. They shell out to
+    # `python3 test/run_tests.py`, so they skip inside a child run (or they
+    # would fork the suite forever).
+    #
+    # The child is NARROWED, never the whole suite: a SCRATCH discovery dir
+    # (`$SKILLS_EVALS_DISCOVERY_DIR`) holding only the probe module, and a
+    # `-k` that selects only it (plus, for the zero-exit pin, one cheap
+    # run_tests.py class). A child that ran everything took 24-29 minutes on
+    # a loaded runner, four times per run, and PR #251's `test` job lost two
+    # of them to the 900 s subprocess timeout. The proofs need run_tests.py's
+    # real entrypoint, discovery, `-k` and memory guard — not 3,000 other
+    # tests — so the timeout below is a safety net, not what keeps these green.
     # ------------------------------------------------------------------
 
     PLANTED = ISSUES_DIR / "test_issue_zz_discovery_probe.py"
@@ -223,8 +232,16 @@ class TestIssue97(unittest.TestCase):
         "    def test_planted_failure(self):\n"
         "        self.fail('discovery-probe: planted by TestIssue97')\n"
     )
+    # A discovered module whose one test passes and touches nothing.
+    CLEAN_SOURCE = (
+        "import unittest\n\n\n"
+        "class CleanProbe(unittest.TestCase):\n"
+        "    def test_touches_nothing(self):\n"
+        "        pass\n"
+    )
 
-    def _run_suite(self, env_extra: dict | None = None
+    def _run_suite(self, env_extra: dict | None = None,
+                   args: tuple[str, ...] = ()
                    ) -> subprocess.CompletedProcess:
         """A reviewed suite spawner that stands down itself. The runner
         verifies every member of its sanctioned sink inventory.
@@ -240,6 +257,9 @@ class TestIssue97(unittest.TestCase):
 
         The callers keep their own `self._skip_in_child()`: it is the same
         answer one frame earlier, with a printed reason, and it costs nothing.
+
+        `args` is the child's command line (`-k PATTERN ...`). Every caller
+        passes one: an argument-less child is the WHOLE suite.
         """
         if os.environ.get(CHILD_ENV):
             reason = ("child suite run — the one suite spawner does not "
@@ -252,7 +272,7 @@ class TestIssue97(unittest.TestCase):
         env.update(env_extra or {})
         env[CHILD_ENV] = "1"
         return subprocess.run(
-            [sys.executable, str(TEST_DIR / "run_tests.py")],
+            [sys.executable, str(TEST_DIR / "run_tests.py"), *args],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
             timeout=900)
 
@@ -261,16 +281,21 @@ class TestIssue97(unittest.TestCase):
         return [int(n) for n in re.findall(r"^Ran (\d+) tests?", output,
                                            flags=re.MULTILINE)]
 
-    def _scratch_discovery_dir(self, prefix: str) -> Path:
-        """A tempdir symlinking every real test_issue_*.py, for a probe to be
-        planted into instead of the real test/issues/ (#182): a concurrently
-        running child suite spawned by any OTHER parallel worker discovers
-        whatever lives under the real directory, so planting there would
-        fail that other worker's run too."""
+    def _scratch_discovery_dir(self, prefix: str,
+                               **modules: str) -> Path:
+        """A tempdir for a child run to discover INSTEAD of the real
+        test/issues/ (#182): a concurrently running child suite spawned by
+        any OTHER parallel worker discovers whatever lives under the real
+        directory, so planting there would fail that other worker's run too.
+
+        Holds exactly the modules passed (`name=source`, written as
+        `<name>.py`) and none of the real ones: the child imports and runs a
+        handful of tests, not the ~3,000 the real directory would add.
+        """
         scratch = Path(tempfile.mkdtemp(prefix=prefix))
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
-        for real in ISSUES_DIR.glob("test_issue_*.py"):
-            (scratch / real.name).symlink_to(real)
+        for name, source in modules.items():
+            (scratch / f"{name}.py").write_text(source, encoding="utf-8")
         return scratch
 
     def _skip_in_child(self) -> None:
@@ -286,11 +311,13 @@ class TestIssue97(unittest.TestCase):
                          f"{self.PLANTED} is left over from an earlier run")
         # Planted into a SCRATCH discovery dir (#182), never the real
         # test/issues/ — see _scratch_discovery_dir. $SKILLS_EVALS_DISCOVERY_DIR
-        # is what makes the child's build_suite() look there instead.
-        scratch = self._scratch_discovery_dir("issue97-discovery-probe-")
-        (scratch / self.PLANTED.name).write_text(self.PLANTED_SOURCE,
-                                                  encoding="utf-8")
-        proc = self._run_suite(env_extra={DISCOVERY_ENV: str(scratch)})
+        # is what makes the child's build_suite() look there instead, and
+        # `-k` narrows the child to the planted module alone.
+        scratch = self._scratch_discovery_dir(
+            "issue97-discovery-probe-",
+            **{self.PLANTED.stem: self.PLANTED_SOURCE})
+        proc = self._run_suite(env_extra={DISCOVERY_ENV: str(scratch)},
+                               args=("-k", self.PLANTED.stem))
         output = proc.stdout + proc.stderr
         self.assertEqual(
             proc.returncode, 1,
@@ -300,27 +327,33 @@ class TestIssue97(unittest.TestCase):
         self.assertIn("discovery-probe: planted by TestIssue97", output,
                       "the planted module's failure must be reported by name")
         counts = self._ran_counts(output)
-        self.assertEqual(len(counts), 1,
-                         "the runner must print ONE total for the whole suite, "
-                         f"got {counts}")
+        self.assertEqual(counts, [1],
+                         "the runner must print ONE total, and it must be the "
+                         f"planted module's single test; got {counts}")
 
     def test_removing_the_planted_module_puts_the_runner_back_to_zero(self):
         self._skip_in_child()
         self.assertFalse(self.PLANTED.exists(),
                          f"{self.PLANTED} is left over from an earlier run")
-        proc = self._run_suite()
+        # The same scratch discovery dir with a PASSING module in place of
+        # the failing one, and the selection widened by one cheap test of
+        # run_tests.py's own, so the single total still has to span the
+        # runner's own classes AND a discovered module.
+        clean = "test_issue_zz_discovery_clean"
+        scratch = self._scratch_discovery_dir(
+            "issue97-discovery-clean-", **{clean: self.CLEAN_SOURCE})
+        own = "TestParallelJobs.test_parse_argv_jobs_defaults_to_one"
+        proc = self._run_suite(env_extra={DISCOVERY_ENV: str(scratch)},
+                               args=("-k", clean, "-k", own))
         output = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0,
-                         "with no planted module the suite must exit 0\n"
+                         "with no planted failure the run must exit 0\n"
                          f"{output[-3000:]}")
         counts = self._ran_counts(output)
-        self.assertEqual(len(counts), 1,
-                         f"one printed total for the whole suite, got {counts}")
-        self.assertGreater(
-            counts[0], 379,
-            "the single total must span run_tests.py's own classes AND the "
-            "discovered test/issues/ modules — this file alone adds more than "
-            "the 379 that predate it")
+        self.assertEqual(counts, [2],
+                         "one printed total, spanning run_tests.py's own "
+                         "class AND the discovered module (2 tests); got "
+                         f"{counts}\n{output[-3000:]}")
 
     def test_this_module_is_reachable_through_the_discovery_pattern(self):
         # The discovery contract in one assertion: this file lives in the
@@ -1521,17 +1554,23 @@ class TestIssue97(unittest.TestCase):
         # test/issues/ — see _scratch_discovery_dir. Same reasoning as the
         # discovery probe above: a concurrent child suite from another
         # parallel worker discovers whatever lives under the real directory.
-        scratch = self._scratch_discovery_dir("issue97-memory-probe-")
-        (scratch / self.MEMORY_PROBE.name).write_text(
-            self.MEMORY_PROBE_SOURCE, encoding="utf-8")
+        # `-k` narrows the child to the probe alone, so the run is one test
+        # long and the guard is the only thing that can make it exit 1.
+        scratch = self._scratch_discovery_dir(
+            "issue97-memory-probe-",
+            **{self.MEMORY_PROBE.stem: self.MEMORY_PROBE_SOURCE})
         proc = self._run_suite(env_extra={MEMORY_ENV: str(watched),
-                                          DISCOVERY_ENV: str(scratch)})
+                                          DISCOVERY_ENV: str(scratch)},
+                               args=("-k", self.MEMORY_PROBE.stem))
         output = proc.stdout + proc.stderr
         self.assertTrue(
             re.search(r"^OK", output, flags=re.MULTILINE),
             "every test in the child run must PASS — the exit status under "
             "test comes from the run-wide guard alone, not from a failing "
             f"test\n{output[-3000:]}")
+        self.assertEqual(self._ran_counts(output), [1],
+                         "the child must have run exactly the probe\n"
+                         f"{output[-3000:]}")
         self.assertEqual(
             proc.returncode, 1,
             "a run that changed the watched user-memory file must exit 1 even "
@@ -1543,9 +1582,10 @@ class TestIssue97(unittest.TestCase):
                          "file's contents")
 
     def test_an_ordinary_run_leaves_the_watched_file_alone(self):
-        # The other side of the pin: with the watched path redirected and NO
-        # probe planted, the same child run exits 0. Without this, a guard
-        # that failed every run would satisfy the test above.
+        # The other side of the pin: with the watched path redirected and a
+        # module that writes nothing in place of the probe, the same narrowed
+        # child run exits 0. Without this, a guard that failed every run
+        # would satisfy the test above.
         self._skip_in_child()
         tmp = Path(tempfile.mkdtemp(prefix="memory-guard-clean-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
@@ -1554,9 +1594,17 @@ class TestIssue97(unittest.TestCase):
         before = watched.read_bytes()
         self.assertFalse(self.MEMORY_PROBE.exists(),
                          f"{self.MEMORY_PROBE} is left over from an earlier run")
-        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched)})
-        self.assertEqual(proc.returncode, 0,
-                         (proc.stdout + proc.stderr)[-3000:])
+        clean = "test_issue_zz_memory_clean"
+        scratch = self._scratch_discovery_dir(
+            "issue97-memory-clean-", **{clean: self.CLEAN_SOURCE})
+        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched),
+                                          DISCOVERY_ENV: str(scratch)},
+                               args=("-k", clean))
+        output = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, output[-3000:])
+        self.assertEqual(self._ran_counts(output), [1],
+                         "the child must have run exactly the clean module\n"
+                         f"{output[-3000:]}")
         self.assertEqual(watched.read_bytes(), before)
 
     def test_the_run_wide_user_memory_guard_names_its_override(self):
