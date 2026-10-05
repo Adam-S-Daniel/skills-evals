@@ -2300,6 +2300,12 @@ class TestIssue97(unittest.TestCase):
     # Every source listed for a site must verify, so dropping any one of the
     # three predicates turns this test red and names the site.
     HARNESS_TIMEOUT_SINKS = {
+        ("harness/scorers/commands.py", "_network_prefix", "subprocess.run",
+         "PROBE_TIMEOUT_S"): (1, (("constant", "PROBE_TIMEOUT_S"),)),
+        ("harness/scorers/commands.py", "_stop_process", "<popen>.wait",
+         "CLEANUP_TIMEOUT_S"): (1, (("constant", "CLEANUP_TIMEOUT_S"),)),
+        ("harness/scorers/commands.py", "_run_command", "<popen>.wait",
+         "timeout_s"): (1, (("sink", "timeout_s"),)),
         ("harness/guidance.py", "deliver", "subprocess.run", "timeout"):
             (1, (("default", "120"),)),
         ("harness/propagation/arms.py", "_run_hook", "subprocess.run",
@@ -2596,6 +2602,13 @@ class TestIssue97(unittest.TestCase):
                             "guidance.check_timeout on `args.timeout` — the "
                             "flag reaches subprocess.run unbounded, which is "
                             "the S1-a defect returning")
+                    elif kind == "sink":
+                        # Objective check constraints are validated at their
+                        # execution sink, outside the top-level fixture knobs.
+                        info = self._harness_timeout_sinks()[(rel, function)]
+                        self.assertIn(source[1], info["checked"], where)
+                        self.assertEqual(argument, source[1], where)
+                        self.assertLess(info["first_check"], info["first_spawn"], where)
                     else:  # pragma: no cover — a typo in the table
                         self.fail(f"{where}: unknown source kind {kind!r}")
 
@@ -2843,6 +2856,12 @@ class TestIssue97(unittest.TestCase):
     # test refuses any sink the walk finds that has no driver, so a new sink
     # cannot arrive with no direct-call coverage.
     SINK_DRIVERS = {
+        ("harness/scorers/commands.py", "_network_prefix"):
+            ("const", "PROBE_TIMEOUT_S"),
+        ("harness/scorers/commands.py", "_stop_process"):
+            ("const", "CLEANUP_TIMEOUT_S"),
+        ("harness/scorers/commands.py", "_run_command"):
+            ("param", "timeout_s"),
         ("harness/guidance.py", "deliver"): ("param", "timeout"),
         ("harness/propagation/arms.py", "_run_hook"): ("param", "timeout"),
         ("harness/propagation/arms.py", "arm_plugin_marketplace"):
@@ -2911,6 +2930,16 @@ class TestIssue97(unittest.TestCase):
                 kwargs["fixture"] = {knob: value, "setup": "true"}
             elif kind == "arm":
                 kwargs["arm"] = {"name": "without_skill", knob: value}
+        if name == "_network_prefix":
+            return fn({})
+        if name == "_stop_process":
+            # Never signal a real process in this direct-call driver.
+            with mock.patch("os.killpg"):
+                return fn(mock.MagicMock())
+        if name == "_run_command":
+            # Never signal a real process in this direct-call driver.
+            with mock.patch("os.killpg"):
+                return fn(["/usr/bin/true"], tmp, {}, None, None, **kwargs)
         if rel == "harness/guidance.py" and name == "deliver":
             return fn(tmp, scratch=tmp, dest_dir=tmp / "cfg", home=tmp / "home",
                       payload="x", **kwargs)
