@@ -26,6 +26,20 @@ RESULT = {"type": "result", "is_error": False, "result": "done",
           "num_turns": 1, "duration_ms": 8,
           "modelUsage": {"fake-default-model": {"inputTokens": 2}}}
 MESSAGE = {"type": "assistant", "message": {"content": []}}
+BACKGROUND_FIRST_RESULT = {
+    "type": "result", "subtype": "success", "is_error": False,
+    "result": "Root cause: set the required check on example.com.",
+    "result_index": 0, "queued_turn_count": 0, "num_turns": 11,
+    "total_cost_usd": 0.66, "duration_ms": 130000,
+    "usage": {"input_tokens": 40}, "stop_reason": "end_turn",
+    "terminal_reason": "completed",
+    "modelUsage": {"fake-default-model": {"inputTokens": 40}},
+    "subagent_stats": {"spawned": 1, "started_in_background": 1, "completed": 0}}
+BACKGROUND_SECOND_RESULT = BACKGROUND_FIRST_RESULT | {
+    "result": "The background agent confirmed the same root cause.",
+    "result_index": 1, "num_turns": 21, "total_cost_usd": 0.787257,
+    "duration_ms": 140000,
+    "subagent_stats": {"spawned": 1, "started_in_background": 1, "completed": 1}}
 
 
 def cli_reply(payload: object) -> subprocess.CompletedProcess:
@@ -48,19 +62,47 @@ class CliJsonShapeTests(unittest.TestCase):
         self.assertIs(normalize_cli_result([RESULT, MESSAGE]), RESULT)
 
     def test_array_without_result(self):
-        with self.assertRaisesRegex(ValueError, "exactly one result object"):
+        with self.assertRaisesRegex(ValueError, "found 0"):
             normalize_cli_result([MESSAGE])
 
-    def test_array_with_two_results(self):
-        with self.assertRaisesRegex(ValueError, "exactly one result object"):
-            normalize_cli_result([RESULT, RESULT])
+    def test_array_without_result_reports_only_the_count(self):
+        with self.assertRaisesRegex(ValueError, "found 0"):
+            normalize_cli_result([MESSAGE])
+
+    def test_follow_up_turn_after_background_agent_yields_two_results(self):
+        # Claude Code 2.1.289, headless, `--output-format json`: the agent
+        # launched a background subagent and answered; the subagent's
+        # task-notification then started a second turn, so the array carried
+        # two `type: result` objects (`result_index` 0 and 1). Shape copied
+        # from a real failing trial (cms-stuck-pr-triage, without_skill),
+        # content replaced by example.com stand-ins.
+        first = BACKGROUND_FIRST_RESULT
+        second = BACKGROUND_SECOND_RESULT
+        merged = normalize_cli_result([MESSAGE, first, MESSAGE, second])
+        self.assertEqual(merged["result"], first["result"] + "\n\n" + second["result"])
+        # Metrics stay the final result's (cumulative) values; nothing is summed.
+        self.assertEqual(merged["total_cost_usd"], 0.787257)
+        self.assertEqual(merged["num_turns"], 21)
+        self.assertEqual(merged["merged_results"], 2)
+        self.assertFalse(merged["is_error"])
+        # The inputs are left untouched.
+        self.assertEqual(first["result"], "Root cause: set the required check on example.com.")
+        self.assertNotIn("merged_results", second)
+
+    def test_any_error_among_several_results_stays_an_error(self):
+        error = BACKGROUND_SECOND_RESULT | {"is_error": True, "result": "failed"}
+        merged = normalize_cli_result([BACKGROUND_FIRST_RESULT, error])
+        self.assertTrue(merged["is_error"])
+        merged = normalize_cli_result([BACKGROUND_FIRST_RESULT | {"is_error": True},
+                                       BACKGROUND_SECOND_RESULT])
+        self.assertTrue(merged["is_error"])
 
     def test_array_with_error_result(self):
         error = RESULT | {"is_error": True, "result": "failed"}
         self.assertIs(normalize_cli_result([MESSAGE, error]), error)
 
     def test_empty_array(self):
-        with self.assertRaisesRegex(ValueError, "exactly one result object"):
+        with self.assertRaisesRegex(ValueError, "found 0"):
             normalize_cli_result([])
 
     def test_non_dict_element_and_scalar_are_rejected_without_echoing_content(self):
@@ -115,8 +157,7 @@ class CliJsonConsumersTests(unittest.TestCase):
         self.assertEqual(answer["error"], "agent_error")
         self.assertEqual(answer["detail"], "failed")
         self.assertEqual(answer["raw"], error)
-        for payload in ([], [MESSAGE], [RESULT, RESULT],
-                        ["private payload", RESULT]):
+        for payload in ([], [MESSAGE], ["private payload", RESULT]):
             with self.subTest(payload=payload):
                 answer = self._agent(payload)
                 self.assertEqual(answer["error"], "invalid_json")
@@ -125,10 +166,26 @@ class CliJsonConsumersTests(unittest.TestCase):
     def test_canary_reads_array_and_reports_invalid_shape(self):
         self.assertEqual(self._canary([MESSAGE, RESULT]), {"reply": "done"})
         self.assertEqual(self._canary([RESULT, MESSAGE]), {"reply": "done"})
-        error = self._canary([RESULT, RESULT])
+        error = self._canary([MESSAGE])
         self.assertEqual(error["error"], "invalid_json")
         self.assertEqual(self._canary([MESSAGE, RESULT | {"is_error": True}])["error"],
                          "agent_error")
+
+    def test_agent_scores_a_run_with_a_follow_up_turn(self):
+        answer = self._agent([MESSAGE, BACKGROUND_FIRST_RESULT, MESSAGE,
+                              BACKGROUND_SECOND_RESULT])
+        self.assertNotIn("error", answer)
+        self.assertEqual(answer["transcript"],
+                         BACKGROUND_FIRST_RESULT["result"] + "\n\n"
+                         + BACKGROUND_SECOND_RESULT["result"])
+        self.assertEqual(answer["cost_usd"], 0.787257)
+        self.assertEqual(run_eval.models_used(answer["raw"]), ["fake-default-model"])
+        # Unparseable stdout is still an error, not a silent pass.
+        with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess(
+                args=["fake-cli"], returncode=0, stdout="[{\"type\": \"res", stderr="")):
+            truncated = run_eval.run_agent(self.workspace, "prompt",
+                                           {"name": "without_skill", "timeout": 5})
+        self.assertEqual(truncated["error"], "invalid_json")
 
     def test_judge_reads_array_and_records_result_model_usage(self):
         text, models = self._judge([MESSAGE, RESULT])
