@@ -371,6 +371,7 @@ def load_skill_fixture(eval_dir: Path) -> dict:
         fixture = run_eval.load_fixture(eval_dir)
         run_eval.validate_mapping_keys(fixture, eval_dir / "fixture.yaml")
         run_eval.validate_timeouts(fixture, eval_dir / "fixture.yaml")
+        run_eval.validate_followups(fixture, eval_dir / "fixture.yaml")
     except (OSError, guidance.GuidanceError) as exc:
         raise Refused(f"fixture configuration error: {exc}") from exc
     subject = fixture.get("subject", "skill")

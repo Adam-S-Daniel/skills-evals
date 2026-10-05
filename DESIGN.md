@@ -111,6 +111,19 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+- **`followups:`** (optional) — a non-empty list of non-blank strings, each
+  sent as one more user turn after `prompt:`, in the same session and
+  workspace: `claude -p <text> --resume <session_id>` with every flag of the
+  first call, identically in both arms. Use it when a skill correctly stops
+  to ask the user before acting, so one headless call could never reach the
+  workspace state the objective checks score (`evals/rename-pdfs/` is the
+  first user). Each turn gets the whole `timeout_s`; a failed turn fails the
+  arm with the usual error type, its detail naming the follow-up. The judge
+  reads every reply with the follow-ups between them. Turns, duration and
+  usage are summed; cost and `modelUsage` come from the last call, because
+  a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
+  load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
+
 ### Parsed configuration and staged-shell objective checks
 
 These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
