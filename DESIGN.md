@@ -472,6 +472,12 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  The consumer-bump half of `platform-release-and-bump` is covered by
+  [`evals/platform-release-and-bump/`](evals/platform-release-and-bump/)
+  ([issue #93](https://github.com/Adam-S-Daniel/skills-evals/issues/93)):
+  the pinned platform verifier checks the release refs and caller parity, while
+  the offline GitHub replay records whether a write was attempted. The live
+  release and deployment steps are outside this fixture.
   `admin-config-render` graduated out of this list: covered by
   [`evals/admin-config-render/`](evals/admin-config-render/)
   ([issue #87](https://github.com/Adam-S-Daniel/skills-evals/issues/87)).

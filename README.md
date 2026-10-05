@@ -81,6 +81,9 @@ evals/
   pdf-ocr-audit/           # A/B eval, Class A: audit synthetic PDFs for OCR needs
     fixture.yaml           # prompt, objective report checks + source immutability, rubric
     seed/archive/          # eight committed PDFs; generator and answer key live outside seed/
+  platform-release-and-bump/ # A/B eval, Class A+B: local platform consumer bump
+    fixture.yaml           # tagged verifier exit, structural refs, caller set, replay restraint
+    seed/                  # older consumer pins and fixed platform release machinery
   skills-doctor/           # A/B eval, Class B: diagnose what a session is
     bucketed-account-store/ # actually being delivered, when the account store
       fixture.yaml         # is bucketed per account and its copy of a skill is
