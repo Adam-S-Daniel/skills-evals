@@ -491,10 +491,16 @@ Not every skill takes the same eval, and some take none. Classify first:
   [`evals/debug-github-workflows/wrong-branch/`](evals/debug-github-workflows/wrong-branch/)
   (issue [#76](https://github.com/Adam-S-Daniel/skills-evals/issues/76)). Main
   invokes a missing test module while an unmerged branch already fixes its
-  workflow. Seven checks require actual log/comparison reads, affirmative
-  cause and merge statements, and preservation of project/instrument files.
-  The reply grammar is deliberately narrow; correct alternative phrasing can
-  fail, so no A/B calibration or measured improvement is claimed. Exit-128,
+  workflow. The investigation-only prompt asks the agent to explain the cause
+  and next step without editing files. A fixture-owned setup builds an offline
+  origin with fetchable main and fix refs. Seven checks require an actual log
+  read, a comparison read through gh or through a git diff, show, or patch log
+  of the fix branch (git commands are recorded under `.git/`), exact
+  branch/action/error tokens in the reply, and preservation of
+  project/instrument files. The independent judge assesses
+  whether those tokens express the correct cause and merge direction; token
+  coverage alone is not semantic correctness. No A/B calibration or measured
+  improvement is claimed. Exit-128,
   token/auth and misleading-success patterns remain uncovered.
   [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
   now has its first Class B fixture:
