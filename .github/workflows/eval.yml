@@ -1735,8 +1735,11 @@ jobs:
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           echo "preflight model: $model"
-          out=$(timeout 120 claude -p 'Reply with exactly: ok' \
-            --model "$model" --output-format json 2>&1)
+          # The judge's isolation (harness/scorers/judge.py JUDGE_ISOLATION_FLAGS
+          # plus auto-memory off), so the preflight proves the same launch.
+          out=$(CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 timeout 120 claude -p 'Reply with exactly: ok' \
+            --model "$model" --output-format json \
+            --setting-sources "" --strict-mcp-config --no-session-persistence 2>&1)
           rc=$?
           echo "preflight exit: $rc"
           printf '%s\n' "$out" | tail -c 4000
@@ -1744,8 +1747,9 @@ jobs:
             echo "::warning::preflight failed on roster model $model; retrying with the fallback"
             model="$fallback"
             echo "preflight model: $model"
-            out=$(timeout 120 claude -p 'Reply with exactly: ok' \
-              --model "$model" --output-format json 2>&1)
+            out=$(CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 timeout 120 claude -p 'Reply with exactly: ok' \
+              --model "$model" --output-format json \
+              --setting-sources "" --strict-mcp-config --no-session-persistence 2>&1)
             rc=$?
             echo "preflight exit: $rc"
             printf '%s\n' "$out" | tail -c 4000

@@ -155,6 +155,12 @@ def collecting_models():
         _MODEL_SINKS.remove(sink)
 
 
+#: Every judge call's isolation flags; scripts/propose_skill_edit.py's
+#: one-shot proposal call uses the same tuple.
+JUDGE_ISOLATION_FLAGS = ("--setting-sources", "", "--strict-mcp-config",
+                         "--no-session-persistence")
+
+
 def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     """Run the judge CLI on `prompt` and return its `result` text.
 
@@ -181,8 +187,14 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
     guidance.check_timeout(timeout, "judge._run_judge_cli(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
+    # Isolated from the account and the checkout: no settings source (so no
+    # user or project CLAUDE.md, hooks or plugins from settings), no MCP
+    # connector, no transcript, and (env below) no auto-memory. The judge
+    # still needs the real HOME for its login (a scratch HOME or config dir
+    # loses it, measured on CLI 2.1.289), so these flags are the isolation.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
-          "--output-format", "json", "--permission-mode", "bypassPermissions"]
+          "--output-format", "json", "--permission-mode", "bypassPermissions",
+          *JUDGE_ISOLATION_FLAGS]
     if model:
         cmd += ["--model", model]
 
