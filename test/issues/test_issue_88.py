@@ -304,7 +304,7 @@ for case, (text, kwargs, reason) in SHELL_FAILURES.items():
     setattr(ShellStagedToolGuard, "test_" + case, shell_failure(text, kwargs, reason))
 
 
-SHELL_FIXTURES = Path(__file__).with_name("fixtures") / "issue88"
+SHELL_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "issue88"
 ARRAY_SOURCE = "mapfile -t files < <(git diff --cached --name-only -- '*.go')\n"
 ARRAY_GUARDED = 'if [ "${#files[@]}" -gt 0 ] && command -v gofmt; then gofmt -l "${files[@]}"; fi\n'
 

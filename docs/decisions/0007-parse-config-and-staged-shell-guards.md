@@ -54,7 +54,7 @@ structure: a local loop variable, iteration over the staged array, a
 that same path. A literal `\.go$` filter establishes Go provenance. Other
 language filters do not supply Go facts. The full reference hook with a Go
 branch and three alternative correct styles are committed under
-`test/issues/fixtures/issue88/` as regression inputs.
+`test/fixtures/issue88/` as regression inputs.
 
 Tool calls accept unquoted scalar `$files` / `${files}`, quoted array
 `"${files[@]}"`, or a guarded scalar `printf '%s\n' "$files" | xargs TOOL ...`
