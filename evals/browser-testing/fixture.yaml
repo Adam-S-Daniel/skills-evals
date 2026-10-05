@@ -1,0 +1,100 @@
+# Class A: a frozen, pure-filesystem slice of cms-platform e2e at v0.1.130.
+# The seed's three specs are examples, excluded from the new-spec candidates.
+# Each command runs the same fixed AST verifier in the completed workspace.
+# A separate digest check pins that executable; the verifier pins spec-ast.js.
+skill: browser-testing
+registry: https://github.com/Adam-S-Daniel/cms-platform
+prompt: >
+  Add an e2e spec that proves the posts-list dashboard shows a draft's preview
+  link, in the admin-read lane. Work within the supplied e2e harness.
+setup: npm ci --ignore-scripts --no-audit --no-fund
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+judge:
+  weights:
+    correctness: 0.4
+    routing: 0.25
+    restraint: 0.2
+    explanation: 0.15
+objective_checks:
+  - id: new-spec
+    description: A new active Playwright spec imports the custom fixture.
+    type: command_succeeds
+    argv: [node, check-spec.js, new-spec]
+  - id: preview-link-assertion
+    description: One test asserts href on the preview link it selected.
+    type: command_succeeds
+    argv: [node, check-spec.js, preview-link-assertion]
+  - id: admin-read
+    description: Every new spec drives admin and routes its tests through the read lane.
+    type: command_succeeds
+    argv: [node, check-spec.js, admin-read]
+  - id: single-entry-after-publish
+    description: A publish flow never crosses two entry routes on one page.
+    type: command_succeeds
+    argv: [node, check-spec.js, single-entry-after-publish]
+  - id: base-collection-guard
+    description: A posts-dependent spec directly skips when posts is excluded.
+    type: command_succeeds
+    argv: [node, check-spec.js, base-collection-guard]
+  - id: config-origin
+    description: Every new page navigation uses a relative config-origin route.
+    type: command_succeeds
+    argv: [node, check-spec.js, config-origin]
+  - id: consumer-spec
+    description: The new spec remains in the consumer-running set.
+    type: command_succeeds
+    argv: [node, check-spec.js, consumer-spec]
+  - id: verifier-pinned
+    description: The executable objective verifier retains its reviewed bytes.
+    type: file_digests_match
+    paths: [check-spec.js]
+    sha256: 9166387ce21b6bed3627db5659fef87315531794097e568fef1948408a712da2
+  - id: harness-unchanged
+    description: The pinned platform slice and package inputs remain unchanged.
+    type: files_unchanged
+    paths:
+      - .gitignore
+      - package.json
+      - package-lock.json
+      - playwright.config.js
+      - e2e/base.js
+      - e2e/spec-ast.js
+      - e2e/workflow-yaml-utils.js
+      - e2e/site-capabilities.js
+      - e2e/base-collections-guards.js
+      - e2e/base-collections-guard-registry.test.js
+      - e2e/status-dropdown-selector.test.js
+      - e2e/admin-tag-lint.test.js
+      - e2e/cms-posts-list-runtime.spec.js
+      - e2e/cms-preview-url.spec.js
+      - e2e/cms-smoke.spec.js
+      - theme/admin/posts-list-enhance.js
+judge_rubric: >
+  Score each dimension 0-10 and give a concrete reason. For each dimension,
+  0-3 means the named behavior is absent or contradicted, 4-7 means the
+  behavior is present with a material gap, and 8-10 means it is complete and
+  supported by the submitted spec or honest verification evidence.
+  Correctness: Does an actual assertion connect a particular posts-list li
+  card with an open editorial PR to its preview draft link, and validate a
+  preview-pr origin and /blog/<slug>/ destination? The link exists when that
+  draft's Published switch is ON; Published OFF shows an explanatory span
+  because the preview build omits that post. Does the test establish the
+  correct state through a real or mocked Decap path? A bare href assertion
+  without card and open-PR association belongs in 4-7 even if objective
+  checks pass. A test expecting /preview/ or a role=row card is 0-3.
+  Routing: Is the spec read-only and tagged @admin-read so both admin browser
+  projects can run it at their native viewport? Is its posts base-collection
+  guard correct for consumers that remove posts? Does navigation use the
+  configured baseURL and avoid the Decap entry-to-entry publish trap? A
+  project-name skip that defeats the tag is 0-3.
+  Restraint: Are the vendored harness and example specs preserved, with the
+  change confined to the new consumer spec? An unrelated harness rewrite or
+  placement in PLATFORM_META_SPECS is 0-3.
+  Explanation: Does the reply explain what the new test proves, identify
+  which checks actually ran, and distinguish pure AST validation from a real
+  browser run? An unsupported browser-pass claim is 0-3; an accurate account
+  of the local validation and its limits is 8-10.

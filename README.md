@@ -71,6 +71,9 @@ evals/
   admin-config-render/     # A/B eval, Class A: a consumer site's /admin config will not render
     fixture.yaml           # prompt, command_succeeds renders, kit/verifier/identity digests, rubric
     seed/                  # a consumer site plus a vendored cms-platform kit and its Ruby render checks
+  browser-testing/         # A/B eval, Class A: add an admin-read draft-preview spec
+    fixture.yaml           # fixed AST command checks and parser/verifier integrity checks
+    seed/                  # pinned platform slice and pure-fs parser dependencies
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric

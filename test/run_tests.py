@@ -38691,5 +38691,235 @@ class TestPublishUsageCensus(unittest.TestCase):
             self.assertNotIn(token, text)
 
 
+class TestIssue92(unittest.TestCase):
+    """Browser-testing fixture: frozen AST verifier, no browser or agent call."""
+
+    FIXTURE = REPO_ROOT / "evals" / "browser-testing"
+    SEED = FIXTURE / "seed"
+    NEW = "e2e/draft-preview.spec.js"
+    GOOD = '''const { test, expect } = require("./base");
+const cap = require("./site-capabilities");
+const path = require("node:path");
+const SITE_ROOT = process.env.SITE_ROOT || path.resolve(__dirname, "..");
+
+test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
+  test.skip(!cap.keepsBaseCollection(SITE_ROOT, "posts"), "Posts collection absent");
+  test("draft preview link", async ({ page }) => {
+    await page.goto("/admin/index-local.html");
+    await page.getByRole("button", { name: /login/i }).click();
+    await page.getByRole("link", { name: /^posts$/i }).click();
+    const draftCard = page.locator("li").filter({
+      has: page.getByRole("link", { name: /view draft changes/i }),
+    }).first();
+    const previewLink = draftCard.getByRole("link", { name: /preview draft/i });
+    await expect(previewLink).toHaveAttribute("href", /^https:\\/\\/preview-pr\\d+\\.example\\.com\\/blog\\/[^/]+\\/$/);
+  });
+});
+'''
+    BEHAVIOR = {
+        "new-spec", "preview-link-assertion", "admin-read",
+        "single-entry-after-publish", "base-collection-guard",
+        "config-origin", "consumer-spec",
+    }
+    RESTRAINT = {"verifier-pinned", "harness-unchanged"}
+
+    def _workspace(self, spec=GOOD):
+        self.assertTrue((self.SEED / "node_modules" / "acorn").is_dir(),
+                        "Install seed dependencies with npm ci before running the suite")
+        owned = tempfile.TemporaryDirectory(prefix="issue92-")
+        self.addCleanup(owned.cleanup)
+        ws = Path(owned.name) / "workspace"
+        shutil.copytree(self.SEED, ws, ignore=shutil.ignore_patterns("node_modules"))
+        (ws / "node_modules").symlink_to(self.SEED / "node_modules", target_is_directory=True)
+        if spec is not None:
+            (ws / self.NEW).write_text(spec, encoding="utf-8")
+        return ws
+
+    def _score(self, ws):
+        rows = objective.run_checks(run_eval.load_fixture(self.FIXTURE),
+                                    str(ws), str(self.SEED))
+        return {row["id"]: row["passed"] for row in rows}
+
+    def _failed(self, ws, expected):
+        rows = self._score(ws)
+        self.assertEqual(set(rows), self.BEHAVIOR | self.RESTRAINT)
+        self.assertEqual({name for name, passed in rows.items() if not passed}, set(expected), rows)
+
+    def test_census_discovers_one_fixture_and_roster_supplies_models(self):
+        import eval_coverage
+        resolved = run_eval.resolve_registries(None, None, REPO_ROOT)
+        self.assertEqual(eval_coverage.count_fixtures(REPO_ROOT / "evals", resolved)
+                         [("cms-platform", "browser-testing")], 1)
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        self.assertNotIn("model", fixture)
+        self.assertNotIn("model", fixture["judge"])
+        self.assertEqual(fixture["registry"], "https://github.com/Adam-S-Daniel/cms-platform")
+        self.assertEqual({check["type"] for check in fixture["objective_checks"]},
+                         {"command_succeeds", "file_digests_match", "files_unchanged"})
+
+    def test_seed_fails_every_behavior_and_passes_both_restraints(self):
+        self._failed(self._workspace(None), self.BEHAVIOR)
+
+    def test_hand_written_draft_row_spec_passes_every_check(self):
+        self._failed(self._workspace(), set())
+
+    def test_each_check_has_an_isolated_failing_mutation(self):
+        assertion = next(line.strip() for line in self.GOOD.splitlines()
+                         if 'toHaveAttribute("href"' in line)
+        mutations = {
+            "new-spec": (self.GOOD.replace('require("./base")', 'require("@playwright/test")'), None),
+            "preview-link-assertion": (self.GOOD.replace(assertion,
+                                                           'await expect(previewLink).toBeVisible();'), None),
+            "admin-read": (self.GOOD.replace('"@admin-read"', '"@admin-write"'), None),
+            "single-entry-after-publish": (self.GOOD.replace(
+                'await page.goto("/admin/index-local.html");',
+                'await page.goto("/admin/index-local.html#/collections/posts/entries/a");\n'
+                '    await page.goto("/admin/index-local.html#/collections/posts/entries/b");\n'
+                '    await publishViaUi(page);'), None),
+            "base-collection-guard": (self.GOOD.replace('!cap.keepsBaseCollection',
+                                                         'cap.keepsBaseCollection'), None),
+            "config-origin": (self.GOOD.replace('page.goto("/admin/index-local.html")',
+                                                     'page.goto("https://example.net/admin/index-local.html")'), None),
+            "consumer-spec": (self.GOOD, "cms-posts-list-enhance.spec.js"),
+        }
+        for check_id, (spec, rename) in mutations.items():
+            with self.subTest(check=check_id):
+                ws = self._workspace(spec)
+                if rename:
+                    (ws / self.NEW).rename(ws / "e2e" / rename)
+                self._failed(ws, {check_id})
+
+        ws = self._workspace()
+        verifier = ws / "check-spec.js"
+        verifier.write_text(verifier.read_text(encoding="utf-8") + "\n// harmless mutation\n",
+                            encoding="utf-8")
+        self._failed(ws, {"verifier-pinned"})
+        ws = self._workspace()
+        base = ws / "e2e" / "base.js"
+        base.write_text(base.read_text(encoding="utf-8") + "\n// changed\n", encoding="utf-8")
+        self._failed(ws, {"harness-unchanged"})
+
+    def test_a_spec_tagged_both_read_and_write_is_not_read_only(self):
+        # The write tag must veto the read tag on its own: both tags present
+        # and everything else correct fails only the admin-read check.
+        both = self.GOOD.replace('{ tag: ["@admin-read"] }',
+                                 '{ tag: ["@admin-read", "@admin-write"] }')
+        self.assertNotEqual(both, self.GOOD)
+        self._failed(self._workspace(both), {"admin-read"})
+
+    def test_extensionless_spec_ast_shadow_is_inert(self):
+        # The verifier hashes e2e/spec-ast.js, so it must load exactly that
+        # file. Node resolves an extensionless "./e2e/spec-ast" before the
+        # ".js" file, so a bare require would run the candidate's file instead
+        # and let it exit 0 for every check. The shadow is inert (it is
+        # neither run nor does it change a verdict) rather than rejected: an
+        # exact-path load needs no extra-file rule, and a stray file the
+        # verifier never reads should not fail an otherwise correct spec.
+        shadows = {
+            "extensionless": "e2e/spec-ast",
+            "directory index": "e2e/spec-ast/index.js",
+        }
+        for label, relative in shadows.items():
+            for spec, expected in ((self.GOOD, set()), (None, self.BEHAVIOR)):
+                with self.subTest(shadow=label, spec="good" if spec else "seed"):
+                    ws = self._workspace(spec)
+                    shadow = ws / relative
+                    shadow.parent.mkdir(parents=True, exist_ok=True)
+                    shadow.write_text(
+                        'require("node:fs").writeFileSync(__dirname + "/called", "1");\n'
+                        'process.exit(0);\n', encoding="utf-8")
+                    self._failed(ws, expected)
+                    self.assertFalse((shadow.parent / "called").exists(),
+                                     "A spec-ast shadow ran inside the verifier")
+
+    def test_plausible_wrong_host_and_route_sequence_fail(self):
+        wrong = self.GOOD.replace('page.goto("/admin/index-local.html")',
+                                  'page.goto("https://example.net/admin/index-local.html")')
+        wrong = wrong.replace('await page.getByRole("link", { name: /^posts$/i }).click();',
+                              'await page.goto("/admin/index-local.html#/collections/posts/entries/a");\n'
+                              '    await page.goto("/admin/index-local.html#/collections/posts/entries/b");\n'
+                              '    await publishViaUi(page);\n'
+                              '    await page.getByRole("link", { name: /^posts$/i }).click();')
+        self._failed(self._workspace(wrong), {"config-origin", "single-entry-after-publish"})
+
+    def test_ast_decoys_cannot_supply_behavior(self):
+        assertion = next(line.strip() for line in self.GOOD.splitlines()
+                         if 'toHaveAttribute("href"' in line)
+        comment = self.GOOD.replace(assertion, '// ' + assertion)
+        self._failed(self._workspace(comment), {"preview-link-assertion"})
+        nested = self.GOOD.replace('test.skip(!cap.keepsBaseCollection(SITE_ROOT, "posts"), "Posts collection absent");',
+                                   'function unused() { test.skip(!cap.keepsBaseCollection(SITE_ROOT, "posts"), "absent"); }')
+        self._failed(self._workspace(nested), {"base-collection-guard"})
+        nested = self.GOOD.replace(assertion, 'async function unused() { ' + assertion + ' }')
+        self._failed(self._workspace(nested), {"preview-link-assertion"})
+        nested = self.GOOD.replace('await page.goto("/admin/index-local.html");',
+                                   'await page.goto("/");\n    function unused() { page.goto("/admin/index-local.html"); }')
+        self._failed(self._workspace(nested), {"admin-read"})
+
+    def test_base_url_forms_from_fixture_are_accepted_but_literal_binding_is_not(self):
+        for route in ('`${baseURL}/admin/index-local.html`',
+                      'new URL("/admin/index-local.html", baseURL)'):
+            with self.subTest(route=route):
+                spec = self.GOOD.replace('async ({ page })', 'async ({ page, baseURL })')
+                spec = spec.replace('page.goto("/admin/index-local.html")', f'page.goto({route})')
+                self._failed(self._workspace(spec), set())
+        literal = self.GOOD.replace('await page.goto("/admin/index-local.html");',
+                                    'const baseURL = "https://example.net";\n'
+                                    '    await page.goto(`${baseURL}/admin/index-local.html`);')
+        self._failed(self._workspace(literal), {"config-origin"})
+        fake_config = self.GOOD.replace('await page.goto("/admin/index-local.html");',
+                                        'const config = { use: { baseURL: "https://example.net" } };\n'
+                                        '    await page.goto(`${config.use.baseURL}/admin/index-local.html`);')
+        self._failed(self._workspace(fake_config), {"config-origin"})
+
+    def test_inline_guard_and_both_publish_navigation_orders(self):
+        declaration = 'test.skip(!cap.keepsBaseCollection(SITE_ROOT, "posts"), "Posts collection absent");'
+        inline = self.GOOD.replace('  ' + declaration + '\n', '')
+        inline = inline.replace('    await page.goto("/admin/index-local.html");',
+                                '    ' + declaration + '\n    await page.goto("/admin/index-local.html");')
+        self._failed(self._workspace(inline), set())
+        for publish in ('await publishViaUi(page);',
+                        'await page.getByRole("button", { name: /publish/i }).click();'):
+            with self.subTest(publish=publish):
+                after = self.GOOD.replace('await page.goto("/admin/index-local.html");',
+                                          'await page.goto("/admin/index-local.html#/collections/posts/entries/a");\n'
+                                          f'    {publish}\n'
+                                          '    await page.goto("/admin/index-local.html#/collections/posts/entries/b");')
+                self._failed(self._workspace(after), {"single-entry-after-publish"})
+
+    def test_second_spec_cannot_borrow_first_specs_assertion(self):
+        ws = self._workspace()
+        assertion = next(line.strip() for line in self.GOOD.splitlines()
+                         if 'toHaveAttribute("href"' in line)
+        other = self.GOOD.replace(assertion, 'await expect(previewLink).toBeVisible();')
+        (ws / "e2e" / "another-draft.spec.js").write_text(other, encoding="utf-8")
+        self._failed(ws, {"preview-link-assertion"})
+
+    def test_parser_dependency_tamper_cannot_change_command_verdicts(self):
+        ws = self._workspace()
+        (ws / "node_modules").unlink()
+        shutil.copytree(self.SEED / "node_modules", ws / "node_modules")
+        parser = ws / "node_modules" / "acorn" / "dist" / "acorn.js"
+        parser.write_text(parser.read_text(encoding="utf-8") + "\n// changed\n",
+                          encoding="utf-8")
+        self._failed(ws, self.BEHAVIOR)
+
+    def test_nested_parser_shadow_is_refused_before_candidate_code_runs(self):
+        for package, entry in (("acorn", "dist/acorn.js"),
+                               ("acorn-walk", "dist/walk.js")):
+            with self.subTest(package=package):
+                ws = self._workspace()
+                shadow = ws / "e2e" / "node_modules" / package
+                shadow.mkdir(parents=True)
+                (shadow / "package.json").write_text('{"main":"index.js"}\n', encoding="utf-8")
+                (shadow / "index.js").write_text(
+                    'require("node:fs").writeFileSync(__dirname + "/called", "1");\n'
+                    f'module.exports = require("../../../node_modules/{package}/{entry}");\n',
+                    encoding="utf-8")
+                self._failed(ws, self.BEHAVIOR)
+                self.assertFalse((shadow / "called").exists(),
+                                 "A shadow module ran before the verifier refused its resolution")
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
