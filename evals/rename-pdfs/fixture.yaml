@@ -33,14 +33,17 @@
 # expects. The issue prescribes the range string; this fixture keeps it
 # rather than watering down the task to what the helper currently parses.
 #
-# Second known confound: SKILL.md:151 forbids batch-renaming without
-# per-file confirmation unless the user types `auto`. run_eval.py invokes
-# `claude -p` with no user to answer that prompt, so a maximally
-# skill-faithful with_skill agent may propose every rename and apply none
-# of them. The prompt below stays the issue's exact sentence rather than
-# adding "auto" or otherwise working around this — read any with_skill N=3
-# numbers with this confound in mind; it is a property of the harness'
-# headless invocation, not of this fixture, and has no code fix here.
+# Second known confound, answered by `followups:` below: SKILL.md's Safety
+# section forbids batch-renaming without per-file confirmation unless the
+# user types `auto`, and one `claude -p` call has no user to answer. Before
+# `followups:`, every with_skill trial in two N=3 runs proposed the renames
+# (one proposed all six correctly) and applied none, scoring the 4/8 a
+# no-op scores. The prompt stays the issue's exact sentence; the follow-up
+# is a second user turn, sent with `--resume` in the same workspace,
+# identically in both arms (ADR 0008). It answers the skill's own question
+# ("auto" accepts all remaining) in words a run without the skill reads as
+# plain consent. It relaxes no confirmation rule; a run that renamed on its
+# first turn just gets a redundant go-ahead.
 #
 # SKILL.md:121 says only "append ` (2)`, ` (3)`, etc." for a collision — it
 # does not say whether that goes before or after `.pdf`. This fixture's
@@ -74,6 +77,9 @@ requires:
 
 prompt: >
   Rename the PDFs in inbox/ per my convention.
+
+followups:
+  - "Yes, apply all of the proposed renames (auto)."
 
 arms:
   with_skill:
