@@ -291,7 +291,10 @@ class TestTheWaitJobsShape(_Scripts):
                          {"pull-requests": "write", "contents": "read"})
 
     def test_steps_and_their_gates(self):
-        self.assertEqual([s.get("name") for s in self.job["steps"]], [WAIT_STEP, SWEEP_STEP])
+        # The pinned interpreter first (first-party setup-python, no secret
+        # and no env); the wait and sweep steps themselves use no action.
+        self.assertEqual([s.get("name") for s in self.job["steps"]],
+                         ["Set up Python", WAIT_STEP, SWEEP_STEP])
         wait = _step(self.job, WAIT_STEP)
         sweep = _step(self.job, SWEEP_STEP)
         self.assertEqual(wait.get("id"), "wait")
