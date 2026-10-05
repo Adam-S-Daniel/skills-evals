@@ -2781,7 +2781,14 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
                 shutil.copytree(seed, workspace)
             else:
                 workspace.mkdir(parents=True)
-            results = objective.run_checks(fixture, str(workspace), str(seed))
+            try:
+                results = objective.run_checks(fixture, str(workspace), str(seed))
+            except objective.ScorerUnavailableError as exc:
+                # As the skill path's objective-only: a missing scoring
+                # dependency is not a failed check (exit 1), so name it and
+                # exit 2 instead of a traceback.
+                print(f"scorer_unavailable: {exc}")
+                return 2
         print(json.dumps({"subject": "guidance", "section": section,
                           "arm": args.arm, "checks": results}, indent=2))
         return 0 if all(r["passed"] for r in results) else 1
