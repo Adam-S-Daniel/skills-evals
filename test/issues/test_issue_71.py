@@ -2,13 +2,12 @@
 """Issue #71 (smallest slice): scripts/propose_skill_edit.py.
 
 Every model-spending step goes through the script's `Runner`, so these tests
-drive the whole pipeline with a fake one: no `claude`, no network, no clock
-(the timestamp is passed in). Two contract tests use the REAL subprocess
-paths with stand-in CLIs instead of a fake runner: the harness's
-`run_eval.py` under test/fake-claude, and Anthropic's skill-creator
-`scripts/run_loop.py` under a stand-in `claude` on PATH. The second is skipped
-when skill-creator is not installed (CI does not install it); point
-SKILL_CREATOR_DIR at its skill directory to run it.
+drive the whole pipeline with a fake one: no real CLI, no network, no clock
+(the timestamp is passed in). Subprocess contracts exercise `local_eval.py`
+with stand-in CLIs and both guarded launch paths with an always-available
+fake `scripts/run_loop.py`. An additional contract uses the installed
+skill-creator's own loop with a stand-in CLI; it is skipped when the plugin
+is absent (CI does not install it). Set SKILL_CREATOR_DIR to run that contract.
 
 Discovered and run by test/run_tests.py; also runnable on its own with
 `python3 test/issues/test_issue_71.py`.
@@ -16,6 +15,7 @@ Discovered and run by test/run_tests.py; also runnable on its own with
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import json
@@ -27,7 +27,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -35,6 +35,7 @@ TEST_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = TEST_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import propose_skill_edit as pse  # noqa: E402
+import test_issue_local_eval as local_eval_tests  # noqa: E402
 
 SKILL = "writing-adrs"
 FIXTURES = ["bootstrap", "existing-convention", "supersede"]
@@ -97,29 +98,21 @@ def flag(argv: list[str], name: str) -> str:
     return argv[argv.index(name) + 1]
 
 
-def write_arm(arm_dir: Path, passed: int, total: int, judge: float | None,
+def write_arm(run_dir: Path, ts: str, fixture: str,
+              passed: int, total: int, judge: float | None,
               trials: int = 3) -> None:
-    """A with_skill arm in run_eval's --trials N > 1 layout."""
+    """The per-trial layout written by local_eval's run_eval children."""
     for k in range(1, trials + 1):
-        trial = arm_dir / f"trial-{k}"
+        trial = run_dir / f"t{k}" / SKILL / ts / fixture / "with_skill"
         (trial / "transcripts").mkdir(parents=True)
         checks = [{"id": f"check-{i}", "passed": i < passed, "detail": f"detail {i}"}
                   for i in range(total)]
         (trial / "summary.json").write_text(json.dumps(
-            {"error": None, "objective_checks": checks, "trial": k}), encoding="utf-8")
+            {"error": None, "objective_checks": checks, "trial": k,
+             "judge": {"overall": judge} if judge is not None else None}),
+            encoding="utf-8")
         (trial / "transcripts" / "raw.json").write_text(
             json.dumps({"result": f"reply of trial {k}"}), encoding="utf-8")
-    judge_block = None
-    if judge is not None:
-        judge_block = {"n": trials, "errors": 0,
-                       "overall": {"n": trials, "mean": judge, "min": judge,
-                                   "max": judge, "sum": judge * trials},
-                       "dimensions": []}
-    (arm_dir / "summary.json").write_text(json.dumps({
-        "error": None, "n": trials,
-        "aggregate": {"objective": {"n": trials, "passed": passed * trials,
-                                    "total": total * trials},
-                      "judge": judge_block, "cost_usd": None}}), encoding="utf-8")
 
 
 class FakeRunner:
@@ -134,15 +127,17 @@ class FakeRunner:
         self.seen_skill_md: dict[str, str] = {}
 
     def run_eval(self, argv):
-        label = Path(flag(argv, "--results-dir")).name
+        run_dir = Path(flag(argv, "--results-dir"))
+        label = run_dir.parent.parent.name
         registry = Path(flag(argv, "--registry").split("=", 1)[1])
         self.calls.append(("run_eval", label, registry, list(argv)))
+        assert not run_dir.exists(), "local_eval destination must start empty"
         assert not (registry / ".git").exists(), "scratch registry carries .git"
         self.seen_skill_md[label] = (registry / "plugins" / "demo" / "skills"
                                      / SKILL / "SKILL.md").read_text(encoding="utf-8")
-        base = Path(flag(argv, "--results-dir")) / SKILL / flag(argv, "--timestamp")
         for fixture, (passed, total, judge) in self.numbers[label].items():
-            write_arm(base / fixture / "with_skill", passed, total, judge,
+            write_arm(run_dir, flag(argv, "--timestamp"), fixture,
+                      passed, total, judge,
                       int(flag(argv, "--trials")))
         return 1
 
@@ -170,6 +165,18 @@ class NoCallRunner:
         raise AssertionError(f"dry run made a {name} call")
 
 
+class RefusingRunner(FakeRunner):
+    def __init__(self, phase):
+        super().__init__(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        self.phase = phase
+
+    def run_eval(self, argv):
+        if Path(flag(argv, "--results-dir")).parent.parent.name == self.phase:
+            self.calls.append(("refused", self.phase))
+            return 2
+        return super().run_eval(argv)
+
+
 GOOD = {"bootstrap": (2, 4, 6.0), "existing-convention": (2, 4, 6.0),
         "supersede": (3, 4, 7.0)}
 
@@ -181,8 +188,13 @@ def proposal(diff: str = BODY_DIFF, rationale: str = "index step was missing") -
 class PipelineCase(unittest.TestCase):
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="test-issue-71-"))
+        self.tmp = Path(tempfile.mkdtemp(
+            prefix="test-issue-71-", dir=local_eval_tests.TestLocalEval._temp_base()))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        home = self.tmp / "home"
+        home.mkdir()
+        self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
+                    "TMPDIR": str(self.tmp), "LANG": "C.UTF-8"}
         self.registry = make_registry(self.tmp / "registry")
         self.skill_creator = make_skill_creator(self.tmp / "skill-creator")
         self.results = self.tmp / "results"
@@ -192,9 +204,12 @@ class PipelineCase(unittest.TestCase):
                 "--skill-creator", str(self.skill_creator),
                 "--results-dir", str(self.results), *extra]
 
-    def run_main(self, runner, *extra):
+    def run_main(self, runner, *extra, env_extra=None):
+        env = dict(self.env)
+        env.update(env_extra or {})
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, env, clear=True), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = pse.main(self.argv(*extra), runner=runner, now=NOW)
         return rc, out.getvalue(), err.getvalue()
 
@@ -227,13 +242,123 @@ class SplitTests(unittest.TestCase):
 
 class RefusalTests(PipelineCase):
 
+    def test_refused_environment_is_recorded_before_even_a_fake_baseline(self):
+        for env in ({"ANTHROPIC_API_KEY": ""},
+                    {"HTTPS_PROXY": "https://user:pass@example.com"}):
+            with self.subTest(names=sorted(env)):
+                runner = FakeRunner(GOOD, GOOD, proposal())
+                rc, _, err = self.run_main(runner, env_extra=env)
+                self.assertEqual(rc, 2)
+                self.assertEqual(runner.calls, [])
+                record = self.record()
+                self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                                 ("refused", "preflight", 2))
+                self.assertIn(next(iter(env)), err)
+                shutil.rmtree(self.results)
+
+    def test_parent_cloud_environment_does_not_reach_pipeline(self):
+        parent_env = {"AZURE_EXTENSION_DIR": "/x", "GOOGLE_FOO": "y"}
+        runner = FakeRunner(
+            GOOD, {"bootstrap": (4, 4, 7.0), "existing-convention": (3, 4, 6.5),
+                   "supersede": (3, 4, 7.0)}, proposal(), NEW_DESCRIPTION)
+        with mock.patch.dict(os.environ, parent_env):
+            rc, _, err = self.run_main(runner, "--rotation", "2")
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(self.record()["status"], "accepted")
+            self.assertEqual({name: os.environ[name] for name in parent_env}, parent_env)
+
+    def test_explicit_cloud_environment_is_refused_before_runner_calls(self):
+        for name, value in (("AZURE_EXTENSION_DIR", "/x"), ("GOOGLE_FOO", "y")):
+            with self.subTest(name=name):
+                shutil.rmtree(self.results, ignore_errors=True)
+                runner = FakeRunner(GOOD, GOOD, proposal())
+                rc, _, err = self.run_main(runner, env_extra={name: value})
+                self.assertEqual(rc, 2)
+                self.assertEqual(runner.calls, [])
+                record = self.record()
+                self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                                 ("refused", "preflight", 2))
+                self.assertIn(name, err)
+                self.assertIn(name, " ".join(record["reasons"]))
+
+    def test_trigger_and_proposal_refusals_are_recorded_without_retry(self):
+        for method, phase in (("run_description_loop", "trigger"),
+                              ("propose", "proposal")):
+            with self.subTest(phase=phase):
+                runner = FakeRunner(GOOD, GOOD, proposal())
+                with mock.patch.object(runner, method,
+                                       side_effect=pse.Refusal("apiKeyHelper refused")) as launch:
+                    rc, _, err = self.run_main(runner)
+                self.assertEqual(rc, 2)
+                self.assertEqual(launch.call_count, 1)
+                self.assertIn("apiKeyHelper", err)
+                record = self.record()
+                self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                                 ("refused", phase, 2))
+                self.assertIn("apiKeyHelper", record["reasons"][0])
+                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                                 ["baseline"])
+                shutil.rmtree(self.results)
+
+    def test_baseline_local_eval_refusal_is_recorded_without_retry(self):
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner)
+        self.assertEqual(rc, 2)
+        self.assertIn("local_eval baseline exited 2", err)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                         ("refused", "baseline", 2))
+        self.assertEqual(runner.calls, [("refused", "baseline")])
+
+    def test_candidate_local_eval_refusal_is_recorded_without_retry(self):
+        runner = RefusingRunner("candidate")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("local_eval candidate exited 2", err)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                         ("refused", "candidate", 2))
+        self.assertIn("candidate", record["runs"])
+        self.assertEqual([c[0] for c in runner.calls].count("refused"), 1)
+
+    def test_results_root_inside_repository_refuses_before_writes_or_calls(self):
+        self.results = REPO_ROOT / "results" / "c42"
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(self.results.exists())
+
+    def test_persistent_write_subdirectory_symlink_into_repo_refuses(self):
+        self.results.mkdir()
+        (self.results / "improvements").symlink_to(REPO_ROOT,
+                                                     target_is_directory=True)
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+
+    def test_trigger_timestamp_symlink_into_repo_refuses(self):
+        trigger = self.results / "trigger" / SKILL
+        trigger.mkdir(parents=True)
+        (trigger / TS).symlink_to(REPO_ROOT, target_is_directory=True)
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse((self.results / "improvements").exists())
+
     def test_a_flat_single_fixture_skill_exits_2(self):
         rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
         self.assertEqual(rc, 0)  # sanity: writing-adrs itself plans fine
         argv = self.argv()
         argv[0] = "workflow-path-audit"
         buf = io.StringIO()
-        with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("needs more fixtures", buf.getvalue())
@@ -252,7 +377,7 @@ class RefusalTests(PipelineCase):
         argv = self.argv()
         argv[argv.index("--skill-creator") + 1] = str(self.tmp / "nowhere")
         err = io.StringIO()
-        with contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stderr(err):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("--skill-creator", err.getvalue())
@@ -309,7 +434,7 @@ class AcceptTests(PipelineCase):
                    / "SKILL.md").read_text()
         self.assertEqual(applied, self.runner.seen_skill_md["candidate"])
 
-    def test_measurement_uses_the_harness_with_n_trials_on_with_skill(self):
+    def test_measurement_uses_local_eval_with_n_trials_on_with_skill(self):
         evals = [c for c in self.runner.calls if c[0] == "run_eval"]
         self.assertEqual([c[1] for c in evals], ["baseline", "candidate"])
         for _, _, _, argv in evals:
@@ -317,6 +442,7 @@ class AcceptTests(PipelineCase):
             self.assertEqual(flag(argv, "--trials"), "3")
             self.assertEqual(flag(argv, "--timestamp"), TS)
             self.assertEqual(Path(argv[0]), REPO_ROOT / "evals" / SKILL)
+            self.assertFalse(Path(flag(argv, "--results-dir")).is_relative_to(REPO_ROOT))
 
     def test_trigger_half_never_sees_the_validation_prompt(self):
         validation_prompt = " ".join(pse.run_eval.load_fixture(
@@ -362,6 +488,109 @@ class TriggerEvalSetOverrideTests(PipelineCase):
 
 
 class RejectTests(PipelineCase):
+
+    def test_missing_one_trial_is_inconclusive_instead_of_using_survivors(self):
+        class MissingTrialRunner(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    (run_dir / "t2" / SKILL / TS / "bootstrap" / "with_skill"
+                     / "summary.json").unlink()
+                return rc
+
+        runner = MissingTrialRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "rejected")
+        self.assertEqual(record["baseline"]["bootstrap"]["error"], "missing_summary")
+        self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_one_errored_trial_is_inconclusive(self):
+        class ErroredTrialRunner(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    path = (run_dir / "t2" / SKILL / TS / "bootstrap"
+                            / "with_skill" / "summary.json")
+                    summary = json.loads(path.read_text())
+                    summary["error"] = {"type": "nonzero_exit"}
+                    path.write_text(json.dumps(summary))
+                return rc
+
+        runner = ErroredTrialRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["baseline"]["bootstrap"]["error"], "nonzero_exit")
+        self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_partial_judge_manifest_and_malformed_errors_are_inconclusive(self):
+        class PartialRunner(FakeRunner):
+            def __init__(self, fault):
+                super().__init__(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+                self.fault = fault
+
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    if self.fault == "manifest":
+                        (run_dir / "manifest.json").write_text(json.dumps({
+                            "trials": [{"trial": 1, "exit_code": 0},
+                                       {"trial": 2, "exit_code": 1},
+                                       {"trial": 3, "exit_code": 0}]}))
+                    else:
+                        path = (run_dir / "t2" / SKILL / TS / "bootstrap"
+                                / "with_skill" / "summary.json")
+                        summary = json.loads(path.read_text())
+                        if self.fault == "judge":
+                            summary["judge"] = {"error": "unavailable"}
+                        elif self.fault == "empty_type_none":
+                            summary["error"] = {"type": None}
+                        elif self.fault == "empty_type_string":
+                            summary["error"] = {"type": ""}
+                        else:
+                            summary["error"] = "malformed"
+                        path.write_text(json.dumps(summary))
+                return rc
+
+        for fault, expected in (("judge", "judge_error"),
+                                ("manifest", "trial_exit"),
+                                ("malformed", "trial_error"),
+                                ("empty_type_none", "trial_error"),
+                                ("empty_type_string", "trial_error")):
+            with self.subTest(fault=fault):
+                shutil.rmtree(self.results, ignore_errors=True)
+                rc, _, _ = self.run_main(PartialRunner(fault), "--rotation", "2")
+                self.assertEqual(rc, 1)
+                record = self.record()
+                self.assertEqual(record["status"], "rejected")
+                self.assertEqual(record["baseline"]["bootstrap"]["error"], expected)
+                self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_repeated_measurements_use_distinct_empty_directories(self):
+        for offset in (0, 1):
+            runner = FakeRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+            now = NOW + timedelta(seconds=offset)
+            with mock.patch.dict(os.environ, self.env, clear=True), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                rc = pse.main(self.argv("--rotation", "2"), runner=runner, now=now)
+            self.assertEqual(rc, 1)
+            stamp = now.strftime(pse.run_eval.TIMESTAMP_FORMAT)
+            record = json.loads((self.results / "improvements" / SKILL
+                                 / f"{stamp}.json").read_text())
+            self.assertEqual(record["status"], "rejected")
+            for phase in ("baseline", "candidate"):
+                self.assertTrue(all(m["error"] is None
+                                    for m in record[phase].values()))
+            for phase in ("baseline", "candidate"):
+                path = pse.run_paths(self.results, phase, SKILL, stamp)
+                self.assertTrue((path / "t1").is_dir())
+        self.assertNotEqual(pse.run_paths(self.results, "baseline", SKILL, TS),
+                            pse.run_paths(self.results, "baseline", "another-skill", TS))
 
     def test_validation_drop_is_rejected_and_recorded_with_numbers(self):
         runner = FakeRunner(GOOD, {"bootstrap": (4, 4, 7.0),
@@ -682,7 +911,8 @@ class HardeningPipelineTests(PipelineCase):
         argv = self.argv("--dry-run")
         argv[0] = "adam-writing-style"
         err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("--no-judge", err.getvalue())
@@ -862,7 +1092,9 @@ class SubprocessRunnerContractTests(unittest.TestCase):
     """The real Runner's subprocess paths, with stand-in CLIs."""
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="test-issue-71-runner-"))
+        self.tmp = Path(tempfile.mkdtemp(
+            prefix="test-issue-71-runner-",
+            dir=local_eval_tests.TestLocalEval._temp_base()))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def test_propose_sends_the_prompt_on_stdin_with_no_tools(self):
@@ -876,7 +1108,10 @@ class SubprocessRunnerContractTests(unittest.TestCase):
             print(json.dumps({{"result": "the reply"}}))
             """))
         fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(fake)}):
+        home = self.tmp / "home"
+        home.mkdir()
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(fake), "HOME": str(home),
+                                         "PATH": os.environ["PATH"]}, clear=True):
             reply = pse.Runner().propose("the prompt", "model-x")
         self.assertEqual(reply, "the reply")
         seen = json.loads(log.read_text())
@@ -892,20 +1127,323 @@ class SubprocessRunnerContractTests(unittest.TestCase):
         scratch = pse.archive_registry(registry, pse.resolve_ref(registry, "HEAD"),
                                        self.tmp / "scratch")
         self.assertFalse((scratch / ".git").exists())
-        results = self.tmp / "results" / "runs" / "baseline"
-        env = {"CLAUDE_BIN": str(TEST_DIR / "fake-claude"), "FAKE_CLAUDE_MODE": "agent"}
-        with mock.patch.dict(os.environ, env), \
+        results = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+        home = self.tmp / "home"
+        home.mkdir()
+        state = self.tmp / "state"
+        state.mkdir()
+        fake = self.tmp / "claude-dispatch"
+        log = self.tmp / "calls.jsonl"
+        fake.write_text(local_eval_tests.DISPATCHER.format(
+            python=sys.executable, log=str(log), state=str(state),
+            fail=None, plant=None, fake=str(TEST_DIR / "fake-claude"),
+            fake_init=str(TEST_DIR / "fake-claude-init")), encoding="utf-8")
+        fake.chmod(0o755)
+        env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
+               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "LANG": "C.UTF-8", "UNRELATED_INHERITED_VALUE": "test"}
+        with mock.patch.dict(os.environ, env, clear=True), \
                 contextlib.redirect_stdout(io.StringIO()):
             rc = pse.Runner().run_eval(pse.run_eval_argv(
                 SKILL, "adam-agentskills", scratch, results, TS, 2, True))
         self.assertIn(rc, (0, 1))
+        self.assertTrue(log.is_file())
+        self.assertTrue((results / "LOCAL_EXHIBIT").is_file())
+        self.assertTrue((results / "manifest.json").is_file())
+        invocation = json.loads((results / "manifest.json").read_text())["invocation"]
+        self.assertEqual(invocation["trials"], 2)
+        self.assertEqual(invocation["arm"], "with_skill")
+        self.assertIs(invocation["no_judge"], True)
+        self.assertEqual(invocation["registries"], ["adam-agentskills"])
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertNotIn("UNRELATED_INHERITED_VALUE", call["env_names"])
+            self.assertNotEqual(call["claude_bin"], str(fake))
+            self.assertEqual(Path(call["claude_bin"]).parent,
+                             Path(call["path_head"]))
         for name in FIXTURES:
-            arm = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS, name)
-            metrics = pse.fixture_metrics(arm)
+            arm = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+            metrics = pse.fixture_metrics(arm, SKILL, TS, name, 2)
             self.assertIsNone(metrics["error"], name)
             self.assertEqual(metrics["n"], 2)
             self.assertGreater(metrics["total"], 0)
-            self.assertTrue(pse.failure_evidence(arm), name)
+            self.assertTrue(pse.failure_evidence(arm, SKILL, TS, name, 2), name)
+            for k in (1, 2):
+                summary = json.loads((pse.trial_arm_dir(arm, k, SKILL, TS, name)
+                                      / "summary.json").read_text())
+                self.assertIs(summary["local_exhibit"], True)
+
+    def test_real_local_eval_refuses_credential_and_settings_before_cli(self):
+        registry = make_registry(self.tmp / "registry")
+        skill_creator = make_skill_creator(self.tmp / "skill-creator")
+        home = self.tmp / "home"
+        home.mkdir()
+        log = self.tmp / "calls.jsonl"
+        fake = self.tmp / "claude"
+        fake.write_text(f"#!{sys.executable}\n"
+                        f"from pathlib import Path\nPath({str(log)!r}).write_text('called')\n"
+                        "raise SystemExit(97)\n", encoding="utf-8")
+        fake.chmod(0o755)
+        env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
+               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "LANG": "C.UTF-8"}
+        results = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+        for cause in ("credential", "settings"):
+            with self.subTest(cause=cause):
+                if cause == "credential":
+                    env["ANTHROPIC_API_KEY"] = ""
+                else:
+                    env.pop("ANTHROPIC_API_KEY")
+                    (home / ".claude").mkdir()
+                    (home / ".claude" / "settings.json").write_text(
+                        json.dumps({"apiKeyHelper": "unused"}), encoding="utf-8")
+                with mock.patch.dict(os.environ, env, clear=True), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
+                                   "--skill-creator", str(skill_creator),
+                                   "--results-dir", str(self.tmp / "results"),
+                                   "--rotation", "2", "--no-judge"],
+                                  runner=pse.Runner(), now=NOW)
+                self.assertEqual(rc, 2)
+                record = json.loads((self.tmp / "results" / "improvements" / SKILL
+                                     / f"{TS}.json").read_text())
+                self.assertEqual((record["status"], record["phase"],
+                                  record["exit_code"]),
+                                 ("refused", "preflight" if cause == "credential" else "baseline", 2))
+                self.assertFalse(log.exists())
+                self.assertFalse(results.exists())
+                shutil.rmtree(self.tmp / "results")
+
+
+class GuardedRunnerTests(unittest.TestCase):
+    """Always-available stand-ins exercise both launch paths, never a login."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(
+            prefix="test-issue-71-guards-",
+            dir=local_eval_tests.TestLocalEval._temp_base()))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.project = self.tmp / "parent" / "project"
+        self.project.mkdir(parents=True)
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.plugin = make_skill_creator(self.tmp / "plugin")
+        self.loop_log = self.tmp / "loop.json"
+        self.cli_log = self.tmp / "cli.json"
+        self.fake = self.tmp / "fake-cli"
+        self.fake.write_text(f"#!{sys.executable}\n" + textwrap.dedent(f"""\
+            import json, os, shutil
+            from pathlib import Path
+            Path({str(self.cli_log)!r}).write_text(json.dumps({{
+                "env_names": sorted(os.environ), "claude_bin": os.environ["CLAUDE_BIN"],
+                "resolved": shutil.which("claude"),
+                "path_head": os.environ["PATH"].split(os.pathsep)[0],
+                "pythonpath": os.environ.get("PYTHONPATH"),
+                "guard_source": Path(os.environ["CLAUDE_BIN"]).read_text()}}))
+            print(json.dumps({{"result": "reply"}}))
+            """))
+        self.fake.chmod(0o700)
+        # A guard-PATH mutation must still reach only a test-owned stand-in.
+        fallback_bin = self.tmp / "bin"
+        fallback_bin.mkdir()
+        self.fallback = fallback_bin / "claude"
+        shutil.copy2(self.fake, self.fallback)
+        self.env = {"PATH": str(fallback_bin) + os.pathsep + os.environ["PATH"],
+                    "HOME": str(self.home),
+                    "TMPDIR": str(self.tmp), "CLAUDE_BIN": str(self.fake),
+                    "GITHUB_TOKEN": "fixture", "XDG_CONFIG_HOME": str(self.tmp / "xdg"),
+                    "XDG_STATE_HOME": str(self.tmp / "state"),
+                    "UNLISTED_VALUE": "fixture", "PYTHONPATH": str(self.tmp / "untrusted")}
+        self.write_loop()
+
+    def write_loop(self, extra=""):
+        (self.plugin / "scripts" / "run_loop.py").write_text(textwrap.dedent(f"""\
+            import json, os, shutil, subprocess
+            from pathlib import Path
+            Path({str(self.loop_log)!r}).write_text(json.dumps({{
+                "env_names": sorted(os.environ), "claude_bin": os.environ["CLAUDE_BIN"],
+                "resolved": shutil.which("claude"),
+                "path_head": os.environ["PATH"].split(os.pathsep)[0],
+                "pythonpath": os.environ.get("PYTHONPATH"),
+                "guard_source": Path(os.environ["CLAUDE_BIN"]).read_text()}}))
+            subprocess.run(["claude", "-p", "fixture"], capture_output=True, check=False)
+            {extra}
+            print(json.dumps({{"best_description": "stand-in winner"}}))
+            """))
+
+    def write_sentinels(self):
+        source = (f"#!{sys.executable}\nfrom pathlib import Path\n"
+                  f"Path({str(self.cli_log)!r}).write_text('sentinel called')\n"
+                  "raise SystemExit(97)\n")
+        for fake in (self.fake, self.fallback):
+            fake.write_text(source)
+
+    @contextlib.contextmanager
+    def child_context(self, env=None):
+        previous = Path.cwd()
+        try:
+            os.chdir(self.project)
+            with mock.patch.dict(os.environ, self.env if env is None else env, clear=True):
+                yield
+        finally:
+            os.chdir(previous)
+
+    def launch(self, path):
+        if path == "trigger":
+            return pse.Runner().run_description_loop([], cwd=self.project,
+                                                      skill_creator=self.plugin)
+        return pse.Runner().propose("fixture prompt", "model-x")
+
+    def assert_guard_environment(self, seen, path):
+        for name in ("ANTHROPIC_API_KEY", "GITHUB_TOKEN", "XDG_CONFIG_HOME",
+                     "XDG_STATE_HOME", "UNLISTED_VALUE", "CLAUDECODE"):
+            self.assertNotIn(name, seen["env_names"])
+        self.assertEqual(seen["resolved"], seen["claude_bin"])
+        self.assertEqual(str(Path(seen["claude_bin"]).parent), seen["path_head"])
+        self.assertNotEqual(seen["claude_bin"], str(self.fake))
+        tree = ast.parse(seen["guard_source"])
+        imports = {(alias.name, alias.asname) for node in ast.walk(tree)
+                   if isinstance(node, ast.Import) for alias in node.names}
+        self.assertIn(("local_eval_guard", "guard"), imports)
+        self.assertTrue(any(
+            isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name) and node.func.value.id == "guard"
+            and node.func.attr == "check_all_settings" for node in ast.walk(tree)))
+        self.assertEqual(seen["pythonpath"], str(self.plugin) if path == "trigger" else None)
+        self.assertFalse(Path(seen["claude_bin"]).parent.exists(), "guard directory leaked")
+
+    def test_each_path_allow_lists_env_installs_guard_and_preserves_parent(self):
+        for path in ("trigger", "proposal"):
+            with self.subTest(path=path), self.child_context():
+                before = dict(os.environ)
+                self.launch(path)
+                self.assertEqual(dict(os.environ), before)
+                seen = json.loads((self.loop_log if path == "trigger" else self.cli_log).read_text())
+                self.assert_guard_environment(seen, path)
+
+    def test_each_path_refuses_even_empty_credential_before_subprocess(self):
+        for path in ("trigger", "proposal"):
+            for value in ("", "fixture"):
+                with self.subTest(path=path, value=value), \
+                        self.child_context(dict(self.env, ANTHROPIC_API_KEY=value)), \
+                        mock.patch.object(pse.subprocess, "run") as run:
+                    with self.assertRaisesRegex(pse.Refusal, "ANTHROPIC_API_KEY"):
+                        self.launch(path)
+                    run.assert_not_called()
+        self.assertFalse(self.loop_log.exists())
+        self.assertFalse(self.cli_log.exists())
+
+    def test_each_path_guard_refuses_settings_in_actual_cwd_and_ancestor(self):
+        # The stand-in loop deliberately swallows the guarded launch's error
+        # and prints winner JSON; the refusal log must still stop the runner.
+        self.write_sentinels()
+        for path in ("trigger", "proposal"):
+            for directory in (self.project, self.project.parent):
+                with self.subTest(path=path, directory=directory.name):
+                    settings = directory / ".claude" / "settings.json"
+                    settings.parent.mkdir(exist_ok=True)
+                    settings.write_text(json.dumps({"apiKeyHelper": "unused"}))
+                    guards = []
+                    installer = pse.local_eval.install_guard_launcher
+                    def record_install(guard_dir, **kwargs):
+                        guards.append(guard_dir)
+                        return installer(guard_dir, **kwargs)
+                    with self.child_context(), \
+                            mock.patch.object(pse.local_eval, "install_guard_launcher",
+                                              side_effect=record_install), \
+                            self.assertRaisesRegex(pse.Refusal, "apiKeyHelper"):
+                        self.launch(path)
+                    self.assertFalse(self.cli_log.exists(), "CLI sentinel reached")
+                    self.assertEqual(len(guards), 1)
+                    self.assertFalse(guards[0].exists(), "refused guard directory leaked")
+                    settings.unlink()
+
+    def test_actual_guard_refusals_are_persisted_by_pipeline_for_both_paths(self):
+        self.write_sentinels()
+        registry = make_registry(self.tmp / "registry")
+        results = self.tmp / "results"
+        for phase in ("trigger", "proposal"):
+            with self.subTest(phase=phase):
+                runner = FakeRunner(GOOD, GOOD, proposal())
+                def guarded_loop(argv, *, cwd, skill_creator):
+                    (cwd / ".claude" / "settings.json").write_text(
+                        json.dumps({"apiKeyHelper": "unused"}))
+                    return pse.Runner().run_description_loop(
+                        argv, cwd=cwd, skill_creator=skill_creator)
+                method = "run_description_loop" if phase == "trigger" else "propose"
+                launch = guarded_loop if phase == "trigger" else pse.Runner().propose
+                settings = self.project / ".claude" / "settings.json"
+                if phase == "proposal":
+                    settings.parent.mkdir(exist_ok=True)
+                    settings.write_text(json.dumps({"apiKeyHelper": "unused"}))
+                with self.child_context(), mock.patch.object(runner, method, side_effect=launch), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
+                                   "--skill-creator", str(self.plugin), "--results-dir",
+                                   str(results), "--rotation", "2", "--no-judge"],
+                                  runner=runner, now=NOW)
+                self.assertEqual(rc, 2)
+                record = json.loads((results / "improvements" / SKILL / f"{TS}.json").read_text())
+                self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                                 ("refused", phase, 2))
+                self.assertIn("apiKeyHelper", record["reasons"][0])
+                self.assertFalse(self.cli_log.exists(), "CLI sentinel reached")
+                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                                 ["baseline"])
+                shutil.rmtree(results)
+                if settings.exists():
+                    settings.unlink()
+
+    def test_description_guard_rechecks_settings_on_each_cli_launch(self):
+        self.write_loop('Path(".claude").mkdir(exist_ok=True); '
+                        'Path(".claude/settings.json").write_text(json.dumps({"apiKeyHelper": "unused"})); '
+                        'subprocess.run(["claude", "-p", "fixture"], capture_output=True, check=False)')
+        with self.child_context(), self.assertRaisesRegex(pse.Refusal, "apiKeyHelper"):
+            self.launch("trigger")
+        self.assertTrue(self.cli_log.exists(), "first safe launch never ran")
+        self.assert_guard_environment(json.loads(self.cli_log.read_text()), "trigger")
+
+    def test_guard_directory_is_removed_after_subprocess_failure(self):
+        for path in ("trigger", "proposal"):
+            with self.subTest(path=path), self.child_context():
+                guards = []
+                installer = pse.local_eval.install_guard_launcher
+                def record_install(guard_dir, **kwargs):
+                    guards.append(guard_dir)
+                    return installer(guard_dir, **kwargs)
+                with mock.patch.object(pse.local_eval, "install_guard_launcher",
+                                       side_effect=record_install), \
+                        mock.patch.object(pse.subprocess, "run", side_effect=OSError("fixture")):
+                    with self.assertRaises(pse.Refusal):
+                        self.launch(path)
+                self.assertEqual(len(guards), 1)
+                self.assertFalse(guards[0].exists())
+
+    def test_installer_with_child_mapping_resolves_only_child_path(self):
+        guard_dir = self.tmp / "guard"
+        guard_dir.mkdir(mode=0o700)
+        child = {"PATH": str(self.tmp), "HOME": str(self.home),
+                 "CLAUDE_BIN": "fake-cli"}
+        before = dict(os.environ)
+        real = pse.local_eval.install_guard_launcher(guard_dir, environ=child)
+        self.assertEqual(real, str(self.fake))
+        self.assertEqual(dict(os.environ), before)
+        self.assertEqual(child["CLAUDE_BIN"], str(guard_dir / "claude"))
+        self.assertEqual(child["PATH"].split(os.pathsep)[0], str(guard_dir))
+
+    def test_installer_refuses_when_child_has_no_cli(self):
+        guard_dir = self.tmp / "guard"
+        guard_dir.mkdir(mode=0o700)
+        empty_bin = self.tmp / "empty-bin"
+        empty_bin.mkdir()
+        child = {"PATH": str(empty_bin), "HOME": str(self.home)}
+        before = dict(child)
+        with self.assertRaisesRegex(pse.local_eval.Refused, "cannot find the claude CLI"):
+            pse.local_eval.install_guard_launcher(guard_dir, environ=child)
+        self.assertEqual(child, before)
+        self.assertEqual(list(guard_dir.iterdir()), [])
 
 
 def _skill_creator_dir() -> Path | None:
@@ -972,10 +1510,13 @@ class SkillCreatorContractTests(unittest.TestCase):
         argv = pse.description_loop_argv(eval_path, skill_dir, "model-x", tmp / "out")
         argv[argv.index("--max-iterations") + 1] = "2"
         argv[argv.index("--runs-per-query") + 1] = "1"
-        env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
-        with mock.patch.dict(os.environ, env):
+        home = tmp / "home"
+        home.mkdir()
+        skill_creator = _skill_creator_dir()
+        env = {"PATH": os.environ['PATH'], "HOME": str(home), "CLAUDE_BIN": str(fake)}
+        with mock.patch.dict(os.environ, env, clear=True):
             out = pse.Runner().run_description_loop(
-                argv, cwd=project, skill_creator=_skill_creator_dir())
+                argv, cwd=project, skill_creator=skill_creator)
         self.assertEqual(out["iterations_run"], 2)
         self.assertTrue(out["best_description"].startswith("IMPROVED"), json.dumps([(h["description"], h["train_results"], h["test_results"]) for h in out["history"]]))
         self.assertEqual(out["best_test_score"], "2/2")
