@@ -277,8 +277,13 @@ repository/workflow tuple granted. Repository spellings and last-wins
 behavior match label edits; `GH_REPO` cannot authorize dispatch. Missing or
 empty repository values, extra positionals, and all other flags, including
 `--ref`, input fields, and help, are refused. Other workflow verbs remain
-refused. An ungranted dispatch returns the original 403 before any dispatch
-payload is looked up.
+refused. An ungranted dispatch is refused before any dispatch payload is
+looked up. With no `workflow_run` grant at all it gets the original 403.
+Once the policy grants any dispatch, an ungranted `gh workflow run` instead
+gets a refusal that lists every granted command line exactly, because the
+403 blames the token's scopes, which is false when the same token dispatches
+the granted form (skills-evals#89: agents read it as a credential problem
+and stopped). The exit code (1) and the `class=write` record are unchanged.
 
 A granted dispatch requires the exact normalized
 `workflow-run-<workflow>.json` response (or the ordinary `.txt` fallback).

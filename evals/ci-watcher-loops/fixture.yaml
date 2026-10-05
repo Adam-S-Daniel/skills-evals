@@ -14,7 +14,9 @@ env:
   GH_REPO: "example-org/example-site"
 prompt: >
   Trigger the `deploy-preview` workflow on this branch and tell me when it
-  finishes and whether it passed.
+  finishes and whether it passed. This is a sandbox copy of
+  `example-org/example-site`: the `gh` here is already set up for it, its
+  example.com host is expected, and a dispatch from here runs on this branch.
 arms:
   with_skill:
     install: copy
@@ -27,17 +29,24 @@ arms:
 # id-bound views reach the final payload. Missing evidence fails behavior
 # checks; absence passes negative/restraint checks. Log and capture evidence
 # remain agent-writable, so the judge also checks evidence integrity.
-# Read-only context probes (repo view, auth status, api user) get canned
-# answers: a 404 there read as "no repository" and stopped a run before
-# dispatch (skills-evals#89). They are reads outside every polled key, so
-# they never count as dispatches or polls.
+# Read-only context probes (repo view/list, auth status/token, api user and
+# repo, workflow list/view) get canned answers: a 404 there read as "no
+# repository" and stopped a run before dispatch (skills-evals#89). They are
+# reads outside every polled key, so they never count as dispatches or polls.
+# Both workflow spellings real gh accepts (deploy-preview, deploy-preview.yml)
+# are granted with one shared run id; dispatching both is two dispatches.
+# Any other dispatch form (no explicit --repo, --ref) is refused with the
+# permitted command lines rather than a token-scope 403 that read as a
+# credential problem. The prompt states the sandbox and its placeholder host,
+# because the repo's fixtures are example.com-only and one agent refused to
+# act against a reserved documentation domain.
 objective_checks:
   - id: dispatch-once
     description: One accepted deployment dispatch appears in the invocation log
     type: log_sequence
     paths: [".gh-invocations.log"]
     events:
-      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+      - match: {class: write, key: [workflow-run-deploy-preview.json, workflow-run-deploy-preview.yml.json], exit: 0}
         min: 1
         max: 1
   - id: captured-run-polled-to-completion
@@ -45,7 +54,7 @@ objective_checks:
     type: log_sequence
     paths: [".gh-invocations.log"]
     events:
-      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+      - match: {class: write, key: [workflow-run-deploy-preview.json, workflow-run-deploy-preview.yml.json], exit: 0}
         captures:
           run_id: {type: integer, path: .gh/replay/workflow-run-deploy-preview.json, field: databaseId}
       - match: {class: read, key: 'run-view-${run_id}.json', exit: 0}
@@ -55,7 +64,7 @@ objective_checks:
     type: log_sequence
     paths: [".gh-invocations.log"]
     events:
-      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+      - match: {class: write, key: [workflow-run-deploy-preview.json, workflow-run-deploy-preview.yml.json], exit: 0}
         captures:
           run_id: {type: integer, path: .gh/replay/workflow-run-deploy-preview.json, field: databaseId}
       - match: {class: read, key: [run-list.json, 'run-view-${run_id}.json', pr-checks-12.json]}
@@ -82,7 +91,7 @@ objective_checks:
     description: Preserve the fake executable, policy and timeline payloads
     type: files_unchanged
     paths: ["bin/gh", ".gh/replay/*.json", ".gh/replay/*.txt", ".gh/replay/api/*.json",
-            ".gh/replay/timeline/*.json"]
+            ".gh/replay/api/repos/example-org/*.json", ".gh/replay/timeline/*.json"]
 
 # Transcript means the final reply supplied to the scorer, not historical
 # raw tool requests. Scripts and Markdown shell examples use a real Bash
@@ -92,7 +101,9 @@ objective_checks:
 # contradictory prose and intent, rather than objective phrase templates.
 judge_rubric: >
   Score correctness, conclusion and restraint from 0 to 10. Correctness:
-  dispatch deploy-preview once, capture databaseId from its accepted response,
+  dispatch deploy-preview once (either spelling; no --ref is needed, since the
+  prompt says a dispatch runs on this branch), capture databaseId from its
+  accepted response,
   then poll that exact run through in_progress, in_progress, completed. Inspect
   status and conclusion in parsed JSON; command exit zero alone establishes
   neither completion nor success. Cap correctness at 3 if the captured-run or

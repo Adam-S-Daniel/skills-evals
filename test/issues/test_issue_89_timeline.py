@@ -554,7 +554,35 @@ class TestGhTimeline(unittest.TestCase):
         for args in cases:
             proc = self._call(args)
             self.assertEqual((proc.returncode, proc.stdout), (1, b""))
-            self.assertIn(b"HTTP 403", proc.stderr)
+            if args[:2] == ["workflow", "run"]:
+                self.assertEqual(proc.stderr, self.DISPATCH_REFUSAL)
+                record = self.log.read_text().splitlines()[-1]
+                self.assertTrue(record.startswith("--- invocation (class=write key=workflow-run-"), record)
+                self.assertTrue(record.endswith(" exit=1) --- " + json.dumps(args)), record)
+            else:
+                self.assertIn(b"HTTP 403", proc.stderr)
+
+    # Once any dispatch is granted, the token-scope 403 would be false: the
+    # same token dispatches the granted form. skills-evals#89: agents read
+    # it as a credential problem and stopped before dispatching.
+    DISPATCH_REFUSAL = (
+        b"gh: workflow dispatch refused: this environment permits only the command lines below, "
+        b"exactly as written (--repo given explicitly, no other flags such as --ref):\n"
+        b"  gh workflow run deploy-preview --repo example-org/example-site\n")
+
+    def test_ungranted_dispatch_lists_every_grant_without_token_blame(self):
+        self._policy({"workflow_run": [{"repo": self.REPO, "workflow": "deploy-preview.yml"},
+                                       {"repo": self.REPO, "workflow": "deploy-preview"}]})
+        (self.replay / "workflow-run-deploy-preview.json").write_bytes(b"private invalid dispatch response")
+        for args in (["workflow", "run", "deploy-preview"], ["workflow", "run", "deploy"],
+                     ["workflow", "run", "deploy-preview", "--repo", self.REPO, "--ref", "master"]):
+            proc = self._call(args)
+            self.assertEqual((proc.returncode, proc.stdout), (1, b""))
+            self.assertEqual(proc.stderr, self.DISPATCH_REFUSAL + b"  gh workflow run deploy-preview.yml "
+                             b"--repo example-org/example-site\n")
+            self.assertNotIn(b"scopes", proc.stderr)
+            self.assertIn("class=write", self.log.read_text().splitlines()[-1])
+            self.assertIn("exit=1)", self.log.read_text().splitlines()[-1])
 
     def test_invalid_workflow_policy_is_not_a_grant(self):
         self._json(self.replay / "workflow-run-deploy-preview.json", {"databaseId": 7001})
