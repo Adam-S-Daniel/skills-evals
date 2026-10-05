@@ -222,7 +222,13 @@ class TestCiWatcherFixture(unittest.TestCase):
     # (skills-evals#89, local N=3 run, trial 2 in both arms).
     PROBES = [('repo', 'view'), ('repo', 'view', '--json', 'nameWithOwner,url'),
               ('repo', 'view', 'example-org/example-site'),
-              ('api', 'user'), ('api', '/user', '--jq', '.login'), ('auth', 'status')]
+              ('api', 'user'), ('api', '/user', '--jq', '.login'), ('auth', 'status'),
+              # Round 2 (skills-evals#89): each of these 404ed and read as
+              # "the repository does not exist" or went unanswered.
+              ('workflow', 'list'), ('workflow', 'list', '--json', 'name,path'),
+              ('workflow', 'view', 'deploy-preview'), ('workflow', 'view', 'deploy-preview.yml'),
+              ('api', 'repos/example-org/example-site'), ('auth', 'status', '-h', 'github.com'),
+              ('repo', 'list'), ('repo', 'list', 'example-org'), ('auth', 'token')]
 
     def _probe(self, ws):
         for args in self.PROBES:
@@ -264,8 +270,82 @@ class TestCiWatcherFixture(unittest.TestCase):
         self.assertEqual(json.loads((ws / '.gh-timeline-state.json').read_text()),
                          {'counts': {'run-view-73019.json': 3}})
 
+    def test_round_two_probes_answer_consistently_with_the_seeded_repository(self):
+        ws = self._ws()
+        listing = self._gh(ws, 'workflow', 'list', '--json', 'name,path,state')
+        self.assertEqual([(w['name'], w['path'], w['state']) for w in listing],
+                         [('deploy-preview', '.github/workflows/deploy-preview.yml', 'active')])
+        self.assertTrue((ws / listing[0]['path']).is_file())
+        for name in ('deploy-preview', 'deploy-preview.yml'):
+            proc = self._run(ws, str(ws / 'bin/gh'), 'workflow', 'view', name)
+            self.assertEqual((proc.returncode, proc.stdout),
+                             (0, f'deploy-preview - deploy-preview.yml\nID: {listing[0]["id"]}\n'))
+        repo = self._gh(ws, 'api', 'repos/' + self.env['GH_REPO'])
+        self.assertEqual((repo['full_name'], urlparse(repo['html_url']).hostname, repo['permissions']['push']),
+                         (self.env['GH_REPO'], 'example.com', True))
+        for args in (('repo', 'list'), ('repo', 'list', 'example-org')):
+            self.assertEqual([r['nameWithOwner'] for r in self._gh(ws, *args)], [self.env['GH_REPO']])
+        proc = self._run(ws, str(ws / 'bin/gh'), 'auth', 'status', '-h', 'github.com')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('Logged in to example.com as example-operator', proc.stdout)
+        proc = self._run(ws, str(ws / 'bin/gh'), 'auth', 'token')
+        self.assertEqual((proc.returncode, proc.stdout), (0, 'example-sandbox-placeholder\n'))
+        keys = [objective._LOG_RECORD.fullmatch(row).groups()[:3]
+                for row in (ws / '.gh-invocations.log').read_text().splitlines()]
+        self.assertEqual(keys, [('read', key, '0') for key in (
+            'workflow-list.json', 'workflow-view-deploy-preview.json', 'workflow-view-deploy-preview.yml.json',
+            'api/repos/example-org/example-site.json', 'repo-list.json', 'repo-list-example-org.json',
+            'auth-status-github.com.json', 'auth-token.json')])
+
+    def test_yml_dispatch_spelling_is_one_accepted_dispatch(self):
+        replay = SEED / '.gh/replay'
+        self.assertEqual((replay / 'workflow-run-deploy-preview.yml.json').read_bytes(),
+                         (replay / 'workflow-run-deploy-preview.json').read_bytes())
+        ws = self._ws()
+        dispatch = self._gh(ws, 'workflow', 'run', 'deploy-preview.yml', '--repo', self.env['GH_REPO'])
+        self.assertEqual(dispatch['databaseId'], int(ID))
+        for _ in range(3):
+            self._gh(ws, 'run', 'view', ID, '--json', 'status,conclusion')
+        self.assertTrue(all(self._score(ws).values()))
+        self.assertTrue((ws / '.gh-invocations.log').read_text().startswith(
+            '--- invocation (class=write key=workflow-run-deploy-preview.yml.json exit=0) --- '))
+        # Both spellings are two dispatches of one workflow.
+        ws = self._good()
+        self._gh(ws, 'workflow', 'run', 'deploy-preview.yml', '--repo', self.env['GH_REPO'])
+        self._fails_only(ws, 'dispatch-once')
+
+    # Refused forms seen in rounds 1 and 2 of skills-evals#89. Each used to
+    # get a token-scope 403 that agents read as a credential problem.
+    REFUSED = [('workflow', 'run', 'deploy-preview'),
+               ('workflow', 'run', 'deploy-preview.yml', '--ref', 'master'),
+               ('workflow', 'run', 'deploy-preview', '--repo', 'example-org/example-site', '--ref', 'master'),
+               ('workflow', 'run', 'Deploy Preview', '--repo', 'example-org/example-site')]
+
+    def test_refused_dispatch_forms_name_the_permitted_command_lines(self):
+        ws = self._ws()
+        for args in self.REFUSED:
+            with self.subTest(args=args):
+                proc = self._run(ws, str(ws / 'bin/gh'), *args)
+                self.assertEqual((proc.returncode, proc.stdout), (1, ''))
+                self.assertNotIn('scopes', proc.stderr)
+                self.assertNotIn('403', proc.stderr)
+                for name in ('deploy-preview', 'deploy-preview.yml'):
+                    self.assertIn(f'\n  gh workflow run {name} --repo example-org/example-site\n', proc.stderr)
+                record = (ws / '.gh-invocations.log').read_text().splitlines()[-1]
+                self.assertRegex(record, r'^--- invocation \(class=write key=\S+ exit=1\) --- ')
+        scores = self._score(ws, None)
+        self.assertEqual({key for key, passed in scores.items() if not passed}, BEHAVIOR)
+        (ws / 'watch-preview.sh').write_text(GOOD_SCRIPT)
+        proc = self._run(ws, 'bash', 'watch-preview.sh')
+        self.assertEqual((proc.returncode, proc.stdout), (0, 'conclusion=success\n'), proc.stderr)
+        self.assertTrue(all(self._score(ws).values()))
+
     def test_probe_payload_mutation_fails_only_instrument_guard(self):
-        for rel in ('auth-status.txt', 'api/user.json', 'repo-view.json'):
+        for rel in ('auth-status.txt', 'api/user.json', 'repo-view.json',
+                    'workflow-run-deploy-preview.yml.json', 'workflow-list.json',
+                    'workflow-view-deploy-preview.txt', 'workflow-view-deploy-preview.yml.txt',
+                    'api/repos/example-org/example-site.json', 'repo-list.json',
+                    'auth-status-github.com.txt', 'auth-token.txt'):
             with self.subTest(payload=rel):
                 ws = self._good()
                 (ws / '.gh/replay' / rel).write_text('{}\n')
@@ -370,7 +450,8 @@ class TestCiWatcherFixture(unittest.TestCase):
                     self.assertIn(urlparse(value).hostname, {'example.com', 'example.net'})
             inspect(document)
         for path in (SEED / '.gh/replay').rglob('*.txt'):
-            hosts = set(re.findall(r'\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b', path.read_text()))
+            # A workflow file name (deploy-preview.yml) is not a host.
+            hosts = set(re.findall(r'\b(?:[a-z0-9-]+\.)+(?!ya?ml\b)[a-z]{2,}\b', path.read_text()))
             self.assertLessEqual(hosts, {'example.com', 'example.net'}, path)
         self.assertNotIn('73019', self.fixture['prompt'])
         self.assertNotIn('success', (SEED / 'README.md').read_text())

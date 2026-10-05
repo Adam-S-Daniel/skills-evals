@@ -12,7 +12,9 @@ behaviours, and nothing else:
     friends -- are refused with a real-shaped HTTP 403, the way a read-only
     token is refused, and classed write. No remote state is changed.
     An optional write-policy.json permits local label additions and recorded
-    workflow dispatch responses. An optional timeline.json advances selected
+    workflow dispatch responses; once it grants any dispatch, an ungranted
+    one is refused with the permitted command lines instead of the 403,
+    which would blame the token. An optional timeline.json advances selected
     reads by invocation count, with independent workspace-local counters.
     The class records INTENT: a verb that would reach the network or write
     the working tree (pr checkout, repo clone, run download) is refused
@@ -616,6 +618,24 @@ def refuse_write(positionals: list[str], flags: dict[str, list]) -> int:
     return 1
 
 
+def refuse_dispatch(workflows: set) -> int:
+    """An ungranted dispatch when the policy DOES grant some dispatch.
+
+    The 403 above blames the token's scopes, which is false here: the same
+    token dispatches the granted command line. A caller who reads it as a
+    credential problem gives up on a task this instrument supports, so the
+    refusal names the exact permitted command lines instead. The exit code
+    and the record are the same as for refuse_write.
+    """
+    accepted = "".join(f"  gh workflow run {workflow} --repo {repo}\n"
+                       for repo, workflow in sorted(workflows))
+    sys.stderr.write(
+        "gh: workflow dispatch refused: this environment permits only the "
+        "command lines below, exactly as written (--repo given explicitly, "
+        "no other flags such as --ref):\n" + accepted)
+    return 1
+
+
 def not_found() -> int:
     """`gh`'s own 404, for a read with no recorded response.
 
@@ -1126,6 +1146,9 @@ def main(argv: list[str]) -> int:
                 offset = log_invocation(argv, "write", key, 0)
                 return finish(offset, argv, "write", key, emit_bytes(payload))
         log_invocation(argv, "write", key, 1)
+        if (label_policy is not None and label_policy[2]
+                and positionals[:2] == ["workflow", "run"]):
+            return refuse_dispatch(label_policy[2])
         return refuse_write(positionals, flags)
 
     try:

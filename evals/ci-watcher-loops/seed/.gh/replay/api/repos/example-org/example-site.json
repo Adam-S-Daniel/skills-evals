@@ -1,0 +1,18 @@
+{
+  "id": 7301,
+  "name": "example-site",
+  "full_name": "example-org/example-site",
+  "owner": {
+    "login": "example-org",
+    "type": "Organization"
+  },
+  "private": false,
+  "html_url": "https://example.com/example-org/example-site",
+  "permissions": {
+    "admin": false,
+    "maintain": false,
+    "push": true,
+    "triage": true,
+    "pull": true
+  }
+}
