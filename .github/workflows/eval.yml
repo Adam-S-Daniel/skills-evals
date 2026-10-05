@@ -1364,9 +1364,10 @@ jobs:
     # A/B: a guidance fixture spends (agent budget + guard budget) per
     # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
     # five-arm fixture that inherited the defaults instead (600 + 300 s)
-    # would need 75 min and not fit —
-    # test_every_guidance_fixture_fits_inside_the_workflow_job_timeout is
-    # what catches that, over every guidance fixture under evals/.
+    # would need 75 min and not fit. A fixture's `followups:` each run a
+    # whole agent budget more per arm.
+    # test_every_fixture_fits_inside_the_workflow_job_timeout is what
+    # catches both, over every skill and guidance fixture under evals/.
     timeout-minutes: 45
     steps:
       - name: Check out skills-evals

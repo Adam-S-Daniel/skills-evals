@@ -522,14 +522,6 @@ class TestCiWatcherFixture(unittest.TestCase):
         scores = self._score(self._ws(), self._turns(['Dispatched.', '', '']))
         self.assertFalse(scores['final-conclusion-token'])
 
-    def test_three_turns_per_arm_fit_inside_the_eval_job(self):
-        workflow = yaml.safe_load((ROOT / '.github/workflows/eval.yml').read_text())
-        job_s = workflow['jobs']['eval']['timeout-minutes'] * 60
-        judge_s = (self.fixture.get('judge') or {}).get('timeout_s', 120)
-        turns = 1 + len(self.fixture['followups'])
-        worst = len(self.fixture['arms']) * (turns * self.fixture['timeout_s'] + judge_s)
-        self.assertLess(worst, job_s * 0.75, (turns, self.fixture['timeout_s'], job_s))
-
 
 class TestCiWatcherShellCapture(unittest.TestCase):
     def _reply(self, text):
