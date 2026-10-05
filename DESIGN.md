@@ -194,8 +194,11 @@ must resolve inside the final workspace, including symlink resolution. Direct
 
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
-`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
-the local harness's guard launcher. Both CI and local scoring use the same
+`claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
+is a directory containing just a symlink to the harness's own `node` (never
+one inside the workspace) appended, so PATH lookups of `node` work on hosts
+such as GitHub runners that install it in `/usr/local/bin`. It inherits no
+credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
 spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
