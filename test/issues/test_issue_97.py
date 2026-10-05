@@ -3797,9 +3797,9 @@ class TestIssue97(unittest.TestCase):
         inputs = (triggers["workflow_dispatch"] or {}).get("inputs") or {}
         self.assertIn("fixture", inputs)
         self.assertEqual(inputs["fixture"].get("default"), "evals/workflow-path-audit",
-                         "the scheduled run keeps its default")
+                         "manual dispatch keeps its default")
         self.assertFalse(inputs["fixture"].get("required"),
-                         "the schedule passes no inputs, so it must not be required")
+                         "manual dispatch can omit the fixture input")
 
     def test_the_fixture_input_is_read_from_the_event_file_never_interpolated(self):
         # `${{ inputs.fixture }}` inside a run: block is a shell-injection
@@ -3851,7 +3851,7 @@ class TestIssue97(unittest.TestCase):
         event_path.write_text(json.dumps(event if event is not None else {}),
                               encoding="utf-8")
         # A real runner always provides GITHUB_OUTPUT (the step writes the
-        # `eval_key` job output there for the `publish` job, B1 round 4).
+        # validated `eval_key` there; publication uses the matching matrix key).
         env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
                    RUNNER_TEMP=str(tmp), GITHUB_OUTPUT=str(tmp / "gh-output"))
         proc = subprocess.run(["bash", "-c", self._validation_script()],
@@ -3874,13 +3874,13 @@ class TestIssue97(unittest.TestCase):
                 proc = self._run_validation({"inputs": {"fixture": fixture}})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, fixture)
-                # B1 (round 4 on #209): the job output `publish` reads for
-                # its commit message is exactly the validated key, one line.
+                # The selection output is exactly the validated key, one line;
+                # the planner gives publication the same per-fixture key.
                 self.assertEqual(
                     proc.output, f"eval_key={fixture[len('evals/'):]}\n")
 
     def test_the_validation_step_defaults_when_the_event_carries_no_input(self):
-        # The scheduled run: no `inputs` in the event payload at all.
+        # Manual dispatch may omit `inputs` or leave the fixture input empty.
         for event in ({}, {"inputs": {}}, {"inputs": {"fixture": ""}}):
             with self.subTest(event=event):
                 proc = self._run_validation(event)

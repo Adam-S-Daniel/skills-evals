@@ -1,0 +1,9 @@
+fixtures:
+  - path: evals/workflow-path-audit
+    readiness: "Current scheduled fixture; local smoke: with 8 vs without 7."
+  - path: evals/embeddable-tool-pages
+    readiness: "Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
+  - path: evals/review-bash-ci-reliability
+    readiness: "Local N=3 judged baseline: objective with 8/11 vs without 5.67/11; judge 6.05 vs 4.95."
+  - path: evals/skills-doctor/bucketed-account-store
+    readiness: "Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
