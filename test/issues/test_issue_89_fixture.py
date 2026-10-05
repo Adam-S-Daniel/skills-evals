@@ -10,6 +10,7 @@ import ast
 import copy
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -216,6 +217,60 @@ class TestCiWatcherFixture(unittest.TestCase):
         self._gh(ws, 'run', 'list')
         self.assertTrue(all(self._score(ws).values()))
 
+    # Read-only context probes an agent runs before dispatching. A 404 here
+    # read as "no GitHub repository" and stopped a trial before dispatch
+    # (skills-evals#89, local N=3 run, trial 2 in both arms).
+    PROBES = [('repo', 'view'), ('repo', 'view', '--json', 'nameWithOwner,url'),
+              ('repo', 'view', 'example-org/example-site'),
+              ('api', 'user'), ('api', '/user', '--jq', '.login'), ('auth', 'status')]
+
+    def _probe(self, ws):
+        for args in self.PROBES:
+            proc = self._run(ws, str(ws / 'bin/gh'), *args)
+            self.assertEqual(proc.returncode, 0, (args, proc.stderr))
+
+    def test_context_probes_answer_from_the_seeded_repository(self):
+        ws = self._ws()
+        for args in (('repo', 'view'), ('repo', 'view', '--json', 'nameWithOwner'),
+                     ('repo', 'view', self.env['GH_REPO'])):
+            with self.subTest(args=args):
+                payload = self._gh(ws, *args)
+                self.assertEqual(payload['nameWithOwner'], self.env['GH_REPO'])
+                self.assertEqual(urlparse(payload['url']).hostname, 'example.com')
+        for args in (('api', 'user'), ('api', '/user', '--jq', '.login')):
+            with self.subTest(args=args):
+                self.assertEqual(self._gh(ws, *args)['login'], 'example-operator')
+        proc = self._run(ws, str(ws / 'bin/gh'), 'auth', 'status')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn('Logged in to example.com as example-operator', proc.stdout)
+        records = (ws / '.gh-invocations.log').read_text().splitlines()
+        self.assertEqual(len(records), 6)
+        for record, key in zip(records, ['repo-view.json'] * 2 + ['repo-view-example-org-example-site.json']
+                               + ['api/user.json'] * 2 + ['auth-status.json']):
+            self.assertTrue(record.startswith(f'--- invocation (class=read key={key} exit=0) --- '), record)
+
+    def test_context_probes_are_neither_dispatches_nor_polls(self):
+        ws = self._ws()
+        self._probe(ws)
+        scores = self._score(ws, None)
+        self.assertEqual({key for key, passed in scores.items() if not passed}, BEHAVIOR)
+        ws = self._ws()
+        self._probe(ws)
+        (ws / 'watch-preview.sh').write_text(GOOD_SCRIPT)
+        proc = self._run(ws, 'bash', 'watch-preview.sh')
+        self.assertEqual((proc.returncode, proc.stdout), (0, 'conclusion=success\n'), proc.stderr)
+        self._probe(ws)
+        self.assertTrue(all(self._score(ws).values()))
+        self.assertEqual(json.loads((ws / '.gh-timeline-state.json').read_text()),
+                         {'counts': {'run-view-73019.json': 3}})
+
+    def test_probe_payload_mutation_fails_only_instrument_guard(self):
+        for rel in ('auth-status.txt', 'api/user.json', 'repo-view.json'):
+            with self.subTest(payload=rel):
+                ws = self._good()
+                (ws / '.gh/replay' / rel).write_text('{}\n')
+                self._fails_only(ws, 'instrument-unchanged')
+
     def test_unsupported_script_constructs_do_not_invalidate_split_captures(self):
         for construct in ['[[ -n preview ]]', 'n=0; n=$((n+1))',
                           'case preview in preview) : ;; esac',
@@ -314,6 +369,9 @@ class TestCiWatcherFixture(unittest.TestCase):
                 elif isinstance(value, str) and value.startswith(('https://', 'http://')):
                     self.assertIn(urlparse(value).hostname, {'example.com', 'example.net'})
             inspect(document)
+        for path in (SEED / '.gh/replay').rglob('*.txt'):
+            hosts = set(re.findall(r'\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b', path.read_text()))
+            self.assertLessEqual(hosts, {'example.com', 'example.net'}, path)
         self.assertNotIn('73019', self.fixture['prompt'])
         self.assertNotIn('success', (SEED / 'README.md').read_text())
         self.assertNotIn('model', self.fixture)
