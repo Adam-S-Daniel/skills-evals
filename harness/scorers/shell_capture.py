@@ -15,6 +15,19 @@ def _literal(node):
         return re.sub(r'\\(.)', r'\1', text, flags=re.S)
     if node.type == 'raw_string':
         return text[1:-1]
+    if node.type == 'ansi_c_string':
+        # Decode only $'...' escapes that can spell a command word; any other
+        # escape makes the word non-literal.
+        body = text[2:-1]
+        escape = r"\\(x[0-9A-Fa-f]{1,2}|[0-7]{1,3}|[\\'\"])"
+        if '\\' in re.sub(escape, '', body):
+            return None
+        def decode(found):
+            token = found.group(1)
+            if token[0] == 'x':
+                return chr(int(token[1:], 16))
+            return chr(int(token, 8)) if token[0] in '01234567' else token
+        return re.sub(escape, decode, body)
     if node.type == 'string':
         if any(child.type != 'string_content' for child in node.named_children):
             return None
@@ -32,18 +45,26 @@ def _command_words(node):
             if word is not None]
 
 
-def _sequence(nodes, states):
+def _sequence(nodes, states, functions):
     for node in nodes:
-        states, unsafe = _flow(node, states)
+        states, unsafe = _flow(node, states, functions)
         if unsafe:
             return states, True
     return states, False
 
 
-def _flow(node, states):
-    """Track dispatch along Tree-sitter paths without joining exclusive branches."""
+def _flow(node, states, functions):
+    """Track dispatch along Tree-sitter paths without joining exclusive branches.
+
+    `functions` maps names defined so far to their bodies; a body is analyzed
+    where the function is called, not where it is defined.
+    """
+    if node.type == 'function_definition':
+        name = node.child_by_field_name('name')
+        functions[name.text.decode('utf-8')] = node.child_by_field_name('body')
+        return states, False
     if node.type == 'command':
-        states, unsafe = _sequence(node.children, states)
+        states, unsafe = _sequence(node.children, states, functions)
         if unsafe:
             return states, True
         words = _command_words(node)
@@ -51,7 +72,23 @@ def _flow(node, states):
             return states, True
         if words[:3] == ['gh', 'workflow', 'run']:
             return {True}, False
+        if words and words[0] in functions:
+            # Remove the definition while its body runs, so recursion ends.
+            body = functions.pop(words[0])
+            try:
+                return _flow(body, states, functions)
+            finally:
+                functions[words[0]] = body
         return states, False
+    if node.type in {'for_statement', 'c_style_for_statement', 'while_statement'}:
+        # A second pass carries one iteration's states into the next; with
+        # two possible states that reaches a fixed point. Zero iterations
+        # keep the incoming states.
+        once, unsafe = _sequence(node.children, states, functions)
+        if unsafe:
+            return states, True
+        twice, unsafe = _sequence(node.children, states | once, functions)
+        return states | once | twice, unsafe
     if node.type == 'if_statement':
         # Conditions run in order until one selects its body; each body is an
         # exclusive branch entered from the states its condition left behind.
@@ -65,9 +102,9 @@ def _flow(node, states):
         outputs, remaining, has_else = set(), states, False
         for keyword, parts in segments:
             if keyword in {'if', 'elif'}:
-                remaining, unsafe = _sequence(parts, remaining)
+                remaining, unsafe = _sequence(parts, remaining, functions)
             elif keyword in {'then', 'else'}:
-                branch, unsafe = _sequence(parts, remaining)
+                branch, unsafe = _sequence(parts, remaining, functions)
                 outputs |= branch
                 has_else |= keyword == 'else'
             else:
@@ -77,24 +114,28 @@ def _flow(node, states):
         return outputs | (set() if has_else else remaining), False
     if node.type == 'case_statement':
         subject = node.child_by_field_name('value')
-        states, unsafe = _sequence([] if subject is None else [subject], states)
+        states, unsafe = _sequence([] if subject is None else [subject], states, functions)
         if unsafe:
             return states, True
-        # Each arm is entered from the same states. No arm may match, so the
-        # incoming states also continue past esac.
-        outputs = set(states)
+        # Each arm is entered from the incoming states. An arm ending in `;&`
+        # falls through to the next arm's body and `;;&` goes on testing the
+        # next patterns, so either carries its output into the next arm.
+        # No arm may match, so the incoming states also continue past esac.
+        outputs, carried = set(states), set()
         for item in node.children:
-            if item.type == 'case_item':
-                branch, unsafe = _sequence(item.children, states)
-                if unsafe:
-                    return states, True
-                outputs |= branch
+            if item.type != 'case_item':
+                continue
+            branch, unsafe = _sequence(item.children, states | carried, functions)
+            if unsafe:
+                return states, True
+            outputs |= branch
+            carried = branch if item.children[-1].type in {';&', ';;&'} else set()
         return outputs, False
-    return _sequence(node.children, states)
+    return _sequence(node.children, states, functions)
 
 
 def _unsafe_capture(root):
-    return _flow(root, {False})[1]
+    return _flow(root, {False}, {})[1]
 
 
 def _mentions_dispatch(text):
@@ -208,11 +249,14 @@ def _substitutions(text, *, prose=False):
                 # Case pattern ')' is a lexical delimiter of an arm, not of
                 # its enclosing substitution: keep the whole case statement
                 # inside its candidate so the parser sees every arm.
-                if cases and cases[-1] == 'body' and text.startswith(';;', cursor):
+                terminator = next((token for token in (';;&', ';;', ';&')
+                                   if text.startswith(token, cursor)), None)
+                if cases and cases[-1] == 'body' and terminator:
+                    # `;;`, `;&` and `;;&` all end an arm; the next word is a
+                    # pattern or the `esac` that closes the statement.
                     cases[-1] = 'pattern'
-                    # The next word may be `esac`, which closes the statement.
                     command_start = True
-                    cursor += 2
+                    cursor += len(terminator)
                     continue
                 if char.isalpha() and (cursor == 0 or text[cursor - 1] in ' \t\r\n;|&()<>'):
                     end = cursor

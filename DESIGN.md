@@ -141,7 +141,10 @@ log paths are read in their listed order, not by clock time.
 each `$(...)` and backtick body lexically, respecting quotes, escapes, comments,
 heredocs, arithmetic and case arms, then parses only that body with the shared
 Tree-sitter entry point (`scorers/bash_ast.py`). `if`/`elif`/`else` and `case`
-arms are exclusive branches. A body that does not parse is ignored unless it
+arms are exclusive branches, except that an arm ending in `;&` or `;;&` carries
+its states into the next arm. Loop bodies are followed for a second iteration,
+function bodies are analyzed where they are called, and `$'...'` words are
+decoded for `\xHH`, octal and quote escapes. A body that does not parse is ignored unless it
 contains `gh workflow run`, in which case the check fails closed; invalid
 syntax elsewhere never fails the whole script.
 

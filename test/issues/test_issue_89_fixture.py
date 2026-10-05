@@ -531,6 +531,47 @@ class TestCiWatcherShellCapture(unittest.TestCase):
                 parse_bash(body + '\n')
                 self.assertEqual(self._reply('```bash\n' + script + '\n```'), script in safe)
 
+    def test_case_terminators_fall_through_or_end_the_arm(self):
+        # (script, safe): `;;` ends the case; `;&` runs the next body; `;;&`
+        # tests the next patterns. Each terminator also ends the arm lexically.
+        table = [
+            ('id=$(case x in x) gh workflow run d ;; x) gh run list ;; esac)', True),
+            ('id=$(case x in x) gh workflow run d ;& y) gh run list ;; esac)', False),
+            ('id=$(case x in x) gh workflow run d ;;& x) gh run list ;; esac)', False),
+            ('id=$(case x in x) gh workflow run d ;& y) : ;; z) gh run list ;; esac)', True),
+            ('id=$(case x in x) gh workflow run d ;& y) : ;& z) gh run list ;; esac)', False),
+            ('id=$(case x in a) : ;& x) gh workflow run d; gh run list ;; esac)', False),
+            ('id=$(case x in a) : ;;& x) gh workflow run d; gh run list ;; esac)', False),
+            ('id=$(case x in a) : ;& x) gh workflow run d ;; esac); y=$(gh run list)', True),
+        ]
+        for script, safe in table:
+            with self.subTest(script=script):
+                body, complete = shell_capture._substitutions(script)[0]
+                self.assertTrue(complete)
+                self.assertTrue(body.endswith('esac'))
+                self.assertEqual(self._reply('```bash\n' + script + '\n```'), safe)
+
+    def test_loops_functions_and_ansi_c_words_are_followed(self):
+        table = [
+            ('x=$(for i in 1 2; do gh run list; gh workflow run x; done)', False),
+            ('x=$(while true; do gh run list; gh workflow run x; done)', False),
+            ('x=$(until false; do gh run list; gh workflow run x; done)', False),
+            ('x=$(for ((i=0;i<2;i++)); do gh run list; gh workflow run x; done)', False),
+            ('x=$(for i in 1 2; do gh run list; done; gh workflow run x)', True),
+            ('x=$(f() { gh run list; }; gh workflow run x; f)', False),
+            ('x=$(function f { gh workflow run x; }; f; gh run list)', False),
+            ('x=$(f() { gh run list; }; f; gh workflow run x)', True),
+            ('x=$(f() { gh workflow run x; gh run list; })', True),
+            ('x=$(f() { f; }; f)', True),
+            ("x=$($'gh' workflow run x; gh run list)", False),
+            ("x=$($'g\\x68' workflow run x; gh run list)", False),
+            ("x=$($'g\\150' workflow run x; gh run list)", False),
+            ("x=$(echo $'it\\'s'; gh run list)", True),
+        ]
+        for script, safe in table:
+            with self.subTest(script=script):
+                self.assertEqual(self._reply('```bash\n' + script + '\n```'), safe)
+
     def test_unavailable_parser_raises_instead_of_passing(self):
         from scorers import bash_ast
         with mock.patch.dict(sys.modules, {'tree_sitter': None}):
