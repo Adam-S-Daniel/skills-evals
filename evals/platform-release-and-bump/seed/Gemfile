@@ -1,0 +1,2 @@
+source "https://example.com/gems"
+gem "cms-platform-theme", git: "https://github.com/Adam-S-Daniel/cms-platform", tag: "v0.1.103"

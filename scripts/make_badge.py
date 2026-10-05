@@ -43,6 +43,10 @@ NOT the wall clock) so a stale badge is self-evident: the newest run that
 contributed to the aggregate, or — when nothing was usable — the newest run
 directory found. Output is deterministic for the same inputs. Stdlib only.
 
+Also accepts a nested skill fixture as `<skill>/<fixture>`; its summaries
+are under results/<skill>/<timestamp>/<fixture>/, and only that fixture
+contributes to its own badge and run window.
+
 Also accepts a guidance eval by its results-tree name, `guidance/<section id>`
 (#97), whose arms are with_guidance/without_guidance rather than
 with_skill/without_skill and whose label reads "guidance eval: <id>".
@@ -88,7 +92,7 @@ def _validate_name(name: str) -> list[str]:
             or any(p in (".", "..") for p in parts)):
         raise ValueError(
             f"invalid eval name {name!r}: expected `<skill>` or "
-            "`guidance/<section id>` with no path metacharacters")
+            "`<skill>/<fixture>` or `guidance/<section id>` with no path metacharacters")
     return parts
 
 
@@ -116,10 +120,14 @@ def runs_newest_first(results_dir: Path, skill: str) -> list[Path]:
     Run dirs are UTC timestamps (%Y%m%dT%H%M%SZ), so reverse-lexicographic
     order is reverse-chronological order — no stat() calls, no wall clock.
     """
-    skill_dir = results_dir / skill
+    parts = skill.split("/")
+    nested = len(parts) == 2 and not skill.startswith(GUIDANCE_PREFIX)
+    skill_dir = results_dir / (parts[0] if nested else skill)
     if not skill_dir.is_dir():
         return []
-    return sorted((d for d in skill_dir.iterdir() if d.is_dir()), reverse=True)
+    return sorted((d for d in skill_dir.iterdir()
+                   if d.is_dir() and (not nested or (d / parts[1]).is_dir())),
+                  reverse=True)
 
 
 def run_date(run_dir: Path) -> str:
@@ -289,7 +297,10 @@ def usable_units(results_dir: Path, skill: str,
     treatment, control = arm_names(skill)
     out = []
     for run_dir in runs_newest_first(results_dir, skill)[:max(1, window)]:
-        for unit_dir in unit_dirs(run_dir, treatment, control):
+        nested = "/" in skill and not skill.startswith(GUIDANCE_PREFIX)
+        units = ([run_dir / skill.split("/", 1)[1]] if nested else
+                 unit_dirs(run_dir, treatment, control))
+        for unit_dir in units:
             with_stats = arm_stats(unit_dir, treatment)
             without_stats = arm_stats(unit_dir, control)
             if with_stats is None or without_stats is None:

@@ -1,0 +1,5 @@
+Editorial label audit
+Audit open editorial entries
+HTTP 403: Resource not accessible by integration (https://api.github.com/repos/example-org/example-site/issues/512/labels)
+HTTP 403: Resource not accessible by integration (https://api.github.com/repos/example-org/example-site/issues/518/labels)
+Process completed with exit code 1.

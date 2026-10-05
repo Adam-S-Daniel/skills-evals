@@ -1,0 +1,14 @@
+name: Editorial label audit
+on:
+  schedule:
+    - cron: '15 5 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  editorial-label-audit:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/editorial-label-audit.yml@v0.1.88
+    with:
+      platform_repo: Adam-S-Daniel/cms-platform
+      platform_ref: v0.1.88
+    secrets: inherit
