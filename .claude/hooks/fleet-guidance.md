@@ -158,10 +158,10 @@ hold before writing.
 - **`mcp__github__*` — session-provisioned**, not in `ListConnectors`. The
   only one with Actions tools (`actions_*`), job logs (`get_job_logs`),
   auto-merge and review-thread resolution. Reach: the attached repos.
-- **`mcp__github-mcp__*` — the claude.ai org connector `github-mcp`**, listed
-  by `ListConnectors`. A strict subset: same reads and
-  PR/issue/merge/push/delete writes; no Actions, job logs, auto-merge or
-  review threads. Reach: a GitHub App allowlist INDEPENDENT of the
+- **`github-mcp` — the claude.ai org connector**, listed by
+  `ListConnectors`; its tool prefix varies by surface. A strict subset:
+  same reads and PR/issue/merge/push/delete writes; no Actions, job logs,
+  auto-merge or review threads. Reach: a GitHub App allowlist INDEPENDENT of the
   attached repos. **Probe for it by connector NAME, never a remembered
   prefix** (`mcp__b26ebb34-…__*` until 2026-08-28). It CAN check a PR —
   `pull_request_read` with `method: "get_check_runs"` and `"get_status"`;
@@ -325,10 +325,8 @@ reusable-workflow ref is for review to catch.
 
 ## A test that can signal can kill every session
 
-2026-10-04: a skills-evals test ([#250](https://github.com/Adam-S-Daniel/skills-evals/pull/250))
-mocked `Popen`; cleanup's `os.killpg(proc.pid, SIGKILL)` hit the mock.
-`MagicMock` converts to the int `1` and `killpg(1, sig)` is `kill(-1, sig)`:
-every user process died.
+2026-10-04: a mocked pid became `kill(-1, SIGKILL)`; every user process died
+([evidence](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/evidence/2026-10-04-killpg-on-a-mocked-pid.md)).
 
 - **Code that signals refuses any pid or group but an `int` > 1**, before the
   call.
@@ -431,16 +429,15 @@ Then say it once, naming the snippet's home (adam-agentskills'
 marketplace add Adam-S-Daniel/adam-agentskills` and install the plugins wanted;
 marketplace behind → `claude plugin marketplace update adam-agentskills`;
 install behind → below; both current → silence.
-The clone (that list's `installLocation`; never assume it) auto-updates while
-the installed bundle (`installPath`) never moves, so check the INSTALL (the
-owner's laptop, 2026-08-31: 381 commits behind): after the refresh,
-compare each `gitCommitSha` in `~/.claude/plugins/installed_plugins.json`
-with `git -C <clone> rev-parse HEAD` — equal is current, another sha behind,
-none unknown. The clone is `--depth 1`, so `merge-base`/`rev-list` exit 128.
-**`claude plugin update` may not fix it, yet says it did** (it gates on
-the `version` string alone; registry ADR 0009) — uninstall and reinstall
-instead. An update changes what loads next session; a marketplace
-refresh does not move a federated bundle. Neither belongs in a repo's `AGENTS.md`.
+Use CLI ≥ 2.1.280 for recorded commits (older updates kept stale SHAs).
+After refreshing the clone (`installLocation`), compare each `gitCommitSha`
+in `~/.claude/plugins/installed_plugins.json` with `git -C <clone> rev-parse HEAD`:
+equal is current, different needs inspection, missing is unknown. Locate the
+bundle via `installPath`; a marketplace refresh does not update it.
+The clone is `--depth 1`, so ancestry/count checks may exit 128.
+Try `claude plugin update`, then recheck; if still stale, uninstall/reinstall
+(registry ADR 0009's version-gate case). Updates load next session. Neither
+belongs in a repo's `AGENTS.md`.
 
 ## Git practices
 

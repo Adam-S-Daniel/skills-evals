@@ -3,8 +3,8 @@
 delivery guard, plus the per-issue test discovery this file is itself the
 first user of.
 
-Hermetic, like the rest of the suite: CLAUDE_BIN always points at
-test/fake-claude, no network, no wall-clock, and — asserted below — never a
+Hermetic, like the rest of the suite: CLAUDE_BIN points at a test-owned
+stand-in, no network, no wall-clock, and — asserted below — never a
 write into the real ~/.claude/CLAUDE.md.
 
 This module is discovered and run by test/run_tests.py (see
@@ -202,6 +202,13 @@ class TestIssue97(unittest.TestCase):
 
     maxDiff = None
 
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="issue97-cli-")
+        self.addCleanup(self.temp.cleanup)
+        self.cli = Path(self.temp.name) / "cli-stub"
+        self.cli.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+        self.cli.chmod(0o700)
+
     # ------------------------------------------------------------------
     # Per-issue test discovery (the structural half of this PR)
     #
@@ -248,13 +255,22 @@ class TestIssue97(unittest.TestCase):
             raise unittest.SkipTest(reason)
         # The caller may add a throwaway-memory path, but may never clear the
         # marker that makes a recursively launched suite stand down.
-        env = dict(os.environ)
+        env = dict(os.environ, CLAUDE_BIN=str(self.cli))
         env.update(env_extra or {})
         env[CHILD_ENV] = "1"
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
             timeout=900)
+
+    def test_child_suite_uses_a_test_owned_cli(self):
+        self._skip_in_child()
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": "/missing/cli"}), \
+                mock.patch.object(subprocess, "run") as run:
+            self._run_suite()
+        child_env = run.call_args.kwargs["env"]
+        self.assertEqual(child_env["CLAUDE_BIN"], str(self.cli))
+        self.assertTrue(os.access(self.cli, os.X_OK))
 
     @staticmethod
     def _ran_counts(output: str) -> list[int]:
