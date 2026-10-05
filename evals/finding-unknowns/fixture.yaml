@@ -46,7 +46,7 @@ objective_checks:
 
 judge_rubric: >
   Rank all three drafts best to worst for the pre-implementation unknowns pass
-  requested in TASK.md. Score each draft 0-10 on the required dimensions
+  requested by the prompt. Score each draft 0-10 on the required dimensions
   "specificity", "register match", and "absence of corporate filler", with a
   one-sentence rationale per dimension. Prioritize factual accuracy, useful
   operator questions, and restraint over length or polished wording. The draft

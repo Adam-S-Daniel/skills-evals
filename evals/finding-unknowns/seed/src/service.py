@@ -15,7 +15,7 @@ def export_response(rows: Iterable[Mapping[str, object]]) -> tuple[str, Iterable
 
 
 def proposed_export_response(rows: Iterable[Mapping[str, object]]) -> tuple[str, Iterable[str]]:
-    """Prototype route; behavior still needs a customer decision."""
+    """Prototype route for the new export."""
     row_iter = iter(rows)
     first = next(row_iter, None)
     if first is None:

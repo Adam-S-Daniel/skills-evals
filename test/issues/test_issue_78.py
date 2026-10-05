@@ -163,6 +163,43 @@ class TestIssue78(unittest.TestCase):
                 reply += f"\nSee {written}.\n"
                 self.assertEqual(self._score(reply)[ids[path]], expected)
 
+    def test_no_seed_file_carries_the_reference_answers(self):
+        def words(text):
+            return text.lower().split()
+
+        def shingles(tokens, size=8):
+            return {tuple(tokens[i:i + size]) for i in range(len(tokens) - size + 1)}
+
+        references = {name: words((EVAL / "references" / f"{name}.md").read_text(
+            encoding="utf-8")) for name in ("strong", "shallow")}
+        self.assertGreater(len(references["strong"]), 100)
+
+        def leaks(root):
+            found = []
+            for path in sorted(root.rglob("*")):
+                if not path.is_file():
+                    continue
+                tokens = words(path.read_bytes().decode("utf-8", "ignore"))
+                for name, ref in references.items():
+                    joined = " ".join(ref)
+                    if joined in " ".join(tokens) or shingles(tokens) & shingles(ref):
+                        found.append(f"{path.relative_to(root)} carries {name}")
+            return found
+
+        self.assertEqual(leaks(SEED), [])
+        for label, mutate in (
+            ("copy under another name", lambda ws: (ws / "docs/notes.txt").write_text(
+                self.strong, encoding="utf-8")),
+            ("embedded in another file", lambda ws: (ws / "TASK.md").write_text(
+                (ws / "TASK.md").read_text() + "\n" + self.strong, encoding="utf-8")),
+            ("one reflowed paragraph", lambda ws: (ws / "src/hint").write_text(
+                " ".join(self.strong.split()[20:60]), encoding="utf-8")),
+        ):
+            with self.subTest(label=label):
+                workspace = self._copy_seed(label.replace(" ", "-"))
+                mutate(workspace)
+                self.assertTrue(leaks(workspace))
+
     def test_seed_test_fails_then_minimal_fix_passes_in_scratch(self):
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"

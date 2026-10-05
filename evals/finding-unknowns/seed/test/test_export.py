@@ -1,4 +1,4 @@
-"""One acceptance criterion is already fixed; others need clarification."""
+"""Acceptance tests for the proposed export."""
 
 import unittest
 
