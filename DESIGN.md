@@ -631,7 +631,7 @@ yet" must stay distinguishable.)
 
 | Skill | Decision | Reason |
 |---|---|---|
-| `test-canary` | no A/B | delivery probe; covered by the propagation arms |
+| `test-canary` | no A/B | internal canary; no propagation arm loads it, so its delivery probe is not built and no open issue tracks it (closed [#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17) built the adam-agentskills arms only) |
 | `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
