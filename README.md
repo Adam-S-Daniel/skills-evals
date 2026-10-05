@@ -119,6 +119,10 @@ evals/
       fixture.yaml         # eval dir of its own — judge.mode: pairwise
       seed/                # the material the writing is drawn from
       references/          # the committed drafts the judge ranks against
+  finding-unknowns/        # Class C: repo-grounded questions before building
+    fixture.yaml           # three path citations, source restraint, pairwise rubric
+    seed/                  # small export service, test, and architecture decision
+    references/            # hand-written strong and shallow replies, outside seed
 scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
