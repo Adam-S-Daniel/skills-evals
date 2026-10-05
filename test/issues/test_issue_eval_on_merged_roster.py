@@ -295,6 +295,10 @@ class TestTheWaitJobsShape(_Scripts):
         # and no env); the wait and sweep steps themselves use no action.
         self.assertEqual([s.get("name") for s in self.job["steps"]],
                          ["Set up Python", WAIT_STEP, SWEEP_STEP])
+        self.assertEqual(self.job["steps"][0], {
+            "name": "Set up Python",
+            "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+            "with": {"python-version": "3.12"}})
         wait = _step(self.job, WAIT_STEP)
         sweep = _step(self.job, SWEEP_STEP)
         self.assertEqual(wait.get("id"), "wait")

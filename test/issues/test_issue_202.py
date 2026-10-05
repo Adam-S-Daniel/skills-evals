@@ -6791,15 +6791,18 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         self.job = self.doc["jobs"]["roster-pr"]
 
     def test_the_mint_step_comes_first_pinned_bare_with_exact_inputs(self):
-        # Only the two interpreter-setup steps may precede it: they run
-        # before the key exists, read no secret and carry no env.
+        # Only the two interpreter-setup steps may precede it, and each is
+        # EXACTLY this dict: anything else in a pre-mint step (a `run:` that
+        # edits PATH or GITHUB_ENV, an `env`, an `if`) is code that runs
+        # before the key exists and shapes the steps that hold it.
         *setup, step, manage = self.job["steps"]
-        self.assertEqual([s.get("name") for s in setup],
-                         ["Set up Python", "Install roster dependency"])
-        for before in setup:
-            self.assertNotIn("secrets.", json.dumps(before))
-            self.assertNotIn("vars.", json.dumps(before))
-            self.assertIsNone(before.get("env"))
+        self.assertEqual(setup, [
+            {"name": "Set up Python",
+             "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+             "with": {"python-version": "3.12"}},
+            {"name": "Install roster dependency",
+             "run": "pip install pyyaml==6.0.3"},
+        ])
         self.assertEqual(step.get("id"), APP_TOKEN_STEP_ID)
         self.assertEqual(step.get("uses"), APP_TOKEN_ACTION,
                          "pinned to v3.2.0's full commit sha, never a tag")

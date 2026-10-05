@@ -2053,13 +2053,16 @@ jobs:
       pr_number: ${{ steps.manage.outputs.pr_number }}
       pushed_sha: ${{ steps.manage.outputs.pushed_sha }}
     steps:
-      # Pinned 3.12 like the other jobs, not the runner's system Python; the manage step parses roster YAML, so PyYAML is installed here too.
+      # Pinned 3.12 like the other jobs, not the runner's system Python.
+      # The manage step parses roster YAML, so PyYAML is installed here too,
+      # exact: this job's next step holds the roster App token. 6.0.3 is the
+      # newest release (2025-09-25), long past the 7-day cooling-off.
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
       - name: Install roster dependency
-        run: pip install pyyaml
+        run: pip install pyyaml==6.0.3
       # Round 6: a GitHub App installation token, minted ONLY in this job.
       # The App (installed on skills-evals alone: Contents R/W, Pull
       # requests R/W, NOT a bypass actor of `main`'s ruleset) is what
@@ -3073,7 +3076,8 @@ jobs:
       # gates require it.
       cleared: ${{ steps.sweep.outputs.cleared }}
     steps:
-      # The poll and sweep scripts are stdlib-only Python; pinned to the same 3.12 as the other jobs rather than the runner's system Python.
+      # The poll and sweep scripts are stdlib-only Python; pinned to the
+      # same 3.12 as the other jobs rather than the runner's system Python.
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
