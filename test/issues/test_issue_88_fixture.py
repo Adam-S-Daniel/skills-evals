@@ -12,6 +12,7 @@ from __future__ import annotations
 import glob
 import hashlib
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -153,6 +154,18 @@ class FixtureContract(unittest.TestCase):
         self.assertNotIn("model", fx["judge"])
         self.assertEqual({k: v["install"] for k, v in fx["arms"].items()},
                          {"with_skill": "copy", "without_skill": "none"})
+
+    def test_rubric_caps_on_the_probe_checks_not_the_parser_check(self):
+        rubric = " ".join(fixture()["judge_rubric"].split())
+        caps = re.findall(r"Cap correctness at \d+ if ([^.]*)\.", rubric)
+        self.assertEqual(len(caps), 1)
+        capped = set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)+", caps[0]))
+        self.assertEqual(capped, {"golangci-width-100", "hook-lints-staged-go",
+                                  "hook-passes-without-go-files", "hook-skips-missing-go-tools"})
+        restraint = re.findall(r"Cap restraint at \d+ if ([^.]*?) fails", rubric)
+        self.assertEqual(len(restraint), 1)
+        self.assertNotIn("hook-guards-go-tools", restraint[0])
+        self.assertIn("hook-guards-go-tools is reported but never caps a score", rubric)
 
     def test_the_three_command_checks_share_one_hidden_probe(self):
         checks = [c for c in fixture()["objective_checks"] if c["type"] == "command_succeeds"]
@@ -348,6 +361,24 @@ have golangci-lint || exit 0
         with workspace(good=True) as ws:
             edit(ws, HOOK, lambda t: t.replace("golangci-lint run ./...", "golangci-lint run --new-from-rev=HEAD ./..."))
             self.assert_failed(ws)
+
+    def test_parser_refused_correct_forms_fail_only_the_uncapped_guard_check(self):
+        # Correct hooks the AST check refuses. Every capped check passes, so
+        # under the rubric they lose no correctness points.
+        dynamic_dirs = SIMPLE_BRANCH.replace(
+            "golangci-lint run ./... || RC=1",
+            'mapfile -t PKGS < <(dirname -- "${GO[@]}" | sort -u); '
+            'golangci-lint run "${PKGS[@]/#/./}" || RC=1')
+        test_command = SIMPLE_BRANCH.replace('[ -z "$(gofmt -l "${GO[@]}")" ]',
+                                             'test -z "$(gofmt -l "${GO[@]}")"')
+        unquoted = SIMPLE_BRANCH.replace('[ -z "$(gofmt -l "${GO[@]}")" ]',
+                                         '[[ -z $(gofmt -l "${GO[@]}") ]]')
+        for name, branch in (("dynamic package dirs", dynamic_dirs), ("test command", test_command),
+                             ("unquoted [[ ]]", unquoted)):
+            self.assertNotEqual(branch, SIMPLE_BRANCH, name)
+            with self.subTest(name), workspace(good=True) as ws:
+                edit(ws, HOOK, lambda t: t.replace(GO_BRANCH, branch))
+                self.assert_failed(ws, "hook-guards-go-tools")
 
     def test_literal_package_directories_fail_only_the_guard_check(self):
         # Documented limit: a neighbor argument with a `/` is not accepted.

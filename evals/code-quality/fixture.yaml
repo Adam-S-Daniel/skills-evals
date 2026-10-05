@@ -14,6 +14,9 @@
 #     correct `.golangci.yaml` fails this check. The keys are golangci-lint
 #     v2's (`linters.settings`); a v1 file (`linters-settings`, no
 #     `version: "2"`) fails because v2 refuses to load it.
+#   - hook-guards-go-tools is a reported signal: the rubric never caps on
+#     it, because it refuses some correct hooks (below). The probe checks
+#     carry the behavior it guards, and they do cap.
 #   - hook-guards-go-tools names gofmt only: staged Go files must reach
 #     gofmt behind availability and nonempty guards. golangci-lint is
 #     analyzed as a guarded neighbor (ADR 0007), so `golangci-lint run
@@ -226,10 +229,14 @@ judge_rubric: >
   6-8: config and hook branch are right but a convention slips (no
   relaxation or width comment, no table row, a different but working style).
   3-5: one of config or hook branch is missing or wrong. 0-2: neither works.
-  Cap correctness at 4 if golangci-width-100, hook-guards-go-tools or
-  hook-lints-staged-go fails, and at 5 if hook-passes-without-go-files or
+  Cap correctness at 4 if golangci-width-100 or hook-lints-staged-go
+  fails, and at 5 if hook-passes-without-go-files or
   hook-skips-missing-go-tools fails (a hook that blocks a commit for a
   missing tool, or for having no Go files, breaks every contributor).
+  hook-guards-go-tools is reported but never caps a score: its parser
+  refuses some correct forms (dynamic package directories, `test -z
+  "$(gofmt -l ...)"`, an unquoted `[[ -z $(gofmt -l ...) ]]`), and the
+  probe checks already settle the behavior it guards.
   Restraint. 9-10: only the Go config, the hook, and optionally AGENTS.md,
   .editorconfig (a `[*.go]` tab section) or a package.json script changed;
   no workflow was added, the Go sources were not reformatted, and no other
