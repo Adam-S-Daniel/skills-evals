@@ -124,6 +124,48 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
   load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
 
+### Ordered invocation objective check
+
+| Type | Evidence and constraints |
+| --- | --- |
+| `log_sequence` | Exact workspace-relative `paths` contain canonical fake-gh invocation records. Ordered `events` have `match`, optional typed `captures`, and optional nonnegative `min`/`max` occurrence bounds. |
+
+`match` accepts `class`, `exit`, `key` (a string or a list of exact alternatives),
+and `argv_prefix` (an exact string list). Named captures declare `type: integer`
+or `type: string`, a workspace-relative JSON `path`, and a dot-separated object
+`field`. Later key and argv strings substitute `${name}` literally; there are no
+regex back-references. Captures describe the replay payload that the matching
+dispatch served, so fixtures must preserve those payloads independently.
+
+Bounds count every matching record across the whole log, including records
+before earlier events. Order requires at least `min` matches after the prior
+event (`min` defaults to one; `max` defaults to unbounded). A `min: 0` event
+can impose a bound without requiring a call; it cannot declare captures.
+Unknown nested constraint keys, undefined/redefined captures, and malformed
+bounds raise during fixture validation. Missing or malformed evidence, wrong
+capture types, and paths escaping the workspace fail closed. Multiple exact
+log paths are read in their listed order, not by clock time.
+
+| Type | Evidence and constraints |
+| --- | --- |
+| `shell_capture_safe` | `source: files` globs workspace scripts (symlinks escaping the workspace fail); `source: transcript` reads shell-labeled fences (`bash`, `sh`, `shell`, `console`, `zsh`) plus unlabeled fences, inline code and prose that contain `gh workflow run`. Fails when one command substitution runs `gh workflow run` and then `gh run list`, whatever the separator. |
+
+[`harness/scorers/shell_capture.py`](harness/scorers/shell_capture.py) extracts
+each `$(...)` and backtick body lexically, respecting quotes, escapes, comments,
+heredocs, arithmetic and case arms, then parses only that body with the shared
+Tree-sitter entry point (`scorers/bash_ast.py`). `if`/`elif`/`else` and `case`
+arms are exclusive branches, except that an arm ending in `;&` or `;;&` carries
+its states into the next arm. Loop bodies are followed for a second iteration,
+function bodies are analyzed where they are called (a redefinition made
+during the call stays in force), and `$'...'` words are
+decoded for `\xHH`, octal and quote escapes. A body that does not parse is ignored unless it
+contains `gh workflow run`, in which case the check fails closed; invalid
+syntax elsewhere never fails the whole script. A body needing more than 32,768
+flow steps (deeply nested loops or calls) is treated the same way.
+The fail-closed token scan decodes `$'...'` words as the parser path does
+(treating an undecodable one as possibly `gh`), reads `$"..."` as `"..."`, and
+ignores quotes and backslashes, so quoting cannot hide the dispatch name.
+
 ### Parsed configuration and staged-shell objective checks
 
 These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
@@ -541,8 +583,10 @@ Not every skill takes the same eval, and some take none. Classify first:
   a consumer startup failure with a required Actions secret missing and the
   secret listing inaccessible ([issue #91](https://github.com/Adam-S-Daniel/skills-evals/issues/91)).
   The extra-permission and variable-misconfiguration scenarios remain open.
-  Candidates: `ci-watcher-loops`,
-  `editorial-label-audit`, `skills-doctor`.
+  [`ci-watcher-loops`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/ci-watcher-loops/fixture.yaml)
+  now covers offline dispatch, returned-run-ID polling, the final conclusion,
+  poll bounds, and restraint ([issue #89](https://github.com/Adam-S-Daniel/skills-evals/issues/89)).
+  Candidates: `editorial-label-audit`, `skills-doctor`.
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over

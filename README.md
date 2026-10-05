@@ -62,6 +62,9 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  ci-watcher-loops/        # Class B: dispatch, captured run id and bounded timeline polling
+    fixture.yaml           # ordered-log, parsed shell capture, conclusion and restraint checks
+    seed/                  # consumer site and shared fake gh with call-count payloads
   debug-github-workflows/  # Class B: one wrong-branch diagnosis fixture
     wrong-branch/          # main invokes an obsolete test module; an unmerged branch has the fix
       fixture.yaml         # replay-read, affirmative-reply and file-restraint checks
