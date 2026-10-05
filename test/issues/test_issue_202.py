@@ -6791,7 +6791,18 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         self.job = self.doc["jobs"]["roster-pr"]
 
     def test_the_mint_step_comes_first_pinned_bare_with_exact_inputs(self):
-        step = self.job["steps"][0]
+        # Only the two interpreter-setup steps may precede it, and each is
+        # EXACTLY this dict: anything else in a pre-mint step (a `run:` that
+        # edits PATH or GITHUB_ENV, an `env`, an `if`) is code that runs
+        # before the key exists and shapes the steps that hold it.
+        *setup, step, manage = self.job["steps"]
+        self.assertEqual(setup, [
+            {"name": "Set up Python",
+             "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+             "with": {"python-version": "3.12"}},
+            {"name": "Install roster dependency",
+             "run": "pip install pyyaml==6.0.3"},
+        ])
         self.assertEqual(step.get("id"), APP_TOKEN_STEP_ID)
         self.assertEqual(step.get("uses"), APP_TOKEN_ACTION,
                          "pinned to v3.2.0's full commit sha, never a tag")
@@ -6809,7 +6820,7 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         }, "exactly these inputs: one repository, exactly two scopes — a "
            "dropped scope makes the token inherit the installation's full "
            "set, and any other permission-* widens it")
-        self.assertEqual([s.get("name") for s in self.job["steps"]],
+        self.assertEqual([s.get("name") for s in self.job["steps"][2:]],
                          ["Mint the roster App token", MANAGE_STEP])
 
     def test_the_app_is_referenced_by_no_job_but_roster_pr(self):
@@ -6830,7 +6841,7 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
                 self.assertNotIn(marker, json.dumps(rest, default=str))
 
     def test_inside_roster_pr_only_the_mint_step_reads_the_key(self):
-        mint, manage = self.job["steps"]
+        mint, manage = self.job["steps"][-2:]
         self.assertNotIn("env", self.job, "no job-level env on roster-pr")
         self.assertIn("secrets.ROSTER_APP_PRIVATE_KEY", json.dumps(mint))
         self.assertNotIn("secrets.", json.dumps(manage))
