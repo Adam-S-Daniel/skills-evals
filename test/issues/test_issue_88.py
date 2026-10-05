@@ -657,6 +657,57 @@ class AnalysisBounds(CheckWorkspace):
                            "analysis_limit")
 
 
+class TestedCapture(CheckWorkspace):
+    """ADR 0007 amendment: `[ -z "$(TOOL ...)" ]` reads as capture and test."""
+
+    HEAD = ("set -euo pipefail\n"
+            "mapfile -t GO < <(git diff --cached --name-only --diff-filter=ACM -- '*.go')\nRC=0\n")
+    GUARD = 'if [ "${#GO[@]}" -gt 0 ] && command -v gofmt >/dev/null; then\n'
+
+    def script(self, body, guard=GUARD):
+        return self.HEAD + guard + body + 'fi\nexit "$RC"\n'
+
+    def test_z_and_n_forms_pass(self):
+        for body in ('  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n',
+                     '  if [ -n "$(gofmt -l "${GO[@]}")" ]; then RC=1; fi\n',
+                     '  [[ -z "$(gofmt -l "${GO[@]}")" ]] || RC=1\n'):
+            with self.subTest(body):
+                result = self.shell(self.script(body))
+                self.assertTrue(result[0], result[1])
+
+    def test_reference_hook_with_tested_capture(self):
+        text = (SHELL_FIXTURES / "lint-staged-go.sh").read_text()
+        old = '    bad=$(gofmt -l "${GO[@]}")\n    if [ -n "$bad" ]; then\n      printf \'%s\\n\' "$bad"\n      RC=1\n    fi\n'
+        self.assertEqual(text.count(old), 1)
+        text = text.replace(old, '    [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n')
+        result = self.shell(text, tools=["gofmt", "golangci-lint"])
+        self.assertTrue(result[0], result[1])
+
+    def test_the_call_inside_still_needs_every_guard(self):
+        body = '  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n'
+        self.assert_reason(self.shell(self.script(body, 'if [ "${#GO[@]}" -gt 0 ]; then\n')),
+                           "availability_guard_missing")
+        self.assert_reason(self.shell(self.script(body, "if command -v gofmt >/dev/null; then\n")),
+                           "nonempty_guard_missing")
+        self.assert_reason(self.shell(self.script('  [ -z "$(gofmt -l .)" ] || RC=1\n')),
+                           "unsupported_tool_arguments")
+
+    def test_a_missing_tool_exit_is_still_caught(self):
+        text = self.HEAD + ('if [ "${#GO[@]}" -gt 0 ]; then\n  command -v gofmt >/dev/null || exit 1\n'
+                            '  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\nfi\nexit "$RC"\n')
+        self.assert_reason(self.shell(text), "missing_tool_nonzero_exit")
+
+    def test_other_substitutions_still_fail_closed(self):
+        for body in ('  gofmt -l "${GO[@]}"\n  [ -z "$(date)" ] || RC=1\n',
+                     '  test -z "$(gofmt -l "${GO[@]}")" || RC=1\n',
+                     '  [ -z "$(gofmt -l "${GO[@]}" 2>&1)" ] || RC=1\n',
+                     '  [ -z "x$(gofmt -l "${GO[@]}")" ] || RC=1\n',
+                     '  [ "$(gofmt -l "${GO[@]}")" = "" ] || RC=1\n'):
+            with self.subTest(body):
+                result = self.shell(self.script(body))
+                self.assertFalse(result[0], result[1])
+
+
 class ParsedCheckIntegration(CheckWorkspace):
     def test_registry_and_constraints_route_config(self):
         self.target.write_text(CONFIG)

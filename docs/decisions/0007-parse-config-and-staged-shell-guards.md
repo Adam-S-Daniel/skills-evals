@@ -2,7 +2,8 @@
 
 - **Status:** accepted (2026-10-04); amended 2026-10-05 to raise the
   continuing-state bound to 2,048 and the step bound to 65,536 (see
-  "Amendment: analysis bounds" below).
+  "Amendment: analysis bounds" below) and to read a configured tool's
+  output tested by `[ -z "$(...)" ]` as a capture.
 - **Issue:** Part of [the code-quality eval, #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88).
 - **Decider:** Adam approved both check types and a Bash parser dependency
   on 2026-10-04; the C58 worker package records that approval.
@@ -89,9 +90,14 @@ Two related shapes keep their current scoring. After a passing availability
 guard, `[ -n "$files" ] && gofmt -l $files` as the last line passes although
 the script then exits 1 on a commit without Go files: this check rejects a
 nonzero exit only when it is caused by a missing configured tool, so an
-empty-list exit status is left to review. `test -z "$(gofmt -l $files)"` fails closed as
-`unsupported_dynamic_form`, because a command substitution outside an
-assignment is not interpreted; capture into a variable and test that instead.
+empty-list exit status is left to review. A configured-tool substitution
+that is the whole quoted operand of `-z` or `-n` inside `[ ]` or `[[ ]]`,
+such as `[ -z "$(gofmt -l "${files[@]}")" ] || RC=1`, is read as a capture
+followed by a test (amended 2026-10-05): the call needs every guard, and
+either outcome is an installed tool's verdict. Any other command
+substitution outside an assignment, including the `test -z "$(...)"`
+command form and a substitution with redirections, still fails closed as
+`unsupported_dynamic_form`.
 
 `if`/`else`, nested guards, negation, `&&`/`||` lists, stderr/null redirections,
 `set -e`/`-u`/`pipefail`, output capture followed by a nonempty test, and numeric
