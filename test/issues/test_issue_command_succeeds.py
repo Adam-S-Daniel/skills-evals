@@ -223,6 +223,36 @@ class CommandSucceedsTests(unittest.TestCase):
             passed, _ = self.check(["sh", "-c", "command -v node"])
         self.assertFalse(passed)
 
+    def test_argv_node_resolves_to_harness_node_outside_fixed_dirs(self):
+        # A fixture's `argv: [node, ...]` on a runner with node in /usr/local/bin.
+        host_bin = self.root / "host-bin"
+        node = self._host_node(host_bin)
+        with self._no_system_node(), \
+                mock.patch.dict(os.environ, {"PATH": f"{host_bin}:{os.environ['PATH']}"}):
+            self.assertEqual(commands._executable(self.ws.resolve(), "node"),
+                             str(node.resolve()))
+            passed, detail = self.check(["node", "--harness-node-probe"])
+        self.assertTrue(passed, detail)
+
+    def test_argv_node_inside_workspace_is_refused(self):
+        self._host_node(self.ws / "bin")
+        with self._no_system_node(), \
+                mock.patch.dict(os.environ, {"PATH": str(self.ws / "bin")}), \
+                mock.patch.object(commands, "_run_command") as run:
+            self.assertEqual(self.check(["node", "--harness-node-probe"]),
+                             (False, "command_invalid_executable"))
+        run.assert_not_called()
+
+    def test_argv_node_prefers_a_fixed_location(self):
+        host_bin = self.root / "host-bin"
+        self._host_node(host_bin)
+        fixed = self.root / "fixed-node"
+        fixed.write_text("#!/bin/sh\n", encoding="utf-8")
+        fixed.chmod(0o700)
+        with mock.patch.dict(commands.INTERPRETERS, {"node": (str(fixed),)}), \
+                mock.patch.dict(os.environ, {"PATH": str(host_bin)}):
+            self.assertEqual(commands._executable(self.ws.resolve(), "node"), str(fixed))
+
     def test_path_is_unchanged_when_node_is_at_a_fixed_location(self):
         host_bin = self.root / "host-bin"
         self._host_node(host_bin)

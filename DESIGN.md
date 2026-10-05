@@ -188,7 +188,9 @@ pins, and analysis bounds are documented in
 
 The [command scorer](harness/scorers/commands.py) runs argv directly with no
 shell or interpolation and closed stdin. Bare `bash`, `sh`, `python3`, and
-`node` resolve only at fixed `/usr/bin` or `/bin` paths; every other entrypoint
+`node` resolve only at fixed `/usr/bin` or `/bin` paths (`node`, on a host with
+neither, resolves to the harness's own `node`, never one inside the workspace,
+which is the same `node` its PATH gets below); every other entrypoint
 must resolve inside the final workspace, including symlink resolution. Direct
 `claude`/`claude.exe` entrypoints are rejected. No arbitrary PATH lookup occurs.
 
