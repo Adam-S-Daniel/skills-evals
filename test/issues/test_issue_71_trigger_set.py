@@ -110,6 +110,18 @@ class DryRunWithSetTests(t71.PipelineCase):
                     self.assertNotIn("warning", err)
         self.assertFalse(self.results.exists())
 
+    def test_malformed_set_is_refused_through_main(self):
+        cases = {"string label": json.dumps([{"query": "q", "should_trigger": "false"}]),
+                 "truncated json": "[{"}
+        for name, text in cases.items():
+            with self.subTest(name):
+                self.reviewed_set = self.tmp / "malformed.json"
+                self.reviewed_set.write_text(text, encoding="utf-8")
+                rc, _, err = self.run_main(t71.NoCallRunner(), "--dry-run")
+                self.assertEqual(rc, pse.EXIT_REFUSED, err)
+                self.assertIn("refused: --trigger-eval-set", err)
+                self.assertFalse(self.results.exists())
+
 
 class LoaderTests(unittest.TestCase):
 
