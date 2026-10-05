@@ -4229,7 +4229,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
     def test_permissions_are_exactly_the_three_the_header_names(self):
         # B1 (round 3 on #209, blocker; extended round 4, blocker),
         # extending F2 (adversarial round 1 on #209): the workflow-level
-        # block is `{}` deliberately — each of the FIVE jobs carries its
+        # block is `{}` deliberately — each of the seven jobs carries its
         # own least-privilege set, so the `eval` job (which runs the
         # bypass-permissions agent) never sees `pull-requests: write`/
         # `issues: write` at all (and no job holds `actions: write` since
@@ -4243,17 +4243,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # not just the workflow) reds it too — that is exactly the defect
         # this test exists to catch.
         doc = self._doc()
-        # (c) The guard covers the workflow's jobs EXACTLY: a sixth job
-        # (with whatever scopes, or none declared) would otherwise slip
-        # past every per-job equality below, which only look up by name.
-        # ADR 0004 (2026-09-30) added a sixth, `roster-wait`: the bounded
-        # wait for this run's armed roster pull request, before the eval.
+        # The guard covers every job exactly. ADR 0004 added the bounded
+        # `roster-wait`; ADR 0008 adds a read-only fixture planner, which
+        # emits reviewed selections without receiving evaluation credentials.
         self.assertEqual(
             sorted(doc["jobs"]),
-            ["disarm", "eval", "publish", "roster", "roster-pr", "roster-wait"],
-            "eval.yml must have exactly these six jobs — a new job needs "
+            ["disarm", "eval", "plan", "publish", "roster", "roster-pr", "roster-wait"],
+            "eval.yml must have exactly these seven jobs — a new job needs "
             "its own exact-permissions row here and in "
             "test_eval_workflow_keeps_its_security_posture")
+        self.assertEqual(
+            doc["jobs"]["plan"].get("permissions"), {"contents": "read"},
+            "the planner reads committed fixtures and never exchanges a credential")
         self.assertEqual(
             doc.get("permissions"), {},
             "eval.yml's workflow-level permissions must be {} — every scope "
@@ -6135,7 +6136,7 @@ class TestIssue67(unittest.TestCase):
         #
         # F2 (adversarial round 1 on #209), extended by B1 (round 3, then
         # round 4, on #209, blocker): the workflow-level block is {} and
-        # each of the FIVE jobs carries its own scopes — `roster` (never
+        # each of the seven jobs carries its own scopes — `roster` (never
         # `eval`) holds the roster-decision scopes (contents/id-token/
         # issues); `disarm` holds only pull-requests/contents-read to turn
         # off an armed auto-merge BEFORE the agent runs; `eval` keeps only
@@ -6148,11 +6149,12 @@ class TestIssue67(unittest.TestCase):
         # `actions` or `contents: write` any more; the roster App's token
         # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
-        # (c) Exactly six jobs (ADR 0004 added `roster-wait`), so a seventh
-        # can never go unguarded.
+        # Exactly seven jobs (ADR 0008 adds the read-only planner), so an
+        # additional job cannot go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
-                         ["disarm", "eval", "publish", "roster", "roster-pr",
+                         ["disarm", "eval", "plan", "publish", "roster", "roster-pr",
                           "roster-wait"])
+        self.assertEqual(doc["jobs"]["plan"]["permissions"], {"contents": "read"})
         # Round 7 (ADR 0003): `roster` no longer pushes, so contents: read.
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "read", "id-token": "write",
@@ -32044,8 +32046,8 @@ elif 'worktree' in args and 'remove' in args:
             if run_results and run.returncode == 0:
                 # B1 (round 4 on #209, blocker): this step lives in the
                 # `publish` job now, not `eval` — see that job's own
-                # comment. It reads the fixture key from `needs.eval.
-                # outputs.eval_key` (via `EVAL_KEY` in `env:`) rather than
+                # comment. It reads the fixture key from the validated matrix
+                # selection (via `EVAL_KEY` in `env:`) rather than
                 # a `$RUNNER_TEMP` file, since `publish` runs on a
                 # different runner from the one that wrote that file.
                 results_script = next(step["run"] for step in document["jobs"]["publish"]["steps"]

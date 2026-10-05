@@ -635,11 +635,20 @@ yet" must stay distinguishable.)
 
 ### Budget
 
-Do not grow the weekly matrix linearly with coverage. Evals run on-touch (PR
-path filters over `evals/<skill>/**` and the skill's own registry path); the
-scheduled lane runs a rotating subset weekly or the full sweep monthly.
-`eval.yml` itself gets salient-path filters — the `workflow-path-audit`
-doctrine applies to the harness's own CI.
+The scheduled real eval runs exactly the reviewed ready list in
+[`evals/scheduled.yml`](evals/scheduled.yml), with readiness evidence per
+fixture; dispatch still runs one fixture. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
+records admission and failure isolation. Two eval legs run concurrently at
+most, with separate credential exchanges and success artifacts; serialized
+publishers build each fixture's badge against accumulated history. Roster
+jobs still run once per workflow run.
+
+At the workflow's estimate of $0.30–0.90 per skill fixture, eight fixtures cost
+about $2.40–7.20 per scheduled run, or $12.00–36.00 for five weekly runs. This is an
+estimate; the API workspace spend limit is the hard ceiling. Every addition
+is a reviewed spend decision. Rotation, monthly sweeps, model products,
+trial changes, and automated budget enforcement remain deferred under
+[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 
