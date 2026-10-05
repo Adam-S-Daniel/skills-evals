@@ -1114,17 +1114,22 @@ FOLLOWUP_MARKER = "\n\n--- user follow-up ---\n{text}\n--- agent reply ---\n"
 def _combine_turns(turns: list[dict], followups: list[str]) -> dict:
     """`run_agent`'s success dict for a session of several CLI calls.
 
-    The transcript is every reply in order with each follow-up between them;
-    usage, cost, turns and duration are summed across calls. `raw` is the
-    last call's result object (so its `result` is the final reply) with those
-    totals, a merged `modelUsage` (so `models_used` sees every model that
-    served any call), and every call's own result object under `turns`.
+    The transcript is every reply in order with each follow-up between them.
+    A resumed call's `total_cost_usd` and `modelUsage` are already CUMULATIVE
+    for the session (measured on Claude Code 2.1.289: the resumed result's
+    cost and per-model tokens equal the sums over both calls), so those two
+    come from the LAST call; summing them would count the first call twice.
+    Its `usage`, `num_turns` and `duration_ms` cover that call alone, so
+    those are summed. `raw` is the last call's result object (so its
+    `result` is the final reply) with those totals, and every call's own
+    result object under `turns`.
     """
     transcript = turns[0].get("result") or ""
     for text, data in zip(followups, turns[1:]):
         transcript += FOLLOWUP_MARKER.format(text=text) + (data.get("result") or "")
-    totals = {}
-    for key in ("usage", "total_cost_usd", "num_turns", "duration_ms", "modelUsage"):
+    totals = {key: turns[-1].get(key)
+              for key in ("total_cost_usd", "modelUsage")}
+    for key in ("usage", "num_turns", "duration_ms"):
         value = None
         for turn in turns:
             if turn.get(key) is not None:

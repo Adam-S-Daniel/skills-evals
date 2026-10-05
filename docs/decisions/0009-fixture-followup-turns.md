@@ -35,9 +35,12 @@ appended, where the session id comes from the previous call's result.
   it.
 - **Scoring is unchanged.** Objective checks score the workspace after the
   last turn. The judge reads every reply in order, with each follow-up
-  between them. Cost, turns, duration and usage are summed across calls;
-  `raw.json` is the last call's result with those totals, a merged
-  `modelUsage`, and every call's result under `turns`.
+  between them. A resumed call reports `total_cost_usd` and `modelUsage`
+  for the whole session so far, but `usage`, `num_turns` and `duration_ms`
+  for that call alone (measured on Claude Code 2.1.289). So cost and
+  `modelUsage` come from the last call, and the other three are summed.
+  `raw.json` is the last call's result with those totals, and every call's
+  result under `turns`.
 - **Errors keep their types.** A failed follow-up fails the arm with the
   same error type a failed first call would (`timeout`, `nonzero_exit`,
   `invalid_json`, `agent_error`), its detail prefixed with the follow-up's
@@ -62,6 +65,9 @@ of the proposed renames (auto)."
   not something the harness tries to solve.
 - The judge sees the follow-up text, so a rubric must not reward an arm
   merely for being told to proceed.
-- No real run has used this yet. The first `rename-pdfs` run with it is the
-  test of whether the CLI's `--resume` keeps the workspace and session as
-  this record assumes.
+- A real-CLI probe (Claude Code 2.1.289) confirmed that `--resume` keeps
+  the session id, the conversation, the workspace and the permission mode.
+  No eval run has used this yet.
+- If a CLI release changes which result fields are cumulative, the cost
+  totals go wrong silently; the hermetic tests pin today's shape, not the
+  CLI's.

@@ -21,7 +21,9 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
+import local_eval  # noqa: E402
 import run_eval  # noqa: E402
 
 RENAME_DIR = ROOT / "evals" / "rename-pdfs"
@@ -141,17 +143,27 @@ class RunAgentFollowupTests(unittest.TestCase):
                          ["Rename the PDFs.", "one", "two"])
 
     def test_the_transcript_and_totals_cover_every_turn(self):
-        cli = ScriptedCli(
-            result("proposed", "s1", model="model-a", cost=0.5, turns=3,
-                   duration=100, tokens=10),
-            result("renamed", "s1", model="model-b", cost=0.25, turns=4,
-                   duration=50, tokens=5))
+        # The real shape (Claude Code 2.1.289, measured with a --resume
+        # probe): the resumed result's `total_cost_usd` and `modelUsage` are
+        # CUMULATIVE for the session, while `usage`, `num_turns` and
+        # `duration_ms` cover that call alone.
+        first = result("proposed", "s1", model="model-a", cost=0.5, turns=3,
+                       duration=100, tokens=10)
+        second = result("renamed", "s1", model="model-b", cost=0.25, turns=4,
+                        duration=50, tokens=5)
+        second["total_cost_usd"] = 0.75
+        second["modelUsage"] = {
+            "model-a": {"inputTokens": 10, "costUSD": 0.5},
+            "model-b": {"inputTokens": 5, "costUSD": 0.25}}
+        cli = ScriptedCli(first, second)
         out = self.run_agent(cli, ["go ahead"])
         self.assertEqual(out["transcript"],
                          "proposed" + run_eval.FOLLOWUP_MARKER.format(
                              text="go ahead") + "renamed")
         self.assertIn("go ahead", out["transcript"])
+        # Cumulative fields: the last call's, never summed (0.5 + 0.75).
         self.assertEqual(out["cost_usd"], 0.75)
+        # Per-call fields: summed.
         self.assertEqual(out["num_turns"], 7)
         self.assertEqual(out["duration_ms"], 150)
         self.assertEqual(out["usage"], {
@@ -163,8 +175,19 @@ class RunAgentFollowupTests(unittest.TestCase):
         self.assertEqual(len(raw["turns"]), 2)
         self.assertEqual(raw["turns"][0]["result"], "proposed")
         self.assertEqual(raw["total_cost_usd"], 0.75)
+        self.assertEqual(raw["modelUsage"], second["modelUsage"])
         self.assertEqual(run_eval.models_used(raw), ["model-a", "model-b"])
         json.dumps(raw)  # raw.json must stay serializable
+
+    def test_three_calls_take_the_last_cumulative_cost(self):
+        replies = []
+        for index, cumulative in enumerate((0.25, 0.5, 0.75), start=1):
+            reply = result(f"r{index}", f"s{index}", cost=0.25)
+            reply["total_cost_usd"] = cumulative
+            replies.append(reply)
+        out = self.run_agent(ScriptedCli(*replies), ["one", "two"])
+        self.assertEqual(out["cost_usd"], 0.75)
+        self.assertEqual(out["num_turns"], 6)
 
     # -- followup failures --------------------------------------------------
 
@@ -235,6 +258,51 @@ class ValidateFollowupsTests(unittest.TestCase):
             rc = run_eval.main()
         self.assertEqual(rc, 2, out.getvalue())
         self.assertIn("`followups:` must be", out.getvalue())
+
+
+class LocalEvalRefusesBadFollowupsTests(unittest.TestCase):
+    def test_load_skill_fixture_refuses_a_bad_value_up_front(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "fixture.yaml").write_text(
+            "skill: demo\nprompt: do it\nfollowups: auto\n", encoding="utf-8")
+        with self.assertRaisesRegex(local_eval.Refused, "`followups:` must be"):
+            local_eval.load_skill_fixture(tmp)
+
+
+class GuidanceArmFollowupTests(unittest.TestCase):
+    """The guidance subject's arm passes the fixture's `followups:` to
+    `run_agent` too, with delivery, guard and agent patched."""
+
+    def test_the_guidance_arm_forwards_followups(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        args = argparse.Namespace(results_dir=tmp / "results", model="m",
+                                  timeout=30, no_judge=True,
+                                  harness_version=None)
+        ctx = {"delivery": "user", "decoys": {}, "token": "TOK",
+               "guidance_dir": tmp, "row": {}, "section": "s",
+               "key": "guidance/s"}
+        arm = {"name": "treatment", "mode": "section", "objective_checks": []}
+        fixture = {"prompt": "do it", "followups": ["yes, go ahead"]}
+        info = {"bytes": 1, "verdict": "installed", "installed": True,
+                "returncode": 0, "dest": "x"}
+        guard = {"ok": True, "expected": True, "observed": True, "detail": "d"}
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm_config):
+            seen["followups"] = arm_config.get("followups")
+            return {"transcript": "t", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        with mock.patch.object(run_eval.guidance, "assemble", return_value="p"), \
+             mock.patch.object(run_eval.guidance, "deliver", return_value=info), \
+             mock.patch.object(run_eval.guidance, "agent_env", return_value={}), \
+             mock.patch.object(run_eval.guidance, "run_guard", return_value=guard), \
+             mock.patch.object(run_eval, "run_agent", fake_run_agent):
+            run_eval._run_guidance_arm(arm, fixture, tmp / "no-seed", ctx,
+                                       args, "T")
+        self.assertEqual(seen["followups"], ["yes, go ahead"])
 
 
 class RenamePdfsFollowupRegressionTests(unittest.TestCase):

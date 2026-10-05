@@ -119,8 +119,9 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   workspace state the objective checks score (`evals/rename-pdfs/` is the
   first user). Each turn gets the whole `timeout_s`; a failed turn fails the
   arm with the usual error type, its detail naming the follow-up. The judge
-  reads every reply with the follow-ups between them; cost, turns, duration
-  and usage are summed. Any other shape is a configuration error (rc 2) at
+  reads every reply with the follow-ups between them. Turns, duration and
+  usage are summed; cost and `modelUsage` come from the last call, because
+  a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
   load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
 
 ### Parsed configuration and staged-shell objective checks
