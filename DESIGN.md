@@ -643,8 +643,8 @@ most, with separate credential exchanges and success artifacts; serialized
 publishers build each fixture's badge against accumulated history. Roster
 jobs still run once per workflow run.
 
-At the workflow's estimate of $0.30–0.90 per skill fixture, seven fixtures cost
-about $2.10–6.30 per scheduled run, or $10.50–31.50 for five weekly runs. This is an
+At the workflow's estimate of $0.30–0.90 per skill fixture, eight fixtures cost
+about $2.40–7.20 per scheduled run, or $12.00–36.00 for five weekly runs. This is an
 estimate; the API workspace spend limit is the hard ceiling. Every addition
 is a reviewed spend decision. Rotation, monthly sweeps, model products,
 trial changes, and automated budget enforcement remain deferred under

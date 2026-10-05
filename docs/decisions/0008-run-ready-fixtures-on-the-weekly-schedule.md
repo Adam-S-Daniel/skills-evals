@@ -28,8 +28,8 @@ and simultaneous publishers would compete for the same results branch.
    `evals/review-bash-ci-reliability`, and
    `evals/skills-doctor/bucketed-account-store`. Qualification on 2026-10-05
    appended `evals/github-actions-sha-pinning`,
-   `evals/writing-adrs/bootstrap`, and `evals/disarm-inherited-reach`, seven
-   in all. Preserve the supplied local evidence in each note without
+   `evals/writing-adrs/bootstrap`, `evals/disarm-inherited-reach`, and
+   `evals/windows-elevation-from-wsl`, eight in all. Preserve the supplied local evidence in each note without
    inventing a measurement date or claiming a paid CI run.
    An entry is admitted only when all of these hold: a local N=3 judged run
    with both arms; zero errored trials and zero judge errors; separation, meaning at least one
@@ -48,13 +48,10 @@ and simultaneous publishers would compete for the same results branch.
    qualification recorded three judge errors (two with the skill, one
    without; each "judge CLI call timed out after 120s"), which fails the
    zero-judge-errors criterion until a clean local run.
-   `evals/windows-elevation-from-wsl` (objective 7 vs 6 with no overlap,
-   judge 8.6 vs 7.53) clears the numeric criteria by the narrowest margin
-   and is left off until a larger run confirms it. `evals/post-failure-comment`
-   and `evals/cms-stuck-pr-triage` each had an errored without-skill trial
-   (a timeout and invalid JSON), and `evals/rename-pdfs` shows no
-   with-skill advantage (objective 4 vs 4, judge 3.4 vs 3.97); all three
-   stay off.
+   `evals/post-failure-comment` and `evals/cms-stuck-pr-triage` each had an
+   errored without-skill trial (a timeout and invalid JSON), and
+   `evals/rename-pdfs` shows no with-skill advantage (objective 4 vs 4,
+   judge 3.4 vs 3.97); all three stay off.
 2. A read-only planning job reads the schedule list only for `schedule`.
    `workflow_dispatch` still reads `fixture` from `GITHUB_EVENT_PATH`, with
    today's single-fixture default and unchanged `roster_only` behavior.
@@ -89,8 +86,8 @@ and simultaneous publishers would compete for the same results branch.
 
 The weekly schedule exercises exactly the reviewed list, and adding an entry
 is a visible spend decision. The workflow's existing estimate is about
-$0.30–0.90 per skill fixture: seven fixtures imply about $2.10–6.30 per
-scheduled run, or $10.50–31.50 for five weekly runs. These are estimates rather than
+$0.30–0.90 per skill fixture: eight fixtures imply about $2.40–7.20 per
+scheduled run, or $12.00–36.00 for five weekly runs. These are estimates rather than
 a cap; model choice, judging, and actual usage affect cost. The API workspace
 spend limit remains the hard ceiling. Readiness evidence does not require a
 positive objective delta: the account-store fixture qualifies with a stronger

@@ -22,7 +22,8 @@ EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
             "evals/writing-adrs/bootstrap",
-            "evals/disarm-inherited-reach"]
+            "evals/disarm-inherited-reach",
+            "evals/windows-elevation-from-wsl"]
 
 
 def module(name, path):
