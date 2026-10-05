@@ -13,7 +13,9 @@ const EXAMPLES = new Set([
   "cms-posts-list-runtime.spec.js", "cms-preview-url.spec.js", "cms-smoke.spec.js",
 ]);
 const SPEC_AST_SHA256 = "46a013d25c90bc26be9f3176b782bc1fb81ab88f66fd5419cd723edc8f5016d8";
-const astPath = path.join(__dirname, "e2e", "spec-ast.js");
+// Resolve once, hash that file, and require that same absolute path. A bare
+// require("./e2e/spec-ast") would load an extensionless sibling file first.
+const astPath = fs.realpathSync(path.join(__dirname, "e2e", "spec-ast.js"));
 const PARSER_FILES = {
   "node_modules/acorn/package.json": "5c1ed7259579a7899b303f514b0194adcb9fe474fc7d136a84c6a45f10eefc84",
   "node_modules/acorn/dist/acorn.js": "fc3ed7b81e58464715d0291402892f22c3d86ea75302645a330390f85d8015c9",
@@ -254,7 +256,7 @@ function verify(mode) {
   if (!Object.entries(PARSER_FILES).every(([file, digest]) =>
     equalsHash(path.join(__dirname, file), digest))) return false;
   if (!parserResolutionIsReviewed()) return false;
-  const { analyzeSpec, analyzeNode, parse, stringValue, calleeName } = require("./e2e/spec-ast");
+  const { analyzeSpec, analyzeNode, parse, stringValue, calleeName } = require(astPath);
   const walk = require("acorn-walk");
   const files = fs.readdirSync(path.join(__dirname, "e2e"))
     .filter((name) => name.endsWith(".spec.js") && !EXAMPLES.has(name)).sort();

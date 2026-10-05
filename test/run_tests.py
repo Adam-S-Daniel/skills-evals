@@ -38589,6 +38589,39 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         base.write_text(base.read_text(encoding="utf-8") + "\n// changed\n", encoding="utf-8")
         self._failed(ws, {"harness-unchanged"})
 
+    def test_a_spec_tagged_both_read_and_write_is_not_read_only(self):
+        # The write tag must veto the read tag on its own: both tags present
+        # and everything else correct fails only the admin-read check.
+        both = self.GOOD.replace('{ tag: ["@admin-read"] }',
+                                 '{ tag: ["@admin-read", "@admin-write"] }')
+        self.assertNotEqual(both, self.GOOD)
+        self._failed(self._workspace(both), {"admin-read"})
+
+    def test_extensionless_spec_ast_shadow_is_inert(self):
+        # The verifier hashes e2e/spec-ast.js, so it must load exactly that
+        # file. Node resolves an extensionless "./e2e/spec-ast" before the
+        # ".js" file, so a bare require would run the candidate's file instead
+        # and let it exit 0 for every check. The shadow is inert (it is
+        # neither run nor does it change a verdict) rather than rejected: an
+        # exact-path load needs no extra-file rule, and a stray file the
+        # verifier never reads should not fail an otherwise correct spec.
+        shadows = {
+            "extensionless": "e2e/spec-ast",
+            "directory index": "e2e/spec-ast/index.js",
+        }
+        for label, relative in shadows.items():
+            for spec, expected in ((self.GOOD, set()), (None, self.BEHAVIOR)):
+                with self.subTest(shadow=label, spec="good" if spec else "seed"):
+                    ws = self._workspace(spec)
+                    shadow = ws / relative
+                    shadow.parent.mkdir(parents=True, exist_ok=True)
+                    shadow.write_text(
+                        'require("node:fs").writeFileSync(__dirname + "/called", "1");\n'
+                        'process.exit(0);\n', encoding="utf-8")
+                    self._failed(ws, expected)
+                    self.assertFalse((shadow.parent / "called").exists(),
+                                     "A spec-ast shadow ran inside the verifier")
+
     def test_plausible_wrong_host_and_route_sequence_fail(self):
         wrong = self.GOOD.replace('page.goto("/admin/index-local.html")',
                                   'page.goto("https://example.net/admin/index-local.html")')

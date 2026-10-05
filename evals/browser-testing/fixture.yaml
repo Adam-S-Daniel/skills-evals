@@ -52,7 +52,7 @@ objective_checks:
     description: The executable objective verifier retains its reviewed bytes.
     type: file_digests_match
     paths: [check-spec.js]
-    sha256: c5fa9a03f3fc4fc7e2d145ff8ca231bbd554f01379bf55d1e14443ddeb10aa23
+    sha256: 9166387ce21b6bed3627db5659fef87315531794097e568fef1948408a712da2
   - id: harness-unchanged
     description: The pinned platform slice and package inputs remain unchanged.
     type: files_unchanged
