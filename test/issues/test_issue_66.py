@@ -108,7 +108,10 @@ FAKE = CONFIG["fake"]
 if "--version" in sys.argv:
     os.execv(FAKE, [FAKE] + sys.argv[1:])
 
-kind = "agents" if "--setting-sources" in sys.argv else "judges"
+# An arm names a setting source; the judge passes an EMPTY one.
+sources = (sys.argv[sys.argv.index("--setting-sources") + 1]
+           if "--setting-sources" in sys.argv[:-1] else "")
+kind = "agents" if sources else "judges"
 state_path = HERE / "state.json"
 state = (json.loads(state_path.read_text(encoding="utf-8"))
          if state_path.exists() else {"agents": 0, "judges": 0})

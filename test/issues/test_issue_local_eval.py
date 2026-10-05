@@ -56,8 +56,8 @@ if "--version" in argv:
     role = "version"
 elif "stream-json" in argv:
     role = "probe"
-elif "--setting-sources" in argv:
-    role = "agent"
+elif "--setting-sources" in argv[:-1] and argv[argv.index("--setting-sources") + 1]:
+    role = "agent"  # the judge passes an EMPTY setting source
 else:
     role = "judge"
 path = os.path.join(STATE, role)
@@ -1394,14 +1394,31 @@ class TestLocalEval(unittest.TestCase):
         self.assertNotIn("sentinel-helper", proc.stderr)
         self.assertIn("settings.json", record.read_text(encoding="utf-8"))
 
-    def test_the_launcher_hands_a_clean_launch_to_the_cli_unchanged(self):
+    def test_the_launcher_hands_a_clean_launch_to_the_cli_with_isolation_flags(self):
+        # A print-mode session gets --strict-mcp-config and, when it names no
+        # setting source, `--setting-sources project` (skill-creator's own
+        # `claude -p` names none); never --no-session-persistence, since a
+        # caller may resume. Each flag only when absent; other argv unchanged.
         launcher, log, _ = self._launcher()
         cwd = self.root / "clean-ws"
         cwd.mkdir()
-        argv = ["-p", "a prompt", "--output-format", "json", "--model", "m"]
-        proc = self._launch(launcher, cwd, *argv)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(self._real_calls(log), [argv])
+        cases = (
+            (["-p", "a prompt", "--output-format", "json", "--model", "m"],
+             ["--strict-mcp-config", "--setting-sources", "project",
+              "-p", "a prompt", "--output-format", "json", "--model", "m"]),
+            (["-p", "--setting-sources", "", "--model", "m"],
+             ["--strict-mcp-config", "-p", "--setting-sources", "", "--model", "m"]),
+            (["--print", "x", "--setting-sources=user", "--strict-mcp-config"],
+             ["--print", "x", "--setting-sources=user", "--strict-mcp-config"]),
+            (["plugin", "list"], ["plugin", "list"]),
+        )
+        for argv, _ in cases:
+            proc = self._launch(launcher, cwd, *argv)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = self._real_calls(log)
+        self.assertEqual(calls, [want for _, want in cases])
+        for call in calls:
+            self.assertNotIn("--no-session-persistence", call)
 
     def test_only_exactly_a_bare_version_skips_the_settings_check(self):
         launcher, log, _ = self._launcher()

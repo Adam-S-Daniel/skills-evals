@@ -1108,10 +1108,34 @@ environment nor a fixture's `env:` can turn it back on. Skill arms and the
 judge keep the real `HOME` on a workstation, because the interactive login
 lives there (ADR 0002, decision 4); with auto-memory on, a local trial wrote
 fixture-derived notes into the operator's own
-`~/.claude/projects/<workspace>/memory/` (observed 2026-10-05). The trials'
-session transcripts still land under that `~/.claude/projects/`: moving them
-would mean a scratch `HOME` or `CLAUDE_CONFIG_DIR`, which moves the login
-with them.
+`~/.claude/projects/<workspace>/memory/` (observed 2026-10-05).
+
+**Isolation is by flags, because the login pins HOME.** Measured on CLI
+2.1.289 with no credential copied: a scratch `HOME`, a scratch
+`CLAUDE_CONFIG_DIR` and `--bare` each answer "Not logged in". With the real
+HOME, `--setting-sources project` alone still loaded the account's claude.ai
+MCP connectors (mail, drive, GitHub) and wrote a transcript under
+`~/.claude/projects/`. So:
+
+| Spawn | Flags beyond its own |
+|---|---|
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
+| canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
+| anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
+
+A follow-up turn `--resume`s, and a non-persisted session cannot be resumed
+("No conversation found"), so a multi-turn arm persists; when it ends, the
+`~/.claude/projects/<munged workspace>` directory it created (the CLI's name:
+every character outside `[A-Za-z0-9]` becomes `-`) is moved to
+`$XDG_STATE_HOME/skills-evals/sessions/`. A directory that existed before the
+arm, one past the CLI's 200-character truncation, and one inside a guidance
+arm's own scratch are never touched. The judge's empty setting source means
+the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
+fleet-memory SessionStart hook: that is the isolation, not a regression.
+What none of this stops: managed settings, the CLI's bundled skills, writes
+to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
+file under the real HOME.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already

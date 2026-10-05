@@ -84,9 +84,14 @@ class RunAgentFollowupTests(unittest.TestCase):
              mock.patch.dict(run_eval.os.environ, {"CLAUDE_BIN": "fake-claude"}):
             return run_eval.run_agent(self.workspace, "Rename the PDFs.", arm)
 
+    # A multi-turn arm's first call: it must persist, or `--resume` finds
+    # no conversation.
     BASE_CMD = ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
                 "json", "--verbose", "--permission-mode", "bypassPermissions",
-                "--setting-sources", "project", "--model", "model-a"]
+                "--setting-sources", "project", "--strict-mcp-config",
+                "--model", "model-a"]
+    # A one-turn arm writes no transcript.
+    ONE_TURN_CMD = [*BASE_CMD[:-2], "--no-session-persistence", *BASE_CMD[-2:]]
 
     # -- no followups: unchanged -----------------------------------------
 
@@ -96,7 +101,7 @@ class RunAgentFollowupTests(unittest.TestCase):
             with self.subTest(followups=followups):
                 cli = ScriptedCli(first)
                 out = self.run_agent(cli, followups)
-                self.assertEqual([c["cmd"] for c in cli.calls], [self.BASE_CMD])
+                self.assertEqual([c["cmd"] for c in cli.calls], [self.ONE_TURN_CMD])
                 self.assertEqual(out, {
                     "transcript": "proposed six renames",
                     "usage": first["usage"], "cost_usd": 0.5, "num_turns": 2,
@@ -124,6 +129,7 @@ class RunAgentFollowupTests(unittest.TestCase):
         self.assertNotIn("error", out)
         first, second = cli.calls
         self.assertEqual(first["cmd"], self.BASE_CMD)
+        self.assertNotIn("--no-session-persistence", second["cmd"])
         expected = list(self.BASE_CMD)
         expected[2] = "Yes, apply all (auto)."
         self.assertEqual(second["cmd"], expected + ["--resume", "sess-1"])

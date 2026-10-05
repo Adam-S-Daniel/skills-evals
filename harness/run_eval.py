@@ -1037,7 +1037,18 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--verbose",
            "--permission-mode", "bypassPermissions",
-           "--setting-sources", arm.get("setting_sources", "project")]
+           "--setting-sources", arm.get("setting_sources", "project"),
+           # The account's claude.ai MCP connectors (mail, drive, GitHub)
+           # load even under `--setting-sources project` (CLI 2.1.289,
+           # measured); strict means only `--mcp-config` servers, of which
+           # the harness passes none.
+           "--strict-mcp-config"]
+    # No transcript under the real HOME for a one-turn arm. A follow-up turn
+    # `--resume`s the session, and a non-persisted session cannot be resumed
+    # ("No conversation found", measured), so a multi-turn arm persists and
+    # `_archive_session_dir` moves what it wrote out of the profile.
+    if not arm.get("followups"):
+        cmd.append("--no-session-persistence")
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
     # Auto-memory off, applied last (guidance.CLI_FORCED_ENV): a skill arm
@@ -1052,59 +1063,130 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # whole `timeout`. The first turn's error details carry no label, so a
     # fixture without `followups:` behaves exactly as before.
     texts = [prompt, *(arm.get("followups") or [])]
-    turns: list[dict] = []
-    for index, text in enumerate(texts):
-        label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
-        turn_cmd = cmd
-        if index:
-            session_id = turns[-1].get("session_id")
-            if not isinstance(session_id, str) or not session_id:
+    projects = _session_projects_dir(env)
+    session_dir = projects / _munged_project_name(workspace) if projects else None
+    preexisting = session_dir is not None and os.path.lexists(session_dir)
+    # The finally covers every return below: a multi-turn arm's transcript
+    # leaves the profile whether the arm succeeded or not.
+    try:
+        turns: list[dict] = []
+        for index, text in enumerate(texts):
+            label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
+            turn_cmd = cmd
+            if index:
+                session_id = turns[-1].get("session_id")
+                if not isinstance(session_id, str) or not session_id:
+                    return {"error": "invalid_json",
+                            "detail": f"{label}the previous result has no "
+                                      "session_id to resume"}
+                turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
+            try:
+                result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
+                                        text=True, timeout=timeout, env=env)
+            except subprocess.TimeoutExpired:
+                return {"error": "timeout",
+                        "detail": f"{label}agent timed out after {timeout}s"}
+
+            if result.returncode != 0:
+                return {"error": "nonzero_exit",
+                        "detail": label + failed_run_detail(result.stdout, result.stderr),
+                        "returncode": result.returncode}
+
+            try:
+                data = normalize_cli_result(json.loads(result.stdout))
+            except json.JSONDecodeError as e:
+                # Shape only. The array form starts with the `system/init`
+                # message (cwd, tool and connector names), and this detail
+                # reaches summary.json, so no slice of stdout is echoed.
                 return {"error": "invalid_json",
-                        "detail": f"{label}the previous result has no "
-                                  "session_id to resume"}
-            turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
-        try:
-            result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
-                                    text=True, timeout=timeout, env=env)
-        except subprocess.TimeoutExpired:
-            return {"error": "timeout",
-                    "detail": f"{label}agent timed out after {timeout}s"}
+                        "detail": f"{label}stdout is not valid JSON ({e.msg} at "
+                                  f"character {e.pos} of {len(result.stdout)})"}
+            except ValueError as e:
+                return {"error": "invalid_json", "detail": f"{label}{e}"}
 
-        if result.returncode != 0:
-            return {"error": "nonzero_exit",
-                    "detail": label + failed_run_detail(result.stdout, result.stderr),
-                    "returncode": result.returncode}
+            if data.get("is_error"):
+                detail = data.get("result", "")
+                return {"error": "agent_error",
+                        "detail": f"{label}{detail}" if label else detail,
+                        "raw": data}
+            turns.append(data)
 
-        try:
-            data = normalize_cli_result(json.loads(result.stdout))
-        except json.JSONDecodeError as e:
-            # Shape only. The array form starts with the `system/init`
-            # message (cwd, tool and connector names), and this detail
-            # reaches summary.json, so no slice of stdout is echoed.
-            return {"error": "invalid_json",
-                    "detail": f"{label}stdout is not valid JSON ({e.msg} at "
-                              f"character {e.pos} of {len(result.stdout)})"}
-        except ValueError as e:
-            return {"error": "invalid_json", "detail": f"{label}{e}"}
+        if len(turns) > 1:
+            return _combine_turns(turns, texts[1:])
+        data = turns[0]
+        return {
+            "transcript": data.get("result"),
+            "usage": data.get("usage"),
+            "cost_usd": data.get("total_cost_usd"),
+            "num_turns": data.get("num_turns"),
+            "duration_ms": data.get("duration_ms"),
+            "raw": data,
+        }
+    finally:
+        if session_dir is not None and not preexisting:
+            _archive_session_dir(session_dir, arm.get("session_scratch"))
 
-        if data.get("is_error"):
-            detail = data.get("result", "")
-            return {"error": "agent_error",
-                    "detail": f"{label}{detail}" if label else detail,
-                    "raw": data}
-        turns.append(data)
 
-    if len(turns) > 1:
-        return _combine_turns(turns, texts[1:])
-    data = turns[0]
-    return {
-        "transcript": data.get("result"),
-        "usage": data.get("usage"),
-        "cost_usd": data.get("total_cost_usd"),
-        "num_turns": data.get("num_turns"),
-        "duration_ms": data.get("duration_ms"),
-        "raw": data,
-    }
+# The CLI's own project-directory name (2.1.289, read from its bundle and
+# matched by the `memory_paths` its init event reports): every character
+# outside [A-Za-z0-9] becomes "-". Past 200 characters the CLI truncates and
+# appends a hash of its own, which this harness does not reproduce, so a name
+# that long is never touched.
+_PROJECT_NAME_MAX = 200
+
+
+def _munged_project_name(workspace: Path) -> str:
+    """The `~/.claude/projects/<name>` the CLI keys a session started in
+    `workspace` by. The real path: the child's cwd resolves symlinks."""
+    return re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(workspace))
+
+
+def _session_projects_dir(env: dict) -> Path | None:
+    """Where the child's CLI writes session transcripts: `$CLAUDE_CONFIG_DIR/
+    projects`, else `$HOME/.claude/projects`, read from the CHILD's env."""
+    config = env.get("CLAUDE_CONFIG_DIR")
+    if config:
+        return Path(config) / "projects"
+    home = env.get("HOME")
+    return Path(home) / ".claude" / "projects" if home else None
+
+
+def session_archive_dir() -> Path:
+    """The harness-owned archive for transcripts a multi-turn arm had to
+    persist: `$XDG_STATE_HOME/skills-evals/sessions`, else
+    `~/.local/state/skills-evals/sessions`. Outside every checkout, so a
+    transcript (host paths, fixture data) never rides into a results tree."""
+    base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    return Path(base) / "skills-evals" / "sessions"
+
+
+def _archive_session_dir(session_dir: Path, scratch=None) -> Path | None:
+    """Move the project directory THIS arm's CLI created out of the profile.
+
+    The caller only asks for a directory that did not exist before the arm's
+    first turn, so nothing another session wrote is touched. Left alone: a
+    name past the CLI's truncation length (the CLI would have written a
+    different, hashed name), a symlink or non-directory, and a directory
+    inside the arm's own `scratch` (the guidance arm's scratch config dir,
+    which the arm removes with the rest of its scratch). Returns where it
+    went, else None; an OSError is swallowed — housekeeping never fails an
+    arm."""
+    if len(session_dir.name) > _PROJECT_NAME_MAX:
+        return None
+    if session_dir.is_symlink() or not session_dir.is_dir():
+        return None
+    if scratch and Path(os.path.realpath(session_dir)).is_relative_to(
+            os.path.realpath(scratch)):
+        return None
+    try:
+        archive = session_archive_dir()
+        archive.mkdir(parents=True, exist_ok=True)
+        slot = Path(tempfile.mkdtemp(prefix=f"{session_dir.name}.", dir=archive))
+        dest = slot / session_dir.name
+        shutil.move(str(session_dir), str(dest))
+        return dest
+    except OSError:
+        return None
 
 
 def _sum_usage(total, part):
@@ -2518,6 +2600,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             "setting_sources": setting_sources,
             "env_override": env,
             "followups": fixture.get("followups"),
+            # A multi-turn arm's transcript lands under `config`, inside this
+            # scratch, and goes when the scratch does: never archived.
+            "session_scratch": str(scratch),
         }
         result = run_agent(workspace, fixture["prompt"], arm_config)
 
