@@ -4046,6 +4046,20 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(proc.selected, "evals/workflow-path-audit")
 
+    @staticmethod
+    def _commit_selection_tree(root: Path) -> None:
+        """A standalone synthetic checkout with no inherited Git metadata."""
+        scripts = root / "scripts"
+        scripts.mkdir()
+        shutil.copy2(REPO_ROOT / "scripts" / "plan_scheduled_evals.py",
+                     scripts / "plan_scheduled_evals.py")
+        git = ["git", "-c", "maintenance.auto=false", "-C", str(root)]
+        subprocess.run([*git, "init", "--quiet"], check=True, capture_output=True)
+        subprocess.run([*git, "add", "evals", "scripts"], check=True, capture_output=True)
+        subprocess.run([*git, "-c", "user.name=fixture", "-c",
+                        "user.email=fixture@example.com", "commit", "--quiet",
+                        "-m", "Track synthetic fixtures"], check=True, capture_output=True)
+
     def test_the_fixture_match_survives_a_committed_list_far_larger_than_a_pipe(self):
         # `printf '%s\n' "$committed" | grep -Fxq -- "$fixture"` is the
         # fleet's forbidden pipe-into-early-exit shape: grep exits the moment
@@ -4071,9 +4085,10 @@ class TestIssue97(unittest.TestCase):
             d = tmp / "evals" / f"zz-generated-fixture-{i:05d}"
             d.mkdir(parents=True)
             (d / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        self._commit_selection_tree(tmp)
         listed = subprocess.run(
             ["bash", "-c",
-             "find evals -mindepth 1 -name fixture.yaml -printf '%h\\n' | sort"],
+             "python3 scripts/plan_scheduled_evals.py --committed"],
             cwd=str(tmp), capture_output=True, text=True, timeout=120).stdout
         self.assertGreater(len(listed.encode("utf-8")), 100_000,
                            "the synthetic committed list must exceed 100 KB")
@@ -4106,6 +4121,7 @@ class TestIssue97(unittest.TestCase):
         # Something for a glob to expand ONTO, so an unquoted printf visibly
         # produces a different list rather than the pattern itself.
         (tmp / "stardir-decoy").mkdir()
+        self._commit_selection_tree(tmp)
         proc = self._run_validation({"inputs": {"fixture": "evals/nope"}},
                                     cwd=tmp)
         self.assertEqual(proc.returncode, 1)
@@ -4118,16 +4134,24 @@ class TestIssue97(unittest.TestCase):
             "every committed path must be listed once, intact — no word "
             f"splitting, no globbing\n{output}")
 
-    def test_the_gate_says_committed_means_present_in_this_checkout(self):
-        # N-i. "Committed" is the set `find` returns, not `git ls-files`: an
-        # untracked fixture directory or a symlinked fixture.yaml is accepted
-        # too. Equivalent in the fresh CI checkout this workflow runs in. The
-        # choice made is to SAY so rather than switch to `git ls-files`.
-        header = self._eval_header_prose()
-        self.assertIn("present in this checkout", header)
-        step = self._validation_script()
-        self.assertIn("find evals", step)
-        self.assertNotIn("git ls-files", step)
+    def test_the_gate_refuses_fixtures_outside_the_committed_index(self):
+        tmp = Path(tempfile.mkdtemp(prefix="eval-tracked-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        tracked = tmp / "evals" / "workflow-path-audit"
+        tracked.mkdir(parents=True)
+        (tracked / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        self._commit_selection_tree(tmp)
+        accepted = self._run_validation({"inputs": {"fixture": "evals/workflow-path-audit"}},
+                                        cwd=tmp)
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertEqual(accepted.selected, "evals/workflow-path-audit")
+        untracked = tmp / "evals" / "untracked"
+        untracked.mkdir()
+        (untracked / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        rejected = self._run_validation({"inputs": {"fixture": "evals/untracked"}}, cwd=tmp)
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIsNone(rejected.selected)
+        self.assertIn("names no committed fixture", rejected.stdout)
 
     def test_agent_guidance_is_checked_out_side_by_side_without_credentials(self):
         checkout = next(

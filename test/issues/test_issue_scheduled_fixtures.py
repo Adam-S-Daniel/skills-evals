@@ -109,7 +109,10 @@ class TestScheduledFixtures(unittest.TestCase):
             subprocess.run(["git", "init", "-q", str(base)], check=True)
             (base / "evals").mkdir()
             (base / "evals/scheduled.yml").write_text("fixtures: [private-source-marker")
-            result = subprocess.run(["python3", str(ROOT / "scripts/plan_scheduled_evals.py")],
+            (base / "scripts").mkdir()
+            shutil.copyfile(ROOT / "scripts/plan_scheduled_evals.py",
+                            base / "scripts/plan_scheduled_evals.py")
+            result = subprocess.run(["python3", "scripts/plan_scheduled_evals.py"],
                                     cwd=base, env=dict(os.environ, GITHUB_EVENT_NAME="schedule", GITHUB_EVENT_PATH="", GITHUB_OUTPUT=str(base / "out")),
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 1)
