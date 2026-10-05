@@ -156,10 +156,12 @@ heredocs, arithmetic and case arms, then parses only that body with the shared
 Tree-sitter entry point (`scorers/bash_ast.py`). `if`/`elif`/`else` and `case`
 arms are exclusive branches, except that an arm ending in `;&` or `;;&` carries
 its states into the next arm. Loop bodies are followed for a second iteration,
-function bodies are analyzed where they are called, and `$'...'` words are
+function bodies are analyzed where they are called (a redefinition made
+during the call stays in force), and `$'...'` words are
 decoded for `\xHH`, octal and quote escapes. A body that does not parse is ignored unless it
 contains `gh workflow run`, in which case the check fails closed; invalid
-syntax elsewhere never fails the whole script.
+syntax elsewhere never fails the whole script. A body needing more than 32,768
+flow steps (deeply nested loops or calls) is treated the same way.
 
 ### Parsed configuration and staged-shell objective checks
 

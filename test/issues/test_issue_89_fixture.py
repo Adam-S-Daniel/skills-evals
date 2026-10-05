@@ -572,6 +572,30 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertEqual(self._reply('```bash\n' + script + '\n```'), safe)
 
+    def test_redefined_function_and_dynamic_name_keep_their_bindings(self):
+        table = [
+            ('x=$(f(){ f(){ gh run list; }; }; f; gh workflow run d; f)', False),
+            ('x=$(f(){ f(){ :; }; }; f; gh workflow run d; f; gh run list)', False),
+            ('x=$(f(){ f(){ :; }; }; gh workflow run d; f; f)', True),
+            ('x=$($cmd; f(){ gh run list; }; gh workflow run d; f)', False),
+        ]
+        for script, safe in table:
+            with self.subTest(script=script):
+                self.assertEqual(self._reply('```bash\n' + script + '\n```'), safe)
+
+    def test_flow_step_bound_fails_closed_only_for_dispatch_bodies(self):
+        nested = 'for i in 1; do ' * 16 + ':' + '; done' * 16
+        shallow = 'for i in 1; do ' * 8 + ':' + '; done' * 8
+        with self.assertRaises(shell_capture._AnalysisLimit):
+            shell_capture._unsafe_capture(parse_bash(nested + '\n'))
+        self.assertFalse(shell_capture._unsafe_capture(parse_bash(shallow + '\n')))
+        self.assertTrue(self._reply('```bash\nx=$(' + nested + ')\n```'))
+        self.assertTrue(self._reply('```bash\nx=$(' + shallow + '; gh workflow run x)\n```'))
+        ok, detail = shell_capture.shell_capture_safe(
+            '', [], source='transcript',
+            transcript='```bash\nx=$(' + nested + '; gh workflow run x)\n```')
+        self.assertEqual((ok, detail), (False, 'reply shell example: shell analysis exceeded its bound'))
+
     def test_unavailable_parser_raises_instead_of_passing(self):
         from scorers import bash_ast
         with mock.patch.dict(sys.modules, {'tree_sitter': None}):

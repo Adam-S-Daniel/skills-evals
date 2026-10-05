@@ -45,6 +45,19 @@ def _command_words(node):
             if word is not None]
 
 
+# Loops and calls are re-walked, so nesting multiplies work; the bound keeps
+# analysis linear in practice and fails closed like an unparseable body.
+_MAX_FLOW_STEPS = 32768
+
+
+class _AnalysisLimit(Exception):
+    """The candidate needs more flow steps than the bound allows."""
+
+
+# Key of the step counter in the `functions` map; no command word equals it.
+_STEPS = object()
+
+
 def _sequence(nodes, states, functions):
     for node in nodes:
         states, unsafe = _flow(node, states, functions)
@@ -57,8 +70,12 @@ def _flow(node, states, functions):
     """Track dispatch along Tree-sitter paths without joining exclusive branches.
 
     `functions` maps names defined so far to their bodies; a body is analyzed
-    where the function is called, not where it is defined.
+    where the function is called, not where it is defined. Its _STEPS entry
+    counts flow steps against _MAX_FLOW_STEPS.
     """
+    functions[_STEPS] = functions.get(_STEPS, 0) + 1
+    if functions[_STEPS] > _MAX_FLOW_STEPS:
+        raise _AnalysisLimit
     if node.type == 'function_definition':
         name = node.child_by_field_name('name')
         functions[name.text.decode('utf-8')] = node.child_by_field_name('body')
@@ -73,12 +90,13 @@ def _flow(node, states, functions):
         if words[:3] == ['gh', 'workflow', 'run']:
             return {True}, False
         if words and words[0] in functions:
-            # Remove the definition while its body runs, so recursion ends.
+            # Remove the definition while its body runs, so recursion ends;
+            # restore it afterwards unless the body redefined the function.
             body = functions.pop(words[0])
             try:
                 return _flow(body, states, functions)
             finally:
-                functions[words[0]] = body
+                functions.setdefault(words[0], body)
         return states, False
     if node.type in {'for_statement', 'c_style_for_statement', 'while_statement'}:
         # A second pass carries one iteration's states into the next; with
@@ -388,12 +406,18 @@ def shell_capture_safe(workspace: str, patterns: list[str], source='files',
                 if not complete:
                     raise BashParseError('incomplete_substitution')
                 root = parse_bash(body + '\n')
+                unsafe = _unsafe_capture(root)
             except BashParseError as error:
                 if str(error) == 'parser_unavailable':
                     raise
-                if _mentions_dispatch(body):
-                    return False, f'{name}: shell syntax could not be verified'
+                reason = 'shell syntax could not be verified'
+            except _AnalysisLimit:
+                reason = 'shell analysis exceeded its bound'
+            else:
+                if unsafe:
+                    return False, f'{name}: dispatch and discovery share a command substitution'
                 continue
-            if _unsafe_capture(root):
-                return False, f'{name}: dispatch and discovery share a command substitution'
+            # An unverifiable body fails closed only if it may dispatch.
+            if _mentions_dispatch(body):
+                return False, f'{name}: {reason}'
     return True, 'no concatenated dispatch/discovery capture'
