@@ -43,6 +43,9 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    CLAUDE_BIN, SKILLS_EVALS_REGISTRIES, AGENTSKILLS_DIR. No XDG_* variable
    passes: `$XDG_CONFIG_HOME/claude/settings.json` could carry a credential
    source this wrapper does not read, so children use the defaults under HOME.
+   One variable is SET rather than allow-listed:
+   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (`guidance.CLI_FORCED_ENV`), so no
+   trial or judge writes auto-memory into the real HOME.
 1b. Reads the settings files the CLI loads for the unisolated judge, which
    runs from this checkout with no `--setting-sources`: `~/.claude/settings
    .json` and `settings.local.json`, this checkout's `.claude/settings.json`
@@ -145,7 +148,10 @@ Limits a reader must know:
   measure user memory, hooks or MCP servers, and it does not include the
   fixture's seed.
 - On a workstation a `bypassPermissions` arm inherits the real `HOME`, where
-  the account's own credentials live (ADR 0002, decision 4).
+  the account's own credentials live (ADR 0002, decision 4). Auto-memory is
+  off for every child, but each trial's session transcript still lands under
+  `~/.claude/projects/-tmp-workspace-*`: a scratch HOME or CLAUDE_CONFIG_DIR
+  would move the `/login` credential with it, so it is not used here.
 - Nothing here was verified against a real CLI: no real run was made. What
   the refusals and the settings pre-flight cannot see, and so stays
   unverified: `~/.claude.json`, the system keychain, and
@@ -232,9 +238,13 @@ def _utc_now() -> str:
 
 
 def child_environment(environ) -> dict:
-    """The allow-listed environment every child runs under."""
-    return {name: value for name, value in environ.items()
-            if name in CHILD_ENV_NAMES or name.startswith(CHILD_ENV_PREFIXES)}
+    """The allow-listed environment every child runs under, plus
+    `guidance.CLI_FORCED_ENV` (auto-memory off) SET, not inherited: the
+    children run under the real HOME, and skill-creator's own `claude`
+    calls (propose_skill_edit) reach no harness sink that would set it."""
+    return guidance.cli_child_env(
+        {name: value for name, value in environ.items()
+         if name in CHILD_ENV_NAMES or name.startswith(CHILD_ENV_PREFIXES)})
 
 
 def check_user_settings(home: Path) -> None:

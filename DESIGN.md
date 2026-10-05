@@ -1100,6 +1100,19 @@ allowlist, not the ambient one: `PATH`, `HOME`, `TMPDIR`,
 a scrubbed and an ambient environment, and an arm that inherits the operator's
 own settings is not measuring the guidance.
 
+Every CLI session the harness starts — skill and guidance arms, the judge,
+the canary and guard probes — also gets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`,
+SET last at the spawn (`guidance.CLI_FORCED_ENV`, applied by
+`guidance.cli_child_env`), never merely inherited, so neither the ambient
+environment nor a fixture's `env:` can turn it back on. Skill arms and the
+judge keep the real `HOME` on a workstation, because the interactive login
+lives there (ADR 0002, decision 4); with auto-memory on, a local trial wrote
+fixture-derived notes into the operator's own
+`~/.claude/projects/<workspace>/memory/` (observed 2026-10-05). The trials'
+session transcripts still land under that `~/.claude/projects/`: moving them
+would mean a scratch `HOME` or `CLAUDE_CONFIG_DIR`, which moves the login
+with them.
+
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
 IS the guidance. A harness that does not isolate the config dir per arm

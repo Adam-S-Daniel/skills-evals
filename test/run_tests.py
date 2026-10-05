@@ -26945,7 +26945,8 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                        (set(self.BASE_ENVIRONMENT) | set(self.PLANTED_FORWARDED)
                         | {"HOME", "TMPDIR", "XDG_CONFIG_HOME", "CLAUDE_BIN"})}
         fixture_env = set(run_eval.load_fixture(self.STUCK_DIR)["env"])
-        expected = (allowlisted | fixture_env
+        # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited.
+        expected = (allowlisted | fixture_env | set(run_eval.guidance.CLI_FORCED_ENV)
                     | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN"})
         self.assertEqual(set(seen), expected,
                          f"unexpected: {sorted(set(seen) - expected)}; "
