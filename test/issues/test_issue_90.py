@@ -21,6 +21,10 @@ from scorers import objective
 
 FIXTURE_DIR = REPO_ROOT / 'evals/editorial-label-audit'
 SITE = 'example-org/example-site'
+# The audit script runs under node, which is not in /usr/bin on every host (the
+# GitHub runner keeps it in /usr/local/bin). Taken from the real environment
+# at import, before any test replaces it, and appended after the sentinel dir.
+NODE_DIR = os.path.dirname(shutil.which('node') or '/usr/bin/node')
 GOOD = '#512: Add `decap-cms/draft`.\n#518: Apply `decap-cms/pending_publish`.\n'
 BEHAVIOR = {
     'pr-512-label', 'pr-518-label', 'caller-can-self-heal',
@@ -79,7 +83,7 @@ class TestIssue90(unittest.TestCase):
         return ws
 
     def base_env(self):
-        return {'HOME': str(self.home), 'PATH': str(self.sentinel) + os.pathsep + '/usr/bin:/bin',
+        return {'HOME': str(self.home), 'PATH': os.pathsep.join([str(self.sentinel), '/usr/bin:/bin', NODE_DIR]),
                 'LC_ALL': 'C.UTF-8', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1',
                 'EDITORIAL_CLAUDE_SENTINEL_LOG': str(self.calls)}
 
