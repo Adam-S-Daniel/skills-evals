@@ -90,7 +90,7 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    pull request.
 2b. Refuses (naming the pinned versions and the pip command) when a selected
    fixture has a check that parses Bash (`objective.PARSER_BACKED_CHECKS`,
-   today `shell_staged_tool_guard`) and this python cannot import
+   `shell_staged_tool_guard` and `shell_capture_safe`) and this python cannot import
    `tree_sitter`/`tree_sitter_bash`. Install `tree-sitter==0.26.0
    tree-sitter-bash==0.25.1`, the CI pins, in the python that runs this
    wrapper (a venv works). run_eval, which this wrapper starts per trial,

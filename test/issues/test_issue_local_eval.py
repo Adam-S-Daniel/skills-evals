@@ -268,20 +268,22 @@ class TestLocalEval(unittest.TestCase):
     def _parser_blocker(self) -> Path:
         """A directory whose `tree_sitter` cannot be imported, for PYTHONPATH."""
         package = self.root / "no-parser" / "tree_sitter"
-        package.mkdir(parents=True)
+        package.mkdir(parents=True, exist_ok=True)
         (package / "__init__.py").write_text(
             "raise ImportError('deliberately absent')\n", encoding="utf-8")
         return package.parent
 
-    def _guard_fixture(self, with_guard_check: bool) -> Path:
+    def _guard_fixture(self, with_guard_check: bool,
+                       check_type: str = "shell_staged_tool_guard") -> Path:
         eval_dir = self.root / "fixture-guard"
         shutil.copytree(EVAL_DIR, eval_dir)
         if with_guard_check:
             path = eval_dir / "fixture.yaml"
             fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
-            fixture["objective_checks"].append(
-                {"id": "guard", "type": "shell_staged_tool_guard",
-                 "paths": ["hook.sh"], "tools": ["gofmt"]})
+            check = {"id": "guard", "type": check_type, "paths": ["hook.sh"]}
+            if check_type == "shell_staged_tool_guard":
+                check["tools"] = ["gofmt"]
+            fixture["objective_checks"].append(check)
             path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
         return eval_dir
 
@@ -289,14 +291,19 @@ class TestLocalEval(unittest.TestCase):
         # A missing parser must stop the run before any CLI call, naming the
         # pins and the pip command, not spend trials that cannot be scored.
         registry = self._registry()
-        proc = self._run(str(self._guard_fixture(True)), "--trials", "1",
-                         "--registry", f"adam-agentskills={registry}",
-                         env_extra={"PYTHONPATH": str(self._parser_blocker())})
-        self._assert_nothing_ran(proc)
-        for needle in ("tree-sitter==0.26.0", "tree-sitter-bash==0.25.1",
-                       "pip install", "Nothing run"):
-            self.assertIn(needle, proc.stderr)
-        self.assertFalse(self.out.exists())
+        for check_type in ("shell_staged_tool_guard", "shell_capture_safe"):
+            with self.subTest(check_type=check_type):
+                shutil.rmtree(self.root / "fixture-guard", ignore_errors=True)
+                self.log.unlink(missing_ok=True)
+                proc = self._run(str(self._guard_fixture(True, check_type)),
+                                 "--trials", "1",
+                                 "--registry", f"adam-agentskills={registry}",
+                                 env_extra={"PYTHONPATH": str(self._parser_blocker())})
+                self._assert_nothing_ran(proc)
+                for needle in ("tree-sitter==0.26.0", "tree-sitter-bash==0.25.1",
+                               "pip install", "Nothing run"):
+                    self.assertIn(needle, proc.stderr)
+                self.assertFalse(self.out.exists())
 
     def test_a_fixture_without_a_parser_backed_check_does_not_need_the_parser(self):
         registry = self._registry()
@@ -313,8 +320,13 @@ class TestLocalEval(unittest.TestCase):
             {"id": "g", "type": "shell_staged_tool_guard"}]}, "name": None}
         plain = {"fixture": {"skill": "s", "objective_checks": [
             {"id": "f", "type": "file_count"}]}, "name": None}
+        real = yaml.safe_load((REPO_ROOT / "evals" / "ci-watcher-loops"
+                               / "fixture.yaml").read_text(encoding="utf-8"))
+        watcher = {"fixture": real, "name": None}
         with mock.patch.object(local_eval.bash_ast, "parser_importable",
                                return_value=False):
+            with self.assertRaises(local_eval.Refused):
+                local_eval.check_scorer_dependencies([watcher])
             local_eval.check_scorer_dependencies([plain])
             with self.assertRaises(local_eval.Refused) as ctx:
                 local_eval.check_scorer_dependencies([plain, guarded])

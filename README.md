@@ -215,7 +215,7 @@ root) names `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` or such an
 `--results-dir` resolves inside any git repository or is not empty, and when
 the skill under test is already visible to an empty workspace (a user-level
 copy would contaminate the `without_skill` arm), and when a selected fixture
-has a check that parses Bash (`shell_staged_tool_guard`) and this python cannot
+has a check that parses Bash (`shell_staged_tool_guard`, `shell_capture_safe`) and this python cannot
 import `tree_sitter`/`tree_sitter_bash`: install the CI pins
 (`python3 -m pip install tree-sitter==0.26.0 tree-sitter-bash==0.25.1`, in a
 venv if you like) first. `run_eval.py` itself never scores a missing parser as

@@ -14,6 +14,26 @@ class BashParseError(ValueError):
     """A fixed parser failure reason, without source text or parser output."""
 
 
+class ScorerUnavailableError(RuntimeError):
+    """A check could not run because a scoring dependency is missing here.
+
+    Deliberately not a `ValueError`: the checks turn those into a failed
+    check, and a missing parser says nothing about the agent's work. The
+    runner records the trial as an error, outside every check's denominator.
+    """
+
+
+def require_parser(check: str) -> None:
+    """Raise `ScorerUnavailableError` unless the pinned parser can be imported.
+
+    Called at the top of every parser-backed check, before it looks at
+    anything the agent wrote, so the outcome never depends on that content.
+    """
+    if not parser_importable():
+        raise ScorerUnavailableError(
+            f"{check}: the Bash parser is not installed; {install_command()}")
+
+
 def parser_importable() -> bool:
     """True when the pinned parser wheels can be imported by this interpreter."""
     try:

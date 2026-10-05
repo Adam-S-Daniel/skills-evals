@@ -406,9 +406,13 @@ def shell_capture_safe(workspace: str, patterns: list[str], source='files',
     elsewhere in a script or prose does not invalidate its independent
     captures. A body with a dispatch token that cannot be parsed fails closed.
     """
-    from .bash_ast import BashParseError, parse_bash
+    from .bash_ast import BashParseError, parse_bash, require_parser
     if source not in {'files', 'transcript'}:
         raise ValueError('shell_capture_safe source must be files or transcript')
+    # Before any candidate is read: whether the parser is installed here must
+    # not depend on what the agent wrote (a body without a substitution never
+    # reaches the parser). A missing parser is a scorer error, not a failure.
+    require_parser('shell_capture_safe')
     if source == 'transcript':
         candidates = [('reply shell example', text, prose)
                       for text, prose in _transcript_shell(transcript or '')]

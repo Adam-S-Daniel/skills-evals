@@ -2555,10 +2555,17 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             scored = dict(fixture)
             scored["objective_checks"] = substitute_token(
                 checks, ctx["token"], decoy)
-            objective_checks = objective.run_checks(
-                scored, str(workspace), str(seed), transcript=result.get("transcript"))
+            try:
+                objective_checks = objective.run_checks(
+                    scored, str(workspace), str(seed),
+                    transcript=result.get("transcript"))
+            except objective.ScorerUnavailableError as exc:
+                # As in `_run_arm`: a missing scoring dependency on THIS
+                # machine is a trial error, not a failed check, and the
+                # judge is skipped with the objective.
+                error = {"type": "scorer_unavailable", "detail": str(exc)}
 
-            if not args.no_judge and fixture.get("judge_rubric"):
+            if error is None and not args.no_judge and fixture.get("judge_rubric"):
                 _git("add", "-A", cwd=workspace)
                 # `:!CLAUDE.md` only under the project-delivery fallback, where
                 # the hook wrote the payload INTO the workspace: without it the

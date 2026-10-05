@@ -13,10 +13,15 @@ Discovered and run by test/run_tests.py; also runnable on its own with
 
 from __future__ import annotations
 
+import builtins
 import json
+import shutil
 import sys
+import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_issue_66 import (HARNESS_DIR, TS, _HarnessCase, _child_env,  # noqa: E402
@@ -24,7 +29,7 @@ from test_issue_66 import (HARNESS_DIR, TS, _HarnessCase, _child_env,  # noqa: E
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
-from scorers import bash_ast  # noqa: E402
+from scorers import bash_ast, objective, shell_capture  # noqa: E402
 
 SKILL = "parser-skill"
 CHECKS = [
@@ -32,6 +37,10 @@ CHECKS = [
      "min": 1, "max": 1},
     {"id": "guard", "type": "shell_staged_tool_guard", "paths": ["hook.sh"],
      "tools": ["gofmt"]},
+    {"id": "capture-files", "type": "shell_capture_safe", "paths": ["hook.sh"],
+     "source": "files"},
+    {"id": "capture-transcript", "type": "shell_capture_safe",
+     "source": "transcript"},
 ]
 
 
@@ -113,12 +122,129 @@ class TestParserUnavailable(_ParserCase):
                          (2, 0, 2))
         checks = {c["id"]: c for c in summary["aggregate"]["objective"]["checks"]}
         self.assertEqual((checks["guard"]["n"], checks["guard"]["passed"]), (2, 0))
+        # The shell_capture_safe checks are scored too, and pass: no dispatch
+        # and discovery share a substitution.
+        for check_id in ("capture-files", "capture-transcript"):
+            self.assertEqual((checks[check_id]["n"], checks[check_id]["passed"]),
+                             (2, 2), check_id)
         self.assertEqual(checks["readme-kept"]["passed"], 2)
         trial = self._summary(f"{run_eval.TRIAL_DIR_PREFIX}1", "summary.json")
         results = {c["id"]: c for c in trial["objective_checks"]}
         self.assertFalse(results["guard"]["passed"])
         self.assertTrue(results["guard"]["detail"].startswith("shell_staged_tool_guard: "))
         self.assertNotIn("parser_unavailable", results["guard"]["detail"])
+
+
+def _without_parser(name, *args, **kwargs):
+    if name == "tree_sitter":
+        raise ImportError("deliberately absent")
+    return _REAL_IMPORT(name, *args, **kwargs)
+
+
+_REAL_IMPORT = builtins.__import__
+
+
+class TestEveryParserBackedCheck(unittest.TestCase):
+    """Each check in PARSER_BACKED_CHECKS raises, whatever the agent wrote."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _fixture(self, check: dict) -> dict:
+        return {"objective_checks": [check]}
+
+    def test_the_set_names_every_check_that_parses_bash(self):
+        self.assertEqual(objective.PARSER_BACKED_CHECKS,
+                         {"shell_staged_tool_guard", "shell_capture_safe"})
+
+    def test_shell_capture_safe_raises_for_both_sources_and_any_content(self):
+        contents = ("", "echo hi\n", "x=$(gh workflow run a.yml && gh run list)\n")
+        for source in ("files", "transcript"):
+            for text in contents:
+                with self.subTest(source=source, text=text):
+                    (self.tmp / "hook.sh").write_text(text, encoding="utf-8")
+                    check = {"id": "c", "type": "shell_capture_safe",
+                             "source": source, "paths": ["hook.sh"]}
+                    with mock.patch("builtins.__import__", side_effect=_without_parser):
+                        with self.assertRaises(objective.ScorerUnavailableError) as ctx:
+                            objective.run_checks(
+                                self._fixture(check), str(self.tmp), str(self.tmp),
+                                transcript=f"```bash\n{text}```\n")
+                    self.assertNotIsInstance(ctx.exception, ValueError)
+                    self.assertIn("tree-sitter-bash==0.25.1", str(ctx.exception))
+
+    def test_a_bad_source_is_still_a_value_error_without_the_parser(self):
+        with mock.patch("builtins.__import__", side_effect=_without_parser):
+            with self.assertRaises(ValueError):
+                shell_capture.shell_capture_safe("", [], source="other")
+
+    @unittest.skipUnless(bash_ast.parser_importable(),
+                         "the pinned parser is not installed here")
+    def test_parser_present_scores_unchanged(self):
+        (self.tmp / "hook.sh").write_text(
+            "x=$(gh workflow run a.yml && gh run list)\n", encoding="utf-8")
+        bad = shell_capture.shell_capture_safe(str(self.tmp), ["hook.sh"])
+        self.assertFalse(bad[0])
+        self.assertIn("share a command substitution", bad[1])
+        (self.tmp / "hook.sh").write_text("echo hi\n", encoding="utf-8")
+        self.assertTrue(shell_capture.shell_capture_safe(
+            str(self.tmp), ["hook.sh"])[0])
+
+    def test_every_caller_of_the_parser_is_covered(self):
+        # The modules that import bash_ast's parser, found from source: a new
+        # one has to be added to PARSER_BACKED_CHECKS (or to a check already
+        # in it) and to this list.
+        found = sorted(p.name for p in (HARNESS_DIR / "scorers").glob("*.py")
+                       if "parse_bash" in p.read_text(encoding="utf-8")
+                       and p.name != "bash_ast.py")
+        self.assertEqual(found, ["objective.py", "shell_capture.py", "shell_guard.py"])
+
+
+class TestGuidanceArmScorerUnavailable(unittest.TestCase):
+    """The guidance path scores with `run_checks` too: same trial error."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.args = types.SimpleNamespace(
+            results_dir=self.tmp / "results", model="fake-model-a",
+            timeout=30, no_judge=False, harness_version=None)
+        self.ctx = {"delivery": "user", "decoys": {}, "token": "TOK",
+                    "guidance_dir": self.tmp, "row": {}, "section": "s",
+                    "key": "guidance/s"}
+        self.arm = {"name": "treatment", "mode": "section", "objective_checks": [
+            {"id": "c", "type": "shell_capture_safe", "source": "transcript"}]}
+        self.fixture = {"prompt": "do it", "judge_rubric": "r"}
+
+    def _run(self):
+        info = {"bytes": 1, "verdict": "installed", "installed": True,
+                "returncode": 0, "dest": "x"}
+        guard = {"ok": True, "expected": True, "observed": True, "detail": "d"}
+        agent = {"transcript": "t", "usage": {}, "cost_usd": 0.0, "num_turns": 1,
+                 "duration_ms": 1, "raw": {"modelUsage": {"fake-model-a": {}}}}
+        judge_score = mock.Mock()
+        with mock.patch.object(run_eval.guidance, "assemble", return_value="p"), \
+             mock.patch.object(run_eval.guidance, "deliver", return_value=info), \
+             mock.patch.object(run_eval.guidance, "agent_env", return_value={}), \
+             mock.patch.object(run_eval.guidance, "run_guard", return_value=guard), \
+             mock.patch.object(run_eval, "run_agent", return_value=agent), \
+             mock.patch.object(run_eval.judge, "score", judge_score), \
+             mock.patch("builtins.__import__", side_effect=_without_parser):
+            result = run_eval._run_guidance_arm(
+                self.arm, self.fixture, self.tmp / "no-seed", self.ctx,
+                self.args, "T")
+        return result, judge_score
+
+    def test_a_missing_parser_is_a_trial_error_and_skips_the_judge(self):
+        result, judge_score = self._run()
+        self.assertEqual(result["error"]["type"], "scorer_unavailable")
+        self.assertIsNone(result["objective_checks"])
+        judge_score.assert_not_called()
+        path = self.args.results_dir / "guidance" / "s" / "T" / "treatment" / "summary.json"
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(summary["error"]["type"], "scorer_unavailable")
+        self.assertIsNone(summary["objective_checks"])
 
 
 class TestAggregateDenominator(unittest.TestCase):
