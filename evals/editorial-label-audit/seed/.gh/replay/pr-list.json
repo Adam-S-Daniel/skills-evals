@@ -1,0 +1,54 @@
+[
+  {
+    "number": 512,
+    "headRefName": "cms/posts/spring-hours",
+    "labels": [],
+    "title": "Spring hours",
+    "state": "OPEN",
+    "url": "https://github.com/example-org/example-site/pull/512"
+  },
+  {
+    "number": 518,
+    "headRefName": "cms/posts/autumn-hours",
+    "labels": [
+      {
+        "name": "cms/ready"
+      }
+    ],
+    "title": "Autumn hours",
+    "state": "OPEN",
+    "url": "https://github.com/example-org/example-site/pull/518"
+  },
+  {
+    "number": 521,
+    "headRefName": "cms/posts/reading-list",
+    "labels": [
+      {
+        "name": "decap-cms/pending_review"
+      }
+    ],
+    "title": "Reading list",
+    "state": "OPEN",
+    "url": "https://github.com/example-org/example-site/pull/521"
+  },
+  {
+    "number": 530,
+    "headRefName": "fix/navigation",
+    "labels": [
+      {
+        "name": "maintenance"
+      }
+    ],
+    "title": "Navigation update",
+    "state": "OPEN",
+    "url": "https://github.com/example-org/example-site/pull/530"
+  },
+  {
+    "number": 534,
+    "headRefName": "docs/contributing",
+    "labels": [],
+    "title": "Contribution guide",
+    "state": "OPEN",
+    "url": "https://github.com/example-org/example-site/pull/534"
+  }
+]
