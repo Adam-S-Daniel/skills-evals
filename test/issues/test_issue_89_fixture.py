@@ -24,6 +24,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness'))
+import run_eval
 from scorers import objective, shell_capture
 from scorers.bash_ast import BashParseError, parse_bash
 
@@ -462,6 +463,72 @@ class TestCiWatcherFixture(unittest.TestCase):
         for step in workflow['jobs']['preview']['steps']:
             if 'uses' in step: self.assertRegex(step['uses'], '@[0-9a-f]{40}$')
             if 'run' in step: self.assertNotIn('${{', step['run'])
+
+    # Round 3 on skills-evals#89: every with_skill trial watched in the
+    # background and ended its turn after one run view, and one `claude -p`
+    # call is never re-invoked, so the run stayed in_progress. The follow-ups
+    # are the later wake-ups; these pin that they reach completion.
+    def _turns(self, replies):
+        run_eval.validate_followups(self.fixture, EVAL / 'fixture.yaml')
+        self.assertEqual(len(replies), 1 + len(self.fixture['followups']))
+        return run_eval._combine_turns([{'result': reply} for reply in replies],
+                                       self.fixture['followups'])['transcript']
+
+    def test_one_view_per_turn_reaches_the_completed_payload(self):
+        ws = self._ws()
+        self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
+        seen = [self._gh(ws, 'run', 'view', ID, '--json', 'status,conclusion')
+                for _ in range(1 + len(self.fixture['followups']))]
+        self.assertEqual([(view['status'], view['conclusion']) for view in seen],
+                         [('in_progress', None), ('in_progress', None), ('completed', 'success')])
+        transcript = self._turns([
+            'Dispatched run 73019; a background watcher is on it and I will report back.',
+            'Not yet: run 73019 is still in_progress. The watcher is re-armed.',
+            REPLY])
+        self.assertTrue(all(self._score(ws, transcript).values()))
+
+    def test_a_watch_that_stops_after_the_first_turn_still_fails(self):
+        ws = self._ws()
+        self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
+        self._gh(ws, 'run', 'view', ID, '--json', 'status,conclusion')
+        transcript = self._turns(['A background watcher is on run 73019.',
+                                  'Still watching run 73019.', 'Still watching run 73019.'])
+        scores = self._score(ws, transcript)
+        self.assertEqual({name for name, passed in scores.items() if not passed},
+                         {'captured-run-polled-to-completion', 'final-conclusion-token'}, scores)
+
+    def test_a_foreground_poller_rereading_on_every_followup_stays_in_bound(self):
+        ws = self._good()
+        self._gh(ws, 'run', 'list')
+        for _ in self.fixture['followups']:
+            view = self._gh(ws, 'run', 'view', ID, '--json', 'status,conclusion')
+            self.assertEqual((view['status'], view['conclusion']), ('completed', 'success'))
+        transcript = self._turns([REPLY, 'Yes: run 73019 completed with conclusion success.',
+                                  'Yes, it is done and it passed.'])
+        self.assertTrue(all(self._score(ws, transcript).values()))
+
+    def test_followups_are_neutral_questions_that_score_nothing(self):
+        followups = self.fixture['followups']
+        self.assertEqual(followups, [
+            'Is it done yet? If it has finished, tell me whether it passed.',
+            'Checking in again: is it done now, and did it pass?'])
+        token = [check for check in self.fixture['objective_checks']
+                 if check['id'] == 'final-conclusion-token'][0]['must_match']
+        for text in followups:
+            self.assertFalse(any(re.search(pattern, text) for pattern in token), text)
+            self.assertNotIn('73019', text)
+            for word in ('fake', 'fixture', 'harness', 'eval', 'replay', 'sandbox'):
+                self.assertNotIn(word, text.lower())
+        scores = self._score(self._ws(), self._turns(['Dispatched.', '', '']))
+        self.assertFalse(scores['final-conclusion-token'])
+
+    def test_three_turns_per_arm_fit_inside_the_eval_job(self):
+        workflow = yaml.safe_load((ROOT / '.github/workflows/eval.yml').read_text())
+        job_s = workflow['jobs']['eval']['timeout-minutes'] * 60
+        judge_s = (self.fixture.get('judge') or {}).get('timeout_s', 120)
+        turns = 1 + len(self.fixture['followups'])
+        worst = len(self.fixture['arms']) * (turns * self.fixture['timeout_s'] + judge_s)
+        self.assertLess(worst, job_s * 0.75, (turns, self.fixture['timeout_s'], job_s))
 
 
 class TestCiWatcherShellCapture(unittest.TestCase):

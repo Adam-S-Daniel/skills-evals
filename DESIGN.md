@@ -117,7 +117,10 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   first call, identically in both arms. Use it when a skill correctly stops
   to ask the user before acting, so one headless call could never reach the
   workspace state the objective checks score (`evals/rename-pdfs/` is the
-  first user). Each turn gets the whole `timeout_s`; a failed turn fails the
+  first user), or when a skill correctly ends its turn to wait for a
+  background watcher, which nothing re-invokes in `-p`
+  (`evals/ci-watcher-loops/` sends two status questions as the later
+  wake-ups). Each turn gets the whole `timeout_s`; a failed turn fails the
   arm with the usual error type, its detail naming the follow-up. The judge
   reads every reply with the follow-ups between them. Turns, duration and
   usage are summed; cost and `modelUsage` come from the last call, because
@@ -585,7 +588,8 @@ Not every skill takes the same eval, and some take none. Classify first:
   The extra-permission and variable-misconfiguration scenarios remain open.
   [`ci-watcher-loops`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/ci-watcher-loops/fixture.yaml)
   now covers offline dispatch, returned-run-ID polling, the final conclusion,
-  poll bounds, and restraint ([issue #89](https://github.com/Adam-S-Daniel/skills-evals/issues/89)).
+  poll bounds, and restraint ([issue #89](https://github.com/Adam-S-Daniel/skills-evals/issues/89)),
+  with two follow-up status turns so a background watch can report later.
   Candidates: `editorial-label-audit`, `skills-doctor`.
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
