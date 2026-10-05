@@ -38661,6 +38661,22 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
                           encoding="utf-8")
         self._failed(ws, self.BEHAVIOR)
 
+    def test_nested_parser_shadow_is_refused_before_candidate_code_runs(self):
+        for package, entry in (("acorn", "dist/acorn.js"),
+                               ("acorn-walk", "dist/walk.js")):
+            with self.subTest(package=package):
+                ws = self._workspace()
+                shadow = ws / "e2e" / "node_modules" / package
+                shadow.mkdir(parents=True)
+                (shadow / "package.json").write_text('{"main":"index.js"}\n', encoding="utf-8")
+                (shadow / "index.js").write_text(
+                    'require("node:fs").writeFileSync(__dirname + "/called", "1");\n'
+                    f'module.exports = require("../../../node_modules/{package}/{entry}");\n',
+                    encoding="utf-8")
+                self._failed(ws, self.BEHAVIOR)
+                self.assertFalse((shadow / "called").exists(),
+                                 "A shadow module ran before the verifier refused its resolution")
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

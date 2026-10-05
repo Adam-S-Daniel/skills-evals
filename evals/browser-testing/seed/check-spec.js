@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { createRequire } = require("node:module");
 
 const MODES = new Set([
   "new-spec", "admin-read", "single-entry-after-publish", "base-collection-guard",
@@ -19,12 +20,24 @@ const PARSER_FILES = {
   "node_modules/acorn-walk/package.json": "73c77feaf1224859bc6995cefe976d51cfd2abcd1edc0362df3149d8bd3633e3",
   "node_modules/acorn-walk/dist/walk.js": "1aa9615d8ea06e2126a21a4c21eb7b8b97a69e5eda256f06d2c48834a57cbf0e",
 };
+const PARSER_ENTRYPOINTS = {
+  acorn: "node_modules/acorn/dist/acorn.js",
+  "acorn-walk": "node_modules/acorn-walk/dist/walk.js",
+};
 
 function source(name) {
   return fs.readFileSync(path.join(__dirname, name), "utf8");
 }
 function equalsHash(file, expected) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") === expected;
+}
+function parserResolutionIsReviewed() {
+  const fromSpec = createRequire(astPath);
+  return Object.entries(PARSER_ENTRYPOINTS).every(([name, relative]) => {
+    const reviewed = fs.realpathSync(path.join(__dirname, relative));
+    return fs.realpathSync(require.resolve(name)) === reviewed &&
+      fs.realpathSync(fromSpec.resolve(name)) === reviewed;
+  });
 }
 function key(node) {
   return node && (node.name || node.value);
@@ -240,6 +253,7 @@ function verify(mode) {
   if (!MODES.has(mode) || !equalsHash(astPath, SPEC_AST_SHA256)) return false;
   if (!Object.entries(PARSER_FILES).every(([file, digest]) =>
     equalsHash(path.join(__dirname, file), digest))) return false;
+  if (!parserResolutionIsReviewed()) return false;
   const { analyzeSpec, analyzeNode, parse, stringValue, calleeName } = require("./e2e/spec-ast");
   const walk = require("acorn-walk");
   const files = fs.readdirSync(path.join(__dirname, "e2e"))

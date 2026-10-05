@@ -32,7 +32,10 @@ facts in the new spec, then the judge examines whether the draft association
 and preview destination are substantively correct. A real browser run is
 outside this fixture's pure-filesystem evidence.
 The fixture pins the verifier's digest, and that verifier checks the copied
-`spec-ast.js` and installed Acorn parser entrypoints before importing them.
+`spec-ast.js` and installed Acorn parser entrypoints. It also resolves both
+parser packages from the verifier and from `spec-ast.js`, and requires each
+resolved path to be the reviewed root entrypoint before importing any parser.
+This rejects an `e2e/node_modules` shadow without loading its JavaScript.
 
 The objective checks recognize direct `test()` declarations and describe
 tags, an early direct `test.skip(!cap.keepsBaseCollection(SITE_ROOT,
