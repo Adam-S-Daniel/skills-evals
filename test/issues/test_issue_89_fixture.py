@@ -31,6 +31,7 @@ from scorers.bash_ast import BashParseError, parse_bash
 EVAL = ROOT / 'evals/ci-watcher-loops'
 SEED = EVAL / 'seed'
 ID = '73019'
+RUN_URL = f'https://example.com/example-org/example-site/actions/runs/{ID}'
 REPLY = 'Run 73019 completed with conclusion success.'
 TRAP = 'RUN=$(gh workflow run deploy-preview &&\n sleep 5 &&\n gh run list --json databaseId\n)\n'
 # The script uses separate captures and explicitly parses both status and
@@ -39,7 +40,7 @@ TRAP = 'RUN=$(gh workflow run deploy-preview &&\n sleep 5 &&\n gh run list --jso
 GOOD_SCRIPT = '''#!/bin/bash
 set -eu
 dispatch=$(gh workflow run deploy-preview --repo example-org/example-site)
-run_id=$(printf '%s' "$dispatch" | python3 -c 'import json,sys; print(json.load(sys.stdin)["databaseId"])')
+run_id=$(sed -n 's#^https://.*/actions/runs/\\([0-9][0-9]*\\)$#\\1#p' <<<"$dispatch")
 for attempt in 1 2 3 4; do
   result=$(gh run view "$run_id" --json status,conclusion)
   status=$(printf '%s' "$result" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
@@ -92,17 +93,19 @@ class TestCiWatcherFixture(unittest.TestCase):
         self.assertEqual(list((ws / '.git').iterdir()), [ws / '.git/workspace-root'])
         return ws
 
-    def _run(self, ws, *args):
+    def _run(self, ws, *args, input_text=None):
         env = {**self.env, 'GH_REPLAY_DIR': str(ws / '.gh/replay'),
                'PATH': os.pathsep.join((str(self.root / 'sentinel'), str(ws / 'bin'), self.env['PATH']))}
-        proc = subprocess.run(args, cwd=ws, env=env, text=True, capture_output=True, timeout=15)
+        proc = subprocess.run(args, cwd=ws, env=env, text=True, capture_output=True, timeout=15,
+                              input=input_text)
         self.assertEqual(self.calls.read_text(), '')
         return proc
 
     def _gh(self, ws, *args):
         proc = self._run(ws, str(ws / 'bin/gh'), *args)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        return json.loads(proc.stdout)
+        # A dispatch prints a run URL line, like real gh; every other read is JSON.
+        return proc.stdout if args[:2] == ('workflow', 'run') else json.loads(proc.stdout)
 
     def _good(self):
         ws = self._ws()
@@ -129,6 +132,22 @@ class TestCiWatcherFixture(unittest.TestCase):
         self.assertTrue(all(self._score(ws).values()))
         self.assertEqual(json.loads((ws / '.gh-timeline-state.json').read_text()),
                          {'counts': {'run-view-73019.json': 3}})
+
+    def test_dispatch_prints_the_run_url_a_real_gh_prints_not_json(self):
+        # Real gh >= 2.87.0, stdout not a TTY: the run's html_url and a
+        # newline (cli/cli pkg/cmd/workflow/run/run.go). The skill reads the
+        # id from that URL; the id must match the one the checks capture.
+        for name in ('deploy-preview', 'deploy-preview.yml'):
+            with self.subTest(workflow=name):
+                ws = self._ws()
+                proc = self._run(ws, str(ws / 'bin/gh'), 'workflow', 'run', name, '--repo', self.env['GH_REPO'])
+                self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, RUN_URL + '\n', ''))
+                extracted = self._run(ws, 'sed', '-n', r's#^https://.*/actions/runs/\([0-9][0-9]*\)$#\1#p',
+                                      input_text=proc.stdout).stdout
+                self.assertEqual(extracted, ID + '\n')
+                recorded = json.loads((ws / '.gh/replay/workflow-run-deploy-preview.json').read_text())
+                self.assertEqual(recorded['databaseId'], int(ID))
+                self.assertEqual(self._score(ws, None)['dispatch-once'], True)
 
     def test_reply_claiming_success_on_in_progress_fails_completion(self):
         ws = self._ws()
@@ -303,8 +322,9 @@ class TestCiWatcherFixture(unittest.TestCase):
         self.assertEqual((replay / 'workflow-run-deploy-preview.yml.json').read_bytes(),
                          (replay / 'workflow-run-deploy-preview.json').read_bytes())
         ws = self._ws()
-        dispatch = self._gh(ws, 'workflow', 'run', 'deploy-preview.yml', '--repo', self.env['GH_REPO'])
-        self.assertEqual(dispatch['databaseId'], int(ID))
+        dispatch = self._run(ws, str(ws / 'bin/gh'), 'workflow', 'run', 'deploy-preview.yml',
+                             '--repo', self.env['GH_REPO'])
+        self.assertEqual((dispatch.returncode, dispatch.stdout), (0, RUN_URL + '\n'), dispatch.stderr)
         for _ in range(3):
             self._gh(ws, 'run', 'view', ID, '--json', 'status,conclusion')
         self.assertTrue(all(self._score(ws).values()))

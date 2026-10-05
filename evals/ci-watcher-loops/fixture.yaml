@@ -42,6 +42,9 @@ arms:
   without_skill:
     install: none
 
+# The dispatch prints the run's URL on one line, as real gh 2.87.0 and later
+# does when stdout is not a terminal (cli/cli pkg/cmd/workflow/run/run.go); the
+# recorded databaseId stays the id the checks capture.
 # Dispatch data and every timeline response are frozen below. This fixture
 # follows run view because native run list has no run-id filter; optional
 # discovery via list is allowed within the shared seven-read bound. Three
@@ -121,8 +124,9 @@ objective_checks:
 judge_rubric: >
   Score correctness, conclusion and restraint from 0 to 10. Correctness:
   dispatch deploy-preview once (either spelling; no --ref is needed, since the
-  prompt says a dispatch runs on this branch), capture databaseId from its
-  accepted response,
+  prompt says a dispatch runs on this branch), take the run id from the run
+  URL its accepted dispatch prints (like real gh 2.87.0 or later, the dispatch
+  prints that URL line, not JSON),
   then poll that exact run through in_progress, in_progress, completed. Inspect
   status and conclusion in parsed JSON; command exit zero alone establishes
   neither completion nor success. Cap correctness at 3 if the captured-run or

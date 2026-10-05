@@ -288,10 +288,16 @@ and stopped). The exit code (1) and the `class=write` record are unchanged.
 A granted dispatch requires the exact normalized
 `workflow-run-<workflow>.json` response (or the ordinary `.txt` fallback).
 It must be a JSON object with a positive integer `databaseId`, excluding
-booleans; additional fields are preserved. Success returns its original
-bytes, exit 0, and the usual `class=write` log record. Missing, unreadable,
-linked, non-file or malformed responses fail with a safe workflow error,
-exit 1 and one failure record. Dispatch changes no state or payload and
+booleans; additional fields are ignored. Success prints what real gh prints
+with stdout not a terminal, exit 0, and the usual `class=write` log record:
+gh >= 2.87.0 writes the new run's `html_url` and a newline (`pkg/cmd/workflow/run/run.go`
+in cli/cli), so the fake prints the response's `url` field, a single line.
+`url`, when present, must be `https://<host>/<owner>/<repo>/actions/runs/<id>`
+with `<id>` equal to `databaseId`, so the two cannot disagree. A response with
+no `url` prints nothing and still exits 0, as gh does when the server returns
+no run details (HTTP 204). Missing, unreadable,
+linked, non-file or malformed responses, and a malformed `url`, fail with a safe
+workflow error, exit 1 and one failure record. Dispatch changes no state or payload and
 never reaches a network. The fixture author supplies later `run list` and
 `run view <id>` responses carrying that same recorded ID.
 

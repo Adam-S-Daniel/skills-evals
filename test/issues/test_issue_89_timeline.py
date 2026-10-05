@@ -509,22 +509,50 @@ class TestGhTimeline(unittest.TestCase):
             self._finished(running, code=1)
         self.assertNotIn("count=", self.log.read_text())
 
-    def test_workflow_dispatch_is_opt_in_returns_raw_id_and_supports_repo_spellings(self):
+    # Real gh >= 2.87.0 with stdout not a TTY prints the run's html_url and a
+    # newline (cli/cli pkg/cmd/workflow/run/run.go), not the JSON it recorded.
+    RUN_URL = "https://example.com/example-org/example-site/actions/runs/7001"
+
+    def test_workflow_dispatch_is_opt_in_prints_the_run_url_and_supports_repo_spellings(self):
         self._policy()
-        payload = b'{ "databaseId": 7001, "url": "https://example.com/runs/7001" }\r\n'
+        payload = ('{ "databaseId": 7001, "url": "%s" }\r\n' % self.RUN_URL).encode()
         (self.replay / "workflow-run-deploy-preview.json").write_bytes(payload)
         for flags in (["--repo", self.REPO], ["--repo=" + self.REPO], ["-R", self.REPO],
                       ["-R" + self.REPO], ["-R=" + self.REPO],
                       ["--repo", "other-org/other-site", "--repo", self.REPO]):
             args = ["workflow", "run", "deploy-preview", *flags]
             proc = self._call(args)
-            self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, payload, b""))
+            self.assertEqual((proc.returncode, proc.stdout, proc.stderr),
+                             (0, self.RUN_URL.encode() + b"\n", b""))
             self.assertEqual(self.log.read_text().splitlines()[-1],
                 '--- invocation (class=write key=workflow-run-deploy-preview.json exit=0) --- ' + json.dumps(args))
         self._timeline({"run-list.json": ["timeline/list.json"], "run-view-7001.json": ["timeline/view.json"]})
         for args in (["run", "list"], ["run", "view", "7001"]):
             self.assertEqual(json.loads(self._call(args).stdout)["databaseId"], 7001)
         self.assertFalse((self.ws / ".gh-label-state.json").exists())
+
+    def test_dispatch_without_a_recorded_url_prints_nothing_like_a_204(self):
+        # An older gh, or a server that returns no run details, prints nothing
+        # on stdout and still exits 0; the dispatch is accepted and logged.
+        self._policy()
+        self._json(self.replay / "workflow-run-deploy-preview.json", {"databaseId": 7001})
+        args = ["workflow", "run", "deploy-preview", "--repo", self.REPO]
+        proc = self._call(args)
+        self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, b"", b""))
+        self.assertEqual(self.log.read_text().splitlines()[-1],
+            '--- invocation (class=write key=workflow-run-deploy-preview.json exit=0) --- ' + json.dumps(args))
+
+    def test_dispatch_url_must_be_the_recorded_run_own_url(self):
+        self._policy()
+        args = ["workflow", "run", "deploy-preview", "--repo", self.REPO]
+        for url in (None, True, "", "7001", "http://example.com/example-org/example-site/actions/runs/7001",
+                    "https://example.com/example-org/example-site/actions/runs/7002",
+                    "https://example.com/example-org/example-site/actions/runs/7001/job/1",
+                    "https://example.com/example-org/example-site/actions/runs/7001\nsecond line",
+                    "https://example.com/example-org/example-site/pull/7001",
+                    "https://example.com/runs/7001"):
+            self._json(self.replay / "workflow-run-deploy-preview.json", {"databaseId": 7001, "url": url})
+            self._reject(args, message=self.WORKFLOW_ERROR)
 
     def test_ungranted_dispatch_refuses_without_looking_up_a_payload(self):
         (self.replay / "workflow-run-deploy-preview.json").write_bytes(b"private invalid dispatch response")
