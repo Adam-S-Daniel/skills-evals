@@ -2,7 +2,7 @@
 
 - **Status:** proposed (2026-10-04)
 - **Issue:** [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68), partially implemented.
-- **Deciders:** the owner requested that scheduled runs include additional ready evals; this package fixes the initial four entries.
+- **Deciders:** the owner requested that scheduled runs include additional ready evals; this package fixes the initial four entries and then appends the fixtures that qualified locally on 2026-10-05.
 
 ## Context
 
@@ -26,8 +26,25 @@ and simultaneous publishers would compete for the same results branch.
    exactly `path` and a nonempty, single-line `readiness` note. The initial
    entries are `evals/workflow-path-audit`, `evals/embeddable-tool-pages`,
    `evals/review-bash-ci-reliability`, and
-   `evals/skills-doctor/bucketed-account-store`. Preserve the supplied local
-   evidence without inventing a measurement date or claiming a paid CI run.
+   `evals/skills-doctor/bucketed-account-store`. Qualification on 2026-10-05
+   appended `evals/github-actions-sha-pinning`,
+   `evals/vendor-release-impact-issues`, and `evals/writing-adrs/bootstrap`,
+   seven in all. Preserve the supplied local evidence in each note without
+   inventing a measurement date or claiming a paid CI run.
+   An entry is admitted only when all of these hold: a local N=3 judged run
+   with both arms; zero errored trials; separation, meaning at least one
+   scorer (objective or judge) where every with-skill trial scores above
+   every without-skill trial, so the difference is not within trial noise;
+   and no open scorer-bug issue or pull request naming the fixture. A
+   judge that returned scores for only some trials is recorded in the note,
+   not hidden. Fixtures that miss a criterion stay off the list until a
+   better local run: `evals/consumer-repo-provisioning` (objective 9.67 vs
+   7.67 and judge 5.23 vs 4.9, both with overlapping trial ranges) and
+   `evals/github-actions-repo-settings` (objective 5 vs 3.67 with
+   overlapping ranges; judge 8.8 vs 8.23, ranges touching at 8.7). The other
+   `evals/writing-adrs` fixtures, `existing-convention` and `supersede`,
+   are listed per path and were not added: their with-skill margins are
+   small and `supersede` lost judge scores on one trial.
 2. A read-only planning job reads the schedule list only for `schedule`.
    `workflow_dispatch` still reads `fixture` from `GITHUB_EVENT_PATH`, with
    today's single-fixture default and unchanged `roster_only` behavior.
@@ -62,8 +79,8 @@ and simultaneous publishers would compete for the same results branch.
 
 The weekly schedule exercises exactly the reviewed list, and adding an entry
 is a visible spend decision. The workflow's existing estimate is about
-$0.30–0.90 per skill fixture: four fixtures imply about $1.20–3.60 per
-scheduled run, or $6–18 for five weekly runs. These are estimates rather than
+$0.30–0.90 per skill fixture: seven fixtures imply about $2.10–6.30 per
+scheduled run, or $10.50–31.50 for five weekly runs. These are estimates rather than
 a cap; model choice, judging, and actual usage affect cost. The API workspace
 spend limit remains the hard ceiling. Readiness evidence does not require a
 positive objective delta: the account-store fixture qualifies with a stronger

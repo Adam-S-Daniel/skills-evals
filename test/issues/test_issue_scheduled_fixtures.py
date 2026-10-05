@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability",
-            "evals/skills-doctor/bucketed-account-store"]
+            "evals/skills-doctor/bucketed-account-store",
+            "evals/github-actions-sha-pinning",
+            "evals/vendor-release-impact-issues",
+            "evals/writing-adrs/bootstrap"]
 
 
 def module(name, path):
@@ -306,7 +309,7 @@ if args == ["diff", "--cached", "--quiet"]:
     def test_timeout_covers_every_scheduled_fixture_with_default_budgets(self):
         budget = doc()["jobs"]["eval"]["timeout-minutes"] * 60
         fixtures = planner.scheduled_fixtures(ROOT / "evals/scheduled.yml", planner.committed_fixtures(ROOT))
-        self.assertEqual(len(fixtures), 4)
+        self.assertEqual(len(fixtures), len(EXPECTED))
         for path in fixtures:
             fixture = yaml.safe_load((ROOT / path / "fixture.yaml").read_text())
             arms = fixture.get("arms") or {"with_skill": {}, "without_skill": {}}
