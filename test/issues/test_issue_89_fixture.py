@@ -617,6 +617,17 @@ class TestCiWatcherShellCapture(unittest.TestCase):
                        "x=$(echo $'g\\x68 flow'" + unparseable + ')']:
             with self.subTest(script=script):
                 self.assertTrue(self._reply('```bash\n' + script + '\n```'))
+        # A literal "$'" inside double quotes opens a bogus $'...' span in the
+        # lexical scan; decoding it must never hide a plain dispatch inside.
+        for body, reply in [
+                ('printf "$\'\\n"\nid=$(gh workflow run d && gh run list)\necho \'done\'',
+                 '```\n{}\n```'),
+                ('printf "$\'\\e"; id=$(gh workflow run d && gh run list); echo \'ok\'', '`{}`'),
+                ('x=$(echo "$\'\\n"; gh workflow run d; gh run list; echo \' x\'; if)',
+                 '```bash\n{}\n```')]:
+            with self.subTest(body=body):
+                self.assertTrue(shell_capture._mentions_dispatch(body))
+                self.assertFalse(self._reply(reply.format(body)))
         # A parsed $"gh" is the literal word gh.
         self.assertFalse(self._reply('```bash\nx=$($"gh" workflow run d; gh run list)\n```'))
         self.assertTrue(self._reply('```bash\nx=$($"gh" workflow run d)\n```'))

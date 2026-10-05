@@ -173,13 +173,19 @@ def _mentions_dispatch(text):
     $'...' spans decode as in _literal (an undecodable one may spell `gh`),
     $"..." reads as "...", and quotes and backslashes are then removed, so
     $'\x67h', $"gh", g""h, 'g'h and \gh all count as `gh`.
+    The $'...' scan ignores shell quoting, so a literal "$'" inside double
+    quotes can open a bogus span over a real dispatch; decoding therefore
+    only adds matches: the raw and quote-stripped texts are searched too.
     """
     def ansi(found):
         decoded = _ansi_c(found.group(1))
         return 'gh' if decoded is None else decoded
-    text = re.sub(r"\$'((?:[^'\\]|\\.)*)'", ansi, text, flags=re.S)
-    text = re.sub(r'''['"\\]''', '', text.replace('$"', '"'))
-    return re.search(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])', text) is not None
+
+    def unquote(value):
+        return re.sub(r'''['"\\]''', '', value.replace('$"', '"'))
+    decoded = re.sub(r"\$'((?:[^'\\]|\\.)*)'", ansi, text, flags=re.S)
+    pattern = re.compile(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])')
+    return any(pattern.search(form) for form in (text, unquote(text), unquote(decoded)))
 
 
 def _substitutions(text, *, prose=False):
