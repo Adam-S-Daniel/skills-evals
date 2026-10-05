@@ -24,6 +24,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_issue_66 import (HARNESS_DIR, TS, _HarnessCase, _child_env,  # noqa: E402
                            _write_fixture)
@@ -262,6 +264,43 @@ class TestGuidanceArmScorerUnavailable(unittest.TestCase):
         self.assertEqual(summary["error"]["type"], "scorer_unavailable")
         self.assertIsNone(summary["objective_checks"])
 
+
+
+class TestGuidanceObjectiveOnlyScorerUnavailable(_ParserCase):
+    """`subject: guidance` with `--arm objective-only` scores with `run_checks`
+    too: a missing parser is named and exits 2, as the skill path does, never
+    a traceback and exit 1 (the code a failing check returns)."""
+
+    def setUp(self):
+        super().setUp()
+        self.fixture_dir = self.evals / "guidance-parser"
+        (self.fixture_dir / "seed").mkdir(parents=True)
+        (self.fixture_dir / "seed" / "hook.sh").write_text(
+            "gofmt -w x\n", encoding="utf-8")
+        doc = {"subject": "guidance", "section": "parser-section",
+               "objective_checks": [
+                   {"id": "capture-files", "type": "shell_capture_safe",
+                    "paths": ["hook.sh"], "source": "files"}]}
+        (self.fixture_dir / "fixture.yaml").write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    def test_objective_only_names_the_missing_parser(self):
+        proc = self._run_blocked("--arm", "objective-only")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("scorer_unavailable", proc.stdout)
+        self.assertIn("tree-sitter-bash==0.25.1", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+        # Nothing scored, so no `checks` document that could read as a result.
+        self.assertNotIn('"checks"', proc.stdout)
+
+    @unittest.skipUnless(bash_ast.parser_importable(),
+                         "the pinned parser is not installed here")
+    def test_parser_present_scores_the_check_as_before(self):
+        proc = self._run_with_parser("--arm", "objective-only")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        out = json.loads(proc.stdout)
+        self.assertEqual([(c["id"], c["passed"]) for c in out["checks"]],
+                         [("capture-files", True)])
 
 class TestAggregateDenominator(unittest.TestCase):
     def test_a_scorer_error_trial_is_outside_every_check_denominator(self):
