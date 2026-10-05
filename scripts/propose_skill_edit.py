@@ -8,7 +8,7 @@ decision record is docs/decisions/0005-improvement-loop-reuses-skill-creator.md.
     python3 scripts/propose_skill_edit.py <skill> \\
         --registry adam-agentskills=PATH [--ref REF] [--trials 3] \\
         [--rotation K] [--min-gain .10] [--holdout FIXTURE] \\
-        [--trigger-eval-set FILE] [--skill-creator DIR] \\
+        [--trigger-eval-set FILE] [--skill-creator DIR] [--num-workers 4] \\
         [--results-dir DIR] [--no-judge] [--dry-run]
 
 WHAT IT DOES, in order:
@@ -23,13 +23,19 @@ WHAT IT DOES, in order:
     from both train and the rotating validation population on every run.
  3. Builds two scratch registries from `git archive <ref>` of the local
     registry checkout: no `.git`, so nothing in them has a push path.
- 4. BASELINE: `harness/run_eval.py evals/<skill> --arm with_skill --trials N`
+ 4. BASELINE: `scripts/local_eval.py evals/<skill> --arm with_skill --trials N`
     against the first scratch copy.
  5. TRIGGER HALF, from Anthropic's skill-creator plugin: its
     `scripts/run_loop.py` description-optimization loop (stratified 60/40
     train/held-out split of a should/should-not-trigger query set, 3 runs per
     query, best description picked by HELD-OUT score). The validation
-    fixture's prompt and the fixed holdout's prompt are never in that set.
+    fixture's prompt and the fixed holdout's prompt are never in that set,
+    and a query appears in it once. A fixture-derived set whose train or
+    held-out split (by skill-creator's own split arithmetic) lacks a
+    should-trigger or should-not-trigger query is refused before any model
+    call, with a `trigger-set-unusable` record; a reviewed
+    `--trigger-eval-set` is run anyway and its split problems recorded.
+    `--num-workers` (default 4) caps skill-creator's parallel CLI calls.
     Scratch project settings disable the archived registry plugins that
     provide the skill, leaving the operator's login available.
  6. BODY HALF: one proposal call (roster judge model, no tools) returning
@@ -37,7 +43,7 @@ WHAT IT DOES, in order:
     failed checks and transcripts. A diff naming any other file, or touching
     the frontmatter, is rejected before anything else runs.
  7. CANDIDATE: both halves applied to the second scratch copy and measured
-    with the same run_eval invocation.
+    through the same local_eval invocation.
  8. ACCEPT only if validation held (objective pass rate not lower; judge mean
     not lower by more than 0.5) AND train improved (objective pass rate
     higher by at least `--min-gain` (default .10), or equal with judge mean
@@ -61,6 +67,7 @@ errored before a decision could be taken.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import difflib
 import io
 import json
@@ -80,11 +87,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HARNESS_DIR = REPO_ROOT / "harness"
 EVALS_DIR = REPO_ROOT / "evals"
-RUN_EVAL = HARNESS_DIR / "run_eval.py"
+LOCAL_EVAL = REPO_ROOT / "scripts" / "local_eval.py"
 
 sys.path.insert(0, str(HARNESS_DIR))
 from cli_json import normalize_cli_result  # noqa: E402
 import run_eval  # noqa: E402
+import local_eval  # noqa: E402
 
 MIN_FIXTURES = 3
 DEFAULT_TRIALS = 3
@@ -97,6 +105,15 @@ DESCRIPTION_MAX_CHARS = 1024
 TRANSCRIPT_EXCERPT_CHARS = 4000
 #: The arm whose numbers a SKILL.md edit can move.
 ARM = "with_skill"
+#: skill-creator's held-out fraction, passed as run_loop's --holdout.
+TRIGGER_HOLDOUT = 0.4
+#: Parallel `claude -p` calls in skill-creator's trigger eval. Its own default
+#: of 10 pushed a 2026-10-05 watched run's five-minute load average to ~28.
+DEFAULT_NUM_WORKERS = 4
+#: What a trigger-loop usage record says about money: nothing is reported.
+TRIGGER_COST_NOTE = ("skill-creator reports no tokens or cost: run_eval.py "
+                     "stops reading each stream-json CLI call once it has a "
+                     "verdict, and improve_description.py asks for text output")
 
 EXIT_ACCEPTED, EXIT_REJECTED, EXIT_REFUSED = 0, 1, 2
 
@@ -114,6 +131,40 @@ class InvalidProposal(Exception):
     """The proposal broke a constraint; it is recorded and never measured."""
 
 
+def check_launch_environment() -> None:
+    """Refuse credential and provider settings before any model subprocess starts."""
+    refused = local_eval.refused_env_names(os.environ)
+    if refused:
+        raise Refusal("refusing to run with " + ", ".join(refused) +
+                      " set; unset them and use the interactive login")
+    proxies = local_eval.proxy_userinfo_names(os.environ)
+    if proxies:
+        raise Refusal("refusing proxy URLs that embed credentials: " +
+                      ", ".join(proxies))
+
+
+@contextmanager
+def guarded_environment():
+    """A private launcher guards explicit and PATH-based CLI calls alike."""
+    check_launch_environment()
+    env = local_eval.child_environment(os.environ)
+    with tempfile.TemporaryDirectory(prefix="skill-edit-guard-") as directory:
+        guard_dir = Path(directory)
+        try:
+            local_eval.install_guard_launcher(guard_dir, environ=env)
+        except local_eval.Refused as exc:
+            raise Refusal(str(exc)) from exc
+        try:
+            yield env
+        finally:
+            # skill-creator can swallow an unsuccessful CLI launch and emit
+            # valid JSON. The launcher's record takes precedence over it.
+            refusals = local_eval.guard_refusals(guard_dir)
+            if refusals:
+                raise Refusal("launch-time settings guard refused: " +
+                              str(refusals[0].get("message")))
+
+
 # ---------------------------------------------------------------------------
 # The runner: every step that can spend model budget, and nothing else.
 # ---------------------------------------------------------------------------
@@ -122,9 +173,8 @@ class Runner:
     """The real thing. Tests substitute a fake with the same three methods."""
 
     def run_eval(self, argv: list[str]) -> int:
-        """`harness/run_eval.py` with `argv`; its exit code (0 pass, 1 a
-        check failed, 2 configuration error)."""
-        return subprocess.run([sys.executable, str(RUN_EVAL), *argv],
+        """Run the guarded local exhibit wrapper; 2 means refusal."""
+        return subprocess.run([sys.executable, str(LOCAL_EVAL), *argv],
                               check=False).returncode
 
     def run_description_loop(self, argv: list[str], *, cwd: Path,
@@ -133,9 +183,6 @@ class Runner:
         `cwd` (its `find_project_root` writes a command file under the
         nearest `.claude/`, so `cwd` must be a scratch project), and its JSON
         stdout parsed. A `skill-creator` link to the plugin is planted in `cwd`."""
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.pathsep.join(
-            p for p in (str(skill_creator), env.get("PYTHONPATH", "")) if p)
         # Run through a link to the plugin planted in the scratch project, so
         # the script path is a literal: the test suite's fork scan
         # (test_every_suite_forking_test_in_this_repo_stands_down_in_a_child)
@@ -143,12 +190,18 @@ class Runner:
         # it cannot for `-m` or a computed path. PYTHONPATH carries
         # skill-creator's `scripts` package, so its imports resolve as under
         # its documented `python -m scripts.run_loop`.
-        link = Path(cwd) / "skill-creator"
-        if not link.exists():
-            link.symlink_to(skill_creator, target_is_directory=True)
-        proc = subprocess.run([sys.executable, "skill-creator/scripts/run_loop.py", *argv],
-                              cwd=cwd, env=env, capture_output=True, text=True,
-                              check=False)
+        with guarded_environment() as env:
+            # Only this trusted plugin's import directory is carried.
+            env["PYTHONPATH"] = str(skill_creator)
+            link = Path(cwd) / "skill-creator"
+            if not link.exists():
+                link.symlink_to(skill_creator, target_is_directory=True)
+            try:
+                proc = subprocess.run([sys.executable, "skill-creator/scripts/run_loop.py", *argv],
+                                      cwd=cwd, env=env, capture_output=True, text=True,
+                                      check=False)
+            except OSError as exc:
+                raise Refusal(f"skill-creator run_loop could not run: {type(exc).__name__}") from exc
         if proc.returncode != 0:
             raise Refusal(f"skill-creator run_loop exited {proc.returncode}")
         try:
@@ -158,13 +211,12 @@ class Runner:
 
     def propose(self, prompt: str, model: str) -> str:
         """One headless call, no tools, prompt on stdin; the reply text."""
-        cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
-               "--output-format", "json", "--permission-mode", "default",
-               "--tools", "", "--model", model]
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         try:
-            proc = subprocess.run(cmd, input=prompt, capture_output=True,
-                                  text=True, env=env, timeout=600, check=False)
+            with guarded_environment() as env:
+                cmd = [env["CLAUDE_BIN"], "-p", "--output-format", "json",
+                       "--permission-mode", "default", "--tools", "", "--model", model]
+                proc = subprocess.run(cmd, input=prompt, capture_output=True,
+                                      text=True, env=env, timeout=600, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise Refusal(f"proposal call could not run: {type(exc).__name__}") from exc
         if proc.returncode != 0:
@@ -400,7 +452,9 @@ def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
     Default: the train fixtures' prompts should trigger; every OTHER skill's
     fixture prompts should not. `--trigger-eval-set` replaces it. Either way
     the validation fixture's prompt is dropped, so the description loop never
-    trains on the fixture that decides acceptance."""
+    trains on the fixture that decides acceptance. A query appears once (the
+    first label wins): skill-creator separates train from held-out results by
+    query text, so a duplicate would put one query on both sides."""
     held_out = {" ".join(str(fixtures[n].get("prompt", "")).split())
                 for n in [validation] + ([holdout] if holdout else [])}
     if override:
@@ -417,25 +471,91 @@ def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
                     and isinstance(other.get("prompt"), str)):
                 items.append({"query": other["prompt"], "should_trigger": False})
         source = "fixtures"
-    clean = []
+    clean, seen = [], set()
     for item in items:
         query = " ".join(str(item.get("query", "")).split())
-        if query and query not in held_out:
+        if query and query not in held_out and query not in seen:
+            seen.add(query)
             clean.append({"query": query, "should_trigger": bool(item.get("should_trigger"))})
-    if not any(i["should_trigger"] for i in clean) or all(i["should_trigger"] for i in clean):
+    if override and (not any(i["should_trigger"] for i in clean)
+                     or all(i["should_trigger"] for i in clean)):
         raise Refusal("the trigger eval set needs at least one should-trigger "
                       "and one should-not-trigger query")
     return clean, source
 
 
+def trigger_split_counts(eval_set: list[dict],
+                         holdout: float = TRIGGER_HOLDOUT) -> dict:
+    """How many queries of each class skill-creator's `split_eval_set` puts
+    in train and in held-out. Its split is stratified: per class it holds out
+    `max(1, int(n * holdout))` of the shuffled queries, so the counts (not
+    which queries) follow from the class sizes alone."""
+    counts = {"train": {}, "held_out": {}}
+    for label, wanted in (("should_trigger", True), ("should_not_trigger", False)):
+        n = sum(1 for item in eval_set if item["should_trigger"] is wanted)
+        held = min(n, max(1, int(n * holdout)))
+        counts["train"][label] = n - held
+        counts["held_out"][label] = held
+    return counts
+
+
+def trigger_set_problems(counts: dict) -> list[str]:
+    """Each split that lacks a class. A train split without a should-trigger
+    query lets the loop "pass" by never triggering, and a held-out split
+    without one cannot notice a description that stopped triggering."""
+    problems = []
+    for split, name in (("train", "train"), ("held_out", "held-out")):
+        for label in ("should_trigger", "should_not_trigger"):
+            if not counts[split][label]:
+                problems.append(f"{name} split has no {label.replace('_', '-')} query")
+    return problems
+
+
 def description_loop_argv(eval_set_path: Path, skill_dir: Path, model: str,
-                          out_dir: Path) -> list[str]:
+                          out_dir: Path,
+                          num_workers: int = DEFAULT_NUM_WORKERS) -> list[str]:
     """skill-creator's documented invocation (SKILL.md "Description
     Optimization", step 3), with its defaults spelled out so the record says
-    what ran, and its browser report switched off."""
+    what ran, its browser report switched off, and fewer parallel workers
+    than its default 10."""
     return ["--eval-set", str(eval_set_path), "--skill-path", str(skill_dir),
             "--model", model, "--max-iterations", "5", "--runs-per-query", "3",
-            "--holdout", "0.4", "--report", "none", "--results-dir", str(out_dir)]
+            "--holdout", str(TRIGGER_HOLDOUT), "--num-workers", str(num_workers),
+            "--report", "none", "--results-dir", str(out_dir)]
+
+
+def trigger_loop_usage(loop: dict, out_dir: Path) -> dict:
+    """The trigger loop's model calls, counted from what skill-creator left:
+    each history entry's per-query `runs` (one `claude -p` each), one
+    proposer call between consecutive iterations, and one more per improve
+    log that records a length rewrite. Tokens and cost are not reported."""
+    history = loop.get("history")
+    eval_calls = None
+    if isinstance(history, list) and history:
+        eval_calls = 0
+        for entry in history:
+            entry = entry if isinstance(entry, dict) else {}
+            for result in (entry.get("train_results") or []) + (entry.get("test_results") or []):
+                runs = result.get("runs") if isinstance(result, dict) else None
+                if isinstance(runs, int) and not isinstance(runs, bool):
+                    eval_calls += runs
+    iterations = loop.get("iterations_run")
+    description_calls = (iterations - 1 if isinstance(iterations, int)
+                         and not isinstance(iterations, bool) and iterations > 0 else None)
+    rewrite_calls = 0
+    for log in sorted(out_dir.glob("*/logs/improve_iter_*.json")):
+        try:
+            entry = json.loads(log.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(entry, dict) and "rewrite_prompt" in entry:
+            rewrite_calls += 1
+    total = (eval_calls + description_calls + rewrite_calls
+             if eval_calls is not None and description_calls is not None else None)
+    return {"counted_from": "skill-creator loop history and improve logs",
+            "eval_calls": eval_calls, "description_calls": description_calls,
+            "rewrite_calls": rewrite_calls, "total_calls": total,
+            "tokens": None, "cost_usd": None, "cost_note": TRIGGER_COST_NOTE}
 
 
 # ---------------------------------------------------------------------------
@@ -564,15 +684,22 @@ Constraints (skills-evals#71):
 - Prefer the smallest edit that would plausibly fix the failures."""
 
 
-def run_paths(results: Path, label: str, skill: str, ts: str, fixture: str) -> Path:
-    return results / "runs" / label / skill / ts / fixture / ARM
+def run_paths(results: Path, label: str, skill: str, ts: str) -> Path:
+    """One empty local_eval destination for this skill, phase and timestamp."""
+    return results / "runs" / label / skill / ts
 
 
-def failure_evidence(arm_dir: Path) -> list[dict]:
+def trial_arm_dir(run_dir: Path, trial: int, skill: str, ts: str,
+                  fixture: str) -> Path:
+    return run_dir / f"t{trial}" / skill / ts / fixture / ARM
+
+
+def failure_evidence(run_dir: Path, skill: str, ts: str,
+                     fixture: str, trials: int) -> list[dict]:
     """Each trial's failed checks and the tail of its final reply."""
-    trial_dirs = sorted(arm_dir.glob(f"{run_eval.TRIAL_DIR_PREFIX}*")) or [arm_dir]
     evidence = []
-    for trial in trial_dirs:
+    for k in range(1, trials + 1):
+        trial = trial_arm_dir(run_dir, k, skill, ts, fixture)
         try:
             summary = json.loads((trial / "summary.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -587,7 +714,7 @@ def failure_evidence(arm_dir: Path) -> list[dict]:
             reply = str(raw.get("result", "")) if isinstance(raw, dict) else ""
         except (OSError, ValueError):
             pass
-        evidence.append({"trial": trial.name, "failed_checks": failed,
+        evidence.append({"trial": k, "failed_checks": failed,
                          "reply_tail": reply[-TRANSCRIPT_EXCERPT_CHARS:]})
     return evidence
 
@@ -642,17 +769,39 @@ def run_eval_argv(skill: str, registry_name: str, registry_root: Path,
     return argv + (["--no-judge"] if no_judge else [])
 
 
-def fixture_metrics(arm_dir: Path) -> dict:
-    """One fixture's arm summary reduced to what the decision reads."""
-    try:
-        summary = json.loads((arm_dir / "summary.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"error": "no summary.json"}
-    stats = summary if "aggregate" in summary else run_eval.aggregate_trials([summary])
+def fixture_metrics(run_dir: Path, skill: str, ts: str,
+                    fixture: str, trials: int) -> dict:
+    """Reduce every local_eval trial; a missing trial stays inconclusive."""
+    summaries = []
+    for k in range(1, trials + 1):
+        path = trial_arm_dir(run_dir, k, skill, ts, fixture) / "summary.json"
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(summary, dict):
+                raise ValueError("summary is not an object")
+        except (OSError, ValueError):
+            summary = {"error": {"type": "missing_summary"}}
+        if summary.get("error") and not isinstance(summary["error"], dict):
+            summary["error"] = {"type": "trial_error"}
+        summaries.append(summary)
+    stats = run_eval.aggregate_trials(summaries)
     objective = stats["aggregate"]["objective"] or {}
-    judge = (stats["aggregate"]["judge"] or {}).get("overall") or {}
-    error = summary.get("error")
-    return {"error": (error or {}).get("type") if error else None,
+    judge_stats = stats["aggregate"]["judge"] or {}
+    judge = judge_stats.get("overall") or {}
+    error = next((s["error"].get("type") or "trial_error"
+                  for s in summaries if s.get("error")), None)
+    if not error and judge_stats.get("errors"):
+        error = "judge_error"
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        manifest = None  # Injected offline runners may only write trial summaries.
+    trial_entries = manifest.get("trials") if isinstance(manifest, dict) else None
+    if not error and isinstance(trial_entries, list) and any(
+            not isinstance(item, dict) or item.get("exit_code") != 0
+            for item in trial_entries):
+        error = "trial_exit"
+    return {"error": error,
             "passed": objective.get("passed"), "total": objective.get("total"),
             "judge_mean": judge.get("mean"), "n": stats.get("n")}
 
@@ -812,6 +961,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         help="skill-creator query set JSON (default: from fixtures)")
     parser.add_argument("--skill-creator", type=Path, default=None,
                         help="skill-creator's skill directory (holds scripts/run_loop.py)")
+    parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS,
+                        help="parallel CLI calls in skill-creator's trigger eval "
+                             f"(default {DEFAULT_NUM_WORKERS}; skill-creator's own is 10)")
     parser.add_argument("--results-dir", type=Path, default=None)
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
@@ -821,6 +973,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error(f"--trials must be 1..{run_eval.MAX_TRIALS}")
     if args.rotation is not None and args.rotation < 0:
         parser.error("--rotation must be >= 0")
+    if args.num_workers < 1:
+        parser.error("--num-workers must be >= 1")
     if not math.isfinite(args.min_gain) or not 0 < args.min_gain <= 1:
         parser.error("--min-gain must be finite and greater than 0, at most 1")
     return args
@@ -853,12 +1007,15 @@ def plan(args: argparse.Namespace) -> dict:
     skill_creator, sc_sha = find_skill_creator(args.skill_creator)
     eval_set, source = trigger_eval_set(skill, fixtures, train, validation,
                                         args.trigger_eval_set, args.holdout)
+    split_counts = trigger_split_counts(eval_set)
     return {"skill": skill, "results": results, "records_dir": records_dir,
             "rotation": rotation, "train": train, "validation": validation,
             "holdout": args.holdout, "min_gain": args.min_gain,
             "fixtures": fixtures, "registry": registry, "sha": sha,
             "skill_creator": skill_creator, "skill_creator_sha": sc_sha,
             "eval_set": eval_set, "eval_set_source": source,
+            "trigger_split": split_counts,
+            "trigger_problems": trigger_set_problems(split_counts),
             "arm_model": models[train[0]],
             "proposal_model": proposal_model()}
 
@@ -872,7 +1029,10 @@ def print_plan(p: dict, args: argparse.Namespace) -> None:
         "holdout": p["holdout"], "min_gain": p["min_gain"],
         "registry": {"name": p["registry"]["name"], "sha": p["sha"]},
         "skill_creator": str(p["skill_creator"]),
-        "trigger_eval_set": {"source": p["eval_set_source"], "size": len(p["eval_set"])},
+        "trigger_eval_set": {"source": p["eval_set_source"], "size": len(p["eval_set"]),
+                             "split": p["trigger_split"],
+                             "problems": p["trigger_problems"]},
+        "num_workers": args.num_workers,
         "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
         "results_dir": str(p["results"]),
         "model_calls": {
@@ -887,11 +1047,24 @@ def print_plan(p: dict, args: argparse.Namespace) -> None:
 
 def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
     p = plan(args)
+    unusable = trigger_set_unusable(p)
     if args.dry_run:
         print_plan(p, args)
+        if unusable:
+            print(f"trigger-set-unusable: {unusable}", file=sys.stderr)
+            return EXIT_REFUSED
         return EXIT_ACCEPTED
     skill, results, registry = p["skill"], p["results"], p["registry"]
     ts = now.astimezone(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
+    # Improvement records persist here; each local_eval call receives its
+    # own absent or empty directory beneath runs/.
+    try:
+        for path in (results, p["records_dir"],
+                     results / "trigger" / skill):
+            local_eval.check_results_dir(path, require_empty=False)
+        local_eval.check_results_dir(results / "trigger" / skill / ts)
+    except local_eval.Refused as exc:
+        raise Refusal(str(exc)) from exc
     names = p["train"] + [p["validation"]] + ([p["holdout"]] if p["holdout"] else [])
     p["records_dir"].mkdir(parents=True, exist_ok=True)
     stem = p["records_dir"] / ts
@@ -908,14 +1081,6 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         original = (base_skill / "SKILL.md").read_text(encoding="utf-8")
         disabled_plugins = skill_provider_plugins(base_root, skill)
 
-        rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
-                                           results / "runs" / "baseline", ts,
-                                           args.trials, args.no_judge))
-        if rc not in (0, 1):
-            raise Refusal(f"baseline run_eval exited {rc}")
-        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts, n))
-                    for n in names}
-
         record = {
             "schema": 1, "skill": skill, "timestamp": ts,
             "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
@@ -926,12 +1091,45 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "trials": args.trials, "no_judge": args.no_judge,
             "min_gain": args.min_gain,
             "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
-            "baseline": baseline, "candidate": None,
-            "runs": {"baseline": str(results / "runs" / "baseline" / skill / ts)},
+            "baseline": None, "candidate": None,
+            "runs": {"baseline": str(run_paths(results, "baseline", skill, ts))},
             "files": {},
         }
         if p["holdout"]:
             record["split"]["holdout"] = p["holdout"]
+        record["trigger_set"] = {"source": p["eval_set_source"],
+                                 "size": len(p["eval_set"]),
+                                 "split": p["trigger_split"],
+                                 "problems": p["trigger_problems"]}
+        if unusable:
+            record.update(status="trigger-set-unusable", phase="trigger-set",
+                          exit_code=EXIT_REFUSED, reasons=[unusable])
+            write_record(stem, record)
+            print(f"refused: trigger-set-unusable: {unusable}; record: "
+                  f"{stem.with_suffix('.json')}", file=sys.stderr)
+            return EXIT_REFUSED
+        if p["trigger_problems"]:
+            print("warning: reviewed trigger eval set: " + "; ".join(p["trigger_problems"]),
+                  file=sys.stderr)
+
+        try:
+            check_launch_environment()
+        except Refusal as exc:
+            return record_refusal(stem, record, "preflight", exc)
+
+        rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
+                                           run_paths(results, "baseline", skill, ts),
+                                           ts, args.trials, args.no_judge))
+        if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+            record.update(status="refused", phase="baseline", exit_code=rc,
+                          reasons=[f"local_eval exited {rc} during baseline"])
+            write_record(stem, record)
+            print(f"refused: local_eval baseline exited {rc}; record: "
+                  f"{stem.with_suffix('.json')}", file=sys.stderr)
+            return EXIT_REFUSED
+        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
+                                       skill, ts, n, args.trials) for n in names}
+        record["baseline"] = baseline
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
@@ -943,9 +1141,13 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         (project / ".claude" / "settings.json").write_text(json.dumps({
             "enabledPlugins": {name: False for name in disabled_plugins}}, indent=2),
             encoding="utf-8")
-        loop = runner.run_description_loop(
-            description_loop_argv(eval_set_path, base_skill, p["arm_model"], trigger_dir),
-            cwd=project, skill_creator=p["skill_creator"])
+        try:
+            loop = runner.run_description_loop(
+                description_loop_argv(eval_set_path, base_skill, p["arm_model"],
+                                      trigger_dir, args.num_workers),
+                cwd=project, skill_creator=p["skill_creator"])
+        except Refusal as exc:
+            return record_refusal(stem, record, "trigger", exc)
         (trigger_dir / "loop.json").write_text(json.dumps(loop, indent=2), encoding="utf-8")
         original_description = frontmatter_data(original).get("description", "")
         raw_best = str(loop.get("best_description") or "")
@@ -960,11 +1162,14 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "best_test_score": loop.get("best_test_score"),
             "best_train_score": loop.get("best_train_score"),
             "iterations": loop.get("iterations_run"),
+            "num_workers": args.num_workers,
+            "usage": trigger_loop_usage(loop, trigger_dir),
             "changed": bool(best) and best != " ".join(str(original_description).split()),
             "loop_output": str(trigger_dir / "loop.json")}
 
         # Body half: one proposal call, validated before anything is measured.
-        evidence = {n: failure_evidence(run_paths(results, "baseline", skill, ts, n))
+        evidence = {n: failure_evidence(run_paths(results, "baseline", skill, ts),
+                                        skill, ts, n, args.trials)
                     for n in p["train"]}
         evidence = {n: e for n, e in evidence.items() if e}
         record["body_half"] = {"model": p["proposal_model"], "rationale": None,
@@ -990,6 +1195,8 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             write_record(stem, record)
             print(f"rejected before measurement: {exc}")
             return EXIT_REJECTED
+        except Refusal as exc:
+            return record_refusal(stem, record, "proposal", exc)
 
         if candidate_text == original:
             record.update(status="no-candidate",
@@ -1003,15 +1210,20 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         record["files"]["patch"] = str(stem.with_suffix(".patch"))
         (cand_skill / "SKILL.md").write_text(candidate_text, encoding="utf-8")
 
+        record["runs"]["candidate"] = str(run_paths(results, "candidate", skill, ts))
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], cand_root,
-                                           results / "runs" / "candidate", ts,
-                                           args.trials, args.no_judge))
-        if rc not in (0, 1):
-            raise Refusal(f"candidate run_eval exited {rc}")
-        candidate = {n: fixture_metrics(run_paths(results, "candidate", skill, ts, n))
-                     for n in names}
+                                           run_paths(results, "candidate", skill, ts),
+                                           ts, args.trials, args.no_judge))
+        if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+            record.update(status="refused", phase="candidate", exit_code=rc,
+                          reasons=[f"local_eval exited {rc} during candidate"])
+            write_record(stem, record)
+            print(f"refused: local_eval candidate exited {rc}; record: "
+                  f"{stem.with_suffix('.json')}", file=sys.stderr)
+            return EXIT_REFUSED
+        candidate = {n: fixture_metrics(run_paths(results, "candidate", skill, ts),
+                                        skill, ts, n, args.trials) for n in names}
         record["candidate"] = candidate
-        record["runs"]["candidate"] = str(results / "runs" / "candidate" / skill / ts)
 
         accepted, reasons = decide(baseline, candidate, p["train"], p["validation"],
                                     args.min_gain, p["holdout"],
@@ -1031,6 +1243,27 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         return EXIT_ACCEPTED if accepted else EXIT_REJECTED
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def trigger_set_unusable(p: dict) -> str | None:
+    """Why a fixture-derived trigger set must not run, or None. A reviewed
+    `--trigger-eval-set` is the operator's call and only warns."""
+    if p["eval_set_source"] != "fixtures" or not p["trigger_problems"]:
+        return None
+    return ("; ".join(p["trigger_problems"]) + f" (skill-creator --holdout "
+            f"{TRIGGER_HOLDOUT} of {len(p['eval_set'])} fixture-derived "
+            "queries); the trigger loop would pass without "
+            "measuring triggering. Pass a reviewed --trigger-eval-set with at "
+            "least two distinct should-trigger and two should-not-trigger queries")
+
+
+def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
+    record.update(status="refused", phase=phase, exit_code=EXIT_REFUSED,
+                  reasons=[str(exc)])
+    write_record(stem, record)
+    print(f"refused during {phase}: {exc}; record: {stem.with_suffix('.json')}",
+          file=sys.stderr)
+    return EXIT_REFUSED
 
 
 def write_record(stem: Path, record: dict) -> None:

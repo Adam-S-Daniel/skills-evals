@@ -220,6 +220,27 @@ def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
                                prefix=f"{fixture_path}: ")
 
 
+def validate_followups(fixture: dict, fixture_path: Path) -> None:
+    """`followups:` is absent, null, or a non-empty list of non-blank
+    strings, checked once at load like every other key the harness reads.
+
+    Each entry is sent as one further user turn after the prompt (see
+    `run_agent`). Anything else would reach `claude -p` as a stringified
+    list or an empty prompt, so it is a named configuration error (rc 2)
+    instead.
+    """
+    value = fixture.get("followups") if isinstance(fixture, dict) else None
+    if value is None:
+        return
+    if (not isinstance(value, list) or not value
+            or not all(isinstance(item, str) and item.strip() for item in value)):
+        raise guidance.GuidanceError(
+            f"{fixture_path}: `followups:` must be a non-empty list of "
+            f"non-blank strings (or absent), got {type(value).__name__} "
+            f"{value!r}. Each entry is one further user turn sent with "
+            "`--resume` after the prompt, identically in both arms.")
+
+
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
 
 _REQUIRED_REGISTRY_FIELDS = ("name", "url", "layout")
@@ -927,7 +948,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
     `arm` carries: name ("with_skill"/"without_skill"), skill + registry (Path,
     only for with_skill), optional model, optional timeout (default 600s),
-    optional env (the fixture's `env:` mapping, see agent_env).
+    optional env (the fixture's `env:` mapping, see agent_env), optional
+    followups (the fixture's `followups:` list, see ADR 0009).
 
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
@@ -1018,35 +1040,59 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
            "--setting-sources", arm.get("setting_sources", "project")]
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
+    env = arm.get("env_override") or agent_env(workspace, arm.get("env"))
 
-    try:
-        result = subprocess.run(cmd, cwd=workspace, capture_output=True,
-                                text=True, timeout=timeout,
-                                env=arm.get("env_override")
-                                or agent_env(workspace, arm.get("env")))
-    except subprocess.TimeoutExpired:
-        return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
+    # `followups:` (ADR 0009): each entry is one more user turn in the SAME
+    # session and workspace — the first call's flags plus `--resume
+    # <session_id>`, the text in the prompt's place. Every turn gets the
+    # whole `timeout`. The first turn's error details carry no label, so a
+    # fixture without `followups:` behaves exactly as before.
+    texts = [prompt, *(arm.get("followups") or [])]
+    turns: list[dict] = []
+    for index, text in enumerate(texts):
+        label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
+        turn_cmd = cmd
+        if index:
+            session_id = turns[-1].get("session_id")
+            if not isinstance(session_id, str) or not session_id:
+                return {"error": "invalid_json",
+                        "detail": f"{label}the previous result has no "
+                                  "session_id to resume"}
+            turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
+        try:
+            result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
+                                    text=True, timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return {"error": "timeout",
+                    "detail": f"{label}agent timed out after {timeout}s"}
 
-    if result.returncode != 0:
-        return {"error": "nonzero_exit",
-                "detail": failed_run_detail(result.stdout, result.stderr),
-                "returncode": result.returncode}
+        if result.returncode != 0:
+            return {"error": "nonzero_exit",
+                    "detail": label + failed_run_detail(result.stdout, result.stderr),
+                    "returncode": result.returncode}
 
-    try:
-        data = normalize_cli_result(json.loads(result.stdout))
-    except json.JSONDecodeError as e:
-        # Shape only. The array form starts with the `system/init` message
-        # (cwd, tool and connector names), and this detail reaches
-        # summary.json, so no slice of stdout is echoed.
-        return {"error": "invalid_json",
-                "detail": f"stdout is not valid JSON ({e.msg} at character "
-                          f"{e.pos} of {len(result.stdout)})"}
-    except ValueError as e:
-        return {"error": "invalid_json", "detail": str(e)}
+        try:
+            data = normalize_cli_result(json.loads(result.stdout))
+        except json.JSONDecodeError as e:
+            # Shape only. The array form starts with the `system/init`
+            # message (cwd, tool and connector names), and this detail
+            # reaches summary.json, so no slice of stdout is echoed.
+            return {"error": "invalid_json",
+                    "detail": f"{label}stdout is not valid JSON ({e.msg} at "
+                              f"character {e.pos} of {len(result.stdout)})"}
+        except ValueError as e:
+            return {"error": "invalid_json", "detail": f"{label}{e}"}
 
-    if data.get("is_error"):
-        return {"error": "agent_error", "detail": data.get("result", ""), "raw": data}
+        if data.get("is_error"):
+            detail = data.get("result", "")
+            return {"error": "agent_error",
+                    "detail": f"{label}{detail}" if label else detail,
+                    "raw": data}
+        turns.append(data)
 
+    if len(turns) > 1:
+        return _combine_turns(turns, texts[1:])
+    data = turns[0]
     return {
         "transcript": data.get("result"),
         "usage": data.get("usage"),
@@ -1054,6 +1100,61 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         "num_turns": data.get("num_turns"),
         "duration_ms": data.get("duration_ms"),
         "raw": data,
+    }
+
+
+def _sum_usage(total, part):
+    """Add one turn's usage-shaped value into the running total: numbers
+    add, mappings merge key by key, anything else takes the latest value."""
+    def is_number(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if is_number(total) and is_number(part):
+        return total + part
+    if isinstance(total, dict) and isinstance(part, dict):
+        merged = dict(total)
+        for key, value in part.items():
+            merged[key] = _sum_usage(merged[key], value) if key in merged else value
+        return merged
+    return part if part is not None else total
+
+
+# What separates one turn's reply from the next in a multi-turn transcript.
+# The judge reads the whole conversation, so it sees the follow-up the agent
+# was answering, not two replies run together.
+FOLLOWUP_MARKER = "\n\n--- user follow-up ---\n{text}\n--- agent reply ---\n"
+
+
+def _combine_turns(turns: list[dict], followups: list[str]) -> dict:
+    """`run_agent`'s success dict for a session of several CLI calls.
+
+    The transcript is every reply in order with each follow-up between them.
+    A resumed call's `total_cost_usd` and `modelUsage` are already CUMULATIVE
+    for the session (measured on Claude Code 2.1.289: the resumed result's
+    cost and per-model tokens equal the sums over both calls), so those two
+    come from the LAST call; summing them would count the first call twice.
+    Its `usage`, `num_turns` and `duration_ms` cover that call alone, so
+    those are summed. `raw` is the last call's result object (so its
+    `result` is the final reply) with those totals, and every call's own
+    result object under `turns`.
+    """
+    transcript = turns[0].get("result") or ""
+    for text, data in zip(followups, turns[1:]):
+        transcript += FOLLOWUP_MARKER.format(text=text) + (data.get("result") or "")
+    totals = {key: turns[-1].get(key)
+              for key in ("total_cost_usd", "modelUsage")}
+    for key in ("usage", "num_turns", "duration_ms"):
+        value = None
+        for turn in turns:
+            if turn.get(key) is not None:
+                value = turn[key] if value is None else _sum_usage(value, turn[key])
+        totals[key] = value
+    return {
+        "transcript": transcript,
+        "usage": totals["usage"],
+        "cost_usd": totals["total_cost_usd"],
+        "num_turns": totals["num_turns"],
+        "duration_ms": totals["duration_ms"],
+        "raw": {**turns[-1], **totals, "turns": turns},
     }
 
 
@@ -1835,6 +1936,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "model": agent_model,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
+            "followups": fixture.get("followups"),
         }
         # A bad `registry:` (missing field, wrong type, unknown URL, or a
         # resolved path that doesn't exist) becomes an error dict here — the
@@ -2411,6 +2513,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "setting_sources": setting_sources,
             "env_override": env,
+            "followups": fixture.get("followups"),
         }
         result = run_agent(workspace, fixture["prompt"], arm_config)
 
@@ -2954,6 +3057,7 @@ def main() -> int:
             fixture = load_fixture(eval_dir)
             validate_mapping_keys(fixture, eval_dir / FIXTURE_FILE)
             validate_timeouts(fixture, eval_dir / FIXTURE_FILE)
+            validate_followups(fixture, eval_dir / FIXTURE_FILE)
         except MappingFixtureKeyError as exc:
             # A malformed `judge:` is #81's `invalid_judge_block` — named in
             # stdout AND recorded as report.md plus one summary.json per arm, so

@@ -1,0 +1,12 @@
+{
+  "number": 518,
+  "headRefName": "cms/posts/autumn-hours",
+  "labels": [
+    {
+      "name": "cms/ready"
+    }
+  ],
+  "title": "Autumn hours",
+  "state": "OPEN",
+  "url": "https://github.com/example-org/example-site/pull/518"
+}

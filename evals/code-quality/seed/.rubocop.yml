@@ -1,0 +1,12 @@
+# RuboCop runs standalone (gem install), not through the site Gemfile: its
+# dependencies need a newer Ruby than the site build uses.
+AllCops:
+  TargetRubyVersion: 3.3
+  NewCops: enable
+  Exclude:
+    - 'vendor/**/*'
+    - 'node_modules/**/*'
+
+# 100-column house width, matching Prettier and Ruff.
+Layout/LineLength:
+  Max: 100

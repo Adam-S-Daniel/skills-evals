@@ -1,0 +1,23 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+# 100-column house width for code, matching Prettier (printWidth), Ruff
+# (line-length) and RuboCop (Layout/LineLength). Markdown and YAML opt out
+# below: prose, long URLs and workflow expressions run longer.
+max_line_length = 100
+
+[*.py]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+[*.{yml,yaml}]
+max_line_length = off

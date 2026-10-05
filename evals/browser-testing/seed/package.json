@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "name": "browser-testing-eval-seed",
+  "version": "1.0.0",
+  "description": "Pure filesystem AST checks for the browser-testing fixture",
+  "dependencies": {
+    "acorn": "8.18.0",
+    "acorn-walk": "8.3.5",
+    "yaml": "2.9.1"
+  }
+}

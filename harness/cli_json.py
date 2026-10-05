@@ -67,7 +67,15 @@ def normalize_cli_result(decoded: object) -> dict:
     return merged
 
 
-_ABSOLUTE_PATH = re.compile(r"(?<![\w:/.-])/(?:[\w.@+-]+/)+[\w.@+-]*")
+# Paths in a CLI diagnostic: a quoted absolute path (spaces allowed), a
+# file:// URL, a ~/ path, a Windows drive path, then a bare absolute path.
+_PATH_PATTERNS = (
+    (re.compile(r"(['\"`])(?:/|~/|[A-Za-z]:[\\/])[^'\"`\n]*\1"), r"\1<path>\1"),
+    (re.compile(r"file:///?[^\s'\"`]*"), "<path>"),
+    (re.compile(r"(?<![\w/.-])~/[^\s'\"`]*"), "<path>"),
+    (re.compile(r"(?<![\w])[A-Za-z]:\\[^\s'\"`]*"), "<path>"),
+    (re.compile(r"(?<![\w:/.-])/(?:[\w.@+-]+/)+[\w.@+-]*"), "<path>"),
+)
 _SUBTYPE = re.compile(r"[A-Za-z0-9_]{1,40}")
 
 
@@ -84,7 +92,8 @@ def failed_run_detail(stdout: str, stderr: str, limit: int = 300) -> str:
     """
     text = stderr.strip()
     if text:
-        text = _ABSOLUTE_PATH.sub("<path>", text)
+        for pattern, replacement in _PATH_PATTERNS:
+            text = pattern.sub(replacement, text)
         return text if len(text) <= limit else text[:limit] + "..."
     try:
         result = normalize_cli_result(json.loads(stdout))

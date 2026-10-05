@@ -111,6 +111,19 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+- **`followups:`** (optional) — a non-empty list of non-blank strings, each
+  sent as one more user turn after `prompt:`, in the same session and
+  workspace: `claude -p <text> --resume <session_id>` with every flag of the
+  first call, identically in both arms. Use it when a skill correctly stops
+  to ask the user before acting, so one headless call could never reach the
+  workspace state the objective checks score (`evals/rename-pdfs/` is the
+  first user). Each turn gets the whole `timeout_s`; a failed turn fails the
+  arm with the usual error type, its detail naming the follow-up. The judge
+  reads every reply with the follow-ups between them. Turns, duration and
+  usage are summed; cost and `modelUsage` come from the last call, because
+  a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
+  load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
+
 ### Parsed configuration and staged-shell objective checks
 
 These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
@@ -188,14 +201,19 @@ pins, and analysis bounds are documented in
 
 The [command scorer](harness/scorers/commands.py) runs argv directly with no
 shell or interpolation and closed stdin. Bare `bash`, `sh`, `python3`, and
-`node` resolve only at fixed `/usr/bin` or `/bin` paths; every other entrypoint
+`node` resolve only at fixed `/usr/bin` or `/bin` paths (`node`, on a host with
+neither, resolves to the harness's own `node`, never one inside the workspace,
+which is the same `node` its PATH gets below); every other entrypoint
 must resolve inside the final workspace, including symlink resolution. Direct
 `claude`/`claude.exe` entrypoints are rejected. No arbitrary PATH lookup occurs.
 
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
-`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
-the local harness's guard launcher. Both CI and local scoring use the same
+`claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
+is a directory containing just a symlink to the harness's own `node` (never
+one inside the workspace) appended, so PATH lookups of `node` work on hosts
+such as GitHub runners that install it in `/usr/local/bin`. It inherits no
+credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
 spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
@@ -459,7 +477,7 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `code-quality`.
+  objective checks + thin judge. Candidates: none open.
   (`github-actions-sha-pinning` was also Class A; it has already shipped —
   see "Backfill order" below.) `rename-pdfs` graduated out of this list:
   covered by `evals/rename-pdfs/` (issue #82). `post-failure-comment`
@@ -470,6 +488,12 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  The consumer-bump half of `platform-release-and-bump` is covered by
+  [`evals/platform-release-and-bump/`](evals/platform-release-and-bump/)
+  ([issue #93](https://github.com/Adam-S-Daniel/skills-evals/issues/93)):
+  the pinned platform verifier checks the release refs and caller parity, while
+  the offline GitHub replay records whether a write was attempted. The live
+  release and deployment steps are outside this fixture.
   `admin-config-render` graduated out of this list: covered by
   [`evals/admin-config-render/`](evals/admin-config-render/)
   ([issue #87](https://github.com/Adam-S-Daniel/skills-evals/issues/87)).
@@ -477,6 +501,18 @@ Not every skill takes the same eval, and some take none. Classify first:
   that drives the vendored Ruby renderer and parses its output. The scorer's
   fixed `PATH` needs `ruby` at `/usr/bin` or `/bin`, and a missing Ruby fails
   the checks rather than skipping them.
+  `browser-testing` is covered by
+  [`evals/browser-testing/`](evals/browser-testing/)
+  ([issue #92](https://github.com/Adam-S-Daniel/skills-evals/issues/92)).
+  Frozen AST commands check spec conventions; actual browser correctness is
+  judged and remains unmeasured by this fixture.
+  `code-quality` graduated out of this list: covered by
+  [`evals/code-quality/`](evals/code-quality/)
+  ([issue #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88)).
+  Its hook checks pair ADR 0007's Bash AST check with a `command_succeeds`
+  probe kept inline in `fixture.yaml`, out of the agent's sight, that runs
+  the hook in a scratch Git repository with fake Go tools; the probe needs
+  `bash`, `git`, `tar` and `mktemp` at `/usr/bin` or `/bin`, not `node`.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
@@ -489,10 +525,16 @@ Not every skill takes the same eval, and some take none. Classify first:
   [`evals/debug-github-workflows/wrong-branch/`](evals/debug-github-workflows/wrong-branch/)
   (issue [#76](https://github.com/Adam-S-Daniel/skills-evals/issues/76)). Main
   invokes a missing test module while an unmerged branch already fixes its
-  workflow. Seven checks require actual log/comparison reads, affirmative
-  cause and merge statements, and preservation of project/instrument files.
-  The reply grammar is deliberately narrow; correct alternative phrasing can
-  fail, so no A/B calibration or measured improvement is claimed. Exit-128,
+  workflow. The investigation-only prompt asks the agent to explain the cause
+  and next step without editing files. A fixture-owned setup builds an offline
+  origin with fetchable main and fix refs. Seven checks require an actual log
+  read, a comparison read through gh or through a git diff, show, or patch log
+  of the fix branch (git commands are recorded under `.git/`), exact
+  branch/action/error tokens in the reply, and preservation of
+  project/instrument files. The independent judge assesses
+  whether those tokens express the correct cause and merge direction; token
+  coverage alone is not semantic correctness. No A/B calibration or measured
+  improvement is claimed. Exit-128,
   token/auth and misleading-success patterns remain uncovered.
   [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
   now has its first Class B fixture:
@@ -617,7 +659,7 @@ yet" must stay distinguishable.)
 
 | Skill | Decision | Reason |
 |---|---|---|
-| `test-canary` | no A/B | delivery probe; covered by the propagation arms |
+| `test-canary` | no A/B | internal canary; no propagation arm loads it, so its delivery probe is not built and no open issue tracks it (closed [#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17) built the adam-agentskills arms only) |
 | `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
@@ -627,11 +669,20 @@ yet" must stay distinguishable.)
 
 ### Budget
 
-Do not grow the weekly matrix linearly with coverage. Evals run on-touch (PR
-path filters over `evals/<skill>/**` and the skill's own registry path); the
-scheduled lane runs a rotating subset weekly or the full sweep monthly.
-`eval.yml` itself gets salient-path filters — the `workflow-path-audit`
-doctrine applies to the harness's own CI.
+The scheduled real eval runs exactly the reviewed ready list in
+[`evals/scheduled.yml`](evals/scheduled.yml), with readiness evidence per
+fixture; dispatch still runs one fixture. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
+records admission and failure isolation. Two eval legs run concurrently at
+most, with separate credential exchanges and success artifacts; serialized
+publishers build each fixture's badge against accumulated history. Roster
+jobs still run once per workflow run.
+
+At the workflow's estimate of $0.30–0.90 per skill fixture, eight fixtures cost
+about $2.40–7.20 per scheduled run, or $12.00–36.00 for five weekly runs. This is an
+estimate; the API workspace spend limit is the hard ceiling. Every addition
+is a reviewed spend decision. Rotation, monthly sweeps, model products,
+trial changes, and automated budget enforcement remain deferred under
+[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 

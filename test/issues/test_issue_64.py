@@ -537,13 +537,15 @@ class RepoFiles(unittest.TestCase):
 
     def test_test_canary_is_not_said_to_be_covered_by_the_propagation_arms(self):
         # Nothing under evals/propagation, the workflows or the harness
-        # references test-canary; its SKILL.md says the probe (issue #17) is
-        # not built. The reason must say that, not claim coverage.
+        # references test-canary; closed issue #17 built the adam-agentskills
+        # propagation arms only, and no open issue tracks a test-canary probe.
+        # The reason must say that, not claim coverage or a tracker.
         doc = yaml.safe_load(COMMITTED_NON_COVERAGE.read_text(encoding="utf-8"))
         row = next(r for r in doc["skips"] if r["skill"] == "test-canary")
         self.assertEqual(
-            row["reason"], "internal canary; carries no guidance; its "
-            "delivery probe (issue #17) is not built")
+            row["reason"], "internal canary; carries no guidance; no probe "
+            "asserts its delivery (not built, untracked; closed issue #17 "
+            "built other propagation arms)")
 
     def test_the_committed_evals_tree_and_skip_file_load_through_the_script(self):
         w = World(self)

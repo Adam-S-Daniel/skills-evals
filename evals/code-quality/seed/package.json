@@ -1,0 +1,15 @@
+{
+  "name": "inventory-site",
+  "private": true,
+  "scripts": {
+    "lint": "npm run lint:js && npm run lint:md",
+    "lint:js": "eslint scripts",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\"",
+    "format": "prettier --write \"scripts/**/*.js\""
+  },
+  "devDependencies": {
+    "eslint": "9.36.0",
+    "markdownlint-cli2": "0.18.1",
+    "prettier": "3.6.2"
+  }
+}

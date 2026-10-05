@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -151,6 +152,22 @@ class FailedRunDetailTests(unittest.TestCase):
         long = failed_run_detail("", "x" * 1000)
         self.assertEqual(long, "x" * 300 + "...")
 
+    def test_stderr_redacts_quoted_urls_home_and_drive_paths(self):
+        cases = {
+            "ENOENT '/home/example/my project/a.txt' not found":
+                "ENOENT '<path>' not found",
+            'cannot open "/home/example/my project/a b.txt"': 'cannot open "<path>"',
+            "loading file:///home/example/x/y.js failed": "loading <path> failed",
+            "see ~/example/.config/x.json now": "see <path> now",
+            "bad C:\\Users\\example\\x.txt here": "bad <path> here",
+            "plain /usr/bin/env: missing": "plain <path>: missing",
+            "a/b relative and https://example.com/x stay":
+                "a/b relative and https://example.com/x stay",
+        }
+        for stderr, expected in cases.items():
+            with self.subTest(stderr=stderr):
+                self.assertEqual(failed_run_detail("", stderr), expected)
+
     def test_unparseable_or_unexpected_stdout_reports_only_its_length(self):
         for stdout in ('[{"cwd": "' + PRIVATE_CWD, "[]", "null", ""):
             with self.subTest(stdout=stdout):
@@ -167,6 +184,14 @@ class CliJsonConsumersTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
+        home = self.workspace / "home"
+        home.mkdir()
+        self.cli = self.workspace / "cli-stub"
+        self.cli.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+        self.cli.chmod(0o700)
+        self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
+                    "TMPDIR": str(self.workspace), "LANG": "C.UTF-8",
+                    "CLAUDE_BIN": str(self.cli)}
 
     def _agent(self, payload: object) -> dict:
         with mock.patch("subprocess.run", return_value=cli_reply(payload)):
@@ -185,7 +210,8 @@ class CliJsonConsumersTests(unittest.TestCase):
         return text, models
 
     def _proposal(self, payload: object) -> str:
-        with mock.patch("subprocess.run", return_value=cli_reply(payload)):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                mock.patch("subprocess.run", return_value=cli_reply(payload)):
             return propose_skill_edit.Runner().propose("prompt", "fake-default-model")
 
     def test_agent_dict_unchanged_and_array_result_last_or_earlier(self):
@@ -294,6 +320,18 @@ class CliJsonConsumersTests(unittest.TestCase):
         with self.assertRaises(propose_skill_edit.Refusal) as caught:
             self._proposal(["private payload", RESULT])
         self.assertNotIn("private payload", str(caught.exception))
+
+    def test_proposal_ignores_parent_cloud_environment(self):
+        parent_env = {"AZURE_EXTENSION_DIR": "/x", "GOOGLE_FOO": "y"}
+        with mock.patch.dict(os.environ, parent_env):
+            self.assertEqual(self._proposal([MESSAGE, RESULT]), "done")
+            self.assertEqual({name: os.environ[name] for name in parent_env}, parent_env)
+
+    def test_proposal_needs_no_cli_on_path(self):
+        empty_bin = self.workspace / "empty-bin"
+        empty_bin.mkdir()
+        with mock.patch.dict(self.env, {"PATH": str(empty_bin)}):
+            self.assertEqual(self._proposal([MESSAGE, RESULT]), "done")
 
     def test_raw_transcript_file_contains_only_normalized_result(self):
         raw = self._agent([MESSAGE, RESULT])["raw"]

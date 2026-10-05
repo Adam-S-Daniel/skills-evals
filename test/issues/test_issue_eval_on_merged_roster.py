@@ -223,11 +223,12 @@ class TestTheJobGraph(_Scripts):
     """The new order: roster -> disarm -> roster-pr (publish + arm) ->
     roster-wait -> eval -> publish. Asserted on the parsed `needs:`."""
 
-    def test_the_jobs_are_exactly_these_six(self):
+    def test_the_jobs_are_exactly_these_seven(self):
         self.assertEqual(sorted(self.jobs),
-                         ["disarm", "eval", "publish", "roster", "roster-pr", "roster-wait"])
+                         ["disarm", "eval", "plan", "publish", "roster", "roster-pr", "roster-wait"])
 
     def test_each_jobs_needs(self):
+        self.assertEqual(_needs(self.jobs["plan"]), [])
         self.assertEqual(_needs(self.jobs["roster"]), [])
         self.assertEqual(_needs(self.jobs["disarm"]), ["roster"])
         # ADR 0004: `roster-pr` arms BEFORE the eval, so it no longer needs
@@ -236,9 +237,10 @@ class TestTheJobGraph(_Scripts):
         self.assertEqual(_needs(self.jobs["roster-pr"]), ["disarm", "roster"])
         self.assertEqual(_needs(self.jobs["roster-wait"]), ["roster", "roster-pr"])
         self.assertEqual(_needs(self.jobs["eval"]),
-                         ["disarm", "roster", "roster-pr", "roster-wait"])
+                         ["disarm", "plan", "roster", "roster-pr", "roster-wait"])
         # S1: `publish` reads `roster-wait`'s `cleared` in its gate.
-        self.assertEqual(_needs(self.jobs["publish"]), ["eval", "roster", "roster-wait"])
+        self.assertEqual(_needs(self.jobs["publish"]),
+                         ["eval", "plan", "roster", "roster-wait"])
 
     def test_the_agent_starts_only_after_the_wait_resolved(self):
         # Invariant 3: nothing armed while the agent runs. `eval` needs the
@@ -497,9 +499,11 @@ class TestTheGates(_Scripts):
     or when `roster-wait` was skipped (off `main`, `roster_only`) — never
     when it failed, timed out, was cancelled or never started."""
 
-    def _ctx(self, wait_result, cleared, *, roster_only=False, eval_result="success"):
-        return {"functions": {"cancelled": lambda: False},
+    def _ctx(self, wait_result, cleared, *, roster_only=False, eval_result="success",
+             plan_result="success", cancelled=False):
+        return {"functions": {"cancelled": lambda: cancelled},
                 "inputs.roster_only": roster_only,
+                "needs.plan.result": plan_result,
                 "needs.roster-wait.result": wait_result,
                 "needs.roster-wait.outputs.cleared": cleared,
                 "needs.eval.result": eval_result}
@@ -529,11 +533,25 @@ class TestTheGates(_Scripts):
         for args, want in self.CASES:
             if args[2]:
                 continue
-            for eval_result in ("success", "failure", "skipped"):
+            for eval_result in ("success", "failure", "skipped", "cancelled"):
                 with self.subTest(args=args, eval_result=eval_result):
                     self.assertIs(self._runs("publish", args[0], args[1],
                                              eval_result=eval_result),
-                                  want and eval_result == "success")
+                                  want and eval_result in {"success", "failure", "cancelled"})
+
+    def test_failed_or_skipped_planning_prevents_eval_and_publication(self):
+        for job in ("eval", "publish"):
+            for plan_result in ("failure", "skipped", "cancelled"):
+                with self.subTest(job=job, plan_result=plan_result):
+                    self.assertFalse(self._runs(job, "success", "true",
+                                                plan_result=plan_result))
+
+    def test_cancellation_prevents_every_matrix_leg(self):
+        for job in ("eval", "publish"):
+            for eval_result in ("success", "failure"):
+                with self.subTest(job=job, eval_result=eval_result):
+                    self.assertFalse(self._runs(job, "success", "true",
+                                                eval_result=eval_result, cancelled=True))
 
     def test_a_failing_roster_wait_changes_nothing_else_downstream(self):
         # R2-S1: the sweep now fails its job when it cannot confirm. Only

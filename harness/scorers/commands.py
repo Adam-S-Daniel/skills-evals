@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -19,16 +20,24 @@ MAX_TIMEOUT_S = 60
 PROBE_TIMEOUT_S = 2
 CLEANUP_TIMEOUT_S = 2
 DIAGNOSTIC_BYTES = 4096
+SYSTEM_PATH = ("/usr/bin", "/bin")
 INTERPRETERS = {name: (f"/usr/bin/{name}", f"/bin/{name}")
                 for name in ("bash", "sh", "python3", "node")}
+
+
+def _fixed_interpreter(name: str) -> str | None:
+    return next((path for path in INTERPRETERS[name]
+                 if os.path.isfile(path) and os.access(path, os.X_OK)), None)
 
 
 def _executable(workspace: Path, name: str) -> str | None:
     if Path(name).name.casefold() in ("claude", "claude.exe"):
         return None
     if name in INTERPRETERS:
-        return next((path for path in INTERPRETERS[name]
-                     if os.path.isfile(path) and os.access(path, os.X_OK)), None)
+        fixed = _fixed_interpreter(name)
+        # Runners keep node outside /usr/bin and /bin; use the same harness node
+        # the child's PATH gets, with the same refusals.
+        return fixed if fixed is not None or name != "node" else _harness_node(workspace)
     path = Path(name)
     path = path if path.is_absolute() else workspace / path
     path = path.resolve()
@@ -38,7 +47,26 @@ def _executable(workspace: Path, name: str) -> str | None:
     return str(path)
 
 
-def _environment(root: Path) -> dict[str, str]:
+def _harness_node(workspace: Path | None) -> str | None:
+    """The harness's own node, for hosts that install it outside /usr/bin.
+
+    GitHub's runner image puts node in /usr/local/bin and setup-node in its
+    tool cache, so neither a bare `node` argv nor a verifier's PATH lookup of
+    `node` finds it there. Only node is exposed, and never one resolved inside
+    the workspace the agent wrote.
+    """
+    if _fixed_interpreter("node") is not None:
+        return None
+    found = shutil.which("node")
+    if found is None or not os.path.isabs(found):
+        return None
+    resolved = Path(found).resolve()
+    if workspace is not None and resolved.is_relative_to(workspace.resolve()):
+        return None
+    return str(resolved) if os.access(resolved, os.X_OK) else None
+
+
+def _environment(root: Path, workspace: Path | None = None) -> dict[str, str]:
     """A new environment, never a filtered copy of a credential-bearing one."""
     directories = {"HOME": "home", "XDG_CONFIG_HOME": "config",
                    "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data",
@@ -53,7 +81,16 @@ def _environment(root: Path) -> dict[str, str]:
     refusal = private_bin / "claude"
     refusal.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
     refusal.chmod(0o700)
-    env.update(PATH=f"{private_bin}:/usr/bin:/bin", LANG="C", LC_ALL="C")
+    path = ":".join((str(private_bin), *SYSTEM_PATH))
+    node = _harness_node(workspace)
+    if node is not None:
+        # A directory holding only node, after the fixed ones, so stubs still win
+        # and no other host tool beside the harness's node becomes reachable.
+        node_bin = root / "node-bin"
+        node_bin.mkdir(mode=0o700)
+        (node_bin / "node").symlink_to(node)
+        path += f":{node_bin}"
+    env.update(PATH=path, LANG="C", LC_ALL="C")
     return env
 
 
@@ -140,7 +177,7 @@ def command_succeeds(workspace: str, paths: list[str], argv=None,
         return False, "command_invalid_executable"
     try:
         with tempfile.TemporaryDirectory(prefix="objective-command-") as temporary:
-            env = _environment(Path(temporary))
+            env = _environment(Path(temporary), final_workspace)
             prefix = _network_prefix(env)
             network = "isolated" if prefix else "unavailable"
             with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
