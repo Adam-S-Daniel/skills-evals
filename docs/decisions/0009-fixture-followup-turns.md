@@ -1,4 +1,4 @@
-# ADR 0008: A fixture may send scripted follow-up turns, identically in both arms
+# ADR 0009: A fixture may send scripted follow-up turns, identically in both arms
 
 - **Status:** proposed (2026-10-05)
 - **Issue:** none; found by the session-9 triage of the rename-pdfs

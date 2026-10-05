@@ -40,7 +40,7 @@
 # (one proposed all six correctly) and applied none, scoring the 4/8 a
 # no-op scores. The prompt stays the issue's exact sentence; the follow-up
 # is a second user turn, sent with `--resume` in the same workspace,
-# identically in both arms (ADR 0008). It answers the skill's own question
+# identically in both arms (ADR 0009). It answers the skill's own question
 # ("auto" accepts all remaining) in words a run without the skill reads as
 # plain consent. It relaxes no confirmation rule; a run that renamed on its
 # first turn just gets a redundant go-ahead.

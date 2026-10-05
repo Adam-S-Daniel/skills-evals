@@ -949,7 +949,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     `arm` carries: name ("with_skill"/"without_skill"), skill + registry (Path,
     only for with_skill), optional model, optional timeout (default 600s),
     optional env (the fixture's `env:` mapping, see agent_env), optional
-    followups (the fixture's `followups:` list, see ADR 0008).
+    followups (the fixture's `followups:` list, see ADR 0009).
 
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
@@ -1033,7 +1033,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         cmd += ["--model", arm["model"]]
     env = arm.get("env_override") or agent_env(workspace, arm.get("env"))
 
-    # `followups:` (ADR 0008): each entry is one more user turn in the SAME
+    # `followups:` (ADR 0009): each entry is one more user turn in the SAME
     # session and workspace — the first call's flags plus `--resume
     # <session_id>`, the text in the prompt's place. Every turn gets the
     # whole `timeout`. The first turn's error details carry no label, so a

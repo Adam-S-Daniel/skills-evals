@@ -1,5 +1,5 @@
 """A fixture's `followups:` are further user turns, sent with `--resume` in
-the same workspace, identically in both arms (ADR 0008).
+the same workspace, identically in both arms (ADR 0009).
 
 Hermetic: `subprocess.run` is replaced by a scripted fake, so no CLI, no
 process and no network is used.
