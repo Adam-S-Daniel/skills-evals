@@ -777,14 +777,13 @@ class ParsedCheckIntegration(CheckWorkspace):
                             continue
                         name = node.child_by_field_name("name").text.decode()
                         args = [arg.text.decode() for arg in node.children_by_field_name("argument")]
-                        # ci.yml's install pins PyYAML exact; eval.yml's do not (yet).
+                        # Every install pins PyYAML exact, in ci.yml and eval.yml alike.
                         if (name == "pip" and len(args) > 2
                                 and args[0] == "install"
-                                and args[1] in {"pyyaml", "pyyaml==6.0.3"}
+                                and args[1].split("==")[0] == "pyyaml"
                                 and args[2] == "markdown-it-py==4.2.0"):
                             installs.append(args)
-                            if workflow == "ci.yml":
-                                self.assertEqual(args[1], "pyyaml==6.0.3")
+                            self.assertEqual(args[1], "pyyaml==6.0.3")
                             self.assertIn("tree-sitter==0.26.0", args)
                             self.assertIn("tree-sitter-bash==0.25.1", args)
         self.assertEqual(len(installs), 3)

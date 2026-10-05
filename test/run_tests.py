@@ -5043,6 +5043,123 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
                     expected)
 
 
+class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
+    """Every package a workflow `pip install`s is pinned exact (`==`).
+
+    The repo pins its Python dependencies exact, with a cooling-off window, so
+    a job that installs a bare `pyyaml` takes whatever PyPI serves that day
+    with no diff to blame. The workflow structure is read from the parsed
+    YAML; each `run:` body is then tokenized shell-style (comments dropped,
+    line continuations joined, `&&` / `;` / `|` split into separate commands),
+    never line-matched. `pip`, `pip3` and `python -m pip` all count.
+    """
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    # pip options that consume the next token, so it is not a package name.
+    VALUE_OPTIONS = frozenset({
+        "-r", "--requirement", "-c", "--constraint", "-e", "--editable",
+        "-i", "--index-url", "--extra-index-url", "-f", "--find-links",
+        "-t", "--target", "--prefix", "--root", "--python", "--platform",
+        "--python-version", "--implementation", "--abi", "--src",
+    })
+
+    @staticmethod
+    def _commands(run: str) -> list[list[str]]:
+        lexer = shlex.shlex(run.replace("\\\n", " "), posix=True,
+                            punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        commands: list[list[str]] = [[]]
+        for token in lexer:
+            if token and set(token) <= set(lexer.punctuation_chars):
+                commands.append([])
+            else:
+                commands[-1].append(token)
+        return [c for c in commands if c]
+
+    @classmethod
+    def _install_args(cls, argv: list[str]) -> list[str] | None:
+        """Arguments after `install` when argv runs `pip install`, else None.
+
+        pip must be the command itself (`pip`, `pip3`, a path ending in
+        either) or `-m pip` after a python, so `echo pip install x` is not an
+        install.
+        """
+        for i, token in enumerate(argv[:3]):
+            is_pip = os.path.basename(token) in ("pip", "pip3")
+            if is_pip and (i == 0 or argv[i - 1] == "-m") \
+                    and argv[i + 1:i + 2] == ["install"]:
+                return argv[i + 2:]
+        return None
+
+    @classmethod
+    def installs(cls, run: str) -> list[list[str]]:
+        found = (cls._install_args(argv) for argv in cls._commands(run))
+        return [args for args in found if args is not None]
+
+    @classmethod
+    def unpinned_packages(cls, run: str) -> list[str]:
+        """Package arguments of `pip install` commands in `run` lacking `==`."""
+        bad = []
+        for args in cls.installs(run):
+            skip = False
+            for arg in args:
+                if skip:
+                    skip = False
+                elif arg in cls.VALUE_OPTIONS:
+                    skip = True
+                elif not arg.startswith("-") and "==" not in arg:
+                    bad.append(arg)
+        return bad
+
+    def test_every_pip_install_in_every_workflow_pins_exact(self):
+        installs = 0
+        for path in sorted(self.WORKFLOWS.glob("*.y*ml")):
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for job_name, job in (doc.get("jobs") or {}).items():
+                for step in job.get("steps") or []:
+                    run = step.get("run") or ""
+                    if "pip" not in run:
+                        continue
+                    installs += len(self.installs(run))
+                    with self.subTest(workflow=path.name, job=job_name,
+                                      step=step.get("name") or step.get("id")):
+                        self.assertEqual(
+                            self.unpinned_packages(run), [],
+                            f"{path.name} job {job_name}: pip install names "
+                            "a package without `==`; pin it exact")
+        self.assertGreater(installs, 0, "no pip install found in any workflow")
+
+    def test_the_guard_can_fail(self):
+        # Mutation inside the test: the helper must flag each unpinned shape,
+        # so a tokenizer that silently matches nothing cannot pass the real
+        # check above.
+        cases = {
+            "bare": ("pip install pyyaml", ["pyyaml"]),
+            "one of several": (
+                "pip install pyyaml markdown-it-py==4.2.0", ["pyyaml"]),
+            "pip3": ("pip3 install pyyaml", ["pyyaml"]),
+            "python -m pip": ("python3 -m pip install pyyaml", ["pyyaml"]),
+            "after other command": (
+                "python3 -m venv v && v/bin/pip install pyyaml",
+                ["pyyaml"]),
+            "continuation": (
+                "pip install \\\n  pyyaml==6.0.3 \\\n  pytest", ["pytest"]),
+            "flag before package": (
+                "pip install --no-cache-dir pyyaml", ["pyyaml"]),
+            "range is not exact": ("pip install 'pyyaml>=6'", ["pyyaml>=6"]),
+            "all exact": (
+                "pip install pyyaml==6.0.3 markdown-it-py==4.2.0", []),
+            "requirements file": ("pip install -r requirements.txt", []),
+            "commented out": ("# pip install pyyaml\necho hi", []),
+            "not pip": ("echo pip install pyyaml", []),
+            "npm install": ("npm install -g @anthropic-ai/claude-code", []),
+        }
+        for label, (run, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.unpinned_packages(run), expected)
+
+
 class CiSalientDetectionTests(unittest.TestCase):
     """Executes ci.yml's own `salient` step script against a real git repo.
 
