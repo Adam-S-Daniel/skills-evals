@@ -1,0 +1,24 @@
+# Site-owned collections for /admin. Indentation matches the platform's list.
+  - name: field-notes
+    label: Field Notes
+    label_singular: Field Note
+    folder: _field_notes
+    create: true
+    delete: true
+    slug: "{{slug}}"
+    fields:
+      - { name: title, label: Title, widget: string, required: true }
+      - { name: location, label: Location, widget: string, required: false }
+      - { name: body, label: Body, widget: markdown }
+  - name: reading-list
+    label: Reading List
+    label_singular: Reading List Entry
+    folder: _reading_list
+    create: true
+    delete: true
+    slug: "{{slug}}"
+    fields:
+      - { name: title, label: Title, widget: string, required: true }
+      - { name: link, label: Link, widget: string, required: false }
+      - $ref: "#/field_library/markdown_body"
+      - $ref: "#/field_library/published_pair"

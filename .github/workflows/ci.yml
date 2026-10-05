@@ -213,7 +213,7 @@ jobs:
         # step deliberately:
         # TestIssue63::test_parallel_pins_agree_with_agentskills_requirements
         # fails the whole suite when the two repos' pins disagree.
-        run: pip install pyyaml markdown-it-py==4.2.0 bashlex==0.18 pytest==9.1.1 pytest-xdist==3.8.0
+        run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals

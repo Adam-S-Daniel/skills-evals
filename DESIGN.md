@@ -133,6 +133,111 @@ bounds raise during fixture validation. Missing or malformed evidence, wrong
 capture types, and paths escaping the workspace fail closed. Multiple exact
 log paths are read in their listed order, not by clock time.
 
+### Parsed configuration and staged-shell objective checks
+
+These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
+in [`harness/scorers/objective.py`](harness/scorers/objective.py). Existing
+check types and fixtures retain their scoring behavior.
+
+| Type | Constraint keys | Evidence |
+| --- | --- | --- |
+| `parsed_config_values` | `format`, optional `expected` | Strict JSON or composed YAML, typed values at mapping-key paths; omitted expectations check parsing only |
+| `shell_staged_tool_guard` | `tools` | Real Bash AST: every configured tool has a reachable call receiving staged Go paths under positive availability and nonempty guards; missing tools skip successfully, including the script's final status; quoted arrays or split scalar/xargs paths |
+
+Both require a nonempty `paths` list of exact workspace-relative regular
+files, without globs, absolute paths, `..`, or symlinks escaping the workspace.
+Each file must satisfy the constraints. Missing files fail; input is bounded
+to 64 KiB and trees to depth 64 and 4096 nodes. Failures contain fixed named
+reasons, without file contents or parser errors. Unknown constraint keys are
+rejected by fixture validation.
+
+```yaml
+- id: go-width
+  type: parsed_config_values
+  paths: [.golangci.yml]
+  format: yaml
+  expected:
+    - path: [linters, settings, lll, line-length]
+      equals: 100
+    - path: [linters, enable]
+      contains: lll
+- id: staged-go
+  type: shell_staged_tool_guard
+  paths: [scripts/lint-staged.sh]
+  tools: [gofmt, golangci-lint]
+```
+
+Configuration roots must be mappings with string keys and finite JSON-shaped
+values. Duplicate keys at any depth, YAML merge keys, custom tags, recursive
+aliases, malformed structures, and invalid JSON fail. Equality is recursive
+and typed (`"100"`, `100`, `100.0`, and `true` differ). `contains` requires a
+list and compares typed members. Each expected entry has exactly `path` plus
+`equals` or `contains`; paths are nonempty lists of string mapping keys.
+Missing keys report `missing_key_<depth>` (zero-based), distinguishing a
+missing root branch from a commented-out leaf. Wrong values and types report
+`value_mismatch` and `value_type_mismatch`.
+
+The shell check parses Bash with Tree-sitter and tracks staged provenance,
+availability, nonempty facts, and command statuses separately. It recognizes
+newline scalar/split-array substitutions, delimiter-matched `mapfile` and
+while-read process-substitution collectors, and the reference hook's
+structurally validated staged-array filter helper. Calls pass separate paths
+through an unquoted scalar, quoted array, or guarded scalar-to-xargs stream;
+quoted newline scalars fail `scalar_paths_quoted`.
+
+Availability guards are `command -v`, `type` / `type -P`, `hash`, or a helper
+whose entire body performs that query. Diagnostic helpers and the reference
+filter may coexist. Nested `if`/`else`, `&&`/`||`, negation, successful early
+skips, `set`, stderr/null redirections, capture-and-test, and RC accumulators
+are recognized. A script's final status matters: a missing-tool path that
+implicitly or explicitly exits nonzero reports `missing_tool_nonzero_exit`.
+An installed linter's failure remains distinct from a missing-tool failure.
+Reassignment clears provenance and nonempty facts.
+
+Comments, literal strings/heredocs, disconnected guards, and unreachable
+branches supply no evidence. Dynamic execution, source commands, aliases,
+indirect expansion, arbitrary helpers/substitutions, general loops, wrappers,
+and unrecognized conditions fail with named reasons. Parser recovery nodes
+fail `invalid_bash`. The exact supported forms, filename limits, dependency
+pins, and analysis bounds are documented in
+[ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md).
+
+### Command objective check
+
+| Check type | Constraints | Evidence |
+| --- | --- | --- |
+| `command_succeeds` | Nonempty string array `argv`; optional finite positive `timeout_s` (default 30, maximum 60; booleans rejected) | Real process exit zero in the arm's final workspace |
+
+The [command scorer](harness/scorers/commands.py) runs argv directly with no
+shell or interpolation and closed stdin. Bare `bash`, `sh`, `python3`, and
+`node` resolve only at fixed `/usr/bin` or `/bin` paths; every other entrypoint
+must resolve inside the final workspace, including symlink resolution. Direct
+`claude`/`claude.exe` entrypoints are rejected. No arbitrary PATH lookup occurs.
+
+Each process receives a new constant-built environment with temporary HOME,
+XDG/config/runtime/temp directories and a fixed PATH headed by a private
+`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
+the local harness's guard launcher. Both CI and local scoring use the same
+registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
+spawn failure, timeout, and invalid arguments yield distinct named failures.
+On POSIX, cleanup terminates the process's own group and reaps its direct child
+with a bounded wait.
+
+Linux network namespaces are attempted using fixed `unshare --net` after a
+bounded harmless probe. The detail says `network=isolated` or
+`network=unavailable`; the latter means network access is not blocked.
+Diagnostics suppress arbitrary program/exception text and expose only status,
+exit code, and capped stdout/stderr byte counts (4096 each, with a truncation
+marker), so published details cannot contain program-supplied home paths or
+environment values. Capture uses temporary files rather than unbounded RAM.
+
+[ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md)
+records the threat model: the agent may have modified the code this check
+runs. This isolation does not prevent reading host files, absolute binary
+invocation, deliberate PATH evasion (including an absolute CLI invocation),
+new-session descendants, or disk/CPU exhaustion. It is not a full sandbox.
+No fixture is added; existing fixture scoring is unchanged.
+
 ### YAML front-matter objective check (`harness/scorers/objective.py`)
 
 `front_matter_has` checks existing files at exact workspace-relative `paths`
@@ -375,8 +480,7 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `code-quality`,
-  `admin-config-render`.
+  objective checks + thin judge. Candidates: `code-quality`.
   (`github-actions-sha-pinning` was also Class A; it has already shipped —
   see "Backfill order" below.) `rename-pdfs` graduated out of this list:
   covered by `evals/rename-pdfs/` (issue #82). `post-failure-comment`
@@ -387,6 +491,13 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  `admin-config-render` graduated out of this list: covered by
+  [`evals/admin-config-render/`](evals/admin-config-render/)
+  ([issue #87](https://github.com/Adam-S-Daniel/skills-evals/issues/87)).
+  It scores a real render: three `command_succeeds` checks run a seed script
+  that drives the vendored Ruby renderer and parses its output. The scorer's
+  fixed `PATH` needs `ruby` at `/usr/bin` or `/bin`, and a missing Ruby fails
+  the checks rather than skipping them.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as

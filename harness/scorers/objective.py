@@ -35,6 +35,7 @@ GIT_TIMEOUT_S = 10
 
 from . import invisibles, wrapping
 from .shell_capture import shell_capture_safe
+from .commands import command_succeeds
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -3688,9 +3689,217 @@ def log_sequence(workspace: str, patterns: list[str],
     return True, f"log_sequence: {len(events)} ordered events within occurrence bounds"
 
 
+class _ObjectiveInputError(ValueError):
+    """Fixed, content-free failure reason for the opt-in parsed checks."""
+
+
+def _objective_file_bytes(workspace, rel):
+    if (not isinstance(rel, str) or not rel or "\x00" in rel
+            or os.path.isabs(rel) or ".." in Path(rel).parts or glob.has_magic(rel)):
+        raise _ObjectiveInputError("invalid_path")
+    root = Path(workspace).resolve()
+    try:
+        target = (root / rel).resolve()
+    except RuntimeError:
+        raise _ObjectiveInputError("unreadable_path") from None
+    if not target.is_relative_to(root):
+        raise _ObjectiveInputError("path_outside_workspace")
+    if not target.exists():
+        raise _ObjectiveInputError("missing_file")
+    if not target.is_file():
+        raise _ObjectiveInputError("not_regular_file")
+    with target.open("rb") as stream:
+        data = stream.read(65537)
+    if len(data) > 65536:
+        raise _ObjectiveInputError("input_limit")
+    return data.decode("utf-8")
+
+
+def _config_shape(value, depth=0, active=None, budget=None):
+    """Bound JSON-shaped graphs, including fixture-supplied expectations."""
+    import math
+    active = set() if active is None else active
+    budget = [4096] if budget is None else budget
+    budget[0] -= 1
+    if depth > 64 or budget[0] < 0 or id(value) in active:
+        raise _ObjectiveInputError("structure_limit")
+    if type(value) in (str, int, bool, type(None)):
+        return
+    if type(value) is float and math.isfinite(value):
+        return
+    if type(value) not in (dict, list):
+        raise _ObjectiveInputError("invalid_structure")
+    active.add(id(value))
+    if isinstance(value, dict):
+        if any(type(key) is not str for key in value):
+            raise _ObjectiveInputError("invalid_structure")
+        children = value.values()
+    else:
+        children = value
+    for child in children:
+        _config_shape(child, depth + 1, active, budget)
+    active.remove(id(value))
+
+
+def _config_equal(actual, expected):
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(actual, dict):
+        return actual.keys() == expected.keys() and all(
+            _config_equal(actual[key], expected[key]) for key in actual)
+    if isinstance(actual, list):
+        return len(actual) == len(expected) and all(
+            _config_equal(a, b) for a, b in zip(actual, expected))
+    return actual == expected
+
+
+def _parsed_config_document(text, format):
+    import yaml
+
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise _ObjectiveInputError("duplicate_key")
+            result[key] = value
+        return result
+
+    def nonfinite(_value):
+        raise _ObjectiveInputError("invalid_json")
+
+    if format == "json":
+        try:
+            data = json.loads(text, object_pairs_hook=pairs, parse_constant=nonfinite)
+        except json.JSONDecodeError:
+            raise _ObjectiveInputError("invalid_json") from None
+    else:
+        class Loader(yaml.SafeLoader):
+            depth = 0
+            count = 0
+
+            def compose_node(self, parent, index):
+                self.depth += 1
+                self.count += 1
+                try:
+                    if self.depth > 64 or self.count > 4096:
+                        raise _ObjectiveInputError("structure_limit")
+                    return super().compose_node(parent, index)
+                finally:
+                    self.depth -= 1
+
+        def validate(node, active, budget, depth=0):
+            budget[0] -= 1
+            if depth > 64 or budget[0] < 0 or id(node) in active:
+                raise _ObjectiveInputError("structure_limit")
+            active.add(id(node))
+            if isinstance(node, yaml.MappingNode):
+                keys = set()
+                for key, value in node.value:
+                    if not isinstance(key, yaml.ScalarNode) or key.tag != "tag:yaml.org,2002:str":
+                        raise _ObjectiveInputError("invalid_structure")
+                    if key.value in keys:
+                        raise _ObjectiveInputError("duplicate_key")
+                    keys.add(key.value)
+                    validate(value, active, budget, depth + 1)
+            elif isinstance(node, yaml.SequenceNode):
+                for child in node.value:
+                    validate(child, active, budget, depth + 1)
+            elif (not isinstance(node, yaml.ScalarNode)
+                  or node.tag not in {"tag:yaml.org,2002:" + tag
+                                      for tag in ("str", "int", "float", "bool", "null")}):
+                raise _ObjectiveInputError("invalid_structure")
+            active.remove(id(node))
+
+        loader = None
+        try:
+            loader = Loader(text)
+            node = loader.get_single_node()
+            if not isinstance(node, yaml.MappingNode):
+                raise _ObjectiveInputError("root_not_mapping")
+            validate(node, set(), [4096])
+            data = loader.construct_document(node)
+        except yaml.YAMLError:
+            raise _ObjectiveInputError("invalid_yaml") from None
+        finally:
+            if loader is not None:
+                loader.dispose()
+    if not isinstance(data, dict):
+        raise _ObjectiveInputError("root_not_mapping")
+    _config_shape(data)
+    return data
+
+
+def parsed_config_values(workspace: str, patterns: list[str], format=None,
+                         expected=_FRONT_MATTER_UNSET) -> tuple[bool, str]:
+    """Typed mapping paths, or parse-only; see ADR 0007 for the contract."""
+    try:
+        if not isinstance(patterns, list) or not patterns or format not in ("yaml", "json"):
+            raise _ObjectiveInputError("invalid_constraints")
+        expected = [] if expected is _FRONT_MATTER_UNSET else expected
+        if not isinstance(expected, list):
+            raise _ObjectiveInputError("invalid_constraints")
+        _config_shape(expected)
+        for item in expected:
+            if (not isinstance(item, dict) or set(item) not in ({"path", "equals"}, {"path", "contains"})
+                    or not isinstance(item["path"], list) or not item["path"]
+                    or any(type(key) is not str for key in item["path"])):
+                raise _ObjectiveInputError("invalid_constraints")
+            _config_shape(item.get("equals", item.get("contains")))
+        for rel in patterns:
+            data = _parsed_config_document(_objective_file_bytes(workspace, rel), format)
+            for item in expected:
+                actual = data
+                for index, key in enumerate(item["path"]):
+                    if not isinstance(actual, dict):
+                        raise _ObjectiveInputError("path_not_mapping")
+                    if key not in actual:
+                        raise _ObjectiveInputError(f"missing_key_{index}")
+                    actual = actual[key]
+                if "equals" in item:
+                    if type(actual) is not type(item["equals"]):
+                        raise _ObjectiveInputError("value_type_mismatch")
+                    if not _config_equal(actual, item["equals"]):
+                        raise _ObjectiveInputError("value_mismatch")
+                else:
+                    if not isinstance(actual, list):
+                        raise _ObjectiveInputError("contains_not_list")
+                    if not any(_config_equal(value, item["contains"]) for value in actual):
+                        raise _ObjectiveInputError("list_member_missing")
+    except _ObjectiveInputError as error:
+        return (False, f"parsed_config_values: {error}")
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return (False, "parsed_config_values: unreadable_or_invalid_input")
+    return (True, "parsed_config_values: all values satisfy typed constraints")
+
+
+def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> tuple[bool, str]:
+    """Prove staged paths and dominating guards using a real Bash AST."""
+    try:
+        if (not isinstance(patterns, list) or not patterns or not isinstance(tools, list) or not tools
+                or any(not isinstance(tool, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tool)
+                       for tool in tools) or len(set(tools)) != len(tools)):
+            raise _ObjectiveInputError("invalid_constraints")
+        from .bash_ast import BashParseError, parse_bash
+        from .shell_guard import StagedToolGuard, ShellGuardError
+        for rel in patterns:
+            text = _objective_file_bytes(workspace, rel)
+            try:
+                StagedToolGuard(parse_bash(text), tools).check()
+            except (BashParseError, ShellGuardError) as error:
+                raise _ObjectiveInputError(str(error)) from None
+    except _ObjectiveInputError as error:
+        return (False, f"shell_staged_tool_guard: {error}")
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return (False, "shell_staged_tool_guard: unreadable_or_invalid_input")
+    return (True, "shell_staged_tool_guard: staged calls have availability and nonempty guards")
+
+
 CHECKS = {
     "log_sequence": log_sequence,
     "shell_capture_safe": shell_capture_safe,
+    "parsed_config_values": parsed_config_values,
+    "shell_staged_tool_guard": shell_staged_tool_guard,
+    "command_succeeds": command_succeeds,
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
@@ -3751,6 +3960,9 @@ _WORKFLOW_STEP_USES_KEYS = {
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "log_sequence": {"events"},
     "shell_capture_safe": {"source"},
+    "parsed_config_values": {"format", "expected"},
+    "shell_staged_tool_guard": {"tools"},
+    "command_succeeds": {"argv", "timeout_s"},
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     # `require_present` is `file_matches`'s only opt-in: it makes a check
     # whose evidence IS the file fail closed when that file is absent or
@@ -3786,12 +3998,13 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                transcript: str | None = None) -> list[dict]:
     """Run every objective check in the fixture; return result dicts.
 
-    Every check here is hermetic — no network, no credentials, no wall clock.
+    File and git checks are hermetic. The opt-in `command_succeeds` executes
+    final-workspace code with isolated process state and a bounded timeout;
+    network isolation is best-effort and reported in its detail (ADR 0006).
     The one that was not, `pinned_shas_match_tags`, resolved a SHA to a tag
     over `git ls-remote`; it retired with the version-comment convention and
-    took the network opt-in that existed only for it. Offline is therefore not
-    a mode here, it is the only behaviour. A future network-dependent check
-    reintroduces an opt-in deliberately, and defaults it off.
+    took the network opt-in that existed only for it. No check intentionally
+    resolves remote evidence; command execution is not a complete sandbox.
 
     Every check's keys are validated against `_CHECK_ALLOWED_KEYS` before
     running, for every type — not just `workflow_step_uses` — so an

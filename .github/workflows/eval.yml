@@ -505,7 +505,7 @@ jobs:
         # convention: harness/guidance.py locates a section's extent with a
         # real markdown parse, and a floating parser version could silently
         # change what a `section` arm delivers.
-        run: pip install pyyaml markdown-it-py==4.2.0 bashlex==0.18
+        run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
       # Runs BEFORE the token exchange, deliberately: a dispatch naming a
       # fixture that does not exist must fail here, with no credential minted
@@ -1563,7 +1563,7 @@ jobs:
         # convention: harness/guidance.py locates a section's extent with a
         # real markdown parse, and a floating parser version could silently
         # change what a `section` arm delivers.
-        run: pip install pyyaml markdown-it-py==4.2.0 bashlex==0.18
+        run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
       # Runs BEFORE the token exchange, deliberately: a dispatch naming a
       # fixture that does not exist must fail here, with no credential minted
