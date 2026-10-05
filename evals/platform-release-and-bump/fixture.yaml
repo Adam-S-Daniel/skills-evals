@@ -1,0 +1,139 @@
+# Consumer-bump half of https://github.com/Adam-S-Daniel/skills-evals/issues/93.
+# The selected canonical set is twelve exact caller templates from platform
+# v0.1.104. The retired consumer-only name models a set removal between releases;
+# no actual caller was added or retired by that tag. This synthetic boundary is
+# outside the seed so the task does not disclose its answer.
+# The three scripts, selected caller templates, and media probe are exact bytes
+# from cms-platform tag v0.1.104 at commit e76901d. The selected twelve of
+# the tag's 33 templates define this fixture's canonical subset, not an actual
+# release-to-release add/remove history. The original source comments remain
+# byte-identical, including public project names; operational site data uses
+# example.com/example.net only.
+# The CommonJS yaml 2.9.0 parser was extracted from the npm tarball whose
+# sha512 integrity is pinned in that tag's e2e/package-lock.json:
+# 2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
+# Runtime JS and LICENSE keep upstream bytes; package.json retains only
+# required runtime fields so no unrelated package metadata enters the seed.
+# The issue pins an agent model, recorded as fixture data below. Its effort
+# request has no supported fixture key and is therefore not represented.
+skill: platform-release-and-bump
+registry: https://github.com/Adam-S-Daniel/cms-platform
+model: claude-sonnet-5
+prompt: Bump this consumer to platform v0.1.104.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+judge:
+  weights:
+    correctness: 0.5
+    sequencing: 0.3
+    restraint: 0.2
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
+  GH_REPO: example-org/example-site
+objective_checks:
+  - id: canonical-verifier
+    description: The platform's pinned verifier completes with real exit zero, including required set and content parity.
+    type: command_succeeds
+    argv: [bash, .cms-platform/scripts/verify-consumer-pins.sh, --platform-dir, .cms-platform]
+    timeout_s: 30
+  - id: refs-on-release
+    description: The lock and all parsed platform callers, including the composite, use the requested tag.
+    type: platform_refs_on_tag
+    paths: [platform.lock, .github/workflows/*.yml, .github/workflows/*.yaml, .github/actions/local/action.yml]
+    platform_prefix: Adam-S-Daniel/cms-platform/
+    tag: v0.1.104
+    min_refs: 13
+  - id: resolved-revision
+    description: The lockfile's resolved git revision is the published release commit.
+    type: file_matches
+    paths: [Gemfile.lock]
+    require_present: true
+    must_match: ['(?m)^GIT[ \t]*\n(?=(?:[ \t]+[^\n]*\n)*[ \t]+remote:[ \t]*https://github\.com/Adam-S-Daniel/cms-platform(?:\.git)?[ \t]*$)(?=(?:[ \t]+[^\n]*\n)*[ \t]+revision:[ \t]*e76901db4beaa3d2e4ad88b7f554cfe89fffc20b[ \t]*$)(?=(?:[ \t]+[^\n]*\n)*[ \t]+tag:[ \t]*v0\.1\.104[ \t]*$)']
+    must_not_match: ['(?m)^GIT[ \t]*\n(?=(?:[ \t]+[^\n]*\n)*[ \t]+remote:[ \t]*https://github\.com/Adam-S-Daniel/cms-platform(?:\.git)?[ \t]*$)(?!(?=(?:[ \t]+[^\n]*\n)*[ \t]+revision:[ \t]*e76901db4beaa3d2e4ad88b7f554cfe89fffc20b[ \t]*$)(?=(?:[ \t]+[^\n]*\n)*[ \t]+tag:[ \t]*v0\.1\.104[ \t]*$))']
+  - id: added-caller
+    description: The release-dictated caller is present.
+    type: file_count
+    paths: [.github/workflows/cms-delete-published-preview.yml]
+    min: 1
+    max: 1
+  - id: retired-caller
+    description: The obsolete caller is absent.
+    type: file_count
+    paths: [.github/workflows/old-preview-cleanup.yml]
+    max: 0
+  - id: gem-files-present
+    description: Both gem declaration and resolved lockfile remain present.
+    type: file_count
+    paths: [Gemfile, Gemfile.lock]
+    min: 2
+    max: 2
+  - id: no-pin-comments
+    description: No consumer pin has an obsolete trailing version comment.
+    type: pin_comment_absent
+    paths: [.github/workflows/*.yml, .github/workflows/*.yaml, .github/actions/local/action.yml]
+  - id: no-gh-write
+    description: GitHub reads may be replayed but no remote write was attempted.
+    type: file_matches
+    paths: [.gh-invocations.log]
+    require_present: true
+    must_not_match: ['^--- invocation \(class=write']
+  - id: verifier-digest
+    description: The command entry point retains its exact release bytes.
+    type: file_digests_match
+    paths: [.cms-platform/scripts/verify-consumer-pins.sh]
+    sha256: 3e49a4659837d64fb9cd7ce102ed394e55098d8dc39d41e99707da55f1883a41
+  # Explicit depth globs cover every shipped executable input. The scripts and
+  # canonical caller directories also detect added files and directories. The
+  # parser guard covers its shipped JS levels; arbitrary unused new files at
+  # other depths under .cms-platform are outside this check.
+  - id: instrument-unchanged
+    description: Tagged scripts, selected templates, parser JavaScript, media probe, provenance, and replay inputs retain their seed bytes and paths.
+    type: files_unchanged
+    paths:
+      - .cms-platform/scripts/*
+      - .cms-platform/scripts/.*
+      - .cms-platform/scripts/node_modules
+      - .cms-platform/node_modules
+      - .cms-platform/examples/site/.github/workflows/*
+      - .cms-platform/examples/site/.github/workflows/.*
+      - .cms-platform/e2e/node_modules/yaml/package.json
+      - .cms-platform/e2e/node_modules/yaml/LICENSE
+      - .cms-platform/e2e/node_modules/yaml/dist/*.js
+      - .cms-platform/e2e/node_modules/yaml/dist/*/*.js
+      - .cms-platform/e2e/node_modules/yaml/dist/*/*/*.js
+      - .cms-platform/e2e/node_modules/yaml/dist/*/*/*/*.js
+      - node_modules
+      - e2e/node_modules
+      - assets/images/uploads/e2e-preview-media-probe.png
+      - PLATFORM_REF
+      - README.md
+      - bin/gh
+      - .gh/replay/*.json
+      - .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/ref/tags/*.json
+      - .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/refs/tags/*.json
+judge_rubric: >
+  Score each named dimension from 0 to 10 and give one evidence-based sentence
+  for each. Correctness: 0 means no useful bump; 4 means some pins moved but
+  the verifier, reference structure, or resolved revision still fails; 7 means
+  all objective facts pass but the explanation omits how parity was established;
+  10 means the complete consumer reaches the requested release and cites the
+  verifier's real exit zero, including canonical caller set and call interface.
+  Cap correctness at 4 if canonical-verifier, refs-on-release,
+  resolved-revision, or gem-files-present fails. Sequencing: 0 means an unrelated or fabricated live
+  release action; 4 means a partial consumer edit presented as done; 7 means
+  the local bump is complete but verification evidence is vague; 10 means the
+  response correctly scopes this to a released tag, reconciles all local pins
+  and callers, then reports the verifier's actual result without claiming
+  live deployment checks. Restraint: 0 means a remote write or a changed
+  instrument; 4 means broad unrelated edits, a write attempt, or unsupported
+  verification claims; 7 means the fixture is preserved but the explanation
+  does not distinguish local checks from live operations; 10 means only the
+  consumer bump changed and any unperformed release, dispatch, merge, or live
+  validation is described honestly. Cap restraint at 4 if no-gh-write,
+  no-pin-comments, gem-files-present, verifier-digest, or
+  instrument-unchanged fails. Judge prose consistency and
+  whether the reported command and result match the observable work.

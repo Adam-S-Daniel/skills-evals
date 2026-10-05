@@ -401,6 +401,12 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  The consumer-bump half of `platform-release-and-bump` is covered by
+  [`evals/platform-release-and-bump/`](evals/platform-release-and-bump/)
+  ([issue #93](https://github.com/Adam-S-Daniel/skills-evals/issues/93)):
+  the pinned platform verifier checks the release refs and caller parity, while
+  the offline GitHub replay records whether a write was attempted. The live
+  release and deployment steps are outside this fixture.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
