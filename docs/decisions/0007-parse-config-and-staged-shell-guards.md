@@ -1,4 +1,4 @@
-# ADR 0006: Parse configuration values and staged shell guards before scoring
+# ADR 0007: Parse configuration values and staged shell guards before scoring
 
 - **Status:** accepted (2026-10-04)
 - **Issue:** Part of [the code-quality eval, #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88).
@@ -35,29 +35,68 @@ Add two opt-in objective types, without changing existing checks:
   variable and be dominated by availability and nonempty-file facts. A branch
   where a tool is missing may skip with `exit 0`, but cannot exit nonzero.
 
-Recognized shell sources are scalar `files=$(git diff --cached --name-only
--- '*.go')` (also `--staged`), or that diff piped to `grep '\.go$'` / `grep -E
-'\.go$'`. Optional `--diff-filter=ACM` is accepted. The same substitution
-inside `files=($(...))` produces an array. Scalar `$files` / `${files}` and
-array `"${files[@]}"` arguments bind calls to the source. Arrays require a
-`${#files[@]} -gt 0` nonempty test; scalars require `-n "$files"` (or the
-negation of `-z`). These source shapes do not claim NUL-safe filename handling;
-the check establishes staged provenance, not hook correctness for every name.
+Recognized staged streams come from `git diff --cached --name-only` (also
+`--staged`), with optional `--diff-filter=ACM` and either a literal `-- '*.go'`
+pathspec or a newline stream piped to `grep '\.go$'` / `grep -E '\.go$'`.
+Scalar `files=$(...)` and split-array `files=($(...))` accept newline streams.
+`mapfile -t files < <(...)` accepts newline streams; `mapfile -d '' files
+< <(... -z)` accepts NUL streams. A while-read collector starts with an empty
+array and uses `while IFS= read -r -d '' f; do files+=("$f"); done < <(... -z)`;
+`read -r` is the newline variant. Delimiters must agree; NUL output cannot be
+credited through command substitution, a line-oriented grep, or `mapfile -t`.
+Only input process substitution is accepted. A pipeline-to-while subshell
+cannot supply parent-array provenance. Source output redirection and a heredoc
+that replaces the input fail.
+
+The reference [cms-platform staged hook](https://github.com/Adam-S-Daniel/cms-platform/blob/main/scripts/lint-staged.sh), documented by its [code-quality skill](https://github.com/Adam-S-Daniel/cms-platform/blob/main/skills/code-quality/SKILL.md), first collects all staged files and then filters them. Its `filter()` helper is recognized by the complete parsed
+structure: a local loop variable, iteration over the staged array, a
+`printf '%s\n'` stream tested by `grep -qE "$1"`, and conditional emission of
+that same path. A literal `\.go$` filter establishes Go provenance. Other
+language filters do not supply Go facts. The full reference hook with a Go
+branch and three alternative correct styles are committed under
+`test/issues/fixtures/issue88/` as regression inputs.
+
+Tool calls accept unquoted scalar `$files` / `${files}`, quoted array
+`"${files[@]}"`, or a guarded scalar `printf '%s\n' "$files" | xargs TOOL ...`
+(`echo` and `xargs -r` are also recognized). A quoted scalar is one argument
+containing newline-joined names and fails `scalar_paths_quoted`; tests exercise
+two staged paths with inert command doubles. Array counts use `-gt 0`, `-ne 0`,
+or an inverted `-eq 0` early skip. Scalar nonempty tests use `-n "$files"` or
+an inverted `-z`. These scalar/split-array/xargs forms do not claim safe handling
+of every filename; the NUL collector plus quoted arrays is the safe recognized
+form for whitespace-containing names.
 
 Availability is `command -v TOOL`, `type TOOL` / `type -P TOOL`, or `hash TOOL`.
-A helper such as `have() { command -v "$1" >/dev/null 2>&1; }` is recognized
-only when its entire body is that check, optionally redirected. `if`/`else`,
-negation, `&&`, nested guards, and successful early exits propagate facts.
-Reassignment invalidates provenance; branch joins keep only facts common to
-all continuing paths. Constant false paths cannot supply an invocation.
+An availability helper's entire body must be that query, optionally redirected.
+A diagnostic helper may only echo or printf a literal safe format (`%s`,
+`%s\n`, or plain text); dynamic formats, `printf -v`, and `%n` are rejected.
+Helpers cannot shadow interpreted builtins or tools. The reference filter,
+availability, and diagnostic helpers may coexist. Neighboring calls are bounded
+to the reference tools: ruff, rubocop, shellcheck, shfmt, and the local eslint,
+prettier, and stylelint executables. They cannot establish configured-tool facts.
+
+`if`/`else`, nested guards, negation, `&&`/`||` lists, stderr/null redirections,
+`set -e`/`-u`/`pipefail`, output capture followed by a nonempty test, and numeric
+RC accumulators propagate separate continuing states. The last command's
+status is the script's implicit exit status; a terminal availability `&&` list
+therefore fails when a configured tool is missing. Errexit is suppressed in
+conditions, tested list elements, and negation. An `if` with no selected branch
+has status zero. Missing-tool failures remain distinct from failures of an
+installed linter, including a saved RC value from another language. Numeric
+comparison supports canonical decimal literals and fails closed on other forms.
+Reassignment invalidates provenance and nonempty facts; false paths cannot
+supply calls. Assignments to shell or Git environment selectors are rejected.
 
 Fail closed on `eval`, source/`.` commands, aliases, indirect expansions,
 dynamic command names, arbitrary command substitutions, unsupported redirects,
-loops, case statements, subshells, background execution, wrappers, and helper
-bodies other than the availability check. Comments, literal strings, and
-literal heredoc bodies never supply calls or guards. The implementation is a
-bounded recognizer, not a general Bash interpreter; unsupported forms receive
-named failure reasons.
+general loops, case statements, subshells, background execution, wrappers, and
+helper bodies outside the recognized structures. Comments, literal strings,
+and literal heredoc bodies never supply calls or guards. The implementation is
+a bounded recognizer, not a general Bash interpreter: at most 4,096 AST nodes,
+64 levels of nesting, 256 continuing states, and 32,768 analysis steps. Fixed
+named failures identify unsupported forms. `scorers/bash_ast.py` exposes
+`parse_bash` independently of the objective scorer and shell interpreter for
+other structural checks.
 
 Use exact pins `tree-sitter==0.26.0` and `tree-sitter-bash==0.25.1`. PyPI JSON
 was checked on 2026-10-04: the latest non-prerelease releases were published

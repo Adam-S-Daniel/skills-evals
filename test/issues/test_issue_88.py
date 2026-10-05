@@ -1,9 +1,11 @@
-"""Hermetic, mutation-covered contracts for the two opt-in checks in ADR 0006."""
+"""Hermetic, mutation-covered contracts for the two opt-in checks in ADR 0007."""
 
 from __future__ import annotations
 
 import builtins
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -215,7 +217,7 @@ class ShellStagedToolGuard(CheckWorkspace):
         self.assertTrue(self.shell(SOURCE + GUARDED.replace('[ -n "$files" ]', '! [ -z "$files" ]'))[0])
 
     def test_and_chain_dominates_call(self):
-        self.assertTrue(self.shell(SOURCE + '[ -n "$files" ] && command -v gofmt && ' + CALL)[0])
+        self.assertTrue(self.shell(SOURCE + '[ -n "$files" ] && command -v gofmt && ' + CALL + '\nexit 0')[0])
 
     def test_two_configured_tools(self):
         text = SOURCE + GUARDED + GUARDED.replace('gofmt', 'golangci-lint').replace('golangci-lint -w', 'golangci-lint run')
@@ -248,7 +250,7 @@ SHELL_FAILURES = {
     "comments_only": (SOURCE + '# ' + CALL, {}, "tool_not_invoked"),
     "string_only": (SOURCE + 'echo "gofmt -w $files"', {}, "tool_not_invoked"),
     "heredoc_only": (SOURCE + "cat <<'EOF'\n" + CALL + '\nEOF\n', {}, "tool_not_invoked"),
-    "unrelated_guard": (SOURCE + GUARDED.replace('command -v gofmt', 'command -v other'), {}, "unsupported_condition"),
+    "unrelated_guard": (SOURCE + GUARDED.replace('command -v gofmt', 'command -v other'), {}, "availability_guard_missing"),
     "always_false_branch": (SOURCE + 'if false; then\n' + GUARDED + '\nfi', {}, "tool_not_invoked"),
     "disconnected_guard": (SOURCE + 'if command -v gofmt; then echo ready; fi\nif [ -n "$files" ]; then ' + CALL + '; fi', {}, "availability_guard_missing"),
     "unconditional_call": (SOURCE + CALL, {}, "availability_guard_missing"),
@@ -280,7 +282,7 @@ SHELL_FAILURES = {
     "loop": (SOURCE + 'for f in $files; do\n' + GUARDED + '\ndone', {}, "unsupported_control_flow"),
     "background_call": (SOURCE + GUARDED.replace(CALL, CALL + ' &'), {}, "unsupported_control_flow"),
     "negated_availability": (SOURCE + GUARDED.replace('command -v gofmt', '! command -v gofmt'), {}, "availability_guard_missing"),
-    "or_guard": (SOURCE + GUARDED.replace(' && ', ' || '), {}, "unsupported_condition"),
+    "or_guard": (SOURCE + GUARDED.replace(' && ', ' || '), {}, "nonempty_guard_missing"),
     "semicolons_in_condition": (SOURCE + GUARDED.replace(' && ', '; '), {}, "unsupported_condition"),
     "unquoted_nonempty_scalar": (SOURCE + GUARDED.replace('"$files"', '$files'), {}, "unsupported_condition"),
     "invalid_bash": (SOURCE + 'if command -v gofmt; then ' + CALL, {}, "invalid_bash"),
@@ -300,6 +302,238 @@ def shell_failure(text, kwargs, reason):
 
 for case, (text, kwargs, reason) in SHELL_FAILURES.items():
     setattr(ShellStagedToolGuard, "test_" + case, shell_failure(text, kwargs, reason))
+
+
+SHELL_FIXTURES = Path(__file__).with_name("fixtures") / "issue88"
+ARRAY_SOURCE = "mapfile -t files < <(git diff --cached --name-only -- '*.go')\n"
+ARRAY_GUARDED = 'if [ "${#files[@]}" -gt 0 ] && command -v gofmt; then gofmt -l "${files[@]}"; fi\n'
+
+
+class ShellReviewRegressions(CheckWorkspace):
+    def fixture(self, name):
+        return (SHELL_FIXTURES / name).read_text(encoding="utf-8")
+
+    def test_reference_hook_with_go_branch(self):
+        result = self.shell(self.fixture("lint-staged-go.sh"), tools=["gofmt", "golangci-lint"])
+        self.assertTrue(result[0], result[1])
+
+    def test_while_read_style(self):
+        result = self.shell(self.fixture("while-read-go.sh"))
+        self.assertTrue(result[0], result[1])
+
+    def test_and_or_capture_style(self):
+        result = self.shell(self.fixture("and-or-capture-go.sh"))
+        self.assertTrue(result[0], result[1])
+
+    def test_xargs_rc_style(self):
+        result = self.shell(self.fixture("xargs-rc-go.sh"))
+        self.assertTrue(result[0], result[1])
+
+    def test_terminal_and_list_missing_tool_status(self):
+        self.assert_reason(self.shell(SOURCE + '[ -n "$files" ] && command -v gofmt >/dev/null && gofmt -l $files'),
+                           "missing_tool_nonzero_exit")
+
+    def test_terminal_or_missing_tool_status(self):
+        text = SOURCE + GUARDED + 'command -v gofmt >/dev/null || false'
+        self.assert_reason(self.shell(text), "missing_tool_nonzero_exit")
+
+    def test_negation_cannot_erase_missing_branch_status(self):
+        text = SOURCE + 'if [ -n "$files" ]; then if command -v gofmt; then ' + CALL + '; else ! true; fi; fi'
+        self.assert_reason(self.shell(text), "missing_tool_nonzero_exit")
+
+    def test_successful_other_tool_cannot_erase_missing_failure(self):
+        text = SOURCE + 'if [ -n "$files" ]; then if command -v gofmt; then gofmt -l $files; else '
+        text += 'if command -v golangci-lint; then golangci-lint run $files; exit 1; else exit 0; fi; fi; fi; exit 0'
+        self.assert_reason(self.shell(text, tools=["gofmt", "golangci-lint"]), "missing_tool_nonzero_exit")
+
+    def test_saved_other_linter_failure_can_exit_nonzero(self):
+        text = SOURCE + 'RC=0\n' + GUARDED + GUARDED.replace('gofmt', 'golangci-lint').replace('golangci-lint -w $files', 'golangci-lint run $files || RC=1')
+        text += 'exit "$RC"'
+        self.assertTrue(self.shell(text, tools=["gofmt", "golangci-lint"])[0])
+
+    def test_standalone_query_with_errexit_blocks_missing_tool(self):
+        self.assert_reason(self.shell('set -e\n' + SOURCE + 'command -v gofmt >/dev/null\n' + GUARDED),
+                           "missing_tool_nonzero_exit")
+
+    def test_if_without_else_has_success_status(self):
+        self.assertTrue(self.shell(SOURCE + 'if [ -n "$files" ] && command -v gofmt; then gofmt -l $files; fi')[0])
+
+    def test_set_builtins_and_stderr_notice(self):
+        self.assertTrue(self.shell('set -e\n' + SOURCE + GUARDED.replace('echo skipped', 'echo skip >&2'))[0])
+
+    def test_scalar_quoted_paths_rejected(self):
+        self.assert_reason(self.shell(SOURCE + GUARDED.replace(CALL, 'gofmt -l "$files"')), "scalar_paths_quoted")
+
+    def test_braced_scalar_quoted_paths_rejected(self):
+        self.assert_reason(self.shell(SOURCE + GUARDED.replace(CALL, 'gofmt -l "${files}"')), "scalar_paths_quoted")
+
+    def test_nonzero_rc_from_missing_tool_rejected(self):
+        self.assert_reason(self.shell(SOURCE + 'RC=0\n' + GUARDED.replace('echo skipped', 'RC=1') + 'exit "$RC"'),
+                           "missing_tool_nonzero_exit")
+
+    def test_missing_branch_comparison_does_not_erase_cause(self):
+        self.assert_reason(self.shell(SOURCE + 'RC=0\n' + GUARDED.replace('echo skipped', '[ "$RC" -eq 0 ]; exit 1')),
+                           "missing_tool_nonzero_exit")
+
+    def test_output_capture_call_still_needs_guards(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE + 'bad=$(gofmt -l "${files[@]}")\n'), "availability_guard_missing")
+
+    def test_output_capture_call_still_needs_nonempty(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE + 'if command -v gofmt; then bad=$(gofmt -l "${files[@]}"); fi'),
+                           "nonempty_guard_missing")
+
+    def test_unstaged_while_read_rejected(self):
+        self.assert_reason(self.shell(self.fixture("while-read-go.sh").replace('--cached ', '')),
+                           "unsupported_staged_source")
+
+    def test_while_read_pipeline_subshell_rejected(self):
+        text = 'files=()\ngit diff --cached --name-only -z -- "*.go" | while IFS= read -r -d "" f; do files+=("$f"); done\n'
+        self.assert_reason(self.shell(text + ARRAY_GUARDED), "unsupported_control_flow")
+
+    def test_filter_helper_cannot_supply_unstaged_paths(self):
+        text = self.fixture("lint-staged-go.sh").replace('&& printf \'%s\\n\' "$f"', '&& printf \'%s\\n\' unstaged.go')
+        self.assert_reason(self.shell(text, tools=["gofmt", "golangci-lint"]), "unsupported_helper")
+
+    def test_wrapper_does_not_hide_call_using_other_array(self):
+        text = self.fixture("lint-staged-go.sh").replace('node_modules/.bin/eslint "${JS[@]}"', 'env gofmt ./... "${JS[@]}"')
+        self.assert_reason(self.shell(text, tools=["gofmt", "golangci-lint"]), "unsupported_command")
+
+    def test_helper_cannot_shadow_exit(self):
+        text = SOURCE + 'exit() { echo harmless; }; command -v gofmt || exit 0; [ -n "$files" ] && gofmt -l $files'
+        self.assert_reason(self.shell(text), "unsupported_helper")
+
+    def test_helper_cannot_shadow_printf_source(self):
+        text = 'printf() { command -v "$1"; }\n' + self.fixture("xargs-rc-go.sh")
+        self.assert_reason(self.shell(text), "unsupported_helper")
+
+    def test_printf_helper_cannot_hide_dynamic_assignment(self):
+        text = 'note() { printf "$@"; }\n' + SOURCE + GUARDED + 'note -v PATH /not-here'
+        self.assert_reason(self.shell(text), "unsupported_helper")
+
+    def test_printf_dynamic_format_rejected(self):
+        self.assert_reason(self.shell(SOURCE + GUARDED + 'printf "$mode" PATH /not-here'), "unsupported_dynamic_form")
+
+    def test_printf_write_format_rejected(self):
+        self.assert_reason(self.shell(SOURCE + GUARDED + "printf '%n' PATH"), "unsupported_dynamic_form")
+
+    def test_printf_write_format_helper_rejected(self):
+        self.assert_reason(self.shell("note() { printf '%n' PATH; }\n" + SOURCE + GUARDED), "unsupported_helper")
+
+    def test_source_output_redirection_rejected(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE.replace("'*.go')", "'*.go' >/dev/null)") + ARRAY_GUARDED),
+                           "unsupported_staged_source")
+
+    def test_xargs_source_output_redirection_rejected(self):
+        text = self.fixture("xargs-rc-go.sh").replace('"$files" | xargs', '"$files" >/dev/null | xargs')
+        self.assert_reason(self.shell(text), "unsupported_staged_source")
+
+    def test_heredoc_cannot_overwrite_process_source(self):
+        text = ARRAY_SOURCE.rstrip() + ' <<EOF\nunstaged.go\nEOF\n' + ARRAY_GUARDED
+        self.assert_reason(self.shell(text), "unsupported_staged_source")
+
+    def test_process_source_requires_input_redirection(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE.replace('< <(', '> <(') + ARRAY_GUARDED), "unsupported_staged_source")
+
+    def test_mapfile_target_cannot_change_environment(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE.replace(' files ', ' PATH ') + ARRAY_GUARDED), "unsupported_dynamic_form")
+
+    def test_git_environment_cannot_redirect_staged_provenance(self):
+        self.assert_reason(self.shell('GIT_INDEX_FILE=other-index\n' + SOURCE + GUARDED), "unsupported_dynamic_form")
+
+    def test_indexed_assignment_cannot_change_environment(self):
+        self.assert_reason(self.shell('PATH[0]=not-here\n' + SOURCE + GUARDED), "unsupported_dynamic_form")
+
+    def test_read_append_cannot_use_indexed_target(self):
+        text = self.fixture("while-read-go.sh").replace('files+=("$f")', 'files[0]+=("$f")')
+        self.assert_reason(self.shell(text), "unsupported_dynamic_form")
+
+    def test_noncanonical_numeric_condition_rejected(self):
+        text = SOURCE + 'RC=00\nif [ "$RC" -eq 0 ]; then gofmt -l $files; fi\n' + GUARDED
+        self.assert_reason(self.shell(text), "unsupported_condition")
+
+    def test_read_target_cannot_change_environment(self):
+        text = self.fixture("while-read-go.sh").replace("'' f;", "'' PATH;").replace('"$f"', '"$PATH"')
+        self.assert_reason(self.shell(text), "unsupported_dynamic_form")
+
+    def test_nul_source_not_scalar(self):
+        self.assert_reason(self.shell(SOURCE.replace('--name-only ', '--name-only -z ') + GUARDED), "unsupported_staged_source")
+
+    def test_grep_cannot_filter_nul_stream_as_lines(self):
+        text = SOURCE.replace("-- '*.go'", "-z | grep '\\.go$'") + GUARDED
+        self.assert_reason(self.shell(text), "unsupported_staged_source")
+
+    def test_nul_source_not_split_array_substitution(self):
+        text = 'files=($(git diff --cached --name-only -z -- "*.go"))\n' + ARRAY_GUARDED
+        self.assert_reason(self.shell(text), "unsupported_staged_source")
+
+    def test_mapfile_nul_delimiter_must_match(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE.replace('--name-only ', '--name-only -z ') + ARRAY_GUARDED),
+                           "unsupported_staged_source")
+
+    def test_mapfile_newline_delimiter_must_match(self):
+        self.assert_reason(self.shell(ARRAY_SOURCE.replace('mapfile -t', "mapfile -d ''") + ARRAY_GUARDED),
+                           "unsupported_staged_source")
+
+    def test_read_nul_delimiter_must_match(self):
+        self.assert_reason(self.shell(self.fixture("while-read-go.sh").replace('--name-only -z ', '--name-only ')),
+                           "unsupported_staged_source")
+
+    def test_read_newline_delimiter_must_match(self):
+        self.assert_reason(self.shell(self.fixture("while-read-go.sh").replace("-r -d ''", '-r')),
+                           "unsupported_staged_source")
+
+    def test_shared_parser_entrypoint(self):
+        from scorers.bash_ast import parse_bash
+        self.assertEqual(parse_bash('echo hello').named_children[0].type, "command")
+
+    def run_mock_hook(self, text):
+        """Exercise argv using two staged files and inert local tool doubles."""
+        bin_dir = self.workspace / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        (bin_dir / "git").write_text('''#!/usr/bin/python3
+import sys
+if sys.argv[1:] == ["rev-parse", "--show-toplevel"]:
+    print(".")
+else:
+    separator = "\\0" if "-z" in sys.argv else "\\n"
+    sys.stdout.write(separator.join(["first.go", "second.go"]) + separator)
+''')
+        (bin_dir / "gofmt").write_text('''#!/usr/bin/python3
+import json, os, sys
+with open(os.environ["HOOK_ARGV"], "w") as stream:
+    json.dump(sys.argv[1:], stream)
+''')
+        for path in bin_dir.iterdir():
+            path.chmod(0o755)
+        for tool in ("golangci-lint", "ruff", "rubocop", "shellcheck", "shfmt"):
+            stub = bin_dir / tool
+            stub.write_text('#!/bin/sh\nexit 0\n')
+            stub.chmod(0o755)
+        local_calls = self.workspace / "claude-calls"
+        sentinel = bin_dir / "claude"
+        sentinel.write_text('#!/usr/bin/python3\nimport os\nwith open(os.environ["LOCAL_CLAUDE_CALLS"], "a") as stream:\n    stream.write("called\\n")\nraise SystemExit(97)\n')
+        sentinel.chmod(0o755)
+        script = self.workspace / "hook.sh"
+        script.write_text(text)
+        argv = self.workspace / "argv.json"
+        env = dict(os.environ, HOOK_ARGV=str(argv), LOCAL_CLAUDE_CALLS=str(local_calls))
+        sentinel_dir = str(Path(env["CLAUDE_BIN"]).parent) if env.get("CLAUDE_BIN") else str(bin_dir)
+        env["PATH"] = os.pathsep.join([sentinel_dir, str(bin_dir), env["PATH"]])
+        result = subprocess.run(["bash", str(script)], cwd=self.workspace, env=env,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(local_calls.exists())
+        return json.loads(argv.read_text())
+
+    def test_correct_styles_pass_two_separate_staged_paths(self):
+        for name in ("lint-staged-go.sh", "while-read-go.sh", "and-or-capture-go.sh", "xargs-rc-go.sh"):
+            with self.subTest(style=name):
+                self.assertEqual(self.run_mock_hook(self.fixture(name)), ["-l", "first.go", "second.go"])
+
+    def test_quoted_scalar_really_joins_two_paths(self):
+        text = SOURCE + GUARDED.replace(CALL, 'gofmt -l "$files"')
+        self.assertEqual(self.run_mock_hook(text), ["-l", "first.go\nsecond.go"])
+        self.assert_reason(self.shell(text), "scalar_paths_quoted")
 
 
 class ParsedCheckIntegration(CheckWorkspace):
