@@ -1040,7 +1040,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
            "--setting-sources", arm.get("setting_sources", "project")]
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
-    env = arm.get("env_override") or agent_env(workspace, arm.get("env"))
+    # Auto-memory off, applied last (guidance.CLI_FORCED_ENV): a skill arm
+    # runs under the real HOME, so its memory would land in the operator's
+    # profile.
+    env = guidance.cli_child_env(arm.get("env_override")
+                                 or agent_env(workspace, arm.get("env")))
 
     # `followups:` (ADR 0009): each entry is one more user turn in the SAME
     # session and workspace — the first call's flags plus `--resume

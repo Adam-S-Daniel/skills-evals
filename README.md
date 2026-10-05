@@ -214,7 +214,10 @@ copy would contaminate the `without_skill` arm). Every child it starts sees
 only an allow-listed environment (no `XDG_*`): PATH, HOME, LANG, LANGUAGE,
 `LC_*`, TERM, TMPDIR, TZ, USER, LOGNAME, SHELL, `HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` and their lowercase forms, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
-`SSL_CERT_DIR`, `CLAUDE_BIN` and the two registry locators. Every CLI launch
+`SSL_CERT_DIR`, `CLAUDE_BIN` and the two registry locators, plus
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, set rather than inherited, so a trial's
+auto-memory never lands in your real `~/.claude/projects/` (the transcripts
+still do: the login lives under that HOME). Every CLI launch
 (version call, probe, arms, judge) goes through a temporary guard launcher that
 re-checks the settings in the directory the CLI is about to start in, so a
 symlinked or `setup:`-written `.claude/settings.json` is refused at launch (exit

@@ -712,7 +712,10 @@ class TestLocalEval(unittest.TestCase):
                    "USER", "LOGNAME", "SHELL", "HTTP_PROXY", "HTTPS_PROXY",
                    "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
                    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR"}
+                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR",
+                   # SET by child_environment, never inherited: auto-memory
+                   # off, so no child writes into the real HOME.
+                   "CLAUDE_CODE_DISABLE_AUTO_MEMORY"}
         proc = self._run(str(EVAL_DIR), "--trials", "1",
                          "--registry", f"adam-agentskills={self._registry()}",
                          env_extra={"SOME_UNLISTED_VAR": "1",
@@ -725,6 +728,7 @@ class TestLocalEval(unittest.TestCase):
             with self.subTest(role=call["role"], n=call["n"]):
                 for name in ("SOME_UNLISTED_VAR", "CLAUDECODE"):
                     self.assertNotIn(name, call["env_names"])
+                self.assertIn("CLAUDE_CODE_DISABLE_AUTO_MEMORY", call["env_names"])
                 if call["role"] in ("version", "judge"):
                     # these inherit the wrapper's whole environment
                     extra = {n for n in call["env_names"]
