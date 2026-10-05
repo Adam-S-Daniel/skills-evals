@@ -8,7 +8,8 @@ open product question. The request does not identify those sources or supply
 the two operator answers.
 
 Three objective checks only certify that the reply cites the relevant file
-paths. The fourth checks that source files were left unchanged. Those checks
+paths. The fourth checks that Python source files were left unchanged
+(bytecode caches from running the seed test are not source). Those checks
 cannot establish that the agent read or understood the files, or that it asked
 useful questions. The blind pairwise judge carries those judgments, using two
 hand-written references outside `seed/` and anchored score levels in the

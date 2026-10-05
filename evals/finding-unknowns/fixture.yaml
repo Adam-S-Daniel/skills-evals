@@ -1,5 +1,5 @@
 # Class C: the judge decides the quality of the unknowns pass. The objective
-# checks certify only three path citations and that source files stayed put.
+# checks certify only three path citations and that Python source files stayed put.
 # References are outside seed/ so the agent cannot read the yardsticks.
 skill: finding-unknowns
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
@@ -17,25 +17,32 @@ prompt: Before you start on TASK.md, work out what you don't know and resolve wh
 objective_checks:
   # These lexical checks establish path citations, not proof that a file was
   # read or interpreted correctly. The rubric carries that semantic judgment.
+  # A path may be absolute or nested under another directory (the lookbehind
+  # excludes only name characters and a dot, so `/tmp/ws/export/table.py` and
+  # `a/export/table.py` count), but `my_export/table.py` and `export/table.pyc`
+  # do not.
   - id: cites-export-module
     description: The reply names the existing export module
     type: transcript_matches
     must_match:
-      - '(?<![A-Za-z0-9_./-])(?:\./)?export/table\.py(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
+      - '(?<![A-Za-z0-9_.-])(?:\./)?export/table\.py(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
   - id: cites-acceptance-test
     description: The reply names the acceptance test
     type: transcript_matches
     must_match:
-      - '(?<![A-Za-z0-9_./-])(?:\./)?test/test_export\.py(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
+      - '(?<![A-Za-z0-9_.-])(?:\./)?test/test_export\.py(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
   - id: cites-design-decision
     description: The reply names the architecture decision
     type: transcript_matches
     must_match:
-      - '(?<![A-Za-z0-9_./-])(?:\./)?docs/adr/0001-bounded-exports\.md(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
+      - '(?<![A-Za-z0-9_.-])(?:\./)?docs/adr/0001-bounded-exports\.md(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])'
   - id: source-unchanged
-    description: The unknowns pass leaves existing source unchanged and creates no source files
+    description: The unknowns pass leaves existing Python source unchanged and creates no Python source files
     type: files_unchanged
-    paths: ["src/*", "export/*"]
+    # Only *.py is guarded (one directory level below each root as well). A
+    # blanket "src/*" would count the __pycache__ directories that running the
+    # seed's failing test creates, failing a correct, restrained run.
+    paths: ["src/*.py", "src/*/*.py", "export/*.py", "export/*/*.py"]
 
 judge_rubric: >
   Rank all three drafts best to worst for the pre-implementation unknowns pass

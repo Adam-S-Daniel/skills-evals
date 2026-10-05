@@ -114,7 +114,8 @@ class TestIssue78(unittest.TestCase):
 
         for name, mutate in (
             ("new src file", lambda ws: (ws / "src/new.py").write_text("pass\n")),
-            ("new export file", lambda ws: (ws / "export/new.txt").write_text("x\n")),
+            ("new export file", lambda ws: (ws / "export/new.py").write_text("pass\n")),
+            ("edited export file", lambda ws: (ws / "export/table.py").write_text("pass\n")),
             ("new nested source", add_nested),
             ("deleted source", lambda ws: (ws / "src/service.py").unlink()),
         ):
@@ -122,6 +123,45 @@ class TestIssue78(unittest.TestCase):
                 workspace = self._copy_seed(name.replace(" ", "-"))
                 mutate(workspace)
                 self._fails_only("source-unchanged", self.strong, workspace)
+
+    def test_bytecode_caches_from_the_seed_test_are_not_source_changes(self):
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+        env["PYTHONPATH"] = str(self.workspace)
+        run = subprocess.run([sys.executable, "test/test_export.py", "-q"],
+                             cwd=self.workspace, env=env, capture_output=True,
+                             text=True, timeout=15)
+        self.assertEqual(run.returncode, 1, run.stderr)  # the seed test is red
+        for directory in ("src", "export"):
+            caches = list((self.workspace / directory / "__pycache__").glob("*.pyc"))
+            self.assertTrue(caches, f"{directory}/__pycache__ was not created")
+        self.assertEqual(self._score(self.strong), dict.fromkeys(CHECK_IDS, True))
+
+    def test_citation_boundaries(self):
+        cases = (
+            ("export/table.py", "/tmp/ws/export/table.py", True),
+            ("export/table.py", "a/export/table.py", True),  # nested path: accepted
+            ("export/table.py", "export/table.py:12", True),
+            ("export/table.py", "my_export/table.py", False),
+            ("export/table.py", "export/table.pyc", False),
+            ("test/test_export.py", "/tmp/ws/test/test_export.py", True),
+            ("test/test_export.py", "my_test/test_export.py", False),
+            ("test/test_export.py", "test/test_export.py:7", True),
+            ("test/test_export.py", "test/test_export.pyc", False),
+            ("docs/adr/0001-bounded-exports.md", "/tmp/ws/docs/adr/0001-bounded-exports.md", True),
+            ("docs/adr/0001-bounded-exports.md", "my_docs/adr/0001-bounded-exports.md", False),
+            ("docs/adr/0001-bounded-exports.md", "docs/adr/0001-bounded-exports.md:3", True),
+            ("docs/adr/0001-bounded-exports.md", "docs/adr/0001-bounded-exports.mdx", False),
+        )
+        ids = {"export/table.py": "cites-export-module",
+               "test/test_export.py": "cites-acceptance-test",
+               "docs/adr/0001-bounded-exports.md": "cites-design-decision"}
+        for path, written, expected in cases:
+            with self.subTest(written=written):
+                reply = self.strong.replace(path, "a local file")
+                self.assertNotIn(path, reply)
+                reply += f"\nSee {written}.\n"
+                self.assertEqual(self._score(reply)[ids[path]], expected)
 
     def test_seed_test_fails_then_minimal_fix_passes_in_scratch(self):
         env = os.environ.copy()
