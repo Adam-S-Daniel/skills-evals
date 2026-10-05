@@ -74,6 +74,9 @@ evals/
   browser-testing/         # A/B eval, Class A: add an admin-read draft-preview spec
     fixture.yaml           # fixed AST command checks and parser/verifier integrity checks
     seed/                  # pinned platform slice and pure-fs parser dependencies
+  code-quality/            # A/B eval, Class A: add Go to the staged lint hook and configs
+    fixture.yaml           # prompt, parsed config + Bash AST + hidden hook probe, preservation checks, rubric
+    seed/                  # platform lint configs, the vendored lint-staged.sh, a small Go module
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric

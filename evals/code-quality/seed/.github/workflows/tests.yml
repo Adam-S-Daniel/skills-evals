@@ -1,0 +1,17 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b95a8788078d258779e994565cf6eef663ff911e
+      - name: Unit tests
+        run: go test ./...
