@@ -111,6 +111,75 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### Parsed configuration and staged-shell objective checks
+
+These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
+in [`harness/scorers/objective.py`](harness/scorers/objective.py). Existing
+check types and fixtures retain their scoring behavior.
+
+| Type | Constraint keys | Evidence |
+| --- | --- | --- |
+| `parsed_config_values` | `format`, optional `expected` | Strict JSON or composed YAML, typed values at mapping-key paths; omitted expectations check parsing only |
+| `shell_staged_tool_guard` | `tools` | Real Bash AST: every configured tool has a reachable call receiving staged Go paths under positive availability and nonempty guards; missing tools skip successfully, including the script's final status; quoted arrays or split scalar/xargs paths |
+
+Both require a nonempty `paths` list of exact workspace-relative regular
+files, without globs, absolute paths, `..`, or symlinks escaping the workspace.
+Each file must satisfy the constraints. Missing files fail; input is bounded
+to 64 KiB and trees to depth 64 and 4096 nodes. Failures contain fixed named
+reasons, without file contents or parser errors. Unknown constraint keys are
+rejected by fixture validation.
+
+```yaml
+- id: go-width
+  type: parsed_config_values
+  paths: [.golangci.yml]
+  format: yaml
+  expected:
+    - path: [linters, settings, lll, line-length]
+      equals: 100
+    - path: [linters, enable]
+      contains: lll
+- id: staged-go
+  type: shell_staged_tool_guard
+  paths: [scripts/lint-staged.sh]
+  tools: [gofmt, golangci-lint]
+```
+
+Configuration roots must be mappings with string keys and finite JSON-shaped
+values. Duplicate keys at any depth, YAML merge keys, custom tags, recursive
+aliases, malformed structures, and invalid JSON fail. Equality is recursive
+and typed (`"100"`, `100`, `100.0`, and `true` differ). `contains` requires a
+list and compares typed members. Each expected entry has exactly `path` plus
+`equals` or `contains`; paths are nonempty lists of string mapping keys.
+Missing keys report `missing_key_<depth>` (zero-based), distinguishing a
+missing root branch from a commented-out leaf. Wrong values and types report
+`value_mismatch` and `value_type_mismatch`.
+
+The shell check parses Bash with Tree-sitter and tracks staged provenance,
+availability, nonempty facts, and command statuses separately. It recognizes
+newline scalar/split-array substitutions, delimiter-matched `mapfile` and
+while-read process-substitution collectors, and the reference hook's
+structurally validated staged-array filter helper. Calls pass separate paths
+through an unquoted scalar, quoted array, or guarded scalar-to-xargs stream;
+quoted newline scalars fail `scalar_paths_quoted`.
+
+Availability guards are `command -v`, `type` / `type -P`, `hash`, or a helper
+whose entire body performs that query. Diagnostic helpers and the reference
+filter may coexist. Nested `if`/`else`, `&&`/`||`, negation, successful early
+skips, `set`, stderr/null redirections, capture-and-test, and RC accumulators
+are recognized. A script's final status matters: a missing-tool path that
+implicitly or explicitly exits nonzero reports `missing_tool_nonzero_exit`.
+An installed linter's failure remains distinct from a missing-tool failure.
+Reassignment clears provenance and nonempty facts.
+
+Comments, literal strings/heredocs, disconnected guards, and unreachable
+branches supply no evidence. Dynamic execution, source commands, aliases,
+indirect expansion, arbitrary helpers/substitutions, general loops, wrappers,
+and unrecognized conditions fail with named reasons. Parser recovery nodes
+fail `invalid_bash`. The exact supported forms, filename limits, dependency
+pins, and analysis bounds are documented in
+[ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md).
+
 ### Command objective check
 
 | Check type | Constraints | Evidence |
