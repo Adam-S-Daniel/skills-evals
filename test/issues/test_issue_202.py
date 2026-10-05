@@ -58,6 +58,19 @@ import timeweeks  # noqa: E402
 sys.path.insert(0, str(SCRIPTS_DIR))
 import render_roster_yaml  # noqa: E402
 
+# A fixed commit time for every throwaway repo's commits: a sha that depends
+# on the wall clock can contain any digit run, so the fixture pins it.
+FIXED_GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
+                   "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00"}
+
+
+def _touches_number(calls, number):
+    """True when a call carries `number` as a whole token (`pr edit 101`,
+    `#101`), never as a run of digits inside a longer word such as the
+    `--match-head-commit <sha>` value a generated sha can supply."""
+    pattern = re.compile(rf"(?<![0-9A-Za-z]){re.escape(str(number))}(?![0-9A-Za-z])")
+    return any(pattern.search(c) for c in calls)
+
 #: The variables a scrubbed probe environment may carry. `LC_CTYPE` is not
 #: the probe's: Python sets it itself at start-up when the locale is `C`
 #: (PEP 538 coercion), and the wrapper that records the environment is Python.
@@ -2035,7 +2048,7 @@ class _ProposeStepFixture(unittest.TestCase):
         github_sha = github_sha or ""
         env1 = dict(env, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
                    GITHUB_OUTPUT=str(github_output), TEST_GIT_DIR=test_git_dir,
-                   GITHUB_SHA=github_sha)
+                   GITHUB_SHA=github_sha, **FIXED_GIT_DATES)
         done1 = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
                                text=True, timeout=60, env=env1, cwd=cwd or self.tmp)
         self.step1_returncode = done1.returncode
@@ -2055,7 +2068,7 @@ class _ProposeStepFixture(unittest.TestCase):
         github_output2 = self.tmp / "github-output-2"
         env2 = dict(env, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
                    GITHUB_OUTPUT=str(github_output2), TEST_GIT_DIR=test_git_dir,
-                   GITHUB_SHA=github_sha)
+                   GITHUB_SHA=github_sha, **FIXED_GIT_DATES)
         for key, var in self.OUTPUT_ENV.items():
             if key in outputs:
                 env2[var] = outputs[key]
@@ -3605,7 +3618,7 @@ class TestProposeStepDiffersBranchGhWrites(_ProposeStepFixture):
         ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
         subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(work), *ident, "commit", "-q", "-m", "x"],
-                       check=True)
+                       check=True, env={**os.environ, **FIXED_GIT_DATES})
         subprocess.run(["git", "-C", str(work), "remote", "add", "origin", str(origin)],
                        check=True)
         return work
@@ -3896,7 +3909,7 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
         ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
         subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(work), *ident, "commit", "-q", "-m", "x"],
-                       check=True)
+                       check=True, env={**os.environ, **FIXED_GIT_DATES})
         subprocess.run(["git", "-C", str(work), "remote", "add", "origin", str(origin)],
                        check=True)
         return work
@@ -3955,7 +3968,7 @@ class TestRosterModeAutoDiffers(_AutoProposeStepFixture):
         self.assertNotIn("--auto", merge_calls[0])
         merge = next((c for c in merge_calls if "--auto" in c), None)
         self.assertIsNotNone(merge, pr_calls)
-        self.assertIn("77", merge)
+        self.assertTrue(_touches_number([merge], 77), merge)
         self.assertIn("--auto", merge)
         self.assertIn("--merge", merge)
         self.assertIn("--match-head-commit", merge)
@@ -4295,7 +4308,7 @@ class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
         # (the foreign-owner row is filtered out), and closes no PR.
         pr_calls = [c for c in calls if c.startswith("pr ")]
         self.assertFalse(any(c.startswith("pr close") for c in pr_calls), pr_calls)
-        self.assertNotIn("101", " ".join(pr_calls))
+        self.assertFalse(_touches_number(pr_calls, 101), pr_calls)
         self.assertNotIn("101", body or "")
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
@@ -4312,7 +4325,7 @@ class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
         out, calls, body = self._run_step(latest, [], cwd=work)
         pr_calls = [c for c in calls if c.startswith("pr ")]
         self.assertFalse(any(c.startswith("pr edit 101") for c in pr_calls), pr_calls)
-        self.assertFalse(any("101" in c for c in pr_calls), pr_calls)
+        self.assertFalse(_touches_number(pr_calls, 101), pr_calls)
         self.assertTrue(any(c.startswith("pr create") for c in pr_calls), pr_calls)
         self.assertIn("Pull request #202", body)
         self.assertNotIn("#101", body)
@@ -4352,7 +4365,7 @@ class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
         out, calls, body = self._run_step(latest, self._tracker(), cwd=d)
         pr_calls = [c for c in calls if c.startswith("pr ")]
         self.assertFalse(any(c.startswith("pr close") for c in pr_calls), pr_calls)
-        self.assertNotIn("77", " ".join(pr_calls))
+        self.assertFalse(_touches_number(pr_calls, 77), pr_calls)
         self.assertNotIn("77", body or "")
 
 
