@@ -46,8 +46,7 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    One variable is SET rather than allow-listed:
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (`guidance.CLI_FORCED_ENV`), so no
    trial or judge writes auto-memory into the real HOME.
-1b. Reads the settings files the CLI loads for the unisolated judge, which
-   runs from this checkout with no `--setting-sources`: `~/.claude/settings
+1b. Reads the user, checkout and managed settings files: `~/.claude/settings
    .json` and `settings.local.json`, this checkout's `.claude/settings.json`
    and `settings.local.json`, and the managed settings (`/etc/claude-code/
    managed-settings.json` and `managed-settings.d/*.json`, plus the macOS and
@@ -59,6 +58,14 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    (the arms load those as project settings), following symlinks as the
    workspace copy does, and on each registry checkout's root
    `.claude/settings*.json`. This early check reads SOURCE files only.
+   The judge itself now runs with `--setting-sources ""` (plus
+   `--strict-mcp-config` and `--no-session-persistence`), so it loads none
+   of these. The check still runs because other children do load them: the
+   arms load project settings, skill-creator's own `claude -p` calls
+   (propose_skill_edit) get `--setting-sources project` from the guard
+   launcher only when they name none, and managed settings apply to every
+   launch whatever its flags. A credential source in any of them is refused
+   before anything starts.
 1c. The launch-time guard, which checks what the CLI will actually read. A
    source check cannot see a symlink resolved later or a fixture `setup:`
    command that writes `.claude/settings.json` into the workspace. So main()

@@ -170,6 +170,26 @@ class IsolationFlagsTests(unittest.TestCase):
         self.assertEqual(run_eval._munged_project_name(Path("/tmp/iso-ws.Yzsnc9")),
                          "-tmp-iso-ws-Yzsnc9")
 
+    def test_the_munged_name_uses_the_resolved_workspace_path(self):
+        # The child's cwd is the real path (getcwd resolves symlinks), so a
+        # workspace reached through a symlinked parent is keyed by the
+        # target. Temp dirs only.
+        real_parent = self.root / "real-parent"
+        (real_parent / "ws.1").mkdir(parents=True)
+        link = self.root / "link-parent"
+        link.symlink_to(real_parent, target_is_directory=True)
+        via_link = link / "ws.1"
+        resolved = os.path.realpath(real_parent / "ws.1")
+        self.assertNotEqual(str(via_link), resolved)
+        want = "".join(c if c.isascii() and c.isalnum() else "-" for c in resolved)
+        self.assertEqual(run_eval._munged_project_name(via_link), want)
+        # And end to end: the stand-in writes under the name the CLI would
+        # use, and the arm archives exactly that directory.
+        out = run_eval.run_agent(via_link, "do it", self.skill_arm(followups=["yes"]))
+        self.assertNotIn("error", out, out)
+        self.assertFalse((self.projects / want).exists())
+        self.assertEqual(self.archived(), [(want, "s1.jsonl")])
+
     def test_a_name_past_the_cli_truncation_is_never_moved(self):
         long_dir = self.projects / ("-" + "a" * 220)
         long_dir.mkdir(parents=True)
