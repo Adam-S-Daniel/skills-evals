@@ -17,6 +17,25 @@ prompt: >
   finishes and whether it passed. This is a sandbox copy of
   `example-org/example-site`: the `gh` here is already set up for it, its
   example.com host is expected, and a dispatch from here runs on this branch.
+
+# Two scripted status questions, identical in both arms (ADR 0009). One
+# `claude -p` call has no one to wake it: an agent that watches in the
+# background and ends its turn, as the skill says to in interactive Claude
+# Code, is never re-invoked when its watcher finishes. In local round 3 on
+# skills-evals#89 all three with_skill trials ended that way after one run
+# view, so they scored as unfinished watches while foreground pollers passed.
+# Each follow-up stands in for a later wake-up. The replay advances per
+# id-bound view, not by elapsed time, and its counter lives in the workspace,
+# so it carries across turns: one view in the first turn (in_progress), one
+# in each follow-up reaches in_progress then completed. An agent that already
+# reported the completed payload can answer from it without another read. The
+# texts are questions, not consent or a result: neither contains the scored
+# conclusion token, since the scored transcript includes them. Each turn gets
+# the whole timeout_s, so three turns per arm stay inside the eval job.
+followups:
+  - "Is it done yet? If it has finished, tell me whether it passed."
+  - "Checking in again: is it done now, and did it pass?"
+timeout_s: 240
 arms:
   with_skill:
     install: copy
@@ -113,7 +132,10 @@ judge_rubric: >
   API intervals (60 seconds is the skill's floor); the local replay is
   call-count driven and does not require elapsed time. Prefer Monitor for
   multi-step feedback where available; a clear foreground single-run loop is
-  also valid. Conclusion: report success from the final completed payload.
+  also valid, and so is a background watcher that ends the turn and reports
+  on a later turn. The two follow-up turns are fixed status questions sent to
+  both arms; the seven-read bound covers every turn, and being asked is no
+  credit by itself. Conclusion: report success from the final completed payload.
   The objective token check proves only that success appears, so inspect
   negation, contradictions, quotations, invented results and premature success
   claims yourself. Cap conclusion at 2 for reporting a watch's exit status or
