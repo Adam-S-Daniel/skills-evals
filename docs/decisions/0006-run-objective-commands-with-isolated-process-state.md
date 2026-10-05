@@ -2,7 +2,9 @@
 
 - **Status:** accepted (2026-10-04); amended 2026-10-04 to reach the
   harness's `node` on hosts without one in `/usr/bin` or `/bin`
-  ([#253](https://github.com/Adam-S-Daniel/skills-evals/pull/253)).
+  ([#253](https://github.com/Adam-S-Daniel/skills-evals/pull/253)); amended
+  2026-10-05 so a bare `node` argv uses that same `node`
+  ([#260](https://github.com/Adam-S-Daniel/skills-evals/pull/260)).
 - **Issue:** [#93](https://github.com/Adam-S-Daniel/skills-evals/issues/93).
 - **Deciders:** Adam, who approved adding the check prerequisite on 2026-10-04.
 
@@ -25,7 +27,9 @@ results. `timeout_s` defaults to 30 seconds and must be finite, positive,
 nonboolean, and at most 60 seconds.
 
 Resolve bare `bash`, `sh`, `python3`, and `node` only at fixed `/usr/bin` or
-`/bin` locations, never through inherited PATH or a workspace name. Other
+`/bin` locations, never through a workspace name. The one exception is `node`
+on a host with neither fixed location: it resolves to the harness's own `node`
+described below, under the same refusals. Other
 entrypoints must resolve inside the workspace; escaping symlinks fail.
 Direct `claude` and `claude.exe` entrypoints fail. Build the child environment
 from constants, with throwaway HOME, XDG/config/runtime/temp directories,
@@ -36,7 +40,8 @@ location holds `node` (GitHub's runner image keeps it in `/usr/local/bin`,
 `setup-node` in its tool cache), the harness's own `node`, resolved from the
 harness's PATH and refused if it lies inside the workspace, is appended as a
 throwaway directory holding only a `node` symlink. A verifier that runs `node`
-through PATH then scores the same on every host. Only `node` is added: no
+through PATH, or names `node` as its argv entrypoint, then scores the same on
+every host. Only `node` is added: no
 current check needs another host tool, and appending a whole directory such
 as `/usr/local/bin` would expose every tool installed there.
 The existing agent and local allow-lists retain login state, so neither fits.

@@ -188,7 +188,9 @@ pins, and analysis bounds are documented in
 
 The [command scorer](harness/scorers/commands.py) runs argv directly with no
 shell or interpolation and closed stdin. Bare `bash`, `sh`, `python3`, and
-`node` resolve only at fixed `/usr/bin` or `/bin` paths; every other entrypoint
+`node` resolve only at fixed `/usr/bin` or `/bin` paths (`node`, on a host with
+neither, resolves to the harness's own `node`, never one inside the workspace,
+which is the same `node` its PATH gets below); every other entrypoint
 must resolve inside the final workspace, including symlink resolution. Direct
 `claude`/`claude.exe` entrypoints are rejected. No arbitrary PATH lookup occurs.
 
@@ -472,6 +474,12 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  The consumer-bump half of `platform-release-and-bump` is covered by
+  [`evals/platform-release-and-bump/`](evals/platform-release-and-bump/)
+  ([issue #93](https://github.com/Adam-S-Daniel/skills-evals/issues/93)):
+  the pinned platform verifier checks the release refs and caller parity, while
+  the offline GitHub replay records whether a write was attempted. The live
+  release and deployment steps are outside this fixture.
   `admin-config-render` graduated out of this list: covered by
   [`evals/admin-config-render/`](evals/admin-config-render/)
   ([issue #87](https://github.com/Adam-S-Daniel/skills-evals/issues/87)).
@@ -479,6 +487,11 @@ Not every skill takes the same eval, and some take none. Classify first:
   that drives the vendored Ruby renderer and parses its output. The scorer's
   fixed `PATH` needs `ruby` at `/usr/bin` or `/bin`, and a missing Ruby fails
   the checks rather than skipping them.
+  `browser-testing` is covered by
+  [`evals/browser-testing/`](evals/browser-testing/)
+  ([issue #92](https://github.com/Adam-S-Daniel/skills-evals/issues/92)).
+  Frozen AST commands check spec conventions; actual browser correctness is
+  judged and remains unmeasured by this fixture.
   `code-quality` graduated out of this list: covered by
   [`evals/code-quality/`](evals/code-quality/)
   ([issue #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88)).
@@ -632,7 +645,7 @@ yet" must stay distinguishable.)
 
 | Skill | Decision | Reason |
 |---|---|---|
-| `test-canary` | no A/B | delivery probe; covered by the propagation arms |
+| `test-canary` | no A/B | internal canary; no propagation arm loads it, so its delivery probe is not built and no open issue tracks it (closed [#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17) built the adam-agentskills arms only) |
 | `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
@@ -642,11 +655,20 @@ yet" must stay distinguishable.)
 
 ### Budget
 
-Do not grow the weekly matrix linearly with coverage. Evals run on-touch (PR
-path filters over `evals/<skill>/**` and the skill's own registry path); the
-scheduled lane runs a rotating subset weekly or the full sweep monthly.
-`eval.yml` itself gets salient-path filters — the `workflow-path-audit`
-doctrine applies to the harness's own CI.
+The scheduled real eval runs exactly the reviewed ready list in
+[`evals/scheduled.yml`](evals/scheduled.yml), with readiness evidence per
+fixture; dispatch still runs one fixture. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
+records admission and failure isolation. Two eval legs run concurrently at
+most, with separate credential exchanges and success artifacts; serialized
+publishers build each fixture's badge against accumulated history. Roster
+jobs still run once per workflow run.
+
+At the workflow's estimate of $0.30–0.90 per skill fixture, eight fixtures cost
+about $2.40–7.20 per scheduled run, or $12.00–36.00 for five weekly runs. This is an
+estimate; the API workspace spend limit is the hard ceiling. Every addition
+is a reviewed spend decision. Rotation, monthly sweeps, model products,
+trial changes, and automated budget enforcement remain deferred under
+[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 

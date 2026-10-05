@@ -22,9 +22,10 @@
 # Rows below carry forward every DESIGN.md table row whose skill exists in a
 # registry today. `wj-next-break` and `sync-skills` are in that table but in no
 # registry now, so they have no row (a row would be a stale skip).
-# `test-canary`'s reason is corrected, not carried: DESIGN.md says "covered by
-# the propagation arms", but nothing in the propagation arms references it and
-# its SKILL.md says the delivery probe is not built (issue #17).
+# `test-canary`'s reason is corrected, not carried: no propagation arm
+# references it. Closed issue #17 built the propagation arms against
+# adam-agentskills' bundle only, so a cms-platform-bundle probe that asserts
+# test-canary is not built, and no open issue tracks it.
 # `add-from-address` and `add-received-from-addresses` are not in DESIGN.md's
 # table: the owner decided to skip them (relayed in the skills-evals#225 fix
 # round), and each SKILL.md says it only dispatches a fastmail-actions workflow
@@ -34,8 +35,8 @@ skips:
     skill: test-canary
     decision: no A/B
     reason: >-
-      internal canary; carries no guidance; its delivery probe (issue #17) is
-      not built
+      internal canary; carries no guidance; no probe asserts its delivery (not
+      built, untracked; closed issue #17 built other propagation arms)
   - registry: cms-platform
     skill: sveltia-cms-playwright-demo
     decision: skip
