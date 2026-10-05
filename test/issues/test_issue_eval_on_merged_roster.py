@@ -537,7 +537,7 @@ class TestTheGates(_Scripts):
                 with self.subTest(args=args, eval_result=eval_result):
                     self.assertIs(self._runs("publish", args[0], args[1],
                                              eval_result=eval_result),
-                                  want and eval_result in {"success", "failure"})
+                                  want and eval_result in {"success", "failure", "cancelled"})
 
     def test_failed_or_skipped_planning_prevents_eval_and_publication(self):
         for job in ("eval", "publish"):

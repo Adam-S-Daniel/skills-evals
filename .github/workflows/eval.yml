@@ -39,7 +39,7 @@
 #   skill registry: it gets --guidance, never --registry.
 #
 # * Schedule selection comes only from committed evals/scheduled.yml, a reviewed
-#   list with readiness evidence (ADR 0007). A contents: read planning job
+#   list with readiness evidence (ADR 0008). A contents: read planning job
 #   emits the matrix; dispatch still takes one `fixture` input (default
 #   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as data, never
 #   interpolated into run:. Every eval leg revalidates its own selection
@@ -1802,8 +1802,15 @@ jobs:
     # S1 (ADR 0004): gated on `roster-wait`'s confirmation exactly as
     # `eval` is — `contents: write` never runs beside an arming that was
     # not confirmed cleared, even if `eval`'s own gate ever drifted.
+    # A matrix leg that exceeds `timeout-minutes` may be reported as
+    # cancelled rather than failed, and a matrix with no failed leg but a
+    # cancelled one aggregates to `cancelled`. `eval.result` may therefore be
+    # success, failure, or cancelled when only some legs ended badly, and
+    # `!cancelled()` (true unless the whole run was cancelled) is what stops
+    # publication on a real cancellation. Only `skipped` keeps this job from
+    # running, so one timed-out leg cannot discard its siblings' results.
     needs: [plan, roster, eval, roster-wait]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure' || needs.eval.result == 'cancelled') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

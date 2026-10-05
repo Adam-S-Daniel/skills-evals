@@ -1,4 +1,4 @@
-# ADR 0007: Run ready fixtures on the weekly schedule
+# ADR 0008: Run ready fixtures on the weekly schedule
 
 - **Status:** proposed (2026-10-04)
 - **Issue:** [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68), partially implemented.
@@ -28,16 +28,15 @@ and simultaneous publishers would compete for the same results branch.
    `evals/review-bash-ci-reliability`, and
    `evals/skills-doctor/bucketed-account-store`. Qualification on 2026-10-05
    appended `evals/github-actions-sha-pinning`,
-   `evals/vendor-release-impact-issues`, and `evals/writing-adrs/bootstrap`,
-   seven in all. Preserve the supplied local evidence in each note without
+   `evals/writing-adrs/bootstrap`, and `evals/disarm-inherited-reach`, seven
+   in all. Preserve the supplied local evidence in each note without
    inventing a measurement date or claiming a paid CI run.
    An entry is admitted only when all of these hold: a local N=3 judged run
-   with both arms; zero errored trials; separation, meaning at least one
+   with both arms; zero errored trials and zero judge errors; separation, meaning at least one
    scorer (objective or judge) where every with-skill trial scores above
    every without-skill trial, so the difference is not within trial noise;
    and no open scorer-bug issue or pull request naming the fixture. A
-   judge that returned scores for only some trials is recorded in the note,
-   not hidden. Fixtures that miss a criterion stay off the list until a
+   judge error is a failed criterion, not a footnote. Fixtures that miss a criterion stay off the list until a
    better local run: `evals/consumer-repo-provisioning` (objective 9.67 vs
    7.67 and judge 5.23 vs 4.9, both with overlapping trial ranges) and
    `evals/github-actions-repo-settings` (objective 5 vs 3.67 with
@@ -45,6 +44,17 @@ and simultaneous publishers would compete for the same results branch.
    `evals/writing-adrs` fixtures, `existing-convention` and `supersede`,
    are listed per path and were not added: their with-skill margins are
    small and `supersede` lost judge scores on one trial.
+   `evals/vendor-release-impact-issues` was also not added: its 2026-10-05
+   qualification recorded three judge errors (two with the skill, one
+   without; each "judge CLI call timed out after 120s"), which fails the
+   zero-judge-errors criterion until a clean local run.
+   `evals/windows-elevation-from-wsl` (objective 7 vs 6 with no overlap,
+   judge 8.6 vs 7.53) clears the numeric criteria by the narrowest margin
+   and is left off until a larger run confirms it. `evals/post-failure-comment`
+   and `evals/cms-stuck-pr-triage` each had an errored without-skill trial
+   (a timeout and invalid JSON), and `evals/rename-pdfs` shows no
+   with-skill advantage (objective 4 vs 4, judge 3.4 vs 3.97); all three
+   stay off.
 2. A read-only planning job reads the schedule list only for `schedule`.
    `workflow_dispatch` still reads `fixture` from `GITHUB_EVENT_PATH`, with
    today's single-fixture default and unchanged `roster_only` behavior.

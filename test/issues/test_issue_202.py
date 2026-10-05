@@ -1209,9 +1209,9 @@ class TestRosterOnlyDispatch(unittest.TestCase):
     # which has no `roster_only`-conditioned `if:` at all: it always runs.
     # B1 (round 4 on #209, blocker): "Build the badge over the run window,
     # commit, and push" moved to the `publish` job, whose own `if:` is
-    # requires `needs.eval.result` to be success or failure — a
+    # requires `needs.eval.result` to be success, failure, or cancelled — a
     # `roster_only` dispatch skips the whole `eval` job (`result` reads
-    # `skipped`, which cannot satisfy either condition), so this
+    # `skipped`, which cannot satisfy listed condition), so this
     # step no longer needs, or carries, its own `roster_only`-conditioned
     # `if:` at all.
     SKIPPED = ("WIF auth preflight", "Run the eval (both arms, judge)")
@@ -3712,7 +3712,7 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         self.assertIsNone(doc["jobs"]["roster"].get("needs"))
         eval_job = doc["jobs"]["eval"]
         # ADR 0004: `eval` also waits for `roster-pr` (the arming) and
-        # `roster-wait` (the bounded wait that resolves it). ADR 0007 adds
+        # `roster-wait` (the bounded wait that resolves it). ADR 0008 adds
         # the successful fixture plan without making roster failures fatal.
         self.assertEqual(eval_job.get("needs"),
                          ["plan", "roster", "disarm", "roster-pr", "roster-wait"])
@@ -5767,10 +5767,10 @@ class TestB1Round4JobGraph(unittest.TestCase):
         publish = self.jobs["publish"]
         # ADR 0004 review, S1: `publish` (contents: write) is gated on the
         # same `roster-wait` confirmation as `eval`, so it needs that job.
-        # ADR 0007 also requires a successful plan, and permits publication
+        # ADR 0008 also requires a successful plan, and permits publication
         # of successful fixtures when a sibling evaluation fails.
         self.assertEqual(self._needs(publish), ["eval", "plan", "roster", "roster-wait"])
-        self.assertEqual(publish.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        self.assertEqual(publish.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure' || needs.eval.result == 'cancelled') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
     def test_roster_pr_runs_after_disarm_and_a_failed_one_never_blocks_it(self):
         # Round 5 had roster-pr wait for `publish` (`contents: write`),

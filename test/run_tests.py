@@ -4244,7 +4244,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # this test exists to catch.
         doc = self._doc()
         # The guard covers every job exactly. ADR 0004 added the bounded
-        # `roster-wait`; ADR 0007 adds a read-only fixture planner, which
+        # `roster-wait`; ADR 0008 adds a read-only fixture planner, which
         # emits reviewed selections without receiving evaluation credentials.
         self.assertEqual(
             sorted(doc["jobs"]),
@@ -6149,7 +6149,7 @@ class TestIssue67(unittest.TestCase):
         # `actions` or `contents: write` any more; the roster App's token
         # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
-        # Exactly seven jobs (ADR 0007 adds the read-only planner), so an
+        # Exactly seven jobs (ADR 0008 adds the read-only planner), so an
         # additional job cannot go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
                          ["disarm", "eval", "plan", "publish", "roster", "roster-pr",

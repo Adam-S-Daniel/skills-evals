@@ -9,7 +9,7 @@ fixtures:
     readiness: "Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
   - path: evals/github-actions-sha-pinning
     readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8.67/10 vs without 8.0/10; judge 7.93 vs 3.1, ranges 6.8-8.5 vs 0.9-4.4."
-  - path: evals/vendor-release-impact-issues
-    readiness: "Local N=3 baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errored trials: objective with 7/7 vs without 4/7 in every trial; judge 6.7 vs 5.15, but the judge returned scores for only 1 of 3 and 2 of 3 trials."
   - path: evals/writing-adrs/bootstrap
     readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8/9 vs without 2.33/9; judge 9.03 vs 1.17, ranges 8.9-9.3 vs 0.4-1.9."
+  - path: evals/disarm-inherited-reach
+    readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7.67/9 vs without 6/9, ranges 7-9 vs 6-6; judge 9.2 vs 6.57, ranges 8.8-10 vs 5.7-7."

@@ -628,7 +628,7 @@ yet" must stay distinguishable.)
 
 The scheduled real eval runs exactly the reviewed ready list in
 [`evals/scheduled.yml`](evals/scheduled.yml), with readiness evidence per
-fixture; dispatch still runs one fixture. [ADR 0007](docs/decisions/0007-run-ready-fixtures-on-the-weekly-schedule.md)
+fixture; dispatch still runs one fixture. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
 records admission and failure isolation. Two eval legs run concurrently at
 most, with separate credential exchanges and success artifacts; serialized
 publishers build each fixture's badge against accumulated history. Roster

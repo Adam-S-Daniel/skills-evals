@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ADR 0007: reviewed schedules, isolated legs, and per-fixture badges.
+"""ADR 0008: reviewed schedules, isolated legs, and per-fixture badges.
 
 Parse workflow structure with PyYAML and execute selection scripts offline.
 The caller must use the PID namespace and sentinel required by AGENTS.md.
@@ -21,8 +21,8 @@ EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
-            "evals/vendor-release-impact-issues",
-            "evals/writing-adrs/bootstrap"]
+            "evals/writing-adrs/bootstrap",
+            "evals/disarm-inherited-reach"]
 
 
 def module(name, path):
@@ -226,7 +226,7 @@ class TestScheduledFixtures(unittest.TestCase):
 
     def test_successful_siblings_publish_and_missing_payload_is_reported(self):
         gate = doc()["jobs"]["publish"]["if"]
-        self.assertIn("needs.eval.result == 'success' || needs.eval.result == 'failure'", gate)
+        self.assertIn("needs.eval.result == 'success' || needs.eval.result == 'failure' || needs.eval.result == 'cancelled'", gate)
         self.assertIn("!cancelled()", gate)
         self.assertIn("needs.plan.result == 'success'", gate)
         self.assertIn("needs.roster-wait.outputs.cleared == 'true'", gate)
@@ -236,7 +236,7 @@ class TestScheduledFixtures(unittest.TestCase):
         self.assertEqual(report["if"], "${{ steps.download.outcome == 'failure' }}")
         commit = step("publish", "Build the badge over the run window, commit, and push")
         self.assertEqual(commit["if"], "${{ steps.download.outcome == 'success' }}")
-        for aggregate, rc in [("failure", 0), ("success", 1)]:
+        for aggregate, rc in [("failure", 0), ("cancelled", 0), ("success", 1)]:
             with tempfile.TemporaryDirectory() as tmp:
                 summary = Path(tmp) / "summary"
                 result = subprocess.run(["bash", "-c", report["run"]], env=dict(os.environ, EVAL_RESULT=aggregate, GITHUB_STEP_SUMMARY=str(summary)), capture_output=True, text=True)
