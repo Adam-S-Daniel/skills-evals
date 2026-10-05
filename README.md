@@ -71,6 +71,9 @@ evals/
   admin-config-render/     # A/B eval, Class A: a consumer site's /admin config will not render
     fixture.yaml           # prompt, command_succeeds renders, kit/verifier/identity digests, rubric
     seed/                  # a consumer site plus a vendored cms-platform kit and its Ruby render checks
+  code-quality/            # A/B eval, Class A: add Go to the staged lint hook and configs
+    fixture.yaml           # prompt, parsed config + Bash AST + hidden hook probe, preservation checks, rubric
+    seed/                  # platform lint configs, the vendored lint-staged.sh, a small Go module
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric

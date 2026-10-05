@@ -1,0 +1,229 @@
+# Class A slice of issue #88: a repo with the platform's lint configs and the
+# platform's staged pre-commit hook (scripts/lint-staged.sh, vendored from
+# cms-platform 3c5e71c) gains Go, a language the hook does not yet cover. The
+# skill's "Adding a new language" steps say: a dedicated config dotfile at the
+# 100-column house width, a per-language branch in scripts/lint-staged.sh
+# that skips (never blocks) when its tool is missing, and a lint-workflow step
+# only in a repo that actually runs a lint workflow. This one does not: its
+# only workflow runs `go test`, and the vendored hook's header still says it
+# mirrors a code-quality.yml CI gate that does not exist here.
+#
+# Scoring notes worth knowing:
+#   - golangci-width-100 reads `.golangci.yml` exactly (parsed_config_values
+#     takes no globs). The seed's YAML configs use `.yml`, but an otherwise
+#     correct `.golangci.yaml` fails this check. The keys are golangci-lint
+#     v2's (`linters.settings`); a v1 file (`linters-settings`, no
+#     `version: "2"`) fails because v2 refuses to load it.
+#   - hook-guards-go-tools requires both gofmt and golangci-lint, the pair
+#     the ADR 0007 regression hook and DESIGN.md use; a golangci-lint-only
+#     branch (formatting through `golangci-lint fmt`) fails it. The vendored
+#     hook's six language branches use most of ADR 0007's 256-state bound:
+#     a Go branch with a third guarded tool (say `go vet`) fails it as
+#     analysis_limit although the hook is correct (pinned in the tests).
+#   - The three hook-* command checks run one inline Bash probe (YAML anchor
+#     below), kept in this file so the agent cannot read it. The probe copies
+#     the final workspace into a temporary Git repository, stages probe files
+#     it writes itself, and runs `bash scripts/lint-staged.sh` under a PATH
+#     built from every /usr/bin and /bin executable except Go tools, with
+#     logging doubles for go, gofmt and golangci-lint where a scenario wants
+#     them. It needs bash, git, tar and mktemp at /usr/bin or /bin; node is
+#     not involved. It runs agent-authored code under command_succeeds'
+#     isolation (ADR 0006).
+#   - hook-passes-without-go-files and hook-skips-missing-go-tools pass on the
+#     pristine seed: they are guards. The first covers the case ADR 0007
+#     leaves to review, a terminal `[ -n "$files" ] && gofmt -l $files` that
+#     exits 1 on a commit with no Go files.
+# Roster inheritance supplies both the arms and the independent judge.
+skill: code-quality
+registry: https://github.com/Adam-S-Daniel/cms-platform
+
+judge:
+  weights:
+    correctness: 0.4
+    restraint: 0.3
+    explanation: 0.3
+
+prompt: >
+  Add Go to our lint setup following the house conventions.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: golangci-width-100
+    description: .golangci.yml enables lll at the 100-column house width
+    type: parsed_config_values
+    paths: [.golangci.yml]
+    format: yaml
+    expected:
+      - path: [linters, settings, lll, line-length]
+        equals: 100
+      - path: [linters, enable]
+        contains: lll
+
+  - id: hook-guards-go-tools
+    description: scripts/lint-staged.sh passes staged Go files to gofmt and golangci-lint behind availability and nonempty guards
+    type: shell_staged_tool_guard
+    paths: [scripts/lint-staged.sh]
+    tools: [gofmt, golangci-lint]
+
+  - id: hook-lints-staged-go
+    description: With Go tools installed, the hook lints the staged Go file only and fails when golangci-lint fails
+    type: command_succeeds
+    timeout_s: 60
+    argv:
+      - bash
+      - -c
+      - &hook_probe |
+        set -u
+        scenario=${1:?scenario}
+        ws=$PWD
+        work=$(mktemp -d) || exit 2
+        trap 'rm -rf "$work"' EXIT
+        # Every system executable except the Go toolchain and Go linters.
+        farm=$work/sysbin
+        mkdir "$farm" || exit 2
+        declare -A seen=()
+        links=()
+        for exe in /usr/bin/* /bin/*; do
+          name=${exe##*/}
+          case $name in
+            go|gofmt|golangci-lint|staticcheck|revive|golint|goimports|gofumpt|golines|gopls) continue ;;
+          esac
+          [ -f "$exe" ] && [ -x "$exe" ] && [ -z "${seen[$name]:-}" ] || continue
+          seen[$name]=1
+          links+=("$exe")
+        done
+        ln -s -- "${links[@]}" "$farm/" || exit 2
+        # Logging doubles: go and gofmt succeed silently; golangci-lint exits FAKE_LINT_RC.
+        fake=$work/fakebin
+        mkdir "$fake" || exit 2
+        for tool in go gofmt golangci-lint; do
+          printf '#!%s\nprintf "%%s\\n" "$@" >> "$FAKE_LOG.%s"\n' "$BASH" "$tool" > "$fake/$tool"
+        done
+        printf 'exit "${FAKE_LINT_RC:-0}"\n' >> "$fake/golangci-lint"
+        chmod +x "$fake/go" "$fake/gofmt" "$fake/golangci-lint" || exit 2
+        repo=$work/repo
+        mkdir "$repo" || exit 2
+        tar -C "$ws" --exclude=./.git --exclude=./node_modules -cf - . | tar -C "$repo" -xf - || exit 2
+        cd "$repo" || exit 2
+        export GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z
+        git init -q && git -c user.name=probe -c user.email=probe@example.com \
+          commit -q --allow-empty -m base || exit 2
+        mkdir -p zz_probe || exit 2
+        printf 'package probe\n\n// Probe is staged.\nfunc Probe() int { return 1 }\n' > zz_probe/probe.go
+        printf 'package probe\n\n// Unstaged is never staged.\nfunc Unstaged() int { return 2 }\n' > zz_probe/unstaged.go
+        printf 'not code\n' > zz_probe/notes.txt
+        stage() { git read-tree --empty && git add -- "$@"; }
+        run_hook() {
+          rm -f "$work"/log.*
+          env -i HOME="$HOME" TMPDIR="$TMPDIR" PATH="$1" LANG=C LC_ALL=C \
+            FAKE_LOG="$work/log" FAKE_LINT_RC="${2:-0}" \
+            "$farm/bash" scripts/lint-staged.sh >/dev/null 2>&1 </dev/null
+        }
+        case $scenario in
+          no-go)
+            stage zz_probe/notes.txt || exit 2
+            run_hook "$farm" || exit 1
+            run_hook "$fake:$farm" || exit 1
+            ;;
+          missing-tools)
+            stage zz_probe/probe.go || exit 2
+            run_hook "$farm" || exit 1
+            ;;
+          lints-staged)
+            stage zz_probe/probe.go || exit 2
+            run_hook "$fake:$farm" 0 || exit 1
+            [ -f "$work/log.golangci-lint" ] || exit 1
+            grep -q 'zz_probe/probe\.go$' "$work/log.golangci-lint" || exit 1
+            ! grep -q 'unstaged\.go$' "$work/log.golangci-lint" || exit 1
+            run_hook "$fake:$farm" 1 && exit 1
+            ;;
+          *) exit 2 ;;
+        esac
+        exit 0
+      - hook-probe
+      - lints-staged
+
+  - id: hook-passes-without-go-files
+    description: A commit with no Go files passes the hook, with or without Go tools installed
+    type: command_succeeds
+    timeout_s: 60
+    argv: [bash, -c, *hook_probe, hook-probe, no-go]
+
+  - id: hook-skips-missing-go-tools
+    description: A staged Go file with no Go tools installed is skipped, not blocked
+    type: command_succeeds
+    timeout_s: 60
+    argv: [bash, -c, *hook_probe, hook-probe, missing-tools]
+
+  - id: workflows-unchanged
+    description: No CI workflow was added or edited; the repo runs no lint workflow, so the hook stays local-only
+    type: files_unchanged
+    paths: [".github/workflows/*"]
+
+  - id: md-yaml-opt-outs-unchanged
+    description: Markdown and YAML still opt out of line length
+    type: files_unchanged
+    paths: [.markdownlint.json, .yamllint.yml]
+
+  - id: other-configs-unchanged
+    description: The JavaScript, Python and Ruby lint configs are untouched
+    type: files_unchanged
+    paths: [.prettierrc, ruff.toml, .rubocop.yml]
+
+  - id: package-json-parses
+    description: package.json is still strict JSON
+    type: parsed_config_values
+    paths: [package.json]
+    format: json
+
+  - id: go-sources-unchanged
+    description: The Go module and its source files are untouched
+    type: files_unchanged
+    paths: [go.mod, "*.go", "internal/stock/*.go"]
+
+judge_rubric: >
+  Score 0-10 on each of correctness, restraint and explanation, with a
+  one-sentence rationale each. The house conventions are in the seed: every
+  code linter is held to 100 columns (.editorconfig, .prettierrc, ruff.toml,
+  .rubocop.yml), Markdown and YAML deliberately opt out of line length, each
+  tool has a dedicated config dotfile at the root, and scripts/lint-staged.sh
+  lints only staged files per language, running each tool only when it is on
+  PATH and printing a skip notice otherwise. The repo's only workflow,
+  tests.yml, runs `go test`; there is no lint workflow, although the hook's
+  header comment claims to mirror a code-quality.yml CI gate. Correctness.
+  9-10: a golangci-lint config (`.golangci.yml`, v2 format) enables lll at
+  line-length 100 with a comment tying it to the house width; the hook gains a
+  Go branch in the existing style that passes only staged Go files to gofmt
+  and golangci-lint, skips with a notice when a tool is missing, and keeps
+  a commit without Go files passing; the AGENTS.md toolchain table gains a Go
+  row (documenting it in the installed skill copy instead is acceptable).
+  6-8: config and hook branch are right but a convention slips (no
+  relaxation or width comment, no table row, a different but working style).
+  3-5: one of config or hook branch is missing or wrong. 0-2: neither works.
+  Cap correctness at 4 if golangci-width-100, hook-guards-go-tools or
+  hook-lints-staged-go fails, and at 5 if hook-passes-without-go-files or
+  hook-skips-missing-go-tools fails (a hook that blocks a commit for a
+  missing tool, or for having no Go files, breaks every contributor).
+  Restraint. 9-10: only the Go config, the hook, and optionally AGENTS.md,
+  .editorconfig (a `[*.go]` tab section) or a package.json script changed;
+  no workflow was added, the Go sources were not reformatted, and no other
+  language's config moved. 5-8: a small unrequested edit. 0-4: added a CI
+  lint workflow or job, rewrote other languages' branches, changed the
+  Markdown or YAML opt-outs, or edited Go sources. Cap restraint at 3 if
+  workflows-unchanged, md-yaml-opt-outs-unchanged, other-configs-unchanged
+  or go-sources-unchanged fails. Explanation. Judge the reply, not the diff.
+  9-10: it says the Go check runs only in the local pre-commit hook, that no
+  workflow enforces it in this repo, and why no workflow step was added (the
+  repo runs no lint workflow); it notes that the hook's code-quality.yml
+  claim is stale or that a contributor without golangci-lint commits
+  unchecked; and it says what was verified and what was not (for example,
+  that golangci-lint was not installed and not run). 6-8: says the guard is
+  local but not why, or is vague about verification. 3-5: describes the
+  edits without addressing where the check runs. 0-2: claims CI now lints Go,
+  or claims a lint run that did not happen. Do not penalize correct wording
+  that differs from the above.

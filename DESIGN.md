@@ -458,7 +458,7 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `code-quality`.
+  objective checks + thin judge. Candidates: none open.
   (`github-actions-sha-pinning` was also Class A; it has already shipped —
   see "Backfill order" below.) `rename-pdfs` graduated out of this list:
   covered by `evals/rename-pdfs/` (issue #82). `post-failure-comment`
@@ -476,6 +476,13 @@ Not every skill takes the same eval, and some take none. Classify first:
   that drives the vendored Ruby renderer and parses its output. The scorer's
   fixed `PATH` needs `ruby` at `/usr/bin` or `/bin`, and a missing Ruby fails
   the checks rather than skipping them.
+  `code-quality` graduated out of this list: covered by
+  [`evals/code-quality/`](evals/code-quality/)
+  ([issue #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88)).
+  Its hook checks pair ADR 0007's Bash AST check with a `command_succeeds`
+  probe kept inline in `fixture.yaml`, out of the agent's sight, that runs
+  the hook in a scratch Git repository with fake Go tools; the probe needs
+  `bash`, `git`, `tar` and `mktemp` at `/usr/bin` or `/bin`, not `node`.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
