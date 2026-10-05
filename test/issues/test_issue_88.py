@@ -536,6 +536,68 @@ with open(os.environ["HOOK_ARGV"], "w") as stream:
         self.assert_reason(self.shell(text), "scalar_paths_quoted")
 
 
+HOUSE_HOOK = (SHELL_FIXTURES / "lint-staged-go.sh").read_text(encoding="utf-8")
+STATICCHECK = 'if [ -n "$files" ] && command -v staticcheck >/dev/null; then staticcheck $files || RC=1; fi\n'
+GO_VET = 'if command -v go >/dev/null; then go vet ./... || RC=1; fi\n'
+
+# Guarded unconfigured tools earn no credit but must not reject a correct hook.
+NEIGHBOR_PASSES = {
+    "house_hook_gofmt_only": HOUSE_HOOK,
+    "guarded_staticcheck_scalar": SOURCE + 'RC=0\n' + GUARDED + STATICCHECK + 'exit "$RC"\n',
+    "guarded_go_vet_packages": SOURCE + 'RC=0\n' + GUARDED + GO_VET + 'exit "$RC"\n',
+    "early_exit_neighbor_guard": SOURCE + GUARDED + 'command -v go >/dev/null || exit 0\ngo vet ./...\n',
+    "helper_guarded_neighbor_array": HOUSE_HOOK.replace("golangci-lint", "staticcheck").replace(
+        'staticcheck run "${GO[@]}"', 'staticcheck -checks=all "${GO[@]}"'),
+}
+
+NEIGHBOR_FAILURES = {
+    "unguarded_unknown_command": (SOURCE + GUARDED + 'staticcheck $files\n', "unsupported_command"),
+    "disconnected_neighbor_guard": (SOURCE + GUARDED + 'command -v staticcheck && echo ok\nstaticcheck $files\n',
+                                    "unsupported_command"),
+    "other_tool_guard": (SOURCE + GUARDED + 'if command -v go; then staticcheck $files; fi\n', "unsupported_command"),
+    "nonliteral_command_name": (SOURCE + GUARDED + 'if command -v staticcheck; then $cmd $files; fi\n',
+                                "unsupported_dynamic_form"),
+    "path_literal_argument": (SOURCE + GUARDED + 'if command -v rm; then rm -rf /; fi\n', "unsupported_command"),
+    "flag_path_value": (SOURCE + GUARDED + 'if command -v rm; then rm --one-file-system=/ $files; fi\n',
+                        "unsupported_command"),
+    "later_bare_word_argument": (SOURCE + GUARDED + 'if command -v rm; then rm -rf src; fi\n', "unsupported_command"),
+    "quoted_string_argument": (SOURCE + GUARDED + "if command -v python3; then python3 -c 'print(1)'; fi\n",
+                               "unsupported_command"),
+    "command_substitution_argument": (SOURCE + GUARDED + 'if command -v staticcheck; then staticcheck $(cat list); fi\n',
+                                      "unsupported_dynamic_form"),
+    "quoted_scalar_argument": (SOURCE + GUARDED + 'if command -v staticcheck; then staticcheck "$files"; fi\n',
+                               "unsupported_command"),
+    "unrelated_variable_argument": (SOURCE + GUARDED + 'if command -v staticcheck; then staticcheck $other; fi\n',
+                                    "unsupported_command"),
+    "configured_tool_as_subcommand": (SOURCE + GUARDED + 'if command -v nice; then nice gofmt -w; fi\n',
+                                      "unsupported_command"),
+    "reserved_command_guarded": (SOURCE + GUARDED + 'if command -v git; then git stash; fi\n', "unsupported_command"),
+}
+
+
+class GuardedNeighborCalls(CheckWorkspace):
+    """Tables below cover guarded unconfigured calls."""
+
+
+def neighbor_pass(text):
+    def test(self):
+        result = self.shell(text)
+        self.assertTrue(result[0], result[1])
+    return test
+
+
+def neighbor_failure(text, reason):
+    def test(self):
+        self.assert_reason(self.shell(text), reason)
+    return test
+
+
+for case, text in NEIGHBOR_PASSES.items():
+    setattr(GuardedNeighborCalls, "test_" + case, neighbor_pass(text))
+for case, (text, reason) in NEIGHBOR_FAILURES.items():
+    setattr(GuardedNeighborCalls, "test_" + case, neighbor_failure(text, reason))
+
+
 class ParsedCheckIntegration(CheckWorkspace):
     def test_registry_and_constraints_route_config(self):
         self.target.write_text(CONFIG)

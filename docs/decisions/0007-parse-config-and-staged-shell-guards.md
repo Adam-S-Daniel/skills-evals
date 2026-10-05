@@ -71,9 +71,25 @@ An availability helper's entire body must be that query, optionally redirected.
 A diagnostic helper may only echo or printf a literal safe format (`%s`,
 `%s\n`, or plain text); dynamic formats, `printf -v`, and `%n` are rejected.
 Helpers cannot shadow interpreted builtins or tools. The reference filter,
-availability, and diagnostic helpers may coexist. Neighboring calls are bounded
-to the reference tools: ruff, rubocop, shellcheck, shfmt, and the local eslint,
-prettier, and stylelint executables. They cannot establish configured-tool facts.
+availability, and diagnostic helpers may coexist. An unconfigured literal
+command (for example golangci-lint, staticcheck, or `go vet`) is a neighboring
+call when the same availability query or helper dominates it. It earns no
+credit, its status splits like an installed linter's, and its arguments are
+limited to flags without a `/`, decimal option values, one leading literal
+subcommand that is not a configured tool, the Go package pattern `./...`, and
+staged arrays or unquoted Go scalars. Unguarded or dynamically named commands,
+interpreted builtins, other argument shapes, and command substitutions still
+fail. The reference hook's local eslint, prettier, and stylelint executables,
+guarded by `[ -x ... ]` of a sibling path, remain the only listed exceptions.
+Neighboring calls cannot establish configured-tool facts.
+
+Two related shapes keep their current scoring. After a passing availability
+guard, `[ -n "$files" ] && gofmt -l $files` as the last line passes although
+the script then exits 1 on a commit without Go files: this check rejects a
+nonzero exit only when it is caused by a missing configured tool, so an
+empty-list exit status is left to review. `test -z "$(gofmt -l $files)"` fails closed as
+`unsupported_dynamic_form`, because a command substitution outside an
+assignment is not interpreted; capture into a variable and test that instead.
 
 `if`/`else`, nested guards, negation, `&&`/`||` lists, stderr/null redirections,
 `set -e`/`-u`/`pipefail`, output capture followed by a nonempty test, and numeric

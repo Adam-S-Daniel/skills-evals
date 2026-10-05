@@ -47,8 +47,10 @@ class _State:
 class StagedToolGuard:
     _ENVIRONMENT_NAMES = {"PATH", "IFS", "BASH_ENV", "ENV", "CDPATH", "SHELLOPTS", "BASHOPTS",
                           "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"}
-    _NEIGHBOR_TOOLS = {"ruff", "rubocop", "shellcheck", "shfmt", "node_modules/.bin/eslint",
-                       "node_modules/.bin/prettier", "node_modules/.bin/stylelint"}
+    # The reference hook guards these local executables with `[ -x ... ]` of
+    # a sibling path, which records no availability fact.
+    _NEIGHBOR_TOOLS = {"node_modules/.bin/eslint", "node_modules/.bin/prettier",
+                       "node_modules/.bin/stylelint"}
     _RESERVED_HELPERS = {"command", "type", "hash", "git", "grep", "mapfile", "readarray", "xargs",
                          "read", "exit", "set", "echo", "printf", "cat", ":", "true", "false", "cd",
                          "eval", "source", ".", "alias", "unalias", "exec", "env", "bash", "sh"}
@@ -504,6 +506,32 @@ class StagedToolGuard:
             raise ShellGuardError("nonempty_guard_missing")
         return self.invoke(words[0], args[1:], state, streamed=True)
 
+    def neighbor_arguments(self, args, state):
+        """Bound a guarded unconfigured call to flags, one subcommand, and staged paths."""
+        for index, arg in enumerate(args):
+            ref = self.reference(arg)
+            value = state.variables.get(ref[0]) if ref else None
+            if value and ref[1] == "array" and arg.type == "string" and value.kind in (
+                    "staged_array", "go_array", "other_array"):
+                continue
+            if value and ref[1] == "scalar" and arg.type != "string" and value.kind == "go_scalar":
+                continue
+            if ref or arg.type not in ("word", "number"):
+                return False
+            word = self.literal(arg)
+            if word is None or "/" in word and word != "./...":
+                return False
+            # Lexical token classes only: a flag, a numeric option value, a
+            # Go package pattern, or a leading subcommand that is not a tool.
+            if word == "./..." or word.isdecimal() or (
+                    word.startswith("-") and word.lstrip("-")[:1].isalnum()):
+                continue
+            if (index == 0 and word.isascii() and word[:1].isalpha()
+                    and word.replace("-", "").replace("_", "").isalnum() and word not in self.tools):
+                continue
+            return False
+        return True
+
     def exit_status(self, state, status, missing, tool_failure=None):
         origin = state.tool_failure if tool_failure is None else tool_failure
         if status != 0 and (missing or (state.missing and not origin)):
@@ -577,8 +605,9 @@ class StagedToolGuard:
             if tool in state.missing:
                 return [state.copy(status=1, status_missing=frozenset({tool}), tool_failure=False)]
             yes, no = self.split(state, frozenset({tool}) if tool in self.tools else frozenset())
+            # An unconfigured tool's fact only permits a guarded neighbor call.
+            yes.available |= {tool}
             if tool in self.tools:
-                yes.available |= {tool}
                 no.missing |= {tool}
             return [yes, no]
         if name == "exit":
@@ -619,6 +648,9 @@ class StagedToolGuard:
         # permit these calls; unrelated commands do not become arbitrary code.
         if name in self._NEIGHBOR_TOOLS and args and any(
                 self.reference(a) and state.variables.get(self.reference(a)[0], _Value("")).kind == "other_array" for a in args):
+            return self.split(state, tool_failure=True)
+        if (name in state.available and name not in self._RESERVED_HELPERS and name not in self.helpers
+                and self.neighbor_arguments(args, state)):
             return self.split(state, tool_failure=True)
         raise ShellGuardError("unsupported_command" if name else "unsupported_control_flow")
 
