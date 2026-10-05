@@ -2789,6 +2789,14 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
                 # exit 2 instead of a traceback.
                 print(f"scorer_unavailable: {exc}")
                 return 2
+            except objective.FixtureError as exc:
+                # As the skill path's objective-only: a bad fixture value
+                # (`strip_seed: "no"`, an oversized seed file) is a named
+                # `invalid_fixture` and exit 2, not a traceback and exit 1,
+                # the code a failing check returns. `SeedTooLarge` is a
+                # `FixtureError`, so one clause covers both.
+                print(f"invalid_fixture: {exc}")
+                return 2
         print(json.dumps({"subject": "guidance", "section": section,
                           "arm": args.arm, "checks": results}, indent=2))
         return 0 if all(r["passed"] for r in results) else 1

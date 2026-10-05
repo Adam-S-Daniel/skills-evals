@@ -302,6 +302,36 @@ class TestGuidanceObjectiveOnlyScorerUnavailable(_ParserCase):
         self.assertEqual([(c["id"], c["passed"]) for c in out["checks"]],
                          [("capture-files", True)])
 
+
+class TestGuidanceObjectiveOnlyInvalidFixture(_ParserCase):
+    """`subject: guidance` with `--arm objective-only` and a fixture value the
+    scorer refuses (`strip_seed: "no"`) is a named `invalid_fixture` and exit
+    2, as the skill path reports it, never a traceback and exit 1 (the code a
+    failing check returns)."""
+
+    def setUp(self):
+        super().setUp()
+        self.fixture_dir = self.evals / "guidance-bad-fixture"
+        (self.fixture_dir / "seed").mkdir(parents=True)
+        (self.fixture_dir / "seed" / "hook.sh").write_text(
+            "gofmt -w x\n", encoding="utf-8")
+        doc = {"subject": "guidance", "section": "bad-fixture-section",
+               "objective_checks": [
+                   {"id": "reply-reads", "type": "transcript_matches",
+                    "must_match": ["x"], "strip_seed": "no"}]}
+        (self.fixture_dir / "fixture.yaml").write_text(
+            yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    def test_a_bad_fixture_value_is_invalid_fixture_and_exit_2(self):
+        proc = self._run(self.fixture_dir, "--arm", "objective-only")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("invalid_fixture: ", proc.stdout)
+        self.assertIn("strip_seed", proc.stdout)
+        self.assertNotIn("Traceback", proc.stderr)
+        # Nothing scored, so no `checks` document that could read as a result.
+        self.assertNotIn('"checks"', proc.stdout)
+
+
 class TestAggregateDenominator(unittest.TestCase):
     def test_a_scorer_error_trial_is_outside_every_check_denominator(self):
         scored = {"error": None, "agent": {"cost_usd": 0.1},
