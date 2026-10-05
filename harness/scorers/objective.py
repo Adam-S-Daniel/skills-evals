@@ -34,6 +34,7 @@ if _HARNESS_DIR not in sys.path:
 GIT_TIMEOUT_S = 10
 
 from . import invisibles, wrapping
+from .bash_ast import ScorerUnavailableError  # noqa: F401  (re-exported)
 from .shell_capture import shell_capture_safe
 from .commands import command_succeeds
 
@@ -3879,8 +3880,12 @@ def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> 
                 or any(not isinstance(tool, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tool)
                        for tool in tools) or len(set(tools)) != len(tools)):
             raise _ObjectiveInputError("invalid_constraints")
-        from .bash_ast import BashParseError, parse_bash
+        from .bash_ast import BashParseError, parse_bash, require_parser
         from .shell_guard import StagedToolGuard, ShellGuardError
+        # The scoring environment may lack the pinned parser. That is not the
+        # agent's failure, so it is never a failed check, whatever the
+        # workspace holds: the runner records the trial as an error.
+        require_parser("shell_staged_tool_guard")
         for rel in patterns:
             text = _objective_file_bytes(workspace, rel)
             try:
@@ -3930,6 +3935,9 @@ CHECKS = {
     "dir_listing_matches": dir_listing_matches,
 }
 
+
+#: Check types that need the pinned Bash parser wheels to run at all.
+PARSER_BACKED_CHECKS = frozenset({"shell_staged_tool_guard", "shell_capture_safe"})
 
 _CHECK_META_KEYS = {"id", "description", "type", "paths"}
 _WORKFLOW_STEP_USES_KEYS = {

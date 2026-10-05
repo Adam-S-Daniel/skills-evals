@@ -663,8 +663,11 @@ class TestCiWatcherShellCapture(unittest.TestCase):
     def test_unavailable_parser_raises_instead_of_passing(self):
         from scorers import bash_ast
         with mock.patch.dict(sys.modules, {'tree_sitter': None}):
-            with self.assertRaisesRegex(bash_ast.BashParseError, 'parser_unavailable'):
-                self._reply('```bash\nx=$(echo one)\n```')
+            # A scorer error (never a pass, never a failed check), whether or
+            # not the reply has anything to parse.
+            for reply in ('```bash\nx=$(echo one)\n```', 'no shell here'):
+                with self.assertRaisesRegex(bash_ast.ScorerUnavailableError, 'tree-sitter-bash==0.25.1'):
+                    self._reply(reply)
 
     def test_invalid_source_is_rejected(self):
         with self.assertRaises(ValueError):
