@@ -194,8 +194,11 @@ must resolve inside the final workspace, including symlink resolution. Direct
 
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
-`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
-the local harness's guard launcher. Both CI and local scoring use the same
+`claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
+is a directory containing just a symlink to the harness's own `node` (never
+one inside the workspace) appended, so PATH lookups of `node` work on hosts
+such as GitHub runners that install it in `/usr/local/bin`. It inherits no
+credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
 spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
@@ -495,10 +498,16 @@ Not every skill takes the same eval, and some take none. Classify first:
   [`evals/debug-github-workflows/wrong-branch/`](evals/debug-github-workflows/wrong-branch/)
   (issue [#76](https://github.com/Adam-S-Daniel/skills-evals/issues/76)). Main
   invokes a missing test module while an unmerged branch already fixes its
-  workflow. Seven checks require actual log/comparison reads, affirmative
-  cause and merge statements, and preservation of project/instrument files.
-  The reply grammar is deliberately narrow; correct alternative phrasing can
-  fail, so no A/B calibration or measured improvement is claimed. Exit-128,
+  workflow. The investigation-only prompt asks the agent to explain the cause
+  and next step without editing files. A fixture-owned setup builds an offline
+  origin with fetchable main and fix refs. Seven checks require an actual log
+  read, a comparison read through gh or through a git diff, show, or patch log
+  of the fix branch (git commands are recorded under `.git/`), exact
+  branch/action/error tokens in the reply, and preservation of
+  project/instrument files. The independent judge assesses
+  whether those tokens express the correct cause and merge direction; token
+  coverage alone is not semantic correctness. No A/B calibration or measured
+  improvement is claimed. Exit-128,
   token/auth and misleading-success patterns remain uncovered.
   [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
   now has its first Class B fixture:

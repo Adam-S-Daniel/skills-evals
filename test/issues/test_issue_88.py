@@ -598,6 +598,116 @@ for case, (text, reason) in NEIGHBOR_FAILURES.items():
     setattr(GuardedNeighborCalls, "test_" + case, neighbor_failure(text, reason))
 
 
+class AnalysisBounds(CheckWorkspace):
+    """ADR 0007 amendment: the reference hook with extra guarded Go tools fits."""
+
+    EXTRA = ["go vet ./...", "staticcheck ./...", "revive ./...",
+             "gosec ./...", "errcheck ./...", "ineffassign ./..."]
+    END = "    note golangci-lint\n  fi\nfi\n"
+
+    def hook(self, extra_tools):
+        text = (SHELL_FIXTURES / "lint-staged-go.sh").read_text()
+        self.assertEqual(text.count(self.END), 1)
+        lines = "".join(
+            f"  if have {call.split()[0]}; then {call} || RC=1; else note {call.split()[0]}; fi\n"
+            for call in self.EXTRA[:extra_tools])
+        return text.replace(self.END, "    note golangci-lint\n  fi\n" + lines + "fi\n")
+
+    def analyze(self, text):
+        from scorers.bash_ast import parse_bash
+        from scorers import shell_guard
+        peak = []
+        original = shell_guard.StagedToolGuard.deduplicate
+
+        def deduplicate(guard, states):
+            result = original(guard, states)
+            peak.append(len(result))
+            return result
+
+        guard = shell_guard.StagedToolGuard(parse_bash(text), ["gofmt", "golangci-lint"])
+        with mock.patch.object(shell_guard.StagedToolGuard, "deduplicate", deduplicate):
+            guard.check()
+        return max(peak), guard.steps
+
+    def test_three_four_and_five_go_tools_pass(self):
+        for extra in (1, 2, 3):
+            with self.subTest(tools=2 + extra):
+                result = self.shell(self.hook(extra), tools=["gofmt", "golangci-lint"])
+                self.assertTrue(result[0], result[1])
+
+    def test_four_tool_hook_stays_well_inside_the_bounds(self):
+        # Steps are the deterministic stand-in for analysis time.
+        from scorers import shell_guard
+        states, steps = self.analyze(self.hook(2))
+        self.assertLessEqual(states, shell_guard.MAX_STATES // 2)
+        self.assertLessEqual(steps, shell_guard.MAX_STEPS // 4)
+
+    def test_bounds_are_the_amended_values(self):
+        from scorers import shell_guard
+        self.assertEqual((shell_guard.MAX_STATES, shell_guard.MAX_STEPS), (2048, 65536))
+
+    def test_the_old_bound_reproduces_the_third_tool_failure(self):
+        from scorers import shell_guard
+        with mock.patch.object(shell_guard, "MAX_STATES", 256):
+            self.assert_reason(self.shell(self.hook(1), tools=["gofmt", "golangci-lint"]),
+                               "analysis_limit")
+
+    def test_the_state_bound_still_fails_closed(self):
+        self.assert_reason(self.shell(self.hook(6), tools=["gofmt", "golangci-lint"]),
+                           "analysis_limit")
+
+
+class TestedCapture(CheckWorkspace):
+    """ADR 0007 amendment: `[ -z "$(TOOL ...)" ]` reads as capture and test."""
+
+    HEAD = ("set -euo pipefail\n"
+            "mapfile -t GO < <(git diff --cached --name-only --diff-filter=ACM -- '*.go')\nRC=0\n")
+    GUARD = 'if [ "${#GO[@]}" -gt 0 ] && command -v gofmt >/dev/null; then\n'
+
+    def script(self, body, guard=GUARD):
+        return self.HEAD + guard + body + 'fi\nexit "$RC"\n'
+
+    def test_z_and_n_forms_pass(self):
+        for body in ('  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n',
+                     '  if [ -n "$(gofmt -l "${GO[@]}")" ]; then RC=1; fi\n',
+                     '  [[ -z "$(gofmt -l "${GO[@]}")" ]] || RC=1\n'):
+            with self.subTest(body):
+                result = self.shell(self.script(body))
+                self.assertTrue(result[0], result[1])
+
+    def test_reference_hook_with_tested_capture(self):
+        text = (SHELL_FIXTURES / "lint-staged-go.sh").read_text()
+        old = '    bad=$(gofmt -l "${GO[@]}")\n    if [ -n "$bad" ]; then\n      printf \'%s\\n\' "$bad"\n      RC=1\n    fi\n'
+        self.assertEqual(text.count(old), 1)
+        text = text.replace(old, '    [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n')
+        result = self.shell(text, tools=["gofmt", "golangci-lint"])
+        self.assertTrue(result[0], result[1])
+
+    def test_the_call_inside_still_needs_every_guard(self):
+        body = '  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\n'
+        self.assert_reason(self.shell(self.script(body, 'if [ "${#GO[@]}" -gt 0 ]; then\n')),
+                           "availability_guard_missing")
+        self.assert_reason(self.shell(self.script(body, "if command -v gofmt >/dev/null; then\n")),
+                           "nonempty_guard_missing")
+        self.assert_reason(self.shell(self.script('  [ -z "$(gofmt -l .)" ] || RC=1\n')),
+                           "unsupported_tool_arguments")
+
+    def test_a_missing_tool_exit_is_still_caught(self):
+        text = self.HEAD + ('if [ "${#GO[@]}" -gt 0 ]; then\n  command -v gofmt >/dev/null || exit 1\n'
+                            '  [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1\nfi\nexit "$RC"\n')
+        self.assert_reason(self.shell(text), "missing_tool_nonzero_exit")
+
+    def test_other_substitutions_still_fail_closed(self):
+        for body in ('  gofmt -l "${GO[@]}"\n  [ -z "$(date)" ] || RC=1\n',
+                     '  test -z "$(gofmt -l "${GO[@]}")" || RC=1\n',
+                     '  [ -z "$(gofmt -l "${GO[@]}" 2>&1)" ] || RC=1\n',
+                     '  [ -z "x$(gofmt -l "${GO[@]}")" ] || RC=1\n',
+                     '  [ "$(gofmt -l "${GO[@]}")" = "" ] || RC=1\n'):
+            with self.subTest(body):
+                result = self.shell(self.script(body))
+                self.assertFalse(result[0], result[1])
+
+
 class ParsedCheckIntegration(CheckWorkspace):
     def test_registry_and_constraints_route_config(self):
         self.target.write_text(CONFIG)

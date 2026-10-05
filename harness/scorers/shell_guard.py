@@ -10,6 +10,13 @@ from dataclasses import dataclass, field, replace
 
 from .bash_ast import parse_bash
 
+# Analysis bounds (ADR 0007). Each guarded tool call splits the continuing
+# states in two. The reference cms-platform hook with a four-tool Go branch
+# peaks at 864 states and about 13,000 steps; five tools peak near 1,700
+# states and 28,000 steps, which these bounds still admit.
+MAX_STATES = 2048
+MAX_STEPS = 65536
+
 
 class ShellGuardError(ValueError):
     """A fixed scoring failure reason."""
@@ -258,7 +265,7 @@ class StagedToolGuard:
 
     def deduplicate(self, states):
         states = list({state.key(): state for state in states}.values())
-        if len(states) > 256:
+        if len(states) > MAX_STATES:
             raise ShellGuardError("analysis_limit")
         return states
 
@@ -282,6 +289,9 @@ class StagedToolGuard:
         ref, positive = None, True
         if expr.type == "unary_expression" and op in ("-n", "-z"):
             operands = [c for c in expr.named_children if c != operator]
+            captured = self.tested_capture(operands, state)
+            if captured is not None:
+                return captured
             ref = self.reference(operands[0]) if len(operands) == 1 and operands[0].type == "string" else None
             positive = op == "-n"
             if ref and ref[1] != "scalar":
@@ -338,6 +348,40 @@ class StagedToolGuard:
                     return [state.copy(status=0 if matches else 1, status_missing=frozenset(), tool_failure=value.tool_failure)]
                 return self.split(state)
         raise ShellGuardError("unsupported_condition")
+
+    def tested_capture_node(self, node):
+        """A substitution that is the whole quoted operand of `-n`/`-z` in `[ ]`."""
+        string = node.parent
+        unary = string.parent if string else None
+        test = unary.parent if unary else None
+        if (not string or string.type != "string" or len(string.named_children) != 1
+                or not unary or unary.type != "unary_expression"
+                or not test or test.type != "test_command"):
+            return False
+        operator = unary.child_by_field_name("operator")
+        return (operator is not None and self.text(operator) in ("-n", "-z")
+                and len(node.named_children) == 1 and node.named_children[0].type == "command"
+                and self.literal(node.named_children[0].child_by_field_name("name")) in self.tools)
+
+    def tested_capture(self, operands, state):
+        """`[ -z "$(TOOL ...)" ]`: the configured call runs, its output is tested.
+
+        Equivalent to capturing into a variable and testing that: the call
+        must satisfy every guard, and either test outcome is an installed
+        tool's verdict, never a missing-tool failure.
+        """
+        if (len(operands) != 1 or operands[0].type != "string"
+                or len(operands[0].named_children) != 1
+                or operands[0].named_children[0].type != "command_substitution"):
+            return None
+        source = operands[0].named_children[0]
+        if len(source.named_children) != 1 or self.command(source.named_children[0])[0] not in self.tools:
+            return None
+        out = []
+        for current in self.execute(source.named_children[0], state, True):
+            out.append(self.success(current, tool_failure=True))
+            out.append(current.copy(status=1, status_missing=frozenset(), tool_failure=True))
+        return out
 
     def assign(self, node, state, tested):
         target = node.child_by_field_name("name")
@@ -539,7 +583,7 @@ class StagedToolGuard:
 
     def execute(self, node, state, tested=False):
         self.steps += 1
-        if self.steps > 32768:
+        if self.steps > MAX_STEPS:
             raise ShellGuardError("analysis_limit")
         states = self._execute(node, state, tested)
         if state.errexit and not tested and node.type not in ("list", "if_statement", "function_definition", "negated_command"):
@@ -672,7 +716,7 @@ class StagedToolGuard:
                 parent = node.parent
                 while parent and parent.type in ("array", "string"):
                     parent = parent.parent
-                if not parent or parent.type != "variable_assignment":
+                if (not parent or parent.type != "variable_assignment") and not self.tested_capture_node(node):
                     raise ShellGuardError("unsupported_dynamic_form")
             if any(c.type == "&" for c in node.children):
                 raise ShellGuardError("unsupported_control_flow")
