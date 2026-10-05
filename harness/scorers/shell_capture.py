@@ -8,17 +8,28 @@ import re
 import shlex
 
 
-def _children(node):
-    import bashlex
-    for value in vars(node).values():
-        if isinstance(value, bashlex.ast.node):
-            yield value
-        elif isinstance(value, list):
-            yield from (child for child in value if isinstance(child, bashlex.ast.node))
+def _literal(node):
+    """Return a word's quote-removed literal value, or None if it expands."""
+    text = node.text.decode('utf-8')
+    if node.type in {'word', 'number'}:
+        return re.sub(r'\\(.)', r'\1', text, flags=re.S)
+    if node.type == 'raw_string':
+        return text[1:-1]
+    if node.type == 'string':
+        if any(child.type != 'string_content' for child in node.named_children):
+            return None
+        return re.sub(r'\\([$`"\\\n])', lambda found: '' if found.group(1) == '\n'
+                      else found.group(1), text[1:-1])
+    if node.type in {'command_name', 'concatenation'}:
+        parts = [_literal(child) for child in node.named_children]
+        return None if not parts or None in parts else ''.join(parts)
+    return None
 
 
 def _command_words(node):
-    return [part.word for part in getattr(node, 'parts', []) if part.kind == 'word']
+    name = node.child_by_field_name('name')
+    return [_literal(word) for word in [name, *node.children_by_field_name('argument')]
+            if word is not None]
 
 
 def _sequence(nodes, states):
@@ -30,9 +41,9 @@ def _sequence(nodes, states):
 
 
 def _flow(node, states):
-    """Track dispatch along AST paths without joining exclusive if branches."""
-    if node.kind == 'command':
-        states, unsafe = _sequence(_children(node), states)
+    """Track dispatch along Tree-sitter paths without joining exclusive branches."""
+    if node.type == 'command':
+        states, unsafe = _sequence(node.children, states)
         if unsafe:
             return states, True
         words = _command_words(node)
@@ -41,33 +52,49 @@ def _flow(node, states):
         if words[:3] == ['gh', 'workflow', 'run']:
             return {True}, False
         return states, False
-    if node.kind == 'if':
+    if node.type == 'if_statement':
+        # Conditions run in order until one selects its body; each body is an
+        # exclusive branch entered from the states its condition left behind.
         segments = []
-        for part in node.parts:
-            if part.kind == 'reservedword':
-                segments.append((part.word, []))
-            elif segments:
-                segments[-1][1].append(part)
-        outputs = set()
-        remaining = states
-        has_else = False
+        for child in node.children:
+            for part in (child.children if child.type in {'elif_clause', 'else_clause'} else [child]):
+                if part.type in {'if', 'elif', 'then', 'else', 'fi'}:
+                    segments.append((part.type, []))
+                elif segments:
+                    segments[-1][1].append(part)
+        outputs, remaining, has_else = set(), states, False
         for keyword, parts in segments:
             if keyword in {'if', 'elif'}:
                 remaining, unsafe = _sequence(parts, remaining)
             elif keyword in {'then', 'else'}:
                 branch, unsafe = _sequence(parts, remaining)
-                outputs.update(branch)
+                outputs |= branch
                 has_else |= keyword == 'else'
             else:
                 continue
             if unsafe:
                 return states, True
         return outputs | (set() if has_else else remaining), False
-    return _sequence(_children(node), states)
+    if node.type == 'case_statement':
+        subject = node.child_by_field_name('value')
+        states, unsafe = _sequence([] if subject is None else [subject], states)
+        if unsafe:
+            return states, True
+        # Each arm is entered from the same states. No arm may match, so the
+        # incoming states also continue past esac.
+        outputs = set(states)
+        for item in node.children:
+            if item.type == 'case_item':
+                branch, unsafe = _sequence(item.children, states)
+                if unsafe:
+                    return states, True
+                outputs |= branch
+        return outputs, False
+    return _sequence(node.children, states)
 
 
-def _unsafe_capture(trees):
-    return _sequence(trees, {False})[1]
+def _unsafe_capture(root):
+    return _flow(root, {False})[1]
 
 
 def _mentions_dispatch(text):
@@ -179,10 +206,12 @@ def _substitutions(text, *, prose=False):
                 return cursor + 1, True
             if shell and quote is None:
                 # Case pattern ')' is a lexical delimiter of an arm, not of
-                # its enclosing substitution. bashlex cannot parse case, so
-                # preserve its complete body for the fail-closed token check.
+                # its enclosing substitution: keep the whole case statement
+                # inside its candidate so the parser sees every arm.
                 if cases and cases[-1] == 'body' and text.startswith(';;', cursor):
                     cases[-1] = 'pattern'
+                    # The next word may be `esac`, which closes the statement.
+                    command_start = True
                     cursor += 2
                     continue
                 if char.isalpha() and (cursor == 0 or text[cursor - 1] in ' \t\r\n;|&()<>'):
@@ -283,11 +312,11 @@ def shell_capture_safe(workspace: str, patterns: list[str], source='files',
                        transcript=None) -> tuple[bool, str]:
     """Reject dispatch followed by discovery in one command substitution.
 
-    Only substitution bodies reach bashlex 0.18. Unsupported syntax elsewhere
-    in a script or prose does not invalidate its independent captures. A body
-    with a dispatch token that cannot be parsed fails closed.
+    Only substitution bodies reach the Tree-sitter parser. Invalid syntax
+    elsewhere in a script or prose does not invalidate its independent
+    captures. A body with a dispatch token that cannot be parsed fails closed.
     """
-    import bashlex
+    from .bash_ast import BashParseError, parse_bash
     if source not in {'files', 'transcript'}:
         raise ValueError('shell_capture_safe source must be files or transcript')
     if source == 'transcript':
@@ -313,12 +342,14 @@ def shell_capture_safe(workspace: str, patterns: list[str], source='files',
         for body, complete in _substitutions(text, prose=prose):
             try:
                 if not complete:
-                    raise bashlex.errors.ParsingError('incomplete substitution', body, len(body))
-                trees = bashlex.parse(body + '\n')
-            except (bashlex.errors.ParsingError, NotImplementedError):
+                    raise BashParseError('incomplete_substitution')
+                root = parse_bash(body + '\n')
+            except BashParseError as error:
+                if str(error) == 'parser_unavailable':
+                    raise
                 if _mentions_dispatch(body):
                     return False, f'{name}: shell syntax could not be verified'
                 continue
-            if _unsafe_capture(trees):
+            if _unsafe_capture(root):
                 return False, f'{name}: dispatch and discovery share a command substitution'
     return True, 'no concatenated dispatch/discovery capture'

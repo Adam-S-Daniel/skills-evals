@@ -133,6 +133,18 @@ bounds raise during fixture validation. Missing or malformed evidence, wrong
 capture types, and paths escaping the workspace fail closed. Multiple exact
 log paths are read in their listed order, not by clock time.
 
+| Type | Evidence and constraints |
+| --- | --- |
+| `shell_capture_safe` | `source: files` globs workspace scripts (symlinks escaping the workspace fail); `source: transcript` reads shell-labeled fences (`bash`, `sh`, `shell`, `console`, `zsh`) plus unlabeled fences, inline code and prose that contain `gh workflow run`. Fails when one command substitution runs `gh workflow run` and then `gh run list`, whatever the separator. |
+
+[`harness/scorers/shell_capture.py`](harness/scorers/shell_capture.py) extracts
+each `$(...)` and backtick body lexically, respecting quotes, escapes, comments,
+heredocs, arithmetic and case arms, then parses only that body with the shared
+Tree-sitter entry point (`scorers/bash_ast.py`). `if`/`elif`/`else` and `case`
+arms are exclusive branches. A body that does not parse is ignored unless it
+contains `gh workflow run`, in which case the check fails closed; invalid
+syntax elsewhere never fails the whole script.
+
 ### Parsed configuration and staged-shell objective checks
 
 These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)

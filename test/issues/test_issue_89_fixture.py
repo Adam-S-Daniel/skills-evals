@@ -20,11 +20,11 @@ from unittest import mock
 from urllib.parse import urlparse
 
 import yaml
-import bashlex
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'harness'))
 from scorers import objective, shell_capture
+from scorers.bash_ast import BashParseError, parse_bash
 
 EVAL = ROOT / 'evals/ci-watcher-loops'
 SEED = EVAL / 'seed'
@@ -226,6 +226,16 @@ class TestCiWatcherFixture(unittest.TestCase):
                 (ws / 'watch-preview.sh').write_text(construct + '\n' + GOOD_SCRIPT)
                 self.assertTrue(all(self._score(ws).values()))
 
+    def test_unrelated_invalid_syntax_does_not_invalidate_split_captures(self):
+        # The whole script does not parse, yet every candidate body does.
+        for line in ['if true; then', 'x=(', 'function {', ')', '[[ -n']:
+            with self.subTest(line=line):
+                with self.assertRaises(BashParseError):
+                    parse_bash(line + '\n' + GOOD_SCRIPT)
+                ws = self._good()
+                (ws / 'watch-preview.sh').write_text(line + '\n' + GOOD_SCRIPT)
+                self.assertTrue(all(self._score(ws).values()))
+
     def test_skill_discovery_status_and_separate_conclusion_pattern(self):
         ws = self._ws()
         self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
@@ -348,21 +358,19 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             '```bash\nx=$({ gh workflow run x; } && { gh run list; }\n)\n```'))
 
     def test_guard_is_load_bearing_source_mutation(self):
-        trees = bashlex.parse('gh workflow run x && gh run list\n')
-        self.assertTrue(shell_capture._unsafe_capture(trees))
+        root = parse_bash('gh workflow run x && gh run list\n')
+        self.assertTrue(shell_capture._unsafe_capture(root))
         with mock.patch.object(shell_capture, '_unsafe_capture', return_value=False):
             with self.assertRaises(AssertionError):
                 self.assertFalse(self._reply('```bash\n' + TRAP + '```'))
         self.assertFalse(self._reply('```bash\n' + TRAP + '```'))
 
     def test_unparseable_candidate_only_fails_closed_with_dispatch_token(self):
-        for script in ['x=$(', 'x=$(echo one && echo', 'x=$(case x in x) echo x;; esac)']:
+        for script in ['x=$(', 'x=$(echo one && echo', 'x=$([[ -n )', 'x=$(echo one; function {)']:
             with self.subTest(script=script):
                 self.assertTrue(self._reply('```bash\n' + script + '\n```'))
-        for script in ['x=$(gh workflow run x &&',
-                       'x=$(gh workflow run x; case x in x) gh run list;; esac)',
-                       'x=$(case x in x) gh workflow run x; gh run list;; esac)',
-                       'x=$(case x in x) :;; y) gh workflow run x; gh run list;; esac)']:
+        for script in ['x=$(gh workflow run x &&', 'x=$(gh workflow run x; [[ -n )',
+                       'x=$(function {; gh workflow run x)']:
             with self.subTest(script=script):
                 self.assertFalse(self._reply('```bash\n' + script + '\n```'))
 
@@ -387,7 +395,7 @@ class TestCiWatcherShellCapture(unittest.TestCase):
         script = "printf '%s' $'literal\\'$(gh workflow run x; gh run list)'\n"
         self.assertTrue(self._reply('```bash\n' + script + '```'))
 
-    def test_quoted_or_escaped_dispatch_tokens_fail_closed_in_unsupported_body(self):
+    def test_quoted_or_escaped_dispatch_tokens_are_recognized_in_parsed_body(self):
         for command in ['"gh" workflow run x', "gh 'workflow' run x", 'g\\h workflow run x',
                         '"gh" "workflow" "run" x']:
             with self.subTest(command=command):
@@ -473,11 +481,12 @@ class TestCiWatcherShellCapture(unittest.TestCase):
         return namespace[function_name]
 
     def test_review_source_mutations_are_detected(self):
-        # Whole-script parsing reintroduces finding 1. Missing candidate filtering
+        # Whole-script parsing reintroduces finding 1 (an unrelated open `if`
+        # would invalidate the script). Missing candidate filtering
         # reintroduces finding 4; dropping the AST list check loses all separators.
         mutations = [
             ('shell_capture_safe', '_substitutions(text, prose=prose)', '[(text, True)]',
-             lambda: self.assertTrue(self._reply('```bash\nn=$((n+1))\n' + GOOD_SCRIPT + '```'))),
+             lambda: self.assertTrue(self._reply('```bash\nif true; then\n' + GOOD_SCRIPT + '```'))),
             ('shell_capture_safe', '_mentions_dispatch(body)', 'True',
              lambda: self.assertTrue(self._reply('```bash\nx=$(echo one &&\n```'))),
             ('_transcript_shell', "label in {'bash', 'sh', 'shell', 'console', 'zsh'}", 'True',
@@ -493,6 +502,40 @@ class TestCiWatcherShellCapture(unittest.TestCase):
                 with mock.patch.object(shell_capture, function, mutant):
                     with self.assertRaises(AssertionError):
                         regression()
+
+    def test_constructs_the_parser_supports_are_decided_by_the_ast(self):
+        # Each body parses, so none of these reaches the fail-closed token rule.
+        safe = ['x=$([[ -n "$k" ]] && gh workflow run x)',
+                'x=$(n=$((n+1)); gh run list)',
+                'x=$(for ((n=0;n<2;n++)); do gh run list; done)',
+                'x=$(declare -a a=(one two); gh workflow run x)',
+                'x=$(case k in a) gh workflow run x;; b) gh run list;; esac)',
+                'x=$(if a; then gh workflow run x; elif b; then gh run list; fi)',
+                'x=$(gh run list; case k in a) gh workflow run x;; esac)',
+                'x=$(case x in x) echo x;; esac)']
+        unsafe = ['x=$([[ -n "$k" ]] && gh workflow run x && gh run list)',
+                  'x=$(n=$((n+1)); gh workflow run x; gh run list)',
+                  'x=$(for ((n=0;n<2;n++)); do gh workflow run x; gh run list; done)',
+                  'x=$(declare -a a=(one two); gh workflow run x; gh run list)',
+                  'x=$(case k in a) gh workflow run x;; esac; gh run list)',
+                  'x=$(case $(gh workflow run x) in a) gh run list;; esac)',
+                  'x=$(gh workflow run x; case x in x) gh run list;; esac)',
+                  'x=$(case x in x) gh workflow run x; gh run list;; esac)',
+                  'x=$(case x in x) :;; y) gh workflow run x; gh run list;; esac)',
+                  'x=$(if a; then gh workflow run x; elif b; then :; fi; gh run list)',
+                  'x=$(if gh workflow run x; then :; elif gh run list; then :; fi)']
+        for script in safe + unsafe:
+            with self.subTest(script=script):
+                body, complete = shell_capture._substitutions(script)[0]
+                self.assertTrue(complete)
+                parse_bash(body + '\n')
+                self.assertEqual(self._reply('```bash\n' + script + '\n```'), script in safe)
+
+    def test_unavailable_parser_raises_instead_of_passing(self):
+        from scorers import bash_ast
+        with mock.patch.dict(sys.modules, {'tree_sitter': None}):
+            with self.assertRaisesRegex(bash_ast.BashParseError, 'parser_unavailable'):
+                self._reply('```bash\nx=$(echo one)\n```')
 
     def test_invalid_source_is_rejected(self):
         with self.assertRaises(ValueError):

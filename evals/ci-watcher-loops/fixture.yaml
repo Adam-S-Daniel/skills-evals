@@ -80,10 +80,10 @@ objective_checks:
     paths: ["bin/gh", ".gh/replay/*.json", ".gh/replay/timeline/*.json"]
 
 # Transcript means the final reply supplied to the scorer, not historical
-# raw tool requests. Scripts and Markdown shell examples use a real shell
-# AST for extracted command-substitution bodies; unsupported syntax in a
-# body containing a dispatch token fails closed. Unrelated shell/prose syntax
-# is ignored. The judge covers omitted tool calls,
+# raw tool requests. Scripts and Markdown shell examples use a real Bash
+# AST (Tree-sitter) for extracted command-substitution bodies; a body that
+# contains a dispatch token and does not parse fails closed. Unrelated
+# shell/prose syntax is ignored. The judge covers omitted tool calls,
 # contradictory prose and intent, rather than objective phrase templates.
 judge_rubric: >
   Score correctness, conclusion and restraint from 0 to 10. Correctness:
