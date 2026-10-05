@@ -401,6 +401,11 @@ Not every skill takes the same eval, and some take none. Classify first:
   `pdf-ocr-audit` graduated out of this list: covered by
   [`evals/pdf-ocr-audit/`](evals/pdf-ocr-audit/)
   ([issue #83](https://github.com/Adam-S-Daniel/skills-evals/issues/83)).
+  `browser-testing` is covered by
+  [`evals/browser-testing/`](evals/browser-testing/)
+  ([issue #92](https://github.com/Adam-S-Daniel/skills-evals/issues/92)).
+  Frozen AST commands check spec conventions; actual browser correctness is
+  judged and remains unmeasured by this fixture.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as

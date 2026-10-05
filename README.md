@@ -68,6 +68,9 @@ evals/
   embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
     fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
     seed/                  # a wired Tools collection, an existing tool, and a standalone app
+  browser-testing/         # A/B eval, Class A: add an admin-read draft-preview spec
+    fixture.yaml           # fixed AST command checks and parser/verifier integrity checks
+    seed/                  # pinned platform slice and pure-fs parser dependencies
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric

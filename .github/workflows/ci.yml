@@ -214,6 +214,15 @@ jobs:
         # TestIssue63::test_parallel_pins_agree_with_agentskills_requirements
         # fails the whole suite when the two repos' pins disagree.
         run: pip install pyyaml markdown-it-py==4.2.0 pytest==9.1.1 pytest-xdist==3.8.0
+      - name: Set up Node for the browser-testing AST fixture
+        if: steps.salient.outputs.run == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install browser-testing parser dependencies
+        if: steps.salient.outputs.run == 'true'
+        working-directory: skills-evals/evals/browser-testing/seed
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals
