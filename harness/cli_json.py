@@ -112,9 +112,9 @@ def failed_run_detail(stdout: str, stderr: str, limit: int = 300) -> str:
 # tool calls were invisible after the fact. `tool_trace` keeps a compact,
 # bounded, redacted line per tool call and per tool result, written beside
 # raw.json as `transcripts/tool_trace.json`. That directory is gitignored and
-# never committed to `persistent/eval-results`, but eval.yml uploads the whole
-# `results/` tree as a workflow artifact, which on a public repository anyone
-# signed in can download, so every string is redacted before it is kept.
+# never committed to `persistent/eval-results`, but eval.yml uploads this file
+# (never raw.json, #289) in a workflow artifact, which on a public repository
+# anyone signed in can download, so every string is redacted before it is kept.
 
 TOOL_TRACE_SCHEMA_VERSION = 1
 #: Characters kept of a tool call's input summary and of a tool result.
