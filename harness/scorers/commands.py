@@ -34,7 +34,10 @@ def _executable(workspace: Path, name: str) -> str | None:
     if Path(name).name.casefold() in ("claude", "claude.exe"):
         return None
     if name in INTERPRETERS:
-        return _fixed_interpreter(name)
+        fixed = _fixed_interpreter(name)
+        # Runners keep node outside /usr/bin and /bin; use the same harness node
+        # the child's PATH gets, with the same refusals.
+        return fixed if fixed is not None or name != "node" else _harness_node(workspace)
     path = Path(name)
     path = path if path.is_absolute() else workspace / path
     path = path.resolve()
@@ -48,8 +51,9 @@ def _harness_node(workspace: Path | None) -> str | None:
     """The harness's own node, for hosts that install it outside /usr/bin.
 
     GitHub's runner image puts node in /usr/local/bin and setup-node in its
-    tool cache, so a verifier's PATH lookup of `node` fails there. Only node is
-    exposed, and never one resolved inside the workspace the agent wrote.
+    tool cache, so neither a bare `node` argv nor a verifier's PATH lookup of
+    `node` finds it there. Only node is exposed, and never one resolved inside
+    the workspace the agent wrote.
     """
     if _fixed_interpreter("node") is not None:
         return None
