@@ -36,11 +36,24 @@ The fixture pins the verifier's digest, and that verifier checks the copied
 parser packages from the verifier and from `spec-ast.js`, and requires each
 resolved path to be the reviewed root entrypoint before importing any parser.
 This rejects an `e2e/node_modules` shadow without loading its JavaScript.
+The verifier resolves `e2e/spec-ast.js` to one absolute path, hashes that file,
+and requires that same path. A bare `require("./e2e/spec-ast")` would let Node
+load an extensionless sibling file first, so a candidate file named `spec-ast`
+could exit 0 for every command check. Sibling files such as `e2e/spec-ast` or
+`e2e/spec-ast/index.js` are therefore inert: never loaded, and they change no
+verdict. The check does not reject extra files, because the exact-path load
+already ignores them and a stray file the verifier never reads should not fail
+an otherwise correct spec.
 
 The objective checks recognize direct `test()` declarations and describe
 tags, an early direct `test.skip(!cap.keepsBaseCollection(SITE_ROOT,
 "posts"), ...)`, and relative or Playwright-fixture-`baseURL` navigation.
-They do not resolve helper-driven or dynamic routing. The entry-navigation
+They do not resolve helper-driven or dynamic routing. Known false negatives,
+which fail a correct spec rather than pass a wrong one: a `page.goto` made
+inside a helper function the test calls is not seen by `admin-read` or
+`config-origin`, and a tag written only in the test title string (for example
+`test("name @admin-read", ...)`) is not read, since only the `tag` option on
+`test` or `test.describe` counts. The entry-navigation
 check conservatively treats every `goto` in one test callback as the same
 page; aliasing and separate page contexts are judge scope. The verifier does
 not execute the complete upstream lint suites or a browser.
