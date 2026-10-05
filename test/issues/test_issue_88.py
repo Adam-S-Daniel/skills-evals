@@ -15,7 +15,7 @@ from unittest import mock
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
-from scorers import objective
+from scorers import bash_ast, objective
 
 
 WIDTH_PATH = ["linters", "settings", "lll", "line-length"]
@@ -234,7 +234,34 @@ class ShellStagedToolGuard(CheckWorkspace):
                 raise ImportError("deliberately absent")
             return original(name, *args, **kwargs)
         with mock.patch("builtins.__import__", side_effect=without_parser):
-            self.assert_reason(self.shell(), "parser_unavailable")
+            with self.assertRaises(bash_ast.BashParseError) as ctx:
+                bash_ast.parse_bash("true")
+        self.assertEqual(str(ctx.exception), "parser_unavailable")
+
+    def test_parser_dependency_absent_is_a_scorer_error_not_a_failed_check(self):
+        original = builtins.__import__
+        def without_parser(name, *args, **kwargs):
+            if name == "tree_sitter":
+                raise ImportError("deliberately absent")
+            return original(name, *args, **kwargs)
+        self.target.write_text(SOURCE + GUARDED, encoding="utf-8")
+        with mock.patch("builtins.__import__", side_effect=without_parser):
+            with self.assertRaises(objective.ScorerUnavailableError) as ctx:
+                self.shell(None)
+            # Whatever the workspace holds, including nothing at all.
+            with self.assertRaises(objective.ScorerUnavailableError):
+                self.shell(None, paths=["missing"])
+            fixture = {"objective_checks": [{"id": "g", "type": "shell_staged_tool_guard",
+                                             "paths": ["input"], "tools": ["gofmt"]}]}
+            with self.assertRaises(objective.ScorerUnavailableError):
+                objective.run_checks(fixture, str(self.workspace), str(self.workspace))
+        self.assertNotIsInstance(ctx.exception, ValueError)
+        for needle in ("tree-sitter==0.26.0", "tree-sitter-bash==0.25.1", "pip install"):
+            self.assertIn(needle, str(ctx.exception))
+
+    def test_parser_present_scores_unchanged(self):
+        self.assertTrue(self.shell()[0])
+        self.assert_reason(self.shell(SOURCE + CALL), "availability_guard_missing")
 
     def test_external_symlink(self):
         outside = tempfile.TemporaryDirectory()
@@ -755,3 +782,6 @@ class ParsedCheckIntegration(CheckWorkspace):
                             self.assertIn("tree-sitter==0.26.0", args)
                             self.assertIn("tree-sitter-bash==0.25.1", args)
         self.assertEqual(len(installs), 3)
+        for args in installs:
+            self.assertEqual({a for a in args if a.startswith("tree-sitter")},
+                             set(bash_ast.PARSER_REQUIREMENTS))

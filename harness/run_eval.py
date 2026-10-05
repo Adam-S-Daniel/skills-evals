@@ -2021,6 +2021,19 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 objective_checks = objective.run_checks(
                     fixture, str(workspace), str(seed),
                     transcript=result.get("transcript"))
+            except objective.ScorerUnavailableError as exc:
+                # A scoring dependency is missing on THIS machine: not the
+                # agent's failure, so the trial is an error (excluded from
+                # every check's denominator, listed in `trial_errors`), never
+                # a failed check. The judge is skipped with the objective.
+                error = {"type": "scorer_unavailable", "detail": str(exc)}
+                _write_summary(args.results_dir, fixture["skill"], arm_name,
+                               timestamp, error, agent_summary, None, None, raw,
+                               extra=extra, harness_version=harness_version,
+                               models=agent_models, arm_dir=out_dir)
+                return {"arm": arm_name, "error": error,
+                        "agent": agent_summary, "objective_checks": None,
+                        "judge": None, "models_used": agent_models}
             except objective.FixtureError as exc:
                 error = {"type": "invalid_fixture", "detail": str(exc)}
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
@@ -3293,6 +3306,12 @@ def main() -> int:
         except guidance.GuidanceError as exc:
             # run_setup's and the objective git checks' sink checks land here.
             print(f"configuration error: {exc}")
+            return 2
+        except objective.ScorerUnavailableError as exc:
+            # Not a fixture error and not a failed check: exit 2, named.
+            print(f"scorer_unavailable: {exc}")
+            _write_pre_run_error(args, fixture, "scorer_unavailable", str(exc),
+                                 fixture_name=prepared[0]["name"])
             return 2
         except objective.FixtureError as exc:
             # `SeedTooLarge` is a `FixtureError`, so one clause covers both.

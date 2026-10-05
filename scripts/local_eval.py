@@ -85,6 +85,15 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    `.git` entry in any parent directory:
    `results/` is not gitignored, so summaries written there would ride into a
    pull request.
+2b. Refuses (naming the pinned versions and the pip command) when a selected
+   fixture has a check that parses Bash (`objective.PARSER_BACKED_CHECKS`,
+   today `shell_staged_tool_guard`) and this python cannot import
+   `tree_sitter`/`tree_sitter_bash`. Install `tree-sitter==0.26.0
+   tree-sitter-bash==0.25.1`, the CI pins, in the python that runs this
+   wrapper (a venv works). run_eval, which this wrapper starts per trial,
+   also never scores a missing parser as a failed check: the trial is an
+   error (`scorer_unavailable`), counted in `errors`, excluded from every
+   check's pass rate.
 3. Refuses a fixture that is not a skill fixture, whose `env:` block names a
    variable rule 1 refuses (run_eval applies that block last, so it would hand
    the variable back to every arm), whose models cannot be selected, or whose
@@ -179,6 +188,7 @@ RUN_EVAL = HARNESS_DIR / "run_eval.py"
 sys.path.insert(0, str(HARNESS_DIR))
 import guidance  # noqa: E402
 import run_eval  # noqa: E402
+from scorers import bash_ast, objective  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import local_eval_guard  # noqa: E402
 from local_eval_guard import (GUARD_EXIT, Refused, check_settings_file,  # noqa: E402,F401
@@ -254,6 +264,27 @@ def check_fixture_settings(seeds: list[Path], registries: list[Path]) -> None:
     for registry in registries:
         for path in sorted((registry / ".claude").glob("settings*.json")):
             check_settings_file(path)
+
+
+def check_scorer_dependencies(fixtures: list[dict]) -> None:
+    """Refuse when a selected fixture's checks need a parser this python lacks.
+
+    Without it the scorer cannot score `shell_staged_tool_guard` at all, and a
+    run would spend its trials only to record every one as a scorer error.
+    """
+    needing = sorted({item["fixture"]["skill"] + (f"/{item['name']}" if item.get("name") else "")
+                      for item in fixtures
+                      for check in item["fixture"].get("objective_checks") or []
+                      if isinstance(check, dict)
+                      and check.get("type") in objective.PARSER_BACKED_CHECKS})
+    if needing and not bash_ast.parser_importable():
+        raise Refused(
+            f"{', '.join(needing)} use a check that parses Bash with Tree-sitter "
+            f"({', '.join(bash_ast.PARSER_REQUIREMENTS)}), which this python "
+            f"({sys.executable}) cannot import, and a missing parser would "
+            "otherwise score as the agent's failure. Install the CI pins "
+            f"(`{bash_ast.install_command(sys.executable)}`, ideally in a "
+            "venv) and re-run. Nothing run.")
 
 
 def _git_env() -> dict:
@@ -778,6 +809,7 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
             item["registry"] = resolve_fixture_registry(
                 item["fixture"], registry_flags, needed="with_skill" in arms)
             item["models"] = select_models(item["fixture"], args.no_judge)
+        check_scorer_dependencies(fixtures)
         check_fixture_settings(
             [item["dir"] / run_eval.SEED_DIR for item in fixtures],
             [Path(f.split("=", 1)[1]) for f in registry_flags]

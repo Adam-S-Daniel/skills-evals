@@ -210,7 +210,13 @@ root) names `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` or such an
 `env` variable or cannot be read, when
 `--results-dir` resolves inside any git repository or is not empty, and when
 the skill under test is already visible to an empty workspace (a user-level
-copy would contaminate the `without_skill` arm). Every child it starts sees
+copy would contaminate the `without_skill` arm), and when a selected fixture
+has a check that parses Bash (`shell_staged_tool_guard`) and this python cannot
+import `tree_sitter`/`tree_sitter_bash`: install the CI pins
+(`python3 -m pip install tree-sitter==0.26.0 tree-sitter-bash==0.25.1`, in a
+venv if you like) first. `run_eval.py` itself never scores a missing parser as
+a failed check either: the trial is a `scorer_unavailable` error, listed in
+`trial_errors` and left out of every check's pass rate. Every child it starts sees
 only an allow-listed environment (no `XDG_*`): PATH, HOME, LANG, LANGUAGE,
 `LC_*`, TERM, TMPDIR, TZ, USER, LOGNAME, SHELL, `HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` and their lowercase forms, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,

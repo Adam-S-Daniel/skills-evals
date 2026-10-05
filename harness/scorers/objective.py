@@ -1438,6 +1438,15 @@ class FixtureError(ValueError):
     """A fixture asks for something this scorer cannot honour as written."""
 
 
+class ScorerUnavailableError(RuntimeError):
+    """A check could not run because a scoring dependency is missing here.
+
+    Deliberately not a `ValueError`: the checks turn those into a failed
+    check, and a missing parser says nothing about the agent's work. The
+    runner records the trial as an error, outside every check's denominator.
+    """
+
+
 class SeedTooLarge(FixtureError):
     """A seed file is bigger than the provenance index will read.
 
@@ -3728,8 +3737,16 @@ def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> 
                 or any(not isinstance(tool, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tool)
                        for tool in tools) or len(set(tools)) != len(tools)):
             raise _ObjectiveInputError("invalid_constraints")
-        from .bash_ast import BashParseError, parse_bash
+        from .bash_ast import (BashParseError, install_command, parse_bash,
+                               parser_importable)
         from .shell_guard import StagedToolGuard, ShellGuardError
+        if not parser_importable():
+            # The scoring environment lacks the pinned parser. That is not
+            # the agent's failure, so it is not a failed check, whatever the
+            # workspace holds: the runner records the trial as an error.
+            raise ScorerUnavailableError(
+                "shell_staged_tool_guard: the Bash parser is not installed; "
+                + install_command())
         for rel in patterns:
             text = _objective_file_bytes(workspace, rel)
             try:
@@ -3777,6 +3794,9 @@ CHECKS = {
     "dir_listing_matches": dir_listing_matches,
 }
 
+
+#: Check types that need the pinned Bash parser wheels to run at all.
+PARSER_BACKED_CHECKS = frozenset({"shell_staged_tool_guard"})
 
 _CHECK_META_KEYS = {"id", "description", "type", "paths"}
 _WORKFLOW_STEP_USES_KEYS = {

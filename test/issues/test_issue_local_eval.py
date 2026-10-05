@@ -265,6 +265,64 @@ class TestLocalEval(unittest.TestCase):
                 self.assertNotIn("example-value", proc.stderr)
                 self.assertFalse(self.out.exists())
 
+    def _parser_blocker(self) -> Path:
+        """A directory whose `tree_sitter` cannot be imported, for PYTHONPATH."""
+        package = self.root / "no-parser" / "tree_sitter"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text(
+            "raise ImportError('deliberately absent')\n", encoding="utf-8")
+        return package.parent
+
+    def _guard_fixture(self, with_guard_check: bool) -> Path:
+        eval_dir = self.root / "fixture-guard"
+        shutil.copytree(EVAL_DIR, eval_dir)
+        if with_guard_check:
+            path = eval_dir / "fixture.yaml"
+            fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+            fixture["objective_checks"].append(
+                {"id": "guard", "type": "shell_staged_tool_guard",
+                 "paths": ["hook.sh"], "tools": ["gofmt"]})
+            path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def test_refuses_a_parser_backed_fixture_when_the_parser_cannot_import(self):
+        # A missing parser must stop the run before any CLI call, naming the
+        # pins and the pip command, not spend trials that cannot be scored.
+        registry = self._registry()
+        proc = self._run(str(self._guard_fixture(True)), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"PYTHONPATH": str(self._parser_blocker())})
+        self._assert_nothing_ran(proc)
+        for needle in ("tree-sitter==0.26.0", "tree-sitter-bash==0.25.1",
+                       "pip install", "Nothing run"):
+            self.assertIn(needle, proc.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_a_fixture_without_a_parser_backed_check_does_not_need_the_parser(self):
+        registry = self._registry()
+        proc = self._run(str(self._guard_fixture(False)), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"PYTHONPATH": str(self._parser_blocker())})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_scorer_dependency_check_in_process(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        guarded = {"fixture": {"skill": "s", "objective_checks": [
+            {"id": "g", "type": "shell_staged_tool_guard"}]}, "name": None}
+        plain = {"fixture": {"skill": "s", "objective_checks": [
+            {"id": "f", "type": "file_count"}]}, "name": None}
+        with mock.patch.object(local_eval.bash_ast, "parser_importable",
+                               return_value=False):
+            local_eval.check_scorer_dependencies([plain])
+            with self.assertRaises(local_eval.Refused) as ctx:
+                local_eval.check_scorer_dependencies([plain, guarded])
+        self.assertIn("tree-sitter==0.26.0", str(ctx.exception))
+        with mock.patch.object(local_eval.bash_ast, "parser_importable",
+                               return_value=True):
+            local_eval.check_scorer_dependencies([plain, guarded])
+
     def test_no_child_process_receives_a_refused_variable(self):
         # The only ANTHROPIC_ name any child may see is the probe's own
         # black-holed endpoint; the version call, every arm and every judge
