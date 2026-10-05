@@ -111,6 +111,75 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### Parsed configuration and staged-shell objective checks
+
+These opt-in checks implement [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md)
+in [`harness/scorers/objective.py`](harness/scorers/objective.py). Existing
+check types and fixtures retain their scoring behavior.
+
+| Type | Constraint keys | Evidence |
+| --- | --- | --- |
+| `parsed_config_values` | `format`, optional `expected` | Strict JSON or composed YAML, typed values at mapping-key paths; omitted expectations check parsing only |
+| `shell_staged_tool_guard` | `tools` | Real Bash AST: every configured tool has a reachable call receiving staged Go paths under positive availability and nonempty guards; missing tools skip successfully, including the script's final status; quoted arrays or split scalar/xargs paths |
+
+Both require a nonempty `paths` list of exact workspace-relative regular
+files, without globs, absolute paths, `..`, or symlinks escaping the workspace.
+Each file must satisfy the constraints. Missing files fail; input is bounded
+to 64 KiB and trees to depth 64 and 4096 nodes. Failures contain fixed named
+reasons, without file contents or parser errors. Unknown constraint keys are
+rejected by fixture validation.
+
+```yaml
+- id: go-width
+  type: parsed_config_values
+  paths: [.golangci.yml]
+  format: yaml
+  expected:
+    - path: [linters, settings, lll, line-length]
+      equals: 100
+    - path: [linters, enable]
+      contains: lll
+- id: staged-go
+  type: shell_staged_tool_guard
+  paths: [scripts/lint-staged.sh]
+  tools: [gofmt, golangci-lint]
+```
+
+Configuration roots must be mappings with string keys and finite JSON-shaped
+values. Duplicate keys at any depth, YAML merge keys, custom tags, recursive
+aliases, malformed structures, and invalid JSON fail. Equality is recursive
+and typed (`"100"`, `100`, `100.0`, and `true` differ). `contains` requires a
+list and compares typed members. Each expected entry has exactly `path` plus
+`equals` or `contains`; paths are nonempty lists of string mapping keys.
+Missing keys report `missing_key_<depth>` (zero-based), distinguishing a
+missing root branch from a commented-out leaf. Wrong values and types report
+`value_mismatch` and `value_type_mismatch`.
+
+The shell check parses Bash with Tree-sitter and tracks staged provenance,
+availability, nonempty facts, and command statuses separately. It recognizes
+newline scalar/split-array substitutions, delimiter-matched `mapfile` and
+while-read process-substitution collectors, and the reference hook's
+structurally validated staged-array filter helper. Calls pass separate paths
+through an unquoted scalar, quoted array, or guarded scalar-to-xargs stream;
+quoted newline scalars fail `scalar_paths_quoted`.
+
+Availability guards are `command -v`, `type` / `type -P`, `hash`, or a helper
+whose entire body performs that query. Diagnostic helpers and the reference
+filter may coexist. Nested `if`/`else`, `&&`/`||`, negation, successful early
+skips, `set`, stderr/null redirections, capture-and-test, and RC accumulators
+are recognized. A script's final status matters: a missing-tool path that
+implicitly or explicitly exits nonzero reports `missing_tool_nonzero_exit`.
+An installed linter's failure remains distinct from a missing-tool failure.
+Reassignment clears provenance and nonempty facts.
+
+Comments, literal strings/heredocs, disconnected guards, and unreachable
+branches supply no evidence. Dynamic execution, source commands, aliases,
+indirect expansion, arbitrary helpers/substitutions, general loops, wrappers,
+and unrecognized conditions fail with named reasons. Parser recovery nodes
+fail `invalid_bash`. The exact supported forms, filename limits, dependency
+pins, and analysis bounds are documented in
+[ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md).
+
 ### Command objective check
 
 | Check type | Constraints | Evidence |
@@ -125,8 +194,11 @@ must resolve inside the final workspace, including symlink resolution. Direct
 
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
-`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
-the local harness's guard launcher. Both CI and local scoring use the same
+`claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
+is a directory containing just a symlink to the harness's own `node` (never
+one inside the workspace) appended, so PATH lookups of `node` work on hosts
+such as GitHub runners that install it in `/usr/local/bin`. It inherits no
+credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
 spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
@@ -389,8 +461,7 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `code-quality`,
-  `admin-config-render`.
+  objective checks + thin judge. Candidates: `code-quality`.
   (`github-actions-sha-pinning` was also Class A; it has already shipped —
   see "Backfill order" below.) `rename-pdfs` graduated out of this list:
   covered by `evals/rename-pdfs/` (issue #82). `post-failure-comment`
@@ -407,6 +478,13 @@ Not every skill takes the same eval, and some take none. Classify first:
   the pinned platform verifier checks the release refs and caller parity, while
   the offline GitHub replay records whether a write was attempted. The live
   release and deployment steps are outside this fixture.
+  `admin-config-render` graduated out of this list: covered by
+  [`evals/admin-config-render/`](evals/admin-config-render/)
+  ([issue #87](https://github.com/Adam-S-Daniel/skills-evals/issues/87)).
+  It scores a real render: three `command_succeeds` checks run a seed script
+  that drives the vendored Ruby renderer and parses its output. The scorer's
+  fixed `PATH` needs `ruby` at `/usr/bin` or `/bin`, and a missing Ruby fails
+  the checks rather than skipping them.
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
@@ -435,7 +513,15 @@ Not every skill takes the same eval, and some take none. Classify first:
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over
   absolute rubric scores. Expect noise; run more trials. Candidates:
-  `adam-writing-style`, `finding-unknowns`.
+  `adam-writing-style`. `finding-unknowns` now has one Class C fixture at
+  [`evals/finding-unknowns/`](evals/finding-unknowns/) for a pre-build
+  unknowns pass ([issue #78](https://github.com/Adam-S-Daniel/skills-evals/issues/78));
+  during-build and post-build behavior remains uncovered. The pairwise schema
+  and scorer exist, but [`harness/run_eval.py`](harness/run_eval.py) currently
+  rejects a judged pairwise run before either arm with
+  `judge_mode_unsupported` (exit 2). Its comment attributes the missing
+  runner wiring to [issue #97](https://github.com/Adam-S-Daniel/skills-evals/issues/97),
+  which is closed; this implementation gap remains.
 
   A Class C fixture says so in its `judge:` block: `mode: pairwise` plus
   `references:` ({name, path} entries, relative to the fixture dir — a path

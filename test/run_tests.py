@@ -24585,7 +24585,7 @@ class TestIssue83(unittest.TestCase):
 
     def _assert_pass_count(self, ws: Path, expected: int, failed: set[str]) -> None:
         results = self._run(ws)
-        self.assertEqual(len(results), 12)
+        self.assertEqual(len(results), 13)
         self.assertEqual(sum(bool(row["passed"]) for row in results.values()), expected)
         self.assertEqual({name for name, row in results.items() if not row["passed"]}, failed)
 
@@ -24665,9 +24665,9 @@ class TestIssue83(unittest.TestCase):
         self.assertEqual(fixture["requires"]["python"],
                          [{"package": "pypdf", "version": "6.16.2", "published": "2026-08-23"}])
         checks = fixture["objective_checks"]
-        self.assertEqual(len(checks), 12)
+        self.assertEqual(len(checks), 13)
         self.assertEqual({row["type"] for row in checks}, {"file_matches", "files_unchanged"})
-        self.assertEqual(len({row["id"] for row in checks}), 12)
+        self.assertEqual(len({row["id"] for row in checks}), 13)
         for check in checks:
             if check["type"] == "file_matches":
                 self.assertTrue(check["require_present"])
@@ -24676,6 +24676,9 @@ class TestIssue83(unittest.TestCase):
         verdict_checks = [row["id"] for row in checks if row["id"].startswith("verdict-")]
         self.assertEqual(verdict_checks, [f"verdict-{index:02d}" for index in range(1, 9)])
         self.assertEqual(set(verdict_checks), set(self.CHECK_BY_FILE.values()))
+        format_check = next(row for row in checks if row["id"] == "report-absolute-paths")
+        self.assertEqual(len(format_check["must_match"]), len(self.FILES))
+        self.assertEqual(len(format_check["must_not_match"]), 1)
         restraint = next(row for row in checks if row["id"] == "archive-unchanged")
         self.assertEqual(restraint["paths"], ["archive/*", "archive/.*"])
         self.assertEqual(restraint.get("by", "path"), "path")
@@ -24686,8 +24689,110 @@ class TestIssue83(unittest.TestCase):
         self._assert_failed(ws, *(row["id"] for row in checks if row["id"] != "archive-unchanged"))
         self._assert_pass_count(ws, 1, {row["id"] for row in checks if row["id"] != "archive-unchanged"})
 
-    def test_correct_report_passes_all_twelve_checks(self):
-        self._assert_pass_count(self._ws(), 12, set())
+    def test_correct_report_passes_all_thirteen_checks(self):
+        self._assert_pass_count(self._ws(), 13, set())
+
+    def test_supported_path_styles_keep_verdicts_independent_of_absolute_format(self):
+        for style in ("archive", "bare", "work/archive", "/archive", "/work/archive", "absolute"):
+            with self.subTest(style=style):
+                ws = self._ws()
+                report = self._report(ws)
+                for name in self.FILES:
+                    absolute = str(ws.resolve() / "archive" / name)
+                    if style == "archive":
+                        replacement = f"archive/{name}"
+                    elif style == "bare":
+                        replacement = name
+                    elif style == "work/archive":
+                        replacement = f"work/archive/{name}"
+                    elif style == "/archive":
+                        replacement = f"/archive/{name}"
+                    elif style == "/work/archive":
+                        replacement = f"/work/archive/{name}"
+                    else:
+                        replacement = absolute
+                    report = report.replace(absolute, replacement)
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                if style in ("archive", "bare", "work/archive"):
+                    self._assert_failed(ws, "report-absolute-paths")
+                    self._assert_pass_count(ws, 12, {"report-absolute-paths"})
+                else:
+                    self._assert_pass_count(ws, 13, set())
+        ws = self._ws()
+        row = "| archive/quarterly-report.pdf | Yes | 0/2 pages have embedded text — image-only scan |"
+        (ws / "audit.md").write_text(self._report(ws).replace(
+            str(ws.resolve() / "archive" / "quarterly-report.pdf"),
+            "archive/quarterly-report.pdf"), encoding="utf-8")
+        self.assertIn(row, (ws / "audit.md").read_text(encoding="utf-8"))
+        self._assert_failed(ws, "report-absolute-paths")
+
+        for style in ("archive", "bare", "work/archive"):
+            for decoration in ("", "`", "**"):
+                for outer_pipes in (True, False):
+                    for quote in (True, False):
+                        with self.subTest(style=style, decoration=decoration,
+                                          outer_pipes=outer_pipes, quote=quote):
+                            ws = self._ws()
+                            lines = [self.HEADER, self.SEPARATOR]
+                            for name, (_case, verdict) in self.FILES.items():
+                                path = (f"archive/{name}" if style == "archive" else
+                                        name if style == "bare" else f"work/archive/{name}")
+                                row_text = (f"{decoration}{path}{decoration} | "
+                                            f"{decoration}{verdict}{decoration} | "
+                                            f"{self.RATIONALES[name]} |")
+                                if outer_pipes:
+                                    row_text = "| " + row_text
+                                else:
+                                    row_text = row_text[:-1].rstrip()
+                                if quote:
+                                    row_text = "> " + row_text
+                                lines.append(row_text)
+                            if quote:
+                                lines = ["> " + line for line in lines]
+                            (ws / "audit.md").write_text(
+                                "\n".join([*lines, self.SUMMARY]), encoding="utf-8")
+                            self._assert_failed(ws, "report-absolute-paths")
+
+    def test_relative_path_verdict_errors_are_caught_after_valid_absolute_rows(self):
+        styles = ("archive", "bare", "work/archive")
+        for name, (_case, correct) in self.FILES.items():
+            wrong = "Yes" if correct != "Yes" else "No"
+            bad_verdicts = (wrong, correct + "?", correct + " — maybe", correct + " or " + wrong)
+            for style in styles:
+                for verdict in bad_verdicts:
+                    with self.subTest(name=name, style=style, verdict=verdict):
+                        ws = self._ws()
+                        if style == "archive":
+                            path = f"archive/{name}"
+                        elif style == "bare":
+                            path = name
+                        else:
+                            path = f"work/archive/{name}"
+                        duplicate = f"| {path} | {verdict} | conflicting row |\n"
+                        (ws / "audit.md").write_text(self._report(ws) + duplicate,
+                                                      encoding="utf-8")
+                        self._assert_failed(ws, self.CHECK_BY_FILE[name],
+                                            "report-absolute-paths")
+
+    def test_absolute_path_check_fails_independently_of_verdict_checks(self):
+        ws = self._ws()
+        report = self._report(ws)
+        relative = str(ws.resolve() / "archive" / "quarterly-report.pdf")
+        report = report.replace(relative, "work/archive/quarterly-report.pdf")
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
+
+        ws = self._ws()
+        report = self._report(ws) + (
+            "| work/archive/quarterly-report.pdf | Yes | duplicate relative row |\n")
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
+
+        ws = self._ws()
+        (ws / "audit.md").write_text(
+            self._report(ws, {"quarterly-report.pdf": "No"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-02")
+
 
     def test_each_objective_behavior_check_can_fail_in_isolation(self):
         for check_id, old, new in (
@@ -24699,6 +24804,12 @@ class TestIssue83(unittest.TestCase):
                 report = self._report(ws).replace(old, new)
                 (ws / "audit.md").write_text(report, encoding="utf-8")
                 self._assert_failed(ws, check_id)
+        ws = self._ws()
+        path = str(ws.resolve() / "archive" / "quarterly-report.pdf")
+        (ws / "audit.md").write_text(
+            self._report(ws).replace(path, "work/archive/quarterly-report.pdf"),
+            encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
         for name, (_case, correct) in self.FILES.items():
             with self.subTest(name=name):
                 ws = self._ws()
@@ -24706,15 +24817,15 @@ class TestIssue83(unittest.TestCase):
                 (ws / "audit.md").write_text(self._report(ws, {name: wrong}), encoding="utf-8")
                 self._assert_failed(ws, self.CHECK_BY_FILE[name])
 
-    def test_filename_only_fallback_reports_unknown_and_scores_three_of_twelve(self):
+    def test_filename_only_fallback_reports_unknown_and_scores_four_of_thirteen(self):
         ws = self._ws()
         # An explicit Unknown fallback supplies no verdicts or answer-key counts.
         (ws / "audit.md").write_text(self._filename_only_report(ws), encoding="utf-8")
         failed = set(self.CHECK_BY_FILE.values()) | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 3, failed)
+        self._assert_pass_count(ws, 4, failed)
 
-    def test_best_simple_filename_heuristic_scores_at_most_six_of_twelve(self):
+    def test_best_simple_filename_heuristic_scores_at_most_seven_of_thirteen(self):
         ws = self._ws()
         names = [path.name.casefold() for path in (ws / "archive").iterdir()]
         active_words = [word for word in ("scan", "scanned", "invoice", "lease", "signed")
@@ -24728,34 +24839,34 @@ class TestIssue83(unittest.TestCase):
                         self._filename_only_report(ws, scan_words=words, fallback="No"),
                         encoding="utf-8")
                     results = self._run(ws)
-                    self.assertEqual(len(results), 12)
+                    self.assertEqual(len(results), 13)
                     scores.append(sum(bool(row["passed"]) for row in results.values()))
         self.assertEqual(len(scores), 31)
-        self.assertLessEqual(max(scores), 6)
-        self.assertEqual(max(scores), 6)
+        self.assertLessEqual(max(scores), 7)
+        self.assertEqual(max(scores), 7)
         (ws / "audit.md").write_text(
             self._filename_only_report(ws, scan_words=("scan", "invoice", "lease"), fallback="No"),
             encoding="utf-8")
         results = self._run(ws)
-        self.assertEqual(sum(bool(row["passed"]) for row in results.values()), 5)
+        self.assertEqual(sum(bool(row["passed"]) for row in results.values()), 6)
 
-    def test_blanket_no_with_self_computed_eight_no_summary_scores_seven_of_twelve(self):
+    def test_blanket_no_with_self_computed_eight_no_summary_scores_eight_of_thirteen(self):
         ws = self._ws()
         (ws / "audit.md").write_text(self._filename_only_report(ws, fallback="No"),
                                       encoding="utf-8")
         failed = {self.CHECK_BY_FILE[name] for name, (_case, correct) in self.FILES.items()
                   if correct != "No"} | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 7, failed)
+        self._assert_pass_count(ws, 8, failed)
 
-    def test_blanket_yes_with_self_computed_summary_scores_five_of_twelve(self):
+    def test_blanket_yes_with_self_computed_summary_scores_six_of_thirteen(self):
         ws = self._ws()
         (ws / "audit.md").write_text(self._filename_only_report(ws, fallback="Yes"),
                                       encoding="utf-8")
         failed = {self.CHECK_BY_FILE[name] for name, (_case, correct) in self.FILES.items()
                   if correct != "Yes"} | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 5, failed)
+        self._assert_pass_count(ws, 6, failed)
 
     def test_garbage_quality_threshold_is_the_wrong_verdict(self):
         ws = self._ws()
@@ -24767,12 +24878,12 @@ class TestIssue83(unittest.TestCase):
         report = "\n".join(line for line in self._report(ws).splitlines()
                             if "/POLICY.PDF" not in line)
         (ws / "audit.md").write_text(report, encoding="utf-8")
-        self._assert_failed(ws, "verdict-08")
+        self._assert_failed(ws, "verdict-08", "report-absolute-paths")
 
         ws = self._ws()
         report = self._report(ws).replace("/POLICY.PDF", "/policy.pdf")
         (ws / "audit.md").write_text(report, encoding="utf-8")
-        self._assert_failed(ws, "verdict-08")
+        self._assert_failed(ws, "verdict-08", "report-absolute-paths")
 
     def test_markdown_quotes_decoration_whitespace_and_optional_pipes_pass(self):
         for decoration in ("", "`", "**", "**`"):
@@ -24791,15 +24902,17 @@ class TestIssue83(unittest.TestCase):
                     self._assert_failed(ws)
 
     def test_incidental_mentions_and_inexact_paths_do_not_supply_a_row(self):
-        for replacement in ("archive/quarterly-report.pdf", "/elsewhere/quarterly-report.pdf",
-                            "/tmp/archive/prefix-quarterly-report.pdf", "/tmp/archive/quarterly-report.pdf.bak"):
+        for replacement in ("/elsewhere/quarterly-report.pdf",
+                            "/tmp/archive/prefix-quarterly-report.pdf",
+                            "/tmp/archive/quarterly-report.pdf.bak",
+                            "quarterly-report.pdf.bak", "prefix-quarterly-report.pdf"):
             with self.subTest(path=replacement):
                 ws = self._ws()
                 full = str(ws.resolve() / "archive" / "quarterly-report.pdf")
                 report = self._report(ws).replace(full, replacement)
                 report += f"I inspected {full}: Yes.\n"
                 (ws / "audit.md").write_text(report, encoding="utf-8")
-                self._assert_failed(ws, "verdict-02")
+                self._assert_failed(ws, "verdict-02", "report-absolute-paths")
 
     def test_verdict_tokens_are_leading_and_word_bounded(self):
         for filename, (_case, correct) in self.FILES.items():
@@ -25100,7 +25213,7 @@ class TestIssue83(unittest.TestCase):
                                       capture_output=True, text=True, cwd=str(REPO_ROOT))
                 self.assertEqual(proc.returncode, exit_code, proc.stdout + proc.stderr)
                 rows = json.loads(proc.stdout)["checks"]
-                self.assertEqual(len(rows), 12)
+                self.assertEqual(len(rows), 13)
                 self.assertEqual({row["id"] for row in rows if not row["passed"]}, failed)
 
 
@@ -36495,6 +36608,9 @@ class B:
 
     def test_mocked_invocation_contract_and_authoritative_suite_override(self):
         from issues import test_issue_97 as issue97
+        suite_case = issue97.TestIssue97()
+        self.addCleanup(suite_case.doCleanups)
+        suite_case.setUp()
         supplied = {self.CHILD: '', 'PROBE': 'yes'}
         argv = [sys.executable, '-']
         stdin = object()
@@ -36507,8 +36623,10 @@ class B:
             self.assertEqual(run.call_args.kwargs['cwd'], '/tmp')
             self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
             self.assertEqual(supplied[self.CHILD], '')
-            self.assertIs(issue97.TestIssue97()._run_suite(supplied), result)
-            self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
+            self.assertIs(suite_case._run_suite(supplied), result)
+            self.assertEqual(run.call_args.kwargs['env'],
+                             {self.CHILD: '1', 'PROBE': 'yes',
+                              'CLAUDE_BIN': str(suite_case.cli)})
         with mock.patch.dict(os.environ, {self.CHILD: '1'}, clear=True), mock.patch.object(subprocess, 'run') as run:
             with self.assertRaises(unittest.SkipTest):
                 TestIssue84Round5()._guarded_invoke(argv, cwd='/tmp', env={})

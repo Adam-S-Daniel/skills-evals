@@ -1,4 +1,4 @@
-# ADR 0005: The improvement loop reuses skill-creator's description loop and measures with this harness
+# ADR 0005: The improvement loop reuses skill-creator and measures through local_eval
 
 - **Status:** proposed (2026-10-04). Built and tested with fakes only; no
   real run has been made.
@@ -71,13 +71,14 @@ this harness or it is not measured the way every other number here is.
    name `SKILL.md` only and may not touch the frontmatter (the name is fixed;
    the description belongs to the trigger half). A diff that breaks either
    rule is recorded as `invalid-proposal` and nothing is measured.
-3. **Measurement — this harness.** Two scratch registries are extracted from
+3. **Measurement — this harness through local_eval.** Two scratch registries are extracted from
    `git archive <ref>` of the local registry checkout; they carry no `.git`,
    so there is no remote and no push path in them. Baseline and candidate
-   are each one `harness/run_eval.py evals/<skill> --arm with_skill
-   --trials 3` against their scratch copy. `scripts/local_eval.py`
-   ([PR #230](https://github.com/Adam-S-Daniel/skills-evals/pull/230), open)
-   is deliberately not a dependency; see Consequences.
+   are each one `scripts/local_eval.py evals/<skill> --arm with_skill
+   --trials 3` against their scratch copy. The wrapper invokes
+   `harness/run_eval.py` for each trial, with a fixed `--timestamp` so the
+   loop can read every trial summary. Each invocation gets its own empty
+   directory under `runs/<phase>/<skill>/<timestamp>/`.
 4. **Split and acceptance.** The skill needs at least three nested fixtures
    (else exit 2, "needs more fixtures"). In name order, validation is the
    fixture at `rotation % n`, where `rotation` defaults to the number of
@@ -138,13 +139,15 @@ this harness or it is not measured the way every other number here is.
   holds out 40% of its query set with its own seed; this script holds out a
   fixture. Removing the validation prompt from the query set is what keeps
   the two from leaking into each other.
-- **Convergence with PR #230.** `local_eval.py` adds the guards a local run
-  should have (refusing `ANTHROPIC_*` and other credential variables, an
-  allow-listed child environment, a results directory outside every work
-  tree, a contamination probe). This script calls `run_eval.py` directly
-  and has none of them. When #230 merges, `Runner.run_eval` should run
-  through `local_eval.py` (or its guard functions) instead, so the loop
-  inherits them; the record and decision code do not change.
+- **Guarded measurements.** After [PR #230](https://github.com/Adam-S-Daniel/skills-evals/pull/230)
+  merged, `Runner.run_eval` routes both measurements through `local_eval.py`.
+  Credential-variable refusal, the allow-listed child environment, the
+  launch-time settings guard, the outside-repository results check,
+  contamination probe and `LOCAL_EXHIBIT` marking apply to these eval runs.
+  Exit 2 records the phase and refusal once, without retry or a later phase.
+  An errored or missing trial remains inconclusive rather than being averaged
+  away. The skill-creator trigger loop and body proposal use the same
+  environment policy and guard launcher directly (see Review round 1 below).
 - Not done here, from #71: the registry pull request itself, the
   `docs/skill-impact.md` entry, `improve.yml`, the idempotency check on an
   open `eval-improve/<skill>` branch, the budget refusal, and publishing
@@ -212,3 +215,40 @@ has only offline test evidence; no real evaluation was run for this change.
   corrective option. The deferred spend cap is a documentation fact, not a
   mechanism this change implements: no script reads a budget file, and the
   plan reports call bounds rather than a dollar ceiling.
+
+## Guarded measurement routing addendum (2026-10-04)
+
+The deferred routing is done. Both baseline and candidate measurements call
+`scripts/local_eval.py` with the selected registry archive, arm, trial count,
+judge setting and fixed timestamp. The wrapper owns the credential and
+settings refusals, child environment, guard launcher and local exhibit stamps.
+The loop checks its persistent output root and write subdirectories with the
+same outside-repository guard before creating a record. Each measurement uses
+an empty directory, so a later improvement run can reuse the root without
+mixing trials. A wrapper refusal records its phase and exit code and stops;
+every requested trial must have a readable summary for a scored decision.
+This was tested with fake CLI responses only; no paid evaluation was run.
+
+### Review round 1: guard the trigger and proposal launches
+
+Both remaining launch paths now build their child environment with
+`local_eval.child_environment` and install `local_eval.install_guard_launcher`
+in a private temporary directory. That directory leads the child's `PATH`,
+and `CLAUDE_BIN` names its launcher. This covers skill-creator's literal
+`claude` calls as well as the body proposal. Only skill-creator's selected
+directory is added to `PYTHONPATH`; inherited Python and XDG configuration
+variables, GitHub credentials and other unlisted variables are excluded.
+The caller's environment remains unchanged, and the launcher directory is
+removed on success or refusal.
+
+The loop explicitly refuses credential or provider environment variables
+before its first model launch, with exit 2 and a refusal record. Each Runner
+launch also checks the original environment before filtering it. The launcher
+checks user, harness and managed settings plus the actual launch directory
+and its parent chain at every call, so a scratch project's `apiKeyHelper`
+cannot depend on an earlier baseline check for refusal. A recorded guard
+refusal ends the phase even if the external loop returns successful JSON.
+Trigger and proposal refusals write their phase and stop without retry or a
+candidate measurement. Offline stand-ins exercise both launch paths; mutation
+checks prove the environment policy, launcher routing, settings preflight and
+refusal records are enforced. No real evaluation was run.

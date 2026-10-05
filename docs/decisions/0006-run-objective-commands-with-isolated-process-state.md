@@ -1,6 +1,8 @@
 # ADR 0006: Run objective commands with isolated process state
 
-- **Status:** accepted (2026-10-04)
+- **Status:** accepted (2026-10-04); amended 2026-10-04 to reach the
+  harness's `node` on hosts without one in `/usr/bin` or `/bin`
+  ([#253](https://github.com/Adam-S-Daniel/skills-evals/pull/253)).
 - **Issue:** [#93](https://github.com/Adam-S-Daniel/skills-evals/issues/93).
 - **Deciders:** Adam, who approved adding the check prerequisite on 2026-10-04.
 
@@ -29,6 +31,14 @@ Direct `claude` and `claude.exe` entrypoints fail. Build the child environment
 from constants, with throwaway HOME, XDG/config/runtime/temp directories,
 and a fixed PATH headed by a private `claude` refusal executable. No parent
 variables, credentials, `CLAUDE_BIN`, or local launchers are inherited.
+The PATH is the refusal directory, then `/usr/bin:/bin`. When neither fixed
+location holds `node` (GitHub's runner image keeps it in `/usr/local/bin`,
+`setup-node` in its tool cache), the harness's own `node`, resolved from the
+harness's PATH and refused if it lies inside the workspace, is appended as a
+throwaway directory holding only a `node` symlink. A verifier that runs `node`
+through PATH then scores the same on every host. Only `node` is added: no
+current check needs another host tool, and appending a whole directory such
+as `/usr/local/bin` would expose every tool installed there.
 The existing agent and local allow-lists retain login state, so neither fits.
 
 On Linux, probe a fixed `unshare --net` invocation with a bounded harmless

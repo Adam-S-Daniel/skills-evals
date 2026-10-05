@@ -189,6 +189,53 @@ class CommandSucceedsTests(unittest.TestCase):
             self.assertTrue(self.python("pass")[0])
         self.assertIn(commands._executable(self.ws, "python3"), commands.INTERPRETERS["python3"])
 
+    def _host_node(self, directory):
+        """A fake host `node` that exits 0 only for a probe real node rejects."""
+        directory.mkdir()
+        node = directory / "node"
+        node.write_text('#!/bin/sh\n[ "$1" = --harness-node-probe ]\n', encoding="utf-8")
+        node.chmod(0o700)
+        return node
+
+    @contextlib.contextmanager
+    def _no_system_node(self):
+        """Simulate a host with no node in /usr/bin or /bin."""
+        empty = self.root / "system-without-node"
+        empty.mkdir()
+        missing = (str(empty / "node"),)
+        with mock.patch.dict(commands.INTERPRETERS, {"node": missing}), \
+                mock.patch.object(commands, "SYSTEM_PATH", (str(empty),)):
+            yield
+
+    def test_verifier_reaches_harness_node_outside_fixed_dirs(self):
+        # GitHub's runner image has node in /usr/local/bin, not /usr/bin or /bin.
+        host_bin = self.root / "host-bin"
+        self._host_node(host_bin)
+        with self._no_system_node(), \
+                mock.patch.dict(os.environ, {"PATH": f"{host_bin}:{os.environ['PATH']}"}):
+            passed, detail = self.check(["sh", "-c", "node --harness-node-probe"])
+        self.assertTrue(passed, detail)
+
+    def test_harness_node_inside_workspace_is_not_reachable(self):
+        self._host_node(self.ws / "bin")
+        with self._no_system_node(), \
+                mock.patch.dict(os.environ, {"PATH": str(self.ws / "bin")}):
+            passed, _ = self.check(["sh", "-c", "command -v node"])
+        self.assertFalse(passed)
+
+    def test_path_is_unchanged_when_node_is_at_a_fixed_location(self):
+        host_bin = self.root / "host-bin"
+        self._host_node(host_bin)
+        fixed = self.root / "fixed-node"
+        fixed.write_text("#!/bin/sh\n", encoding="utf-8")
+        fixed.chmod(0o700)
+        env_root = self.root / "env"
+        env_root.mkdir()
+        with mock.patch.dict(commands.INTERPRETERS, {"node": (str(fixed),)}), \
+                mock.patch.dict(os.environ, {"PATH": str(host_bin)}):
+            env = commands._environment(env_root, self.ws)
+        self.assertEqual(env["PATH"], f"{env_root / 'bin'}:/usr/bin:/bin")
+
     def test_symlink_escape_and_cli_alias_rejected(self):
         (self.ws / "escape").symlink_to("/usr/bin/true")
         (self.ws / "claude").write_text("NEVER EXECUTE", encoding="utf-8")
