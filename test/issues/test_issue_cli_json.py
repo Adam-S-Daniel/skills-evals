@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from cli_json import normalize_cli_result  # noqa: E402
+from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
 import run_canary  # noqa: E402
 import run_eval  # noqa: E402
 import propose_skill_edit  # noqa: E402
@@ -92,7 +92,8 @@ class CliJsonShapeTests(unittest.TestCase):
         self.assertEqual(merged["usage"]["output_tokens"], 370)
         self.assertEqual(merged["usage"]["server_tool_use"], {"web_search_requests": 1})
         self.assertEqual(merged["usage"]["service_tier"], "standard")
-        self.assertEqual(merged["usage"]["iterations"], [{"output_tokens": 75}])
+        self.assertEqual(merged["usage"]["iterations"],
+                         [{"output_tokens": 295}, {"output_tokens": 75}])
         self.assertEqual(merged["total_cost_usd"], 0.05)
         self.assertEqual(merged["modelUsage"], {"fake-default-model": {"inputTokens": 15}})
         self.assertEqual(merged["merged_results"], 2)
@@ -125,6 +126,40 @@ class CliJsonShapeTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     normalize_cli_result(payload)
                 self.assertNotIn("private payload", str(caught.exception))
+
+
+PRIVATE_CWD = "/home/example/private-workspace"
+ERROR_TURN_ARRAY = [
+    {"type": "system", "subtype": "init", "cwd": PRIVATE_CWD,
+     "tools": ["Read", "mcp__example__lookup"]},
+    {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "input": {"file_path": PRIVATE_CWD + "/notes.txt"}}]}},
+    BACKGROUND_FIRST_RESULT | {"subtype": "error_max_turns", "is_error": True,
+                               "result": "ran out at " + PRIVATE_CWD},
+]
+
+
+class FailedRunDetailTests(unittest.TestCase):
+    def test_array_stdout_is_never_echoed(self):
+        detail = failed_run_detail(json.dumps(ERROR_TURN_ARRAY), "")
+        self.assertEqual(detail, "result subtype error_max_turns, is_error true")
+        self.assertNotIn("private-workspace", detail)
+
+    def test_stderr_is_bounded_and_loses_absolute_paths(self):
+        detail = failed_run_detail("ignored", f"boom at {PRIVATE_CWD}/x.py line 3\n")
+        self.assertEqual(detail, "boom at <path> line 3")
+        long = failed_run_detail("", "x" * 1000)
+        self.assertEqual(long, "x" * 300 + "...")
+
+    def test_unparseable_or_unexpected_stdout_reports_only_its_length(self):
+        for stdout in ('[{"cwd": "' + PRIVATE_CWD, "[]", "null", ""):
+            with self.subTest(stdout=stdout):
+                detail = failed_run_detail(stdout, " \n")
+                self.assertEqual(detail, f"stdout {len(stdout)} chars")
+
+    def test_subtype_is_only_echoed_when_it_looks_like_a_label(self):
+        odd = ERROR_TURN_ARRAY[-1] | {"subtype": PRIVATE_CWD}
+        self.assertNotIn("private-workspace", failed_run_detail(json.dumps([odd]), ""))
 
 
 class CliJsonConsumersTests(unittest.TestCase):
@@ -203,6 +238,36 @@ class CliJsonConsumersTests(unittest.TestCase):
         argv = run.call_args.args[0]
         self.assertIn("--verbose", argv)
         self.assertEqual(argv[argv.index("--output-format") + 1], "json")
+
+    def test_agent_nonzero_exit_with_array_stdout_does_not_echo_it(self):
+        failed = subprocess.CompletedProcess(
+            args=["fake-cli"], returncode=1, stdout=json.dumps(ERROR_TURN_ARRAY),
+            stderr="")
+        with mock.patch("subprocess.run", return_value=failed):
+            answer = run_eval.run_agent(self.workspace, "prompt",
+                                        {"name": "without_skill", "timeout": 5})
+            canary = run_canary.run_leg(self.workspace, "prompt", "Read",
+                                        model=None, timeout=5)
+            with self.assertRaises(RuntimeError) as judged:
+                judge._run_judge_cli("prompt", model=None, timeout=5)
+        self.assertEqual(answer["error"], "nonzero_exit")
+        self.assertEqual(answer["returncode"], 1)
+        self.assertEqual(answer["detail"], "result subtype error_max_turns, is_error true")
+        for text in (json.dumps(answer), json.dumps(canary), str(judged.exception)):
+            self.assertNotIn("private-workspace", text)
+
+    def test_judge_and_canary_invalid_json_echo_none_of_stdout(self):
+        broken = subprocess.CompletedProcess(
+            args=["fake-cli"], returncode=0, stdout='[{"cwd": "' + PRIVATE_CWD,
+            stderr="")
+        with mock.patch("subprocess.run", return_value=broken):
+            canary = run_canary.run_leg(self.workspace, "prompt", "Read",
+                                        model=None, timeout=5)
+            with self.assertRaises(RuntimeError) as judged:
+                judge._run_judge_cli("prompt", model=None, timeout=5)
+        self.assertEqual(canary["error"], "invalid_json")
+        self.assertNotIn("private-workspace", json.dumps(canary))
+        self.assertNotIn("private-workspace", str(judged.exception))
 
     def test_truncated_stdout_is_an_error_that_echoes_none_of_it(self):
         truncated = '[{"type": "system", "subtype": "init", "cwd": "private payload", "ses'

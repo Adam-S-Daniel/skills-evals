@@ -54,7 +54,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from cli_json import normalize_cli_result  # noqa: E402
+from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
@@ -1029,7 +1029,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
     if result.returncode != 0:
         return {"error": "nonzero_exit",
-                "detail": result.stderr.strip() or result.stdout.strip(),
+                "detail": failed_run_detail(result.stdout, result.stderr),
                 "returncode": result.returncode}
 
     try:
