@@ -27,6 +27,10 @@ arms:
 # id-bound views reach the final payload. Missing evidence fails behavior
 # checks; absence passes negative/restraint checks. Log and capture evidence
 # remain agent-writable, so the judge also checks evidence integrity.
+# Read-only context probes (repo view, auth status, api user) get canned
+# answers: a 404 there read as "no repository" and stopped a run before
+# dispatch (skills-evals#89). They are reads outside every polled key, so
+# they never count as dispatches or polls.
 objective_checks:
   - id: dispatch-once
     description: One accepted deployment dispatch appears in the invocation log
@@ -77,7 +81,8 @@ objective_checks:
   - id: instrument-unchanged
     description: Preserve the fake executable, policy and timeline payloads
     type: files_unchanged
-    paths: ["bin/gh", ".gh/replay/*.json", ".gh/replay/timeline/*.json"]
+    paths: ["bin/gh", ".gh/replay/*.json", ".gh/replay/*.txt", ".gh/replay/api/*.json",
+            ".gh/replay/timeline/*.json"]
 
 # Transcript means the final reply supplied to the scorer, not historical
 # raw tool requests. Scripts and Markdown shell examples use a real Bash

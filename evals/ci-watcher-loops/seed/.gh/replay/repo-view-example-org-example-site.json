@@ -1,0 +1,8 @@
+{
+  "name": "example-site",
+  "nameWithOwner": "example-org/example-site",
+  "owner": {
+    "login": "example-org"
+  },
+  "url": "https://example.com/example-org/example-site"
+}
