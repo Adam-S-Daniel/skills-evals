@@ -149,9 +149,20 @@ class FakeRunner:
         original = pse.frontmatter_data(
             (Path(flag(argv, "--skill-path")) / "SKILL.md").read_text())["description"]
         best = self.best_description or original
+        # skill-creator's own shape: per-iteration results with run counts,
+        # and one improve log per proposer call (one of them a rewrite).
+        logs = Path(flag(argv, "--results-dir")) / "2026-10-04_120000" / "logs"
+        logs.mkdir(parents=True)
+        (logs / "improve_iter_1.json").write_text(json.dumps(
+            {"iteration": 1, "rewrite_prompt": "shorter, please"}))
+        runs = int(flag(argv, "--runs-per-query"))
+        history = [{"iteration": i,
+                    "train_results": [{"query": "q", "runs": runs}] * 4,
+                    "test_results": [{"query": "t", "runs": runs}] * 2}
+                   for i in (1, 2)]
         return {"best_description": best, "original_description": original,
                 "best_test_score": "2/2", "best_train_score": "3/4",
-                "iterations_run": 2}
+                "iterations_run": 2, "history": history}
 
     def propose(self, prompt, model):
         self.calls.append(("propose", prompt, model))
@@ -177,12 +188,27 @@ class RefusingRunner(FakeRunner):
         return super().run_eval(argv)
 
 
+#: A reviewed --trigger-eval-set: three positives, three negatives, none of
+#: them a fixture prompt.
+REVIEWED_QUERIES = (
+    [{"query": f"record the {topic} decision", "should_trigger": True}
+     for topic in ("queue", "cache", "schema")]
+    + [{"query": f"fix the flaky {thing} test", "should_trigger": False}
+       for thing in ("login", "upload", "search")])
+
 GOOD = {"bootstrap": (2, 4, 6.0), "existing-convention": (2, 4, 6.0),
         "supersede": (3, 4, 7.0)}
 
 
 def proposal(diff: str = BODY_DIFF, rationale: str = "index step was missing") -> str:
     return "```json\n" + json.dumps({"rationale": rationale, "unified_diff": diff}) + "\n```"
+
+
+def _skill_creator_dir_early() -> Path | None:
+    try:
+        return pse.find_skill_creator(None)[0]
+    except pse.Refusal:
+        return None
 
 
 class PipelineCase(unittest.TestCase):
@@ -198,11 +224,15 @@ class PipelineCase(unittest.TestCase):
         self.registry = make_registry(self.tmp / "registry")
         self.skill_creator = make_skill_creator(self.tmp / "skill-creator")
         self.results = self.tmp / "results"
+        self.reviewed_set = self.tmp / "reviewed-queries.json"
+        self.reviewed_set.write_text(json.dumps(REVIEWED_QUERIES))
 
     def argv(self, *extra):
+        reviewed = (["--trigger-eval-set", str(self.reviewed_set)]
+                    if self.reviewed_set else [])
         return [SKILL, "--registry", f"adam-agentskills={self.registry}",
                 "--skill-creator", str(self.skill_creator),
-                "--results-dir", str(self.results), *extra]
+                "--results-dir", str(self.results), *reviewed, *extra]
 
     def run_main(self, runner, *extra, env_extra=None):
         env = dict(self.env)
@@ -449,9 +479,7 @@ class AcceptTests(PipelineCase):
             REPO_ROOT / "evals" / SKILL / "supersede")["prompt"].split())
         queries = [i["query"] for i in self.runner.eval_set]
         self.assertNotIn(validation_prompt, queries)
-        positives = [i for i in self.runner.eval_set if i["should_trigger"]]
-        self.assertEqual(len(positives), 2)
-        self.assertTrue(any(not i["should_trigger"] for i in self.runner.eval_set))
+        self.assertEqual(self.runner.eval_set, REVIEWED_QUERIES)
 
     def test_skill_creator_loop_runs_in_a_scratch_project(self):
         _, argv, cwd, skill_creator = next(c for c in self.runner.calls if c[0] == "loop")
@@ -637,6 +665,185 @@ class RejectTests(PipelineCase):
         self.assertEqual(rc, 1)
         self.assertEqual(self.record()["status"], "no-candidate")
         self.assertEqual(len([c for c in runner.calls if c[0] == "run_eval"]), 1)
+
+
+def trial_split(n: int, holdout: float = 0.4) -> tuple[int, int]:
+    """skill-creator's split_eval_set arithmetic for one class: (train, held out)."""
+    held = min(n, max(1, int(n * holdout)))
+    return n - held, held
+
+
+class TriggerSetGuardTests(PipelineCase):
+    """The 2026-10-05 watched trial: writing-adrs' fixture-derived query set had
+    one distinct positive, skill-creator held it out, and the trigger loop
+    "passed" a train split of negatives only."""
+
+    def setUp(self):
+        super().setUp()
+        self.reviewed_set = None  # The fixture-derived set, as the trial ran.
+
+    def test_trial_split_refuses_with_a_record_and_no_call(self):
+        rc, _, err = self.run_main(NoCallRunner(), "--rotation", "0")
+        self.assertEqual(rc, 2)
+        self.assertIn("trigger-set-unusable", err)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                         ("trigger-set-unusable", "trigger-set", 2))
+        self.assertIn("train split has no should-trigger query", record["reasons"][0])
+        self.assertIn("--trigger-eval-set", record["reasons"][0])
+        trigger_set = record["trigger_set"]
+        self.assertEqual(trigger_set["source"], "fixtures")
+        self.assertEqual(trigger_set["split"]["train"]["should_trigger"], 0)
+        self.assertEqual(trigger_set["split"]["held_out"]["should_trigger"], 1)
+        self.assertIsNone(record["baseline"])
+        self.assertFalse((self.results / "trigger").exists())
+
+    def test_every_writing_adrs_rotation_is_refused_by_dry_run(self):
+        for rotation in range(3):
+            with self.subTest(rotation=rotation):
+                rc, out, err = self.run_main(NoCallRunner(), "--dry-run",
+                                             "--rotation", str(rotation))
+                self.assertEqual(rc, 2)
+                planned = json.loads(out)["trigger_eval_set"]
+                self.assertEqual(planned["split"]["train"]["should_trigger"], 0)
+                self.assertTrue(planned["problems"])
+                self.assertIn("trigger-set-unusable", err)
+        self.assertFalse(self.results.exists())
+
+    def test_duplicate_train_prompts_count_once(self):
+        # Rotation 2 trains bootstrap and existing-convention, which share a
+        # prompt: two identical positives would let the held-out copy leak.
+        fixtures = pse.load_fixtures(SKILL, FIXTURES)
+        items, source = pse.trigger_eval_set(
+            SKILL, fixtures, ["bootstrap", "existing-convention"], "supersede", None)
+        self.assertEqual(source, "fixtures")
+        queries = [i["query"] for i in items]
+        self.assertEqual(len(queries), len(set(queries)))
+        self.assertEqual(sum(i["should_trigger"] for i in items), 1)
+        validation = " ".join(fixtures["supersede"]["prompt"].split())
+        self.assertNotIn(validation, queries)
+
+    def test_reviewed_set_runs_and_records_its_split(self):
+        thin = self.tmp / "thin.json"
+        thin.write_text(json.dumps(
+            [{"query": "record the queue decision", "should_trigger": True}]
+            + REVIEWED_QUERIES[3:]))
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        rc, _, err = self.run_main(runner, "--rotation", "2",
+                                   "--trigger-eval-set", str(thin))
+        self.assertEqual(rc, 1, err)
+        self.assertIn("warning", err)
+        record = self.record()
+        self.assertEqual(record["status"], "no-candidate")
+        self.assertEqual(record["trigger_set"]["source"], "file:thin.json")
+        self.assertEqual(record["trigger_set"]["split"]["train"]["should_trigger"], 0)
+        self.assertTrue(record["trigger_set"]["problems"])
+        self.assertTrue(any(c[0] == "loop" for c in runner.calls))
+
+
+class TriggerSplitCountTests(unittest.TestCase):
+
+    def test_counts_follow_skill_creator_arithmetic(self):
+        for positives in range(5):
+            for negatives in range(5):
+                items = ([{"query": f"p{i}", "should_trigger": True} for i in range(positives)]
+                         + [{"query": f"n{i}", "should_trigger": False}
+                            for i in range(negatives)])
+                counts = pse.trigger_split_counts(items)
+                for label, n in (("should_trigger", positives),
+                                 ("should_not_trigger", negatives)):
+                    train, held = trial_split(n)
+                    self.assertEqual(counts["train"][label], train)
+                    self.assertEqual(counts["held_out"][label], held)
+
+    def test_problems_name_each_empty_class_in_each_split(self):
+        one_each = [{"query": "p", "should_trigger": True},
+                    {"query": "n", "should_trigger": False}]
+        problems = pse.trigger_set_problems(pse.trigger_split_counts(one_each))
+        self.assertEqual(problems, ["train split has no should-trigger query",
+                                    "train split has no should-not-trigger query"])
+        two_each = one_each + [{"query": "p2", "should_trigger": True},
+                               {"query": "n2", "should_trigger": False}]
+        self.assertEqual(pse.trigger_set_problems(pse.trigger_split_counts(two_each)), [])
+        no_held_positive = {"train": {"should_trigger": 2, "should_not_trigger": 2},
+                            "held_out": {"should_trigger": 0, "should_not_trigger": 1}}
+        self.assertEqual(pse.trigger_set_problems(no_held_positive),
+                         ["held-out split has no should-trigger query"])
+
+    @unittest.skipUnless(_skill_creator_dir_early(), "skill-creator not installed")
+    def test_counts_match_the_installed_split_eval_set(self):
+        source = (_skill_creator_dir_early() / "scripts" / "run_loop.py").read_text()
+        tree = ast.parse(source)
+        split = next(node for node in tree.body
+                     if isinstance(node, ast.FunctionDef) and node.name == "split_eval_set")
+        namespace: dict = {"random": __import__("random")}
+        exec(compile(ast.Module(body=[split], type_ignores=[]), "run_loop.py", "exec"),
+             namespace)
+        for positives in range(5):
+            for negatives in range(1, 5):
+                items = ([{"query": f"p{i}", "should_trigger": True} for i in range(positives)]
+                         + [{"query": f"n{i}", "should_trigger": False}
+                            for i in range(negatives)])
+                train, test = namespace["split_eval_set"](items, 0.4)
+                counts = pse.trigger_split_counts(items)
+                self.assertEqual(counts["train"]["should_trigger"],
+                                 sum(i["should_trigger"] for i in train))
+                self.assertEqual(counts["held_out"]["should_trigger"],
+                                 sum(i["should_trigger"] for i in test))
+
+
+class TriggerLoopUsageTests(PipelineCase):
+
+    def test_record_counts_trigger_loop_calls_and_says_cost_is_unreported(self):
+        runner = FakeRunner(GOOD, {}, proposal(""), None)
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1, err)
+        usage = self.record()["description_half"]["usage"]
+        # 2 iterations x 6 queries x 3 runs; 1 proposer call (between the two
+        # iterations) plus the 1 rewrite its log records.
+        self.assertEqual(usage["eval_calls"], 36)
+        self.assertEqual(usage["description_calls"], 1)
+        self.assertEqual(usage["rewrite_calls"], 1)
+        self.assertEqual(usage["total_calls"], 38)
+        self.assertIsNone(usage["tokens"])
+        self.assertIsNone(usage["cost_usd"])
+        self.assertIn("skill-creator", usage["cost_note"])
+
+    def test_usage_tolerates_a_loop_without_history(self):
+        usage = pse.trigger_loop_usage({"iterations_run": 1}, self.tmp / "absent")
+        self.assertEqual((usage["eval_calls"], usage["description_calls"],
+                          usage["rewrite_calls"], usage["total_calls"]),
+                         (None, 0, 0, None))
+
+
+class NumWorkersTests(PipelineCase):
+
+    def test_default_is_four_and_is_recorded(self):
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1, err)
+        argv = next(c[1] for c in runner.calls if c[0] == "loop")
+        self.assertEqual(flag(argv, "--num-workers"), "4")
+        self.assertEqual(self.record()["description_half"]["num_workers"], 4)
+
+    def test_flag_passes_through_to_skill_creator_and_plan(self):
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        rc, _, err = self.run_main(runner, "--rotation", "2", "--num-workers", "2")
+        self.assertEqual(rc, 1, err)
+        argv = next(c[1] for c in runner.calls if c[0] == "loop")
+        self.assertEqual(flag(argv, "--num-workers"), "2")
+        self.assertEqual(self.record()["description_half"]["num_workers"], 2)
+        shutil.rmtree(self.results)
+        rc, out, _ = self.run_main(NoCallRunner(), "--dry-run", "--num-workers", "3")
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)["num_workers"], 3)
+
+    def test_num_workers_must_be_positive(self):
+        for value in ("0", "-1"):
+            with self.subTest(value=value), self.assertRaises(SystemExit) as exc, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                pse.parse_args([SKILL, "--num-workers", value])
+            self.assertEqual(exc.exception.code, 2)
 
 
 class DiffTargetTests(unittest.TestCase):
@@ -1189,6 +1396,8 @@ class SubprocessRunnerContractTests(unittest.TestCase):
                "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
                "LANG": "C.UTF-8"}
         results = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+        reviewed = self.tmp / "reviewed-queries.json"
+        reviewed.write_text(json.dumps(REVIEWED_QUERIES))
         for cause in ("credential", "settings"):
             with self.subTest(cause=cause):
                 if cause == "credential":
@@ -1203,7 +1412,8 @@ class SubprocessRunnerContractTests(unittest.TestCase):
                     rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
                                    "--skill-creator", str(skill_creator),
                                    "--results-dir", str(self.tmp / "results"),
-                                   "--rotation", "2", "--no-judge"],
+                                   "--rotation", "2", "--no-judge",
+                                   "--trigger-eval-set", str(reviewed)],
                                   runner=pse.Runner(), now=NOW)
                 self.assertEqual(rc, 2)
                 record = json.loads((self.tmp / "results" / "improvements" / SKILL
@@ -1363,6 +1573,8 @@ class GuardedRunnerTests(unittest.TestCase):
         self.write_sentinels()
         registry = make_registry(self.tmp / "registry")
         results = self.tmp / "results"
+        reviewed = self.tmp / "reviewed-queries.json"
+        reviewed.write_text(json.dumps(REVIEWED_QUERIES))
         for phase in ("trigger", "proposal"):
             with self.subTest(phase=phase):
                 runner = FakeRunner(GOOD, GOOD, proposal())
@@ -1382,7 +1594,8 @@ class GuardedRunnerTests(unittest.TestCase):
                         contextlib.redirect_stderr(io.StringIO()):
                     rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
                                    "--skill-creator", str(self.plugin), "--results-dir",
-                                   str(results), "--rotation", "2", "--no-judge"],
+                                   str(results), "--rotation", "2", "--no-judge",
+                                   "--trigger-eval-set", str(reviewed)],
                                   runner=runner, now=NOW)
                 self.assertEqual(rc, 2)
                 record = json.loads((results / "improvements" / SKILL / f"{TS}.json").read_text())

@@ -1,7 +1,7 @@
 # ADR 0005: The improvement loop reuses skill-creator and measures through local_eval
 
-- **Status:** proposed (2026-10-04). Built and tested with fakes only; no
-  real run has been made.
+- **Status:** proposed (2026-10-04). Built and tested with fakes; one
+  watched real run on 2026-10-05 (see the first-trial addendum).
 - **Issues:** [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71)
   (the improvement loop; this is its smallest slice),
   [#232](https://github.com/Adam-S-Daniel/skills-evals/issues/232) (reuse
@@ -52,7 +52,8 @@ this harness or it is not measured the way every other number here is.
    reached through a link planted in the scratch project so the script path
    is a literal the suite's fork scan can classify. It gets its documented
    arguments (`--max-iterations 5 --runs-per-query 3 --holdout 0.4`, browser
-   report off). It keeps skill-creator's split, its held-out selection and its
+   report off), plus `--num-workers` (default 4, see the first-trial
+   addendum). It keeps skill-creator's split, its held-out selection and its
    proposer; nothing of it is copied into this repo. Its working directory is
    a scratch project holding `.claude/settings.json`, so the command files
    it plants never land in a real checkout. Settings disable every local
@@ -113,7 +114,7 @@ this harness or it is not measured the way every other number here is.
 | `agents/grader.md` | An LLM grader of expectations. The behavior half is scored by `scorers/objective.py` and this harness's judge, which already run with N trials. |
 | `scripts/aggregate_benchmark.py` | Reads skill-creator's `grading.json` layout. `run_eval.aggregate_trials` already aggregates this harness's trials, and the decision reads that. |
 | `agents/comparator.md` / `analyzer.md` | Blind A/B needs subagents and a reader; a candidate here is accepted on numbers, and the record carries both tables for the human reviewing it. |
-| skill-creator's own query-writing step (a reviewed ~20-query set) | Not automated. The fixture-derived default is thin (two or more positives, other skills' prompts as negatives, few of them near-misses); a reviewed set can be passed with `--trigger-eval-set`. |
+| skill-creator's own query-writing step (a reviewed ~20-query set) | Not automated. The fixture-derived default is thin (the train fixtures' distinct prompts as positives, other skills' prompts as negatives, few of them near-misses) and is refused when either of skill-creator's splits lacks a class (first-trial addendum); a reviewed set can be passed with `--trigger-eval-set`. |
 
 ### Alternatives considered
 
@@ -252,3 +253,52 @@ Trigger and proposal refusals write their phase and stop without retry or a
 candidate measurement. Offline stand-ins exercise both launch paths; mutation
 checks prove the environment policy, launcher routing, settings preflight and
 refusal records are enforced. No real evaluation was run.
+
+## First watched trial addendum (2026-10-05)
+
+The first real run (`writing-adrs`, rotation 0, `--trials 1 --no-judge`,
+skills-evals `a41dfb0`, registry `f6bd36a`) ended `no-candidate` with every
+guard holding, but its trigger half measured nothing. Of 21 fixture-derived
+queries only one should trigger: existing-convention's prompt equals
+bootstrap's, the validation prompt, so it was removed. skill-creator holds
+out `max(1, int(n * 0.4))` queries of each class, so a lone positive always
+lands in the held-out split. The train split was negatives only, passed
+12/12 on the first iteration, and the loop stopped; the one positive
+triggered 0 of 3 times. Three changes follow.
+
+- **A fixture-derived set must give both splits both classes.** The script
+  computes skill-creator's split counts (the arithmetic of `split_eval_set`;
+  a contract test compares them with the installed function) and refuses a
+  fixture-derived set whose train or held-out split lacks a should-trigger
+  or should-not-trigger query. The refusal is status
+  `trigger-set-unusable`, phase `trigger-set`, exit 2, with a record
+  carrying the split counts, before any model call; `--dry-run` reports the
+  same and exits 2. The held-out case is refused too: without a positive,
+  held-out selection cannot notice a description that stopped triggering.
+  Under skill-creator's arithmetic it cannot occur when the train split is
+  sound, so the check is a guard against a changed split, not a second
+  rule. A reviewed `--trigger-eval-set` is the operator's call: it runs, and
+  its split problems are recorded and printed as a warning. Queries are now
+  distinct (the first label wins), because skill-creator separates train
+  from held-out results by query text; two copies of one prompt would sit
+  on both sides. With today's three fixtures, every `writing-adrs` rotation
+  is refused without a reviewed set; a fourth fixture with a distinct
+  prompt is the fix on the fixture side.
+- **The record counts the trigger loop's calls.** skill-creator reports no
+  tokens or cost: `run_eval.py` stops reading each `stream-json` call once it
+  has a verdict, and `improve_description.py` asks for text output. The
+  record's `description_half.usage` therefore counts calls from the loop's
+  output (each history entry's per-query `runs`, one proposer call between
+  consecutive iterations, one per improve log recording a length rewrite)
+  and sets `tokens` and `cost_usd` to null with that reason. The trial's
+  count was 63 calls (21 queries, 3 runs, one iteration). A spend cap is
+  still not implemented.
+- **Parallelism is the operator's, default 4.** skill-creator's
+  `--num-workers` (its default 10) is passed through from
+  `--num-workers N`, default 4, and recorded as
+  `description_half.num_workers`. Ten parallel CLI calls pushed the
+  five-minute load average to about 28 on the operator's machine.
+
+All three were built red-first against fakes; the regression test replays
+the trial's rotation-0 split from the repository's own fixtures. No further
+real run was made for this change.
