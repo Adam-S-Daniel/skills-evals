@@ -4229,7 +4229,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
     def test_permissions_are_exactly_the_three_the_header_names(self):
         # B1 (round 3 on #209, blocker; extended round 4, blocker),
         # extending F2 (adversarial round 1 on #209): the workflow-level
-        # block is `{}` deliberately — each of the FIVE jobs carries its
+        # block is `{}` deliberately — each of the seven jobs carries its
         # own least-privilege set, so the `eval` job (which runs the
         # bypass-permissions agent) never sees `pull-requests: write`/
         # `issues: write` at all (and no job holds `actions: write` since
@@ -4243,17 +4243,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # not just the workflow) reds it too — that is exactly the defect
         # this test exists to catch.
         doc = self._doc()
-        # (c) The guard covers the workflow's jobs EXACTLY: a sixth job
-        # (with whatever scopes, or none declared) would otherwise slip
-        # past every per-job equality below, which only look up by name.
-        # ADR 0004 (2026-09-30) added a sixth, `roster-wait`: the bounded
-        # wait for this run's armed roster pull request, before the eval.
+        # The guard covers every job exactly. ADR 0004 added the bounded
+        # `roster-wait`; ADR 0008 adds a read-only fixture planner, which
+        # emits reviewed selections without receiving evaluation credentials.
         self.assertEqual(
             sorted(doc["jobs"]),
-            ["disarm", "eval", "publish", "roster", "roster-pr", "roster-wait"],
-            "eval.yml must have exactly these six jobs — a new job needs "
+            ["disarm", "eval", "plan", "publish", "roster", "roster-pr", "roster-wait"],
+            "eval.yml must have exactly these seven jobs — a new job needs "
             "its own exact-permissions row here and in "
             "test_eval_workflow_keeps_its_security_posture")
+        self.assertEqual(
+            doc["jobs"]["plan"].get("permissions"), {"contents": "read"},
+            "the planner reads committed fixtures and never exchanges a credential")
         self.assertEqual(
             doc.get("permissions"), {},
             "eval.yml's workflow-level permissions must be {} — every scope "
@@ -6135,7 +6136,7 @@ class TestIssue67(unittest.TestCase):
         #
         # F2 (adversarial round 1 on #209), extended by B1 (round 3, then
         # round 4, on #209, blocker): the workflow-level block is {} and
-        # each of the FIVE jobs carries its own scopes — `roster` (never
+        # each of the seven jobs carries its own scopes — `roster` (never
         # `eval`) holds the roster-decision scopes (contents/id-token/
         # issues); `disarm` holds only pull-requests/contents-read to turn
         # off an armed auto-merge BEFORE the agent runs; `eval` keeps only
@@ -6148,11 +6149,12 @@ class TestIssue67(unittest.TestCase):
         # `actions` or `contents: write` any more; the roster App's token
         # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
-        # (c) Exactly six jobs (ADR 0004 added `roster-wait`), so a seventh
-        # can never go unguarded.
+        # Exactly seven jobs (ADR 0008 adds the read-only planner), so an
+        # additional job cannot go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
-                         ["disarm", "eval", "publish", "roster", "roster-pr",
+                         ["disarm", "eval", "plan", "publish", "roster", "roster-pr",
                           "roster-wait"])
+        self.assertEqual(doc["jobs"]["plan"]["permissions"], {"contents": "read"})
         # Round 7 (ADR 0003): `roster` no longer pushes, so contents: read.
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "read", "id-token": "write",
@@ -8037,6 +8039,86 @@ class TestGhWriteAllowlist(unittest.TestCase):
         row = json.loads(self._call(["pr", "view", "512"]).stdout)
         self.assertEqual(len(row["labels"]), 2, "repeated successful edits are idempotent")
 
+    @staticmethod
+    def _hashed_entry(entry):
+        canonical = f"{entry['repo']}\n{entry['number']}\n{entry['label']}"
+        return {"sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+    def test_hash_policy_replays_edits_in_plain_state_and_read_payloads(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(e) for e in self.ENTRIES]})
+        for entry in self.ENTRIES:
+            self.assertEqual(self._edit(entry["number"], entry["label"]).returncode, 0)
+        self.assertEqual(json.loads((self.ws / ".gh-label-state.json").read_text()),
+                         {"pr_edit_add_label": self.ENTRIES})
+        for entry in self.ENTRIES:
+            row = json.loads(self._call(["pr", "view", str(entry["number"])]).stdout)
+            self.assertIn({"name": entry["label"]}, row["labels"])
+        rows = json.loads(self._call(["pr", "list"]).stdout)
+        self.assertEqual([row["labels"] for row in rows[:2]],
+                         [[{"name": e["label"]}] for e in self.ENTRIES])
+
+    def test_hash_policy_exact_case_decimal_utf8_and_no_trailing_newline(self):
+        entry = {"repo": "Example-Org/Example-Site", "number": 519, "label": "Editorial ✓"}
+        self._json(self.ws / ".gh/replay/pr-view-519.json", {"labels": []})
+        args = ["pr", "edit", "519", "--repo", entry["repo"], "--add-label", entry["label"]]
+        canonical = "Example-Org/Example-Site\n519\nEditorial ✓"
+        for alternative in (canonical + "\n", canonical.lower(), canonical.replace("\n", ":"),
+                            canonical.replace("519", "0519")):
+            self._policy({"pr_edit_add_label": [{"sha256": hashlib.sha256(
+                alternative.encode("utf-8")).hexdigest()}]})
+            self._reject(args)
+        self._policy({"pr_edit_add_label": [self._hashed_entry(entry)]})
+        self.assertEqual(self._call(args).returncode, 0)
+
+    def test_hash_policy_wrong_tuples_and_implicit_repo_are_refused(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(self.ENTRIES[0])]})
+        valid = ["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"]
+        for args in (valid[:3] + valid[5:], ["pr", "edit", "518", *valid[3:]],
+                     ["pr", "edit", "0512", *valid[3:]], valid[:-1] + ["decap-cms/Draft"],
+                     valid[:4] + [self.REPO.upper()] + valid[5:]):
+            with self.subTest(args=args):
+                self._reject(args)
+
+    def test_hash_policy_cannot_authorize_lexically_invalid_repo_or_label(self):
+        for field, value in (("repo", "../example-site"), ("repo", self.REPO + "/"),
+                             ("label", " bad"), ("label", "bad,"), ("label", "bad\nlabel"),
+                             ("label", "")):
+            with self.subTest(field=field, value=value):
+                entry = dict(self.ENTRIES[0], **{field: value})
+                self._policy({"pr_edit_add_label": [self._hashed_entry(entry)]})
+                self._reject(["pr", "edit", str(entry["number"]), "--repo", entry["repo"],
+                              "--add-label", entry["label"]])
+
+    def test_malformed_hash_and_equivalent_duplicate_grants_fail_closed(self):
+        hashed = self._hashed_entry(self.ENTRIES[0])
+        digest = hashed["sha256"]
+        rows = [[{"sha256": value}] for value in
+                (None, True, 12, [], {}, "", "a" * 63, "a" * 65, digest.upper(), "g" * 64,
+                 digest + "\n", " " + digest)]
+        rows += [[dict(hashed, unknown=True)], [dict(self.ENTRIES[0], **hashed)],
+                 [hashed, hashed], [self.ENTRIES[0], hashed], [hashed, self.ENTRIES[0]]]
+        for entries in rows:
+            with self.subTest(entries=entries):
+                self._policy({"pr_edit_add_label": entries})
+                self._reject(["pr", "view", "512"], configuration=True)
+                self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                              "--add-label", "decap-cms/draft"], configuration=True)
+
+    def test_mixed_policy_accepts_plain_state_but_rejects_hash_state_and_revocation(self):
+        hashed = self._hashed_entry(self.ENTRIES[0])
+        self._policy({"pr_edit_add_label": [hashed, self.ENTRIES[1]]})
+        self.assertEqual(self._edit().returncode, 0)
+        self.assertEqual(self._edit(518, self.ENTRIES[1]["label"]).returncode, 0)
+        state = self.ws / ".gh-label-state.json"
+        plain = state.read_bytes()
+        self._json(state, {"pr_edit_add_label": [hashed]})
+        self._reject(["pr", "view", "512"], configuration=True)
+        state.write_bytes(plain)
+        self._policy({"pr_edit_add_label": [self.ENTRIES[1]]})
+        self._reject(["pr", "view", "512"], configuration=True)
+        self._reject(["pr", "edit", "518", "--repo", self.REPO,
+                      "--add-label", self.ENTRIES[1]["label"]], configuration=True)
+
     def test_nonexistent_short_label_spellings_are_refused(self):
         self._policy()
         for label in (["-l", "decap-cms/draft"], ["-l=decap-cms/draft"],
@@ -8360,6 +8442,16 @@ class TestGhWriteAllowlist(unittest.TestCase):
         self.assertFalse((self.ws / ".gh-label-state.json").exists())
         self.assertIn("class=write key=pr-edit-512.json exit=1",
                       (self.ws / ".gh-invocations.log").read_text())
+
+    def test_hashed_grant_revoked_after_startup_is_revalidated(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(e) for e in self.ENTRIES]})
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        self._policy({"pr_edit_add_label": [self._hashed_entry(self.ENTRIES[1])]})
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertFalse((self.ws / ".gh-label-state.json").exists())
 
     def test_state_changed_after_startup_is_revalidated(self):
         self._policy()
@@ -24585,7 +24677,7 @@ class TestIssue83(unittest.TestCase):
 
     def _assert_pass_count(self, ws: Path, expected: int, failed: set[str]) -> None:
         results = self._run(ws)
-        self.assertEqual(len(results), 12)
+        self.assertEqual(len(results), 13)
         self.assertEqual(sum(bool(row["passed"]) for row in results.values()), expected)
         self.assertEqual({name for name, row in results.items() if not row["passed"]}, failed)
 
@@ -24665,9 +24757,9 @@ class TestIssue83(unittest.TestCase):
         self.assertEqual(fixture["requires"]["python"],
                          [{"package": "pypdf", "version": "6.16.2", "published": "2026-08-23"}])
         checks = fixture["objective_checks"]
-        self.assertEqual(len(checks), 12)
+        self.assertEqual(len(checks), 13)
         self.assertEqual({row["type"] for row in checks}, {"file_matches", "files_unchanged"})
-        self.assertEqual(len({row["id"] for row in checks}), 12)
+        self.assertEqual(len({row["id"] for row in checks}), 13)
         for check in checks:
             if check["type"] == "file_matches":
                 self.assertTrue(check["require_present"])
@@ -24676,6 +24768,9 @@ class TestIssue83(unittest.TestCase):
         verdict_checks = [row["id"] for row in checks if row["id"].startswith("verdict-")]
         self.assertEqual(verdict_checks, [f"verdict-{index:02d}" for index in range(1, 9)])
         self.assertEqual(set(verdict_checks), set(self.CHECK_BY_FILE.values()))
+        format_check = next(row for row in checks if row["id"] == "report-absolute-paths")
+        self.assertEqual(len(format_check["must_match"]), len(self.FILES))
+        self.assertEqual(len(format_check["must_not_match"]), 1)
         restraint = next(row for row in checks if row["id"] == "archive-unchanged")
         self.assertEqual(restraint["paths"], ["archive/*", "archive/.*"])
         self.assertEqual(restraint.get("by", "path"), "path")
@@ -24686,8 +24781,110 @@ class TestIssue83(unittest.TestCase):
         self._assert_failed(ws, *(row["id"] for row in checks if row["id"] != "archive-unchanged"))
         self._assert_pass_count(ws, 1, {row["id"] for row in checks if row["id"] != "archive-unchanged"})
 
-    def test_correct_report_passes_all_twelve_checks(self):
-        self._assert_pass_count(self._ws(), 12, set())
+    def test_correct_report_passes_all_thirteen_checks(self):
+        self._assert_pass_count(self._ws(), 13, set())
+
+    def test_supported_path_styles_keep_verdicts_independent_of_absolute_format(self):
+        for style in ("archive", "bare", "work/archive", "/archive", "/work/archive", "absolute"):
+            with self.subTest(style=style):
+                ws = self._ws()
+                report = self._report(ws)
+                for name in self.FILES:
+                    absolute = str(ws.resolve() / "archive" / name)
+                    if style == "archive":
+                        replacement = f"archive/{name}"
+                    elif style == "bare":
+                        replacement = name
+                    elif style == "work/archive":
+                        replacement = f"work/archive/{name}"
+                    elif style == "/archive":
+                        replacement = f"/archive/{name}"
+                    elif style == "/work/archive":
+                        replacement = f"/work/archive/{name}"
+                    else:
+                        replacement = absolute
+                    report = report.replace(absolute, replacement)
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                if style in ("archive", "bare", "work/archive"):
+                    self._assert_failed(ws, "report-absolute-paths")
+                    self._assert_pass_count(ws, 12, {"report-absolute-paths"})
+                else:
+                    self._assert_pass_count(ws, 13, set())
+        ws = self._ws()
+        row = "| archive/quarterly-report.pdf | Yes | 0/2 pages have embedded text — image-only scan |"
+        (ws / "audit.md").write_text(self._report(ws).replace(
+            str(ws.resolve() / "archive" / "quarterly-report.pdf"),
+            "archive/quarterly-report.pdf"), encoding="utf-8")
+        self.assertIn(row, (ws / "audit.md").read_text(encoding="utf-8"))
+        self._assert_failed(ws, "report-absolute-paths")
+
+        for style in ("archive", "bare", "work/archive"):
+            for decoration in ("", "`", "**"):
+                for outer_pipes in (True, False):
+                    for quote in (True, False):
+                        with self.subTest(style=style, decoration=decoration,
+                                          outer_pipes=outer_pipes, quote=quote):
+                            ws = self._ws()
+                            lines = [self.HEADER, self.SEPARATOR]
+                            for name, (_case, verdict) in self.FILES.items():
+                                path = (f"archive/{name}" if style == "archive" else
+                                        name if style == "bare" else f"work/archive/{name}")
+                                row_text = (f"{decoration}{path}{decoration} | "
+                                            f"{decoration}{verdict}{decoration} | "
+                                            f"{self.RATIONALES[name]} |")
+                                if outer_pipes:
+                                    row_text = "| " + row_text
+                                else:
+                                    row_text = row_text[:-1].rstrip()
+                                if quote:
+                                    row_text = "> " + row_text
+                                lines.append(row_text)
+                            if quote:
+                                lines = ["> " + line for line in lines]
+                            (ws / "audit.md").write_text(
+                                "\n".join([*lines, self.SUMMARY]), encoding="utf-8")
+                            self._assert_failed(ws, "report-absolute-paths")
+
+    def test_relative_path_verdict_errors_are_caught_after_valid_absolute_rows(self):
+        styles = ("archive", "bare", "work/archive")
+        for name, (_case, correct) in self.FILES.items():
+            wrong = "Yes" if correct != "Yes" else "No"
+            bad_verdicts = (wrong, correct + "?", correct + " — maybe", correct + " or " + wrong)
+            for style in styles:
+                for verdict in bad_verdicts:
+                    with self.subTest(name=name, style=style, verdict=verdict):
+                        ws = self._ws()
+                        if style == "archive":
+                            path = f"archive/{name}"
+                        elif style == "bare":
+                            path = name
+                        else:
+                            path = f"work/archive/{name}"
+                        duplicate = f"| {path} | {verdict} | conflicting row |\n"
+                        (ws / "audit.md").write_text(self._report(ws) + duplicate,
+                                                      encoding="utf-8")
+                        self._assert_failed(ws, self.CHECK_BY_FILE[name],
+                                            "report-absolute-paths")
+
+    def test_absolute_path_check_fails_independently_of_verdict_checks(self):
+        ws = self._ws()
+        report = self._report(ws)
+        relative = str(ws.resolve() / "archive" / "quarterly-report.pdf")
+        report = report.replace(relative, "work/archive/quarterly-report.pdf")
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
+
+        ws = self._ws()
+        report = self._report(ws) + (
+            "| work/archive/quarterly-report.pdf | Yes | duplicate relative row |\n")
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
+
+        ws = self._ws()
+        (ws / "audit.md").write_text(
+            self._report(ws, {"quarterly-report.pdf": "No"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-02")
+
 
     def test_each_objective_behavior_check_can_fail_in_isolation(self):
         for check_id, old, new in (
@@ -24699,6 +24896,12 @@ class TestIssue83(unittest.TestCase):
                 report = self._report(ws).replace(old, new)
                 (ws / "audit.md").write_text(report, encoding="utf-8")
                 self._assert_failed(ws, check_id)
+        ws = self._ws()
+        path = str(ws.resolve() / "archive" / "quarterly-report.pdf")
+        (ws / "audit.md").write_text(
+            self._report(ws).replace(path, "work/archive/quarterly-report.pdf"),
+            encoding="utf-8")
+        self._assert_failed(ws, "report-absolute-paths")
         for name, (_case, correct) in self.FILES.items():
             with self.subTest(name=name):
                 ws = self._ws()
@@ -24706,15 +24909,15 @@ class TestIssue83(unittest.TestCase):
                 (ws / "audit.md").write_text(self._report(ws, {name: wrong}), encoding="utf-8")
                 self._assert_failed(ws, self.CHECK_BY_FILE[name])
 
-    def test_filename_only_fallback_reports_unknown_and_scores_three_of_twelve(self):
+    def test_filename_only_fallback_reports_unknown_and_scores_four_of_thirteen(self):
         ws = self._ws()
         # An explicit Unknown fallback supplies no verdicts or answer-key counts.
         (ws / "audit.md").write_text(self._filename_only_report(ws), encoding="utf-8")
         failed = set(self.CHECK_BY_FILE.values()) | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 3, failed)
+        self._assert_pass_count(ws, 4, failed)
 
-    def test_best_simple_filename_heuristic_scores_at_most_six_of_twelve(self):
+    def test_best_simple_filename_heuristic_scores_at_most_seven_of_thirteen(self):
         ws = self._ws()
         names = [path.name.casefold() for path in (ws / "archive").iterdir()]
         active_words = [word for word in ("scan", "scanned", "invoice", "lease", "signed")
@@ -24728,34 +24931,34 @@ class TestIssue83(unittest.TestCase):
                         self._filename_only_report(ws, scan_words=words, fallback="No"),
                         encoding="utf-8")
                     results = self._run(ws)
-                    self.assertEqual(len(results), 12)
+                    self.assertEqual(len(results), 13)
                     scores.append(sum(bool(row["passed"]) for row in results.values()))
         self.assertEqual(len(scores), 31)
-        self.assertLessEqual(max(scores), 6)
-        self.assertEqual(max(scores), 6)
+        self.assertLessEqual(max(scores), 7)
+        self.assertEqual(max(scores), 7)
         (ws / "audit.md").write_text(
             self._filename_only_report(ws, scan_words=("scan", "invoice", "lease"), fallback="No"),
             encoding="utf-8")
         results = self._run(ws)
-        self.assertEqual(sum(bool(row["passed"]) for row in results.values()), 5)
+        self.assertEqual(sum(bool(row["passed"]) for row in results.values()), 6)
 
-    def test_blanket_no_with_self_computed_eight_no_summary_scores_seven_of_twelve(self):
+    def test_blanket_no_with_self_computed_eight_no_summary_scores_eight_of_thirteen(self):
         ws = self._ws()
         (ws / "audit.md").write_text(self._filename_only_report(ws, fallback="No"),
                                       encoding="utf-8")
         failed = {self.CHECK_BY_FILE[name] for name, (_case, correct) in self.FILES.items()
                   if correct != "No"} | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 7, failed)
+        self._assert_pass_count(ws, 8, failed)
 
-    def test_blanket_yes_with_self_computed_summary_scores_five_of_twelve(self):
+    def test_blanket_yes_with_self_computed_summary_scores_six_of_thirteen(self):
         ws = self._ws()
         (ws / "audit.md").write_text(self._filename_only_report(ws, fallback="Yes"),
                                       encoding="utf-8")
         failed = {self.CHECK_BY_FILE[name] for name, (_case, correct) in self.FILES.items()
                   if correct != "Yes"} | {"report-summary"}
         self._assert_failed(ws, *sorted(failed))
-        self._assert_pass_count(ws, 5, failed)
+        self._assert_pass_count(ws, 6, failed)
 
     def test_garbage_quality_threshold_is_the_wrong_verdict(self):
         ws = self._ws()
@@ -24767,12 +24970,12 @@ class TestIssue83(unittest.TestCase):
         report = "\n".join(line for line in self._report(ws).splitlines()
                             if "/POLICY.PDF" not in line)
         (ws / "audit.md").write_text(report, encoding="utf-8")
-        self._assert_failed(ws, "verdict-08")
+        self._assert_failed(ws, "verdict-08", "report-absolute-paths")
 
         ws = self._ws()
         report = self._report(ws).replace("/POLICY.PDF", "/policy.pdf")
         (ws / "audit.md").write_text(report, encoding="utf-8")
-        self._assert_failed(ws, "verdict-08")
+        self._assert_failed(ws, "verdict-08", "report-absolute-paths")
 
     def test_markdown_quotes_decoration_whitespace_and_optional_pipes_pass(self):
         for decoration in ("", "`", "**", "**`"):
@@ -24791,15 +24994,17 @@ class TestIssue83(unittest.TestCase):
                     self._assert_failed(ws)
 
     def test_incidental_mentions_and_inexact_paths_do_not_supply_a_row(self):
-        for replacement in ("archive/quarterly-report.pdf", "/elsewhere/quarterly-report.pdf",
-                            "/tmp/archive/prefix-quarterly-report.pdf", "/tmp/archive/quarterly-report.pdf.bak"):
+        for replacement in ("/elsewhere/quarterly-report.pdf",
+                            "/tmp/archive/prefix-quarterly-report.pdf",
+                            "/tmp/archive/quarterly-report.pdf.bak",
+                            "quarterly-report.pdf.bak", "prefix-quarterly-report.pdf"):
             with self.subTest(path=replacement):
                 ws = self._ws()
                 full = str(ws.resolve() / "archive" / "quarterly-report.pdf")
                 report = self._report(ws).replace(full, replacement)
                 report += f"I inspected {full}: Yes.\n"
                 (ws / "audit.md").write_text(report, encoding="utf-8")
-                self._assert_failed(ws, "verdict-02")
+                self._assert_failed(ws, "verdict-02", "report-absolute-paths")
 
     def test_verdict_tokens_are_leading_and_word_bounded(self):
         for filename, (_case, correct) in self.FILES.items():
@@ -25100,7 +25305,7 @@ class TestIssue83(unittest.TestCase):
                                       capture_output=True, text=True, cwd=str(REPO_ROOT))
                 self.assertEqual(proc.returncode, exit_code, proc.stdout + proc.stderr)
                 rows = json.loads(proc.stdout)["checks"]
-                self.assertEqual(len(rows), 12)
+                self.assertEqual(len(rows), 13)
                 self.assertEqual({row["id"] for row in rows if not row["passed"]}, failed)
 
 
@@ -31841,8 +32046,8 @@ elif 'worktree' in args and 'remove' in args:
             if run_results and run.returncode == 0:
                 # B1 (round 4 on #209, blocker): this step lives in the
                 # `publish` job now, not `eval` — see that job's own
-                # comment. It reads the fixture key from `needs.eval.
-                # outputs.eval_key` (via `EVAL_KEY` in `env:`) rather than
+                # comment. It reads the fixture key from the validated matrix
+                # selection (via `EVAL_KEY` in `env:`) rather than
                 # a `$RUNNER_TEMP` file, since `publish` runs on a
                 # different runner from the one that wrote that file.
                 results_script = next(step["run"] for step in document["jobs"]["publish"]["steps"]
@@ -36495,6 +36700,9 @@ class B:
 
     def test_mocked_invocation_contract_and_authoritative_suite_override(self):
         from issues import test_issue_97 as issue97
+        suite_case = issue97.TestIssue97()
+        self.addCleanup(suite_case.doCleanups)
+        suite_case.setUp()
         supplied = {self.CHILD: '', 'PROBE': 'yes'}
         argv = [sys.executable, '-']
         stdin = object()
@@ -36507,8 +36715,10 @@ class B:
             self.assertEqual(run.call_args.kwargs['cwd'], '/tmp')
             self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
             self.assertEqual(supplied[self.CHILD], '')
-            self.assertIs(issue97.TestIssue97()._run_suite(supplied), result)
-            self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
+            self.assertIs(suite_case._run_suite(supplied), result)
+            self.assertEqual(run.call_args.kwargs['env'],
+                             {self.CHILD: '1', 'PROBE': 'yes',
+                              'CLAUDE_BIN': str(suite_case.cli)})
         with mock.patch.dict(os.environ, {self.CHILD: '1'}, clear=True), mock.patch.object(subprocess, 'run') as run:
             with self.assertRaises(unittest.SkipTest):
                 TestIssue84Round5()._guarded_invoke(argv, cwd='/tmp', env={})
