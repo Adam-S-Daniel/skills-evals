@@ -1,6 +1,9 @@
 # ADR 0007: Parse configuration values and staged shell guards before scoring
 
-- **Status:** accepted (2026-10-04)
+- **Status:** accepted (2026-10-04); amended 2026-10-05 to raise the
+  continuing-state bound to 2,048 and the step bound to 65,536 (see
+  "Amendment: analysis bounds" below) and to read a configured tool's
+  output tested by `[ -z "$(...)" ]` as a capture.
 - **Issue:** Part of [the code-quality eval, #88](https://github.com/Adam-S-Daniel/skills-evals/issues/88).
 - **Decider:** Adam approved both check types and a Bash parser dependency
   on 2026-10-04; the C58 worker package records that approval.
@@ -87,9 +90,14 @@ Two related shapes keep their current scoring. After a passing availability
 guard, `[ -n "$files" ] && gofmt -l $files` as the last line passes although
 the script then exits 1 on a commit without Go files: this check rejects a
 nonzero exit only when it is caused by a missing configured tool, so an
-empty-list exit status is left to review. `test -z "$(gofmt -l $files)"` fails closed as
-`unsupported_dynamic_form`, because a command substitution outside an
-assignment is not interpreted; capture into a variable and test that instead.
+empty-list exit status is left to review. A configured-tool substitution
+that is the whole quoted operand of `-z` or `-n` inside `[ ]` or `[[ ]]`,
+such as `[ -z "$(gofmt -l "${files[@]}")" ] || RC=1`, is read as a capture
+followed by a test (amended 2026-10-05): the call needs every guard, and
+either outcome is an installed tool's verdict. Any other command
+substitution outside an assignment, including the `test -z "$(...)"`
+command form and a substitution with redirections, still fails closed as
+`unsupported_dynamic_form`.
 
 `if`/`else`, nested guards, negation, `&&`/`||` lists, stderr/null redirections,
 `set -e`/`-u`/`pipefail`, output capture followed by a nonempty test, and numeric
@@ -109,7 +117,7 @@ general loops, case statements, subshells, background execution, wrappers, and
 helper bodies outside the recognized structures. Comments, literal strings,
 and literal heredoc bodies never supply calls or guards. The implementation is
 a bounded recognizer, not a general Bash interpreter: at most 4,096 AST nodes,
-64 levels of nesting, 256 continuing states, and 32,768 analysis steps. Fixed
+64 levels of nesting, 2,048 continuing states, and 65,536 analysis steps. Fixed
 named failures identify unsupported forms. `scorers/bash_ast.py` exposes
 `parse_bash` independently of the objective scorer and shell interpreter for
 other structural checks.
@@ -119,6 +127,20 @@ was checked on 2026-10-04: the latest non-prerelease releases were published
 2026-06-30 and 2025-12-02, respectively, both older than seven days.
 Install both in every workflow that installs the objective harness; there is
 no requirements file or Python package manifest in this repository.
+
+## Amendment: analysis bounds (2026-10-05)
+
+The first bounds were 256 states and 32,768 steps. Every guarded tool call
+splits the continuing states in two, and the reference cms-platform hook's
+six language branches already peak at 240 states with the two-tool Go branch.
+A third correctly guarded Go tool (`go vet`, `staticcheck`), which the
+code-quality skill tells agents to add, therefore failed `analysis_limit` on
+a correct hook. Measured on that hook: three Go tools peak at 448 states and
+6,334 steps, four at 864 and 13,342, five at 1,696 and 27,742. The bounds are
+now 2,048 states and 65,536 steps, which admit five tools; the four-tool hook
+analyzes in well under a second, and a test bounds its step count (a
+deterministic stand-in for time). The node, depth
+and input-size bounds are unchanged.
 
 ## Consequences
 

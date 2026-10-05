@@ -74,6 +74,12 @@ evals/
   admin-config-render/     # A/B eval, Class A: a consumer site's /admin config will not render
     fixture.yaml           # prompt, command_succeeds renders, kit/verifier/identity digests, rubric
     seed/                  # a consumer site plus a vendored cms-platform kit and its Ruby render checks
+  browser-testing/         # A/B eval, Class A: add an admin-read draft-preview spec
+    fixture.yaml           # fixed AST command checks and parser/verifier integrity checks
+    seed/                  # pinned platform slice and pure-fs parser dependencies
+  code-quality/            # A/B eval, Class A: add Go to the staged lint hook and configs
+    fixture.yaml           # prompt, parsed config + Bash AST + hidden hook probe, preservation checks, rubric
+    seed/                  # platform lint configs, the vendored lint-staged.sh, a small Go module
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
@@ -84,6 +90,9 @@ evals/
   pdf-ocr-audit/           # A/B eval, Class A: audit synthetic PDFs for OCR needs
     fixture.yaml           # prompt, objective report checks + source immutability, rubric
     seed/archive/          # eight committed PDFs; generator and answer key live outside seed/
+  platform-release-and-bump/ # A/B eval, Class A+B: local platform consumer bump
+    fixture.yaml           # tagged verifier exit, structural refs, caller set, replay restraint
+    seed/                  # older consumer pins and fixed platform release machinery
   skills-doctor/           # A/B eval, Class B: diagnose what a session is
     bucketed-account-store/ # actually being delivered, when the account store
       fixture.yaml         # is bucketed per account and its copy of a skill is
@@ -95,6 +104,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  editorial-label-audit/  # A/B eval, Class B: diagnose and repair persistent editorial labels
+    fixture.yaml           # prompt, permissions and label-transaction checks, rubric
+    seed/                  # thin daily caller, vendored audit, shared gh payloads
   consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
     fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
     seed/                  # shared fake gh, startup-failure metadata, denied secret listing
@@ -122,6 +134,10 @@ evals/
       fixture.yaml         # eval dir of its own — judge.mode: pairwise
       seed/                # the material the writing is drawn from
       references/          # the committed drafts the judge ranks against
+  finding-unknowns/        # Class C: repo-grounded questions before building
+    fixture.yaml           # three path citations, source restraint, pairwise rubric
+    seed/                  # small export service, test, and architecture decision
+    references/            # hand-written strong and shallow replies, outside seed
 scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)

@@ -351,6 +351,17 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.out.iterdir()),
                          ["earlier.txt"])
 
+    def test_persistent_root_check_still_refuses_a_repository(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        self.out.mkdir()
+        (self.out / "earlier.txt").write_text("x\n", encoding="utf-8")
+        self.assertEqual(local_eval.check_results_dir(self.out, require_empty=False),
+                         self.out)
+        with self.assertRaises(local_eval.Refused):
+            local_eval.check_results_dir(REPO_ROOT / "results", require_empty=False)
+
     def test_refuses_a_guidance_fixture_and_out_of_range_trials(self):
         for args, message in (((str(GUIDANCE_FIXTURE), "--trials", "1"),
                                "skill fixtures only"),
@@ -412,6 +423,24 @@ class TestLocalEval(unittest.TestCase):
         self.assertFalse(probe["skill_under_test_visible"])
 
     # -- 2, 4, 5, 6: a clean run -----------------------------------------
+
+    def test_timestamp_is_forwarded_to_every_trial_and_validated(self):
+        stamp = "20261004T120000Z"
+        proc = self._run(str(EVAL_DIR), "--trials", "2", "--no-judge",
+                         "--timestamp", stamp,
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self._json("manifest.json")["invocation"]["timestamp"], stamp)
+        for k in (1, 2):
+            self.assertEqual(len(list((self.out / f"t{k}").glob(
+                f"{SKILL}/{stamp}/**/with_skill/summary.json"))), 1)
+        self.assertTrue((self.out / "LOCAL_EXHIBIT").is_file())
+        self.log.unlink(missing_ok=True)
+        self.out = self.root / "bad-timestamp"
+        invalid = self._run(str(EVAL_DIR), "--timestamp", "../escape")
+        self._assert_nothing_ran(invalid)
+        self.assertIn("--timestamp", invalid.stderr)
+        self.assertFalse(self.out.exists())
 
     def test_a_clean_run_records_identity_runs_n_trials_and_aggregates(self):
         registry = self._registry()

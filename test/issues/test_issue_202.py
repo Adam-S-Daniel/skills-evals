@@ -1209,8 +1209,9 @@ class TestRosterOnlyDispatch(unittest.TestCase):
     # which has no `roster_only`-conditioned `if:` at all: it always runs.
     # B1 (round 4 on #209, blocker): "Build the badge over the run window,
     # commit, and push" moved to the `publish` job, whose own `if:` is
-    # `needs.eval.result == 'success'` — a `roster_only` dispatch skips the
-    # whole `eval` job (`result` reads `skipped`, never `success`), so this
+    # requires `needs.eval.result` to be success, failure, or cancelled — a
+    # `roster_only` dispatch skips the whole `eval` job (`result` reads
+    # `skipped`, which cannot satisfy listed condition), so this
     # step no longer needs, or carries, its own `roster_only`-conditioned
     # `if:` at all.
     SKIPPED = ("WIF auth preflight", "Run the eval (both arms, judge)")
@@ -3711,12 +3712,14 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         self.assertIsNone(doc["jobs"]["roster"].get("needs"))
         eval_job = doc["jobs"]["eval"]
         # ADR 0004: `eval` also waits for `roster-pr` (the arming) and
-        # `roster-wait` (the bounded wait that resolves it).
-        self.assertEqual(eval_job.get("needs"), ["roster", "disarm", "roster-pr", "roster-wait"])
+        # `roster-wait` (the bounded wait that resolves it). ADR 0008 adds
+        # the successful fixture plan without making roster failures fatal.
+        self.assertEqual(eval_job.get("needs"),
+                         ["plan", "roster", "disarm", "roster-pr", "roster-wait"])
         # ADR 0004 review, S1 (fail closed): also gated on `roster-wait`
         # confirming the arming cleared (or being skipped, off `main`); a
         # failed `roster` or `disarm` is still never fatal.
-        self.assertEqual(eval_job.get("if"), "${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        self.assertEqual(eval_job.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
         self.assertEqual(doc["jobs"]["disarm"].get("needs"), "roster")
 
 
@@ -5746,9 +5749,9 @@ class TestB1Round4DisarmLookupFilters(unittest.TestCase):
 
 class TestB1Round4JobGraph(unittest.TestCase):
     """B1 (round 4 on #209): the job graph's gates, asserted on the PARSED
-    workflow. `publish` holds `contents: write` and must run only once the
-    `eval` job succeeded (the old in-job badge step's implicit success()
-    gate, which also skips it for `roster_only`); `disarm` runs only for
+    workflow. `publish` holds `contents: write` and runs after a successful
+    plan and a completed eval matrix, including a failed sibling; each
+    publisher requires its own success payload. `disarm` runs only for
     `main` and only after `roster`; `eval` waits for `disarm` but is never
     blocked by it failing or being skipped."""
 
@@ -5760,12 +5763,14 @@ class TestB1Round4JobGraph(unittest.TestCase):
         needs = job.get("needs") or []
         return sorted([needs] if isinstance(needs, str) else needs)
 
-    def test_publish_runs_only_after_a_successful_eval(self):
+    def test_publish_runs_after_a_completed_eval_matrix_and_a_successful_plan(self):
         publish = self.jobs["publish"]
         # ADR 0004 review, S1: `publish` (contents: write) is gated on the
         # same `roster-wait` confirmation as `eval`, so it needs that job.
-        self.assertEqual(self._needs(publish), ["eval", "roster", "roster-wait"])
-        self.assertEqual(publish.get("if"), "${{ !cancelled() && needs.eval.result == 'success' && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        # ADR 0008 also requires a successful plan, and permits publication
+        # of successful fixtures when a sibling evaluation fails.
+        self.assertEqual(self._needs(publish), ["eval", "plan", "roster", "roster-wait"])
+        self.assertEqual(publish.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure' || needs.eval.result == 'cancelled') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
     def test_roster_pr_runs_after_disarm_and_a_failed_one_never_blocks_it(self):
         # Round 5 had roster-pr wait for `publish` (`contents: write`),
@@ -5791,8 +5796,8 @@ class TestB1Round4JobGraph(unittest.TestCase):
         # which since the review's S1 DOES block unless it confirmed the
         # arming cleared or was skipped — the gate logic itself is
         # evaluated in test_issue_eval_on_merged_roster.TestTheGates.
-        self.assertEqual(self._needs(ev), ["disarm", "roster", "roster-pr", "roster-wait"])
-        self.assertEqual(ev.get("if"), "${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        self.assertEqual(self._needs(ev), ["disarm", "plan", "roster", "roster-pr", "roster-wait"])
+        self.assertEqual(ev.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
 
 class TestB1VerifyComparePredicate(unittest.TestCase):

@@ -1,4 +1,4 @@
-# Real (non-hermetic) skill eval: runs the workflow-path-audit A/B eval against
+# Real (non-hermetic) eval: runs reviewed scheduled fixtures or one dispatch against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
 # pushes the badge + run summaries to the `persistent/eval-results` branch. The hermetic
 # suite stays in ci.yml — this workflow is the ONLY place real credentials
@@ -38,17 +38,19 @@
 #   persist-credentials: false like every other checkout, and it is NOT a
 #   skill registry: it gets --guidance, never --registry.
 #
-# * The fixture that runs is a dispatch input (`fixture`, default
-#   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as DATA in the
-#   validation step below and never interpolated into a run: block —
-#   `${{ inputs.* }}` in a shell script is an injection surface, and this is
-#   the workflow that holds the key. The value is first refused outright if it
-#   carries any character outside [A-Za-z0-9/_.-] — a newline included, which
-#   is what a `grep -F` match alone could not catch, since grep treats each
-#   LINE of its pattern as a pattern of its own — and only then matched
-#   against the set of evals/**/fixture.yaml directories present in this
-#   checkout. Anything failing either check fails the step BEFORE the token
-#   exchange runs. The scheduled run passes no input and gets the default.
+# * Schedule selection comes only from committed evals/scheduled.yml, a reviewed
+#   list with readiness evidence (ADR 0008). A contents: read planning job
+#   emits the matrix; dispatch still takes one `fixture` input (default
+#   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as data, never
+#   interpolated into run:. Every eval leg revalidates its own selection
+#   against Git's committed evals/**/fixture.yaml set before its own exchange.
+#   An untracked directory, traversal, malformed value or NUL cannot qualify.
+#   fail-fast: false isolates failures; at most two eval legs run together.
+#   Success artifacts have unique numeric slots and run_attempt names; failed
+#   legs upload diagnostics separately. Publishers independently validate the
+#   fixture/key in fresh checkouts and download only the matching success
+#   artifact. They serialize writes, even when a sibling eval fails. The
+#   roster/disarm/proposal/wait jobs still run once per workflow run.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   Anthropic secret exists (the one stored secret in this workflow is the
@@ -70,7 +72,7 @@
 #   token (≤1h, workspace-scoped, spend-capped) is masked via
 #   ::add-mask::, stored only in $RUNNER_TEMP/anthropic-bearer, and
 #   exported step-locally as ANTHROPIC_AUTH_TOKEN in each step that calls
-#   claude — never top-level env. The single exchange also satisfies the
+#   claude — never top-level env. Each leg has its own exchange, satisfying the
 #   issuer's single-use JTI enforcement (one exchange, all four claude
 #   calls share the token). Dispatches from non-main refs get no
 #   credential — the rule's sub claim matches ref:refs/heads/main only —
@@ -80,11 +82,10 @@
 #   guard probe per declared arm, which is 5 + 5 for the delivery canary. The
 #   report's cost column counts the SCORED leg only — the guard probes are
 #   real calls and are not in it. The fixture
-#   pins a mid-tier agent and a strong judge — carried over unchanged from
-#   the predecessor fixture — which puts a run at ~$0.30–0.90, i.e.
-#   ~$1.50–4/month at weekly cadence. Unpinning any of them would make the
-#   per-run cost track the CLI's default model instead, and would break
-#   week-over-week badge comparability with it. Per-dispatch spend is
+#   may pin its models or use the committed roster. The existing estimate is
+#   ~$0.30–0.90 per skill fixture: the four-entry schedule is approximately
+#   $1.20–3.60/run, or $6–18 for five weekly runs. These are estimates rather
+#   than a cap; actual model choice and judging affect cost. Per-fixture spend is
 #   bounded by the harness timeouts
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
@@ -116,7 +117,8 @@
 #   class name, and refresh_models.py is written to produce nothing else. The
 #   token-exchange failure output below is a separate pre-existing path.
 #
-# * All five checkouts use `persist-credentials: false`; write auth is
+# * All five checkouts (distinct repositories) use `persist-credentials: false`;
+#   the plan and publisher repeat this repo on fresh runners. Write auth is
 #   injected only in the steps that write — the `roster` job's
 #   roster-proposal step (its tracking issue only; since round 7 it pushes
 #   nothing), the `disarm`, `roster-pr` and `roster-wait` jobs' `gh` calls,
@@ -131,9 +133,8 @@
 #   planted; no long-lived secret exists on any of them either. Every job
 #   that writes anything (`roster`, `disarm`, `roster-pr`, `roster-wait`,
 #   `publish`) gets its own fresh `${{ github.token }}`, scoped to that
-#   job's own `permissions:` block and never shared with `eval`'s — six
-#   jobs, six runners, no credential in common between the one that runs
-#   the agent and any of the other five. What IS in reach differs by
+#   job's own `permissions:` block and never shared with `eval`'s. Matrix
+#   legs use separate runners; no agent shares a runner with a writer. What IS in reach differs by
 #   subject, because the two arms are built differently:
 #
 #     - a SKILL arm's agent gets an ALLOWLIST too, since #81 (harness/
@@ -216,7 +217,7 @@ on:
         required: false
         default: false
 
-# SIX jobs, each least-privileged at JOB level (B1, adversarial round 4 on
+# SEVEN jobs, each least-privileged at JOB level (B1, adversarial round 4 on
 # #209, blocker; B1 round 3; F2, round 1; ADR 0004 added `roster-wait`). Workflow-level permissions is `{}`
 # deliberately: the `eval` job runs the bypass-permissions agent, and
 # giving it write scopes for the whole job would hand those scopes to that
@@ -278,7 +279,7 @@ on:
 # read) that a LATER STEP OF THE SAME JOB would then execute with whatever
 # credential that step holds, so no write credential of any kind may exist
 # on this job's runner at all, ever. `needs: [roster, disarm, roster-pr,
-# roster-wait]` — NOT the other way: `disarm` and `roster-wait` must finish
+# roster-wait, plan]` — NOT the other way: `disarm` and `roster-wait` must finish
 # before this job's agent starts. `if:` is `!cancelled()`, not
 # `roster_only`, AND (S1, fail closed) `roster-wait` either skipped (off
 # `main`) or reporting `cleared == 'true'` — so no armed auto-merge, an
@@ -323,27 +324,17 @@ on:
 # (and repository admins) create, update or delete `roster/proposal`
 # closes that gap once it is live; until then it stands.
 #
-# `publish` (contents: write): B1 (round 4 on #209, blocker). Everything
-# that used to be the `eval` job's own "Build the badge over the run
-# window, commit, and push" step, moved into a job with NO agent and a
-# FRESH checkout, so the write credential it holds never coexists on a
-# runner with the bypass-permissions agent. `needs: [roster, eval,
-# roster-wait]`, `if:` `!cancelled()`, `needs.eval.result == 'success'` and
-# (S1) the same `roster-wait` `cleared` gate as `eval` — it only runs
-# once the eval has actually produced something to publish (this also
-# reproduces the old skip on a `roster_only` dispatch, whose `eval` job
-# never runs at all: `needs.eval.result` reads `skipped`, which is never
-# `success`). It takes a fresh `actions/checkout` of `skills-evals` at this
-# run's own triggering sha — never the `eval` job's checkout, which the
-# agent shared a filesystem with — downloads the `eval` job's uploaded
-# artifact into `results/`, and runs `scripts/make_badge.py` from ITS OWN
-# checkout, never from the artifact: the artifact is the eval's raw output,
-# untrusted content exactly like everything else `persistent/eval-results` already
-# carries, and it must never be able to substitute its own copy of the
-# script that builds the badge. The roster exhibit it commits
-# (`roster/latest.json`) comes from `needs.roster.outputs.roster_latest_json`
-# — the `roster` job's own computed roster — exactly as it did when this
-# logic lived in `eval` (ADR 0001 decision 3: read by no decision).
+# `plan` (contents: read) admits the event/list into a fixture/key/slot matrix.
+# `publish` (contents: write) uses that same matrix on fresh runners with no
+# agent. It requires the confirmed-clear gate, no cancellation, and an eval
+# matrix that finished (success OR failure). Each leg reads only its unique
+# success payload. Missing payload skips that leg after an eval failure; a
+# missing payload after aggregate success is an infrastructure error. Matrix
+# max-parallel: 1 and the run concurrency lane serialize results-branch writes.
+# The badge script comes from the fresh committed checkout, never the artifact;
+# it builds this fixture's badge only after loading accumulated results history.
+# The roster exhibit remains needs.roster.outputs.roster_latest_json, an exhibit
+# read by no roster decision (ADR 0001 decision 3).
 #
 # `roster-pr` (pull-requests: write, issues: write, contents: read, plus
 # the roster App's installation token): publishes the proposal the `roster`
@@ -406,6 +397,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: skills-evals
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Install planning dependency
+        run: pip install pyyaml
+      - name: Plan reviewed fixtures
+        id: plan
+        working-directory: skills-evals
+        run: python3 scripts/plan_scheduled_evals.py
+
   roster:
     runs-on: ubuntu-latest
     # B1 (round 3 on #209): computes, renders, admits and pushes the
@@ -507,17 +522,9 @@ jobs:
         # change what a `section` arm delivers.
         run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
-      # Runs BEFORE the token exchange, deliberately: a dispatch naming a
-      # fixture that does not exist must fail here, with no credential minted
-      # and nothing spent. The value is read from the event payload as DATA
-      # (jq, no `${{ }}` interpolation into this shell), checked for SHAPE,
-      # and only then matched against the set of directories that actually
-      # carry a committed fixture.yaml — so a traversal, an absolute path, a
-      # shell metacharacter, a newline or a stale name never gets past here.
-      # "Committed" here means "present in this checkout": the set comes from
-      # `find`, not `git ls-files`, so an untracked fixture directory would be
-      # accepted too. Equivalent in the fresh CI checkout this workflow runs
-      # in, where nothing is untracked.
+      # This singleton reads the model catalogue, not an eval fixture.
+      # The read-only plan and each eval leg validate committed selections;
+      # no fixture-controlled input is consumed by this exchange.
       - name: Mint OIDC token and exchange for Anthropic access token
         run: |
           resp=$(curl -sS --fail-with-body \
@@ -1316,7 +1323,7 @@ jobs:
     # only once no roster pull request is left armed, and this job can run
     # on the roster its own run just merged. `disarm` stays listed: it is
     # what clears an EARLIER run's stale arming before anything else.
-    needs: [roster, disarm, roster-pr, roster-wait]
+    needs: [plan, roster, disarm, roster-pr, roster-wait]
     # S1 (fail closed): runs only when `roster-wait` CONFIRMED no roster
     # pull request is left armed (`cleared == 'true'`), or when it was
     # skipped altogether (a dispatch off `main`, where nothing is armed by
@@ -1336,7 +1343,7 @@ jobs:
     # arming and the committed roster. But a `roster-wait` that did not
     # CONFIRM the arming cleared keeps this job from running at all (S1,
     # the clause below). Skipped entirely for a `roster_only` dispatch.
-    if: ${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     # Job-level, not workflow-level (F2). B1 (round 4 on #209, blocker):
     # `contents: write` is GONE — this job runs the bypass-permissions
@@ -1349,11 +1356,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    # Consumed by `publish` (B1, round 4 on #209): the fixture's results
-    # key, for the commit message it writes — that job has no file on this
-    # one's runner to read it from.
-    outputs:
-      eval_key: ${{ steps.select-fixture.outputs.eval_key }}
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     # 45 min covers the widest committed shape, not just the 2-arm skill
     # A/B: a guidance fixture spends (agent budget + guard budget) per
     # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
@@ -1572,25 +1578,24 @@ jobs:
       # and only then matched against the set of directories that actually
       # carry a committed fixture.yaml — so a traversal, an absolute path, a
       # shell metacharacter, a newline or a stale name never gets past here.
-      # "Committed" here means "present in this checkout": the set comes from
-      # `find`, not `git ls-files`, so an untracked fixture directory would be
-      # accepted too. Equivalent in the fresh CI checkout this workflow runs
-      # in, where nothing is untracked.
+      # Git's index defines the committed set; untracked fixtures never qualify.
       - name: Select and validate the fixture to run
-        # `id` + a `GITHUB_OUTPUT` write (B1, round 4 on #209): the
-        # `publish` job's commit message needs this same key, and that job
-        # has no file this one wrote to `$RUNNER_TEMP` — a separate runner
-        # entirely — so it travels as a job output instead, already
-        # charset-validated below before it is ever written anywhere.
+        # Keep a local step output for offline validation probes. Publishing
+        # uses the trusted planner's matching key, revalidated on its own
+        # fresh runner; matrix eval outputs are never shared across legs.
         id: select-fixture
         working-directory: skills-evals
+        env:
+          SCHEDULE_FIXTURE: ${{ github.event_name == 'schedule' && matrix.fixture || '' }}
+          MATRIX_KEY: ${{ matrix.eval_key }}
+          MATRIX_SLOT: ${{ matrix.slot }}
         run: |
           set -euo pipefail
           # Byte semantics for the character class below, so what this gate
           # accepts does not depend on the runner's locale.
           export LC_ALL=C
-          fixture=""
-          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+          fixture="${SCHEDULE_FIXTURE:-}"
+          if [ -z "$fixture" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
             # NUL FIRST, on the event file itself, before any command
             # substitution. `jq -r` emits a NUL faithfully and bash's `$( )`
             # then DROPS it ("warning: command substitution: ignored null
@@ -1614,7 +1619,7 @@ jobs:
             fi
             fixture="$(jq -r '.inputs.fixture // empty' "$GITHUB_EVENT_PATH")"
           fi
-          # The scheduled run carries no inputs at all; it gets the default.
+          # Dispatch with no input keeps the single-fixture default.
           if [ -z "$fixture" ]; then
             fixture="evals/workflow-path-audit"
           fi
@@ -1640,7 +1645,7 @@ jobs:
               echo "eval.yml: dispatch input 'fixture' has characters outside [A-Za-z0-9/_.-]"
               exit 1 ;;
           esac
-          committed="$(find evals -mindepth 1 -name fixture.yaml -printf '%h\n' | sort)"
+          committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
           # A here-string, never `printf ... | grep -Fxq`: piping a list into
           # an early-exit reader under `pipefail` makes the writer take
           # SIGPIPE the moment grep matches, and the step then fails CLOSED on
@@ -1657,6 +1662,9 @@ jobs:
           # The results/badge key is the fixture path without its evals/
           # prefix: `workflow-path-audit`, or `guidance/<section id>`.
           key="${fixture#evals/}"
+          if [ -n "${MATRIX_KEY:-}" ]; then
+            python3 scripts/plan_scheduled_evals.py --validate "$fixture" "$MATRIX_KEY" "$MATRIX_SLOT" >/dev/null
+          fi
           printf '%s' "$key" > "$RUNNER_TEMP/eval-key"
           echo "eval_key=$key" >> "$GITHUB_OUTPUT"
           echo "fixture: $fixture"
@@ -1768,23 +1776,21 @@ jobs:
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
 
-      # B1 (round 4 on #209, blocker): this job does NOT build the badge,
-      # commit, or push any more — that logic (and the `contents: write`
-      # token it needs) moved to the `publish` job, which has no agent and
-      # a fresh checkout. This step hands `publish` its raw output as a
-      # build artifact instead: `results/` is exactly what the old badge
-      # step snapshotted before switching to `persistent/eval-results`, so `publish`
-      # can restore it the same way. `if: ${{ !cancelled() }}` rather than
-      # the default (only on success) so a failed eval run still uploads
-      # whatever partial output it produced — this is also this job's own
-      # debug artifact, replacing the old failure-only "Upload results on
-      # failure" step; `publish` only ever reads it when `eval` itself
-      # succeeded (its own `if:` on `needs.eval.result == 'success'`).
+      # Only successful legs provide a publishable payload. Partial output is
+      # diagnostic, with a separate name publishers never download.
       - name: Upload eval results
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: eval-results-payload
+          name: eval-results-payload-${{ matrix.slot }}-${{ github.run_attempt }}
+          path: skills-evals/results/
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Upload eval diagnostics
+        if: ${{ failure() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: eval-results-diagnostics-${{ matrix.slot }}-${{ github.run_attempt }}
           path: skills-evals/results/
           if-no-files-found: ignore
           include-hidden-files: true
@@ -1796,12 +1802,23 @@ jobs:
     # S1 (ADR 0004): gated on `roster-wait`'s confirmation exactly as
     # `eval` is — `contents: write` never runs beside an arming that was
     # not confirmed cleared, even if `eval`'s own gate ever drifted.
-    needs: [roster, eval, roster-wait]
-    if: ${{ !cancelled() && needs.eval.result == 'success' && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
+    # A matrix leg that exceeds `timeout-minutes` may be reported as
+    # cancelled rather than failed, and a matrix with no failed leg but a
+    # cancelled one aggregates to `cancelled`. `eval.result` may therefore be
+    # success, failure, or cancelled when only some legs ended badly, and
+    # `!cancelled()` (true unless the whole run was cancelled) is what stops
+    # publication on a real cancellation. Only `skipped` keeps this job from
+    # running, so one timed-out leg cannot discard its siblings' results.
+    needs: [plan, roster, eval, roster-wait]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.eval.result == 'success' || needs.eval.result == 'failure' || needs.eval.result == 'cancelled') && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       # Fresh — never the `eval` job's checkout, which the agent shared a
       # filesystem with. `ref:` is explicit even though it matches the
@@ -1818,19 +1835,33 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The `eval` job's raw output, uploaded as a build artifact (B1,
-      # round 4 on #209) since this job shares no filesystem with that
-      # one. `actions/download-artifact` is pinned to v7.0.0
-      # (37930b1c2abaa49bbe596cd826c3c89aef350131, the same major as the
-      # `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`
-      # (v7) this repo already pins) — resolved with
-      # `git ls-remote https://github.com/actions/download-artifact
-      # 'refs/tags/v7*'`, a release well over 7 days old.
+      - name: Validate the publishing fixture and key
+        id: fixture
+        working-directory: skills-evals
+        env:
+          FIXTURE: ${{ matrix.fixture }}
+          EVAL_KEY: ${{ matrix.eval_key }}
+          SLOT: ${{ matrix.slot }}
+        run: python3 scripts/plan_scheduled_evals.py --validate "$FIXTURE" "$EVAL_KEY" "$SLOT" >> "$GITHUB_OUTPUT"
+
       - name: Download eval results
+        id: download
+        continue-on-error: true
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         with:
-          name: eval-results-payload
+          name: eval-results-payload-${{ matrix.slot }}-${{ github.run_attempt }}
           path: skills-evals/results
+
+      - name: Report a missing success payload
+        if: ${{ steps.download.outcome == 'failure' }}
+        env:
+          EVAL_RESULT: ${{ needs.eval.result }}
+        run: |
+          echo "This fixture has no downloadable success payload; publishing is skipped." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVAL_RESULT" = success ]; then
+            echo "::error::Successful eval matrix is missing a success payload"
+            exit 1
+          fi
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
@@ -1854,6 +1885,7 @@ jobs:
       # own copy of the script that builds the badge. It is stdlib-only, so
       # nothing else has to travel with it.
       - name: Build the badge over the run window, commit, and push
+        if: ${{ steps.download.outcome == 'success' }}
         working-directory: skills-evals
         env:
           # Push auth lives only in this step.
@@ -1866,13 +1898,10 @@ jobs:
           # decision); empty when the roster job published nothing this
           # run.
           ROSTER_LATEST_JSON: ${{ needs.roster.outputs.roster_latest_json }}
-          # The fixture's results/badge key (B1, round 4 on #209): the
-          # `eval` job already validated this against
-          # [A-Za-z0-9/_.-] before writing it as a job output; re-checked
-          # below regardless, since a job boundary is exactly where
-          # "validate again" earns its keep, and this value lands directly
-          # in a commit message.
-          EVAL_KEY: ${{ needs.eval.outputs.eval_key }}
+          # The fixture's results/badge key is independently validated against
+          # Git's committed set in THIS job's fresh checkout, using the
+          # trusted plan key, never a matrix eval job's last output.
+          EVAL_KEY: ${{ steps.fixture.outputs.eval_key }}
         run: |
           set -euo pipefail
           git config user.name "skills-evals real-eval bot"
@@ -1913,12 +1942,8 @@ jobs:
             echo "No roster was published this run — see the roster job's warning." \
               >> "$GITHUB_STEP_SUMMARY"
           fi
-          # The published badge is the reference A/B's, always: it is what the
-          # README renders, and rebuilding it from the accumulated window is a
-          # no-op on a run of some other fixture. A dispatched fixture's own
-          # results are still committed below; make_badge.py takes a
-          # `guidance/<id>` name too, for when a guidance A/B earns a badge.
-          python3 "$RUNNER_TEMP/make_badge.py" workflow-path-audit
+          # Build this validated fixture's badge over the accumulated window.
+          python3 "$RUNNER_TEMP/make_badge.py" "$EVAL_KEY"
           git add badges results
           # -f is load-bearing: .gitignore lists roster/ and usage/ so a stray
           # local copy cannot ride into a main-branch PR. They ARE tracked here

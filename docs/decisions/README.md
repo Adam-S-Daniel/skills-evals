@@ -17,4 +17,6 @@ with, so the next session can tell a deliberate constraint from an accident.
 | [0004](0004-eval-runs-on-the-roster-its-run-merged.md) | The scheduled eval runs on the roster its own run just merged | accepted (2026-09-30) |
 | [0005](0005-improvement-loop-reuses-skill-creator.md) | The improvement loop reuses skill-creator's description loop and measures with this harness | proposed (2026-10-04) |
 | [0006](0006-run-objective-commands-with-isolated-process-state.md) | Run objective commands with isolated process state | accepted (2026-10-04) |
-| [0007](0007-parse-config-and-staged-shell-guards.md) | Parse configuration values and staged shell guards before scoring | accepted (2026-10-04) |
+| [0007](0007-parse-config-and-staged-shell-guards.md) | Parse configuration values and staged shell guards before scoring | accepted (2026-10-04); amended 2026-10-05 |
+| [0008](0008-run-ready-fixtures-on-the-weekly-schedule.md) | Run ready fixtures on the weekly schedule | proposed (2026-10-04) |
+| [0009](0009-fixture-followup-turns.md) | A fixture may send scripted follow-up turns, identically in both arms | proposed (2026-10-05) |

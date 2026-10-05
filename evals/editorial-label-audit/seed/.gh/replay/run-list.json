@@ -1,0 +1,9 @@
+[
+  {
+    "databaseId": 4471182930,
+    "workflowName": "Editorial label audit",
+    "status": "completed",
+    "conclusion": "failure",
+    "url": "https://github.com/example-org/example-site/actions/runs/4471182930"
+  }
+]
