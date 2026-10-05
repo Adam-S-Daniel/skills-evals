@@ -39,7 +39,7 @@ from . import invisibles, wrapping
 _HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
 if _HARNESS_DIR not in sys.path:
     sys.path.insert(0, _HARNESS_DIR)
-from cli_json import normalize_cli_result  # noqa: E402
+from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -205,14 +205,15 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     if result.returncode != 0:
         raise RuntimeError(
             f"judge CLI call failed (exit {result.returncode}): "
-            f"{result.stderr.strip() or result.stdout.strip()}"
+            f"{failed_run_detail(result.stdout, result.stderr)}"
         )
 
     try:
         data = normalize_cli_result(json.loads(result.stdout))
     except json.JSONDecodeError as e:
         raise RuntimeError(
-            f"judge CLI produced invalid JSON: {result.stdout[:500]!r}: {e}"
+            f"judge CLI produced invalid JSON: {e.msg} at character {e.pos} "
+            f"of {len(result.stdout)}"
         ) from e
     except ValueError as e:
         raise RuntimeError(f"judge CLI produced invalid JSON: {e}") from e

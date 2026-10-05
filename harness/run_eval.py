@@ -54,7 +54,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from cli_json import normalize_cli_result  # noqa: E402
+from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
@@ -1026,8 +1026,17 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # arms have always had — `project`, and this harness's own environment
     # with the fixture's `env:` applied — so skill fixtures are byte-identical
     # across this change.
+    # `--verbose` makes `--output-format json` print the whole message array
+    # (every turn's `type: result`), not only the LAST result. An agent that
+    # starts a background subagent answers, then answers again when the
+    # subagent reports; without the flag the first answer is dropped and the
+    # scorer sees only the follow-up text (CLI 2.1.289, probed). The flag is
+    # also the CLI's own config override, so the output shape no longer
+    # depends on the machine's verbose setting. `normalize_cli_result`
+    # accepts both shapes.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
-           "--output-format", "json", "--permission-mode", "bypassPermissions",
+           "--output-format", "json", "--verbose",
+           "--permission-mode", "bypassPermissions",
            "--setting-sources", arm.get("setting_sources", "project")]
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
@@ -1059,14 +1068,18 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
         if result.returncode != 0:
             return {"error": "nonzero_exit",
-                    "detail": label + (result.stderr.strip() or result.stdout.strip()),
+                    "detail": label + failed_run_detail(result.stdout, result.stderr),
                     "returncode": result.returncode}
 
         try:
             data = normalize_cli_result(json.loads(result.stdout))
         except json.JSONDecodeError as e:
+            # Shape only. The array form starts with the `system/init`
+            # message (cwd, tool and connector names), and this detail
+            # reaches summary.json, so no slice of stdout is echoed.
             return {"error": "invalid_json",
-                    "detail": f"{label}{result.stdout[:500]!r}: {e}"}
+                    "detail": f"{label}stdout is not valid JSON ({e.msg} at "
+                              f"character {e.pos} of {len(result.stdout)})"}
         except ValueError as e:
             return {"error": "invalid_json", "detail": f"{label}{e}"}
 

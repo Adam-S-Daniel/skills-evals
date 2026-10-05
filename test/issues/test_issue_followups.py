@@ -85,7 +85,7 @@ class RunAgentFollowupTests(unittest.TestCase):
             return run_eval.run_agent(self.workspace, "Rename the PDFs.", arm)
 
     BASE_CMD = ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
-                "json", "--permission-mode", "bypassPermissions",
+                "json", "--verbose", "--permission-mode", "bypassPermissions",
                 "--setting-sources", "project", "--model", "model-a"]
 
     # -- no followups: unchanged -----------------------------------------
@@ -206,6 +206,29 @@ class RunAgentFollowupTests(unittest.TestCase):
                 out = self.run_agent(cli, ["yes"])
                 self.assertEqual(out["error"], error)
                 self.assertEqual(out["detail"], detail)
+
+    def test_a_failed_followup_never_echoes_the_array_it_printed(self):
+        private = "/home/example/private-workspace"
+        array = json.dumps([
+            {"type": "system", "subtype": "init", "cwd": private},
+            result("stopped at " + private) | {"subtype": "error_max_turns",
+                                               "is_error": True}])
+        cli = ScriptedCli(result("proposed"),
+                          subprocess.CompletedProcess(["fake"], 1, stdout=array,
+                                                      stderr=""))
+        out = self.run_agent(cli, ["yes"])
+        self.assertEqual(out["error"], "nonzero_exit")
+        self.assertEqual(out["detail"], "follow-up 1 of 1: result subtype "
+                                        "error_max_turns, is_error true")
+        self.assertNotIn("private-workspace", json.dumps(out))
+        cli = ScriptedCli(result("proposed"),
+                          subprocess.CompletedProcess(["fake"], 0,
+                                                      stdout=array[:40] + private,
+                                                      stderr=""))
+        out = self.run_agent(cli, ["yes"])
+        self.assertEqual(out["error"], "invalid_json")
+        self.assertTrue(out["detail"].startswith("follow-up 1 of 1: stdout is not valid JSON"))
+        self.assertNotIn("private-workspace", out["detail"])
 
     def test_no_session_id_to_resume_is_an_error_before_any_followup(self):
         for session in (None, "", 7):
