@@ -81,6 +81,18 @@ prompt: >
 followups:
   - "Yes, apply all of the proposed renames (auto)."
 
+# Per TURN, and every turn gets the whole value (`run_agent`), so this
+# fixture's two turns cost up to 2 x timeout_s per arm. At the harness
+# default of 600 s that is 2 arms x (2 x 600 + 120 judge) = 2640 s against
+# the 2025 s ceiling (0.75 x eval.yml's 2700 s job timeout). Observed
+# `duration_ms` in the local runs under ~/evals-local (2026-10-04 and
+# 2026-10-05), the agent call(s) only: 16 one-turn arms ran 29-151 s (slowest
+# a single with_skill call, 151 s); 6 two-turn arms (with the follow-up, the
+# 2026-10-05 s10 run) ran 41-61 s for BOTH turns. 300 s is about twice the
+# slowest single call seen. Worst case now 2 x (2 x 300 + 120) = 1440 s.
+# test_every_fixture_fits_inside_the_workflow_job_timeout holds the budget.
+timeout_s: 300
+
 arms:
   with_skill:
     install: copy

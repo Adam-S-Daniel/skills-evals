@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -195,6 +196,54 @@ def make_guidance_checkout(root: Path) -> Path:
 # checks it out side by side) and on a dev box; tests that need the REAL hook
 # or the REAL manifest skip with a printed reason when it is not.
 REAL_GUIDANCE_DIR = (REPO_ROOT / ".." / "_agent-guidance").resolve()
+
+
+def _harness_default(path: Path, functions: tuple[str, ...], receiver: str,
+                     key: str) -> int:
+    """The integer default a harness function falls back to, READ OUT OF THE
+    SOURCE: the literal in `<receiver>.get("<key>", <int>)` inside each named
+    function. Every site must agree, and at least one must exist, so a budget
+    test built on it cannot go on counting a number the harness stopped
+    using, or pass vacuously when the call site moves.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: set[int] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef) and node.name in functions):
+            continue
+        for call in ast.walk(node):
+            if (isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "get"
+                    and ast.unparse(call.func.value) == receiver
+                    and len(call.args) == 2
+                    and isinstance(call.args[0], ast.Constant)
+                    and call.args[0].value == key
+                    and isinstance(call.args[1], ast.Constant)
+                    and isinstance(call.args[1].value, int)):
+                found.add(call.args[1].value)
+    assert len(found) == 1, (
+        f"{path.name}: expected exactly one default for "
+        f"`{receiver}.get({key!r}, <int>)` in {functions}, found "
+        f"{sorted(found)} — has the call site's shape changed?")
+    return found.pop()
+
+
+def _signature_default(path: Path, function: str, argument: str) -> int:
+    """The integer default of one keyword parameter, parsed from the source."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    fn = next(node for node in ast.walk(tree)
+              if isinstance(node, ast.FunctionDef) and node.name == function)
+    args = fn.args
+    pairs = list(zip(reversed(args.args), reversed(args.defaults)))
+    pairs += [(a, d) for a, d in zip(args.kwonlyargs, args.kw_defaults)
+              if d is not None]
+    for arg, default in pairs:
+        if arg.arg == argument:
+            assert (isinstance(default, ast.Constant)
+                    and isinstance(default.value, int)), (function, argument)
+            return default.value
+    raise AssertionError(f"{function}() has no defaulted `{argument}` parameter")
 
 
 class TestIssue97(unittest.TestCase):
@@ -4643,14 +4692,27 @@ class TestIssue97(unittest.TestCase):
     # `judge_cfg.get("timeout_s", 120)` on the judge, and `deliver`'s own
     # `timeout: int = 120` on the hook. A five-arm fixture that inherits all
     # of them needs 5 x 1140 s = 95 min and does NOT fit in eval.yml's 45.
-    DEFAULT_AGENT_BUDGET_S = 600
-    DEFAULT_GUARD_BUDGET_S = 300
-    DEFAULT_JUDGE_BUDGET_S = 120
+    #
+    # Read out of the harness source, not written down here (#287): a default
+    # the harness changes must move the budget with it.
+    _RUN_EVAL = HARNESS_DIR / "run_eval.py"
+    _ARM_FNS = ("_run_arm", "_run_guidance_arm")
+    DEFAULT_AGENT_BUDGET_S = _harness_default(
+        _RUN_EVAL, _ARM_FNS, "fixture", "timeout_s")
+    DEFAULT_GUARD_BUDGET_S = _harness_default(
+        _RUN_EVAL, ("_run_guidance_arm",), "fixture.get('guard') or {}",
+        "timeout_s")
+    DEFAULT_JUDGE_BUDGET_S = _harness_default(
+        _RUN_EVAL, _ARM_FNS, "judge_cfg", "timeout_s")
+    # The per-arm `setup:` hook (`run_setup`, skill arms only).
+    DEFAULT_SETUP_BUDGET_S = _harness_default(
+        _RUN_EVAL, ("run_setup",), "fixture", "setup_timeout_s")
     # `deliver(..., timeout: int = 120)` in harness/guidance.py, and
     # `_run_guidance_arm` passes no override — a fixed per-arm cost, spent
     # running the real hook. Measured in round 3: a hook that sleeps gives
     # rc 2 at 120.2 s.
-    DELIVER_BUDGET_S = 120
+    DELIVER_BUDGET_S = _signature_default(
+        HARNESS_DIR / "guidance.py", "deliver", "timeout")
 
     @staticmethod
     def _judge_branch_keys() -> tuple[str, ...]:
@@ -4691,6 +4753,31 @@ class TestIssue97(unittest.TestCase):
                     keys.append(call.args[0].value)
         return tuple(dict.fromkeys(keys))
 
+    @staticmethod
+    def _turns(fixture: dict) -> int:
+        """Agent calls per arm: the prompt plus one per `followups:` entry.
+        `run_agent` gives EVERY turn the whole `timeout`, so a follow-up is a
+        second full agent budget, not a rounding error (#287)."""
+        return 1 + len(fixture.get("followups") or [])
+
+    @classmethod
+    def _skill_fixture_budget(cls, fixture: dict) -> tuple[int, int]:
+        """(per-arm seconds, arm count) for a skill fixture, defaults and all.
+
+        Every arm `_run_arm` runs spends: one agent budget per turn, the
+        `setup:` hook when the fixture declares one (`run_setup`, called from
+        `materialize_workspace` for each arm), and the judge — a skill
+        fixture must declare `judge_rubric:` and eval.yml passes no
+        `--no-judge`. `--arm both` is the two skill arms, one trial.
+        """
+        agent = (fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
+                 * cls._turns(fixture))
+        setup = (fixture.get("setup_timeout_s", cls.DEFAULT_SETUP_BUDGET_S)
+                 if fixture.get("setup") else 0)
+        judge = (fixture.get("judge") or {}).get(
+            "timeout_s", cls.DEFAULT_JUDGE_BUDGET_S)
+        return agent + setup + judge, 2
+
     @classmethod
     def _guidance_fixture_budget(cls, fixture: dict) -> tuple[int, int]:
         """(per-arm seconds, arm count) for a guidance fixture, defaults and
@@ -4716,7 +4803,8 @@ class TestIssue97(unittest.TestCase):
         spent; it passes no `--timeout` either, so the agent leg is the
         fixture's own knob.
         """
-        agent = fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
+        agent = (fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
+                 * cls._turns(fixture))
         guard = (fixture.get("guard") or {}).get(
             "timeout_s", cls.DEFAULT_GUARD_BUDGET_S)
         judge = ((fixture.get("judge") or {}).get(
@@ -4791,40 +4879,119 @@ class TestIssue97(unittest.TestCase):
             "_run_guidance_arm now calls run_setup, so `setup_timeout_s` is a "
             "real per-arm cost and the budget must count it")
 
-    def test_every_guidance_fixture_fits_inside_the_workflow_job_timeout(self):
-        # Generalised from the delivery canary alone: any guidance fixture
-        # under evals/ is dispatchable, and one that inherits the default
-        # budgets across five arms would blow the job timeout with no summary
-        # and no artifact — the failure mode that is hardest to read in CI.
+    @staticmethod
+    def _dispatchable_by_run_eval(fixture: dict) -> bool:
+        """Whether `run_eval.py` would run this fixture at all: a guidance
+        fixture, or a skill fixture with the `skill` and `prompt` strings it
+        requires of every non-objective-only arm. The propagation probe and
+        the bridge canary live under evals/ too but have their own runners
+        (`run_propagation.py`, `run_canary.py`); eval.yml handed to
+        `run_eval.py` they exit 2 on the missing field before any agent call,
+        so they spend no budget."""
+        if fixture.get("subject") == "guidance":
+            return True
+        return (isinstance(fixture.get("skill"), str)
+                and isinstance(fixture.get("prompt"), str))
+
+    def test_every_fixture_fits_inside_the_workflow_job_timeout(self):
+        # #287. This used to check guidance fixtures only and counted one
+        # agent call per arm, so rename-pdfs (a skill fixture with one
+        # `followups:` entry and the default 600 s) needed
+        # 2 x (2 x 600 + 120) = 2640 s of a 2700 s job and nothing noticed.
+        # Any fixture under evals/ is dispatchable, and a job that outlives
+        # `timeout-minutes` dies with no summary and no artifact — the failure
+        # mode that is hardest to read in CI.
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         job_budget_s = doc["jobs"]["eval"]["timeout-minutes"] * 60
-        checked = 0
+        # The budget below assumes the invocation eval.yml really makes:
+        # `--arm both` (two skill arms, or the guidance fixture's declared
+        # arms), one trial, no `--timeout` override and no `--no-judge`.
+        # Parsed from the step, so a flag added there fails here instead of
+        # silently making the arithmetic wrong.
+        step = next(step for step in doc["jobs"]["eval"]["steps"]
+                    if step.get("id") == "eval")
+        tokens = shlex.split(step["run"].replace("\\\n", " "))
+        self.assertIn("run_eval.py", " ".join(tokens))
+        self.assertEqual(tokens[tokens.index("--arm") + 1], "both")
+        for flag in ("--trials", "--timeout", "--no-judge"):
+            self.assertNotIn(
+                flag, tokens,
+                f"eval.yml's run step now passes {flag}: the per-fixture "
+                "budget in this test no longer describes what a leg spends")
+        checked = {"skill": 0, "guidance": 0}
+        skipped = []
         for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
             fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
-            if fixture.get("subject") != "guidance":
+            name = str(path.parent.relative_to(REPO_ROOT))
+            if not self._dispatchable_by_run_eval(fixture):
+                skipped.append(name)
                 continue
-            checked += 1
-            per_arm, arms = self._guidance_fixture_budget(fixture)
+            guidance_subject = fixture.get("subject") == "guidance"
+            checked["guidance" if guidance_subject else "skill"] += 1
+            per_arm, arms = (self._guidance_fixture_budget(fixture)
+                             if guidance_subject
+                             else self._skill_fixture_budget(fixture))
             worst_case = per_arm * arms
-            with self.subTest(fixture=str(path.parent.relative_to(REPO_ROOT))):
-                self.assertLess(
+            with self.subTest(fixture=name):
+                self.assertLessEqual(
                     worst_case, job_budget_s * 0.75,
-                    f"{path.parent.relative_to(REPO_ROOT)}: {arms} arms x "
-                    f"(deliver + agent + guard + judge = {per_arm}s) = "
+                    f"{name}: {arms} arms x {per_arm}s per arm = "
                     f"{worst_case}s does not leave room inside eval.yml's "
                     f"{job_budget_s}s job timeout for the CLI install and the "
-                    "badge commit. A fixture that omits the knobs inherits "
-                    f"{self.DELIVER_BUDGET_S} + {self.DEFAULT_AGENT_BUDGET_S} "
-                    f"+ {self.DEFAULT_GUARD_BUDGET_S} + "
-                    f"{self.DEFAULT_JUDGE_BUDGET_S}s per arm; a declared "
+                    "badge commit (0.75 x the job timeout is the ceiling). "
+                    f"The agent leg runs {self._turns(fixture)} turn(s) — the "
+                    "prompt plus each `followups:` entry — and EVERY turn "
+                    "gets the whole `timeout_s:` (default "
+                    f"{self.DEFAULT_AGENT_BUDGET_S}s). Lower `timeout_s:`, "
+                    "drop a follow-up or split the fixture. Per-arm extras "
+                    "for a skill fixture: the judge "
+                    f"({self.DEFAULT_JUDGE_BUDGET_S}s default) and a "
+                    f"`setup:` hook ({self.DEFAULT_SETUP_BUDGET_S}s default). "
+                    f"For a guidance fixture: deliver ({self.DELIVER_BUDGET_S}s)"
+                    f", the guard ({self.DEFAULT_GUARD_BUDGET_S}s default) and "
+                    "the judge when it declares "
                     + " or ".join(f"`{key}:`"
                                   for key in self._judge_branch_keys())
-                    + " is spent because eval.yml passes no `--no-judge` "
-                    "(those are the keys _run_guidance_arm's judge branch "
-                    "reads, parsed out of the harness).")
-        self.assertGreater(checked, 0,
-                           "no committed guidance fixture — this test would "
-                           "pass vacuously")
+                    + " (eval.yml passes no `--no-judge`; those are the keys "
+                    "_run_guidance_arm's judge branch reads, parsed out of "
+                    "the harness).")
+        for subject, count in checked.items():
+            self.assertGreater(count, 0,
+                               f"no committed {subject} fixture — this test "
+                               "would pass vacuously for that subject")
+        # A fixture skipped for not being run_eval's is named, so a real
+        # fixture that loses its `skill:`/`prompt:` cannot slip out of the
+        # budget unnoticed.
+        self.assertEqual(
+            sorted(skipped),
+            ["evals/guidance-bridge-canary", "evals/propagation"],
+            "the fixtures run_eval.py does not run changed; each is either "
+            "another runner's (add it here) or has lost `skill:`/`prompt:`")
+
+    def test_a_followup_turn_costs_a_whole_agent_budget(self):
+        # #287, as arithmetic: both subjects multiply the agent leg by the
+        # turn count and by nothing else, and the skill path counts the judge
+        # and a declared `setup:`.
+        base = {"timeout_s": 100, "judge": {"timeout_s": 7}}
+        self.assertEqual(self._skill_fixture_budget(base), (107, 2))
+        with_followups = dict(base, followups=["a", "b"])
+        self.assertEqual(self._skill_fixture_budget(with_followups),
+                         (307, 2))
+        self.assertEqual(
+            self._skill_fixture_budget(
+                dict(base, setup="true", setup_timeout_s=11)),
+            (118, 2))
+        self.assertEqual(
+            self._skill_fixture_budget({"followups": ["a"]}),
+            (2 * self.DEFAULT_AGENT_BUDGET_S + self.DEFAULT_JUDGE_BUDGET_S, 2),
+            "an omitted `timeout_s:` is the harness default, per turn")
+        gbase = {"timeout_s": 10, "guard": {"timeout_s": 20},
+                 "arms": {"a": {}, "b": {}}}
+        self.assertEqual(
+            self._guidance_fixture_budget(dict(gbase, followups=["x"])),
+            (self.DELIVER_BUDGET_S + 2 * 10 + 20, 2),
+            "a guidance arm's agent leg runs every turn; deliver and the "
+            "guard run once")
 
     def test_the_job_timeout_comment_accounts_for_a_guidance_dispatch(self):
         # The two comments the round-1 review found stale: both described a
