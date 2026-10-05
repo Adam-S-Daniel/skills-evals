@@ -3680,7 +3680,7 @@ def _parsed_config_document(text, format):
 
 def parsed_config_values(workspace: str, patterns: list[str], format=None,
                          expected=_FRONT_MATTER_UNSET) -> tuple[bool, str]:
-    """Typed mapping paths, or parse-only; see ADR 0006 for the contract."""
+    """Typed mapping paths, or parse-only; see ADR 0007 for the contract."""
     try:
         if not isinstance(patterns, list) or not patterns or format not in ("yaml", "json"):
             raise _ObjectiveInputError("invalid_constraints")
