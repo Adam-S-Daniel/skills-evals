@@ -126,7 +126,8 @@ class TestIssue78(unittest.TestCase):
     def test_seed_test_fails_then_minimal_fix_passes_in_scratch(self):
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
-        command = [sys.executable, "-m", "unittest", "discover", "-s", "test", "-q"]
+        env["PYTHONPATH"] = str(self.workspace)
+        command = [sys.executable, "test/test_export.py", "-q"]
         failed = subprocess.run(command, cwd=self.workspace, env=env,
                                 capture_output=True, text=True, timeout=15)
         self.assertEqual(failed.returncode, 1, failed.stderr)
