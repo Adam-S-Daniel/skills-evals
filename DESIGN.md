@@ -180,6 +180,42 @@ fail `invalid_bash`. The exact supported forms, filename limits, dependency
 pins, and analysis bounds are documented in
 [ADR 0007](docs/decisions/0007-parse-config-and-staged-shell-guards.md).
 
+### Command objective check
+
+| Check type | Constraints | Evidence |
+| --- | --- | --- |
+| `command_succeeds` | Nonempty string array `argv`; optional finite positive `timeout_s` (default 30, maximum 60; booleans rejected) | Real process exit zero in the arm's final workspace |
+
+The [command scorer](harness/scorers/commands.py) runs argv directly with no
+shell or interpolation and closed stdin. Bare `bash`, `sh`, `python3`, and
+`node` resolve only at fixed `/usr/bin` or `/bin` paths; every other entrypoint
+must resolve inside the final workspace, including symlink resolution. Direct
+`claude`/`claude.exe` entrypoints are rejected. No arbitrary PATH lookup occurs.
+
+Each process receives a new constant-built environment with temporary HOME,
+XDG/config/runtime/temp directories and a fixed PATH headed by a private
+`claude` refusal stub. It inherits no credentials or `CLAUDE_BIN`, including
+the local harness's guard launcher. Both CI and local scoring use the same
+registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
+spawn failure, timeout, and invalid arguments yield distinct named failures.
+On POSIX, cleanup terminates the process's own group and reaps its direct child
+with a bounded wait.
+
+Linux network namespaces are attempted using fixed `unshare --net` after a
+bounded harmless probe. The detail says `network=isolated` or
+`network=unavailable`; the latter means network access is not blocked.
+Diagnostics suppress arbitrary program/exception text and expose only status,
+exit code, and capped stdout/stderr byte counts (4096 each, with a truncation
+marker), so published details cannot contain program-supplied home paths or
+environment values. Capture uses temporary files rather than unbounded RAM.
+
+[ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md)
+records the threat model: the agent may have modified the code this check
+runs. This isolation does not prevent reading host files, absolute binary
+invocation, deliberate PATH evasion (including an absolute CLI invocation),
+new-session descendants, or disk/CPU exhaustion. It is not a full sandbox.
+No fixture is added; existing fixture scoring is unchanged.
+
 ### YAML front-matter objective check (`harness/scorers/objective.py`)
 
 `front_matter_has` checks existing files at exact workspace-relative `paths`

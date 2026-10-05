@@ -34,6 +34,7 @@ if _HARNESS_DIR not in sys.path:
 GIT_TIMEOUT_S = 10
 
 from . import invisibles, wrapping
+from .commands import command_succeeds
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -3745,6 +3746,7 @@ def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> 
 CHECKS = {
     "parsed_config_values": parsed_config_values,
     "shell_staged_tool_guard": shell_staged_tool_guard,
+    "command_succeeds": command_succeeds,
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
@@ -3805,6 +3807,7 @@ _WORKFLOW_STEP_USES_KEYS = {
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "parsed_config_values": {"format", "expected"},
     "shell_staged_tool_guard": {"tools"},
+    "command_succeeds": {"argv", "timeout_s"},
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     # `require_present` is `file_matches`'s only opt-in: it makes a check
     # whose evidence IS the file fail closed when that file is absent or
@@ -3840,12 +3843,13 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                transcript: str | None = None) -> list[dict]:
     """Run every objective check in the fixture; return result dicts.
 
-    Every check here is hermetic — no network, no credentials, no wall clock.
+    File and git checks are hermetic. The opt-in `command_succeeds` executes
+    final-workspace code with isolated process state and a bounded timeout;
+    network isolation is best-effort and reported in its detail (ADR 0006).
     The one that was not, `pinned_shas_match_tags`, resolved a SHA to a tag
     over `git ls-remote`; it retired with the version-comment convention and
-    took the network opt-in that existed only for it. Offline is therefore not
-    a mode here, it is the only behaviour. A future network-dependent check
-    reintroduces an opt-in deliberately, and defaults it off.
+    took the network opt-in that existed only for it. No check intentionally
+    resolves remote evidence; command execution is not a complete sandbox.
 
     Every check's keys are validated against `_CHECK_ALLOWED_KEYS` before
     running, for every type — not just `workflow_step_uses` — so an
