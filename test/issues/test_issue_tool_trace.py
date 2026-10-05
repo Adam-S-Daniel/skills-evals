@@ -24,7 +24,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 
 import cli_json  # noqa: E402
-from cli_json import bounded_tool_trace, redact, secret_values, tool_events  # noqa: E402
+from cli_json import (REDACTED, bounded_tool_trace, redact, secret_values,  # noqa: E402
+                      tool_events)
 import run_eval  # noqa: E402
 
 # A credential the arm's environment carries (eval.yml forwards
@@ -124,6 +125,154 @@ class RedactionTests(unittest.TestCase):
             with self.subTest(text=text[:12]):
                 self.assertIn("<redacted>", redact(text))
                 self.assertNotIn(ASSIGNED_SECRET, redact(text))
+
+
+def path_lines_then(secret: str, at: int = 4057) -> str:
+    """grep/find-style absolute-path lines (about 3.9 KB, each of which
+    redaction shrinks to `<path>`), then `secret` starting at char `at`, just
+    inside the 4096-char window the first version redacted before cutting."""
+    head, index = "", 0
+    while len(head) + 200 < at:
+        head += "/srv/" + "segment/" * 18 + f"file{index:03}.py\n"
+        index += 1
+    rest = at - len(head)
+    head += "/srv/" + "a" * (rest - 6) + "\n"
+    assert len(head) == at
+    return head + secret + "\nmore output\n"
+
+
+class FullStringRedactionTests(unittest.TestCase):
+    """The first version redacted 4096 chars and then cut to 300; redaction
+    shrank the head, so a secret cut at the window edge reached the kept
+    300 chars unredacted (review of b4592cd)."""
+
+    def _output(self, text: str, secrets: list[str]) -> str:
+        message = {"type": "user", "parent_tool_use_id": None, "message": {
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_09",
+                         "content": text}]}}
+        return tool_events([message], secrets)[0]["output"]
+
+    def test_env_value_at_the_window_edge_is_redacted(self):
+        secret = "fake" + "-env-" + "0123456789abcdefghijklmnopqrstu"
+        self.assertEqual(len(secret), 40)
+        out = self._output(path_lines_then(secret), [secret])
+        self.assertIn("<path>", out)
+        for piece in (secret[:8], secret[8:16], secret[-8:]):
+            self.assertNotIn(piece, out)
+        self.assertIn(REDACTED, out)
+
+    def test_token_shape_at_the_window_edge_is_redacted(self):
+        # 15 of its chars inside the old window: too few for the gh*_ shape.
+        out = self._output(path_lines_then(SHAPED_SECRET, at=4096 - 15), [])
+        self.assertNotIn(SHAPED_SECRET[:8], out)
+        self.assertIn(REDACTED, out)
+
+    def test_oversized_text_keeps_nothing(self):
+        big = "x" * (cli_json._REDACT_MAX_CHARS + 1) + SHAPED_SECRET
+        out = self._output(big, [])
+        self.assertNotIn("x", out.replace("chars", ""))
+        self.assertIn("too large to redact", out)
+
+
+class CredentialShapeTests(unittest.TestCase):
+    """Each hardening shape is redacted without a known value."""
+
+    VALUE = "Vv" + "9q" + "Zx4" + "Lm7" + "Pq2" + "Rt8"
+
+    def assertRedacted(self, text: str, secret: str, marker: str = REDACTED):
+        out = redact(text)
+        self.assertNotIn(secret, out, out)
+        self.assertIn(marker, out, out)
+        return out
+
+    def test_headers(self):
+        for header in ("X-Api-Key", "x-api-key", "X-Auth-Token", "Private-Token",
+                       "X-Goog-Api-Key", "Proxy-Authorization"):
+            with self.subTest(header=header):
+                self.assertRedacted(f'curl -H "{header}: {self.VALUE}" x',
+                                    self.VALUE)
+        out = self.assertRedacted("Authorization: Digest username=" + self.VALUE,
+                                  self.VALUE)
+        self.assertTrue(out.startswith("Authorization: "))
+
+    def test_netrc(self):
+        text = ("machine example.com login someuser password " + self.VALUE
+                + "\nmachine example.net\n  login otheruser\n  password "
+                + self.VALUE + "\n")
+        out = self.assertRedacted(text, self.VALUE)
+        self.assertNotIn("someuser", out)
+        self.assertNotIn("otheruser", out)
+        self.assertIn("machine example.net", out)
+
+    def test_curl_user(self):
+        for flag in ("-u ", "--user ", "--user=", "-u '"):
+            with self.subTest(flag=flag):
+                out = self.assertRedacted(
+                    f"curl {flag}someone:{self.VALUE} https://example.com", self.VALUE)
+                self.assertNotIn("someone", out)
+        # -u without a colon is some other flag (git push -u, sort -u).
+        self.assertEqual(redact("git push -u origin main"), "git push -u origin main")
+
+    def test_url_userinfo(self):
+        for url in (f"https://x-access-token:{self.VALUE}@github.com/o/r.git",
+                    f"postgres://admin:{self.VALUE}@db.example.com:5432/x",
+                    f"https://{self.VALUE}@example.com/"):
+            with self.subTest(url=url[:12]):
+                out = self.assertRedacted(url, self.VALUE)
+                self.assertNotIn("x-access-token", out)
+        self.assertIn("example.com", redact(f"https://u:{self.VALUE}@example.com/x"))
+
+    def test_pat_env_names(self):
+        for name in ("GH_PAT_X", "MY_PAT", "PAT_FOR_CI", "gh_pat"):
+            with self.subTest(name=name):
+                self.assertRedacted(f"{name}={self.VALUE}", self.VALUE)
+        self.assertEqual(secret_values({"GH_PAT_X": self.VALUE,
+                                        "PATH": "/usr/local/bin:/usr/bin"}),
+                         [self.VALUE])
+        self.assertNotIn(REDACTED, redact("PATH=/usr/bin SPATIAL=yes"))
+
+    def test_private_key_blocks(self):
+        body = "\n".join(["lQOYBF" + self.VALUE] * 3)
+        for kind in ("PGP PRIVATE KEY BLOCK", "OPENSSH PRIVATE KEY",
+                     "ENCRYPTED PRIVATE KEY", "RSA PRIVATE KEY"):
+            with self.subTest(kind=kind):
+                text = (f"before\n-----BEGIN {kind}-----\n{body}\n"
+                        f"-----END {kind}-----\nafter")
+                out = self.assertRedacted(text, self.VALUE)
+                self.assertEqual(out, "before\n" + REDACTED + "\nafter")
+        # No END line: everything from BEGIN on goes.
+        out = redact("x\n-----BEGIN PRIVATE KEY-----\n" + body)
+        self.assertEqual(out, "x\n" + REDACTED)
+
+    def test_vendor_token_shapes(self):
+        alnum = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
+        for token in ("gl" + "pat-" + alnum[:20],
+                      "AI" + "za" + alnum[:35],
+                      "rk" + "_live_" + alnum[:24],
+                      "sk" + "_live_" + alnum[:24],
+                      "sk" + "_test_" + alnum[:24],
+                      "xa" + "pp-1-" + alnum[:20],
+                      "xo" + "xb-" + alnum[:20],
+                      "xo" + "xe-" + alnum[:20],
+                      "gh" + "p_" + alnum,
+                      "gh" + "s_" + alnum,
+                      "github" + "_pat_" + alnum):
+            with self.subTest(token=token[:6]):
+                out = self.assertRedacted(f"value {token} end", token)
+                self.assertEqual(out, f"value {REDACTED} end")
+
+    def test_email_addresses(self):
+        address = "someone." + "name" + "@" + "example.com"
+        out = self.assertRedacted(f"Author: Some One <{address}>", address,
+                                  cli_json.EMAIL)
+        self.assertIn("<email>", out)
+        self.assertEqual(redact("a@b c@1.2.3 @types/node"),
+                         "a@b c@1.2.3 @types/node")
+
+    def test_ordinary_output_is_kept(self):
+        text = ("ok 12 tests passed\nkey: value\nmonkey patch applied\n"
+                "sort -u list.txt\nhttps://example.com/path?q=1\n")
+        self.assertEqual(redact(text), text)
 
 
 class BoundTests(unittest.TestCase):

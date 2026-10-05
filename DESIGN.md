@@ -471,13 +471,21 @@ is objectively decidable from the resulting files alone.
   result (`is_error`, `output_chars`, the head of the output), tagged with the
   CLI call (`call` 0 is the prompt, then each follow-up). Inputs are cut to 200
   characters, outputs to 300, and one trial's events to 64 KiB; events past
-  the cap are counted in `omitted_events`. Every string is redacted first
-  (`cli_json.redact`): the values of credential-named variables in the
-  arm's environment, credential shapes (`gh*_`, `sk-`, `AKIA`, JWTs,
-  `Authorization:` headers, `NAME=value` where the name says token, secret,
-  password, key, credential, auth or cookie) and absolute paths (the same
-  patterns `failed_run_detail` applies). The file is gitignored like
-  `raw.json` and never reaches `persistent/eval-results`, but eval.yml uploads
+  the cap are counted in `omitted_events`. Every string is redacted whole
+  before it is cut (`cli_json.redact`; a cut first could split a secret so
+  no pattern matches the kept part, and a string over 1 MiB is not kept at
+  all): the values of credential-named variables in the arm's environment,
+  credential shapes (`gh*_`, `github_pat_`, `glpat-`, `sk-`, `sk_`/`rk_`
+  `live`/`test`, `AIza`, `AKIA`, `xox*-`, `xapp-`, JWTs, any `BEGIN ...
+  PRIVATE KEY` block including PGP, `Authorization:` values, URL userinfo,
+  `curl -u user:pass`, `.netrc` `login`/`password`, `NAME=value` or
+  `Name: value` where the name says token, secret, password, api-key,
+  `-key`/`_key`, PAT, credential, auth or cookie), email addresses (to
+  `<email>`) and absolute paths (the same patterns `failed_run_detail`
+  applies). Residual risk: a secret with no recognizable name or shape, such
+  as a PEM body without its BEGIN line or a base64-encoded token, is not
+  detected; heuristics for those would mangle ordinary output. The file is
+  gitignored like `raw.json` and never reaches `persistent/eval-results`, but eval.yml uploads
   `results/` as a workflow artifact, which is public on this repository. No
   scorer reads it: `run_agent` returns it under `tool_trace`, beside the
   unchanged `transcript` and `raw`.

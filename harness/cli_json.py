@@ -124,9 +124,11 @@ TRACE_NAME_CHARS = 100
 #: Hard cap on the serialized events of one trial (every CLI call of one arm
 #: run). Events past it are counted in `omitted_events`, never kept.
 TRACE_MAX_BYTES = 64 * 1024
-#: Redaction reads this much of a string before it is truncated, so a secret
-#: that starts inside the kept head is seen whole.
-_REDACT_WINDOW = 4096
+#: Redaction scans the WHOLE string before it is cut: redaction can shrink
+#: text (a long path becomes `<path>`), so a window cut first would pull an
+#: unredacted, half-cut secret from the window's edge into the kept head. A
+#: string longer than this is not scanned and nothing of it is kept.
+_REDACT_MAX_CHARS = 1 << 20
 #: A tool-use id, kept only when it has this shape (it pairs calls with
 #: results); anything else is dropped rather than echoed.
 _TOOL_USE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -136,30 +138,61 @@ _INPUT_KEYS = ("command", "file_path", "path", "pattern", "url", "query",
                "skill", "subagent_type", "description", "prompt")
 
 REDACTED = "<redacted>"
-# Environment variable names whose values are credentials.
+EMAIL = "<email>"
+# Environment variable names whose values are credentials. `pat` only as a
+# whole name part (GH_PAT, PAT_X), never inside a word such as PATH.
 _SECRET_NAME = re.compile(
-    r"(?i)(token|secret|passw(or)?d|api_?key|access_?key|private_?key|"
-    r"credential|auth|cookie|session)")
+    r"(?i)(token|secret|passw(or)?d|api[_-]?key|access[_-]?key|"
+    r"private[_-]?key|credential|auth|cookie|session|(?<![a-z])pat(?![a-z]))")
+#: Every repetition below is bounded or anchored on a literal, so one scan of
+#: a large tool output stays linear.
+_KEY_NAME = (r"(?:token|secret|passw(?:or)?d|api[_-]?key|access[_-]?key|"
+             r"private[_-]?key|[_-]key|credential|auth|cookie|"
+             r"(?<![A-Za-z])pat(?![A-Za-z]))")
 #: Shapes of credentials, wherever they appear.
 _SECRET_PATTERNS = (
-    (re.compile(r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?"
-                r"(?:-----END[A-Z ]*PRIVATE KEY-----|\Z)"), REDACTED),
+    # Any BEGIN ... PRIVATE KEY ... block (PEM, OpenSSH, PGP "PRIVATE KEY
+    # BLOCK"), through its END line or, if that is missing, the end of text.
+    (re.compile(r"-----BEGIN[A-Z0-9 ]{0,40}PRIVATE KEY[A-Z0-9 ]{0,40}-----"
+                r"[\s\S]*?(?:-----END[A-Z0-9 ]{0,40}PRIVATE KEY[A-Z0-9 ]{0,40}"
+                r"-----|\Z)"), REDACTED),
+    # URL userinfo: scheme://user:pass@host, https://x-access-token:...@host.
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]{0,30}://)[^\s/?#@'\"`<>]{1,512}@"),
+     r"\1" + REDACTED + "@"),
     (re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"), REDACTED),
     (re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
      REDACTED),
+    (re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}"), REDACTED),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{35}"), REDACTED),
+    (re.compile(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{10,}"), REDACTED),
     (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), REDACTED),
-    (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), REDACTED),
+    (re.compile(r"\b(?:xox[abeprs]|xapp)-[A-Za-z0-9-]{10,}"), REDACTED),
     (re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*"),
      REDACTED),
-    (re.compile(r"(?i)\b(authorization\s*:\s*(?:bearer|token|basic)\s+)\S+"),
+    # Authorization / Proxy-Authorization: the whole value, any scheme.
+    (re.compile(r"(?i)\b(authorization[\"']?\s*[:=]\s*[\"']?)[^\r\n\"'`]+"),
      r"\1" + REDACTED),
     (re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]{16,}"), r"\1" + REDACTED),
-    # NAME=value / "name": "value" where the name says credential: `env`
-    # output, an export, a config file read back.
-    (re.compile(r"(?i)\b([A-Za-z0-9_.-]*(?:token|secret|passw(?:or)?d|api_?key|"
-                r"access_?key|private_?key|credential|auth|cookie)[A-Za-z0-9_.-]*"
+    # curl -u / --user / --proxy-user user:password.
+    (re.compile(r"(?<!\S)(-u|--user|--proxy-user)(\s+|=)([\"']?)"
+                r"[^\s\"':]{0,256}:[^\s\"']*"),
+     r"\1\2\3" + REDACTED),
+    # .netrc: `password v` anywhere, `login v` at a line start or after
+    # `machine host`.
+    (re.compile(r"(?i)\b(passw(?:or)?d[ \t]+)(?![=:])\S+"), r"\1" + REDACTED),
+    (re.compile(r"(?im)((?:^[ \t]*|\bmachine[ \t]+\S{1,256}[ \t]+)login[ \t]+)\S+"),
+     r"\1" + REDACTED),
+    # NAME=value / "name": "value" / X-Api-Key: value where the name says
+    # credential: `env` output, an export, a header, a config file read back.
+    # The name starts only where a name can (not mid-word), so a long run of
+    # name characters is tried once, not at every offset.
+    (re.compile(r"(?i)((?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{0,128}" + _KEY_NAME
+                + r"[A-Za-z0-9_.-]{0,128}"
                 r"[\"']?\s*[=:]\s*[\"']?)[^\s\"',;}]+"),
      r"\1" + REDACTED),
+    # Email addresses (personal data never goes in a public log).
+    (re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@"
+                r"(?:[A-Za-z0-9-]{1,63}\.){1,8}[A-Za-z]{2,24}\b"), EMAIL),
 )
 
 
@@ -192,8 +225,11 @@ def redact(text: str, secrets: list[str] = ()) -> str:
 
 
 def _clip(text: str, limit: int, secrets: list[str]) -> str:
-    """Redact the head of `text`, then cut it to `limit` characters."""
-    kept = redact(text[:_REDACT_WINDOW], secrets)
+    """Redact ALL of `text`, then cut it to `limit` characters. Never cut
+    first: a cut can split a secret so no pattern matches the part kept."""
+    if len(text) > _REDACT_MAX_CHARS:
+        return f"<{len(text)} chars, too large to redact>"
+    kept = redact(text, secrets)
     return kept if len(kept) <= limit else kept[:limit] + "..."
 
 
