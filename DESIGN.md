@@ -486,7 +486,9 @@ is objectively decidable from the resulting files alone.
   as a PEM body without its BEGIN line or a base64-encoded token, is not
   detected; heuristics for those would mangle ordinary output. The file is
   gitignored like `raw.json` and never reaches `persistent/eval-results`, but eval.yml uploads
-  `results/` as a workflow artifact, which is public on this repository. No
+  it in the run's workflow artifact, which is public on this repository. That
+  artifact is an allowlist (#289): `summary.json`, `report.md` and
+  `tool_trace.json`; the unredacted `raw.json` stays on the runner. No
   scorer reads it: `run_agent` returns it under `tool_trace`, beside the
   unchanged `transcript` and `raw`.
 

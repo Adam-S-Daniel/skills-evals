@@ -1783,22 +1783,40 @@ jobs:
 
       # Only successful legs provide a publishable payload. Partial output is
       # diagnostic, with a separate name publishers never download.
+      #
+      # Both uploads name an ALLOWLIST, never the whole results/ tree (#289):
+      # this repository is public, so anyone signed in can download a workflow
+      # artifact. Each arm's transcripts/raw.json is the CLI's unredacted
+      # result, which the forwarded ANTHROPIC_ credential could reach, so it
+      # stays on the runner. What is uploaded: summary.json (the scores and
+      # every check's detail, all `publish` and make_badge.py read), the run's
+      # report.md, and transcripts/tool_trace.json, which cli_json.redact
+      # scrubs before it is written. All three patterns share the search root
+      # skills-evals/results, so the artifact keeps the results/ layout the
+      # `publish` download expects. No file the harness writes is hidden, so
+      # hidden files stay excluded (the action's default).
       - name: Upload eval results
         if: ${{ success() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: eval-results-payload-${{ matrix.slot }}-${{ github.run_attempt }}
-          path: skills-evals/results/
+          path: |
+            skills-evals/results/**/summary.json
+            skills-evals/results/**/report.md
+            skills-evals/results/**/transcripts/tool_trace.json
           if-no-files-found: error
-          include-hidden-files: true
+          include-hidden-files: false
       - name: Upload eval diagnostics
         if: ${{ failure() && !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: eval-results-diagnostics-${{ matrix.slot }}-${{ github.run_attempt }}
-          path: skills-evals/results/
+          path: |
+            skills-evals/results/**/summary.json
+            skills-evals/results/**/report.md
+            skills-evals/results/**/transcripts/tool_trace.json
           if-no-files-found: ignore
-          include-hidden-files: true
+          include-hidden-files: false
 
   # B1 (round 4 on #209, blocker): the badge/results commit-and-push,
   # relocated off the `eval` job to a runner the agent never touches. See
