@@ -46,8 +46,7 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    One variable is SET rather than allow-listed:
    `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (`guidance.CLI_FORCED_ENV`), so no
    trial or judge writes auto-memory into the real HOME.
-1b. Reads the settings files the CLI loads for the unisolated judge, which
-   runs from this checkout with no `--setting-sources`: `~/.claude/settings
+1b. Reads the user, checkout and managed settings files: `~/.claude/settings
    .json` and `settings.local.json`, this checkout's `.claude/settings.json`
    and `settings.local.json`, and the managed settings (`/etc/claude-code/
    managed-settings.json` and `managed-settings.d/*.json`, plus the macOS and
@@ -59,6 +58,14 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    (the arms load those as project settings), following symlinks as the
    workspace copy does, and on each registry checkout's root
    `.claude/settings*.json`. This early check reads SOURCE files only.
+   The judge itself now runs with `--setting-sources ""` (plus
+   `--strict-mcp-config` and `--no-session-persistence`), so it loads none
+   of these. The check still runs because other children do load them: the
+   arms load project settings, skill-creator's own `claude -p` calls
+   (propose_skill_edit) get `--setting-sources project` from the guard
+   launcher only when they name none, and managed settings apply to every
+   launch whatever its flags. A credential source in any of them is refused
+   before anything starts.
 1c. The launch-time guard, which checks what the CLI will actually read. A
    source check cannot see a symlink resolved later or a fixture `setup:`
    command that writes `.claude/settings.json` into the workspace. So main()
@@ -77,7 +84,12 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    checkout's own tree (the judge's cwd) is not walked beneath, only its
    `.claude/` is read; its source was checked in 1b. On a refusal it prints
    the file and key to stderr, records it, exits 87 and does NOT start the
-   CLI; otherwise it execs the real CLI with argv and environment unchanged.
+   CLI; otherwise it execs the real CLI with the environment unchanged and,
+   for a print-mode session (`-p`/`--print`), `--strict-mcp-config` and (when
+   argv names none) `--setting-sources project` prepended, each only when
+   absent (`local_eval_guard.session_isolation_args`). That reaches
+   skill-creator's own `claude -p` calls, which no harness sink builds. It
+   never adds `--no-session-persistence`: a caller may `--resume`.
    A bare `--version` is not checked (it loads no settings). local_eval turns
    any refusal into exit 2, names the trial and fixture(s), and runs no
    further trial.
@@ -138,20 +150,26 @@ says so.
 
 Limits a reader must know:
 
-- The judge is not isolated like the arms. `harness/scorers/judge.py`
-  (`_run_judge_cli`) runs the CLI with no `--setting-sources`, no `env=` and
-  no `cwd=`, so locally it loads this account's user settings, user memory
-  and plugins, and the project memory of this checkout (run_eval runs from
-  the repo root here, as in CI). Local judge scores may therefore not be
-  comparable with CI's.
+- The judge runs under the real HOME (its login lives there) and is
+  isolated by flags: `--setting-sources ""` (no user or project settings,
+  CLAUDE.md, hooks or settings-enabled plugins), `--strict-mcp-config` (none
+  of the account's claude.ai MCP connectors), `--no-session-persistence` and
+  auto-memory off (`judge.JUDGE_ISOLATION_FLAGS`, measured on CLI 2.1.289).
+  What still reaches it: managed settings, the CLI's bundled skills, and
+  writes to `~/.claude.json`.
 - The probe measures which SKILLS an empty workspace sees. It does not
   measure user memory, hooks or MCP servers, and it does not include the
   fixture's seed.
 - On a workstation a `bypassPermissions` arm inherits the real `HOME`, where
-  the account's own credentials live (ADR 0002, decision 4). Auto-memory is
-  off for every child, but each trial's session transcript still lands under
-  `~/.claude/projects/-tmp-workspace-*`: a scratch HOME or CLAUDE_CONFIG_DIR
-  would move the `/login` credential with it, so it is not used here.
+  the account's own credentials live (ADR 0002, decision 4), and it can read
+  the credential file there. A scratch HOME, a scratch CLAUDE_CONFIG_DIR and
+  `--bare` each lose the `/login` (measured), so arms are isolated by flags:
+  `--setting-sources project`, `--strict-mcp-config`, auto-memory off, and
+  `--no-session-persistence` for a one-turn arm. A multi-turn arm must
+  persist to `--resume`; when it ends, the `~/.claude/projects/<workspace>`
+  directory it created is moved to `$XDG_STATE_HOME/skills-evals/sessions/`
+  (default `~/.local/state/...`), and one that existed before is not touched.
+  Managed settings, bundled skills and `~/.claude.json` writes still apply.
 - Nothing here was verified against a real CLI: no real run was made. What
   the refusals and the settings pre-flight cannot see, and so stays
   unverified: `~/.claude.json`, the system keychain, and

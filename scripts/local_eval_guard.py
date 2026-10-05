@@ -203,6 +203,29 @@ def check_all_settings(home, repo_root, managed_files, managed_dropins,
         check_launch_cwd(cwd, skip_beneath=skip_beneath)
 
 
+def session_isolation_args(args) -> list:
+    """`args` for a print-mode session (`-p`/`--print`), with
+    `--strict-mcp-config` and, when argv names no `--setting-sources`,
+    `--setting-sources project` prepended — each only when absent, so a
+    caller's own choice (the judge's empty sources) stands. Anything else
+    (`--version`, `plugin ...`) is returned unchanged. Never adds
+    `--no-session-persistence`: a caller may `--resume` the session later.
+
+    This is what reaches skill-creator's own `claude -p` calls (found on
+    PATH), which no harness sink builds: without it they load the account's
+    user settings, plugins and claude.ai MCP connectors."""
+    args = list(args)
+    if "-p" not in args and "--print" not in args:
+        return args
+    extra = []
+    if "--strict-mcp-config" not in args:
+        extra.append("--strict-mcp-config")
+    if not any(a == "--setting-sources" or a.startswith("--setting-sources=")
+               for a in args):
+        extra += ["--setting-sources", "project"]
+    return [*extra, *args]
+
+
 def launcher_source(python: str, scripts_dir: str, real_cli: str,
                     repo_root: str, record: str, managed_files=(),
                     managed_dropins=()) -> str:
@@ -211,8 +234,9 @@ def launcher_source(python: str, scripts_dir: str, real_cli: str,
     (`check_all_settings`: user, checkout and managed files, then its own cwd)
     and, on a refusal, writes the file and key to stderr and to `record`,
     exits GUARD_EXIT and does NOT start the CLI; otherwise it execs the real
-    CLI with argv and environment unchanged. A bare `--version` is not
-    checked: it loads no settings and makes no model call."""
+    CLI with the environment unchanged and argv passed through
+    `session_isolation_args`. A bare `--version` is not checked: it loads no
+    settings and makes no model call."""
     return f'''#!{python}
 import json, os, sys
 sys.dont_write_bytecode = True
@@ -236,5 +260,5 @@ if args != ["--version"]:
         except OSError:
             pass
         sys.exit({GUARD_EXIT})
-os.execv(REAL, [REAL, *args])
+os.execv(REAL, [REAL, *guard.session_isolation_args(args)])
 '''

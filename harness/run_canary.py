@@ -111,7 +111,13 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
           "--output-format", "json",
           "--setting-sources", setting_sources,
-          "--disallowedTools", disallowed_tools]
+          "--disallowedTools", disallowed_tools,
+          "--strict-mcp-config"]
+    # No transcript under the real HOME. A leg with its own scratch config
+    # dir (the guidance guard) writes inside that scratch and keeps the
+    # CLI's default there.
+    if not (env or {}).get("CLAUDE_CONFIG_DIR"):
+        cmd.append("--no-session-persistence")
     if model:
         cmd += ["--model", model]
 
