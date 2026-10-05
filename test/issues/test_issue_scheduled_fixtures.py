@@ -231,6 +231,11 @@ class TestScheduledFixtures(unittest.TestCase):
                     self.assertFalse(pattern.endswith("/"), "a whole directory: " + pattern)
                     self.assertNotIn("!", pattern)
                     self.assertNotIn("raw", pattern)
+                    # The last segment must be a literal allowed file name: the
+                    # pinned upload-artifact (@actions/glob, implicitDescendants)
+                    # uploads everything under a matched directory, so a final
+                    # `**`, `*` or directory name would publish raw.json too.
+                    self.assertIn(pattern.rsplit("/", 1)[1], allowed, pattern)
                     if "transcripts" in pattern:
                         self.assertTrue(pattern.endswith("/transcripts/" + run_eval.TOOL_TRACE_NAME), pattern)
                 with tempfile.TemporaryDirectory() as tmp:
@@ -243,8 +248,13 @@ class TestScheduledFixtures(unittest.TestCase):
                                             arm_dir=results / "fixture/20261005T000000Z/nested/without_skill/trial-1")
                     (results / "fixture/20261005T000000Z" / run_eval.REPORT_NAME).write_text("r")
                     written = {str(f.relative_to(results)) for f in results.rglob("*") if f.is_file()}
-                    uploaded = {str(f.relative_to(results)) for pattern in patterns
-                                for f in results.glob(pattern[len(prefix):]) if f.is_file()}
+                    uploaded = set()
+                    for pattern in patterns:
+                        for match in results.glob(pattern[len(prefix):]):
+                            # implicitDescendants: a matched directory uploads
+                            # every file beneath it.
+                            files = match.rglob("*") if match.is_dir() else [match]
+                            uploaded |= {str(f.relative_to(results)) for f in files if f.is_file()}
                     self.assertEqual(written - uploaded, {
                         "fixture/20261005T000000Z/with_skill/transcripts/raw.json",
                         "fixture/20261005T000000Z/nested/without_skill/trial-1/transcripts/raw.json"})
