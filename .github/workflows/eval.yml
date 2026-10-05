@@ -415,7 +415,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install planning dependency
-        run: pip install pyyaml
+        run: pip install pyyaml==6.0.3
       - name: Plan reviewed fixtures
         id: plan
         working-directory: skills-evals
@@ -520,7 +520,7 @@ jobs:
         # convention: harness/guidance.py locates a section's extent with a
         # real markdown parse, and a floating parser version could silently
         # change what a `section` arm delivers.
-        run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
+        run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
       # This singleton reads the model catalogue, not an eval fixture.
       # The read-only plan and each eval leg validate committed selections;
@@ -1570,7 +1570,7 @@ jobs:
         # convention: harness/guidance.py locates a section's extent with a
         # real markdown parse, and a floating parser version could silently
         # change what a `section` arm delivers.
-        run: pip install pyyaml markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
+        run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
       # Runs BEFORE the token exchange, deliberately: a dispatch naming a
       # fixture that does not exist must fail here, with no credential minted
