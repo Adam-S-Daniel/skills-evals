@@ -598,6 +598,65 @@ for case, (text, reason) in NEIGHBOR_FAILURES.items():
     setattr(GuardedNeighborCalls, "test_" + case, neighbor_failure(text, reason))
 
 
+class AnalysisBounds(CheckWorkspace):
+    """ADR 0007 amendment: the reference hook with extra guarded Go tools fits."""
+
+    EXTRA = ["go vet ./...", "staticcheck ./...", "revive ./...",
+             "gosec ./...", "errcheck ./...", "ineffassign ./..."]
+    END = "    note golangci-lint\n  fi\nfi\n"
+
+    def hook(self, extra_tools):
+        text = (SHELL_FIXTURES / "lint-staged-go.sh").read_text()
+        self.assertEqual(text.count(self.END), 1)
+        lines = "".join(
+            f"  if have {call.split()[0]}; then {call} || RC=1; else note {call.split()[0]}; fi\n"
+            for call in self.EXTRA[:extra_tools])
+        return text.replace(self.END, "    note golangci-lint\n  fi\n" + lines + "fi\n")
+
+    def analyze(self, text):
+        from scorers.bash_ast import parse_bash
+        from scorers import shell_guard
+        peak = []
+        original = shell_guard.StagedToolGuard.deduplicate
+
+        def deduplicate(guard, states):
+            result = original(guard, states)
+            peak.append(len(result))
+            return result
+
+        guard = shell_guard.StagedToolGuard(parse_bash(text), ["gofmt", "golangci-lint"])
+        with mock.patch.object(shell_guard.StagedToolGuard, "deduplicate", deduplicate):
+            guard.check()
+        return max(peak), guard.steps
+
+    def test_three_four_and_five_go_tools_pass(self):
+        for extra in (1, 2, 3):
+            with self.subTest(tools=2 + extra):
+                result = self.shell(self.hook(extra), tools=["gofmt", "golangci-lint"])
+                self.assertTrue(result[0], result[1])
+
+    def test_four_tool_hook_stays_well_inside_the_bounds(self):
+        # Steps are the deterministic stand-in for analysis time.
+        from scorers import shell_guard
+        states, steps = self.analyze(self.hook(2))
+        self.assertLessEqual(states, shell_guard.MAX_STATES // 2)
+        self.assertLessEqual(steps, shell_guard.MAX_STEPS // 4)
+
+    def test_bounds_are_the_amended_values(self):
+        from scorers import shell_guard
+        self.assertEqual((shell_guard.MAX_STATES, shell_guard.MAX_STEPS), (2048, 65536))
+
+    def test_the_old_bound_reproduces_the_third_tool_failure(self):
+        from scorers import shell_guard
+        with mock.patch.object(shell_guard, "MAX_STATES", 256):
+            self.assert_reason(self.shell(self.hook(1), tools=["gofmt", "golangci-lint"]),
+                               "analysis_limit")
+
+    def test_the_state_bound_still_fails_closed(self):
+        self.assert_reason(self.shell(self.hook(6), tools=["gofmt", "golangci-lint"]),
+                           "analysis_limit")
+
+
 class ParsedCheckIntegration(CheckWorkspace):
     def test_registry_and_constraints_route_config(self):
         self.target.write_text(CONFIG)

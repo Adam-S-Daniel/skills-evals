@@ -10,6 +10,13 @@ from dataclasses import dataclass, field, replace
 
 from .bash_ast import parse_bash
 
+# Analysis bounds (ADR 0007). Each guarded tool call splits the continuing
+# states in two. The reference cms-platform hook with a four-tool Go branch
+# peaks at 864 states and about 13,000 steps; five tools peak near 1,700
+# states and 28,000 steps, which these bounds still admit.
+MAX_STATES = 2048
+MAX_STEPS = 65536
+
 
 class ShellGuardError(ValueError):
     """A fixed scoring failure reason."""
@@ -258,7 +265,7 @@ class StagedToolGuard:
 
     def deduplicate(self, states):
         states = list({state.key(): state for state in states}.values())
-        if len(states) > 256:
+        if len(states) > MAX_STATES:
             raise ShellGuardError("analysis_limit")
         return states
 
@@ -539,7 +546,7 @@ class StagedToolGuard:
 
     def execute(self, node, state, tested=False):
         self.steps += 1
-        if self.steps > 32768:
+        if self.steps > MAX_STEPS:
             raise ShellGuardError("analysis_limit")
         states = self._execute(node, state, tested)
         if state.errexit and not tested and node.type not in ("list", "if_statement", "function_definition", "negated_command"):
