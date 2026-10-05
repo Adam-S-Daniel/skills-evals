@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build local, inspectable main and fix refs before the harness baseline commit.
 set -euo pipefail
+# The trace records the agent's git commands, not the commands that build it.
+unset GIT_TRACE
 
 root="$(pwd -P)"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null

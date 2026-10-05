@@ -415,9 +415,11 @@ Not every skill takes the same eval, and some take none. Classify first:
   invokes a missing test module while an unmerged branch already fixes its
   workflow. The investigation-only prompt asks the agent to explain the cause
   and next step without editing files. A fixture-owned setup builds an offline
-  origin with fetchable main and fix refs. Seven checks require actual log/API
-  comparison reads, exact branch/action/error tokens in the reply, and
-  preservation of project/instrument files. The independent judge assesses
+  origin with fetchable main and fix refs. Seven checks require an actual log
+  read, a comparison read through gh or through a git diff, show, or patch log
+  of the fix branch (git commands are recorded under `.git/`), exact
+  branch/action/error tokens in the reply, and preservation of
+  project/instrument files. The independent judge assesses
   whether those tokens express the correct cause and merge direction; token
   coverage alone is not semantic correctness. No A/B calibration or measured
   improvement is claimed. Exit-128,

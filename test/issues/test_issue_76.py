@@ -37,6 +37,8 @@ LOG_KEY = "run-view-77001.log"
 COMPARE_KEY = f"api/{COMPARE_ENDPOINT}.json"
 WORKFLOW = ".github/workflows/ci.yml"
 LOG = ".gh-invocations.log"
+TRACE = ".git/trace.log"
+BRANCH = "fix/ci-test-discovery"
 DIAGNOSIS = (
     "On main, .github/workflows/ci.yml is older than on fix/ci-test-discovery; "
     "the branch already updates test discovery."
@@ -180,6 +182,14 @@ class WrongBranchFixtureTests(unittest.TestCase):
         return subprocess.run([str(ws / "bin/gh"), *args], cwd=ws, env=env,
                               capture_output=True, text=True, timeout=30)
 
+    def _git(self, ws, *args):
+        """Run git as the agent does: the fixture's own environment, tracing on."""
+        self._assert_owned(ws)
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            env = run_eval.agent_env(ws, self.fixture["env"])
+        return subprocess.run(["git", *args], cwd=ws, env=env,
+                              capture_output=True, text=True, timeout=30)
+
     def _read(self, ws, *args):
         result = self._gh(ws, *args)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -190,6 +200,12 @@ class WrongBranchFixtureTests(unittest.TestCase):
         self.assertIn("ModuleNotFoundError", self._read(ws, "run", "view", "77001", "--log"))
         comparison = json.loads(self._read(ws, "api", COMPARE_ENDPOINT))
         self.assertEqual((comparison["ahead_by"], comparison["behind_by"]), (1, 0))
+        return ws
+
+    def _logged(self, label=None):
+        """A workspace whose agent read run 77001's log but not the branch."""
+        ws = self._ws()
+        self.assertIn("ModuleNotFoundError", self._read(ws, "run", "view", "77001", "--log"))
         return ws
 
     def _score(self, ws, reply=GOOD_REPLY):
@@ -296,6 +312,90 @@ class WrongBranchFixtureTests(unittest.TestCase):
         scores = self._score(self._good(), "The runner image has the wrong Python version. Upgrade it and rerun CI.")
         self.assertEqual({key for key, passed in scores.items() if not passed},
                          {"main-differs-from-feature", "merge-existing-fix", "obsolete-command-diagnosed"})
+
+    # The skill teaches git for finding another branch, so a git-only
+    # investigation is as correct as one that asks gh for the comparison.
+    def test_git_only_route_passes_every_check_without_a_gh_comparison(self):
+        routes = (
+            ("diff", ("diff", "origin/main", f"origin/{BRANCH}")),
+            ("diff-range", ("diff", f"origin/main...origin/{BRANCH}")),
+            ("diff-two-dot", ("diff", f"main..{BRANCH}")),
+            ("diff-local", ("diff", "main", BRANCH)),
+            ("show-path", ("show", f"origin/{BRANCH}:{WORKFLOW}")),
+            ("show-branch", ("show", BRANCH)),
+            ("show-full-ref", ("show", f"refs/remotes/origin/{BRANCH}")),
+            ("log-patch", ("log", "-p", f"origin/{BRANCH}")),
+            ("log-long-patch", ("log", "--patch", "--stat", BRANCH)),
+            ("log-range-patch", ("log", f"main..{BRANCH}", "-p")),
+        )
+        for label, args in routes:
+            with self.subTest(route=label):
+                ws = self._logged(label)
+                self.assertEqual(self._git(ws, "branch", "-a").returncode, 0)
+                self.assertEqual(self._git(ws, "fetch", "origin", BRANCH).returncode, 0)
+                result = self._git(ws, *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn(COMPARE_KEY, (ws / LOG).read_text())
+                self.assertEqual(self._score(ws), dict.fromkeys(PRISTINE, True))
+
+    def test_git_route_reads_the_branch_content_the_checks_stand_for(self):
+        ws = self._logged("content")
+        shown = self._git(ws, "diff", "origin/main", f"origin/{BRANCH}")
+        self.assertIn("-        run: python3 -m unittest test.test_legacy", shown.stdout)
+        self.assertIn("+        run: python3 -m unittest discover -s test", shown.stdout)
+        self.assertIn("built-in: git diff origin/main origin/" + BRANCH, (ws / TRACE).read_text())
+
+    def test_listing_or_fetching_without_reading_the_branch_content_fails(self):
+        commands = (
+            ("branch-list", ("branch", "-a")),
+            ("branch-verbose", ("branch", "-a", "-vv")),
+            ("fetch", ("fetch", "origin", BRANCH)),
+            ("fetch-all", ("fetch", "origin")),
+            ("log-without-patch", ("log", "--oneline", f"origin/{BRANCH}")),
+            ("log-range-without-patch", ("log", f"main..{BRANCH}")),
+            ("rev-list", ("rev-list", "--left-right", "--count", f"origin/main...origin/{BRANCH}")),
+            ("show-main-only", ("show", f"origin/main:{WORKFLOW}")),
+            ("diff-without-the-branch", ("diff", "origin/main")),
+            ("log-patch-of-main", ("log", "-p", "origin/main")),
+            ("status", ("status", "--short")),
+        )
+        ws = self._logged("every")
+        for label, args in commands:
+            with self.subTest(command=label):
+                self.assertEqual(self._git(ws, *args).returncode, 0)
+                self._fails_only(ws, "feature-comparison-read")
+        self.assertTrue((ws / TRACE).is_file(), "git was traced; only the evidence rule rejects these")
+
+    def test_a_different_branch_name_is_not_the_fix_branch(self):
+        ws = self._logged("lookalike")
+        for name in (f"{BRANCH}-old", f"hotfix/ci-test-discovery", f"{BRANCH}/old", f"{BRANCH}.txt"):
+            with self.subTest(name=name):
+                self._git(ws, "diff", "origin/main", f"origin/{name}")
+                self._git(ws, "show", name)
+                self._git(ws, "log", "-p", name)
+                self._fails_only(ws, "feature-comparison-read")
+
+    def test_neither_a_gh_comparison_nor_a_git_read_fails_only_that_check(self):
+        ws = self._logged("neither")
+        self.assertFalse((ws / TRACE).exists())
+        self._fails_only(ws, "feature-comparison-read")
+
+    def test_git_evidence_is_the_trace_only_and_setup_leaves_it_empty(self):
+        ws = self._ws()
+        self.assertFalse((ws / TRACE).exists(), "building the workspace must not trace")
+        self.assertEqual(self._git(ws, "status", "--short").stdout, "", "the trace must not dirty the tree")
+        self.assertFalse(any(Path(path).name == "trace.log"
+                             for path in self._run(ws, "git", "ls-files").stdout.split()))
+        self._read(ws, "run", "view", "77001", "--log")
+        self._run(ws, "git", "show", f"origin/{BRANCH}")
+        self._fails_only(ws, "feature-comparison-read")
+
+    def test_both_routes_together_and_the_gh_route_alone_pass(self):
+        ws = self._good()
+        self.assertFalse((ws / TRACE).exists())
+        self.assertEqual(self._score(ws), dict.fromkeys(PRISTINE, True))
+        self._git(ws, "diff", f"main..{BRANCH}")
+        self.assertEqual(self._score(ws), dict.fromkeys(PRISTINE, True))
 
     # Probe each behavior; omitting the branch token fails both checks that require it.
     def test_mutation_log_read_is_missing(self):
@@ -528,7 +628,8 @@ class WrongBranchFixtureTests(unittest.TestCase):
         self.assertEqual(self.fixture["judge"]["weights"], {"correctness": 0.6, "restraint": 0.2, "explanation": 0.2})
         self.assertTrue((SEED / "bin/gh").is_symlink())
         self.assertEqual((SEED / "bin/gh").resolve(), (HARNESS / "fakes/gh").resolve())
-        self.assertEqual(self.fixture["env"], {"PATH": "$WORKSPACE/bin:$PATH", "GH_REPLAY_DIR": "$WORKSPACE/.gh/replay", "GH_REPO": REPO})
+        self.assertEqual(self.fixture["env"], {"PATH": "$WORKSPACE/bin:$PATH", "GH_REPLAY_DIR": "$WORKSPACE/.gh/replay", "GH_REPO": REPO,
+                                             "GIT_TRACE": "$WORKSPACE/.git/trace.log"})
         self.assertEqual(self.fixture["setup"], "bash $WORKSPACE/setup.sh")
         prompt = self.fixture["prompt"]
         self.assertIn("CI is red on main", prompt)
