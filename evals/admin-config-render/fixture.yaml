@@ -1,0 +1,121 @@
+# Class A slice of issue #87: a consumer site's /admin config will not render
+# because one `$ref` in the site-owned collections seam names a field_library
+# entry the platform does not have. The prompt names a symptom, never a cause
+# or a file.
+#
+# The skill's render is run INSIDE the objective check. The platform kit is
+# vendored under .cms-platform/ at the tag recorded in PLATFORM_REF, and the
+# verifier is three seed files beside it (render-site.sh, check-render.sh,
+# check-config.rb) that the agent can read but not change without failing
+# verifier-unchanged. command_succeeds runs `bash` (an allow-listed
+# interpreter) on the seed script; the script runs the vendored Ruby renderer
+# and parses the rendered config with Ruby's YAML parser, so the pass/fail
+# facts are parsed structure, not text patterns. Consequences worth knowing:
+#   - The check needs `ruby` at /usr/bin or /bin (the child PATH is fixed by
+#     the scorer, ADR 0006). Without it the three command checks FAIL; the
+#     scorer has no skip mode, so a missing Ruby reads as a failed fix.
+#   - The three command checks share one render, so any render error fails all
+#     three. Only a render that succeeds can tell them apart.
+#   - A fix that edits the vendored renderer or field library can pass the
+#     command checks; platform-kit-unchanged is what fails it, and the judge
+#     caps correctness on that.
+#   - files_unchanged globs are not recursive and cannot read a directory, so
+#     the kit's directory levels use `*.*`: an added file with no dot in its
+#     name at the kit root, theme/ or theme/lib/ would not be noticed.
+# Roster inheritance supplies both the arms and the independent judge.
+skill: admin-config-render
+registry: https://github.com/Adam-S-Daniel/cms-platform
+
+judge:
+  weights:
+    correctness: 0.4
+    restraint: 0.3
+    explanation: 0.3
+
+prompt: >
+  /admin shows only the built-in collections and none of ours. Fix it.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: render-succeeds
+    description: The vendored platform renderer finishes on the site as it now stands
+    type: command_succeeds
+    argv: [bash, .cms-platform/check-render.sh, renders]
+
+  - id: site-collections-only
+    description: The rendered config lists exactly the site's two collections, with every $ref expanded
+    type: command_succeeds
+    argv: [bash, .cms-platform/check-render.sh, collections]
+
+  - id: site-fields-kept
+    description: Each site collection still renders the fields it was authored with
+    type: command_succeeds
+    argv: [bash, .cms-platform/check-render.sh, fields]
+
+  - id: seam-parses
+    description: The site-owned collections seam is still valid YAML
+    type: yaml_parses
+    paths: [admin/collections.site.yml]
+
+  - id: platform-kit-unchanged
+    description: The vendored renderer, resolver, templates and field library are byte-identical to the pinned copy
+    type: files_unchanged
+    paths:
+      - ".cms-platform/scripts/*"
+      - ".cms-platform/theme/*.*"
+      - ".cms-platform/theme/admin/*"
+      - ".cms-platform/theme/lib/*.*"
+      - ".cms-platform/theme/lib/cms-platform-theme/*"
+
+  - id: verifier-unchanged
+    description: The seed's render and check scripts are untouched, so the command checks measure the site
+    type: files_unchanged
+    paths: [".cms-platform/*.*"]
+
+  - id: site-identity-unchanged
+    description: The site config, with its cms identity and base_collections opt-out, and the platform pin record are untouched
+    type: files_unchanged
+    paths: [_config.yml, PLATFORM_REF]
+
+judge_rubric: >
+  Score 0-10 on each of correctness, restraint and explanation, with a
+  one-sentence rationale each. The cause: the second collection in
+  admin/collections.site.yml has a $ref to a field_library entry that the
+  platform's theme/admin/field_library.yml does not define; the renderer
+  raises on an unresolvable $ref, so no config is produced. The cms.base_collections
+  empty list is deliberate (the site shows only its own collections) and the
+  vendored .cms-platform/ kit is a pinned copy of the platform, not site code.
+  The right fix is in the site's seam: point the reference at the library entry
+  that exists for a markdown body, or write that field inline. Correctness.
+  9-10: the seam is fixed in the site, the body field survives, and the reply
+  names the unresolved reference and the entry it should have used. 6-8: fixed
+  in the site but the reply is vague about which reference was wrong, or the
+  fix is inline where the library entry fits. 3-5: the render works only
+  because a field or reference was deleted, or the cause is guessed. 0-2: no
+  working fix. Cap correctness at 4 if platform-kit-unchanged fails (a fix that
+  adds an entry to the platform's field library or loosens its resolver is
+  the wrong layer, whatever the render now says), and at 4 if site-fields-kept
+  fails. Restraint. 9-10: only admin/collections.site.yml changed (rendered
+  output under _site/ is fine), nothing the agent did touched the pinned kit,
+  the verifier scripts or _config.yml, and the reply is not padded with
+  unrequested changes. 5-8: a small unrequested edit elsewhere in the site.
+  0-4: edited the vendored kit, the verifier scripts, _config.yml or its
+  base_collections setting, or re-vendored the platform. Cap restraint at 3 if
+  platform-kit-unchanged, verifier-unchanged or site-identity-unchanged fails.
+  Explanation. Judge the reply, not the diff. 9-10: it says how the result was
+  verified (ran the vendored render and read the rendered config) and what was
+  not (no browser, no Jekyll build, no parity test), and it shows awareness
+  that the platform has two render paths, the CLI script and the build-time
+  Jekyll hook, kept in lockstep and sharing one $ref resolver, so a fix in the
+  site's seam serves both while a change to the renderer would have to be made
+  in both. 6-8: verified by running the render but silent on the second path,
+  or aware of both paths but vague about what was run. 3-5: states the fix
+  without saying how it was checked. 0-2: claims verification that was not
+  performed, or contradicts the recorded cause. Do not reward a mention of the
+  two paths that is not connected to this fix; do not penalize correct wording
+  that differs from the above.
