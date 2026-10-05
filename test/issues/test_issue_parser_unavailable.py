@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import builtins
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -56,20 +57,35 @@ class _ParserCase(_HarnessCase):
             "raise ImportError('deliberately absent')\n", encoding="utf-8")
         self.blocker = str(blocker.parent)
 
-    def _run_blocked(self, *flags: str):
-        # _HarnessCase._run builds the child environment itself, so the
-        # blocker rides in through a wrapper that adds PYTHONPATH.
+    def _run_with_pythonpath(self, pythonpath: str, *flags: str):
+        # _HarnessCase._run builds the child environment itself (HOME is a
+        # temp dir, so a user-site install is invisible to the child), so
+        # what the child can import rides in through a wrapper that adds
+        # PYTHONPATH.
         original = _child_env
 
-        def with_blocker(tmp, **extra):
-            return original(tmp, PYTHONPATH=self.blocker, **extra)
+        def with_path(tmp, **extra):
+            return original(tmp, PYTHONPATH=pythonpath, **extra)
 
         import test_issue_66
-        test_issue_66._child_env = with_blocker
+        test_issue_66._child_env = with_path
         try:
             return self._run(self.fixture_dir, *flags)
         finally:
             test_issue_66._child_env = original
+
+    def _run_blocked(self, *flags: str):
+        return self._run_with_pythonpath(self.blocker, *flags)
+
+    def _run_with_parser(self, *flags: str):
+        """The child sees the parser wherever THIS process imports it from
+        (a venv, site-packages or a user site), not only where HOME finds it."""
+        import tree_sitter
+        import tree_sitter_bash
+        roots = dict.fromkeys(
+            str(Path(module.__file__).resolve().parent.parent)
+            for module in (tree_sitter, tree_sitter_bash))
+        return self._run_with_pythonpath(os.pathsep.join(roots), *flags)
 
     def _summary(self, *parts: str) -> dict:
         return json.loads(self.arm_dir.joinpath(*parts).read_text(encoding="utf-8"))
@@ -114,8 +130,8 @@ class TestParserUnavailable(_ParserCase):
                          "the pinned parser is not installed here")
     def test_parser_present_scores_the_check_as_before(self):
         self._script(agents=[{"write": "hook.sh"}] * 2)
-        proc = self._run(self.fixture_dir, "--arm", "without_skill",
-                         "--trials", "2", "--timestamp", TS, "--no-judge")
+        proc = self._run_with_parser("--arm", "without_skill",
+                                     "--trials", "2", "--timestamp", TS, "--no-judge")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         summary = self._summary("summary.json")
         self.assertEqual((summary["n"], summary["errors"], summary["scored"]),
