@@ -34,6 +34,7 @@ if _HARNESS_DIR not in sys.path:
 GIT_TIMEOUT_S = 10
 
 from . import invisibles, wrapping
+from .shell_capture import shell_capture_safe
 from .commands import command_succeeds
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
@@ -3547,6 +3548,156 @@ def post_failure_comment_reference_valid(workspace: str, patterns: list[str], *,
             if not problems else "; ".join(problems))
 
 
+_LOG_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_LOG_RECORD = re.compile(
+    r"--- invocation \(class=(read|write|unknown) key=(\S+) exit=(-?[0-9]+)"
+    r"(?: count=([1-9][0-9]*))?\) --- (.*)")
+
+
+def _log_sequence_path(root: str, relative: str) -> Path:
+    """Resolve exact evidence paths without letting a fixture escape its workspace."""
+    if (not isinstance(relative, str) or not relative
+            or Path(relative).is_absolute() or ".." in Path(relative).parts
+            or any(character in relative for character in "*?[]\x00")):
+        raise ValueError("log_sequence paths must be exact workspace-relative names")
+    base = Path(root).resolve()
+    target = (base / relative).resolve()
+    if not target.is_relative_to(base):
+        raise ValueError("log_sequence path resolves outside the workspace")
+    return target
+
+
+def _validate_log_sequence(patterns: list[str], events: list[dict]) -> None:
+    """Reject unknown keys and ambiguous captures before reading any evidence."""
+    if not isinstance(patterns, list) or not patterns:
+        raise ValueError("log_sequence requires a nonempty paths list")
+    for path in patterns:
+        # The same lexical check applies to capture paths. Resolution against the
+        # real workspace happens only after the whole specification is validated.
+        _log_sequence_path("/", path)
+    if not isinstance(events, list) or not events:
+        raise ValueError("log_sequence requires a nonempty events list")
+    declared = set()
+    for event in events:
+        if not isinstance(event, dict) or set(event) - {"match", "captures", "min", "max"}:
+            raise ValueError("unknown or malformed log_sequence event constraint key(s)")
+        minimum, maximum = event.get("min", 1), event.get("max")
+        if (type(minimum) is not int or minimum < 0
+                or ("max" in event and (type(maximum) is not int
+                                       or maximum < minimum))):
+            raise ValueError("log_sequence min/max must be ordered nonnegative integers")
+        match = event.get("match")
+        if (not isinstance(match, dict) or not match
+                or set(match) - {"class", "key", "argv_prefix", "exit"}):
+            raise ValueError("unknown or malformed log_sequence match constraint key(s)")
+        if "class" in match and match["class"] not in ("read", "write", "unknown"):
+            raise ValueError("log_sequence match class is invalid")
+        if "exit" in match and type(match["exit"]) is not int:
+            raise ValueError("log_sequence match exit must be an integer")
+        strings = []
+        if "key" in match:
+            keys = match["key"] if isinstance(match["key"], list) else [match["key"]]
+            if not keys or any(not isinstance(key, str) or not key for key in keys):
+                raise ValueError("log_sequence match key must be a string or nonempty string list")
+            strings.extend(keys)
+        if "argv_prefix" in match:
+            prefix = match["argv_prefix"]
+            if (not isinstance(prefix, list) or not prefix
+                    or any(not isinstance(item, str) for item in prefix)):
+                raise ValueError("log_sequence argv_prefix must be a nonempty string list")
+            strings.extend(prefix)
+        for value in strings:
+            references = _LOG_REFERENCE.findall(value)
+            if "${" in _LOG_REFERENCE.sub("", value) or set(references) - declared:
+                raise ValueError("log_sequence has an undefined or malformed capture reference")
+        captures = event.get("captures", {})
+        if not isinstance(captures, dict) or (captures and minimum == 0):
+            raise ValueError("log_sequence captures require a mandatory event and mapping")
+        for name, capture in captures.items():
+            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                    or name in declared):
+                raise ValueError("log_sequence capture name is invalid or redefined")
+            if (not isinstance(capture, dict) or set(capture) != {"type", "path", "field"}
+                    or capture["type"] not in ("integer", "string")
+                    or not isinstance(capture["field"], str) or not capture["field"]
+                    or any(not segment for segment in capture["field"].split("."))):
+                raise ValueError("unknown or malformed log_sequence capture constraint key(s)")
+            _log_sequence_path("/", capture["path"])
+            declared.add(name)
+
+
+def _log_sequence_matches(record: dict, match: dict, captures: dict) -> bool:
+    def substitute(value):
+        return _LOG_REFERENCE.sub(lambda found: str(captures[found.group(1)]), value)
+
+    for field in ("class", "exit"):
+        if field in match and record[field] != match[field]:
+            return False
+    if "key" in match:
+        # This is the fake's canonical lexical escaping, not a regex matcher.
+        keys = match["key"] if isinstance(match["key"], list) else [match["key"]]
+        escaped = [substitute(key).encode("unicode_escape").decode("ascii").replace(" ", "\\x20")
+                   for key in keys]
+        if record["key"] not in escaped:
+            return False
+    if "argv_prefix" in match:
+        prefix = [substitute(item) for item in match["argv_prefix"]]
+        if record["argv"][:len(prefix)] != prefix:
+            return False
+    return True
+
+
+def log_sequence(workspace: str, patterns: list[str],
+                 events: list[dict] | None = None) -> tuple[bool, str]:
+    """Ordered fake-gh events, typed payload captures, and whole-log bounds.
+
+    Paths are exact log names, read in the listed order. Bounds count every
+    matching invocation, including those before a prior event; order then
+    requires at least `min` occurrences after that prior event. Capture fields
+    are dot-separated JSON object keys; the captured value is substituted
+    literally into later keys/argv, never interpreted as a regular expression.
+    """
+    _validate_log_sequence(patterns, events)
+    records = []
+    try:
+        for relative in patterns:
+            text = _log_sequence_path(workspace, relative).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                found = _LOG_RECORD.fullmatch(line)
+                if found is None:
+                    return False, "log_sequence: malformed invocation record"
+                klass, key, code, _count, argv_text = found.groups()
+                argv = json.loads(argv_text)
+                if not isinstance(argv, list) or any(not isinstance(item, str) for item in argv):
+                    return False, "log_sequence: malformed invocation argv"
+                records.append({"class": klass, "key": key, "exit": int(code), "argv": argv})
+        captures, cursor = {}, -1
+        for number, event in enumerate(events, 1):
+            indices = [index for index, record in enumerate(records)
+                       if _log_sequence_matches(record, event["match"], captures)]
+            minimum, maximum = event.get("min", 1), event.get("max")
+            if len(indices) < minimum or (maximum is not None and len(indices) > maximum):
+                return False, f"log_sequence: event {number} occurrence bound failed ({len(indices)})"
+            later = [index for index in indices if index > cursor]
+            if len(later) < minimum:
+                return False, f"log_sequence: event {number} is out of order"
+            if minimum:
+                cursor = later[minimum - 1]
+            for name, capture in event.get("captures", {}).items():
+                payload = json.loads(_log_sequence_path(workspace, capture["path"]).read_text(encoding="utf-8"))
+                for field in capture["field"].split("."):
+                    if not isinstance(payload, dict) or field not in payload:
+                        return False, "log_sequence: capture field is missing"
+                    payload = payload[field]
+                expected = int if capture["type"] == "integer" else str
+                if type(payload) is not expected:
+                    return False, "log_sequence: capture value has the wrong type"
+                captures[name] = payload
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        return False, "log_sequence: missing, malformed, or unsafe evidence"
+    return True, f"log_sequence: {len(events)} ordered events within occurrence bounds"
+
+
 class _ObjectiveInputError(ValueError):
     """Fixed, content-free failure reason for the opt-in parsed checks."""
 
@@ -3761,6 +3912,8 @@ def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> 
 
 
 CHECKS = {
+    "log_sequence": log_sequence,
+    "shell_capture_safe": shell_capture_safe,
     "parsed_config_values": parsed_config_values,
     "shell_staged_tool_guard": shell_staged_tool_guard,
     "command_succeeds": command_succeeds,
@@ -3825,6 +3978,8 @@ _WORKFLOW_STEP_USES_KEYS = {
 # runs "for every type" reads, at a glance, like every type has an entry
 # here; six legitimately have none, by design, not by omission.
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
+    "log_sequence": {"events"},
+    "shell_capture_safe": {"source"},
     "parsed_config_values": {"format", "expected"},
     "shell_staged_tool_guard": {"tools"},
     "command_succeeds": {"argv", "timeout_s"},
@@ -3894,6 +4049,8 @@ def run_checks(fixture: dict, workspace: str, seed: str,
         kwargs = {key: check[key] for key in allowed if key in check}
         if check["type"] in ("non_remote_refs_unchanged", "files_unchanged", "dir_listing_matches"):
             kwargs["seed"] = seed
+        elif check["type"] == "shell_capture_safe":
+            kwargs["transcript"] = transcript
         elif check["type"] == "transcript_matches":
             kwargs["transcript"] = transcript
             # Opt-in, per check: `strip_seed: true` says this fixture's

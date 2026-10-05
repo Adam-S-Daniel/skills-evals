@@ -116,8 +116,11 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
         cmd += ["--model", model]
 
     try:
+        # `env=None` still means "inherit", now with auto-memory off
+        # (guidance.CLI_FORCED_ENV) applied last.
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
-                                text=True, timeout=timeout, env=env)
+                                text=True, timeout=timeout,
+                                env=guidance.cli_child_env(env))
     except subprocess.TimeoutExpired:
         return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
 

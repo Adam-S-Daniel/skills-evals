@@ -54,13 +54,17 @@ evals/
   disarm-inherited-reach/  # A/B eval, Class A: disarm a clone's inherited reach into production
     fixture.yaml           # prompt, setup: hook, git-state objective checks, rubric
     seed/                  # setup.sh builds a bare prod repo, a clone and a worktree
-  writing-adrs/            # A/B eval, Class A (format half): three fixtures
+  writing-adrs/            # A/B eval, Class A (format half): four fixtures
     bootstrap/             # no docs/decisions/ yet — bootstrap the folder
     existing-convention/   # docs/decisions/ already has a house format
     supersede/             # replace an accepted decision and update its pointers
+    why-no-comment-trail/  # "why did we do X?": record the relayed reason as an ADR
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  ci-watcher-loops/        # Class B: dispatch, captured run id and bounded timeline polling
+    fixture.yaml           # ordered-log, parsed shell capture, conclusion and restraint checks
+    seed/                  # consumer site and shared fake gh with call-count payloads
   debug-github-workflows/  # Class B: one wrong-branch diagnosis fixture
     wrong-branch/          # main invokes an obsolete test module; an unmerged branch has the fix
       fixture.yaml         # replay-read, affirmative-reply and file-restraint checks
@@ -220,7 +224,10 @@ a failed check either: the trial is a `scorer_unavailable` error, listed in
 only an allow-listed environment (no `XDG_*`): PATH, HOME, LANG, LANGUAGE,
 `LC_*`, TERM, TMPDIR, TZ, USER, LOGNAME, SHELL, `HTTP_PROXY`, `HTTPS_PROXY`,
 `NO_PROXY` and their lowercase forms, `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
-`SSL_CERT_DIR`, `CLAUDE_BIN` and the two registry locators. Every CLI launch
+`SSL_CERT_DIR`, `CLAUDE_BIN` and the two registry locators, plus
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, set rather than inherited, so a trial's
+auto-memory never lands in your real `~/.claude/projects/` (the transcripts
+still do: the login lives under that HOME). Every CLI launch
 (version call, probe, arms, judge) goes through a temporary guard launcher that
 re-checks the settings in the directory the CLI is about to start in, so a
 symlinked or `setup:`-written `.claude/settings.json` is refused at launch (exit

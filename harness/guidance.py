@@ -295,6 +295,34 @@ def check_env_block(env_spec, where: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# the CLI child's forced variables — ONE definition, for EVERY session spawn
+#
+# A skill arm and the judge run under the operator's real HOME on a
+# workstation (the interactive login lives there; ADR 0002, decision 4), and
+# the CLI's auto-memory writes to `$HOME/.claude/projects/<cwd>/memory/`.
+# Observed 2026-10-05: a local rename-pdfs trial wrote `MEMORY.md` and a
+# fixture-derived note into the operator's own profile, keyed by the trial's
+# temp workspace. `CLAUDE_CODE_DISABLE_AUTO_MEMORY` is the CLI's own switch
+# (2.1.289 treats "1"/"true"/"yes"/"on" as off, and a falsy value FORCES it
+# on, overriding `autoMemoryEnabled` in settings), so it is SET here, last,
+# rather than allow-listed: an ambient `=0` or a fixture `env:` block cannot
+# turn it back on. Every sink that starts a CLI session — run_eval.run_agent,
+# judge._run_judge_cli, run_canary.run_leg, and local_eval's
+# child_environment — applies this mapping; `--version` calls load no
+# session and are left alone. The propagation probe builds its own scratch
+# HOME and allowlist (init_probe.build_env) and makes no model turn.
+CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+
+
+def cli_child_env(env=None) -> dict:
+    """A copy of `env` (default: this process's environment) with
+    `CLI_FORCED_ENV` applied last. The input mapping is never mutated."""
+    out = dict(os.environ if env is None else env)
+    out.update(CLI_FORCED_ENV)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # checkout + manifest
 
 

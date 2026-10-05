@@ -187,8 +187,11 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
         cmd += ["--model", model]
 
     try:
+        # The judge inherits this process's environment, plus auto-memory
+        # off (guidance.CLI_FORCED_ENV): it runs under the real HOME.
         result = subprocess.run(cmd, input=prompt, capture_output=True,
-                                text=True, timeout=timeout)
+                                text=True, timeout=timeout,
+                                env=guidance.cli_child_env())
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"judge CLI call timed out after {timeout}s") from e
     except OSError as e:
