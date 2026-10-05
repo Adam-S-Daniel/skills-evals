@@ -35,6 +35,10 @@ WHAT IT DOES, in order:
     should-trigger or should-not-trigger query is refused before any model
     call, with a `trigger-set-unusable` record; a reviewed
     `--trigger-eval-set` is run anyway and its split problems recorded.
+    A reviewed set lives beside the skill's fixtures as
+    `evals/<skill>/trigger-eval-set.json` (writing-adrs ships one) and is
+    passed explicitly; it must be a JSON list of exactly
+    `{query: string, should_trigger: boolean}` objects.
     `--num-workers` (default 4) caps skill-creator's parallel CLI calls.
     Scratch project settings disable the archived registry plugins that
     provide the skill, leaving the operator's login available.
@@ -447,6 +451,28 @@ def proposal_model() -> str:
 # Trigger half: skill-creator's description loop
 # ---------------------------------------------------------------------------
 
+def load_trigger_eval_set(path: Path) -> list[dict]:
+    """A reviewed `--trigger-eval-set` file, refused unless it is exactly
+    skill-creator's shape: a JSON list of `{query, should_trigger}` objects
+    with a non-empty string query and a JSON boolean label. The label is
+    never coerced: `"false"` would otherwise read as a should-trigger query."""
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Refusal(f"--trigger-eval-set {path.name}: unreadable: "
+                      f"{type(exc).__name__}") from exc
+    if not isinstance(items, list):
+        raise Refusal(f"--trigger-eval-set {path.name}: must be a JSON list")
+    for index, item in enumerate(items):
+        if (not isinstance(item, dict)
+                or set(item) != {"query", "should_trigger"}
+                or not isinstance(item["query"], str) or not item["query"].strip()
+                or not isinstance(item["should_trigger"], bool)):
+            raise Refusal(f"--trigger-eval-set {path.name}: item {index} must be "
+                          "exactly {query: non-empty string, should_trigger: boolean}")
+    return items
+
+
 def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
                      validation: str, override: Path | None,
                      holdout: str | None = None) -> tuple[list[dict], str]:
@@ -461,7 +487,7 @@ def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
     held_out = {" ".join(str(fixtures[n].get("prompt", "")).split())
                 for n in [validation] + ([holdout] if holdout else [])}
     if override:
-        items = json.loads(override.read_text(encoding="utf-8"))
+        items = load_trigger_eval_set(override)
         source = f"file:{override.name}"
     else:
         items = [{"query": fixtures[name]["prompt"], "should_trigger": True}
