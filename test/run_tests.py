@@ -4967,6 +4967,82 @@ class CiDispatchTests(unittest.TestCase):
                         f"pip-installed in ci.yml: {install_argv}")
 
 
+class WorkflowPinnedPythonTests(unittest.TestCase):
+    """Every job that runs `python3` or `pip` pins its interpreter.
+
+    ubuntu-latest moves to Ubuntu 26.04 from 2026-10-19
+    (https://github.com/actions/runner-images/issues/14748), which takes the
+    system Python from 3.12 to 3.14 and pip from 24 to 25.1. A job that calls
+    the bare system interpreter would change Python under the suite with no
+    diff to blame, so each one carries an `actions/setup-python` step, pinned
+    to a full commit SHA and to 3.12, BEFORE its first python/pip step.
+
+    `python3` and `pip` are lexical tokens in a `run:` body, so a word match
+    there is fine; the workflow structure itself (jobs, step order, `uses`) is
+    read from the parsed YAML. A comment that merely names python3 in a job
+    without a pin would also trip this: the conservative direction.
+    """
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    PYTHON_TOKEN = re.compile(r"\b(?:python3?|pip3?)\b")
+    SETUP_PYTHON = re.compile(r"^actions/setup-python@[0-9a-f]{40}$")
+
+    @classmethod
+    def unpinned_jobs(cls, doc: dict) -> list[str]:
+        """Jobs in a parsed workflow whose python/pip use precedes a pin."""
+        bad = []
+        for name, job in (doc.get("jobs") or {}).items():
+            pinned = False
+            for step in job.get("steps") or []:
+                uses = step.get("uses") or ""
+                if cls.SETUP_PYTHON.match(uses):
+                    pinned = (step.get("with") or {}).get(
+                        "python-version") == "3.12"
+                elif cls.PYTHON_TOKEN.search(step.get("run") or "") \
+                        and not pinned:
+                    bad.append(f"{name}: {step.get('name') or step.get('id')}")
+                    break
+        return bad
+
+    def test_every_python_job_pins_setup_python_3_12_first(self):
+        seen = 0
+        for path in sorted(self.WORKFLOWS.glob("*.yml")):
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            seen += 1
+            with self.subTest(workflow=path.name):
+                self.assertEqual(
+                    self.unpinned_jobs(doc), [],
+                    f"{path.name}: a job runs python3/pip before an "
+                    "actions/setup-python@<sha> step with python-version "
+                    '"3.12"; the runner image is changing its system Python')
+        self.assertGreater(seen, 0, "no workflow files found")
+
+    def test_the_guard_can_fail(self):
+        # Mutation inside the test: the helper must flag each unpinned shape,
+        # so a parser that silently matches nothing cannot pass the real check.
+        pin = {"uses": "actions/setup-python@" + "a" * 40,
+               "with": {"python-version": "3.12"}}
+        run = {"name": "go", "run": "python3 x.py"}
+        cases = {
+            "no pin": ([run], ["j: go"]),
+            "pin after use": ([run, pin], ["j: go"]),
+            "pip counts": ([{"name": "i", "run": "pip install pyyaml"}],
+                           ["j: i"]),
+            "tag not sha": ([{"uses": "actions/setup-python@v5",
+                              "with": {"python-version": "3.12"}}, run],
+                            ["j: go"]),
+            "wrong version": ([{**pin, "with": {"python-version": "3.14"}},
+                               run], ["j: go"]),
+            "pinned first": ([pin, run], []),
+            "no python": ([{"name": "x", "run": "echo hi"}], []),
+        }
+        for label, (steps, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(
+                    self.unpinned_jobs({"jobs": {"j": {"steps": steps}}}),
+                    expected)
+
+
 class CiSalientDetectionTests(unittest.TestCase):
     """Executes ci.yml's own `salient` step script against a real git repo.
 

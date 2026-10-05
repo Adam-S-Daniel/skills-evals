@@ -200,6 +200,15 @@ jobs:
           path: _agent-guidance
           persist-credentials: false
 
+      # Pinned, not the runner's system Python: ubuntu-latest moves to Ubuntu
+      # 26.04 from 2026-10-19 (https://github.com/actions/runner-images/issues/14748),
+      # taking system Python from 3.12 to 3.14 and pip with it. 3.12 is what
+      # eval.yml and propagation.yml already run.
+      - name: Set up Python
+        if: steps.salient.outputs.run == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
       - name: Install dependencies
         if: steps.salient.outputs.run == 'true'
         # markdown-it-py is what harness/guidance.py parses a guidance
