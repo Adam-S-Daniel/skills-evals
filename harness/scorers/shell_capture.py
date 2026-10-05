@@ -177,25 +177,29 @@ def _mentions_dispatch(text, *, unverifiable=False):
     quotes can open a bogus span over a real dispatch; decoding therefore
     only adds matches: the raw and quote-stripped texts are searched too.
 
-    For an unverifiable body (unparseable or over the analysis bound),
-    `workflow run` after any command spelling is enough: that fallback exists
-    to be conservative, a lexical decoder cannot follow shell quoting well
-    enough to rule out a disguised `gh`, and a legitimate unverifiable body
-    mentioning "workflow run" is rare. The spelling-aware scan stays as an
-    additional match, never as a filter.
+    For an unverifiable body (unparseable or over the analysis bound) the
+    fallback exists to be conservative, and lexical decoding cannot follow
+    shell quoting (a literal "$'" inside double quotes pairs with the quote
+    opening a later $'\x67h' or $'\x77orkflow'). $'...' is the only quoting
+    that decodes escapes, so such a body fails closed if it contains $' at
+    all; every other quote and backslash is removed by unquote, so otherwise
+    it fails closed when the unquoted text says `workflow run` after any
+    command spelling. A legitimate unverifiable body mentioning either is
+    rare. The spelling-aware scan stays as an additional match.
     """
+    def unquote(value):
+        return re.sub(r'''['"\\]''', '', value.replace('$"', '"'))
+    pattern = re.compile(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])')
+    if unverifiable:
+        if "$'" in text or re.search(r'workflow\s+run', unquote(text)):
+            return True
+        return any(pattern.search(form) for form in (text, unquote(text)))
+
     def ansi(found):
         decoded = _ansi_c(found.group(1))
         return 'gh' if decoded is None else decoded
-
-    def unquote(value):
-        return re.sub(r'''['"\\]''', '', value.replace('$"', '"'))
     decoded = re.sub(r"\$'((?:[^'\\]|\\.)*)'", ansi, text, flags=re.S)
-    pattern = re.compile(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])')
-    forms = (text, unquote(text), unquote(decoded))
-    if unverifiable and any(re.search(r'\bworkflow\b\s+\brun\b', form) for form in forms):
-        return True
-    return any(pattern.search(form) for form in forms)
+    return any(pattern.search(form) for form in (text, unquote(text), unquote(decoded)))
 
 
 def _substitutions(text, *, prose=False):

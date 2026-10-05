@@ -614,7 +614,7 @@ class TestCiWatcherShellCapture(unittest.TestCase):
                     self.assertFalse(self._reply('```bash\n' + script + '\n```'))
         for script in ['x=$(' + nested + 'echo gh workflow; gh run list)',
                        'x=$(echo one' + unparseable + ')',
-                       "x=$(echo $'g\\x68 flow'" + unparseable + ')']:
+                       'x=$(echo "g\\x68 flow"' + unparseable + ')']:
             with self.subTest(script=script):
                 self.assertTrue(self._reply('```bash\n' + script + '\n```'))
         # A literal "$'" inside double quotes opens a bogus $'...' span in the
@@ -628,14 +628,24 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertTrue(shell_capture._mentions_dispatch(body))
                 self.assertFalse(self._reply(reply.format(body)))
-        # A bogus span can pair with the quote that opens a disguised name, so
-        # an unverifiable body fails closed on `workflow run` alone.
+        # A bogus span can pair with the quote that opens a disguised word, so
+        # an unverifiable body fails closed on any $' or on `workflow run`.
         bogus = 'echo "$\'\\n"; '
         for script in ['x=$(' + bogus + '"gh" workflow run d; gh run list; echo \'x\'; if)',
                        'x=$(' + bogus + '$\'\\x67h\' workflow run d; gh run list; if)',
                        'x=$(' + bogus + '$\'\\147h\' workflow run d; gh run list; if)',
                        'x=$(' + nested + bogus + '$\'\\x67h\' workflow run d; gh run list)',
-                       'x=$(' + nested + bogus + '$\'\\147h\' workflow run d; gh run list)']:
+                       'x=$(' + nested + bogus + '$\'\\147h\' workflow run d; gh run list)',
+                       'x=$(' + bogus + 'gh $\'\\x77orkflow\' run d; gh run list; if)',
+                       'x=$(' + bogus + 'gh workflow $\'\\x72un\' d; gh run list; if)',
+                       'x=$(' + nested + bogus + 'gh $\'\\x77orkflow\' run d; gh run list)',
+                       'x=$(' + nested + bogus + 'gh workflow $\'\\x72un\' d; gh run list)',
+                       # No $': a name the spelling scan cannot read still
+                       # fails closed on `workflow run` in the unquoted text.
+                       'x=$("$GH" workflow run d; gh run list' + unparseable + ')',
+                       'x=$(' + nested + '"$GH" work""flow run d; gh run list)',
+                       # Any $' fails an unverifiable body closed, even a harmless one.
+                       "x=$(echo $'g\\x68 flow'" + unparseable + ')']:
             with self.subTest(script=script):
                 self.assertFalse(self._reply('```bash\n' + script + '\n```'))
         # The spelling-aware scan alone still sees a quoted name in a bogus span.
@@ -643,7 +653,9 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             bogus + '"gh" workflow run d; gh run list; echo \'x\''))
         # A verifiable body that only mentions "workflow run" is decided by
         # the AST, not the fallback, so it stays clean.
-        self.assertTrue(self._reply('```bash\nx=$(echo "$\'\\n workflow run"; gh run list)\n```'))
+        listed = 'echo "$\'\\n workflow run"; gh run list'
+        self.assertFalse(shell_capture._unsafe_capture(parse_bash(listed + '\n')))
+        self.assertTrue(self._reply('```bash\nx=$(' + listed + ')\n```'))
         # A parsed $"gh" is the literal word gh.
         self.assertFalse(self._reply('```bash\nx=$($"gh" workflow run d; gh run list)\n```'))
         self.assertTrue(self._reply('```bash\nx=$($"gh" workflow run d)\n```'))
