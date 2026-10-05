@@ -68,6 +68,9 @@ evals/
   embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
     fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
     seed/                  # a wired Tools collection, an existing tool, and a standalone app
+  admin-config-render/     # A/B eval, Class A: a consumer site's /admin config will not render
+    fixture.yaml           # prompt, command_succeeds renders, kit/verifier/identity digests, rubric
+    seed/                  # a consumer site plus a vendored cms-platform kit and its Ruby render checks
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
