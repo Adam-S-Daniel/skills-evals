@@ -623,7 +623,7 @@ def refuse_dispatch(workflows: set) -> int:
 
     The 403 above blames the token's scopes, which is false here: the same
     token dispatches the granted command line. A caller who reads it as a
-    credential problem gives up on a task this instrument supports, so the
+    credential problem gives up on a task this environment supports, so the
     refusal names the exact permitted command lines instead. The exit code
     and the record are the same as for refuse_write.
     """
