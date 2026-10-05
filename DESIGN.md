@@ -382,8 +382,9 @@ is objectively decidable from the resulting files alone.
 - **Harness language:** Python — CHOSEN and implemented for the objective scorer.
 - **Agent under test:** CHOSEN and implemented — the Claude Code CLI, invoked
   headlessly per arm:
-  `claude -p <prompt> --output-format json --permission-mode bypassPermissions
-  --setting-sources project` (plus `--model <model>` if the fixture or CLI
+  `claude -p <prompt> --output-format json --verbose --permission-mode
+  bypassPermissions --setting-sources project` (`--verbose` makes the CLI print
+  every turn's result, not only the last) (plus `--model <model>` if the fixture or CLI
   flag sets one). The binary is `$CLAUDE_BIN` if set, else `claude` on `PATH`,
   so tests can substitute a fake CLI. `--setting-sources project` scopes skill
   discovery to the workspace's own `.claude/`, which is what makes the

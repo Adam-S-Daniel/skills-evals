@@ -29,16 +29,23 @@ MESSAGE = {"type": "assistant", "message": {"content": []}}
 BACKGROUND_FIRST_RESULT = {
     "type": "result", "subtype": "success", "is_error": False,
     "result": "Root cause: set the required check on example.com.",
-    "result_index": 0, "queued_turn_count": 0, "num_turns": 11,
-    "total_cost_usd": 0.66, "duration_ms": 130000,
-    "usage": {"input_tokens": 40}, "stop_reason": "end_turn",
+    "result_index": 0, "queued_turn_count": 0, "num_turns": 2,
+    "total_cost_usd": 0.038031, "duration_ms": 3062, "duration_api_ms": 2900,
+    "usage": {"input_tokens": 10, "output_tokens": 295, "service_tier": "standard",
+              "server_tool_use": {"web_search_requests": 0},
+              "iterations": [{"output_tokens": 295}]},
+    "stop_reason": "end_turn",
     "terminal_reason": "completed",
-    "modelUsage": {"fake-default-model": {"inputTokens": 40}},
+    "modelUsage": {"fake-default-model": {"inputTokens": 10}},
     "subagent_stats": {"spawned": 1, "started_in_background": 1, "completed": 0}}
 BACKGROUND_SECOND_RESULT = BACKGROUND_FIRST_RESULT | {
     "result": "The background agent confirmed the same root cause.",
-    "result_index": 1, "num_turns": 21, "total_cost_usd": 0.787257,
-    "duration_ms": 140000,
+    "result_index": 1, "num_turns": 1, "total_cost_usd": 0.05,
+    "duration_ms": 1878, "duration_api_ms": 1800,
+    "usage": {"input_tokens": 5, "output_tokens": 75, "service_tier": "standard",
+              "server_tool_use": {"web_search_requests": 1},
+              "iterations": [{"output_tokens": 75}]},
+    "modelUsage": {"fake-default-model": {"inputTokens": 15}},
     "subagent_stats": {"spawned": 1, "started_in_background": 1, "completed": 1}}
 
 
@@ -65,10 +72,6 @@ class CliJsonShapeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "found 0"):
             normalize_cli_result([MESSAGE])
 
-    def test_array_without_result_reports_only_the_count(self):
-        with self.assertRaisesRegex(ValueError, "found 0"):
-            normalize_cli_result([MESSAGE])
-
     def test_follow_up_turn_after_background_agent_yields_two_results(self):
         # Claude Code 2.1.289, headless, `--output-format json`: the agent
         # launched a background subagent and answered; the subagent's
@@ -80,14 +83,24 @@ class CliJsonShapeTests(unittest.TestCase):
         second = BACKGROUND_SECOND_RESULT
         merged = normalize_cli_result([MESSAGE, first, MESSAGE, second])
         self.assertEqual(merged["result"], first["result"] + "\n\n" + second["result"])
-        # Metrics stay the final result's (cumulative) values; nothing is summed.
-        self.assertEqual(merged["total_cost_usd"], 0.787257)
-        self.assertEqual(merged["num_turns"], 21)
+        # Per-turn fields are summed; cost and model usage are cumulative on
+        # the CLI, so the last result's are kept.
+        self.assertEqual(merged["num_turns"], 3)
+        self.assertEqual(merged["duration_ms"], 3062 + 1878)
+        self.assertEqual(merged["duration_api_ms"], 2900 + 1800)
+        self.assertEqual(merged["usage"]["input_tokens"], 15)
+        self.assertEqual(merged["usage"]["output_tokens"], 370)
+        self.assertEqual(merged["usage"]["server_tool_use"], {"web_search_requests": 1})
+        self.assertEqual(merged["usage"]["service_tier"], "standard")
+        self.assertEqual(merged["usage"]["iterations"], [{"output_tokens": 75}])
+        self.assertEqual(merged["total_cost_usd"], 0.05)
+        self.assertEqual(merged["modelUsage"], {"fake-default-model": {"inputTokens": 15}})
         self.assertEqual(merged["merged_results"], 2)
         self.assertFalse(merged["is_error"])
         # The inputs are left untouched.
         self.assertEqual(first["result"], "Root cause: set the required check on example.com.")
         self.assertNotIn("merged_results", second)
+        self.assertEqual(second["usage"]["output_tokens"], 75)
 
     def test_any_error_among_several_results_stays_an_error(self):
         error = BACKGROUND_SECOND_RESULT | {"is_error": True, "result": "failed"}
@@ -178,14 +191,28 @@ class CliJsonConsumersTests(unittest.TestCase):
         self.assertEqual(answer["transcript"],
                          BACKGROUND_FIRST_RESULT["result"] + "\n\n"
                          + BACKGROUND_SECOND_RESULT["result"])
-        self.assertEqual(answer["cost_usd"], 0.787257)
+        self.assertEqual(answer["cost_usd"], 0.05)
+        self.assertEqual(answer["num_turns"], 3)
+        self.assertEqual(answer["usage"]["output_tokens"], 370)
         self.assertEqual(run_eval.models_used(answer["raw"]), ["fake-default-model"])
-        # Unparseable stdout is still an error, not a silent pass.
+
+    def test_agent_asks_for_the_whole_message_array(self):
+        with mock.patch("subprocess.run", return_value=cli_reply(RESULT)) as run:
+            run_eval.run_agent(self.workspace, "prompt",
+                               {"name": "without_skill", "timeout": 5})
+        argv = run.call_args.args[0]
+        self.assertIn("--verbose", argv)
+        self.assertEqual(argv[argv.index("--output-format") + 1], "json")
+
+    def test_truncated_stdout_is_an_error_that_echoes_none_of_it(self):
+        truncated = '[{"type": "system", "subtype": "init", "cwd": "private payload", "ses'
         with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess(
-                args=["fake-cli"], returncode=0, stdout="[{\"type\": \"res", stderr="")):
-            truncated = run_eval.run_agent(self.workspace, "prompt",
-                                           {"name": "without_skill", "timeout": 5})
-        self.assertEqual(truncated["error"], "invalid_json")
+                args=["fake-cli"], returncode=0, stdout=truncated, stderr="")):
+            answer = run_eval.run_agent(self.workspace, "prompt",
+                                        {"name": "without_skill", "timeout": 5})
+        self.assertEqual(answer["error"], "invalid_json")
+        self.assertNotIn("private payload", answer["detail"])
+        self.assertIn(str(len(truncated)), answer["detail"])
 
     def test_judge_reads_array_and_records_result_model_usage(self):
         text, models = self._judge([MESSAGE, RESULT])
