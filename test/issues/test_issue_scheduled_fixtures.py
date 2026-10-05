@@ -10,6 +10,7 @@ import os
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -207,6 +208,47 @@ class TestScheduledFixtures(unittest.TestCase):
         keys = [entry["eval_key"] for entry in planner.plan(ROOT, "schedule", {})["include"]]
         self.assertEqual(len(keys), len(set(keys)))
         self.assertNotIn("outputs", doc()["jobs"]["eval"])
+
+    def test_artifacts_upload_an_allowlist_without_raw_transcripts(self):
+        # #289: this repository is public, so a workflow artifact is public.
+        # Each arm's transcripts/raw.json is unredacted, so neither upload may
+        # name the whole results/ tree or raw.json; the only transcript file
+        # allowed out is the redacted tool_trace.json.
+        sys.path.insert(0, str(ROOT / "harness"))
+        import run_eval
+        allowed = {"summary.json", "report.md", run_eval.TOOL_TRACE_NAME}
+        self.assertEqual(set(run_eval.ARM_DIR_FILES + run_eval.RUN_DIR_FILES) - allowed,
+                         {"raw.json"},
+                         "a new results file needs a decision: upload it or not")
+        prefix = "skills-evals/results/"
+        for name in ("Upload eval results", "Upload eval diagnostics"):
+            with self.subTest(step=name):
+                upload = step("eval", name)["with"]
+                patterns = [line.strip() for line in upload["path"].splitlines() if line.strip()]
+                self.assertEqual(upload["include-hidden-files"], False)
+                for pattern in patterns:
+                    self.assertTrue(pattern.startswith(prefix), pattern)
+                    self.assertFalse(pattern.endswith("/"), "a whole directory: " + pattern)
+                    self.assertNotIn("!", pattern)
+                    self.assertNotIn("raw", pattern)
+                    if "transcripts" in pattern:
+                        self.assertTrue(pattern.endswith("/transcripts/" + run_eval.TOOL_TRACE_NAME), pattern)
+                with tempfile.TemporaryDirectory() as tmp:
+                    results = Path(tmp)
+                    run_eval._write_summary(results, "fixture", "with_skill", "20261005T000000Z",
+                                            None, None, None, None, {"result": "x"},
+                                            tool_trace={"events": []})
+                    run_eval._write_summary(results, "fixture", "without_skill", "20261005T000000Z",
+                                            None, None, None, None, {"result": "x"},
+                                            arm_dir=results / "fixture/20261005T000000Z/nested/without_skill/trial-1")
+                    (results / "fixture/20261005T000000Z" / run_eval.REPORT_NAME).write_text("r")
+                    written = {str(f.relative_to(results)) for f in results.rglob("*") if f.is_file()}
+                    uploaded = {str(f.relative_to(results)) for pattern in patterns
+                                for f in results.glob(pattern[len(prefix):]) if f.is_file()}
+                    self.assertEqual(written - uploaded, {
+                        "fixture/20261005T000000Z/with_skill/transcripts/raw.json",
+                        "fixture/20261005T000000Z/nested/without_skill/trial-1/transcripts/raw.json"})
+                    self.assertTrue(uploaded <= written)
 
     def test_publisher_revalidates_fixture_key_before_matching_download(self):
         steps = doc()["jobs"]["publish"]["steps"]

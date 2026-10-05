@@ -785,7 +785,8 @@ _ALLOWED_ENV_PREFIXES = (
                    # also makes it one of the variables the arm's own
                    # published transcript could leak (see "a variable that
                    # reaches the arm is a variable an arm can publish" above);
-                   # nothing here redacts it before raw.json is written.
+                   # nothing here redacts it before raw.json is written, so
+                   # eval.yml leaves raw.json out of its artifacts (#289).
     "CLAUDE_",     # the CLI's own knobs, including CLAUDE_CODE_OAUTH_TOKEN.
                    # Also carries CLAUDE_BIN, which only the harness itself
                    # reads (run_agent/judge.score/run_canary via os.environ,
