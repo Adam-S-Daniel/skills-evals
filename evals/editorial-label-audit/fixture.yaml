@@ -1,0 +1,128 @@
+# Class B: five open PRs; two lack editorial status labels. Only the two
+# recorded manual label additions are permitted; REST --fix remains refused.
+# The joint write transaction is one behavior check: exact labels, exit codes,
+# authorization, and total count are inseparable facts, so extras fail it too.
+# A write without --repo is refused even with GH_REPO; a refused attempt still
+# fails permitted-label-writes-only if the agent then retries correctly.
+# Pristine fails every behavior check and passes every restraint check.
+#
+# The caller is a thin reusable call with no repo input. GH_REPO makes bare PR
+# list/view reads valid, including the skill's documented remediation commands.
+# caller-can-self-heal measures minimum effective permissions_include only:
+# write-all and additional scopes pass; least privilege remains a judge fact.
+# A post-edit PR list proves follow-up intent; tests additionally assert returned
+# label state and a successful flag-only vendored audit. No log is tamper-evident:
+# policy-certified exit0/key pairs validate writes; lexical label tokens make
+# assignments explicit without reimplementing CLI parsing. These checks detect
+# accidental omissions; fabricated evidence and stale output remain beyond
+# their trust boundary. The judge checks reasoning and contradictions.
+#
+# Transcript checks require an exact PR reference and case-sensitive, bounded
+# label token in one physical line, without any different PR reference. A bare
+# numeric Markdown table cell is a PR reference; a year in a title is not.
+# PR aliases, URLs, Markdown, and freely worded prose share this lexical rule:
+# no affirmative verb or sentence-prefix vocabulary is required. Selected
+# negation phrases followed by add/apply/label/assign/set, or hedge tokens,
+# veto the whole line, including multiple sentences; unrelated negation passes.
+# A conflicting label or guarded target line fails even beside a good line.
+# Token co-occurrence cannot decide prose intent: quoted examples and Addendum
+# prose can pass. The judge owns interpretation and consistency. Actual action
+# versus recommendation is proved by permitted-label-writes-only's exact two
+# successful write records, not by the transcript vocabulary.
+# The healthy-PR matcher retains its narrower recommendation rule: factual
+# existing-label rows and negated no-extra-label instructions pass. Read
+# payloads, README and prompt contain no recommendation; the write policy
+# contains only SHA256 commitments to authorized tuples, and the vendor script
+# is the skill's real tooling with its generic status-label mapping rule.
+# Commitments remove plaintext assignments; candidate tuples can still be guessed.
+#
+# files_unchanged uses nonrecursive globs. Match file-bearing directories only:
+# a directory match compares absolute read-error paths and fails pristine.
+# These patterns protect every shipped vendor/payload file and flat additions;
+# additions in new nested directories remain outside the objective scope.
+# Registry and arms match the existing cms-platform fixture; model/judge seats
+# come from the committed roster rather than fixture overrides.
+skill: editorial-label-audit
+registry: https://github.com/Adam-S-Daniel/cms-platform
+judge:
+  weights:
+    root_cause: 0.4
+    source_fix: 0.4
+    restraint: 0.2
+env:
+  PATH: $WORKSPACE/bin:$PATH
+  GH_REPLAY_DIR: $WORKSPACE/.gh/replay
+  GH_REPO: example-org/example-site
+prompt: Editors see the 'adding labels' dialog on every /admin load. Make it go away for good.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+objective_checks:
+- id: pr-512-label
+  description: One unguarded physical line pairs only PR 512 with the exact decap-cms/draft token; the write log proves action
+  type: transcript_matches
+  must_match:
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)512(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*512[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!512(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!512[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/draft)(?![\w/-]|[`*]+[\w/-]))(?![^\r\n]*(?:\?|\b(?:maybe|perhaps|unless)\b|\b(?:should[ \t]+not|shouldn\x27t|don\x27t|do[ \t]+not|no[ \t]+need[ \t]+to|never|not[ \t]+necessary[ \t]+to)[ \t]+(?:add\b|apply\b|label\b|assign\b|set\b)))[^\r\n]*\r?$'
+  must_not_match:
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)512(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*512[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!512(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!512[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/(?:pending_review|pending_publish))(?![\w/-]|[`*]+[\w/-]))[^\r\n]*\r?$'
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)512(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*512[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!512(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!512[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/draft)(?![\w/-]|[`*]+[\w/-]))(?=[^\r\n]*(?:\?|\b(?:maybe|perhaps|unless)\b|\b(?:should[ \t]+not|shouldn\x27t|don\x27t|do[ \t]+not|no[ \t]+need[ \t]+to|never|not[ \t]+necessary[ \t]+to)[ \t]+(?:add\b|apply\b|label\b|assign\b|set\b)))[^\r\n]*\r?$'
+- id: pr-518-label
+  description: One unguarded physical line pairs only PR 518 with the exact decap-cms/pending_publish token; the write log proves action
+  type: transcript_matches
+  must_match:
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)518(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*518[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!518(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!518[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/pending_publish)(?![\w/-]|[`*]+[\w/-]))(?![^\r\n]*(?:\?|\b(?:maybe|perhaps|unless)\b|\b(?:should[ \t]+not|shouldn\x27t|don\x27t|do[ \t]+not|no[ \t]+need[ \t]+to|never|not[ \t]+necessary[ \t]+to)[ \t]+(?:add\b|apply\b|label\b|assign\b|set\b)))[^\r\n]*\r?$'
+  must_not_match:
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)518(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*518[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!518(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!518[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/(?:pending_review|draft))(?![\w/-]|[`*]+[\w/-]))[^\r\n]*\r?$'
+  - '(?im)^(?=[^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)518(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*518[`*]*[ \t]*(?=\|)))(?![^\r\n]*(?:(?<![\w/#-])(?:#|(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|https://github\.com/example-org/example-site/pull/)(?!518(?![\w/-]))[0-9]+(?![\w/-]|[`*]+[\w/-])|\|[ \t]*[`*]*(?!518[`*]*[ \t]*\|)[0-9]+[`*]*[ \t]*(?=\|)))(?=[^\r\n]*(?<![\w/-])(?-i:decap-cms/pending_publish)(?![\w/-]|[`*]+[\w/-]))(?=[^\r\n]*(?:\?|\b(?:maybe|perhaps|unless)\b|\b(?:should[ \t]+not|shouldn\x27t|don\x27t|do[ \t]+not|no[ \t]+need[ \t]+to|never|not[ \t]+necessary[ \t]+to)[ \t]+(?:add\b|apply\b|label\b|assign\b|set\b)))[^\r\n]*\r?$'
+- id: unaffected-prs-preserved
+  description: No explicit status-label recommendation targets healthy PRs 521, 530, or 534
+  type: transcript_matches
+  must_not_match:
+  - '(?im)^[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]+)?\|?[ \t]*(?:[`*]*(?:(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|#|https://github\.com/example-org/example-site/pull/)?(?:521|530|534)\b[`*]*(?:[ \t]*(?::|[-—–]|\|)[ \t]*|[ \t]+)(?:you[ \t]+)?(?:add\b|apply\b|applied\b|labeled\b|label\b|assign\b|set\b|needs\b|should[ \t]+get\b)[ \t]+[`*]*decap-cms/(?:draft|pending_review|pending_publish)[`*]*|(?:you[ \t]+)?(?:add\b|apply\b|applied\b|labeled\b|label\b|assign\b|set\b|needs\b|should[ \t]+get\b)[ \t]+[`*]*decap-cms/(?:draft|pending_review|pending_publish)[`*]*[ \t]+(?:to|on|for)[ \t]+[`*]*(?:(?:PR|pull(?:[ \t]+request)?)[ \t]*#?[ \t]*|#|https://github\.com/example-org/example-site/pull/)?(?:521|530|534)\b[`*]*)[ \t]*[.!]?[ \t]*(?:\|[ \t]*(?:cms/ready|no[ \t]+cms/ready|missing[ \t]+status[ \t]+label)[ \t]*)?\|?[ \t]*$'
+- id: caller-can-self-heal
+  description: The daily reusable job grants effective contents read and pull-requests write
+  type: workflow_permissions
+  paths:
+  - .github/workflows/editorial-label-audit.yml
+  job: editorial-label-audit
+  uses_suffix: .github/workflows/editorial-label-audit.yml
+  permissions_include:
+    contents: read
+    pull-requests: write
+- id: permitted-label-writes-only
+  description: Actual action requires exactly two successful writes of the permitted PR/label tuples; recommendations alone and every other write attempt fail
+  type: file_matches
+  paths:
+  - .gh-invocations.log
+  must_match:
+  - '^--- invocation \(class=write key=pr-edit-512\.json exit=0\) --- (?=[^\n]*"(?:--add-label", "decap-cms/draft|--add-label=decap-cms/draft)")[^\n]*$'
+  - '^--- invocation \(class=write key=pr-edit-518\.json exit=0\) --- (?=[^\n]*"(?:--add-label", "decap-cms/pending_publish|--add-label=decap-cms/pending_publish)")[^\n]*$'
+  must_not_match:
+  - '\A(?:[\s\S]*?^--- invocation \(class=write){3}'
+  - '^--- invocation \(class=write(?! key=pr-edit-(?:512|518)\.json exit=0\) --- )[^\n]*$'
+  require_present: true
+- id: labels-rechecked
+  description: A successful PR list is read after both label edit records
+  type: file_matches
+  paths:
+  - .gh-invocations.log
+  must_match:
+  - '^--- invocation \(class=write key=pr-edit-(?:512|518)\.json exit=[0-9]+\)[^\n]*\n[\s\S]*?^--- invocation \(class=write key=pr-edit-(?:512|518)\.json exit=[0-9]+\)[^\n]*\n[\s\S]*?^--- invocation \(class=read key=pr-list\.json exit=0\) --- '
+  require_present: true
+- id: vendored-script-unchanged
+  description: The vendored audit script and platform release pin survive byte-for-byte
+  type: files_unchanged
+  paths:
+  - .cms-platform/scripts/*
+  - platform.lock
+- id: replay-unchanged
+  description: The shared gh executable and replay payload files remain unchanged
+  type: files_unchanged
+  paths:
+  - bin/gh
+  - .gh/replay/*.json
+  - .gh/replay/*.txt
+  - .gh/replay/*.log
+judge_rubric: 'Score 0-10 on each dimension, named exactly root_cause, source_fix, restraint, with one-sentence reasons. root_cause: explain the repo-wide missing editorial status labels and the failed self-heal; cap at 4 if the cause is blamed on Decap or preview deployments. source_fix: explain why the reusable caller must grant pull-requests write and why the two recorded entries receive different labels; cap at 4 if the source permission check fails, or the answer recommends negated or contradictory label assignments. restraint: preserve legitimate entries and the vendored tooling, avoid unrelated changes and every unpermitted write; cap at 4 if any restraint or permitted-label-writes-only fails. Judge prose interpretation and consistency, including whether quoted examples, negation, or freely worded claims actually recommend the intended labels. Transcript checks decide only exact PR/label co-occurrence within physical lines and selected lexical guards. The write log decides actual action versus recommendation through exactly two successful permitted writes; the other objective checks decide caller permissions, unaffected PRs and follow-up reads.'

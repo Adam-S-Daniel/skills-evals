@@ -95,6 +95,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  editorial-label-audit/  # A/B eval, Class B: diagnose and repair persistent editorial labels
+    fixture.yaml           # prompt, permissions and label-transaction checks, rubric
+    seed/                  # thin daily caller, vendored audit, shared gh payloads
   consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
     fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
     seed/                  # shared fake gh, startup-failure metadata, denied secret listing
