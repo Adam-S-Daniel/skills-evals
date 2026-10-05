@@ -808,6 +808,25 @@ def permitted_workflow_run(positionals: list[str], flags: dict, policy: set):
     return entry if entry in policy else None
 
 
+def dispatch_stdout(document: dict) -> bytes:
+    """What real gh >= 2.87.0 prints for a dispatch with stdout not a TTY.
+
+    cli/cli pkg/cmd/workflow/run/run.go writes the run's html_url and a
+    newline, and nothing at all when the server returned no run details
+    (HTTP 204: older GHE, or any other reason). The recorded response keeps
+    databaseId for whoever scores the log; its optional url field is the one
+    line printed, and it must be the run's own URL so the two cannot disagree.
+    """
+    if "url" not in document:
+        return b""
+    url = document["url"]
+    match = (re.fullmatch(r"https://[^\s/]+/[^\s/]+/[^\s/]+/actions/runs/([0-9]+)", url)
+             if isinstance(url, str) else None)
+    if match is None or int(match.group(1)) != document["databaseId"]:
+        raise WorkflowPolicyError()
+    return url.encode("utf-8") + b"\n"
+
+
 def workflow_payload(payload_dir: str, key: str) -> bytes:
     try:
         names = [key, key[:-len(".json")] + ".txt"] if key.endswith(".json") else [key]
@@ -825,7 +844,7 @@ def workflow_payload(payload_dir: str, key: str) -> bytes:
                 or type(document.get("databaseId")) is not int
                 or document["databaseId"] <= 0):
             raise WorkflowPolicyError()
-        return data
+        return dispatch_stdout(document)
     except (TimelineError, LabelPolicyError, ValueError, UnicodeError, RecursionError):
         raise WorkflowPolicyError() from None
 
