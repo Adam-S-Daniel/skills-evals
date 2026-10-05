@@ -72,22 +72,25 @@ if [ "${#GO[@]}" -gt 0 ]; then
     note gofmt
   fi
   if have golangci-lint; then
-    golangci-lint run "${GO[@]}" || RC=1
+    golangci-lint run ./... || RC=1
   else
     note golangci-lint
   fi
 fi
 
 """
+# The ADR 0007 regression hook (test/fixtures/issue88/lint-staged-go.sh) passes
+# the staged files to golangci-lint. That is valid AST input but a wrong
+# reference answer: go/packages refuses named files from two directories
+# ("named files must all be in one directory"), so this branch runs the module.
+REGRESSION_LINT_CALL = 'golangci-lint run "${GO[@]}" || RC=1'
 TAIL = 'if [ "$RC" -ne 0 ]; then'
-# A one-line-per-tool branch. The vendored hook's six language branches leave
-# the AST check little state headroom (see the analysis_limit test below), so
-# mutations that add a call or a status split start from this smaller form.
+# A one-line-per-tool branch with the tested-capture gofmt form.
 SIMPLE_BRANCH = """\
 mapfile -t GO < <(filter '\\.go$')
 if [ "${#GO[@]}" -gt 0 ]; then
-  if have gofmt; then gofmt -l "${GO[@]}" || RC=1; else note gofmt; fi
-  if have golangci-lint; then golangci-lint run "${GO[@]}" || RC=1; else note golangci-lint; fi
+  if have gofmt; then [ -z "$(gofmt -l "${GO[@]}")" ] || RC=1; else note gofmt; fi
+  if have golangci-lint; then golangci-lint run ./... || RC=1; else note golangci-lint; fi
 fi
 
 """
@@ -169,8 +172,11 @@ class FixtureContract(unittest.TestCase):
         self.assertEqual(hashlib.sha256(hook.read_bytes()).hexdigest(), VENDORED_HOOK_SHA256)
         self.assertTrue(os.access(hook, os.X_OK))
         self.assertNotIn(".go", hook.read_text())
-        # The regression copy from ADR 0007 is exactly this hook plus GO_BRANCH.
-        self.assertEqual(add_go_branch(hook.read_text()), REFERENCE_GO_HOOK.read_text())
+        # The regression copy from ADR 0007 is this hook plus GO_BRANCH, except
+        # that it passes the staged files to golangci-lint.
+        self.assertEqual(add_go_branch(hook.read_text()).replace("golangci-lint run ./... || RC=1",
+                                                                 REGRESSION_LINT_CALL),
+                         REFERENCE_GO_HOOK.read_text())
 
     def test_seed_states_the_house_conventions_and_has_no_go_config(self):
         self.assertIn("max_line_length = 100", (SEED / ".editorconfig").read_text())
@@ -245,8 +251,8 @@ class FixtureScoring(unittest.TestCase):
                 '"format":', '"lint:go": "golangci-lint run ./...",\n    "format":'))
             self.assert_failed(ws)
 
-    def test_golangci_only_branch_fails_the_guard_check_by_design(self):
-        # Documented strictness: the guard check names gofmt and golangci-lint.
+    def test_golangci_only_branch_fails_the_gofmt_checks_by_design(self):
+        # Documented strictness: staged files must reach gofmt.
         branch = """\
 mapfile -t GO < <(filter '\\.go$')
 if [ "${#GO[@]}" -gt 0 ]; then
@@ -257,7 +263,7 @@ fi
         with workspace() as ws:
             (ws / ".golangci.yml").write_text(GOLANGCI)
             edit(ws, HOOK, lambda t: add_go_branch(t, branch))
-            self.assert_failed(ws, "hook-guards-go-tools")
+            self.assert_failed(ws, "hook-guards-go-tools", "hook-lints-staged-go")
 
     # One isolated failing mutation per check.
 
@@ -272,7 +278,8 @@ fi
         branch = """\
 GOFILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
 if [ -n "$GOFILES" ]; then
-  if have golangci-lint; then golangci-lint run "$GOFILES" || RC=1; else note golangci-lint; fi
+  if have gofmt; then [ -z "$(gofmt -l "$GOFILES")" ] || RC=1; else note gofmt; fi
+  if have golangci-lint; then golangci-lint run ./... || RC=1; else note golangci-lint; fi
 fi
 
 """
@@ -286,7 +293,8 @@ fi
             self.assert_failed(ws)
 
     def test_swallowed_lint_failure_fails_only_the_staged_lint_check(self):
-        branch = SIMPLE_BRANCH.replace('run "${GO[@]}" || RC=1', 'run "${GO[@]}" || true')
+        branch = SIMPLE_BRANCH.replace("run ./... || RC=1", "run ./... || true")
+        self.assertNotEqual(branch, SIMPLE_BRANCH)
         with workspace(good=True) as ws:
             edit(ws, HOOK, lambda t: t.replace(GO_BRANCH, branch))
             self.assert_failed(ws, "hook-lints-staged-go")
@@ -299,7 +307,7 @@ GOFILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
 if [ "$RC" -ne 0 ]; then exit "$RC"; fi
 have gofmt || exit 0
 have golangci-lint || exit 0
-[ -n "$GOFILES" ] && gofmt -l $GOFILES && golangci-lint run $GOFILES
+[ -n "$GOFILES" ] && [ -z "$(gofmt -l $GOFILES)" ] && golangci-lint run ./...
 """
         with workspace(good=True) as ws:
             edit(ws, HOOK, lambda t: t.replace(GO_BRANCH, "").split(TAIL)[0] + terminal)
@@ -315,18 +323,37 @@ have golangci-lint || exit 0
             edit(ws, HOOK, lambda t: t.replace(GO_BRANCH, branch))
             self.assert_failed(ws, "hook-skips-missing-go-tools")
 
-    def test_known_limit_reference_branch_plus_go_vet_exceeds_the_analysis_bound(self):
-        # Known false negative, pinned so a change to ADR 0007's bounds shows
-        # up here: the full vendored hook, the reference Go branch and one more
-        # correctly guarded `go vet` exceed the 256-state bound and fail
-        # analysis_limit, though the probe passes it in every scenario.
-        vet = '  if have go; then go vet ./... || RC=1; else note go; fi\nfi\n\n'
+    def test_reference_branch_plus_go_vet_and_staticcheck_passes(self):
+        # Needs fix/shell-guard-analysis-bound: under the old 256-state bound
+        # a third guarded Go tool on the vendored hook failed analysis_limit.
+        extra = ('  if have go; then go vet ./... || RC=1; else note go; fi\n'
+                 '  if have staticcheck; then staticcheck ./... || RC=1; else note staticcheck; fi\n')
+        for count in (1, 2):
+            lines = "".join(extra.splitlines(keepends=True)[:count])
+            with self.subTest(extra_tools=count), workspace(good=True) as ws:
+                edit(ws, HOOK, lambda t: t.replace("    note golangci-lint\n  fi\nfi\n\n",
+                                                   "    note golangci-lint\n  fi\n" + lines + "fi\n\n"))
+                self.assert_failed(ws)
+
+    def test_ignored_gofmt_output_fails_only_the_staged_lint_check(self):
+        # `gofmt -l` exits 0 whatever it lists, so this branch never fails on
+        # an unformatted file; the probe's dirty-gofmt run catches it.
+        branch = SIMPLE_BRANCH.replace('[ -z "$(gofmt -l "${GO[@]}")" ] || RC=1', 'gofmt -l "${GO[@]}" || RC=1')
+        self.assertNotEqual(branch, SIMPLE_BRANCH)
         with workspace(good=True) as ws:
-            edit(ws, HOOK, lambda t: t.replace("    note golangci-lint\n  fi\nfi\n\n",
-                                               "    note golangci-lint\n  fi\n" + vet))
+            edit(ws, HOOK, lambda t: t.replace(GO_BRANCH, branch))
+            self.assert_failed(ws, "hook-lints-staged-go")
+
+    def test_new_issues_only_golangci_lint_passes(self):
+        with workspace(good=True) as ws:
+            edit(ws, HOOK, lambda t: t.replace("golangci-lint run ./...", "golangci-lint run --new-from-rev=HEAD ./..."))
+            self.assert_failed(ws)
+
+    def test_literal_package_directories_fail_only_the_guard_check(self):
+        # Documented limit: a neighbor argument with a `/` is not accepted.
+        with workspace(good=True) as ws:
+            edit(ws, HOOK, lambda t: t.replace("golangci-lint run ./...", "golangci-lint run ./internal/... ."))
             self.assert_failed(ws, "hook-guards-go-tools")
-            ok, detail = objective.shell_staged_tool_guard(str(ws), [HOOK], tools=["gofmt", "golangci-lint"])
-            self.assertEqual(detail, "shell_staged_tool_guard: analysis_limit")
 
     def test_added_lint_workflow_fails_only_the_workflow_check(self):
         with workspace(good=True) as ws:
@@ -383,17 +410,23 @@ have golangci-lint || exit 0
             edit(ws, ".golangci.yml", lambda t: t.replace("    - lll\n", "    - govet\n"))
             self.assert_failed(ws, "golangci-width-100")
 
-    def test_whole_module_lint_fails_the_guard_and_staged_checks(self):
+    def test_gofmt_on_the_whole_tree_fails_the_guard_and_staged_checks(self):
         with workspace(good=True) as ws:
-            edit(ws, HOOK, lambda t: t.replace('golangci-lint run "${GO[@]}"', "golangci-lint run ./..."))
+            edit(ws, HOOK, lambda t: t.replace('bad=$(gofmt -l "${GO[@]}")', "bad=$(gofmt -l .)"))
+            self.assert_failed(ws, "hook-guards-go-tools", "hook-lints-staged-go")
+
+    def test_untracked_go_files_reaching_gofmt_fail_the_guard_and_staged_checks(self):
+        with workspace(good=True) as ws:
+            edit(ws, HOOK, lambda t: t.replace("mapfile -t GO < <(filter '\\.go$')",
+                                               "mapfile -t GO < <(git ls-files --cached --others -- '*.go')"))
             self.assert_failed(ws, "hook-guards-go-tools", "hook-lints-staged-go")
 
     def test_unguarded_linter_fails_the_guard_and_skip_checks(self):
         with workspace(good=True) as ws:
             edit(ws, HOOK, lambda t: t.replace(
-                '  if have golangci-lint; then\n    golangci-lint run "${GO[@]}" || RC=1\n'
+                '  if have golangci-lint; then\n    golangci-lint run ./... || RC=1\n'
                 '  else\n    note golangci-lint\n  fi\n',
-                '  golangci-lint run "${GO[@]}" || RC=1\n'))
+                '  golangci-lint run ./... || RC=1\n'))
             self.assert_failed(ws, "hook-guards-go-tools", "hook-skips-missing-go-tools")
 
     def test_deleted_hook_fails_every_hook_check(self):

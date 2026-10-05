@@ -14,19 +14,30 @@
 #     correct `.golangci.yaml` fails this check. The keys are golangci-lint
 #     v2's (`linters.settings`); a v1 file (`linters-settings`, no
 #     `version: "2"`) fails because v2 refuses to load it.
-#   - hook-guards-go-tools requires both gofmt and golangci-lint, the pair
-#     the ADR 0007 regression hook and DESIGN.md use; a golangci-lint-only
-#     branch (formatting through `golangci-lint fmt`) fails it. The vendored
-#     hook's six language branches use most of ADR 0007's 256-state bound:
-#     a Go branch with a third guarded tool (say `go vet`) fails it as
-#     analysis_limit although the hook is correct (pinned in the tests).
+#   - hook-guards-go-tools names gofmt only: staged Go files must reach
+#     gofmt behind availability and nonempty guards. golangci-lint is
+#     analyzed as a guarded neighbor (ADR 0007), so `golangci-lint run
+#     ./...` and `--new-from-rev=HEAD ./...` pass, while literal package
+#     directories (`./internal/...`, an argument with a `/`) and dynamic
+#     ones (`$(dirname ...)`) fail it. Passing staged files across two
+#     directories to golangci-lint makes go/packages refuse ("named files
+#     must all be in one directory"), so the reference answer runs it on
+#     the module. A golangci-lint-only branch (no gofmt call) fails it.
+#   - Depends on fix/shell-guard-analysis-bound: before it, a third guarded
+#     Go tool (`go vet`, `staticcheck`) failed analysis_limit on the
+#     vendored hook, and `[ -z "$(gofmt -l ...)" ] || RC=1` failed
+#     unsupported_dynamic_form. `test -z "$(...)"` still fails closed.
 #   - The three hook-* command checks run one inline Bash probe (YAML anchor
 #     below), kept in this file so the agent cannot read it. The probe copies
 #     the final workspace into a temporary Git repository, stages probe files
 #     it writes itself, and runs `bash scripts/lint-staged.sh` under a PATH
 #     built from every /usr/bin and /bin executable except Go tools, with
 #     logging doubles for go, gofmt and golangci-lint where a scenario wants
-#     them. It needs bash, git, tar and mktemp at /usr/bin or /bin; node is
+#     them. hook-lints-staged-go needs gofmt to receive the staged probe file
+#     (and not an unstaged one), golangci-lint to be invoked in any form, and
+#     the hook to fail when golangci-lint fails or gofmt lists a file. A
+#     `gofmt -w` that rewrites and restages instead of failing therefore
+#     fails it; the house hook only checks (prettier --check, shfmt -d). It needs bash, git, tar and mktemp at /usr/bin or /bin; node is
 #     not involved. It runs agent-authored code under command_succeeds'
 #     isolation (ADR 0006).
 #   - hook-passes-without-go-files and hook-skips-missing-go-tools pass on the
@@ -65,13 +76,13 @@ objective_checks:
         contains: lll
 
   - id: hook-guards-go-tools
-    description: scripts/lint-staged.sh passes staged Go files to gofmt and golangci-lint behind availability and nonempty guards
+    description: scripts/lint-staged.sh passes staged Go files to gofmt behind availability and nonempty guards; other guarded Go tools may run beside it
     type: shell_staged_tool_guard
     paths: [scripts/lint-staged.sh]
-    tools: [gofmt, golangci-lint]
+    tools: [gofmt]
 
   - id: hook-lints-staged-go
-    description: With Go tools installed, the hook lints the staged Go file only and fails when golangci-lint fails
+    description: With Go tools installed, gofmt checks the staged Go file only, golangci-lint runs, and either one's failure fails the hook
     type: command_succeeds
     timeout_s: 60
     argv:
@@ -98,12 +109,20 @@ objective_checks:
           links+=("$exe")
         done
         ln -s -- "${links[@]}" "$farm/" || exit 2
-        # Logging doubles: go and gofmt succeed silently; golangci-lint exits FAKE_LINT_RC.
+        # Logging doubles: go succeeds silently; with FAKE_GOFMT_DIRTY=1 gofmt
+        # lists the staged probe file if it received it (so a failing dirty
+        # run proves the staged file reached gofmt); golangci-lint exits
+        # FAKE_LINT_RC.
         fake=$work/fakebin
         mkdir "$fake" || exit 2
         for tool in go gofmt golangci-lint; do
           printf '#!%s\nprintf "%%s\\n" "$@" >> "$FAKE_LOG.%s"\n' "$BASH" "$tool" > "$fake/$tool"
         done
+        cat >> "$fake/gofmt" <<'FAKE'
+        if [ "${FAKE_GOFMT_DIRTY:-0}" = 1 ]; then
+          for arg in "$@"; do case $arg in *zz_probe/probe.go) printf '%s\n' "$arg" ;; esac; done
+        fi
+        FAKE
         printf 'exit "${FAKE_LINT_RC:-0}"\n' >> "$fake/golangci-lint"
         chmod +x "$fake/go" "$fake/gofmt" "$fake/golangci-lint" || exit 2
         repo=$work/repo
@@ -121,7 +140,7 @@ objective_checks:
         run_hook() {
           rm -f "$work"/log.*
           env -i HOME="$HOME" TMPDIR="$TMPDIR" PATH="$1" LANG=C LC_ALL=C \
-            FAKE_LOG="$work/log" FAKE_LINT_RC="${2:-0}" \
+            FAKE_LOG="$work/log" FAKE_LINT_RC="${2:-0}" FAKE_GOFMT_DIRTY="${3:-0}" \
             "$farm/bash" scripts/lint-staged.sh >/dev/null 2>&1 </dev/null
         }
         case $scenario in
@@ -136,11 +155,11 @@ objective_checks:
             ;;
           lints-staged)
             stage zz_probe/probe.go || exit 2
-            run_hook "$fake:$farm" 0 || exit 1
-            [ -f "$work/log.golangci-lint" ] || exit 1
-            grep -q 'zz_probe/probe\.go$' "$work/log.golangci-lint" || exit 1
-            ! grep -q 'unstaged\.go$' "$work/log.golangci-lint" || exit 1
-            run_hook "$fake:$farm" 1 && exit 1
+            run_hook "$fake:$farm" 0 0 || exit 1
+            [ -f "$work/log.golangci-lint" ] && [ -f "$work/log.gofmt" ] || exit 1
+            ! grep -q 'unstaged\.go$' "$work/log.gofmt" || exit 1
+            run_hook "$fake:$farm" 1 0 && exit 1
+            run_hook "$fake:$farm" 0 1 && exit 1
             ;;
           *) exit 2 ;;
         esac
@@ -198,8 +217,10 @@ judge_rubric: >
   header comment claims to mirror a code-quality.yml CI gate. Correctness.
   9-10: a golangci-lint config (`.golangci.yml`, v2 format) enables lll at
   line-length 100 with a comment tying it to the house width; the hook gains a
-  Go branch in the existing style that passes only staged Go files to gofmt
-  and golangci-lint, skips with a notice when a tool is missing, and keeps
+  Go branch in the existing style that checks only the staged Go files with
+  gofmt and runs golangci-lint (on the module, its new issues, or the staged
+  files' packages; any of these is fine), skips with a notice when a tool is
+  missing, and keeps
   a commit without Go files passing; the AGENTS.md toolchain table gains a Go
   row (documenting it in the installed skill copy instead is acceptable).
   6-8: config and hook branch are right but a convention slips (no
