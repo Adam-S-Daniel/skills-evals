@@ -211,6 +211,21 @@ def _skill_creator_dir_early() -> Path | None:
         return None
 
 
+def frozen_evals(dest: Path) -> Path:
+    """Every committed fixture.yaml under evals/, minus writing-adrs fixtures
+    added after FIXTURES. The pipeline tests' canned numbers and the trigger
+    guard's 2026-10-05 trial are both about exactly FIXTURES, so they read
+    this snapshot; test_issue_80_why.py checks the live fixture set."""
+    evals = REPO_ROOT / "evals"
+    for path in evals.rglob("fixture.yaml"):
+        rel = path.relative_to(evals)
+        if rel.parts[0] == SKILL and rel.parts[1] not in FIXTURES:
+            continue
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest / rel)
+    return dest
+
+
 class PipelineCase(unittest.TestCase):
 
     def setUp(self):
@@ -226,6 +241,9 @@ class PipelineCase(unittest.TestCase):
         self.results = self.tmp / "results"
         self.reviewed_set = self.tmp / "reviewed-queries.json"
         self.reviewed_set.write_text(json.dumps(REVIEWED_QUERIES))
+        patcher = mock.patch.object(pse, "EVALS_DIR", frozen_evals(self.tmp / "frozen-evals"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def argv(self, *extra):
         reviewed = (["--trigger-eval-set", str(self.reviewed_set)]
@@ -471,7 +489,7 @@ class AcceptTests(PipelineCase):
             self.assertEqual(flag(argv, "--arm"), "with_skill")
             self.assertEqual(flag(argv, "--trials"), "3")
             self.assertEqual(flag(argv, "--timestamp"), TS)
-            self.assertEqual(Path(argv[0]), REPO_ROOT / "evals" / SKILL)
+            self.assertEqual(Path(argv[0]), pse.EVALS_DIR / SKILL)
             self.assertFalse(Path(flag(argv, "--results-dir")).is_relative_to(REPO_ROOT))
 
     def test_trigger_half_never_sees_the_validation_prompt(self):
