@@ -54,7 +54,8 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
+from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
+                      normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
@@ -1066,6 +1067,19 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     projects = _session_projects_dir(env)
     session_dir = projects / _munged_project_name(workspace) if projects else None
     preexisting = session_dir is not None and os.path.lexists(session_dir)
+    # Every call's tool events (#89), for `transcripts/tool_trace.json`. The
+    # scorers never see them: they are attached to the returned dict under
+    # `tool_trace` only, beside `raw`, and only when some call made a tool
+    # call, so a run without one returns (and writes) exactly what it did
+    # before.
+    secrets = secret_values(env, dict(os.environ))
+    calls: list[list[dict]] = []
+
+    def traced(answer: dict) -> dict:
+        if any(calls):
+            answer["tool_trace"] = bounded_tool_trace(calls)
+        return answer
+
     # The finally covers every return below: a multi-turn arm's transcript
     # leaves the profile whether the arm succeeded or not.
     try:
@@ -1088,12 +1102,19 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                         "detail": f"{label}agent timed out after {timeout}s"}
 
             if result.returncode != 0:
-                return {"error": "nonzero_exit",
-                        "detail": label + failed_run_detail(result.stdout, result.stderr),
-                        "returncode": result.returncode}
+                try:
+                    calls.append(tool_events(json.loads(result.stdout), secrets))
+                except ValueError:
+                    pass
+                return traced({"error": "nonzero_exit",
+                               "detail": label + failed_run_detail(result.stdout,
+                                                                   result.stderr),
+                               "returncode": result.returncode})
 
             try:
-                data = normalize_cli_result(json.loads(result.stdout))
+                decoded = json.loads(result.stdout)
+                calls.append(tool_events(decoded, secrets))
+                data = normalize_cli_result(decoded)
             except json.JSONDecodeError as e:
                 # Shape only. The array form starts with the `system/init`
                 # message (cwd, tool and connector names), and this detail
@@ -1102,26 +1123,26 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                         "detail": f"{label}stdout is not valid JSON ({e.msg} at "
                                   f"character {e.pos} of {len(result.stdout)})"}
             except ValueError as e:
-                return {"error": "invalid_json", "detail": f"{label}{e}"}
+                return traced({"error": "invalid_json", "detail": f"{label}{e}"})
 
             if data.get("is_error"):
                 detail = data.get("result", "")
-                return {"error": "agent_error",
-                        "detail": f"{label}{detail}" if label else detail,
-                        "raw": data}
+                return traced({"error": "agent_error",
+                               "detail": f"{label}{detail}" if label else detail,
+                               "raw": data})
             turns.append(data)
 
         if len(turns) > 1:
-            return _combine_turns(turns, texts[1:])
+            return traced(_combine_turns(turns, texts[1:]))
         data = turns[0]
-        return {
+        return traced({
             "transcript": data.get("result"),
             "usage": data.get("usage"),
             "cost_usd": data.get("total_cost_usd"),
             "num_turns": data.get("num_turns"),
             "duration_ms": data.get("duration_ms"),
             "raw": data,
-        }
+        })
     finally:
         if session_dir is not None and not preexisting:
             _archive_session_dir(session_dir, arm.get("session_scratch"))
@@ -1588,6 +1609,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    extra: dict | None = None, *,
                    harness_version: str | None = None,
                    models: list | None = None,
+                   tool_trace: dict | None = None,
                    judge_models: list | None = None,
                    arm_dir: Path | None = None) -> None:
     """One arm's summary.json (+ raw transcript).
@@ -1633,6 +1655,11 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         transcripts_dir.mkdir(parents=True, exist_ok=True)
         with open(transcripts_dir / "raw.json", "w", encoding="utf-8") as f:
             json.dump(raw, f, indent=2)
+    if tool_trace is not None:
+        transcripts_dir = arm_dir / "transcripts"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        with open(transcripts_dir / TOOL_TRACE_NAME, "w", encoding="utf-8") as f:
+            json.dump(tool_trace, f, indent=2)
 
 
 # How much of an error detail one report table cell carries. The full
@@ -2081,6 +2108,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         objective_checks = None
         judge_result = None
         raw = result.get("raw")
+        tool_trace = result.get("tool_trace")
         # Only a run that produced a result can say what served it; an
         # errored agent call records none (an `agent_error` result's raw
         # object is not trusted to be a complete one).
@@ -2116,7 +2144,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
                                timestamp, error, agent_summary, None, None, raw,
                                extra=extra, harness_version=harness_version,
-                               models=agent_models, arm_dir=out_dir)
+                               models=agent_models, arm_dir=out_dir,
+                               tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
                         "judge": None, "models_used": agent_models}
@@ -2125,7 +2154,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
                                timestamp, error, agent_summary, None, None, raw,
                                extra=extra, harness_version=harness_version,
-                               models=agent_models, arm_dir=out_dir)
+                               models=agent_models, arm_dir=out_dir,
+                               tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
                         "judge": None, "models_used": agent_models}
@@ -2159,7 +2189,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        error, agent_summary, objective_checks, judge_result, raw,
                        extra=extra, harness_version=harness_version,
                        models=agent_models, judge_models=judge_models,
-                       arm_dir=out_dir)
+                       arm_dir=out_dir, tool_trace=tool_trace)
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
@@ -2314,7 +2344,8 @@ _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # new run-directory file cannot arrive without being classified.
 REPORT_NAME = "report.md"
 RUN_DIR_FILES = (REPORT_NAME,)
-ARM_DIR_FILES = ("summary.json", "raw.json")
+TOOL_TRACE_NAME = "tool_trace.json"
+ARM_DIR_FILES = ("summary.json", "raw.json", TOOL_TRACE_NAME)
 
 # The prefix every per-arm workspace's mkdtemp carries, named once so the
 # length cap below and the call sites cannot drift apart.
@@ -2624,6 +2655,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         objective_checks = None
         judge_result = None
         raw = result.get("raw")
+        tool_trace = result.get("tool_trace")
         agent_models = [] if "error" in result else models_used(raw)
         judge_models: list = []
 
@@ -2686,7 +2718,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                        agent_summary, objective_checks, judge_result, raw,
                        key=ctx["key"], extra=extra,
                        harness_version=harness_version, models=agent_models,
-                       judge_models=judge_models)
+                       judge_models=judge_models, tool_trace=tool_trace)
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,

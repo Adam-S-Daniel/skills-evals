@@ -113,7 +113,7 @@ branch, which carries generated data only and is treated as untrusted input:
 
 The most recent real run at the time of writing is
 [`results/workflow-path-audit/20260922T125552Z/report.md`](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/workflow-path-audit/20260922T125552Z/report.md).
-Raw transcripts are deliberately never published (public repository).
+Raw transcripts are deliberately never published (public repository). Each arm's `transcripts/` directory also holds `tool_trace.json`, a bounded, redacted line per tool call and tool result; like `raw.json` it stays out of `persistent/eval-results` and reaches only the run's workflow artifact.
 
 ## 5. What is measured today
 
