@@ -162,6 +162,9 @@ decoded for `\xHH`, octal and quote escapes. A body that does not parse is ignor
 contains `gh workflow run`, in which case the check fails closed; invalid
 syntax elsewhere never fails the whole script. A body needing more than 32,768
 flow steps (deeply nested loops or calls) is treated the same way.
+The fail-closed token scan decodes `$'...'` words as the parser path does
+(treating an undecodable one as possibly `gh`), reads `$"..."` as `"..."`, and
+ignores quotes and backslashes, so quoting cannot hide the dispatch name.
 
 ### Parsed configuration and staged-shell objective checks
 

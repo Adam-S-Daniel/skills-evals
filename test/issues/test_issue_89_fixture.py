@@ -596,6 +596,31 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             transcript='```bash\nx=$(' + nested + '; gh workflow run x)\n```')
         self.assertEqual((ok, detail), (False, 'reply shell example: shell analysis exceeded its bound'))
 
+    def test_unverifiable_bodies_decode_quoted_dispatch_names(self):
+        # Bodies over the step bound or that do not parse fall back to the
+        # lexical scan, which must see the same quoted spellings of `gh`.
+        nested = 'for i in 1; do ' * 11 + ':' + '; done' * 11 + '; '
+        unparseable = '; if'
+        with self.assertRaises(shell_capture._AnalysisLimit):
+            shell_capture._unsafe_capture(parse_bash(nested + ':\n'))
+        with self.assertRaises(BashParseError):
+            parse_bash('echo one' + unparseable + '\n')
+        spellings = ["$'gh'", "$'\\x67h'", "$'\\147h'", '$"gh"', 'g""h', "'g'h", '\\gh',
+                     "$'\\e'"]
+        for spelling in spellings:
+            for prefix, suffix in [(nested, ''), ('', unparseable)]:
+                script = 'x=$(' + prefix + spelling + ' workflow run d; gh run list' + suffix + ')'
+                with self.subTest(script=script):
+                    self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+        for script in ['x=$(' + nested + 'echo gh workflow; gh run list)',
+                       'x=$(echo one' + unparseable + ')',
+                       "x=$(echo $'g\\x68 flow'" + unparseable + ')']:
+            with self.subTest(script=script):
+                self.assertTrue(self._reply('```bash\n' + script + '\n```'))
+        # A parsed $"gh" is the literal word gh.
+        self.assertFalse(self._reply('```bash\nx=$($"gh" workflow run d; gh run list)\n```'))
+        self.assertTrue(self._reply('```bash\nx=$($"gh" workflow run d)\n```'))
+
     def test_unavailable_parser_raises_instead_of_passing(self):
         from scorers import bash_ast
         with mock.patch.dict(sys.modules, {'tree_sitter': None}):

@@ -8,6 +8,22 @@ import re
 import shlex
 
 
+_ANSI_C_ESCAPE = r"\\(x[0-9A-Fa-f]{1,2}|[0-7]{1,3}|[\\'\"])"
+
+
+def _ansi_c(body):
+    """Decode the $'...' escapes that can spell a command word, else None."""
+    if '\\' in re.sub(_ANSI_C_ESCAPE, '', body):
+        return None
+
+    def decode(found):
+        token = found.group(1)
+        if token[0] == 'x':
+            return chr(int(token[1:], 16))
+        return chr(int(token, 8)) if token[0] in '01234567' else token
+    return re.sub(_ANSI_C_ESCAPE, decode, body)
+
+
 def _literal(node):
     """Return a word's quote-removed literal value, or None if it expands."""
     text = node.text.decode('utf-8')
@@ -16,18 +32,11 @@ def _literal(node):
     if node.type == 'raw_string':
         return text[1:-1]
     if node.type == 'ansi_c_string':
-        # Decode only $'...' escapes that can spell a command word; any other
-        # escape makes the word non-literal.
-        body = text[2:-1]
-        escape = r"\\(x[0-9A-Fa-f]{1,2}|[0-7]{1,3}|[\\'\"])"
-        if '\\' in re.sub(escape, '', body):
-            return None
-        def decode(found):
-            token = found.group(1)
-            if token[0] == 'x':
-                return chr(int(token[1:], 16))
-            return chr(int(token, 8)) if token[0] in '01234567' else token
-        return re.sub(escape, decode, body)
+        # Any escape _ansi_c cannot decode makes the word non-literal.
+        return _ansi_c(text[2:-1])
+    if node.type == 'translated_string':
+        # $"..." is a locale-translated "..."; without a catalog it is unchanged.
+        return _literal(node.named_children[0]) if node.named_children else None
     if node.type == 'string':
         if any(child.type != 'string_content' for child in node.named_children):
             return None
@@ -157,21 +166,20 @@ def _unsafe_capture(root):
 
 
 def _mentions_dispatch(text):
-    # This is a lexical token check only, used when an AST cannot be built.
-    # Parsed command shape is always decided by _flow, never by this token.
-    if re.search(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])', text):
-        return True
-    lexer = shlex.shlex(text, posix=True, punctuation_chars=';&|()<>')
-    lexer.whitespace_split = True
-    tokens = []
-    try:
-        for token in lexer:
-            tokens = (tokens + [token])[-3:]
-            if tokens == ['gh', 'workflow', 'run']:
-                return True
-    except ValueError:
-        pass
-    return False
+    r"""Lexical over-approximation of a `gh workflow run` token sequence.
+
+    Used only to select reply snippets and to decide whether a body that
+    cannot be verified fails closed; parsed command shape is decided by _flow.
+    $'...' spans decode as in _literal (an undecodable one may spell `gh`),
+    $"..." reads as "...", and quotes and backslashes are then removed, so
+    $'\x67h', $"gh", g""h, 'g'h and \gh all count as `gh`.
+    """
+    def ansi(found):
+        decoded = _ansi_c(found.group(1))
+        return 'gh' if decoded is None else decoded
+    text = re.sub(r"\$'((?:[^'\\]|\\.)*)'", ansi, text, flags=re.S)
+    text = re.sub(r'''['"\\]''', '', text.replace('$"', '"'))
+    return re.search(r'(?<![A-Za-z0-9_])gh\s+workflow\s+run(?![A-Za-z0-9_])', text) is not None
 
 
 def _substitutions(text, *, prose=False):
