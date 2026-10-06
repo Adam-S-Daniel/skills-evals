@@ -245,9 +245,11 @@ holds it too (#98's rule, aimed at the diff rather than a guidance section),
 unless the run lies inside one declared interface string or inside the
 issue's text as it stood before the fix. The real-work fixtures' own test
 module, which arrives with the first fixtures, checks that each committed
-fixture has no hits. Whether the scaffolder treats a hit as a
-warning for review or a rejection stays open; the miner records it as a
-warning (Q3 below).
+fixture has no hits; both it and the scaffolder read the diff's added lines
+through `fixture_added_lines`. The scaffolder rejects a hit (Adam,
+2026-10-06: "Reject (Recommended)"; `LEAK_POLICY` in
+`scripts/scaffold_real_work.py`, "The scaffolder and its gate" below). The
+miner, earlier in the pipeline, records a hit as a warning (Q3 below).
 
 **What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
 file in the fixture directory (outside `seed/`) holding the issue's title and
@@ -948,6 +950,62 @@ decisions (Adam, 2026-10-06)".
 - **Q8, training cutoffs:** "Keep, report apart (Recommended)". Each
   candidate records its merge date, so pre- and post-cutoff fixtures are
   reported separately rather than excluded.
+
+### The scaffolder and its gate
+
+Q6 puts the scaffolder's model call in the ADR 0010 routine and gives
+scaffold pull requests their own gate. The model writes only what needs
+judgment: the task text (the issue minus the sections that describe the
+fix), `interface_strings:` and the checker selection (`argv`,
+`fail_to_pass`, `pass_to_pass`, `deps:`), as a JSON spec. Everything else is
+deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py):
+
+- **build** turns one miner candidate and the spec into
+  `evals/real-work/<repo name>-<pr>/` in the shape of the first three
+  fixtures: `seed/` is the base tree from `git archive`, with the agent
+  context stripped (`seed_prep.strip_agent_context`), the evaluated paths
+  removed (`.claude`, `skills.lock`, `agents-md`, `skills`,
+  `.claude-plugin`), and every symlink, every file over 100 KB but the
+  lockfile and `AGENTS.md`, and every e2e spec but the checker's own
+  trimmed; `checker/` is the merge commit's copy of each selected test
+  file; `solution.patch` is the rest of the diff, leaving out what the seed
+  no longer holds; `issue-before-fix.txt` and its three times come from one
+  `gh api graphql` read, picking the body revision and title from before
+  the first commit by the rules above. The fixture is `draft: true` and
+  `subject: any`, and its header says the prompt was written by a model.
+  It reads the clone with `git archive`, `git cat-file` and `git diff` and
+  never writes it.
+- **check** validates with the harness's own code: the fixture loads as
+  `run_eval.py` loads it, the seed passes `seed_prep`'s guard, the size
+  caps hold, and the answer-leak lint finds no hit. `--run` also scores the
+  seed (every `fail_to_pass` test fails, every `pass_to_pass` test passes)
+  and the seed with `solution.patch` (all pass), each within 60 s (Q1).
+- **gate** is the review gate. The routine never opens a pull request: it
+  pushes `claude/scaffold-<fixture id>`, and `routine-scaffold-pushed.yml`
+  (no permissions, runs nothing) hands off to `routine-scaffold-gate.yml`,
+  which runs the default branch's copy on `workflow_run`, the same split as
+  the results ingest. Its `validate` job (`contents: read`) reads the branch
+  through git plumbing only and rejects it unless it only adds regular files
+  under the one `evals/real-work/<fixture id>/` its name names (an
+  executable bit only under `seed/` and `checker/`), within the caps, as a
+  draft with no `setup:` or `env:` that passes `check` without `--run`.
+  Nothing from the branch runs in the gate. Its `draft-pr` job
+  (`pull-requests: write`) then opens a draft pull request labeled
+  `eval-scaffold`, or leaves an open one alone. It never merges, approves
+  or pushes. The label and the repository setting that lets Actions open
+  pull requests come from repo-settings (Adam, 2026-10-06: "Yes, via
+  repo-settings (Recommended)"), and the routine is fired in scaffold mode
+  by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
+  fire-workflow input (Recommended)"); both land in their own PRs.
+
+What a reviewer adds before the fixture can leave draft: the fixture's
+entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`
+(that module fails until then, by design) and any `deps:` directory in
+ci.yml's install step, after which `test` runs it red and green. A pull
+request opened with the workflow's own token starts no workflow, so `test`
+first runs when a person pushes to it. The scaffold branches' head ref,
+`claude/scaffold-`, is in the miner's bot list, so a merged scaffold is never
+mined back.
 
 ### Harness-wide rules (promoted from the first fixture)
 

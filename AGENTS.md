@@ -108,3 +108,5 @@ session that lost the guidance must not also lose these.
   | `routine-eval-fire.yml` | dispatch only | none needed |
   | `routine-eval-results-pushed.yml` | `push` to `claude/eval-*` | `paths: eval-results/**` (the routine's pinned result root); holds no permissions and runs nothing from the branch |
   | `routine-eval-ingest.yml` | `workflow_run` of the above, dispatch | runs the default branch's copy only; `scripts/ingest_routine_results.py` validates the branch and writes `persistent/eval-results` `routine-results/<run id>/` (ADR 0010 decision 2) |
+  | `routine-scaffold-pushed.yml` | `push` to `claude/scaffold-*` | `paths: evals/real-work/**` (the one directory a scaffold adds to); holds no permissions and runs nothing from the branch |
+  | `routine-scaffold-gate.yml` | `workflow_run` of the above, dispatch | runs the default branch's copy only; `scripts/scaffold_real_work.py gate` validates the branch without running it, then a second job opens a draft PR labeled `eval-scaffold` (never merges; DESIGN.md "The scaffolder and its gate") |
