@@ -84,9 +84,10 @@ def _repo_roots() -> list[Path]:
     return roots
 
 #: Head refs that automation opens (session-23 classify.py, plus DESIGN.md's
-#: own `scaffold/`).
+#: own `scaffold/`, and the eval routine's `claude/scaffold-<id>` fixture
+#: branches, so a merged scaffold is never mined back as a candidate).
 BOT_HEAD = re.compile(r"^(cms/|agents-md-sync|skills-lock-bump|dependabot|platform/"
-                      r"|roster/|automated|persistent/|scaffold/)")
+                      r"|roster/|automated|persistent/|scaffold/|claude/scaffold-)")
 TEST_PATH = re.compile(r"(^|/)(test|tests|e2e|spec|__tests__)/|_test\.(py|go|rb|sh)$"
                        r"|\.test\.(js|ts|mjs)$|\.spec\.(js|ts)$|(^|/)test_[^/]*\.py$|\.bats$")
 DOC_PATH = re.compile(r"\.(md|txt)$")

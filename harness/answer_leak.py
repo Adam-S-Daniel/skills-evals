@@ -26,6 +26,7 @@ the fix began. How a snapshot is established, and its limits, is in DESIGN.md.
 
 from __future__ import annotations
 
+import difflib
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +60,25 @@ def added_lines(patch: str) -> list[str]:
     """The lines a unified diff adds, without the `+` and without file headers."""
     return [line[1:] for line in patch.splitlines()
             if line.startswith("+") and not line.startswith("+++")]
+
+
+def fixture_added_lines(fixture_dir, overlay: str = "checker") -> list[str]:
+    """Every line a real-work fixture's pull request added: the added lines
+    of its `solution.patch`, and each overlay (hidden test) file's additions
+    over the seed's copy of it. This is the `answer` the lint compares the
+    task text with, for the committed fixtures' test module and for
+    scripts/scaffold_real_work.py alike."""
+    fixture_dir = Path(fixture_dir)
+    added = added_lines((fixture_dir / "solution.patch").read_text(encoding="utf-8"))
+    checker = fixture_dir / overlay
+    for path in sorted(p for p in checker.rglob("*") if p.is_file() and not p.is_symlink()):
+        before = fixture_dir / "seed" / path.relative_to(checker)
+        old = (before.read_text(encoding="utf-8").splitlines()
+               if before.is_file() and not before.is_symlink() else [])
+        new = path.read_text(encoding="utf-8").splitlines()
+        added += [line[1:] for line in difflib.unified_diff(old, new, lineterm="", n=0)
+                  if line.startswith("+") and not line.startswith("+++")]
+    return added
 
 
 def leaked_runs(prompt: str, answer: str, interface_strings=(),

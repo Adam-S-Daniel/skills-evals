@@ -11,7 +11,6 @@ test job does it), exactly as the browser-testing fixture's tests need theirs.
 from __future__ import annotations
 
 import contextlib
-import difflib
 import hashlib
 import io
 import json
@@ -169,15 +168,7 @@ class RealWorkFixtureTests(unittest.TestCase):
         # before the fix began (issue_before_fix:), are not leaks.
         for name, directory, fixture in self.fixtures():
             with self.subTest(fixture=name):
-                added = answer_leak.added_lines(
-                    (directory / "solution.patch").read_text(encoding="utf-8"))
-                for rel in CHECKER_BLOBS[name]:
-                    before = directory / "seed" / rel
-                    old = (before.read_text(encoding="utf-8").splitlines()
-                           if before.exists() else [])
-                    new = (directory / "checker" / rel).read_text(encoding="utf-8").splitlines()
-                    added += [line[1:] for line in difflib.unified_diff(old, new, lineterm="", n=0)
-                              if line.startswith("+") and not line.startswith("+++")]
+                added = answer_leak.fixture_added_lines(directory)
                 self.assertGreater(len(added), 10)
                 preexisting = answer_leak.preexisting_text(fixture, directory)
                 self.assertTrue(preexisting.strip(), "each fixture snapshots its issue")
