@@ -1,0 +1,128 @@
+{
+  "skill": "github-actions-sha-pinning",
+  "arm": "without_skill",
+  "timestamp": "20261006T141218Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.32633570000000006,
+    "num_turns": 17,
+    "duration_ms": 170068,
+    "usage": {
+      "input_tokens": 34,
+      "cache_creation_input_tokens": 28307,
+      "cache_read_input_tokens": 570451,
+      "output_tokens": 14141,
+      "output_tokens_details": {
+        "thinking_tokens": 9532
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 28307
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 566,
+          "cache_read_input_tokens": 46220,
+          "cache_creation_input_tokens": 2107,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 2107,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "third-party-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "third-party-pins-match-pins-md",
+      "passed": false,
+      "detail": "PINS.md: Image: invalid sha 'Digest'; PINS.md: alpine: invalid sha 'sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'; Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml: no `uses:` pin found (PINS.md gives e76901db4beaa3d2e4ad88b7f554cfe89fffc20b); Adam-S-Daniel/cms-platform/.github/actions/recursion-gate: no `uses:` pin found (PINS.md gives e76901db4beaa3d2e4ad88b7f554cfe89fffc20b)"
+    },
+    {
+      "id": "no-trailing-comments",
+      "passed": false,
+      "detail": "version comment present: .github/workflows/ci.yml:15 - uses: actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a  # v4; .github/workflows/ci.yml:16 - uses: actions/setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708  # v4; .github/workflows/ci.yml:19 - uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1  # v4.1.0; .github/workflows/ci.yml:23 - uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f  # v4.1.0; .github/workflows/deploy.yml:9 uses: Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml@e76901db4beaa3d2e4ad88b7f554cfe89fffc20b  # v0.1.104; .github/actions/gate/action.yml:7 - uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@e76901db4beaa3d2e4ad88b7f554cfe89fffc20b  # v0.1.104"
+    },
+    {
+      "id": "cms-platform-refs-stay-on-tag",
+      "passed": false,
+      "detail": ".github/workflows/deploy.yml:9 uses: Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml@e76901db4beaa3d2e4ad88b7f554cfe89fffc20b (expected @v0.1.104); .github/actions/gate/action.yml:7 uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@e76901db4beaa3d2e4ad88b7f554cfe89fffc20b (expected @v0.1.104)"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": false,
+      "detail": ".github/workflows/lint.yml: modified"
+    },
+    {
+      "id": "reference-files-untouched",
+      "passed": false,
+      "detail": "PINS.md: modified"
+    },
+    {
+      "id": "ci-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "deploy-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/deploy.yml matches"
+    },
+    {
+      "id": "gate-action-not-deleted",
+      "passed": true,
+      "detail": ".github/actions/gate/action.yml matches"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "carve_out",
+        "score": 1,
+        "rationale": "The agent resolved BOTH cms-platform refs (the `e2e-tests.yml` reusable-workflow call in deploy.yml and the `recursion-gate` composite-action call in .github/actions/gate/action.yml) to commit SHA `e76901db...`, the exact failure the skill forbids because it breaks cms-platform's pin-consistency lint and platform-bump's rewrite, and it offered no reasoning distinguishing first-party platform refs from third-party actions \u2014 treating them as just two more tags to pin."
+      },
+      {
+        "name": "comment_removal",
+        "score": 0,
+        "rationale": "The agent went the opposite direction on every count: it left the pre-existing trailing `# v4.1.0` comment on `actions/upload-artifact`, actively \"fixed\" `actions/cache` by adding a matching version comment, and appended brand-new trailing version comments to every ref it pinned (checkout, setup-node, and both cms-platform refs), even stating the comment convention as policy in its summary."
+      },
+      {
+        "name": "restraint",
+        "score": 1,
+        "rationale": "The agent edited the docker ref in lint.yml to add a digest and rewrote PINS.md with two new cms-platform rows plus an entirely new container-image digest table and a dateline edit \u2014 all out of scope \u2014 showing restraint only toward the local `./.github/actions/*` path refs, while also tacking on an unsolicited observation about a missing `local-lint` directory; the 7-day cooling-off consideration never came up."
+      }
+    ],
+    "overall": 0.7
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.291 (Claude Code)"
+  },
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5"
+  ],
+  "n": 1
+}

@@ -1,0 +1,128 @@
+{
+  "skill": "github-actions-sha-pinning",
+  "arm": "with_skill",
+  "timestamp": "20261006T141218Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1180621,
+    "num_turns": 8,
+    "duration_ms": 37601,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 16337,
+      "cache_read_input_tokens": 208208,
+      "output_tokens": 3555,
+      "output_tokens_details": {
+        "thinking_tokens": 2132
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 16337
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 440,
+          "cache_read_input_tokens": 35465,
+          "cache_creation_input_tokens": 892,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 892,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "third-party-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "third-party-pins-match-pins-md",
+      "passed": true,
+      "detail": "every PINS.md pin present and correct"
+    },
+    {
+      "id": "no-trailing-comments",
+      "passed": true,
+      "detail": "no trailing comment on any uses: pin"
+    },
+    {
+      "id": "cms-platform-refs-stay-on-tag",
+      "passed": true,
+      "detail": "every platform ref pinned to v0.1.104"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/lint.yml)"
+    },
+    {
+      "id": "reference-files-untouched",
+      "passed": true,
+      "detail": "unchanged (PINS.md)"
+    },
+    {
+      "id": "ci-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "deploy-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/deploy.yml matches"
+    },
+    {
+      "id": "gate-action-not-deleted",
+      "passed": true,
+      "detail": ".github/actions/gate/action.yml matches"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "carve_out",
+        "score": 8,
+        "rationale": "Both cms-platform refs were correctly left on the `@v0.1.104` release tag and explicitly called out as a carve-out tied to `platform_ref` consistency, though the explanation stops short of naming the concrete mechanisms (pin-consistency lint, platform-bump rewrite) that make them different from the third-party actions it pinned."
+      },
+      {
+        "name": "comment_removal",
+        "score": 10,
+        "rationale": "The pre-existing `# v4.1.0` trailing comment was deleted outright rather than updated, and neither the newly pinned checkout nor the expanded setup-node SHA gained a version comment."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "Only `ci.yml` was modified; the docker ref, the already-correct `actions/cache` pin, PINS.md, and the deploy/gate files were all left untouched with brief justification, with no scope creep beyond the prompt."
+      }
+    ],
+    "overall": 8.9
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.291 (Claude Code)"
+  },
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5"
+  ],
+  "n": 1
+}
