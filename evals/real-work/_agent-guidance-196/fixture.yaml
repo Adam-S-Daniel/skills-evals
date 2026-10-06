@@ -19,6 +19,12 @@
 # pull request's own test file, byte-equal to the merge commit's. The fix
 # itself is in solution.patch, which only the fixture's tests read.
 
+# issue-before-fix.txt is Adam-S-Daniel/_agent-guidance#194 as it stood before the pull request's
+# first commit: created 2026-09-28T14:50:46Z, never edited (GraphQL
+# userContentEdits empty, lastEditedAt null) and never renamed (0
+# RENAMED_TITLE_EVENT), so its current title and body; first commit
+# 2026-09-28T15:13:21Z. Read 2026-10-06.
+
 subject: any
 draft: true
 strip_agent_context: true
@@ -75,6 +81,8 @@ interface_strings:
   - "newestPathCommit(owner, repo, branch, path)"
   - "newestSuccessfulWorkflowRun(owner, repo, workflowId)"
   - "run_started_at"
+
+issue_before_fix: issue-before-fix.txt
 
 objective_checks:
   - id: hidden-tests

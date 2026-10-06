@@ -11,6 +11,7 @@ test job does it), exactly as the browser-testing fixture's tests need theirs.
 from __future__ import annotations
 
 import contextlib
+import difflib
 import hashlib
 import io
 import json
@@ -128,6 +129,41 @@ class RealWorkFixtureTests(unittest.TestCase):
                         for entry in fixture["deps"])
         self.assertEqual(installed, wanted)
         self.assertIn("npm ci --ignore-scripts --no-audit --no-fund", step["run"])
+
+    def test_cms_seeds_keep_only_the_checkers_own_spec(self):
+        # Adam, 2026-10-06: "Trim other e2e specs". The e2e helpers and
+        # configs stay; of the specs, only the one the checker overlays.
+        for name, directory, _ in self.fixtures():
+            e2e = directory / "seed" / "e2e"
+            if not e2e.is_dir():
+                continue
+            with self.subTest(fixture=name):
+                specs = sorted(p.name for p in e2e.iterdir()
+                               if p.name.endswith((".spec.js", ".test.js", ".spec.js-snapshots")))
+                self.assertEqual(specs, [Path(path).name for path in CHECKER_BLOBS[name]])
+
+    def test_no_task_text_quotes_the_merged_diff(self):
+        # The answer is every line the pull request added: its fix
+        # (solution.patch) and its test file's additions over the seed's copy.
+        # Runs inside a declared interface string, or already in the issue
+        # before the fix began (issue_before_fix:), are not leaks.
+        for name, directory, fixture in self.fixtures():
+            with self.subTest(fixture=name):
+                added = answer_leak.added_lines(
+                    (directory / "solution.patch").read_text(encoding="utf-8"))
+                for rel in CHECKER_BLOBS[name]:
+                    before = directory / "seed" / rel
+                    old = (before.read_text(encoding="utf-8").splitlines()
+                           if before.exists() else [])
+                    new = (directory / "checker" / rel).read_text(encoding="utf-8").splitlines()
+                    added += [line[1:] for line in difflib.unified_diff(old, new, lineterm="", n=0)
+                              if line.startswith("+") and not line.startswith("+++")]
+                self.assertGreater(len(added), 10)
+                preexisting = answer_leak.preexisting_text(fixture, directory)
+                self.assertTrue(preexisting.strip(), "each fixture snapshots its issue")
+                self.assertEqual(answer_leak.leaked_runs(
+                    fixture["prompt"], "\n".join(added),
+                    fixture.get("interface_strings", ()), preexisting), [])
 
     def workspace(self, directory: Path, fixture: dict, fixed: bool) -> Path:
         """The seed as the agent would get it, its dependencies already

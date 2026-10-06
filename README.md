@@ -125,9 +125,10 @@ evals/
   real-work/               # subject: any, draft: real pull requests replayed (decision Q4)
     <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196
       fixture.yaml         # the issue as the prompt, a repo_tests check, interface_strings
-      seed/                # the base tree, agent context stripped, subject paths trimmed
+      seed/                # the base tree: agent context, subject paths and other specs trimmed
       checker/             # the pull request's own test file, hidden from the agent
       solution.patch       # the pull request's fix, read only by the fixture tests
+      issue-before-fix.txt # the issue as it stood before the fix: its text is no leak
   guidance/                # guidance-subject fixtures (subject: guidance)
     _delivery/             # the delivery canary: one arm per mode, no seed
       fixture.yaml         # section id, five arms, per-arm transcript checks

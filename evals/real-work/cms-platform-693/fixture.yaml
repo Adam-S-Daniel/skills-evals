@@ -9,14 +9,22 @@
 # never reads): skills/, .claude-plugin/,
 # theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY,
 # theme/assets/js/aws-rum-web/cwr-1.25.0.js, docs/health-audit-close-rule/runs.json,
-# docs/VERSION-HISTORY.md, docs/CI-INVARIANTS.md, scripts/audit-repo-settings.js,
-# e2e/repo-settings-audit.test.js, e2e/preview-only-label-description.test.js.
+# docs/VERSION-HISTORY.md, docs/CI-INVARIANTS.md, scripts/audit-repo-settings.js.
+# Also every e2e/*.test.js, e2e/*.spec.js and e2e/*.spec.js-snapshots/ except
+# the checker's own e2e/live-url-derive-routable.test.js: 296 entries (Adam,
+# 2026-10-06: "Trim other e2e specs"). The e2e helpers and configs stay.
 
 # The seed is the base tree as `git archive` wrote it, with the fleet agent
 # context already stripped (strip_agent_context: below re-checks it on every
 # run) and the trimmed paths listed above removed. The checker overlay is the
 # pull request's own test file, byte-equal to the merge commit's. The fix
 # itself is in solution.patch, which only the fixture's tests read.
+
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#677 as it stood before the pull request's
+# first commit: created 2026-10-05T15:59:07Z, never edited (GraphQL
+# userContentEdits empty, lastEditedAt null) and never renamed (0
+# RENAMED_TITLE_EVENT), so its current title and body; first commit
+# 2026-10-05T17:50:08Z. Read 2026-10-06.
 
 subject: any
 draft: true
@@ -31,6 +39,8 @@ prompt: |
   theme/admin/live-url-derive.js `ROUTABLE_COLLECTIONS` is `{ pages, posts, tags, projects }`, so the "View page on site" banner and Live Preview link never appear for adamdaniel.ai's site-owned `tools` collection (folder `_tools`, `preview_path: /tools/{{slug}}/`, URL `/tools/<slug>/`). After publishing, an editor has no link to the tool page. Needs a `tools` entry in the map and in the `path` lookup, keyed on the slug field.
 
   Found in https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/4083 (site half, slug pattern: see the PR linked there).
+
+issue_before_fix: issue-before-fix.txt
 
 objective_checks:
   - id: hidden-tests
