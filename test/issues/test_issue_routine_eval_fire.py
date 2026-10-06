@@ -7,7 +7,8 @@ routines fire API. What is pinned here:
 
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
-    inputs fixture, arms and trials, and `permissions: contents: read`;
+    inputs mode, candidate, fixture, arms and trials, and
+    `permissions: contents: read`;
   * every `uses:` is a 40-character SHA with nothing after it on the line,
     at the same SHA this repo's other workflows already pin;
   * no `${{ inputs.* }}` or `${{ github.event.* }}` inside any `run:` block;
@@ -16,9 +17,15 @@ routines fire API. What is pinned here:
   * the validation step, run for real, accepts a committed fixture and
     refuses `..`, paths outside evals/, uncommitted fixtures and bad arms or
     trials without echoing the value, and emits a run id of the agreed shape;
+  * scaffold mode (Adam, 2026-10-06: "New fire-workflow input
+    (Recommended)"): `candidate` must match the miner key pattern in
+    scaffold mode and be empty in eval mode, and `fixture` must be empty in
+    scaffold mode; both are checked in the same validation step, before the
+    bearer is in any step's env;
   * the fire step, run against a fake curl, sends the bearer on stdin (never
-    argv) and a payload of exactly four fields, and never prints the
-    response body, on success or failure.
+    argv) and a jq-built payload: eval mode's four fields plus `mode`, or
+    exactly `mode`, `run_id` and `candidate` in scaffold mode; it never
+    prints the response body, on success or failure.
 
 The workflow is parsed with PyYAML, never scanned line by line. Discovered
 and run by test/run_tests.py; also runnable on its own with
@@ -47,6 +54,9 @@ WORKFLOW = WORKFLOWS / "routine-eval-fire.yml"
 SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
+CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
+# The miner key pattern the routine re-checks (routine-delta.md, Payload).
+CANDIDATE_RE = re.compile(r"^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$")
 # A lexical check on the expression token only, applied to a `run:` value
 # the parser already isolated.
 FORBIDDEN_IN_RUN = re.compile(r"\$\{\{[^}]*\b(?:inputs\.|github\.event\.)")
@@ -100,8 +110,17 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(set(on), {"workflow_dispatch"},
                          "dispatch only: no schedule (#71's gate), no "
                          "pull_request or push (it would need a required check)")
-        self.assertEqual(set(on["workflow_dispatch"]["inputs"]),
-                         {"fixture", "arms", "trials"})
+        inputs = on["workflow_dispatch"]["inputs"]
+        self.assertEqual(set(inputs),
+                         {"mode", "candidate", "fixture", "arms", "trials"})
+        self.assertEqual(inputs["mode"]["type"], "choice")
+        self.assertEqual(inputs["mode"]["options"], ["eval", "scaffold"])
+        self.assertEqual(inputs["mode"]["default"], "eval")
+        self.assertEqual(inputs["candidate"]["type"], "string")
+        # Required in scaffold mode only, so the form cannot require it; the
+        # validation step does. Likewise `fixture`, required in eval mode only.
+        self.assertIs(inputs["candidate"]["required"], False)
+        self.assertIs(inputs["fixture"]["required"], False)
         self.assertEqual(on["workflow_dispatch"]["inputs"]["arms"]["options"],
                          ["both", "with", "without"])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["trials"]["options"],
@@ -165,12 +184,27 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertLess(ids.index("validate"), fire)
         env = self.steps[fire]["env"]
         for key, output in (("RUN_ID", "run_id"), ("FIXTURE", "fixture"),
-                            ("ARMS", "arms"), ("TRIALS", "trials")):
+                            ("ARMS", "arms"), ("TRIALS", "trials"),
+                            ("MODE", "mode"), ("CANDIDATE", "candidate")):
             self.assertEqual(env[key], f"${{{{ steps.validate.outputs.{output} }}}}")
         self.assertEqual(
             env["FIRE_URL"],
             "https://api.anthropic.com/v1/claude_code/routines/"
             "trig_014cqgegCtJUqXYjAKmkr4J5/fire")
+
+    def test_no_step_before_the_fire_step_sees_the_bearer(self):
+        # The validation step (and everything before it) runs with no env
+        # that names a secret, and the job sets no env at all: the bearer
+        # exists only once every input has passed.
+        self.assertNotIn("env", self.job)
+        self.assertNotIn("env", self.doc)
+        fire = next(i for i, s in enumerate(self.steps)
+                    if s.get("name") == "Fire the eval routine")
+        for step in self.steps[:fire]:
+            with self.subTest(step=step.get("name")):
+                text = yaml.safe_dump(step)
+                self.assertNotIn("secrets", text)
+                self.assertNotIn("BEARER", text)
 
     def test_checkout_does_not_persist_credentials(self):
         checkout = [s for s in self.steps
@@ -209,14 +243,98 @@ class ValidateStepTests(unittest.TestCase):
 
     def test_accepts_a_committed_fixture(self):
         proc, values = self.run_step(
-            {"fixture": FIXTURE, "arms": "with", "trials": "3"})
+            {"mode": "eval", "candidate": "", "fixture": FIXTURE,
+             "arms": "with", "trials": "3"})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(values["mode"], "eval")
+        self.assertEqual(values["candidate"], "")
         self.assertEqual(values["fixture"], FIXTURE)
         self.assertEqual((values["arms"], values["trials"]), ("with", "3"))
         self.assertRegex(values["run_id"], RUN_ID)
 
+    def test_an_absent_candidate_reads_as_empty_in_eval_mode(self):
+        # A string input with no default may be left out of the event.
+        proc, values = self.run_step(
+            {"mode": "eval", "fixture": FIXTURE, "arms": "both", "trials": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(values["candidate"], "")
+
+    def test_accepts_a_scaffold_candidate(self):
+        for candidate in (CANDIDATE, "jodidaniel__jodidaniel.com__1",
+                          "a-b__c.d-e_f__9999999"):
+            with self.subTest(candidate=candidate):
+                self.assertRegex(candidate, CANDIDATE_RE)
+                proc, values = self.run_step(
+                    {"mode": "scaffold", "candidate": candidate, "fixture": "",
+                     "arms": "both", "trials": "1"})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(values["mode"], "scaffold")
+                self.assertEqual(values["candidate"], candidate)
+                self.assertEqual(values["fixture"], "")
+                self.assertRegex(values["run_id"], RUN_ID)
+
+    def test_refuses_bad_scaffold_inputs_without_echoing_them(self):
+        good = {"mode": "scaffold", "candidate": CANDIDATE, "fixture": "",
+                "arms": "both", "trials": "1"}
+        cases = {
+            "missing_candidate": {"candidate": None},
+            "empty_candidate": {"candidate": ""},
+            "fixture_given": {"fixture": FIXTURE},
+            "single_underscores": {"candidate": "Adam-S-Daniel_repo_12"},
+            "underscore_in_owner": {"candidate": "Adam_S__repo__12"},
+            "underscore_after_number": {"candidate": "Adam-S-Daniel__repo__12_"},
+            "empty_owner": {"candidate": "__repo__12"},
+            "empty_repo": {"candidate": "Adam-S-Daniel____12"},
+            "two_keys": {"candidate": "Adam-S-Daniel__repo__12 Adam-S-Daniel__repo__13"},
+            "zero_pr": {"candidate": "Adam-S-Daniel__repo__0"},
+            "leading_zero": {"candidate": "Adam-S-Daniel__repo__012"},
+            "eight_digits": {"candidate": "Adam-S-Daniel__repo__12345678"},
+            "no_number": {"candidate": "Adam-S-Daniel__repo"},
+            "shell_subst": {"candidate": "Adam-S-Daniel__$(id)__12"},
+            "shell_semicolon": {"candidate": "Adam-S-Daniel__repo__12;id"},
+            "shell_backtick": {"candidate": "Adam-S-Daniel__`id`__12"},
+            "shell_pipe": {"candidate": "Adam-S-Daniel__repo|id__12"},
+            "slash": {"candidate": "Adam-S-Daniel__../repo__12"},
+            "quote": {"candidate": 'Adam-S-Daniel__re"po__12'},
+            "space": {"candidate": "Adam-S-Daniel__re po__12"},
+            "newline_inside": {"candidate": "Adam-S-Daniel__repo__12\nx__y__1"},
+            "trailing_newline": {"candidate": "Adam-S-Daniel__repo__12\n"},
+            "nul": {"candidate": "Adam-S-Daniel__repo__12\u0000"},
+            "non_ascii": {"candidate": "Adam-S-Daniel__r\u00e9po__12"},
+            "candidate_number": {"candidate": 12},
+            "mode_unknown": {"mode": "improve"},
+            "mode_case": {"mode": "Scaffold"},
+            "mode_newline": {"mode": "scaffold\n"},
+            "mode_missing": {"mode": None},
+            "mode_number": {"mode": 1},
+        }
+        self._refuse_all(good, cases)
+
+    def test_refuses_a_candidate_in_eval_mode(self):
+        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
+                "arms": "both", "trials": "1"}
+        self._refuse_all(good, {
+            "candidate_in_eval": {"candidate": CANDIDATE},
+            "whitespace_candidate": {"candidate": " "},
+            "missing_fixture": {"fixture": None},
+        })
+
+    def _refuse_all(self, good, cases):
+        for label, override in cases.items():
+            with self.subTest(case=label):
+                inputs = {**good, **override}
+                inputs = {k: v for k, v in inputs.items() if v is not None}
+                proc, values = self.run_step(inputs)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {}, "no output on a refusal")
+                self.assertIn("::error::", proc.stdout + proc.stderr)
+                bad = next(iter(override.values()))
+                if isinstance(bad, str) and bad.strip():
+                    self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)
+
     def test_refuses_bad_inputs_without_echoing_them(self):
-        good = {"fixture": FIXTURE, "arms": "both", "trials": "1"}
+        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
+                "arms": "both", "trials": "1"}
         cases = {
             "dotdot": {"fixture": "evals/../evals/writing-adrs/bootstrap"},
             "dot": {"fixture": "evals/./writing-adrs/bootstrap"},
@@ -262,6 +380,21 @@ sys.exit(int(os.environ.get("FAKE_CURL_EXIT", "0")))
 """
 
 
+# Wraps the real jq: logs each call's argv and stdout, so a test can show
+# the body curl sent is byte for byte what a `jq -n` call printed.
+FAKE_JQ = """#!/usr/bin/env python3
+import json, os, subprocess, sys
+proc = subprocess.run([os.environ["REAL_JQ"], *sys.argv[1:]],
+                      stdin=sys.stdin, capture_output=True)
+with open(os.path.join(os.environ["FAKE_CURL_LOG"], "jq.jsonl"), "a") as f:
+    f.write(json.dumps({"argv": sys.argv[1:],
+                        "stdout": proc.stdout.decode("utf-8", "replace")}) + "\\n")
+sys.stdout.buffer.write(proc.stdout)
+sys.stderr.buffer.write(proc.stderr)
+sys.exit(proc.returncode)
+"""
+
+
 class FireStepTests(unittest.TestCase):
 
     BEARER = "sk-ant-oat01-FAKE-BEARER-FOR-TESTS"
@@ -283,9 +416,10 @@ class FireStepTests(unittest.TestCase):
             s for s in load(WORKFLOW)["jobs"]["fire"]["steps"]
             if s.get("name") == "Fire the eval routine")["env"]
 
-    def run_step(self, status, body, curl_exit=0):
+    def run_step(self, status, body, curl_exit=0, **overrides):
         self.summary.write_text("", encoding="utf-8")
         (self.log / "calls").unlink(missing_ok=True)
+        (self.log / "argv.json").unlink(missing_ok=True)
         env = {
             "FAKE_CURL_EXIT": str(curl_exit),
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
@@ -294,9 +428,11 @@ class FireStepTests(unittest.TestCase):
             "EVAL_ROUTINE_FIRE_BEARER": self.BEARER,
             "RUN_ID": "20261006T120000Z-a1b2c3",
             "FIXTURE": FIXTURE, "ARMS": "both", "TRIALS": "2",
+            "MODE": "eval", "CANDIDATE": "",
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log),
             "FAKE_CURL_STATUS": status, "FAKE_CURL_BODY": body,
+            **overrides,
         }
         return subprocess.run(["bash", "-c", self.script], cwd=self.tmp,
                               env=env, capture_output=True, text=True,
@@ -342,7 +478,7 @@ class FireStepTests(unittest.TestCase):
                       self.summary.read_text())
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
-    def test_success_sends_four_fields_and_keeps_the_bearer_off_argv(self):
+    def test_success_sends_eval_fields_and_keeps_the_bearer_off_argv(self):
         proc = self.run_step("200", self.ok_body(note="BODY-SENTINEL"))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         argv = json.loads((self.log / "argv.json").read_text())
@@ -354,6 +490,7 @@ class FireStepTests(unittest.TestCase):
         body = json.loads(argv[argv.index("--data-binary") + 1])
         self.assertEqual(set(body), {"text"})
         self.assertEqual(json.loads(body["text"]), {
+            "mode": "eval",
             "run_id": "20261006T120000Z-a1b2c3", "fixture": FIXTURE,
             "arms": "both", "trials": 2})
         out = proc.stdout + proc.stderr
@@ -364,6 +501,84 @@ class FireStepTests(unittest.TestCase):
         summary = self.summary.read_text()
         self.assertIn(f"https://claude.ai/code/{self.SESSION}", summary)
         self.assertIn("claude/eval-20261006T120000Z-a1b2c3", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_scaffold_sends_exactly_mode_run_id_and_candidate(self):
+        # FIXTURE, ARMS and TRIALS are set to junk here: scaffold mode must
+        # send none of them, whatever they hold.
+        proc = self.run_step("200", self.ok_body(), MODE="scaffold",
+                             CANDIDATE=CANDIDATE, FIXTURE="FIXTURE-SENTINEL",
+                             ARMS="ARMS-SENTINEL", TRIALS="not-a-number")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        argv = json.loads((self.log / "argv.json").read_text())
+        self.assertFalse(any(self.BEARER in a for a in argv))
+        self.assertEqual((self.log / "stdin").read_text(),
+                         f"Authorization: Bearer {self.BEARER}\n")
+        body = json.loads(argv[argv.index("--data-binary") + 1])
+        self.assertEqual(set(body), {"text"})
+        payload = json.loads(body["text"])
+        self.assertEqual(payload, {"mode": "scaffold",
+                                   "run_id": "20261006T120000Z-a1b2c3",
+                                   "candidate": CANDIDATE})
+        self.assertEqual(list(payload), ["mode", "run_id", "candidate"])
+        out = proc.stdout + proc.stderr
+        self.assertNotIn("SENTINEL", out)
+        summary = self.summary.read_text()
+        self.assertNotIn("SENTINEL", summary)
+        self.assertIn(CANDIDATE, summary)
+        self.assertIn("claude/scaffold-", summary)
+        self.assertNotIn("claude/eval-", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_values_are_json_encoded_by_jq(self):
+        # Defense in depth past validation: a value with JSON metacharacters
+        # arrives intact as one string, never as extra keys.
+        tricky = 'x", "evil": "1'
+        for mode, extra, key in (("scaffold", {"CANDIDATE": tricky}, "candidate"),
+                                 ("eval", {"FIXTURE": tricky}, "fixture")):
+            with self.subTest(mode=mode):
+                proc = self.run_step("200", self.ok_body(), MODE=mode, **extra)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                argv = json.loads((self.log / "argv.json").read_text())
+                body = json.loads(argv[argv.index("--data-binary") + 1])
+                payload = json.loads(body["text"])
+                self.assertEqual(payload[key], tricky)
+                self.assertNotIn("evil", payload)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_the_body_is_the_output_of_one_jq_null_input_call(self):
+        jq = self.bin / "jq"
+        jq.write_text(FAKE_JQ, encoding="utf-8")
+        jq.chmod(jq.stat().st_mode | stat.S_IXUSR)
+        for mode, extra in (("eval", {}), ("scaffold", {"CANDIDATE": CANDIDATE})):
+            with self.subTest(mode=mode):
+                (self.log / "jq.jsonl").unlink(missing_ok=True)
+                proc = self.run_step("200", self.ok_body(), MODE=mode,
+                                     REAL_JQ=shutil.which("jq"), **extra)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                argv = json.loads((self.log / "argv.json").read_text())
+                sent = argv[argv.index("--data-binary") + 1]
+                calls = [json.loads(l) for l in
+                         (self.log / "jq.jsonl").read_text().splitlines()]
+                builders = [c for c in calls if c["argv"][:2] == ["-n", "-c"]]
+                self.assertEqual(len(builders), 1, calls)
+                self.assertEqual(builders[0]["stdout"], sent + "\n")
+                # Every value reaches jq as an --arg/--argjson operand, never
+                # spliced into the filter program.
+                program = next(a for a in builders[0]["argv"][2:]
+                               if a.startswith("{text:"))
+                self.assertNotIn("20261006T120000Z-a1b2c3", program)
+                self.assertNotIn(CANDIDATE, program)
+                self.assertNotIn(FIXTURE, program)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_an_unknown_mode_never_calls_the_api(self):
+        for mode in ("", "improve", "Scaffold"):
+            with self.subTest(mode=mode):
+                proc = self.run_step("200", self.ok_body(), MODE=mode)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertFalse((self.log / "calls").exists())
+                self.assertEqual(self.summary.read_text(), "")
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_failures_print_only_the_status(self):

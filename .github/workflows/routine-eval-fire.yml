@@ -11,9 +11,16 @@ name: Fire eval routine
 # * Every dispatch input is read from $GITHUB_EVENT_PATH as data, never
 #   interpolated into a `run:` block (the rendered command is echoed into a
 #   public log), and validated before the bearer is ever in a step's env.
-# * The payload the routine receives carries exactly four fields: run_id,
-#   fixture, arms, trials. The routine treats it as untrusted, and so does
-#   this workflow when it builds it: jq encodes every value.
+# * Two modes (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
+#   (Recommended)"). `eval`, the default, sends exactly five fields: mode,
+#   run_id, fixture, arms, trials. `scaffold` sends exactly three: mode,
+#   run_id, candidate (a miner key, OWNER__REPO__PR), and the routine turns
+#   that one candidate into one draft real-work fixture on its own branch.
+#   `candidate` must be empty in eval mode and `fixture` empty in scaffold
+#   mode, so no input is silently ignored except arms and trials, which are
+#   choices and are not sent in scaffold mode. The routine treats the
+#   payload as untrusted, and so does this workflow when it builds it: jq
+#   encodes every value.
 # * The fire bearer (EVAL_ROUTINE_FIRE_BEARER, a repository secret per ADR
 #   0010 decision 5) reaches only the fire step, via `env`, and goes to curl
 #   on stdin, never in argv. The HTTP response body is never printed: the
@@ -23,19 +30,35 @@ name: Fire eval routine
 #   response would start a second session (and spend a second fire).
 # * Results land on `claude/eval-<run id>`, pushed by the routine; the
 #   validator and ingester for that branch is a separate workflow (ADR 0010,
-#   decision 2). Nothing here writes to the repository.
+#   decision 2). A scaffold run pushes `claude/scaffold-<fixture id>`
+#   instead, which its own gate validates. Nothing here writes to the
+#   repository.
 #
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: >-
+          eval runs a fixture; scaffold turns one miner candidate into a
+          draft real-work fixture.
+        required: true
+        type: choice
+        options: [eval, scaffold]
+        default: eval
+      candidate:
+        description: >-
+          Scaffold mode only (leave empty for eval): the miner key,
+          OWNER__REPO__PR, e.g. Adam-S-Daniel__skills-evals__123.
+        required: false
+        type: string
       fixture:
         description: >-
-          Fixture directory under evals/, e.g. evals/writing-adrs/bootstrap.
-          Must be a committed evals/**/fixture.yaml directory on the default
-          branch.
-        required: true
+          Eval mode only (leave empty for scaffold): fixture directory under
+          evals/, e.g. evals/writing-adrs/bootstrap. Must be a committed
+          evals/**/fixture.yaml directory on the default branch.
+        required: false
         type: string
       arms:
         description: Which arms to run.
@@ -84,39 +107,28 @@ jobs:
           # NUL first, on the event file itself: bash's $( ) drops a NUL, so
           # every check below would otherwise judge a different string than
           # the dispatcher sent. No rejection echoes the value back.
-          if jq -e '[.inputs.fixture, .inputs.arms, .inputs.trials]
+          # `fixture` and `candidate` are optional strings (each is required
+          # in one mode only), so an absent one reads as empty.
+          if jq -e '[.inputs.mode, .inputs.arms, .inputs.trials,
+                     (.inputs.fixture // ""), (.inputs.candidate // "")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
             exit 1
           fi
-          fixture="$(jq -r '.inputs.fixture' "$event")"
-          arms="$(jq -r '.inputs.arms' "$event")"
-          trials="$(jq -r '.inputs.trials' "$event")"
-
-          case "$fixture" in
-            *[!A-Za-z0-9/_.-]*|'')
-              echo "::error::input 'fixture' is empty or has characters outside [A-Za-z0-9/_.-]"
-              exit 1 ;;
-          esac
-          case "/$fixture/" in
-            */../*|*/./*|*//*)
-              echo "::error::input 'fixture' has an empty, '.' or '..' path segment"
-              exit 1 ;;
-          esac
-          case "$fixture" in
-            evals/*) ;;
-            *)
-              echo "::error::input 'fixture' is not under evals/"
-              exit 1 ;;
-          esac
-          # Exact, whole-line match against git's index of committed
-          # fixtures: a here-string, never a pipe into an early-exit grep.
-          committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
-          if ! grep -Fxq -- "$fixture" <<<"$committed"; then
-            echo "::error::input 'fixture' names no committed fixture on the default branch"
+          # Also on the event file: $( ) strips trailing newlines, so a
+          # value ending in one would otherwise pass the pattern below.
+          if jq -e '[.inputs.mode, (.inputs.candidate // "")]
+                    | any(test("[\u0000-\u001f\u007f]"))' \
+               "$event" >/dev/null; then
+            echo "::error::input 'mode' or 'candidate' contains a control character"
             exit 1
           fi
+          mode="$(jq -r '.inputs.mode' "$event")"
+          candidate="$(jq -r '.inputs.candidate // ""' "$event")"
+          fixture="$(jq -r '.inputs.fixture // ""' "$event")"
+          arms="$(jq -r '.inputs.arms' "$event")"
+          trials="$(jq -r '.inputs.trials' "$event")"
 
           case "$arms" in
             both|with|without) ;;
@@ -131,6 +143,54 @@ jobs:
               exit 1 ;;
           esac
 
+          case "$mode" in
+            eval)
+              if [ -n "$candidate" ]; then
+                echo "::error::input 'candidate' must be empty in eval mode"
+                exit 1
+              fi ;;
+            scaffold)
+              if [ -n "$fixture" ]; then
+                echo "::error::input 'fixture' must be empty in scaffold mode"
+                exit 1
+              fi
+              # The miner key pattern the routine re-checks. The repository
+              # part admits `_`, so a repository named `_x` still has a key.
+              if ! [[ "$candidate" =~ ^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$ ]]; then
+                echo "::error::input 'candidate' is empty or is not a miner key (OWNER__REPO__PR)"
+                exit 1
+              fi ;;
+            *)
+              echo "::error::input 'mode' must be eval or scaffold"
+              exit 1 ;;
+          esac
+
+          if [ "$mode" = eval ]; then
+            case "$fixture" in
+              *[!A-Za-z0-9/_.-]*|'')
+                echo "::error::input 'fixture' is empty or has characters outside [A-Za-z0-9/_.-]"
+                exit 1 ;;
+            esac
+            case "/$fixture/" in
+              */../*|*/./*|*//*)
+                echo "::error::input 'fixture' has an empty, '.' or '..' path segment"
+                exit 1 ;;
+            esac
+            case "$fixture" in
+              evals/*) ;;
+              *)
+                echo "::error::input 'fixture' is not under evals/"
+                exit 1 ;;
+            esac
+            # Exact, whole-line match against git's index of committed
+            # fixtures: a here-string, never a pipe into an early-exit grep.
+            committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
+            if ! grep -Fxq -- "$fixture" <<<"$committed"; then
+              echo "::error::input 'fixture' names no committed fixture on the default branch"
+              exit 1
+            fi
+          fi
+
           run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
           if ! [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$ ]]; then
             echo "::error::generated run id has an unexpected shape"
@@ -138,13 +198,19 @@ jobs:
           fi
 
           {
+            echo "mode=${mode}"
+            echo "candidate=${candidate}"
             echo "fixture=${fixture}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
           } >> "$GITHUB_OUTPUT"
           echo "run id: ${run_id}"
-          echo "fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
+          if [ "$mode" = scaffold ]; then
+            echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
+          else
+            echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
+          fi
 
       - name: Fire the eval routine
         env:
@@ -154,18 +220,31 @@ jobs:
           FIXTURE: ${{ steps.validate.outputs.fixture }}
           ARMS: ${{ steps.validate.outputs.arms }}
           TRIALS: ${{ steps.validate.outputs.trials }}
+          MODE: ${{ steps.validate.outputs.mode }}
+          CANDIDATE: ${{ steps.validate.outputs.candidate }}
         run: |
           set -euo pipefail
           if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
             echo "::error::repository secret EVAL_ROUTINE_FIRE_BEARER is not set"
             exit 1
           fi
-          # The payload is the routine's untrusted input: these four fields
-          # and nothing else, every value encoded by jq.
-          body="$(jq -n -c \
-            --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
-            --arg arms "$ARMS" --argjson trials "$TRIALS" \
-            '{text: ({run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials} | tojson)}')"
+          # The payload is the routine's untrusted input: each mode's fields
+          # and nothing else, every value encoded by jq. Any other mode
+          # stops here, before the API is called.
+          case "${MODE:-}" in
+            scaffold)
+              body="$(jq -n -c \
+                --arg run_id "$RUN_ID" --arg candidate "$CANDIDATE" \
+                '{text: ({mode: "scaffold", run_id: $run_id, candidate: $candidate} | tojson)}')" ;;
+            eval)
+              body="$(jq -n -c \
+                --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
+                --arg arms "$ARMS" --argjson trials "$TRIALS" \
+                '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials} | tojson)}')" ;;
+            *)
+              echo "::error::mode must be eval or scaffold"
+              exit 1 ;;
+          esac
           response="$(mktemp)"
           trap 'rm -f "$response"' EXIT
           # The bearer goes to curl on stdin (`-H @-`), so it is never in
@@ -258,11 +337,22 @@ jobs:
             exit 1
           fi
           echo "run id: ${RUN_ID}; session link is in the job summary"
-          {
-            echo "### Eval routine fired"
-            echo
-            echo "- Run id: \`${RUN_ID}\`"
-            echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
-            echo "- Session: ${session_url}"
-            echo "- Results branch: \`claude/eval-${RUN_ID}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$MODE" = scaffold ]; then
+            {
+              echo "### Eval routine fired (scaffold mode)"
+              echo
+              echo "- Run id: \`${RUN_ID}\`"
+              echo "- Candidate: \`${CANDIDATE}\`"
+              echo "- Session: ${session_url}"
+              echo "- Branch: \`claude/scaffold-<fixture id>\`, pushed by the routine; its gate opens the draft PR"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Eval routine fired"
+              echo
+              echo "- Run id: \`${RUN_ID}\`"
+              echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
+              echo "- Session: ${session_url}"
+              echo "- Results branch: \`claude/eval-${RUN_ID}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

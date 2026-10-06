@@ -945,6 +945,10 @@ decisions (Adam, 2026-10-06)".
 - **Q6, where the scaffolder runs:** "Routine + own gate (Recommended)". Its
   model call runs in the ADR 0010 routine, and scaffold PRs get their own
   review gate, separate from #71's three improvement PRs.
+  How it is fired: "New fire-workflow input (Recommended)".
+  `routine-eval-fire.yml` takes `mode: scaffold` and a `candidate` miner key
+  (`OWNER__REPO__PR`), validates both before the bearer is in any step's
+  env, and sends only `mode`, `run_id` and `candidate`.
 - **Q8, training cutoffs:** "Keep, report apart (Recommended)". Each
   candidate records its merge date, so pre- and post-cutoff fixtures are
   reported separately rather than excluded.
