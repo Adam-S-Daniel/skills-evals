@@ -222,7 +222,7 @@ and what that token can do, is not yet known.
 Routine [`trig_018bKqzSugdDPUkiA4hD4BMQ`](https://claude.ai/code/routines/trig_018bKqzSugdDPUkiA4hD4BMQ),
 run session `cse_01CtmcBYPtdNuTnjB3WraW2J` (no link recorded), 2026-10-06
 14:06Z, 106 seconds. The real harness ran the guidance `_delivery` fixture
-(both arms, N=1, judge off) and the `writing-adrs` bootstrap fixture (with
+(all five arms, N=1, judge off) and the `writing-adrs` bootstrap fixture (with
 and without the skill). No repo edit and no workaround was made.
 
 - **Setup works, with one wrinkle.** The pins are `eval.yml`'s
@@ -254,10 +254,12 @@ Adam answered on 2026-10-06:
 
 **Resulting direction:** arms run with `--permission-mode auto` instead of
 `bypassPermissions` (the routine's CLI, 2.1.291, lists `auto` among the
-`--permission-mode` choices). The root refusal is specific to
-`--dangerously-skip-permissions`, so it should no longer apply, and the arm
-then works the way Adam's own sessions do. **Not yet shown:** that auto mode
-runs as root in a routine. A re-run of Probe 2 after the harness change
+`--permission-mode` choices). The harness passes
+`--permission-mode bypassPermissions` (`harness/run_eval.py:1041`) and still
+got the message naming `--dangerously-skip-permissions`, so the CLI refuses
+bypass mode as root, whichever flag selects it. Auto mode is expected to be
+exempt, and the arm then works the way Adam's own sessions do. **Not yet
+shown:** that auto mode runs as root in a routine. A re-run of Probe 2 after the harness change
 confirms it (pending). The two options above become fallbacks, used only if
 auto mode fails as root.
 
