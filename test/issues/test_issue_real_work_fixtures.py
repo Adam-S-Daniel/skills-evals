@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -53,6 +54,15 @@ EVALUATED_PATHS = (".claude", "skills.lock", "agents-md", "skills", ".claude-plu
 # `deps:` installs from, and AGENTS.md's kept repository-specific section.
 TRIM_BYTES = 100 * 1024
 KEPT_LARGE = {"package-lock.json", "AGENTS.md"}
+# The one description a seed's plugin manifest may carry. The manifest stays (a
+# kept test reads its version) but its upstream description lists what the
+# stripped skills/ directory does, which is the subject leaking back in.
+NEUTRAL_MANIFEST_DESCRIPTION = "cms-platform: a Jekyll + Decap CMS + AWS site platform."
+MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json")
+# The ecosystem Dependabot reads each seed manifest as.
+DEPENDABOT_MANIFESTS = {"package.json": "npm", "package-lock.json": "npm",
+                        "Gemfile": "bundler", "Gemfile.lock": "bundler"}
+DEPENDABOT_CONFIG = REPO / ".github" / "dependabot.yml"
 
 
 def blob_id(path: Path) -> str:
@@ -113,6 +123,16 @@ class RealWorkFixtureTests(unittest.TestCase):
                          if p.stat().st_size > TRIM_BYTES and p.name not in KEPT_LARGE]
                 self.assertEqual(large, [])
 
+    def test_seed_plugin_manifests_do_not_describe_the_stripped_skills(self):
+        for name, directory, _ in self.fixtures():
+            for manifest in MANIFESTS:
+                path = directory / "seed" / manifest
+                if not path.exists():
+                    continue
+                with self.subTest(fixture=name, manifest=manifest):
+                    description = json.loads(path.read_text(encoding="utf-8"))["description"]
+                    self.assertEqual(description, NEUTRAL_MANIFEST_DESCRIPTION)
+
     def test_ci_installs_exactly_the_fixtures_dependencies(self):
         workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml")
                                   .read_text(encoding="utf-8"))
@@ -164,6 +184,49 @@ class RealWorkFixtureTests(unittest.TestCase):
                 self.assertEqual(answer_leak.leaked_runs(
                     fixture["prompt"], "\n".join(added),
                     fixture.get("interface_strings", ()), preexisting), [])
+
+    @staticmethod
+    def dependabot_glob(pattern: str) -> re.Pattern:
+        # Dependabot's `directories:` globbing: `**` spans segments, `*` one.
+        parts = re.split(r"(\*\*|\*)", pattern)
+        return re.compile("".join(
+            ".*" if part == "**" else "[^/]*" if part == "*" else re.escape(part)
+            for part in parts))
+
+    def test_dependabot_ignores_every_seed_manifest(self):
+        # Dependabot security updates apply to any lockfile in the repository,
+        # not only the directories dependabot.yml lists (skills-evals#312 bumped
+        # a seed's package-lock.json, and the auto-merge allowlist would have
+        # landed it). `exclude-paths` is version-updates-only, so what holds
+        # security updates off is an entry per ecosystem over the seeds with
+        # `ignore: dependency-name: "*"` (`update-types` would not, per the
+        # options reference), and no `versions:` that narrows it.
+        config = yaml.safe_load(DEPENDABOT_CONFIG.read_text(encoding="utf-8"))
+        covered = {}
+        for entry in config["updates"]:
+            if entry["package-ecosystem"] == "github-actions":
+                continue
+            ecosystem = entry["package-ecosystem"]
+            self.assertNotIn("directory", entry, "a seeds entry uses `directories:`")
+            self.assertEqual(entry["ignore"], [{"dependency-name": "*"}])
+            self.assertEqual(entry["cooldown"], {"default-days": 7, "semver-major-days": 30})
+            covered.setdefault(ecosystem, []).extend(
+                self.dependabot_glob(pattern) for pattern in entry["directories"])
+        self.assertEqual(sorted(covered), ["bundler", "npm"])
+        found = 0
+        for directory, dirnames, filenames in os.walk(REAL_WORK):
+            dirnames[:] = [d for d in dirnames if d != "node_modules"]
+            for filename in filenames:
+                if filename not in DEPENDABOT_MANIFESTS:
+                    continue
+                found += 1
+                where = "/" + Path(directory).relative_to(REPO).as_posix()
+                with self.subTest(manifest=f"{where}/{filename}"):
+                    self.assertTrue(
+                        any(glob.fullmatch(where)
+                            for glob in covered[DEPENDABOT_MANIFESTS[filename]]),
+                        f"no dependabot.yml entry ignores {where}")
+        self.assertGreater(found, 5)
 
     def workspace(self, directory: Path, fixture: dict, fixed: bool) -> Path:
         """The seed as the agent would get it, its dependencies already

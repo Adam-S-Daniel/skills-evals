@@ -52,3 +52,37 @@ updates:
       # is what lets that one bump land without the third-party wait
       # (https://github.com/Adam-S-Daniel/cms-platform/issues/424).
       exclude: ["Adam-S-Daniel/cms-platform/*"]
+
+  # The real-work fixtures' seeds (evals/real-work/*/seed) are frozen copies of
+  # other repositories, lockfiles included: a bump there changes what a fixture
+  # measures, and the auto-merge allowlist would land it (skills-evals#312 was
+  # such a security update). Version updates are per listed directory, so the
+  # seeds got none, but security updates cover every lockfile in the repository
+  # whether or not it is listed. `exclude-paths` cannot help: it is marked
+  # version-updates-only in GitHub's options reference. `ignore` is marked for
+  # both, so one entry per ecosystem the seeds use lists them all and ignores
+  # every dependency by name (`update-types` would not hold back a security
+  # update, and `versions` would narrow it). test_issue_real_work_fixtures.py
+  # parses this file and fails when a seed manifest falls outside these globs.
+  # The cooldown repeats the standing convention; with everything ignored it
+  # never fires, but a new block starts from the account's setting, not none.
+  - package-ecosystem: npm
+    directories:
+      - "/evals/real-work/**/*"
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+  - package-ecosystem: bundler
+    directories:
+      - "/evals/real-work/**/*"
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
