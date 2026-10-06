@@ -263,7 +263,10 @@ class ValidateStepTests(unittest.TestCase):
         event.write_text(json.dumps({"inputs": inputs}), encoding="utf-8")
         output = self.tmp / "output"
         output.write_text("", encoding="utf-8")
+        # A UTF-8 locale, as on an ubuntu runner: the step's own
+        # `export LC_ALL=C` is then what keeps [A-Za-z] to ASCII.
         env = {"PATH": os.environ["PATH"], "HOME": str(self.tmp),
+               "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
                "GITHUB_EVENT_PATH": str(event), "GITHUB_OUTPUT": str(output)}
         proc = subprocess.run(["bash", "-c", self.script], cwd=REPO_ROOT,
                               env=env, capture_output=True, text=True,
@@ -333,6 +336,9 @@ class ValidateStepTests(unittest.TestCase):
             "trailing_newline": {"candidate": "Adam-S-Daniel__repo__12\n"},
             "nul": {"candidate": "Adam-S-Daniel__repo__12\u0000"},
             "non_ascii": {"candidate": "Adam-S-Daniel__r\u00e9po__12"},
+            "fullwidth": {"candidate": "Adam-S-Daniel__r\uff41po__12"},
+            "nbsp": {"candidate": "Adam-S-Daniel__re\u00a0po__12"},
+            "line_separator": {"candidate": "Adam-S-Daniel__re\u2028po__12"},
             "candidate_number": {"candidate": 12},
             "mode_unknown": {"mode": "improved"},
             "mode_case_improve": {"mode": "Improve"},
@@ -395,7 +401,22 @@ class ValidateStepTests(unittest.TestCase):
             "skill_subst": {"skill": "$(id)"},
             "skill_space": {"skill": "writing adrs"},
             "skill_non_ascii": {"skill": "writing-adr\u00e9"},
+            "skill_fullwidth": {"skill": "writing-adr\uff41"},
+            "skill_nbsp": {"skill": "writing\u00a0adrs"},
+            "skill_line_separator": {"skill": "writing\u2028adrs"},
         }, expect="is not a skill name")
+        # The step's own holdout shape check, ahead of fire-check, which
+        # would refuse these too but with another message.
+        self._refuse_all(good, {
+            "holdout_too_long": {"holdout": "h" * 129},
+            "holdout_space": {"holdout": "super sede"},
+            "holdout_slash": {"holdout": "supersede/x"},
+            "holdout_subst": {"holdout": "$(id)"},
+            "holdout_non_ascii": {"holdout": "supersed\u00e9"},
+            "holdout_fullwidth": {"holdout": "supersed\uff45"},
+            "holdout_nbsp": {"holdout": "super\u00a0sede"},
+            "holdout_line_separator": {"holdout": "super\u2028sede"},
+        }, expect="is longer than 128 characters or has characters outside")
         # The loop's own resolution (improve_gate.py fire-check): not a
         # skill's fixture set, another registry's skill, too few fixtures.
         self._refuse_all(no_holdout, {

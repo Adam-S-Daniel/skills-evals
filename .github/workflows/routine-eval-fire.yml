@@ -212,10 +212,10 @@ jobs:
                 echo "::error::input 'skill' is empty or is not a skill name"
                 exit 1
               fi
-              # The holdout is a single fixture name: no path, and the
-              # whole-line match below names the rest.
+              # The holdout is a single fixture name, no path; fire-check
+              # below checks it is one of the skill's fixtures.
               if [ -n "$holdout" ] && ! [[ "$holdout" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
-                echo "::error::input 'holdout' has characters outside [A-Za-z0-9._-]"
+                echo "::error::input 'holdout' is longer than 128 characters or has characters outside [A-Za-z0-9._-]"
                 exit 1
               fi ;;
             *)
