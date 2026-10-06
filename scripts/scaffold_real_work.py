@@ -81,12 +81,11 @@ import seed_prep  # noqa: E402
 from scorers import objective  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Policy. Each choice DESIGN.md leaves open is one named constant here, set to
-# the most conservative option until the owner answers.
+# Policy, one named constant per choice.
 
 #: What an answer-leak hit does: "reject" (refuse to build, fail the check and
-#: the gate) or "warn" (report it for review). DESIGN.md "The answer-leak
-#: lint" leaves this open; the miner records a hit as a warning (Q3).
+#: the gate) or "warn" (report it for review). Adam, 2026-10-06: "Reject
+#: (Recommended)". The miner still records a hit as a warning (Q3).
 LEAK_POLICY = "reject"
 #: Owner decision Q1: each red and green scoring finishes within 60 s.
 CAP_SECONDS = 60
@@ -728,6 +727,8 @@ def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
     problems, _ = static_problems(root)
     if problems:
         raise ingest.Rejected("; ".join(problems[:5]))
+    # Only pattern-checked values: no key may carry content read from the
+    # branch (a title, the prompt) into the job that holds a write token.
     return {"fixture_id": fixture_id, "sha": tip, "files": str(len(files))}
 
 

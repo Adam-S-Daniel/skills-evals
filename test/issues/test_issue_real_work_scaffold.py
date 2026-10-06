@@ -519,6 +519,16 @@ class GateTests(_GateCase):
     def test_accepts_the_scaffold_and_writes_exactly_its_files(self):
         tip = self.commit()
         result = self.gate(expect=tip)
+        # Exactly these keys reach $GITHUB_OUTPUT: none may carry branch
+        # content (a title, the prompt) to the job holding a write token.
+        self.assertEqual(set(result), {"fixture_id", "sha", "files"})
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
+                                  "--source", self.BRANCH, "--branch", self.BRANCH,
+                                  "--out", str(self.tmp / "out-cli")])
+        self.assertEqual(code, 0)
+        self.assertEqual([line.split("=", 1)[0] for line in out.getvalue().splitlines()],
+                         ["fixture_id", "sha", "files"])
         self.assertEqual(result["fixture_id"], "toy-7")
         self.assertEqual(result["sha"], tip)
         out = self.tmp / "out" / "toy-7"
@@ -589,8 +599,11 @@ class GateTests(_GateCase):
 
     def test_rejects_bad_branches_and_moves(self):
         self.commit()
+        # claude/toy-7 and claude/eval-run-7 would be valid fixture ids under
+        # a looser `claude/(?:scaffold-)?` pattern: only the prefix refuses them.
         for branch in ("claude/eval-20261006T194256Z-f944ea", "claude/scaffold-", "scaffold/toy-7",
-                       "claude/scaffold-toy", "claude/scaffold-../x-1"):
+                       "claude/scaffold-toy", "claude/scaffold-../x-1", "claude/toy-7",
+                       "claude/eval-run-7", "claude/scaffoldtoy-7", "claude/scaffold-toy-7/x"):
             with self.subTest(branch=branch):
                 with self.assertRaisesRegex(ingest.Rejected, "branch name"):
                     self.gate(branch=branch)
@@ -638,6 +651,7 @@ class ResolveTests(unittest.TestCase):
 
     def test_rejections(self):
         for event in (self.push("claude/eval-20261006T194256Z-f944ea"),
+                      self.push("claude/toy-7"), self.push("claude/eval-run-7"),
                       self.push("claude/scaffold-x-1\n::warning::")):
             with self.assertRaisesRegex(ingest.Rejected, "claude/scaffold-<id>"):
                 self.resolve("workflow_run", event)
@@ -754,7 +768,7 @@ class WorkflowShapeTests(unittest.TestCase):
                 with self.subTest(job=job, body=body[:40]):
                     self.assertNotIn("${{", body, "pass values through env, never inline")
 
-    def test_it_opens_only_a_labelled_draft_and_never_merges_or_pushes(self):
+    def test_it_opens_only_a_labeled_draft_and_never_merges_or_pushes(self):
         bodies = "\n".join(body for _, body in run_blocks(self.gate))
         for verb in (r"\bgh\s+pr\s+(merge|review|close|ready)\b", r"\bgit\s+push\b",
                      r"\bgit\s+merge\b", r"--auto\b", r"\bgh\s+api\s+[^\n]*-X\b",
@@ -767,6 +781,32 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn('--label "$LABEL"', tail)
         self.assertEqual(self.gate["jobs"]["draft-pr"]["steps"][0]["env"]["LABEL"],
                          scaffold.DRAFT_LABEL)
+
+    def test_the_pr_job_reads_only_the_validated_outputs(self):
+        # The gate's outputs are the only values that cross from the job that
+        # reads the untrusted branch into the job that holds a write token.
+        # Each is pattern-checked; nothing taken from the branch's content
+        # (the prompt, a title) may join them.
+        validate = self.gate["jobs"]["validate"]
+        self.assertEqual(validate["outputs"], {
+            "branch": "${{ steps.resolve.outputs.branch }}",
+            "fixture_id": "${{ steps.gate.outputs.fixture_id }}",
+            "sha": "${{ steps.gate.outputs.sha }}"})
+        [step] = self.gate["jobs"]["draft-pr"]["steps"]
+        self.assertEqual(set(step["env"]),
+                         {"GH_TOKEN", "REPO", "BASE", "BRANCH", "FIXTURE_ID", "SHA", "LABEL"})
+        [title] = re.findall(r'--title\s+("[^"]*")', step["run"])
+        self.assertEqual(title, '"Draft real-work fixture: ${FIXTURE_ID}"')
+        self.assertEqual(re.findall(r"\$\{?([A-Z_]+)", title), ["FIXTURE_ID"])
+
+    def test_an_open_pr_is_found_by_head_owner_not_branch_name_alone(self):
+        # `gh pr list --head` matches a branch name in any fork, so a fork's
+        # same-named branch would suppress the PR. The REST query names the
+        # head as <owner>:<branch>.
+        [step] = self.gate["jobs"]["draft-pr"]["steps"]
+        self.assertNotIn("gh pr list", step["run"])
+        self.assertIn('owner="${REPO%%/*}"', step["run"])
+        self.assertIn('pulls?state=open&head=${owner}:${BRANCH}&base=${BASE}', step["run"])
 
     def test_the_pr_body_has_no_closing_keyword(self):
         [(_, body)] = [b for b in run_blocks(self.gate) if b[0] == "draft-pr"]

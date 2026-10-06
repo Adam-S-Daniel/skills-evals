@@ -246,11 +246,10 @@ unless the run lies inside one declared interface string or inside the
 issue's text as it stood before the fix. The real-work fixtures' own test
 module, which arrives with the first fixtures, checks that each committed
 fixture has no hits; both it and the scaffolder read the diff's added lines
-through `fixture_added_lines`. Whether the scaffolder treats a hit as a
-warning for review or a rejection is still the owner's to decide; until
-then it rejects (`LEAK_POLICY` in `scripts/scaffold_real_work.py`, "The
-scaffolder and its gate" below). The miner records a hit as a warning (Q3
-below).
+through `fixture_added_lines`. The scaffolder rejects a hit (Adam,
+2026-10-06: "Reject (Recommended)"; `LEAK_POLICY` in
+`scripts/scaffold_real_work.py`, "The scaffolder and its gate" below). The
+miner, earlier in the pipeline, records a hit as a warning (Q3 below).
 
 **What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
 file in the fixture directory (outside `seed/`) holding the issue's title and
@@ -993,7 +992,11 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   Nothing from the branch runs in the gate. Its `draft-pr` job
   (`pull-requests: write`) then opens a draft pull request labeled
   `eval-scaffold`, or leaves an open one alone. It never merges, approves
-  or pushes.
+  or pushes. The label and the repository setting that lets Actions open
+  pull requests come from repo-settings (Adam, 2026-10-06: "Yes, via
+  repo-settings (Recommended)"), and the routine is fired in scaffold mode
+  by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
+  fire-workflow input (Recommended)"); both land in their own PRs.
 
 What a reviewer adds before the fixture can leave draft: the fixture's
 entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`

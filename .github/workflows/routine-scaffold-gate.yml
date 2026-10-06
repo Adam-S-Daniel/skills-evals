@@ -148,8 +148,12 @@ jobs:
             echo "::error::${BRANCH} moved after validation; its newer push runs its own gate"
             exit 1
           fi
-          open="$(gh pr list --repo "$REPO" --head "$BRANCH" --base "$BASE" \
-            --state open --json number --jq 'length')" || open=""
+          # Filter on the head's OWNER too: the CLI's `--head` filter matches the
+          # branch name in any fork, so a fork's same-named branch could
+          # otherwise suppress this pull request.
+          owner="${REPO%%/*}"
+          open="$(gh api "repos/${REPO}/pulls?state=open&head=${owner}:${BRANCH}&base=${BASE}" \
+            --jq 'length')" || open=""
           case "$open" in
             0) ;;
             1)
@@ -170,6 +174,8 @@ jobs:
             echo "- confirms the prompt is the real ask, with the issue sections that describe the solution dropped, and that \`interface_strings:\` name only what the hidden tests check verbatim;"
             echo "- runs \`scripts/scaffold_real_work.py check --fixture evals/real-work/${FIXTURE_ID} --run\` (red on the seed, green with the fix);"
             echo "- adds the fixture to \`CHECKER_BLOBS\` in \`test/issues/test_issue_real_work_fixtures.py\`, and any \`deps:\` directory to ci.yml's real-work install step."
+            echo
+            echo "Known limits: this gate runs once per push. If a later push to \`${BRANCH}\` fails it, this pull request gets no comment or label; the failed run of routine-scaffold-gate.yml is the only signal, so check the branch's latest gate run before reviewing."
             echo
             echo "Part of https://github.com/Adam-S-Daniel/skills-evals/issues/65."
           } > "$body"
