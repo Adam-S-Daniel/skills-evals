@@ -4036,8 +4036,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
 def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
                 transcript: str | None) -> list[dict]:
     """`run_checks`' loop. `seed` is the fixture's own seed directory, whose
-    parent holds `repo_tests`' overlay; `compare_seed` is what the workspace
-    is compared against, which a `strip_agent_context:` fixture strips."""
+    parent holds `repo_tests`' overlay and the pristine files
+    `dir_listing_matches` reads; `compare_seed` is what the workspace is
+    compared against, which a `strip_agent_context:` fixture strips."""
     results = []
     for check in fixture.get("objective_checks", []):
         fn = CHECKS.get(check["type"])
@@ -4051,10 +4052,11 @@ def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
             raise ValueError(f"unknown {check['type']!r} constraint key(s) in "
                             f"check {check.get('id')!r}: {sorted(extra)}")
         kwargs = {key: check[key] for key in allowed if key in check}
-        if check["type"] == "repo_tests":
+        if check["type"] in ("repo_tests", "dir_listing_matches"):
+            # `dir_listing_matches` only reads `expected_file` from the seed,
+            # which is pristine by contract (it may sit under a stripped path).
             kwargs["seed"] = seed
-        elif check["type"] in ("non_remote_refs_unchanged", "files_unchanged",
-                               "dir_listing_matches"):
+        elif check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
             kwargs["seed"] = compare_seed
         elif check["type"] == "shell_capture_safe":
             kwargs["transcript"] = transcript

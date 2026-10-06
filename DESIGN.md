@@ -152,8 +152,9 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   _agent-guidance`) or has text above the marker line. A guidance arm strips
   and guards its own copy of the seed the same way, and a failed guard there
   ends the run with exit 2; its `--arm objective-only` path strips and guards
-  the same way. Checks that compare the workspace with the seed read a
-  stripped copy of the seed. Only the workspace root is touched: a nested
+  the same way. Checks that compare the workspace with the seed
+  (`files_unchanged`, `non_remote_refs_unchanged`) read a stripped copy of the
+  seed. Only the workspace root is touched: a nested
   `AGENTS.md` can be a repository's own test data.
 - **`deps:`** (optional, skill subject only) — a list of 1 to 4
   `{manager: npm, dir: <workspace-relative directory>}` entries (`dir`
@@ -379,9 +380,11 @@ a `.git/` path, more than 128 files or more than 4 MiB; more than 16
 selected tests; a test argument over 512 characters; and a timeout above
 60 s. The check needs the fixture directory, so `run_checks` hands it the
 fixture's own seed path. The checks that compare the workspace with the seed
-(`files_unchanged`, `dir_listing_matches`, `non_remote_refs_unchanged`, a
-`transcript_matches` with `strip_seed`) get a stripped copy of the seed when
-`strip_agent_context:` is set, because the agent's workspace was stripped.
+(`files_unchanged`, `non_remote_refs_unchanged`) and a `transcript_matches`
+with `strip_seed` get a stripped copy of the seed when `strip_agent_context:`
+is set, because the agent's workspace was stripped. `dir_listing_matches`
+keeps the pristine seed: it reads only its `expected_file` from there, which
+may sit under a path the strip removes.
 
 **Known limits.** The overlay replaces the hidden test files, nothing else.
 The runner and its configuration come from the agent's workspace: the agent
@@ -394,6 +397,13 @@ applies. A fixture author narrows it by naming an `argv` that does not read
 workspace configuration (`python3 -m unittest`, `node --test`) and by an
 overlay that includes the runner's own config file, which replaces the
 agent's copy.
+
+`--arm objective-only --workspace <dir>` scores the directory as given, with
+no strip and no `setup:`, against the same stripped seed (when
+`strip_agent_context:` is set). A hand-supplied workspace that still carries
+the fleet's agent context therefore shows `AGENTS.md`, `CLAUDE.md` and
+`.claude/` as changes under `files_unchanged`; strip it first, or omit
+`--workspace` to score a fresh, stripped copy of the seed.
 
 ```yaml
 strip_agent_context: true

@@ -399,6 +399,19 @@ class StrippedSeedScoringTests(_Base):
                          [("kept", True), ("listing", True), ("hidden-tests", True)],
                          results)
 
+    def test_dir_listing_expected_file_is_read_from_the_pristine_seed(self):
+        # `expected_file` is read from the pristine seed, so it may live in a
+        # path the strip removes.
+        (self.seed / ".claude" / "expected.txt").write_text(
+            "AGENTS.md\nCLAUDE.md\ncalc.py\n", encoding="utf-8")
+        fixture = self.fixture(objective_checks=[
+            {"id": "listing", "type": "dir_listing_matches", "paths": ["."],
+             "ignore": [".git"], "expected_file": ".claude/expected.txt"}])
+        results = objective.run_checks(fixture, str(self.stripped_workspace()),
+                                       str(self.seed))
+        self.assertEqual([(r["id"], r["passed"]) for r in results],
+                         [("listing", True)], results)
+
     def test_a_real_change_to_a_kept_file_still_fails(self):
         ws = self.stripped_workspace()
         (ws / "AGENTS.md").write_text("## Repo-specific additions\n\nEdited.\n",
