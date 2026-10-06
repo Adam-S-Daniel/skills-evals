@@ -309,7 +309,13 @@ UI.
    runs, then pushes `claude/eval-probe-<id>`.
 2. A dispatch-only workflow that fires the routine and records the session
    URL, behind the decisions above.
-3. The `claude/eval-*` validator and ingester, tested with fakes.
+3. The `claude/eval-*` validator and ingester, tested with fakes
+   (`scripts/ingest_routine_results.py`, run by
+   `.github/workflows/routine-eval-ingest.yml` on the `workflow_run` of
+   `routine-eval-results-pushed.yml`; results land under
+   `routine-results/<run id>/` on `persistent/eval-results`, apart from
+   the badge's `results/`). Not yet built: the fire record decision 2
+   matches a run id against, and the missing-push deadline.
 4. Two real-work fixtures (one writer, one CI-debug) with objective checks.
 
 ## Alternatives considered

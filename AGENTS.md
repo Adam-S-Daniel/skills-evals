@@ -95,3 +95,16 @@ session that lost the guidance must not also lose these.
   stands, what is parked on Adam and why, and how to resume it. The live
   operational state is the status board,
   [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
+
+- **Workflow triggers and salient paths.** `test` (ci.yml) is the one
+  required check. Keep this table in step when a trigger or filter moves.
+
+  | Workflow | Triggers | Salient-path handling |
+  |---|---|---|
+  | `ci.yml` | `pull_request`, `push` to main, dispatch | `pull_request` unfiltered (required check); step `salient` gates the suite on `SALIENT_PATHS`, which must equal `on.push.paths` (`CiDispatchTests`) |
+  | `propagation.yml` | `pull_request`, `push` to main, schedule, dispatch | deliberately unfiltered: it probes an unpinned upstream registry (its header says why) |
+  | `dependabot-auto-merge.yml` | `pull_request`, schedule, dispatch | acts only on Dependabot PRs whose changes stay inside the manifest-path allowlist |
+  | `eval.yml`, `scheduled-run-health.yml` | schedule, dispatch | no push or PR trigger, so no path filter |
+  | `routine-eval-fire.yml` | dispatch only | none needed |
+  | `routine-eval-results-pushed.yml` | `push` to `claude/eval-*` | `paths: results/**, eval-results/**` (the routine's result roots); holds no permissions and runs nothing from the branch |
+  | `routine-eval-ingest.yml` | `workflow_run` of the above, dispatch | runs the default branch's copy only; `scripts/ingest_routine_results.py` validates the branch and writes `persistent/eval-results` `routine-results/<run id>/` (ADR 0010 decision 2) |
