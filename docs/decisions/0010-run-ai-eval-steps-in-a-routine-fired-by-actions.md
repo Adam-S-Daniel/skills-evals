@@ -241,11 +241,32 @@ and without the skill). No repo edit and no workaround was made.
   refuses `bypassPermissions` as root.
 
 **Consequence:** the routine path needs a harness change before any real
-run. Two options, and the choice is **open** (it is a design decision about
-arm isolation, the same concern as ADR 0002 decision 1):
+run. Two options were put to Adam:
 
 - run the arms as a non-root user inside the routine; or
 - pass `IS_SANDBOX` through `agent_env`, for routine runs only.
+
+Adam answered on 2026-10-06:
+
+> "Should the harness perhaps use auto approval anyway? It is how I run
+> virtually everything anyhow, so arguably only adds to the eval runs’
+> validity"
+
+**Resulting direction:** arms run with `--permission-mode auto` instead of
+`bypassPermissions` (the routine's CLI, 2.1.291, lists `auto` among the
+`--permission-mode` choices). The root refusal is specific to
+`--dangerously-skip-permissions`, so it should no longer apply, and the arm
+then works the way Adam's own sessions do. **Not yet shown:** that auto mode
+runs as root in a routine. A re-run of Probe 2 after the harness change
+confirms it (pending). The two options above become fallbacks, used only if
+auto mode fails as root.
+
+Consequences of auto mode:
+
+- Permission-classifier denials become part of the measured behavior: an
+  arm that gets denied and recovers, or stalls, scores accordingly.
+- Results must record the permission mode an arm ran under, so runs under
+  different modes are never compared as like-for-like.
 
 The eval runner routine now exists:
 [`trig_014cqgegCtJUqXYjAKmkr4J5`](https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5),
@@ -256,8 +277,10 @@ UI.
 
 - Whether an arm can read the ingress token file or an on-disk GitHub token,
   and what each grants (the open risk above).
-- Which harness change unblocks root arms in a routine: a non-root user,
-  or `IS_SANDBOX` passed through `agent_env` for routine runs only (Probe 2).
+- Whether arms under `--permission-mode auto` run as root in a routine
+  (Probe 2 re-run, pending after the harness change). If not, the fallback
+  is a non-root user or `IS_SANDBOX` passed for routine runs only, and that
+  choice is still open.
 - What "modest scale" is in fires per week.
 - Whether routine results agree with API-path results on a paired run (see
   Consequences); until then they are not compared.
