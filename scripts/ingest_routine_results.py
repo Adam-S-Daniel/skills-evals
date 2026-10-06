@@ -583,9 +583,12 @@ def place(staged: Path, tree: Path) -> dict:
     return {"changed": "true" if plan else "false", "added": str(len(plan))}
 
 
-def resolve(event_name: str, event_path: str) -> dict:
+def resolve(event_name: str, event_path: str, branch_re: re.Pattern = BRANCH_RE,
+            shape: str = "claude/eval-<run id>") -> dict:
     """The branch (and, for a push, the sha) to ingest, from the event file
-    the runner wrote, as validated values only."""
+    the runner wrote, as validated values only. `branch_re`'s named groups
+    are returned beside them (the run id here; the scaffold gate passes its
+    own pattern, scripts/scaffold_real_work.py)."""
     try:
         with open(event_path, encoding="utf-8") as handle:
             event = json.load(handle)
@@ -608,10 +611,9 @@ def resolve(event_name: str, event_path: str) -> dict:
         branch, sha = (event.get("inputs") or {}).get("branch"), ""
     else:
         raise Rejected("unsupported event")
-    if not isinstance(branch, str) or not BRANCH_RE.fullmatch(branch):
-        raise Rejected("branch is not claude/eval-<run id>")
-    return {"branch": branch, "sha": sha,
-            "run_id": BRANCH_RE.fullmatch(branch).group("run_id")}
+    if not isinstance(branch, str) or not branch_re.fullmatch(branch):
+        raise Rejected(f"branch is not {shape}")
+    return {"branch": branch, "sha": sha, **branch_re.fullmatch(branch).groupdict()}
 
 
 def main(argv: list[str] | None = None) -> int:

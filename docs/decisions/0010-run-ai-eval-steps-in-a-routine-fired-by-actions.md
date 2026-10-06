@@ -317,6 +317,13 @@ UI.
    the badge's `results/`). Not yet built: the fire record decision 2
    matches a run id against, and the missing-push deadline.
 4. Two real-work fixtures (one writer, one CI-debug) with objective checks.
+5. The improvement loop's routine mode: the routine pushes an accepted
+   candidate to `claude/eval-improve-<run id>`, and
+   `.github/workflows/routine-improve-gate.yml` validates it and opens a
+   draft pull request in adam-agentskills once its credential is chosen
+   ([ADR 0005](0005-improvement-loop-reuses-skill-creator.md), "Routine
+   improve mode addendum"). The routine's saved prompt and the fire
+   workflow's mode input are not yet changed.
 
 ## Alternatives considered
 

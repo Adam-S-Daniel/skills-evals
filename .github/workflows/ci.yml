@@ -10,7 +10,8 @@ name: CI
 # built after the persistent/eval-results checkout; and routine-eval-fire.yml,
 # which test_issue_routine_eval_fire.py parses and runs; routine-eval-ingest.yml
 # and routine-eval-results-pushed.yml, which test_issue_routine_eval_ingest.py
-# parses; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
+# parses; routine-improve-gate.yml and routine-improve-pushed.yml, which
+# test_issue_routine_improve.py parses; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
 # parses to check it covers every seed manifest. Plus this file itself, so a change to
 # the filter is always exercised by the filter. README.md and DESIGN.md are
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
@@ -47,6 +48,8 @@ on:
     paths:
       - .github/workflows/ci.yml
       - .github/workflows/eval.yml
+      - .github/workflows/routine-improve-gate.yml
+      - .github/workflows/routine-improve-pushed.yml
       - .github/workflows/routine-eval-fire.yml
       - .github/workflows/routine-eval-ingest.yml
       - .github/workflows/routine-eval-results-pushed.yml
@@ -94,6 +97,8 @@ jobs:
           SALIENT_PATHS: |
             .github/workflows/ci.yml
             .github/workflows/eval.yml
+            .github/workflows/routine-improve-gate.yml
+            .github/workflows/routine-improve-pushed.yml
             .github/workflows/routine-eval-fire.yml
             .github/workflows/routine-eval-ingest.yml
             .github/workflows/routine-eval-results-pushed.yml
