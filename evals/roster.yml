@@ -19,27 +19,21 @@ arms:
   - id: "claude-sonnet-5"
     reason: >-
       held over from the previous roster: superseded by `claude-sonnet-5-5`,
-      the vendor default for the sonnet tier per claude-code-cli 2.1.284
-      (probed 2026-09-29T03:24:42Z), and inside its 1-week buffer — 0 of 1
-      complete ISO week(s) since that release are covered by the census
+      the vendor default for the sonnet tier per claude-code-cli 2.1.291
+      (probed 2026-10-06T13:54:43Z), but still 3.4% of rankable census usage
+      over the 1 complete week(s) 2026-W40 (at or above the 2% exit bar)
   - id: "claude-sonnet-5-5"
     reason: >-
-      vendor default for the sonnet tier per claude-code-cli 2.1.284 (probed
-      2026-09-29T03:24:42Z), seated with no cooling-off; the tier qualifies
-      by usage: `claude-sonnet-5` carries 46.7% of rankable census usage
+      vendor default for the sonnet tier per claude-code-cli 2.1.291 (probed
+      2026-10-06T13:54:43Z), seated with no cooling-off; the tier qualifies
+      by usage: `claude-sonnet-5-5` carries 26.0% of rankable census usage
       over the last 4 weeks (at or above the 10% entry bar)
-  - id: "claude-opus-5"
-    reason: >-
-      held over from the previous roster: superseded by `claude-opus-5-5`,
-      the vendor default for the opus tier per claude-code-cli 2.1.284
-      (probed 2026-09-29T03:24:42Z), and inside its 1-week buffer — 0 of 1
-      complete ISO week(s) since that release are covered by the census
   - id: "claude-opus-5-5"
     reason: >-
-      vendor default for the opus tier per claude-code-cli 2.1.284 (probed
-      2026-09-29T03:24:42Z), seated with no cooling-off; the tier qualifies
-      by usage: `claude-opus-5` carries 43.9% of rankable census usage over
-      the last 4 weeks (at or above the 10% entry bar)
+      vendor default for the opus tier per claude-code-cli 2.1.291 (probed
+      2026-10-06T13:54:43Z), seated with no cooling-off; the tier qualifies
+      by usage: `claude-opus-5-5` carries 53.0% of rankable census usage
+      over the last 4 weeks (at or above the 10% entry bar)
 judge:
   id: "claude-fable-5-1"
   reason: >-
@@ -60,31 +54,31 @@ preflight:
 # (human-reviewed, or CI-gated-automatic under `roster_mode: auto`).
 catalogue_seen:
   - id: "claude-fable-5"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-fable-5-1"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-haiku-4-5-20251001"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-4-5-20251101"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-4-6"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-4-7"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-4-8"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-5"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-opus-5-5"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-sonnet-4-5-20250929"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-sonnet-4-6"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-sonnet-5"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
   - id: "claude-sonnet-5-5"
-    last_seen: "2026-09-29"
+    last_seen: "2026-10-06"
 
 provenance:
   seeded: >-
@@ -94,10 +88,10 @@ provenance:
     roster_mode: auto), per ADR 0001 and ADR 0003
   from: >-
     the committed evals/roster.yml, the Models API catalogue fetched at
-    2026-09-29T03:24:44Z, and the usage census published at
-    2026-09-22T02:36:27Z; rendered from harness/roster.py's proposal
-  run_id: "36516990079"
-  eval_results_commit: "ea2f77f9f43a2577914447a8087cdc3ea672c054"
-  models_api_at: "2026-09-29T03:24:44Z"
-  census_at: "2026-09-22T02:36:27Z"
-generated_at: "2026-09-29T03:24:45Z"
+    2026-10-06T13:54:46Z, and the usage census published at
+    2026-10-05T16:37:09Z; rendered from harness/roster.py's proposal
+  run_id: "37474539000"
+  eval_results_commit: "ac89c293182e73a25313980e3e788215cdd107aa"
+  models_api_at: "2026-10-06T13:54:46Z"
+  census_at: "2026-10-05T16:37:09Z"
+generated_at: "2026-10-06T13:54:46Z"
