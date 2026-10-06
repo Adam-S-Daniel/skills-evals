@@ -49,6 +49,7 @@ skills-evals/
   harness/                 # runner + scorers (Python)
     run_eval.py
     guidance.py            # guidance subject: payload assembly, delivery, guard
+    seed_prep.py           # strip_agent_context: and deps: (real-work seeds)
     registries.yml         # registry name -> URL -> skill-directory layout
     scorers/
       objective.py
@@ -60,6 +61,7 @@ skills-evals/
     <skill>/
       fixture.yaml         # prompt, seed ref, objective checks, judge rubric
       seed/                # input workspace the agent starts from
+      checker/             # a repo_tests overlay: hidden tests, never in seed/
       seed/bin/<tool>      # symlink to ../../../../harness/fakes/<tool>, for
                            # a fixture whose `env:` puts it first on PATH
     guidance/<section id>/ # subject: guidance — a section, not a skill
@@ -126,6 +128,66 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   usage are summed; cost and `modelUsage` come from the last call, because
   a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
   load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
+
+- **`strip_agent_context:`** (optional, `true` or `false`; default `false`)
+  — for a real-work seed copied from a fleet repository. Before `deps:`
+  and `setup:` run, and before the seed commit, the harness
+  ([`harness/seed_prep.py`](harness/seed_prep.py)) removes the fleet's agent
+  context from the workspace root: the whole `.claude/` directory (settings,
+  the `skills-bootstrap.sh` and `fleet-memory.sh` SessionStart hooks, the
+  fleet copy of the guidance in `.claude/hooks/fleet-guidance.md`, any
+  committed skills) and `skills.lock`. In `AGENTS.md` and `CLAUDE.md` it keeps
+  the exact `## Repo-specific additions` line and everything below it, the
+  line `_agent-guidance`'s `sync.sh` cuts at. The fleet's two-line `CLAUDE.md`
+  bridge becomes a bare `@AGENTS.md`. A file carrying fleet-managed text but
+  no marker line is removed whole, and a repository's own `CLAUDE.md` with no
+  fleet text is kept. Arms run with `--setting-sources project`, so without
+  this a seed's `.claude/settings.json` would install skills into the
+  `without_skill` arm and write the guidance into a `none` arm's memory.
+  The strip is checked, not trusted: after `deps:` and `setup:`, on the
+  workspace as the agent gets it, a guard fails the arm with
+  `seed_not_stripped` if `.claude` or `skills.lock` is present, or if either
+  guidance file is a symlink, carries a fleet marker (`BEGIN MANAGED SECTION`,
+  `END MANAGED SECTION`, ``Managed by [`_agent-guidance`]``, `Managed by
+  _agent-guidance`) or has text above the marker line. A guidance arm strips
+  and guards its own copy of the seed the same way, and a failed guard there
+  ends the run with exit 2. Only the workspace root is touched: a nested
+  `AGENTS.md` can be a repository's own test data.
+- **`deps:`** (optional, skill subject only) — a list of 1 to 4
+  `{manager: npm, dir: <workspace-relative directory>}` entries (`dir`
+  defaults to `.`), installed during setup, before `setup:`, from the
+  repository's committed lockfile: `npm ci --ignore-scripts --no-audit
+  --no-fund` in that directory, which installs exactly the versions and
+  integrity hashes in `package-lock.json` (or `npm-shrinkwrap.json`) and
+  refuses a lockfile out of step with `package.json`. This step has network;
+  scoring does not. A missing lockfile, a missing `npm` on the arm's `PATH`, a
+  timeout or a nonzero exit fails the arm with a named `deps_failed` error and
+  the agent is never invoked. Each entry is bounded by `setup_timeout_s`.
+  `npm` is the only manager so far; any other value is refused at load. The
+  installed tree is part of the workspace the agent can edit; ADR 0006's
+  threat model (the agent may modify the code a check runs) applies to it.
+
+### Real-work fixture decisions (Adam, 2026-10-06)
+
+From the owner's answers to the open questions in the real-work fixture
+design, recorded verbatim:
+
+- **Q1, the 60 s cap:** "Select tests (Recommended)". `command_succeeds`
+  keeps its 60 s cap; a fixture runs only the pull request's own selected
+  test files or cases.
+- **Q2, dependencies:** "Fetch in setup (Recommended)". A fixture's setup
+  installs dependencies from the repository's lockfile, pinned, with network.
+- **Q5, the seed's agent context:** "Keep repo-specific (Recommended)". Seeds
+  strip the fleet-managed guidance (everything above `## Repo-specific
+  additions` in `AGENTS.md` and `CLAUDE.md`, and their fleet copies) and the
+  agent settings and hooks, but keep each repository's own "Repo-specific
+  additions" section.
+- **Q7, the primary efficiency KPI:** "Tokens (Recommended)". Nothing here
+  implements accept or reject on it yet.
+
+Q3 (private repositories and Class C sources), Q4 (one fixture for many
+subjects), Q6 (where the scaffolder runs) and Q8 (training cutoffs) remain
+open.
 
 ### Ordered invocation objective check
 
@@ -278,6 +340,56 @@ runs. This isolation does not prevent reading host files, absolute binary
 invocation, deliberate PATH evasion (including an absolute CLI invocation),
 new-session descendants, or disk/CPU exhaustion. It is not a full sandbox.
 No fixture is added; existing fixture scoring is unchanged.
+
+### Hidden repository tests objective check
+
+| Check type | Constraints | Evidence |
+| --- | --- | --- |
+| `repo_tests` | `overlay` (a directory in the fixture, outside `seed/`); nonempty string array `argv`; nonempty `fail_to_pass` and optional `pass_to_pass` lists of tests; optional `timeout_s` per test (default 30, maximum 60) | Each selected test exits 0 over a scratch copy of the final workspace with the overlay laid on top |
+
+A real-work fixture is scored by the tests its pull request added, and the
+agent must not see them. They live in the fixture directory, in the
+`overlay` directory, never in `seed/`. At scoring time
+[`harness/scorers/repo_tests.py`](harness/scorers/repo_tests.py) copies the
+final workspace to a scratch directory, lays the overlay's files over the
+copy at the same relative paths (replacing whatever the agent left there,
+and never writing through a symlink the agent planted), and runs
+`argv + <test>` once per selected test. A test is a string, or a list of
+strings, appended to `argv`, for example
+`argv: [python3, -m, pytest, -q, -p, no:cacheprovider]` with
+`fail_to_pass: ["test/test_x.py::test_partial_read"]`. Every
+`fail_to_pass` and `pass_to_pass` test must exit 0. One process per test is
+what keeps each one under the 60 s cap (decision Q1 above) and decides each
+test by its own exit code, never by parsing a runner's output. The agent's
+own workspace is never written.
+
+Each process gets `command_succeeds`' isolation: fixed interpreters or a
+workspace entrypoint (resolved inside the scratch copy), no shell, a fresh
+constant environment per test, best-effort `unshare --net`, and a detail
+that names the counts, the network state and each failed test with its exit
+status (`exit=<n>`, `timeout`, `spawn_failed`), never program output.
+
+Refused, both at fixture load (exit 2, before any arm) and again at scoring
+time (a failed check): an unknown or missing key; an overlay that is absolute,
+climbs out with `..`, is a symlink, is the fixture directory itself, or is
+inside or contains `seed/`; an overlay holding a symlink, a non-regular file,
+a `.git/` path, more than 128 files or more than 4 MiB; more than 16
+selected tests; a test argument over 512 characters; and a timeout above
+60 s. The check needs the fixture directory, so `run_checks` hands it the
+seed path, as it does for `files_unchanged`.
+
+```yaml
+strip_agent_context: true
+deps:
+  - manager: npm
+    dir: e2e
+objective_checks:
+  - id: hidden-tests
+    type: repo_tests
+    overlay: checker
+    argv: [node, --test]
+    fail_to_pass: [test/test-dependabot-config-health.js]
+```
 
 ### YAML front-matter objective check (`harness/scorers/objective.py`)
 

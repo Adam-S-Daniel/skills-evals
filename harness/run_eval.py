@@ -59,6 +59,7 @@ from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
+import seed_prep  # noqa: E402
 
 
 FIXTURE_FILE = "fixture.yaml"
@@ -929,6 +930,11 @@ def run_setup(workspace: Path, fixture: dict) -> dict | None:
     timeout = fixture.get("setup_timeout_s", 60)
     guidance.check_timeout(timeout, "run_eval.run_setup(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
+    # `deps:` first, so a `setup:` command can use what it installed.
+    deps_error = seed_prep.install_deps(
+        workspace, fixture, agent_env(workspace, fixture.get("env")), timeout)
+    if deps_error is not None:
+        return deps_error
     setup_cmd = fixture.get("setup")
     if not setup_cmd:
         return None
@@ -1351,7 +1357,11 @@ def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
         if fixture is not None:
-            setup_result = run_setup(workspace, fixture)
+            # `strip_agent_context:` before setup; its guard after, on the
+            # workspace exactly as the agent gets it (harness/seed_prep.py).
+            seed_prep.prepare_seed(workspace, fixture)
+            setup_result = (run_setup(workspace, fixture)
+                            or seed_prep.seed_guard(workspace, fixture))
             if setup_result is not None:
                 raise SetupFailedError(workspace, setup_result)
         _git("init", "-q", cwd=workspace)
@@ -2743,6 +2753,10 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             path.mkdir(parents=True)
         if seed.is_dir():
             shutil.copytree(seed, workspace, dirs_exist_ok=True)
+        seed_prep.prepare_seed(workspace, fixture)
+        seed_error = seed_prep.seed_guard(workspace, fixture)
+        if seed_error is not None:
+            raise guidance.GuidanceError(seed_error["detail"])
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "--allow-empty", "-m", "seed", cwd=workspace)
@@ -3401,6 +3415,7 @@ def main() -> int:
             validate_mapping_keys(fixture, eval_dir / FIXTURE_FILE)
             validate_timeouts(fixture, eval_dir / FIXTURE_FILE)
             validate_followups(fixture, eval_dir / FIXTURE_FILE)
+            seed_prep.validate_fixture(fixture, eval_dir)
         except MappingFixtureKeyError as exc:
             # A malformed `judge:` is #81's `invalid_judge_block` — named in
             # stdout AND recorded as report.md plus one summary.json per arm, so
@@ -3627,7 +3642,9 @@ def main() -> int:
                 with tempfile.TemporaryDirectory() as tmp:
                     workspace = Path(tmp) / "ws"
                     shutil.copytree(seed, workspace)
-                    setup_error = run_setup(workspace, fixture)
+                    seed_prep.prepare_seed(workspace, fixture)
+                    setup_error = (run_setup(workspace, fixture)
+                                   or seed_prep.seed_guard(workspace, fixture))
                     if setup_error is not None:
                         print(f"setup failed: {setup_error['detail']}")
                         return 2
