@@ -1,7 +1,10 @@
 # ADR 0005: The improvement loop reuses skill-creator and measures through local_eval
 
-- **Status:** proposed (2026-10-04). Built and tested with fakes; one
-  watched real run on 2026-10-05 (see the first-trial addendum).
+- **Status:** accepted (2026-10-06, Adam), with two amendments (see
+  [Acceptance amendments (2026-10-06)](#acceptance-amendments-2026-10-06)).
+  Proposed 2026-10-04. Built and tested with fakes; watched real runs on
+  2026-10-05 and 2026-10-06 (see the first-trial and serial trigger eval
+  addenda). Decision items 4 and 6 are superseded in part, marked in place.
 - **Issues:** [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71)
   (the improvement loop; this is its smallest slice),
   [#232](https://github.com/Adam-S-Daniel/skills-evals/issues/232) (reuse
@@ -10,7 +13,8 @@
   loop for guidance sections, which must extend this script, not fork it).
 - **Deciders:** Adam, 2026-10-04: "I would like any pertinent built in or
   anthropic-published Claude skills or plugins related to evals to be
-  leveraged where appropriate."
+  leveraged where appropriate." Adam, 2026-10-06, accepting the record with
+  the two amendments below.
 
 ## Context
 
@@ -91,6 +95,11 @@ this harness or it is not measured the way every other number here is.
    objective pass rate, or judge mean divided by 10 when objective is equal).
    The fixed holdout must not regress on either score. Any errored or
    unscored fixture, or missing expected judge score, rejects as inconclusive.
+   **Superseded in part (2026-10-06):** the acceptance basis becomes
+   real-work fixtures plus a token and cost metric (Amendment 2). This
+   decision's objective and judge rule is what the code implements today
+   (see "Not yet implemented"). The trigger half only picks the candidate
+   description; it does not decide acceptance.
 5. **Output stays local.** `improvements/<skill>/<ts>.json` is written every
    time (rejections are the high-value record), `<ts>.patch` whenever a
    candidate existed (rooted at the registry, `git apply`-able), and
@@ -102,6 +111,12 @@ this harness or it is not measured the way every other number here is.
    its numbers are not badge input, and it never runs in CI. There is no
    workflow: #71 says scheduling waits for three merged human-reviewed pull
    requests from it, and dispatch waits for the same evidence.
+   **Superseded in part (2026-10-06):** "never runs in CI" and "there is no
+   workflow" no longer hold for routine runs. The run path moves to the
+   ADR 0010 routine (Amendment 1). What stands: the numbers are not badge
+   input, and scheduling still waits for the three-PR gate
+   ([ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md),
+   decision 4).
 7. **Every model call goes through one injectable `Runner`** (`run_eval`,
    `run_description_loop`, `propose`), so `test/issues/test_issue_71.py` runs
    the whole pipeline offline with a fake, and `--dry-run` prints the plan
@@ -332,3 +347,77 @@ the descriptions.
 - Records written with `num_workers` above 1 (the first real run's
   `description_half`) undercount triggers and should not be compared with
   serial ones.
+
+## Acceptance amendments (2026-10-06)
+
+Adam, 2026-10-06, accepting this record, verbatim: "I approve ADR 0005 with
+the amendments you recommended:
+1. Move the run path to the ADR 0010 routine with auto permission mode.
+2. Record real-work fixtures plus a token/cost metric as the acceptance basis,
+instead of trigger rate alone."
+
+### Amendment 1: the run path is the ADR 0010 routine, in auto permission mode
+
+The loop's measurement is to run in the eval runner routine described by
+[ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
+(fired by Actions through
+[`routine-eval-fire.yml`](../../.github/workflows/routine-eval-fire.yml)),
+not only under the operator's own login. Arms and the judge launch with
+`--permission-mode auto`, which is the harness default since
+[PR #304](https://github.com/Adam-S-Daniel/skills-evals/pull/304). The CLI
+refuses `bypassPermissions` as root in the routine sandbox; that auto mode
+runs as root there is expected but, per ADR 0010 ("Resulting direction" and
+its open questions), not yet shown. The baseline and candidate measurements
+already share one mode, because both are built by the same `run_eval_argv`
+helper and pass no `--permission-mode`
+(`scripts/propose_skill_edit.py:805-810`).
+
+This supersedes the "local exhibit ... never runs in CI ... no workflow"
+framing of decision 6 for routine runs only. Decisions 3 and 4 of
+[ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decisions-2026-10-06)
+carry over unchanged: routine results stay a local exhibit and do not feed
+the badge, and no scheduled loop runs until three human-reviewed pull
+requests from it have merged.
+
+### Amendment 2: the acceptance basis is real-work fixtures plus a token/cost metric
+
+A candidate is to be judged on how the agent does real work, with an
+efficiency metric beside it, instead of on the objective and judge rule of
+decision 4 alone. The basis is:
+
+- **Real-work fixtures**, drawn from merged fleet pull requests and admitted
+  only when they carry a FAIL_TO_PASS test: the design and checker are in
+  [PR #303](https://github.com/Adam-S-Daniel/skills-evals/pull/303) and the
+  read-only miner is
+  [PR #305](https://github.com/Adam-S-Daniel/skills-evals/pull/305)
+  (merged as `9086eef4`).
+- **A token and cost metric.** Adam chose tokens as the primary efficiency
+  KPI: Q7, "Tokens (Recommended)" (`DESIGN.md:185`, in "Real-work fixture
+  decisions (Adam, 2026-10-06)"). The per-arm efficiency aggregates the
+  decision can read, with the with-vs-without delta, are in
+  [PR #301](https://github.com/Adam-S-Daniel/skills-evals/pull/301).
+
+One serial trial, run by the orchestrating session at skills-evals `6817d6d`
+and not recorded in the addenda above, ended with the best description equal
+to the original after 183 skill-creator calls (three iterations, reported as
+10/12 and 7/8, 10/12 and 6/8, then 12/12 and 6/8). Its raw record is not in
+this repository.
+
+### Not yet implemented
+
+Both are as of `origin/main` at `ec9cf33`.
+
+- **`propose_skill_edit.py`'s acceptance does not read tokens.** `decide`
+  compares objective pass rate and judge mean only
+  (`scripts/propose_skill_edit.py:862-921`), and the per-fixture metrics it
+  reads carry `passed`, `total` and `judge_mean`
+  (`scripts/propose_skill_edit.py:813-848`). The trigger half records
+  `tokens` and `cost_usd` as null (`scripts/propose_skill_edit.py:129-132`,
+  `:596-599`). PR #301 says the same of its aggregates: tokens are not wired
+  into accept/reject yet, and `DESIGN.md` says so of Q7. Decision 4's objective and judge
+  rule is therefore what the code implements today; this amendment records
+  the intended basis, not a behavior change.
+- **The loop is not wired into the routine.** No file under `.github/`
+  mentions `scripts/propose_skill_edit.py`, and `routine-eval-fire.yml`
+  fires a fixture, arms and trials (its payload carries `run_id`, `fixture`,
+  `arms`, `trials`), not the improvement loop. The loop still runs from an operator's shell.
