@@ -1,0 +1,113 @@
+{
+  "skill": "embeddable-tool-pages",
+  "arm": "with_skill",
+  "timestamp": "20261006T140441Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1373937,
+    "num_turns": 15,
+    "duration_ms": 37915,
+    "usage": {
+      "input_tokens": 28,
+      "cache_creation_input_tokens": 12697,
+      "cache_read_input_tokens": 391176,
+      "output_tokens": 2736,
+      "output_tokens_details": {
+        "thinking_tokens": 240
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 12697
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 365,
+          "cache_read_input_tokens": 30796,
+          "cache_creation_input_tokens": 791,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 791,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "asset-copy",
+      "passed": true,
+      "detail": "assets/tools/unit-converter/index.html: digest matches"
+    },
+    {
+      "id": "tool-front-matter",
+      "passed": true,
+      "detail": "front matter satisfies all constraints"
+    },
+    {
+      "id": "tool-entry-listing",
+      "passed": true,
+      "detail": "_tools/ matches the expected listing (2 entries)"
+    },
+    {
+      "id": "post-embed",
+      "passed": true,
+      "detail": "_posts/2026-01-01-example.md matches"
+    },
+    {
+      "id": "source-unchanged",
+      "passed": true,
+      "detail": "unchanged (seed/new-tool/index.html)"
+    },
+    {
+      "id": "existing-tool-unchanged",
+      "passed": true,
+      "detail": "unchanged (_data/tool_sources/existing.yml, _tools/existing.md, assets/tools/existing/index.html)"
+    },
+    {
+      "id": "site-wiring-unchanged",
+      "passed": true,
+      "detail": "unchanged (_config.yml, _includes/header.html, _layouts/default.html, _layouts/tool.html, admin/collections.site.yml, tools/index.html)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 9,
+        "rationale": "The diff adds a `_tools/unit-converter.md` entry with the collection's front matter (title, slug, description, featured, embed_src) so it renders at /tools/unit-converter/ via the existing collection layout, copies the static app to assets/tools/unit-converter/index.html, and inserts a real iframe to /assets/tools/unit-converter/ inside html-embed:start/end comments directly below the intro paragraph with a link to /tools/unit-converter/; only the unverified Jekyll build and the unverifiable byte-identical claim keep it from a 10."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "Only the three required files changed; the post's other text, the source seed app, the automation-managed existing tool, and site config were left untouched."
+      },
+      {
+        "name": "Explanation",
+        "score": 4,
+        "rationale": "The reply honestly states that Jekyll was unavailable and the build was not run, but it does not explain why one static app is shared between the tool page and the post, does not distinguish the CMS preview from a live PR preview where iframe scripts actually execute, and does not flag that a first-time tool addition needs visual-regression and new-page manual review."
+      }
+    ],
+    "overall": 7.7
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.291 (Claude Code)"
+  },
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "n": 1
+}
