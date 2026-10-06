@@ -20,3 +20,4 @@ with, so the next session can tell a deliberate constraint from an accident.
 | [0007](0007-parse-config-and-staged-shell-guards.md) | Parse configuration values and staged shell guards before scoring | accepted (2026-10-04); amended 2026-10-05 |
 | [0008](0008-run-ready-fixtures-on-the-weekly-schedule.md) | Run ready fixtures on the weekly schedule | proposed (2026-10-04) |
 | [0009](0009-fixture-followup-turns.md) | A fixture may send scripted follow-up turns, identically in both arms | proposed (2026-10-05) |
+| [0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) | Run the AI steps of skill and guidance evals in a routine fired by Actions, and measure agent effectiveness on real work | proposed (2026-10-06) |
