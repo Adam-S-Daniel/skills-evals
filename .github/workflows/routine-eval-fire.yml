@@ -217,10 +217,12 @@ jobs:
               "$response" 2>/dev/null || echo "response shape: unavailable"
           }
           # Fail closed on any response shape the docs do not describe. The
-          # docs show `session_<X>` for both the id and the URL; the first
-          # real fire (run 37518720233) answered an id of `cse_<X>` with the
-          # URL on `session_<X>`, so accept either id prefix and require the
-          # URL to be built from the same <X>.
+          # docs show `session_<X>` for both the id and the URL. The first
+          # real fire (run 37518720233) was refused with the body unseen;
+          # the list_runs API shows that run as `cse_<X>` with its URL on
+          # `session_<X>`, so the fire response is inferred to use the same
+          # id. Accept either id prefix and require the URL to be built from
+          # the same <X>.
           if ! session_key="$(jq -er '
                 select(.type == "routine_fire")
                 | .claude_code_session_id

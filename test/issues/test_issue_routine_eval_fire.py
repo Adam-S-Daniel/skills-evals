@@ -311,9 +311,11 @@ class FireStepTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_a_cse_id_with_a_session_url_is_accepted(self):
-        # The first real fire (run 37518720233) answered an id of cse_<X>
-        # beside a URL on session_<X>. The docs example shows session_<X>
-        # for both; the fix accepts either id prefix over the same <X>.
+        # The first real fire (run 37518720233) was refused with its body
+        # unseen; list_runs shows that run as cse_<X> with a URL on
+        # session_<X>, so the fire response is inferred to match. The docs
+        # example shows session_<X> for both; the fix accepts either id
+        # prefix over the same <X>.
         body = json.dumps({
             "type": "routine_fire",
             "claude_code_session_id": "cse_01TestOnlyAbc",
@@ -424,6 +426,16 @@ class FireStepTests(unittest.TestCase):
                 "claude_code_session_id": "BODY-SENTINEL; rm -rf",
                 "claude_code_session_url": ok_url}),
                 ["id_type=string", "id_length=21", "id_prefix=other"], []),
+            "uppercase_prefix": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "BODY-SENTINEL_x",
+                "claude_code_session_url": ok_url}),
+                ["id_length=15", "id_prefix=other"], []),
+            "eleven_letter_prefix": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "abcdefghijk_x",
+                "claude_code_session_url": ok_url}),
+                ["id_length=13", "id_prefix=other"], ["id_prefix=abcdefghijk_"]),
             "array_body": ('["BODY-SENTINEL"]',
                 ["body_is_json=yes", "top_level_type=array",
                  "type_is_routine_fire=missing", "top_level_keys=0",
