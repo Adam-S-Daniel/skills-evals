@@ -1,0 +1,205 @@
+# Reusable ATOMIC down-sync helper. Bumps EVERY cms-platform reference a
+# consumer pins — `platform_ref:` inputs + `platform.lock`, the reusable-workflow
+# `uses:@<tag>` pins, the `cms-platform-theme` Gemfile `tag:`, and `Gemfile.lock`
+# (`tag:` + git `revision:`), plus any composite-action `@<sha>` pin — to the
+# latest cms-platform release, in ONE PR. So the single-version pin-consistency
+# guard (#29) passes on this PR alone.
+#
+# It ALSO seeds any workflow caller that release newly made platform-dictated:
+# if examples/site/.github/workflows/ gained a file at the new ref that the
+# consumer doesn't yet carry, it's copied in (re-pinned to the new ref) so the
+# workflow-SET-parity half of the same guard (#54) also passes on this PR
+# alone. Previously a newly-dictated caller had to be hand-added AFTER the bump
+# PR's pin-consistency check failed with `workflow-set: MISSING
+# (platform-dictated)` — observed live when v0.1.54 added
+# dependabot-rearm-sweep.yml: both adamdaniel.ai's and jodidaniel.com's bump
+# PRs failed and needed a manual follow-up commit to unblock. A consumer that
+# once deliberately DELETED a dictated caller gets it re-seeded too — the
+# checker has no such opt-out (it fails MISSING unconditionally), so seeding
+# is always the correct move, never a false-positive graft-back. This only
+# ever ADDS a wholly-absent caller; a file that exists but has drifted CONTENT
+# is untouched (that's dev-hooks-sync / the CUR->LATEST rewrite's job — #63
+# content parity catches that class separately).
+#
+# (Previously this bumped ONLY `platform_ref:` and left the `uses:@` pins + the
+# theme gem to Dependabot's piecemeal PRs — which breaks the single-version
+# guard until every one lands. Closing that gap is issue #13.)
+name: Platform bump (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      platform_repo: { type: string, default: Adam-S-Daniel/cms-platform }
+    secrets:
+      gh_token: { required: false }
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      # The bump rewrites .github/workflows/* (the `uses:@` pins + `platform_ref:`
+      # inputs), so the PUSH needs `workflows` permission. The default Actions
+      # GITHUB_TOKEN's GitHub App lacks it — git rejects the push with "refusing
+      # to allow a GitHub App to create or update workflow ... without 'workflows'
+      # permission". Check out with the caller's PAT (CMS_PLATFORM_PAT —
+      # fine-grained Contents + PR + Workflows: write) so THAT token is what git
+      # persists as the push credential. (the live half of #13)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6.0.2 (2026-01-09)
+        with:
+          token: ${{ secrets.gh_token || github.token }}
+      - name: Bump every cms-platform reference to the latest release (atomic)
+        env:
+          GH_TOKEN: ${{ secrets.gh_token || github.token }}
+          PLATFORM: ${{ inputs.platform_repo }}
+        run: |
+          set -euo pipefail
+          LATEST=$(gh release view --repo "$PLATFORM" --json tagName -q .tagName 2>/dev/null || echo "")
+          [ -n "$LATEST" ] || { echo "no release on $PLATFORM yet"; exit 0; }
+          CUR=$(sed -n -E 's/^platform_ref:[[:space:]]*//p' platform.lock 2>/dev/null || echo "")
+          [ "$LATEST" = "$CUR" ] && { echo "already on $LATEST"; exit 0; }
+
+          # Resolve the release tag -> its COMMIT sha (deref an annotated tag) for
+          # the Gemfile.lock git `revision:` and any composite-action `@<sha>` pin.
+          NEW_SHA=$(gh api "repos/$PLATFORM/git/refs/tags/$LATEST" --jq '.object.sha')
+          if [ "$(gh api "repos/$PLATFORM/git/refs/tags/$LATEST" --jq '.object.type')" = "tag" ]; then
+            NEW_SHA=$(gh api "repos/$PLATFORM/git/tags/$NEW_SHA" --jq '.object.sha')
+          fi
+          OLD_SHA=$(sed -n -E 's/^[[:space:]]*revision:[[:space:]]*//p' Gemfile.lock 2>/dev/null | head -1 || echo "")
+
+          # The pin-bearing files (everything pin-consistency checks). By the
+          # single-version invariant the CURRENT version string appears ONLY as a
+          # current pin, so a literal CUR->LATEST replace is safe; OLD_SHA->NEW_SHA
+          # moves the gem revision + any SHA-pinned composite. A composite-action
+          # SHA pin equals the release commit SHA, so the same OLD->NEW covers it.
+          TARGETS=()
+          [ -f platform.lock ]  && TARGETS+=("platform.lock")
+          [ -f Gemfile ]        && TARGETS+=("Gemfile")
+          [ -f Gemfile.lock ]   && TARGETS+=("Gemfile.lock")
+          while IFS= read -r -d '' f; do TARGETS+=("$f"); done \
+            < <(find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0 2>/dev/null || true)
+
+          for f in "${TARGETS[@]}"; do
+            [ -f "$f" ] || continue
+            CUR="$CUR" LATEST="$LATEST" perl -i -pe 's/\Q$ENV{CUR}\E/$ENV{LATEST}/g if length $ENV{CUR};' "$f"
+            if [ -n "$OLD_SHA" ]; then
+              OLD_SHA="$OLD_SHA" NEW_SHA="$NEW_SHA" perl -i -pe 's/\Q$ENV{OLD_SHA}\E/$ENV{NEW_SHA}/g;' "$f"
+            fi
+          done
+
+          # First-adoption fallback: a repo with no platform.lock yet.
+          if [ ! -f platform.lock ]; then
+            printf 'platform_repo: %s\nplatform_ref: %s\n' "$PLATFORM" "$LATEST" > platform.lock
+          fi
+
+          # Seed any workflow caller this release newly made platform-dictated
+          # (issue: v0.1.54 added dependabot-rearm-sweep.yml and every consumer's
+          # bump PR failed pin-consistency's workflow-set-parity check until it
+          # was hand-added). The canonical dictated set lives at
+          # examples/site/.github/workflows/ in the platform repo, read AT THE
+          # NEW ref so it reflects exactly what pin-consistency will check for
+          # once this PR's platform.lock lands.
+          mapfile -t DICTATED < <(
+            gh api "repos/$PLATFORM/contents/examples/site/.github/workflows?ref=$LATEST" \
+              --jq '.[] | select(.type=="file") | .name' 2>/dev/null | grep -E '\.ya?ml$' || true
+          )
+          SEEDED=()
+          for name in "${DICTATED[@]}"; do
+            dest=".github/workflows/$name"
+            # Only a wholly-MISSING caller is seeded. A file that already exists
+            # is left alone even if its content has drifted from the canonical
+            # template — that's dev-hooks-sync / content-parity (#63) territory,
+            # not this bump's job. This also covers a consumer that deliberately
+            # deleted a dictated caller: the pin-consistency guard has no
+            # opt-out for that (it fails workflow-set: MISSING unconditionally),
+            # so re-seeding here can never be wrong.
+            [ -f "$dest" ] && continue
+            mkdir -p .github/workflows
+            gh api "repos/$PLATFORM/contents/examples/site/.github/workflows/$name?ref=$LATEST" \
+              --jq '.content' | base64 -d > "$dest"
+            # Stamp the seeded file's platform-ref pin(s) to $LATEST. Can't reuse
+            # the CUR->LATEST replace above: CUR is the CONSUMER's old ref, but
+            # the example's own embedded pin can lag well behind the release
+            # being bumped to (examples/site is only re-pinned when THAT file's
+            # content changes, not on every tag — this repo's own examples span
+            # v0.1.1..v0.1.52 today), so stamp unconditionally to whatever
+            # version is actually there. Covers both ref shapes the
+            # pin-consistency checker recognizes: a reusable `uses:@vX.Y.Z` and
+            # a composite action's trailing `# vX.Y.Z` comment (defensive; no
+            # example currently uses the latter).
+            LATEST="$LATEST" perl -i -pe '
+              s{(\Q$ENV{PLATFORM}\E/\.github/(?:workflows|actions)/[^@[:space:]]+\@)v[0-9]+(?:\.[0-9]+){0,3}}{$1$ENV{LATEST}}g;
+              s{(\Q$ENV{PLATFORM}\E/\.github/actions/[^[:space:]]+\s+#\s*)v[0-9]+(?:\.[0-9]+){0,3}}{$1$ENV{LATEST}}g;
+            ' "$dest"
+            SEEDED+=("$name")
+          done
+          if [ "${#SEEDED[@]}" -gt 0 ]; then
+            printf 'seeded %d newly platform-dictated workflow(s): %s\n' "${#SEEDED[@]}" "${SEEDED[*]}"
+          fi
+
+          # git diff --quiet alone is blind to a brand-new UNTRACKED file (a
+          # seeded caller, or a first-adoption platform.lock) — it only compares
+          # tracked content. Fold in `git status --porcelain` so an add-only
+          # change still trips the "there IS something to bump" path.
+          if git diff --quiet && [ -z "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "no changes"
+            exit 0
+          fi
+          BRANCH="platform/bump-$LATEST"
+          git config user.name  cms-platform-bot
+          git config user.email cms-platform-bot@users.noreply.github.com
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore: bump cms-platform to $LATEST"
+          git push -f origin "$BRANCH"
+          SEED_NOTE=""
+          if [ "${#SEEDED[@]}" -gt 0 ]; then
+            SEED_NOTE=" Seeded newly platform-dictated workflow caller(s): ${SEEDED[*]}."
+          fi
+          gh pr create --base "$GITHUB_REF_NAME" --head "$BRANCH" \
+            --title "Bump cms-platform to $LATEST" \
+            --body "Atomic single-version bump of every cms-platform reference (\`platform_ref:\` + \`platform.lock\`, the \`uses:@\` reusable-workflow pins, the \`cms-platform-theme\` Gemfile \`tag:\`, and \`Gemfile.lock\` \`tag:\` + \`revision:\`) to $LATEST. The pin-consistency guard (#29) passes on this PR alone.${SEED_NOTE}" \
+          || gh pr edit "$BRANCH" --body "Bump cms-platform to $LATEST.${SEED_NOTE}"
+          # Unattended landing: the bump is mechanical and CI-gated, so enable
+          # auto-merge and let the site's required checks decide. Runs on the
+          # caller's PAT (gh_token) — a GITHUB_TOKEN-created PR wouldn't even
+          # trigger CI. FAIL-OPEN: if the repo hasn't enabled auto-merge (or a
+          # ruleset forbids it), the PR simply stays open for a human — the
+          # pre-chaining behavior for every bump PR.
+          gh pr merge --auto --squash "$BRANCH" \
+            || echo "::warning::could not enable auto-merge on the bump PR for $LATEST — merge it manually (is 'Allow auto-merge' enabled on this repo?)"
+
+          # Close superseded `platform/bump-*` PRs. Every bump PR is an
+          # ATOMIC absolute rewrite of every pinned reference (see the file
+          # header) — it fully supersedes whatever an OLDER bump PR proposed,
+          # so once THIS run's PR is open (or updated) above, any OTHER open
+          # `platform/bump-*` PR is stale noise, not a stack to reconcile.
+          # Left alone, these pile up every time a release is cut before a
+          # consumer merges the previous bump PR (observed live: a consumer
+          # accrued 4 open bump PRs at once). FAIL-OPEN, same rationale as
+          # the auto-merge line just above: a stale PR left open by mistake
+          # is a cosmetic nuisance, never worth failing the bump. Runs on
+          # the same caller PAT (GH_TOKEN, already set for this step) as
+          # every other `gh` call here — no new token introduced.
+          NEW_PR=$(gh pr view "$BRANCH" --json number --jq .number 2>/dev/null || echo "")
+          if [ -n "$NEW_PR" ]; then
+            mapfile -t OLD_BUMP_PRS < <(
+              gh pr list --state open --json number,headRefName \
+                --jq ".[] | select(.headRefName | startswith(\"platform/bump-\")) | select(.headRefName != \"${BRANCH}\") | .number" \
+              2>/dev/null || true
+            )
+            for old_num in "${OLD_BUMP_PRS[@]}"; do
+              [ -z "$old_num" ] && continue
+              # --delete-branch is safe here: the jq filter above only ever
+              # matches `platform/bump-*` branches, and those branches are
+              # produced exclusively by this bump step, never hand-authored.
+              gh pr close "$old_num" --delete-branch --comment \
+                "Superseded by the bump to $LATEST (#${NEW_PR}) — this older bump PR is a stale absolute-rewrite and is safe to drop." \
+                || echo "::warning::could not close superseded bump PR #${old_num} — close it manually"
+            done
+          else
+            echo "::warning::could not resolve the PR number for $BRANCH — skipping superseded bump-PR cleanup"
+          fi

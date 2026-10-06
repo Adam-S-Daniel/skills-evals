@@ -1,0 +1,287 @@
+# Reusable production deploy for platform sites.
+#
+# A consuming site calls this from a thin wrapper that owns the `on: push`
+# trigger + paths-ignore (see examples/site/.github/workflows/deploy-production.yml).
+# Builds Jekyll, syncs `_site/` to the site's production bucket, invalidates
+# CloudFront, and registers a GitHub Deployment so admin/deploy-status-pill.js
+# can surface deploy state in the editor.
+name: Deploy to Production (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      apex_domain:
+        description: "Site apex domain, e.g. example.com (no scheme)."
+        required: true
+        type: string
+      prod_bucket:
+        description: "S3 bucket name for the production site."
+        required: true
+        type: string
+      media_archive_bucket:
+        description: >
+          Optional private S3 bucket holding archived media PDFs. When set, the
+          deploy copies each `_media` entry carrying `pdf_public: true` out of
+          it into the built site. Entries left unticked are never copied, so
+          their PDF is not on the public site at all -- not merely unlinked.
+          Empty (the default) skips the whole thing, checkout included.
+        required: false
+        type: string
+        default: ""
+      platform_repo:
+        description: "owner/name of the platform repo holding the helper scripts."
+        required: false
+        type: string
+        default: Adam-S-Daniel/cms-platform
+      platform_ref:
+        description: "Tag/sha of the platform repo to fetch scripts from (pin to the same ref as this workflow)."
+        required: false
+        type: string
+        default: main
+      aws_region:
+        description: "AWS region for S3 + CloudFront."
+        required: false
+        type: string
+        default: us-east-1
+      ruby_version:
+        required: false
+        type: string
+        default: "3.2"
+    secrets:
+      AWS_ROLE_ARN:
+        description: "OIDC role to assume for S3/CloudFront."
+        required: true
+      PRODUCTION_CLOUDFRONT_ID:
+        description: "Production CloudFront distribution id (optional; skips invalidation when empty)."
+        required: false
+
+permissions:
+  contents: read
+  id-token: write   # needed for AWS OIDC authentication
+  deployments: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run
+# in-progress and latest queued. We do NOT cancel in-progress runs, so that
+# a production deploy is never interrupted mid-flight. (Scoped per-repo, so
+# each site's deploys are independent.)
+concurrency:
+  group: "production"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      PRODUCTION_BUCKET: ${{ inputs.prod_bucket }}
+      APEX_DOMAIN: ${{ inputs.apex_domain }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.PRODUCTION_CLOUDFRONT_ID }}
+      MEDIA_ARCHIVE_BUCKET: ${{ inputs.media_archive_bucket }}
+
+    steps:
+      - name: Register GitHub Deployment (in_progress)
+        id: deploy-start
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const { data: deployment } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: [],
+              production_environment: true,
+              description: 'deploy-production.yml run',
+            });
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.id,
+              state: 'in_progress',
+              log_url: runUrl,
+              description: 'Building + syncing to S3 + invalidating CloudFront',
+            });
+            core.setOutput('deployment_id', deployment.id);
+            core.notice(`Registered production deployment ${deployment.id} (in_progress)`);
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0   # needed for last-modified dates in Jekyll
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9
+        with:
+          ruby-version: ${{ inputs.ruby_version }}
+          bundler-cache: true   # runs `bundle install` and caches gems
+
+      - name: Calculate reading times
+        run: |
+          # Auto-calculate reading_time for every post that has `reading_time`
+          # left blank (or 0). We write the value into a _data file consumed
+          # by the Liquid templates, keeping the source Markdown unmodified.
+          mkdir -p _data
+          echo "# Auto-generated — do not edit" > _data/reading_times.yml
+          # `nullglob` expands an empty `_posts/*.md` to nothing rather than
+          # the literal pattern, so a brand-new repo with no posts doesn't
+          # emit a bogus reading-time entry.
+          shopt -s nullglob
+          for f in _posts/*.md; do
+            slug=$(basename "$f" .md)
+            # shellcheck disable=SC2002
+            words=$(cat "$f" | sed '/^---/,/^---/d' | wc -w)
+            mins=$(( (words / 200) + 1 ))
+            echo "${slug}: ${mins}" >> _data/reading_times.yml
+          done
+
+      - name: Build Jekyll site
+        env:
+          JEKYLL_ENV: production
+        run: bundle exec jekyll build
+
+      - name: Write deploy-time commit metadata
+        # Surfaces the deployed commit in the admin's top-right corner via
+        # admin/index.html, plus (below it) the cms-platform release pill —
+        # sourced from this site's platform.lock, the cms-platform version
+        # it's pinned to. Use HEAD rather than github.sha to sidestep
+        # shallow-clone issues; on push events they're identical.
+        run: |
+          # Escape workflow-command data before printing repository-controlled text.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          mkdir -p ./_site/admin
+          SHA=$(git rev-parse HEAD)
+          ISO=$(git log -1 --format=%cI HEAD)
+          # Tolerant: platform.lock is expected (every consumer site ships
+          # one — see the platform-bump workflow), but a missing file or
+          # missing key must never fail this step, just omit that pill.
+          PLATFORM_REPO=$(grep -m1 '^platform_repo:' platform.lock 2>/dev/null | sed -E 's/^[^:]+:[[:space:]]*//;s/[[:space:]]+$//') || true
+          PLATFORM_REF=$(grep -m1 '^platform_ref:' platform.lock 2>/dev/null | sed -E 's/^[^:]+:[[:space:]]*//;s/[[:space:]]+$//') || true
+          cat > ./_site/admin/commit.json <<JSON
+          { "sha": "${SHA}", "iso": "${ISO}", "branch": "main", "platform_repo": "${PLATFORM_REPO}", "platform_ref": "${PLATFORM_REF}" }
+          JSON
+          printf 'Commit metadata diagnostic: %s\n' "$(escape_workflow_data "$(cat ./_site/admin/commit.json)")"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check out platform scripts (media archive only)
+        if: inputs.media_archive_bucket != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      - name: Publish opted-in archived PDFs
+        # Ordering is load-bearing: AFTER `Configure AWS credentials` (the
+        # archive is private, so reading it needs the role) and BEFORE
+        # `Sync to S3` (the copied files have to be in the tree that
+        # `aws s3 sync --delete` uploads). After the sync it would upload
+        # nothing at all.
+        #
+        # The `if:` guards SCRIPT AVAILABILITY, not the decision -- with no
+        # bucket configured the checkout above is skipped, so there is no
+        # script to run. When it does run, the script itself distinguishes
+        # "nothing opted in" (notice, exit 0 -- the default and not a problem)
+        # from "an opted-in PDF is missing from the archive" (error, exit 1),
+        # because that second one ships a Download PDF button that 404s.
+        if: inputs.media_archive_bucket != ''
+        run: bash ./.cms-platform/scripts/publish-opted-in-pdfs.sh ./_site
+
+      - name: Sync to S3
+        # `--exclude` keeps the local-dev / e2e-test admin variants out of
+        # the public bucket. `aws s3 sync --delete --exclude X` will NOT
+        # delete X from the destination, so the explicit `aws s3 rm` below
+        # cleans up copies on buckets predating this exclude.
+        #
+        # `404.html` is excluded here too and uploaded by the next step with a
+        # no-cache header. CloudFront answers every missing key with this
+        # object (CustomErrorResponses, ErrorCachingMinTTL 0) and passes ITS
+        # Cache-Control through, so under the day-long max-age below every 404
+        # reached the browser as cacheable for 24 hours. An editor's draft
+        # image 404s on the admin's origin until the post publishes, and that
+        # cached 404 kept the image broken in the editor's browser after
+        # publish. An excluded key is also spared by `--delete`, so the
+        # existing object stays in place until the next step overwrites it.
+        run: |
+          aws s3 sync ./_site "s3://${PRODUCTION_BUCKET}/" \
+            --delete \
+            --cache-control "public, max-age=86400" \
+            --exclude '404.html' \
+            --exclude 'admin/index-local.html' \
+            --exclude 'admin/config-local.yml' \
+            --exclude 'admin/index-test.html' \
+            --exclude 'admin/config-test.yml'
+
+      - name: Upload 404 page (not cacheable)
+        # See the exclude above: the error page must never be cached, or a
+        # 404 outlives the file arriving. Guarded because a consumer need not
+        # ship a 404.html (CloudFront then serves S3's own error instead).
+        run: |
+          if [ -f ./_site/404.html ]; then
+            aws s3 cp ./_site/404.html "s3://${PRODUCTION_BUCKET}/404.html" \
+              --cache-control "no-cache, must-revalidate" \
+              --content-type "text/html; charset=utf-8"
+          else
+            echo "No _site/404.html; nothing to upload."
+          fi
+
+      - name: Remove stale dev-only admin objects
+        # Idempotent purge of admin/*-local and admin/*-test objects that
+        # earlier deploys uploaded before they were excluded above.
+        run: |
+          for key in admin/index-local.html admin/config-local.yml \
+                     admin/index-test.html admin/config-test.yml; do
+            aws s3 rm "s3://${PRODUCTION_BUCKET}/${key}"
+          done
+
+      - name: Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "/*"
+
+      - name: Update GitHub Deployment status (success/failure)
+        if: always() && steps.deploy-start.outputs.deployment_id
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        # DEPLOYMENT_ID joins JOB_STATUS in the env map: a github-script body
+        # is JS handed to an eval, so an interpolated value arrives as SOURCE
+        # rather than data. This step already read JOB_STATUS the right way —
+        # the id was the one value still substituted into the text. The `if:`
+        # gate above stays an expression (never parsed as code), so it keeps
+        # reading the output directly. Number() because process.env is
+        # strings and deployment_id is used numerically.
+        env:
+          JOB_STATUS: ${{ job.status }}
+          DEPLOYMENT_ID: ${{ steps.deploy-start.outputs.deployment_id }}
+        with:
+          script: |
+            const id = Number(process.env.DEPLOYMENT_ID);
+            const job = process.env.JOB_STATUS;        // success | failure | cancelled
+            const state = job === 'success' ? 'success' : 'failure';
+            const apex = process.env.APEX_DOMAIN;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: id,
+              state,
+              environment_url: state === 'success' ? `https://${apex}/` : undefined,
+              log_url: runUrl,
+              description: state === 'success'
+                ? `${apex} is live with the latest commit`
+                : `deploy-production.yml ${job}`,
+            });
+            core.notice(`Production deployment ${id} → ${state}`);
