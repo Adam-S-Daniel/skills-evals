@@ -33,7 +33,9 @@ are reported apart, not excluded), its base and an `answer_leak` flag: the
 body quotes a line the pull request added. The base is a true merge's first
 parent, else (squash or rebase merge) the PR's `baseRefOid`, which can predate
 the base branch at merge time; `base_from` says which. A repo whose pull
-requests 404, or a PR with no readable merge commit, is skipped with a warning.
+requests 404, a PR with no readable merge commit, or a PR whose diff GitHub will
+not render (HTTP 406, over its line or file cap; counted as `diff_too_large`) is
+skipped with a warning naming repo#number; any other `gh` failure aborts.
 
 PREPARE is the `redgreen.sh` tree step: `git archive` of base and merge into
 `<out>/red` and `<out>/green`, with the merge's test files laid over `red`.
@@ -135,6 +137,16 @@ class GhNotFound(Exception):
     pass
 
 
+class GhDiffTooLarge(Exception):
+    """GitHub refuses to render the diff (HTTP 406, over its line or file cap)."""
+
+
+#: `gh pr diff` stderr for a diff GitHub will not render. A known, benign class:
+#: the pull request exists and is readable, only its diff is unavailable.
+DIFF_TOO_LARGE = re.compile(r"HTTP 406\b.*exceeded the maximum number of (?:lines|files)",
+                            re.DOTALL)
+
+
 def gh_json(*args: str):
     done = subprocess.run(["gh", *args], capture_output=True, text=True)
     if done.returncode:
@@ -149,6 +161,9 @@ def gh_json(*args: str):
 def gh_text(*args: str) -> str:
     done = subprocess.run(["gh", *args], capture_output=True, text=True)
     if done.returncode:
+        if DIFF_TOO_LARGE.search(done.stderr or ""):
+            raise GhDiffTooLarge(" ".join(args[:3]))
+        # Status only: never echo an API body.
         raise MineError(f"gh {' '.join(args[:2])} failed (exit {done.returncode})")
     return done.stdout
 
@@ -275,7 +290,7 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
             continue
         counts = {"repo": repo, "merged": len(prs), "bot": 0, "on_hold": 0,
                   "not_replayable": 0, "no_task_text": 0, "no_merge_commit": 0,
-                  "candidates": 0}
+                  "diff_too_large": 0, "candidates": 0}
         for pr in prs:
             if is_bot(pr):
                 counts["bot"] += 1
@@ -313,7 +328,15 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
                 base_sha, base_from = parents[0], "merge-first-parent"
             else:
                 base_sha, base_from = pr.get("baseRefOid"), "pr-base-ref-oid"
-            diff = gh_text("pr", "diff", str(pr["number"]), "--repo", repo)
+            try:
+                diff = gh_text("pr", "diff", str(pr["number"]), "--repo", repo)
+            except GhDiffTooLarge:
+                # The answer-leak check needs the diff; without it the PR cannot
+                # be judged, so it is skipped (and counted), not guessed at.
+                print(f"mine_real_work: warning: {repo}#{pr['number']}: diff too large "
+                      "for GitHub to render; skipped", file=sys.stderr)
+                counts["diff_too_large"] += 1
+                continue
             paths = [f["path"] for f in pr.get("files") or []]
             out["candidates"].append({
                 "key": f"{repo.replace('/', '__')}__{pr['number']}",
