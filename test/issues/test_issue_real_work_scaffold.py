@@ -603,7 +603,12 @@ class GateTests(_GateCase):
         # a looser `claude/(?:scaffold-)?` pattern: only the prefix refuses them.
         for branch in ("claude/eval-20261006T194256Z-f944ea", "claude/scaffold-", "scaffold/toy-7",
                        "claude/scaffold-toy", "claude/scaffold-../x-1", "claude/toy-7",
-                       "claude/eval-run-7", "claude/scaffoldtoy-7", "claude/scaffold-toy-7/x"):
+                       "claude/eval-run-7", "claude/scaffoldtoy-7", "claude/scaffold-toy-7/x",
+                       # Git allows these in a ref name; the id lands in a
+                       # query string, a PR title and body. Over-long ids too.
+                       "claude/scaffold-a&base=x-1", "claude/scaffold-a%26b-1",
+                       "claude/scaffold-a#b-1", "claude/scaffold-a?b-1", "claude/scaffold-a=b-1",
+                       "claude/scaffold-" + "a" * 65 + "-1", "claude/scaffold-toy-12345678"):
             with self.subTest(branch=branch):
                 with self.assertRaisesRegex(ingest.Rejected, "branch name"):
                     self.gate(branch=branch)
@@ -649,9 +654,19 @@ class ResolveTests(unittest.TestCase):
                          {"branch": "claude/scaffold-_agent-guidance-196", "sha": "",
                           "fixture_id": "_agent-guidance-196"})
 
+    def test_the_longest_fixture_id_is_accepted(self):
+        longest = "a" * 64 + "-1234567"
+        self.assertEqual(len(longest), 72)
+        self.assertEqual(self.resolve("workflow_run", self.push(f"claude/scaffold-{longest}"))
+                         ["fixture_id"], longest)
+
     def test_rejections(self):
         for event in (self.push("claude/eval-20261006T194256Z-f944ea"),
                       self.push("claude/toy-7"), self.push("claude/eval-run-7"),
+                      *(self.push(b) for b in ("claude/scaffold-a&base=x-1",
+                                               "claude/scaffold-a%26b-1", "claude/scaffold-a#b-1",
+                                               "claude/scaffold-a?b-1", "claude/scaffold-a=b-1",
+                                               "claude/scaffold-" + "a" * 65 + "-1")),
                       self.push("claude/scaffold-x-1\n::warning::")):
             with self.assertRaisesRegex(ingest.Rejected, "claude/scaffold-<id>"):
                 self.resolve("workflow_run", event)
@@ -789,12 +804,28 @@ class WorkflowShapeTests(unittest.TestCase):
         # (the prompt, a title) may join them.
         validate = self.gate["jobs"]["validate"]
         self.assertEqual(validate["outputs"], {
+            "base": "${{ github.event.repository.default_branch }}",
             "branch": "${{ steps.resolve.outputs.branch }}",
             "fixture_id": "${{ steps.gate.outputs.fixture_id }}",
             "sha": "${{ steps.gate.outputs.sha }}"})
         [step] = self.gate["jobs"]["draft-pr"]["steps"]
-        self.assertEqual(set(step["env"]),
-                         {"GH_TOKEN", "REPO", "BASE", "BRANCH", "FIXTURE_ID", "SHA", "LABEL"})
+        self.assertEqual(step["env"], {
+            "GH_TOKEN": "${{ github.token }}", "REPO": "${{ github.repository }}",
+            "BASE": "${{ needs.validate.outputs.base }}",
+            "BRANCH": "${{ needs.validate.outputs.branch }}",
+            "FIXTURE_ID": "${{ needs.validate.outputs.fixture_id }}",
+            "SHA": "${{ needs.validate.outputs.sha }}", "LABEL": scaffold.DRAFT_LABEL})
+        # No other route in: no env above the step, and no event field
+        # (a head commit message, a branch's own text) anywhere in the job.
+        self.assertNotIn("env", self.gate)
+        for name in ("validate", "draft-pr"):
+            self.assertNotIn("env", self.gate["jobs"][name], name)
+        job_text = yaml.safe_dump(self.gate["jobs"]["draft-pr"])
+        self.assertIsNone(re.search(r"\$\{\{\s*github\.event", job_text))
+        self.assertEqual(sorted(set(re.findall(r"\$\{\{\s*([^}]*?)\s*\}\}", job_text))), [
+            "github.repository", "github.token", "needs.validate.outputs.base",
+            "needs.validate.outputs.branch", "needs.validate.outputs.fixture_id",
+            "needs.validate.outputs.sha"])
         [title] = re.findall(r'--title\s+("[^"]*")', step["run"])
         self.assertEqual(title, '"Draft real-work fixture: ${FIXTURE_ID}"')
         self.assertEqual(re.findall(r"\$\{?([A-Z_]+)", title), ["FIXTURE_ID"])

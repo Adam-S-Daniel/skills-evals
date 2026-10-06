@@ -138,6 +138,9 @@ CHECK_ID = "hidden-tests"
 CHECK_DESCRIPTION = "The pull request's own tests, hidden from the agent"
 
 REAL_WORK_ROOT = "evals/real-work"
+#: A fixture id is also part of a branch name, a REST query string, and a PR
+#: title and body, so it is the only barrier there: no `&=?#%` or `/`, and at
+#: most 72 characters (64 for the repository name, `-`, seven digits).
 FIXTURE_ID = r"[A-Za-z0-9_][A-Za-z0-9._-]{0,63}-[1-9][0-9]{0,6}"
 FIXTURE_ID_RE = re.compile(FIXTURE_ID)
 BRANCH_RE = re.compile(rf"claude/scaffold-(?P<fixture_id>{FIXTURE_ID})")
