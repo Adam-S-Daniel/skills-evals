@@ -60,7 +60,11 @@ elif args[:2] == ["pr", "list"]:
         raise SystemExit(1)
     print(json.dumps(data["prs"][repo]))
 elif args[:2] == ["pr", "diff"]:
-    sys.stdout.write(data["diffs"][args[args.index("--repo") + 1] + "#" + args[2]])
+    key = args[args.index("--repo") + 1] + "#" + args[2]
+    if key in data.get("diff_errors", {}):
+        sys.stderr.write(data["diff_errors"][key] + "\n")
+        raise SystemExit(1)
+    sys.stdout.write(data["diffs"][key])
 elif args[0] == "api" and len(args) == 2:
     repo, sha = args[1].removeprefix("repos/").split("/commits/")
     parents = data.get("parents", {}).get(sha, ["b" * 40, "c" * 40])
@@ -139,13 +143,14 @@ class _MinerCase(unittest.TestCase):
             encoding="utf-8")
         return root / "repos.yml"
 
-    def gh_data(self, repos, prs, diffs=None, parents=None):
+    def gh_data(self, repos, prs, diffs=None, parents=None, diff_errors=None):
         diffs = dict(diffs or {})
         for repo, rows in prs.items():
             for row in rows:
                 diffs.setdefault(f"{repo}#{row['number']}", DIFF)
         self.data_path.write_text(json.dumps({"repos": repos, "prs": prs, "diffs": diffs,
-                                              "parents": parents or {}}),
+                                              "parents": parents or {},
+                                              "diff_errors": diff_errors or {}}),
                                   encoding="utf-8")
 
     def run_main(self, *argv):
@@ -301,6 +306,41 @@ class TestCandidateFilters(_MinerCase):
         self.assertEqual(doc["summary"][0]["no_merge_commit"], 2)
         self.assertIn("#2: no readable merge commit", self.stderr)
         self.assertIn("#3: no readable merge commit", self.stderr)
+
+    def _mine_with_diff_error(self, number, message):
+        repo = f"{ADAM}/skills-evals"
+        self.gh_data(repos={repo: _view(ADAM, "skills-evals")},
+                     prs={repo: [_pr(1), _pr(number), _pr(3)]},
+                     diff_errors={f"{repo}#{number}": message})
+        return self.registry(["skills-evals"])
+
+    def test_a_diff_github_will_not_render_skips_that_pr_and_mining_continues(self):
+        # skills-evals#311 (300+ files): HTTP 406 aborted the whole mine.
+        for kind in ("files (300)", "lines (20000)"):
+            with self.subTest(kind=kind):
+                registry = self._mine_with_diff_error(
+                    2, "could not find pull request diff: HTTP 406: Sorry, the diff exceeded "
+                       f"the maximum number of {kind}. Consider using 'List pull requests "
+                       "files' API or locally cloning the repository instead. "
+                       "(https://api.github.com/repos/o/r/pulls/2)")
+                doc = self.mine(registry)
+                self.assertEqual([c["pr"] for c in doc["candidates"]], [1, 3])
+                self.assertEqual(doc["summary"][0]["diff_too_large"], 1)
+                self.assertIn("skills-evals#2: diff too large", self.stderr)
+                self.assertNotIn("Consider using", self.stderr)
+                self.assertNotIn("api.github.com", self.stderr)
+
+    def test_an_unknown_diff_failure_still_fails_loudly_without_echoing_the_body(self):
+        for message in ("HTTP 500: server secret-body-text",
+                        "HTTP 406: Not Acceptable secret-body-text",
+                        "diff exceeded the maximum number of lines secret-body-text"):
+            with self.subTest(message=message):
+                registry = self._mine_with_diff_error(2, message)
+                rc, err = self.run_main("mine", "--registry", str(registry), "--out", str(self.out))
+                self.assertEqual(rc, 2)
+                self.assertIn("gh pr diff failed (exit 1)", err)
+                self.assertNotIn("secret-body-text", err)
+                self.assertFalse(self.out.exists())
 
     def test_answer_leak_flags_a_body_that_quotes_an_added_line(self):
         doc = self._mine([
