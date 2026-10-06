@@ -11,7 +11,7 @@ with, so the next session can tell a deliberate constraint from an accident.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-roster-trusted-on-main.md) | The roster the harness runs on is committed on `main`; a computed roster is a proposal | accepted (2026-09-13); amended by 0003 and 0004 |
-| [0002](0002-runs-bill-the-api-org-not-the-subscription.md) | Real runs bill the API organisation; subscription credentials are not adopted | accepted (2026-09-23) |
+| [0002](0002-runs-bill-the-api-org-not-the-subscription.md) | Real runs bill the API organisation; subscription credentials are not adopted | accepted (2026-09-23); decision 1 superseded for routine runs only by 0010 |
 | [0002](0002-roster-follows-vendor-defaults.md) | The roster seats each tier's vendor-default model at once and retires the version it superseded after a buffer | accepted (2026-09-27; decision 1 revised 2026-09-28) |
 | [0003](0003-roster-merges-automatically.md) | The roster proposal merges automatically, behind `roster_mode` | accepted (2026-09-28; round 6, the roster App, 2026-09-29); amended by 0004 |
 | [0004](0004-eval-runs-on-the-roster-its-run-merged.md) | The scheduled eval runs on the roster its own run just merged | accepted (2026-09-30) |
@@ -20,4 +20,4 @@ with, so the next session can tell a deliberate constraint from an accident.
 | [0007](0007-parse-config-and-staged-shell-guards.md) | Parse configuration values and staged shell guards before scoring | accepted (2026-10-04); amended 2026-10-05 |
 | [0008](0008-run-ready-fixtures-on-the-weekly-schedule.md) | Run ready fixtures on the weekly schedule | proposed (2026-10-04) |
 | [0009](0009-fixture-followup-turns.md) | A fixture may send scripted follow-up turns, identically in both arms | proposed (2026-10-05) |
-| [0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) | Run the AI steps of skill and guidance evals in a routine fired by Actions, and measure agent effectiveness on real work | proposed (2026-10-06) |
+| [0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) | Run the AI steps of skill and guidance evals in a routine fired by Actions, and measure agent effectiveness on real work | accepted (2026-10-06); supersedes 0002 (billing) decision 1 for routine runs only |
