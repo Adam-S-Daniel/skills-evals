@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WDGTosDcH8ygvnWZJZjNe4",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && echo \"---CHANGELOG---\" && cat CHANGELOG.md 2><path> && echo \"---retry.sh---\" && cat scripts/retry.sh 2><path>",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WDGTosDcH8ygvnWZJZjNe4",
+      "is_error": false,
+      "output": "On branch master\nnothing to commit, working tree clean\n0d883b7 initial commit\n---CHANGELOG---\n# Changelog\n\n## 1.3.0 - 2026-08-11\n\n- Removed the unused `moment` dependency in favor of the platform `Date` APIs.\n- Fixed a typo in the `--verbose` flag's help text.\n---retry.sh---\n#!<path> bash\n# retry.sh...",
+      "output_chars": 1247,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0117Xko8vSu6yQpqRamC7AGC",
+      "name": "Bash",
+      "input": "ls -la && find . -iname \"*.md\" -not -path \"./node_modules/*\" && cat package.json 2><path> && echo \"---\" && git log -p -- CHANGELOG.md | head -50",
+      "input_chars": 147,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0117Xko8vSu6yQpqRamC7AGC",
+      "is_error": true,
+      "output": "Exit code 1\ntotal 28\ndrwxr-xr-x  4 root root 4096 Oct  6 22:29 .\ndrwxrwxrwt 10 root root 4096 Oct  6 22:29 ..\ndrwxr-xr-x  8 root root 4096 Oct  6 22:29 .git\n-rw-r--r--  1 root root  308 Oct  6 19:24 AGENTS.md\n-rw-r--r--  1 root root  167 Oct  6 19:24 CHANGELOG.md\n-rw-r--r--  1 root root  180 Oct  6 ...",
+      "output_chars": 404,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013tRrTCsFGBv1hZbU7Uascd",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 33,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013tRrTCsFGBv1hZbU7Uascd",
+      "is_error": false,
+      "output": "1\t# Order Sync\n2\t\n3\tOrder Sync polls the upstream fulfillment service and mirrors order status\n4\tinto the local database. See `scripts/retry.sh` for the retry helper used by\n5\tevery poller.\n6\t",
+      "output_chars": 192,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WpvDrTwwvJHFRhcz5VLWgn",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WpvDrTwwvJHFRhcz5VLWgn",
+      "is_error": false,
+      "output": "1\t# Changelog\n2\t\n3\t## 1.3.0 - 2026-08-11\n4\t\n5\t- Removed the unused `moment` dependency in favor of the platform `Date` APIs.\n6\t- Fixed a typo in the `--verbose` flag's help text.\n7\t",
+      "output_chars": 181,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PvhYbtkuJXqQkdnEMRaptW",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PvhYbtkuJXqQkdnEMRaptW",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 142,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0
+}
