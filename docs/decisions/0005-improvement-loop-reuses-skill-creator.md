@@ -419,8 +419,9 @@ Both are as of `origin/main` at `ec9cf33`.
   the intended basis, not a behavior change.
 - **The loop is not wired into the routine.** No file under `.github/`
   mentions `scripts/propose_skill_edit.py`, and `routine-eval-fire.yml`
-  fires a fixture, arms and trials (its payload carries `run_id`, `fixture`,
-  `arms`, `trials`), not the improvement loop. The loop still runs from an operator's shell.
+  fires a fixture, arms and trials (its payload carries `mode: eval`,
+  `run_id`, `fixture`, `arms`, `trials`) or, in scaffold mode, one miner
+  candidate, not the improvement loop. The loop still runs from an operator's shell.
 
 ## Token-aware acceptance addendum (2026-10-06)
 
