@@ -50,6 +50,7 @@ skills-evals/
     run_eval.py
     guidance.py            # guidance subject: payload assembly, delivery, guard
     seed_prep.py           # strip_agent_context: and deps: (real-work seeds)
+    answer_leak.py         # interface_strings:, issue_before_fix: and the four-word answer-leak lint
     registries.yml         # registry name -> URL -> skill-directory layout
     scorers/
       objective.py
@@ -156,6 +157,42 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   (`files_unchanged`, `non_remote_refs_unchanged`) read a stripped copy of the
   seed. Only the workspace root is touched: a nested
   `AGENTS.md` can be a repository's own test data.
+- **`subject: any`** — a subject-agnostic real-work fixture (Q4, in
+  "Real-work fixtures from merged pull requests" below). It names no `skill:` or `section:`; the run names one with
+  `--skill NAME` (it then runs as a skill fixture) or `--section ID` (a
+  guidance fixture), and with neither only `--arm objective-only` runs it,
+  printing `"subject": "any"` and the fixture's directory name. Under
+  `--skill` its results are named after its own directory, whether it is run
+  directly or found under `evals/real-work/`; under `--section` they go to
+  `results/guidance/<section>/<fixture>/`, so two fixtures run under one
+  section never share a run directory. A fixture that fixes its own
+  subject refuses both flags, and a `subject: any` fixture that also names a
+  `skill:` or `section:` is refused; all of these are configuration errors
+  (exit 2) before any arm starts. A guidance run still refuses `deps:`, as
+  any guidance fixture does.
+- **`draft: true`** (optional, `true` or `false`) — the key
+  [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65) names for a
+  fixture no person has reviewed yet. `--arm objective-only` still runs it;
+  any agent arm is refused (exit 2) unless `--allow-draft` is passed, which no
+  workflow does, so a draft is never paid for or published until a person
+  removes the key.
+- **`interface_strings:`** (optional) — 1 to 32 nonblank strings of at most
+  200 characters: the identifiers and messages a hidden test checks
+  verbatim, which the task text must therefore name. A run inside one
+  declared string is not an answer-leak hit (see "The answer-leak lint"
+  below). Validated at load.
+- **`issue_before_fix:`** (optional) — a fixture-relative path to a regular
+  file outside `seed/`, at most 256 KiB, holding the issue's text as it stood
+  before the pull request's first commit. A run of that text is not an
+  answer-leak hit. It needs three keys beside it: `issue_created_at`,
+  `issue_last_edited_at` (null when the snapshot is the issue as first
+  written) and `first_commit_at`, each a quoted ISO-8601 UTC time such as
+  `"2026-10-05T15:59:07Z"`. Validated at load (exit 2): an absolute path,
+  `..`, a symlink, a directory, a missing file, a file under `seed/`, a file
+  over 256 KiB or one that is not UTF-8; a missing, unquoted, non-UTC or
+  unparseable time; an issue created after the first commit; an edit time
+  before creation or after the first commit; and any of the three keys
+  without the snapshot.
 - **`deps:`** (optional, skill subject only) — a list of 1 to 4
   `{manager: npm, dir: <workspace-relative directory>}` entries (`dir`
   defaults to `.`), installed during setup, before `setup:`, from the
@@ -188,10 +225,56 @@ design, recorded verbatim:
 - **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
   `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
   acceptance"); nothing else does.
+- **Answer leak, the exemption list:** "Exempt interface strings
+  (Recommended)". Each fixture declares, in `interface_strings:`, the
+  identifiers and messages its hidden tests check verbatim, and its task text
+  drops issue sections that describe the solution.
+- **Answer leak, issue text:** "Exempt pre-existing issue text
+  (Recommended)". Text the issue already held before the pull request's first
+  commit is not a leak: a fix's comments, test data and ADR prose often quote
+  the issue, which is the reverse of a leak.
 
-Q3 (private repositories and Class C sources), Q4 (one fixture for many
-subjects), Q6 (where the scaffolder runs) and Q8 (training cutoffs) remain
-open.
+Q3, Q4, Q6 and Q8 are recorded in "Real-work fixtures from merged pull
+requests (2026-10-06)" below.
+
+#### The answer-leak lint ([`harness/answer_leak.py`](harness/answer_leak.py))
+
+A library, not a run-time check. A four-word run of the task text (words are
+lowercase letter and digit runs) is a hit when one line the merged diff added
+holds it too (#98's rule, aimed at the diff rather than a guidance section),
+unless the run lies inside one declared interface string or inside the
+issue's text as it stood before the fix. The real-work fixtures' own test
+module, which arrives with the first fixtures, checks that each committed
+fixture has no hits. Whether the scaffolder treats a hit as a
+warning for review or a rejection stays open; the miner records it as a
+warning (Q3 below).
+
+**What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
+file in the fixture directory (outside `seed/`) holding the issue's title and
+body as they stood before the pull request's first commit, and three keys
+record why that holds, read from GitHub when the fixture is written:
+
+- `issue_created_at`: the issue's `createdAt`;
+- `issue_last_edited_at`: the time of the revision the snapshot holds. It is
+  null for an issue never edited (`lastEditedAt` null, no
+  `userContentEdits`). For an issue edited before the fix began, it is that
+  last edit's time. For one edited only after, it is null with the original
+  text, or the last earlier revision's time with that revision's text (a
+  `userContentEdits` entry);
+- `first_commit_at`: the `committedDate` of the pull request's first commit.
+
+The harness checks the order at load: created no later than the first
+commit, and the snapshot's edit, when there is one, between the two. Title
+renames (`RENAMED_TITLE_EVENT`) are read the same way, and the snapshot
+carries the title as it stood then.
+
+**Limits.** The times are hand-recorded and trusted at load; nothing
+re-fetches them yet, so a test that replays the GitHub reads could confirm
+them later. A commit's date is set by whoever made the commit, so a rebased
+or backdated branch can move it. Comments on the issue are not part of the
+snapshot, so text first written in a comment counts as new. An issue written
+after work began on an unpushed branch, quoting code already drafted, is
+exempt even though it may describe the answer.
 
 ### Ordered invocation objective check
 

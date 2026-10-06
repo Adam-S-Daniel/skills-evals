@@ -1,0 +1,97 @@
+# Real-work fixture: _agent-guidance#196
+# https://github.com/Adam-S-Daniel/_agent-guidance/pull/196, the fix for
+# https://github.com/Adam-S-Daniel/_agent-guidance/issues/194 (the prompt below
+# is that issue's title and body, verbatim, then the interface its hidden
+# tests call, which the issue does not name). The writer fixture: Node, a pure
+# function plus its unit tests and an ADR addendum.
+#   base  720469abbef4948e9b0ce41da9a6b3e486b3148c (the merge's first parent)
+#   merge 565210666434a33a8d8c9b8114508bc8987d1ef2
+# Trimmed from the seed (evaluated paths, and files over 100 KB the checker
+# never reads): agents-md/, test/run-tests.sh,
+# docs/routines/guidance-centralization.md, scripts/bump-consumer-locks.sh.
+# No pass_to_pass: on Node 20 a negative --test-name-pattern still runs
+# every test (measured: 69 pass, 6 fail), and --test-skip-pattern needs
+# Node 22.1. The file's other 69 tests pass on the seed.
+
+# The seed is the base tree as `git archive` wrote it, with the fleet agent
+# context already stripped (strip_agent_context: below re-checks it on every
+# run) and the trimmed paths listed above removed. The checker overlay is the
+# pull request's own test file, byte-equal to the merge commit's. The fix
+# itself is in solution.patch, which only the fixture's tests read.
+
+# issue-before-fix.txt is Adam-S-Daniel/_agent-guidance#194's title and body as they stood before the
+# pull request's first commit. The three times beside issue_before_fix:
+# below were read from GitHub on 2026-10-06 (GraphQL createdAt, lastEditedAt
+# with no userContentEdits and no RENAMED_TITLE_EVENT, and the first
+# commit's committedDate); the harness checks their order at load.
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+  - manager: npm
+    dir: .
+
+prompt: |
+  dependabot-config-health: a repo whose config arrived in its first commit, with no check run, reads as unknown forever
+
+  When a repo's `.github/dependabot.yml` arrives in its very first commit, pushed directly with no PR, GitHub records no validation check for it. The sweep then reads that repo as **unknown** and turns red every day, even though the config is fine.
+
+  ## Evidence (2026-09-27)
+
+  - **The repo:** `Adam-S-Daniel/adam-agentskills` was created at 2026-09-24T21:58Z. Its config arrived in commit `559ceb7` ("Start adam-agentskills from the retired registry's current tree"), the only commit that has touched `.github/dependabot.yml`, pushed directly.
+  - **No check:** that commit has **no check runs at all**, and there is no PR, so there's no merge commit to look at either.
+  - **But Dependabot works:** it has run **7 successful update jobs** there, the latest at 2026-09-25T18:32Z.
+  - **The sweep has been red daily since 2026-09-25.** For example, https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/36321373390 reports `Adam-S-Daniel/adam-agentskills: unknown` with "GitHub's config check run could not be found on the path commit or its PR merge commit". That red is what the health audit reported on #162.
+
+  ## Why the rule is too strict here
+
+  `verdictFor` in `scripts/dependabot-config-health.js` maps `check.state === "missing"` to **unknown**, unconditionally. The #429 decision was deliberate: an invalid config that *replaces* a valid one does not stop update jobs, so recent jobs can't prove the current config parses.
+
+  That reasoning needs a **previous** valid config. When the file's only commit is its first ever, there's nothing earlier for Dependabot to have been running on. Successful update jobs started after that commit therefore prove GitHub parsed it.
+
+  ## Proposed rule
+
+  A missing check **and** exactly one commit ever touching `.github/dependabot.yml` **and** at least one successful Dependabot update job that started after that commit → **healthy**, logged with a notice line that names the reason. Anything else with a missing check stays **unknown**, exactly as today.
+
+  ## Done when
+
+  - [ ] Unit tests on fixture data, with no network and no clock, cover:
+    - one commit, a successful job after it → healthy
+    - one commit, no jobs → unknown
+    - one commit, jobs only before the commit → unknown
+    - several commits, check missing → unknown (the #429 case)
+    - one commit, the only job after it failed → unknown
+  - [ ] Negative control: the new tests fail against the current `verdictFor`.
+  - [ ] ADR 0014 gets an addendum recording the narrowed rule and why it doesn't reopen #429's hole.
+  - [ ] A read-only dry run of the sweep reports `adam-agentskills` as healthy, with the notice line.
+
+  A comment-only PR in `adam-agentskills` is also giving that file a recorded check, which clears today's red. This issue is about the next repo pushed the same way.
+
+  ## Interface the reviewer's tests use
+
+  - `assessRepo(...)` returns a `notices` array alongside `findings` and `unknowns`: empty unless the narrowed rule applied, and then one notice containing the words "first and only commit".
+  - `api.newestPathCommit(owner, repo, branch, path)` also returns `onlyCommit`: true if no earlier commit ever touched that file.
+  - The successful-job lookup is a new api method, `newestSuccessfulWorkflowRun(owner, repo, workflowId)`, returning the newest successful run (read `run_started_at`) or null. Call it only when the single-commit check already holds; when it throws, the repo stays unknown.
+
+interface_strings:
+  - "notices"
+  - "first and only commit"
+  - "onlyCommit"
+  - "newestPathCommit(owner, repo, branch, path)"
+  - "newestSuccessfulWorkflowRun(owner, repo, workflowId)"
+  - "run_started_at"
+
+issue_before_fix: issue-before-fix.txt
+issue_created_at: "2026-09-28T14:50:46Z"
+issue_last_edited_at: null
+first_commit_at: "2026-09-28T15:13:21Z"
+
+objective_checks:
+  - id: hidden-tests
+    type: repo_tests
+    description: The pull request's own tests, hidden from the agent
+    overlay: checker
+    argv: [node, --test]
+    fail_to_pass:
+      - ["--test-name-pattern=#194", test/test-dependabot-config-health.js]

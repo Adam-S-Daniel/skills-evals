@@ -210,6 +210,14 @@ jobs:
                 + " url_starts_with_claude_code=\(
                     if ($url | type) == "string" and ($url | startswith("https://claude.ai/code/"))
                     then "yes" else "no" end)"
+                + " url_equals_code_plus_id=\(
+                    if ($id | type) == "string" and ($url | type) == "string"
+                       and $url == ("https://claude.ai/code/" + $id)
+                    then "yes" else "no" end)"
+                + " url_equals_code_session_suffix=\(
+                    if ($id | type) == "string" and ($url | type) == "string"
+                       and $url == ("https://claude.ai/code/session_" + ($id | sub("^[a-z]{1,10}_"; "")))
+                    then "yes" else "no" end)"
                 + " top_level_keys=\(if type == "object" then length else 0 end)"
                 + " has_wrapper_key=\(
                     if type == "object" and (has("data") or has("result") or has("response"))
@@ -217,27 +225,34 @@ jobs:
               "$response" 2>/dev/null || echo "response shape: unavailable"
           }
           # Fail closed on any response shape the docs do not describe. The
-          # docs show `session_<X>` for both the id and the URL. The first
-          # real fire (run 37518720233) was refused with the body unseen;
-          # the list_runs API shows that run as `cse_<X>` with its URL on
-          # `session_<X>`, so the fire response is inferred to use the same
-          # id. Accept either id prefix and require the URL to be built from
-          # the same <X>.
-          if ! session_key="$(jq -er '
+          # docs show `session_<X>` for the id and a URL of
+          # `https://claude.ai/code/` + id. The real response (re-fire run
+          # 37521038032, shape line only) has a `cse_<24 chars>` id and a URL
+          # that is NOT `.../code/session_<X>`. The list_runs API shows the
+          # first run (37518720233) as `cse_<X>` with its URL on
+          # `session_<X>`. So accept either id prefix and a URL that is the
+          # documented `https://claude.ai/code/` + id, or `.../code/session_`
+          # + the same <X>. The accepted URL is rebuilt from the validated
+          # id, never copied from the body.
+          if ! session_id="$(jq -er '
                 select(.type == "routine_fire")
                 | .claude_code_session_id
-                | select(type == "string")
-                | capture("^(session|cse)_(?<key>[A-Za-z0-9]{1,128})$")
-                | .key' \
+                | select(type == "string" and test("^(session|cse)_[A-Za-z0-9]{1,128}$"))' \
                 "$response" 2>/dev/null)"; then
             echo "::error::the fire API answered 200 with an unrecognized body; it is not printed"
             describe_shape
             exit 1
           fi
-          session_url="https://claude.ai/code/session_${session_key}"
-          if ! jq -e --arg url "$session_url" \
-               '.claude_code_session_url == $url' \
+          session_key="${session_id#*_}"
+          if jq -e --arg id "$session_id" \
+               '.claude_code_session_url == ("https://claude.ai/code/" + $id)' \
                "$response" >/dev/null 2>&1; then
+            session_url="https://claude.ai/code/${session_id}"
+          elif jq -e --arg key "$session_key" \
+               '.claude_code_session_url == ("https://claude.ai/code/session_" + $key)' \
+               "$response" >/dev/null 2>&1; then
+            session_url="https://claude.ai/code/session_${session_key}"
+          else
             echo "::error::the fire API's session URL does not match its session id; the body is not printed"
             describe_shape
             exit 1

@@ -1,0 +1,285 @@
+name: Install Playwright browsers
+description: >-
+  Playwright's system-deps + browser install for one engine, split into TWO
+  PHASES: apt UNBOUNDED-but-retried, then the browser download bounded with an
+  escalating ladder and retried.
+
+  WHY THIS EXISTS (measured, adamdaniel.ai run 31177527405 job
+  92862768030). `--with-deps` runs `apt-get install` for ~90 system
+  packages before it downloads the browser. On 2026-08-07 the Ubuntu
+  archive mirror served that job at ~35 KB/s for the WHOLE run — every
+  package fetch stalling 86-391 s — so `install --with-deps webkit` took
+  39 MINUTES instead of its usual ~60 s. The tests themselves then ran
+  in 41.6 s. Nothing was broken; the mirror was slow.
+
+  That was expensive because of what waits on it. The e2e matrix's
+  aggregating `e2e` gate waits for EVERY project job, so one stalled
+  lane sets the whole PR's critical path — and a `cms/*` canary PR that
+  can't merge until `e2e / e2e` reports blocks the prod loop that opened
+  it. That run's 39-minute lane held delete-recovery PR #2953 for 40
+  minutes and failed the media-roundtrip loop's 30-minute delete-leg
+  budget. Ten lanes take ten INDEPENDENT apt exposures per run, so the
+  chance a run hits one is roughly ten times a single lane's.
+
+  WHY THE TWO PHASES ARE BOUNDED DIFFERENTLY (measured, adamdaniel.ai
+  run 31215846471 job 92989057569 — this is the #210 finding). The first
+  version of this action wrapped ONE `install --with-deps` in `timeout`,
+  so the bound could land mid-apt. It did: attempt 1 was killed at its
+  420 s bound while `apt-get` — a GRANDCHILD, which `timeout` never
+  signals — kept running and kept holding
+  /var/lib/dpkg/lock-frontend. Attempts 2 and 3 then died on "Could not
+  get lock /var/lib/dpkg/lock-frontend. It is held by process 2857
+  (apt-get)": the bound orphaned apt and STARVED ITS OWN RETRIES, and a
+  `dpkg` interrupted mid-configure can leave packages half-configured on
+  top of that. `npx playwright install` also wraps apt's exit 100 into
+  exit 1, so the outer status is not diagnostic and the old message
+  classified that lock failure as "a real install failure (not a
+  timeout, not an apt lock)" — the diagnostic actively lied.
+
+  So the halves are split and treated according to what killing them
+  costs. **apt (`install-deps`) is NOT bounded here** — see the comment
+  at its call site; a killed apt is strictly worse than a slow apt that
+  finishes, the job's own `timeout-minutes` is the honest backstop for a
+  genuinely hung one, and being late-but-green beats being
+  red-and-blocking a canary PR. **The browser download (`install`,
+  without `--with-deps`) IS bounded**, with the escalating ladder: it is
+  pure HTTP, safely killable, and resumable, so a fresh attempt gets
+  fresh connections (Playwright's CDN and azure.archive.ubuntu.com are
+  both load-balanced), which is what actually recovers a collapsed
+  transfer.
+
+  Typical runs are unaffected: the download bound is a large multiple of
+  a healthy download, so it never trips on a healthy mirror.
+
+  Bash only — no transitive `uses:` (clean for the SHA-pin convention;
+  mirrors await-prod-deploy / cms-recursion-gate).
+
+inputs:
+  browser:
+    description: >-
+      ONE engine to install — `chromium`, `firefox` or `webkit`. Not a list:
+      the value is passed to `npx playwright` as a single quoted argument, so
+      "chromium firefox" would be handed over as one bogus engine name. Must
+      already be resolved (this action does not read playwright.config.js);
+      e2e-tests.yml derives it from `node ci-matrix.js --engine "$PW_PROJECT"`.
+    required: false
+    default: chromium
+  working-directory:
+    description: "Directory holding the harness's node_modules (where `npx playwright` resolves)."
+    required: false
+    default: .cms-platform/e2e
+  deps-only:
+    description: >-
+      'true' runs ONLY the apt phase (`install-deps`) and skips the browser
+      download — for a lane that restored the browser binaries from cache and
+      needs just the OS libraries.
+    required: false
+    default: 'false'
+  apt-lock-timeout-seconds:
+    description: >-
+      How long apt may WAIT for the dpkg frontend lock before giving up. Set as an
+      apt.conf.d drop-in so it also applies to the apt-get inside
+      `playwright install-deps`, which this action does not invoke directly.
+      300 s comfortably outlasts a runner's boot-time unattended-upgrades pass.
+    required: false
+    default: '300'
+  attempts:
+    description: "How many times to try EACH phase before failing the step."
+    required: false
+    default: '3'
+  timeout-seconds:
+    description: >-
+      Bound for every BROWSER-DOWNLOAD attempt except the last. Default 420 s is
+      several times a healthy download, so a healthy run never hits it — it exists
+      to abandon a stalled CDN connection quickly and try a fresh one.
+
+      It does NOT apply to the apt phase, which is deliberately unbounded (a
+      killed apt orphans `apt-get` on the dpkg lock — job 92989057569). A
+      genuinely hung apt is caught by the caller's own job `timeout-minutes`.
+    required: false
+    default: '420'
+  final-timeout-seconds:
+    description: >-
+      Bound for the LAST BROWSER-DOWNLOAD attempt, deliberately much larger.
+
+      WHY THE LAST ATTEMPT IS DIFFERENT. A uniform 420 s bound has a failure mode
+      that is WORSE than the stall it fixes: when the network is slow for the whole
+      run — which is exactly what was measured (~35 KB/s sustained, 2340 s to
+      finish) — all three attempts hit the bound and the step exits 1. That turns a
+      slow-but-GREEN run into a RED required check, which blocks a `cms/*` canary
+      PR permanently instead of merging it late; the very outcome the retry was
+      added to avoid. The download resumes (downloaded engines stay in
+      ~/.cache/ms-playwright), so each attempt makes real progress — the last one
+      just needs room to finish.
+
+      Default 1200 s ⇒ worst BOUNDED case 420 + 420 + 1200 + backoff = ~35 min.
+      **A caller whose job `timeout-minutes` is smaller than that MUST pass smaller
+      values**, or the job is killed mid-retry and the run reports an opaque "job
+      timed out" instead of this action's diagnostic. Locked by
+      e2e/playwright-install-bounded.test.js, which fails if any caller's bounded
+      worst case exceeds its own job budget. (The apt phase is unbounded, so it is
+      not part of that static number — the job timeout is its only backstop.)
+    required: false
+    default: '1200'
+
+runs:
+  using: composite
+  steps:
+    # apt must WAIT for the dpkg lock, not fail on it. A GitHub-hosted runner runs
+    # its own background apt (unattended-upgrades / apt-daily) for the first minute
+    # or so after boot, and `playwright install-deps` shells out to apt-get
+    # itself — so it races that holder and dies with exit 100:
+    #
+    #   E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 2967 (apt-get)
+    #
+    # Measured live (adamdaniel.ai job 92892148211): that failed the webkit-iphone16
+    # lane, which failed the aggregating `e2e` gate, which BLOCKED the host loop's
+    # canary PR — and the loop then timed out waiting for a merge that could never
+    # happen. Retrying does NOT help here: the attempts were back-to-back, so all
+    # three landed inside the same lock window.
+    #
+    # apt >= 2.0 (Ubuntu 24.04 ships 2.7) can wait for the lock instead of erroring,
+    # and an apt.conf.d drop-in applies it to apt invocations we do not control —
+    # which is the only way to reach the one inside `playwright install-deps`.
+    # Fail-open: if we cannot write the drop-in we still try the install.
+    - name: Let apt wait for the dpkg lock instead of failing
+      shell: bash
+      env:
+        PW_APT_LOCK_TIMEOUT_S: ${{ inputs.apt-lock-timeout-seconds }}
+      run: |
+        set -uo pipefail
+        conf=/etc/apt/apt.conf.d/99-playwright-install-lock-timeout
+        line="DPkg::Lock::Timeout \"${PW_APT_LOCK_TIMEOUT_S}\";"
+        if [ -w /etc/apt/apt.conf.d ]; then
+          printf '%s\n' "$line" > "$conf" && echo "apt will wait up to ${PW_APT_LOCK_TIMEOUT_S}s for the dpkg lock."
+        elif command -v sudo >/dev/null 2>&1; then
+          printf '%s\n' "$line" | sudo tee "$conf" >/dev/null \
+            && echo "apt will wait up to ${PW_APT_LOCK_TIMEOUT_S}s for the dpkg lock." \
+            || echo "::warning::could not write ${conf}; a dpkg-lock race can still fail the install."
+        else
+          echo "::warning::no write access to /etc/apt/apt.conf.d and no sudo; a dpkg-lock race can still fail the install."
+        fi
+
+    - name: Install Playwright system deps + browser (two phases, retried)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PW_INSTALL_BROWSER: ${{ inputs.browser }}
+        PW_INSTALL_DEPS_ONLY: ${{ inputs.deps-only }}
+        PW_INSTALL_ATTEMPTS: ${{ inputs.attempts }}
+        PW_INSTALL_TIMEOUT_S: ${{ inputs.timeout-seconds }}
+        PW_INSTALL_FINAL_TIMEOUT_S: ${{ inputs.final-timeout-seconds }}
+        PW_APT_LOCK_TIMEOUT_S: ${{ inputs.apt-lock-timeout-seconds }}
+      run: |
+        set -uo pipefail
+        # `set -e` is deliberately NOT set: it would abort the retry loop on the
+        # first failed attempt. Inputs come through env, never interpolated into
+        # the command — the rendered `run:` is echoed to a public log (AGENTS.md).
+
+        # Classify a failure from the captured OUTPUT, not from the exit code
+        # alone: `npx playwright install` wraps apt's exit 100 into exit 1, so the
+        # outer status is not diagnostic. The run that motivated this printed
+        # "Could not get lock /var/lib/dpkg/lock-frontend" and still exited 1,
+        # and the old message asserted "not a timeout, not an apt lock".
+        APT_LOCK_RE='Could not get lock|lock-frontend|dpkg was interrupted'
+
+        why_failed() {
+          # $3 is the bound this attempt ran under, or "none" for the unbounded
+          # apt phase — where a 124 cannot mean "we killed it".
+          local status="$1" out="$2" bound="$3"
+          if grep -Eq "$APT_LOCK_RE" "$out" 2>/dev/null; then
+            printf '%s' "the apt/dpkg LOCK was held by another process. This action already tells apt to wait ${PW_APT_LOCK_TIMEOUT_S}s for it (an apt.conf.d drop-in); the holder outlived that, so raise apt-lock-timeout-seconds."
+          elif [ "$status" -eq 124 ] && [ "$bound" != "none" ]; then
+            printf '%s' "it hit the ${bound}s download bound — a slow CDN, not a broken install; the next attempt resumes, and a re-run gets fresh connections."
+          else
+            printf '%s' "a real package/mirror or install error (exit ${status}); the output carries no apt-lock marker."
+          fi
+        }
+
+        # One phase = one retried command, `mode` deciding whether it is bounded.
+        #
+        # PHASE A (`deps`) IS DELIBERATELY NOT WRAPPED IN `timeout`, and that looks
+        # wrong until you know why (#210, job 92989057569). Bounding apt does not
+        # convert "slow apt" into "abandoned apt" — it converts it into "KILLED
+        # apt, an orphaned `apt-get` still holding /var/lib/dpkg/lock-frontend,
+        # every following attempt starved on that lock, and possibly a
+        # half-configured dpkg state". `timeout` signals only the process it
+        # launched, and the apt-get that matters is a grandchild. A completed-or-
+        # failed apt leaves no orphan of OURS; only a killed one does. So we retry
+        # it (a transient mirror/lock error rides out) but never kill it, and the
+        # caller's job `timeout-minutes` is the backstop for a genuinely hung apt —
+        # where a "job timed out" is an ACCURATE report rather than a misleading
+        # one. The trade is deliberate: apt IS the slow phase (the 39-minute
+        # incident was package fetches, not the CDN), so one lane can be late.
+        # Late-and-green beats red-and-blocked, because a red required check blocks
+        # a `cms/*` canary PR permanently instead of merging it late.
+        #
+        # PHASE B (`download`) keeps the bound + escalating ladder: pure HTTP,
+        # safely killable, resumable, and it orphans nothing that holds a lock.
+        run_phase() {
+          local mode="$1" label="$2"
+          local attempt=1 bound status out why backoff
+          while :; do
+            out="$(mktemp)"
+            status=0
+            # `tee` keeps the output STREAMING to the log — that is how a human
+            # diagnoses a stalled mirror — while capturing it for why_failed.
+            #
+            # Capture the status with `|| status=$?`, NOT `if …; fi` then `$?`:
+            # after a `fi` with no else branch, `$?` is the IF STATEMENT's status
+            # (0), not the command's, so every failure logged as "exit 0".
+            if [ "$mode" = "deps" ]; then
+              bound="none"
+              echo "[${label}] attempt ${attempt} of ${PW_INSTALL_ATTEMPTS}, UNBOUNDED on purpose (a killed apt orphans apt-get on the dpkg lock):"
+              npx playwright install-deps "$PW_INSTALL_BROWSER" 2>&1 | tee "$out" || status=$?
+            else
+              # The LAST attempt gets the generous bound: early attempts exist to
+              # abandon a stalled connection fast, the final one to actually finish
+              # on a network that is simply slow (see final-timeout-seconds).
+              if [ "$attempt" -ge "$PW_INSTALL_ATTEMPTS" ]; then
+                bound="$PW_INSTALL_FINAL_TIMEOUT_S"
+              else
+                bound="$PW_INSTALL_TIMEOUT_S"
+              fi
+              echo "[${label}] attempt ${attempt} of ${PW_INSTALL_ATTEMPTS}, bound ${bound}s:"
+              timeout "$bound" npx playwright install "$PW_INSTALL_BROWSER" 2>&1 | tee "$out" || status=$?
+            fi
+            if [ "$status" -eq 0 ]; then
+              echo "[${label}] succeeded on attempt ${attempt}."
+              rm -f "$out"
+              return 0
+            fi
+            why="$(why_failed "$status" "$out" "$bound")"
+            rm -f "$out"
+            if [ "$attempt" -ge "$PW_INSTALL_ATTEMPTS" ]; then
+              echo "::error::playwright ${label} phase failed ${PW_INSTALL_ATTEMPTS} time(s) (last exit ${status}): ${why}"
+              return 1
+            fi
+            # Back off before retrying — an immediate retry lands inside the same
+            # bad window, which is how three back-to-back attempts all hit one
+            # dpkg-lock holder (job 92892148211).
+            backoff=$((attempt * 15))
+            echo "::warning::playwright ${label} phase attempt ${attempt} of ${PW_INSTALL_ATTEMPTS} gave up (exit ${status}): ${why} Retrying in ${backoff}s with fresh connections (apt and the browser download both resume, so progress is kept)."
+            sleep "$backoff"
+            attempt=$((attempt + 1))
+          done
+        }
+
+        echo "playwright install for '${PW_INSTALL_BROWSER}': ${PW_INSTALL_ATTEMPTS} attempts per phase;" \
+             "apt phase unbounded (job timeout is its backstop);" \
+             "download bound ${PW_INSTALL_TIMEOUT_S}s, final attempt ${PW_INSTALL_FINAL_TIMEOUT_S}s."
+
+        # PHASE A — apt. Runs first; the download only happens if it succeeded.
+        run_phase deps "install-deps (apt)" || exit 1
+
+        if [ "$PW_INSTALL_DEPS_ONLY" = "true" ]; then
+          echo "deps-only: OS libraries installed, skipping the browser download."
+          exit 0
+        fi
+
+        # PHASE B — the browser download. NO `--with-deps`: phase A already did the
+        # apt work, and re-running it here would re-expose the dpkg lock (and put
+        # apt back under a bound, which is the bug this split exists to remove).
+        run_phase download "install (browser download)" || exit 1
+
+        echo "playwright install complete."

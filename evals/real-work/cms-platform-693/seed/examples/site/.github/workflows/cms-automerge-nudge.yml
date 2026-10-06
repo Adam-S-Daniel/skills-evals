@@ -1,0 +1,115 @@
+# Thin caller — copied into a site repo as
+# `.github/workflows/cms-automerge-nudge.yml`. Owns the schedule /
+# workflow_dispatch triggers + run-name + concurrency lane; delegates the
+# stuck-PR recovery to the platform's reusable workflow.
+#
+# Re-enables auto-merge on any open CMS canary PR whose
+# required checks are all green but whose mergeStateStatus is still
+# BLOCKED (issue #1815 Blocker 1 — see the reusable's header for the
+# full #1812 differential).
+#
+# WHERE THE REQUIRED-CONTEXT LIST IS DECLARED. The authoritative
+# declaration is cms-platform's own `repo-settings.yml`, under
+# `ruleset_library.consumer-main` -> `required_status_checks` — that
+# manifest is what `node scripts/audit-repo-settings.js --fix --yes` PUTs
+# to the live ruleset, so it is the source of truth. The list below is
+# lint-locked against it by cms-platform's `e2e/cms-automerge-nudge.test.js`;
+# both files live in the platform, so that lock is entirely platform-side.
+#
+# Do NOT re-point this comment at a site's `.github/rulesets/main.json`, and
+# do NOT claim a site keeps its own copy of that lint. Neither is true:
+# consumers track no `e2e/` tree at all (the harness is platform-delivered),
+# one consumer has no `.github/rulesets/` directory, and the other's is a
+# dead vestige nothing reads — it even declares a ruleset that does not
+# exist live. Keep `@vX.Y.Z` on the `uses:` line pinned to a released
+# platform tag.
+name: CMS auto-merge nudge
+run-name: >-
+  ${{ github.event_name == 'schedule'
+        && format('scheduled — {0}', github.event.schedule)
+   || format('manual — @{0}', github.actor) }}
+
+on:
+  schedule:
+    # Declared every 5 minutes, well under the 6h sweep threshold — but
+    # GitHub throttles scheduled-workflow cadence under load, so this fires
+    # roughly every 45-90 min in practice (see the reusable's header), not
+    # literally every 5. Still recovers a stuck PR long before the daily
+    # sweep would close it. Cron load is bounded regardless: each run is
+    # <1 min, one GraphQL query + 0-N tiny mutations.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # Single global lane — only one nudge pass at a time. cancel-in-progress
+  # is fine here: if a new pass starts mid-flight, the cancelled pass'
+  # work is recovered by the next pass (the mutation is idempotent and
+  # the next pass re-queries fresh state).
+  group: cms-automerge-nudge
+  cancel-in-progress: true
+
+jobs:
+  nudge:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/cms-automerge-nudge.yml@v0.1.151
+    with:
+      # Required-status-check contexts this site's branch protection
+      # enforces, one per line. In THIS template the list mirrors
+      # cms-platform's `repo-settings.yml` `ruleset_library.consumer-main`
+      # (lint-locked, see the header) — the canonical consumer shape.
+      #
+      # DERIVE THESE, don't copy them: the list below is only the shape a
+      # typical consumer ends up with, and a wrong entry silently disables
+      # the nudge (it waits forever for a context no run will ever report).
+      # Get the real list for YOUR site with:
+      #
+      #   gh api repos/<owner>/<repo>/rules/branches/main \
+      #     --jq '.[] | select(.type=="required_status_checks")
+      #                | .parameters.required_status_checks[].context'
+      #
+      # The nudge matches these suffix-tolerantly against check-run names,
+      # so either the bare job name or the full `<caller> / <job>` form
+      # works — the full form is used below because that is what the
+      # ruleset actually stores, and mirroring it keeps the two diffable.
+      #
+      # A previous version of this template listed nine contexts —
+      # `select`, `unit`, `e2e (1)`, `e2e-admin`, `finalize` among them —
+      # that match no job any current workflow produces. `e2e-tests.yml`
+      # has exactly two jobs, a `project` matrix and the aggregating `e2e`
+      # gate, so the single required e2e context is `e2e / e2e` and the
+      # ten `e2e / project (<name>)` contexts are informational.
+      #
+      # The list below equals `ruleset_library.consumer-main`'s six contexts
+      # in cms-platform's `repo-settings.yml`, and the platform lint keeps it
+      # that way. YOUR site owes ITS OWN ruleset's set, and the authoritative
+      # place that is declared is the same manifest:
+      # `repos[<owner/repo>].rulesets.main` names a `ruleset_library` entry,
+      # and THAT entry's `required_status_checks` is your list. Both consumers
+      # map to `consumer-main` today, so both owe these same six; a site
+      # mapped to a different entry owes that entry's list instead. Derive it
+      # with the `gh api` recipe above — never by editing this template's list
+      # out of step with the manifest it is locked to.
+      #
+      # BOTH directions of a wrong list bite, and only the first is obvious.
+      # A WRONG entry makes the nudge wait forever for a context nothing
+      # reports, silently disabling stuck-PR recovery. A SHORT list makes it
+      # ask to merge on incomplete evidence: jodidaniel.com#156 is the worked
+      # example — that caller passed one context of six from the day it was
+      # seeded (six platform bumps touched the file and none revisited the
+      # value), so a single green check would have fired `pulls.merge()` while
+      # five were still pending. It was safe only because branch protection
+      # answered 405. Never read a short list as a deliberate narrowing.
+      required_contexts: |
+        editorial / validate-content
+        scan / scan
+        parity / parity
+        preview-media / preview-media
+        e2e / e2e
+        visual-regression / approve-regression
+        prerelease-guard / prerelease-guard
+        site-verify / site-verify
+    secrets:
+      CMS_E2E_PAT: ${{ secrets.CMS_E2E_PAT }}

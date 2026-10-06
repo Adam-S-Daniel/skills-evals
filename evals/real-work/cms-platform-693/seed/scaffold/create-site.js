@@ -1,0 +1,724 @@
+#!/usr/bin/env node
+"use strict";
+/*
+ * create-site — scaffold a new cms-platform site (thin shell).
+ *
+ *   npx github:Adam-S-Daniel/cms-platform <target-dir> \
+ *       --owner Adam-S-Daniel --repo example.com --domain example.com --title "Example"
+ *
+ * Flags may be omitted; you'll be prompted. Copies the platform-owned files
+ * (the admin/collections.site.yml.example seam reference, thin
+ * workflow callers, dependabot) from this repo and generates the site
+ * identity (_config.yml, Gemfile, site-params.env). Content,
+ * branding, and AWS values stay in the new site; platform machinery flows in
+ * via the gem + reusable workflows (see docs/SYNC.md).
+ */
+const fs = require("fs");
+const path = require("path");
+const readline = require("readline");
+const { execFileSync } = require("child_process");
+
+const PLATFORM_ROOT = path.resolve(__dirname, "..");
+const PLATFORM_REPO = "Adam-S-Daniel/cms-platform";
+// Documented offline FALLBACK only — used when resolvePlatformVersion() below
+// can't reach GitHub. Refresh this on each platform release: it is the version
+// an OFFLINE scaffold stamps into every pin, so a stale value silently births a
+// site pinned many releases back. Kept in lockstep with plugin.json's version
+// (v-prefixed) and the examples/site template pins by
+// e2e/examples-site-pins-current.test.js — the release PR moves all of them
+// together.
+const PLATFORM_VERSION = "v0.1.151";
+
+function parseArgs(argv) {
+  const out = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a.startsWith("--")) {
+      const next = argv[i + 1];
+      out[a.slice(2)] = next === undefined || next.startsWith("--") ? true : argv[++i];
+    } else out._.push(a);
+  }
+  return out;
+}
+
+// Resolve the platform release to pin this new site to. Precedence:
+//   1. Explicit override: --platform-ref flag or CMS_PLATFORM_REF env var.
+//   2. `gh api repos/<PLATFORM_REPO>/releases/latest --jq .tag_name` (if `gh`
+//      is installed and authenticated).
+//   3. GitHub REST API via global fetch (Node 18+), same endpoint.
+//   4. Fallback to the baked-in PLATFORM_VERSION constant above.
+async function resolvePlatformVersion(args) {
+  const explicit = (args && args["platform-ref"]) || process.env.CMS_PLATFORM_REF;
+  if (typeof explicit === "string" && explicit.trim()) {
+    const ref = explicit.trim();
+    console.log(`platform release: ${ref} (explicit override)`);
+    return ref;
+  }
+
+  try {
+    const out = execFileSync(
+      "gh",
+      ["api", `repos/${PLATFORM_REPO}/releases/latest`, "--jq", ".tag_name"],
+      { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 },
+    )
+      .toString()
+      .trim();
+    if (/^v\d+\.\d+\.\d+$/.test(out)) {
+      console.log(`platform release: ${out} (via gh)`);
+      return out;
+    }
+  } catch (_) {
+    /* swallow: gh absent, unauthenticated, network down, etc. */
+  }
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(`https://api.github.com/repos/${PLATFORM_REPO}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const json = await res.json();
+      const tag = json && json.tag_name;
+      if (typeof tag === "string" && /^v\d+\.\d+\.\d+$/.test(tag)) {
+        console.log(`platform release: ${tag} (via GitHub API)`);
+        return tag;
+      }
+    }
+  } catch (_) {
+    /* swallow: network down, non-2xx, malformed JSON, etc. */
+  }
+
+  console.log(`platform release: ${PLATFORM_VERSION} (fallback constant — could not reach GitHub)`);
+  return PLATFORM_VERSION;
+}
+
+function ask(rl, q, dflt) {
+  return new Promise((res) => {
+    rl.question(`${q}${dflt ? ` (${dflt})` : ""}: `, (ans) =>
+      res((ans && ans.trim()) || dflt || "")
+    );
+  });
+}
+
+function copyTree(src, dest, transform) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyTree(s, d, transform);
+    else {
+      let buf = fs.readFileSync(s);
+      if (transform && /\.(ya?ml|js|md|html|css|rb|env|json)$/.test(entry.name)) {
+        buf = Buffer.from(transform(buf.toString("utf8")));
+      }
+      fs.mkdirSync(path.dirname(d), { recursive: true });
+      fs.writeFileSync(d, buf);
+    }
+  }
+}
+
+function write(dest, rel, content) {
+  const p = path.join(dest, rel);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, content);
+}
+
+// A platform ref's `@vX.Y.Z` pin, ANCHORED TO THE PLATFORM SLUG. It used to be
+// the bare `/@v\d+\.\d+\.\d+/g` — version-shaped rather than cms-platform-scoped
+// — so it also rewrote a THIRD-PARTY pin, and anything version-shaped that
+// merely looked like one. Measured before the anchor landed: a template caller
+// carrying `- run: pip install some-tool@v2.3.4` shipped `some-tool@v0.1.84`
+// into every new site, and NOTHING saw it — not this scaffolder, not actionlint
+// (it does not resolve tags), not the pin checker (it ignores non-platform
+// refs), not the new site's own verify-consumer-pins.sh (a non-platform token is
+// not a platform ref). A lint enumerating the positions where that can happen
+// keeps losing to the next position; anchoring the transform removes the hazard.
+// Locked by e2e/examples-site-pins-current.test.js, which drives THIS function.
+// The `i` is load-bearing, and was MEASURED: GitHub resolves a lowercase-owner
+// ref (`adam-s-daniel/cms-platform@…`), and the bare version-shaped rule used to
+// normalise one by accident. A case-SENSITIVE anchor would have shipped
+// `adam-s-daniel/…@v0.1.1` verbatim into a new site — a genuinely stale platform
+// pin that nothing downstream sees, because the pin checker's classifyUses(),
+// verify-consumer-pins.sh's slug test and platform-bump.yml's rewrite are all
+// case-sensitive. So anchoring must not narrow WHICH platform refs get
+// normalised; it only narrows the rule to platform refs. (The template guard
+// separately REJECTS a mis-cased slug outright, so one should never get here.)
+const PLATFORM_PIN = new RegExp(
+  `(${PLATFORM_REPO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\s@]*)@v\\d+\\.\\d+\\.\\d+`,
+  "gi",
+);
+
+// The template → new-site text transform: site identity first, then the platform
+// pins. Module-level (not a closure inside main()) so the template guard can
+// apply the REAL transform to the REAL template and scan the bytes a new site
+// would actually receive — the agreement two rounds of a re-derived detector
+// could not establish.
+//
+// It deliberately does NOT rewrite a trailing `# vX.Y.Z (date)` comment on a
+// platform line. That is not an oversight: since the 2026-08-20 fleet-wide
+// retirement a `uses:` line ends at its ref and carries NO version comment at
+// all, so there is none left to rewrite — and a transform that silently
+// repaired comments would HIDE template rot from the scan that proves the
+// template clean, as well as re-minting the very label the pin checker now
+// rejects. Do not teach it to write one.
+function substitute(text, { prefix, domain, platformVersion }) {
+  return String(text)
+    .replace(/example-com/g, prefix)
+    .replace(/example\.com/g, domain)
+    .replace(/platform_ref:\s*v\d+\.\d+\.\d+/g, `platform_ref: ${platformVersion}`)
+    .replace(PLATFORM_PIN, `$1@${platformVersion}`);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const platformVersion = await resolvePlatformVersion(args);
+  const rl = args.yes
+    ? null
+    : readline.createInterface({ input: process.stdin, output: process.stdout });
+  const q = async (k, prompt, dflt) =>
+    args[k] != null ? args[k] : rl ? await ask(rl, prompt, dflt) : dflt;
+
+  const domain = await q("domain", "Production domain (apex, no scheme)", "example.com");
+  const title = await q("title", "Site title", domain.split(".")[0]);
+  const owner = await q("owner", "GitHub owner", "Adam-S-Daniel");
+  const repo = await q("repo", "GitHub repo name", domain);
+  const author = await q("author", "Author name", title);
+  const target = path.resolve(args._[0] || (await q("dir", "Target directory", repo)));
+  if (rl) rl.close();
+
+  const prefix = domain.replace(/\./g, "-");
+  // Rewrite the template's identity + platform pins on the way into the new
+  // site — see substitute() above for what it does and, more importantly, what
+  // it deliberately does not.
+  const sub = (s) => substitute(s, { prefix, domain, platformVersion });
+
+  if (fs.existsSync(target) && fs.readdirSync(target).length)
+    throw new Error(`target ${target} is not empty`);
+  fs.mkdirSync(target, { recursive: true });
+
+  copyTree(path.join(PLATFORM_ROOT, "examples/site/.github"), path.join(target, ".github"), sub);
+  // admin/ machinery ships via the cms-platform-theme gem (theme/admin) — sites
+  // no longer vendor it. Seed only the seam reference (collections.site.yml.example)
+  // so the site knows where its optional custom collections go.
+  fs.mkdirSync(path.join(target, "admin"), { recursive: true });
+  write(
+    target,
+    "admin/collections.site.yml.example",
+    fs.readFileSync(path.join(PLATFORM_ROOT, "theme/admin/collections.site.yml.example"), "utf8"),
+  );
+  // Platform skills are NOT vendored into a site. They ship as a federated
+  // bundle in the adam-agentskills marketplace (`/plugin install
+  // cms-platform@adam-agentskills`); on an ephemeral surface that install does not
+  // persist, and the channel there — that registry's skills-bootstrap
+  // SessionStart hook — delivers this bundle to a repo only once THAT repo's
+  // own `skills.lock` declares cms-platform as a source. The lock is a
+  // per-consuming-repo artifact, and a freshly scaffolded site has none at
+  // all, so it receives nothing here today. That is the point: a new site is
+  // never born with a `.claude/skills` mirror that nothing syncs and nothing
+  // guards.
+
+  // Pre-commit guards (secrets-scan + lint-staged) — platform-authoritative,
+  // kept current by .github/workflows/dev-hooks-sync.yml. Seed the canonical
+  // files + a SessionStart that wires them locally, so the guards are active on
+  // the first clone (not only after the first sync PR lands). (issue #116)
+  for (const f of [
+    "scripts/secrets-scan.sh",
+    "scripts/lint-staged.sh",
+    "scripts/setup-hooks.sh",
+    ".githooks/pre-commit",
+    ".gitconfig-fragment",
+  ]) {
+    const dst = path.join(target, f);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(path.join(PLATFORM_ROOT, f), dst);
+    if (/\.sh$|pre-commit$/.test(f)) fs.chmodSync(dst, 0o755);
+  }
+  write(target, ".claude/settings.json", DEV_HOOKS_SETTINGS_JSON);
+
+  write(target, "_config.yml", configYml({ title, domain, author, owner, repo }));
+  write(target, "Gemfile", gemfile(platformVersion));
+  write(
+    target,
+    "infrastructure/site-params.env",
+    sub(fs.readFileSync(path.join(PLATFORM_ROOT, "infrastructure/site-params.example.env"), "utf8"))
+      .replace(/^export GITHUB_REPO=.*$/m, `export GITHUB_REPO="${repo}"`)
+      .replace(/^export APEX_DOMAIN=.*$/m, `export APEX_DOMAIN="${domain}"`)
+      // A scaffolded site ships per-PR preview admins on preview-*.<domain>; each is its own
+      // origin, so the OAuth proxy must allow them or they cannot sign in.
+      .replace(
+        /^export ALLOWED_ORIGINS=.*$/m,
+        `export ALLOWED_ORIGINS="https://${domain},https://preview-*.${domain}"`
+      )
+      .replace(/^export STACK_NAME=.*$/m, `export STACK_NAME="${prefix}-oauth-proxy"`)
+  );
+  write(
+    target,
+    "platform.lock",
+    `# cms-platform lock — the platform release this site is pinned to.\n` +
+      `# Bumped by the platform-bump workflow, which moves the uses:@ pins and\n` +
+      `# the theme gem in lockstep too (Dependabot ignores all three — #242,\n` +
+      `# #244). See the platform's docs/SYNC.md.\n` +
+      `platform_repo: ${PLATFORM_REPO}\n` +
+      `platform_ref: ${platformVersion}\n`
+  );
+
+  write(target, "_posts/" + seedDate() + "-hello-world.md", SEED_POST(title));
+  write(target, "pages/about.md", SEED_ABOUT(title));
+  // Seed a NEUTRAL "replace me" placeholder logo. The gem ships only a neutral
+  // placeholder (never a site's brand — issue #25); the render hooks default
+  // cms.logo_url to <url>/assets/images/logo.svg, and this site-owned copy
+  // SHADOWS the gem asset. The owner replaces it with their real logo (or sets
+  // cms.logo_url). Reuse the gem placeholder so the two never drift; prepend a
+  // "replace me" note for the new owner.
+  write(target, "assets/images/logo.svg", seedLogo());
+  // Seed a NEUTRAL "replace me" placeholder favicon (issue #325), same pattern
+  // as the logo above: the gem ships only a neutral placeholder; the gem
+  // include theme/_includes/favicon.html defaults favicon_url to
+  // <baseurl>/assets/favicon.svg, and this site-owned copy SHADOWS it. The
+  // owner replaces it with their real icon (or sets cms.favicon_url).
+  write(target, "assets/favicon.svg", seedFavicon());
+  write(target, "_e2e/canary-post.md", SEED_CANARY);
+  write(target, "index.html", SEED_INDEX);
+  // Seed the consuming-site half of the live-preview + graceful-404 contract
+  // (issue #23). The gem ships theme/_layouts/preview.html + the admin
+  // preview-bridge / native-preview-href scripts, but the admin "Live Preview"
+  // link dead-ends on a raw S3 404 unless THIS site exposes the /preview/ PAGE;
+  // likewise an unknown URL 404s ungracefully without a site 404.html. preview.md
+  // is front-matter ONLY (the gem layout IS the shell); 404.html is a friendly
+  // not-found page on the gem `default` layout. Locked by
+  // e2e/scaffold-preview-and-404.test.js.
+  write(target, "preview.md", SEED_PREVIEW);
+  write(target, "404.html", SEED_404);
+  // Seed the preview-media probe sentinel (issue #84). preview-media.yml's
+  // salient-change gate fetches this exact path on the deployed preview to
+  // prove the flat `media_folder` resolves; without it a fresh consumer only
+  // "passes" preview-media by never triggering it, then 404s the first
+  // media-salient change (bit jodidaniel.com on the v0.1.30 bump). Canonical
+  // 1x1 PNG, byte-identical to the platform's own e2e/fixtures/tiny-pixel.png
+  // (git blob sha 62a5f8f47fec02344e5bf9061888262f677cf5d6) and to what
+  // adamdaniel.ai / jodidaniel.com already carry. Embedded as base64 (not read
+  // from e2e/ at scaffold time) so scaffold output stays hermetic. Locked by
+  // e2e/scaffold-seeds-media-probe.test.js.
+  write(
+    target,
+    "assets/images/uploads/e2e-preview-media-probe.png",
+    Buffer.from(PROBE_PNG_BASE64, "base64"),
+  );
+  write(target, ".gitignore", SITE_GITIGNORE);
+  // The secrets-scan reusable runs the gitleaks binary with --config
+  // .gitleaks.toml when present; ship the platform's fixture allowlist so a
+  // fresh site scans clean. (gitleaks-action is license-gated for org repos,
+  // so the reusable uses the binary — see .github/workflows/secrets-scan.yml.)
+  write(target, ".gitleaks.toml", fs.readFileSync(path.join(PLATFORM_ROOT, ".gitleaks.toml"), "utf8"));
+  write(target, "README.md", siteReadme({ title, domain, owner, repo, platformVersion }));
+
+  // OAuth proxy + bootstrap DELEGATING deploy wrappers (#69). The site commits
+  // ONLY these thin wrappers — never the OAuth proxy lambda.py/template.yaml or
+  // the bootstrap CloudFormation template — and each checks the platform out at
+  // platform_ref into .cms-platform/ and deploys the platform's stack under THIS
+  // site's identity (from infrastructure/site-params.env). Keeps consumers from
+  // forking the proxy/infra. Locked by e2e/scaffold-deploy-delegators.test.js.
+  for (const rel of ["oauth-proxy/deploy.sh", "infrastructure/bootstrap/deploy.sh"]) {
+    write(target, rel, fs.readFileSync(path.join(PLATFORM_ROOT, rel + ".delegating"), "utf8"));
+    fs.chmodSync(path.join(target, rel), 0o755);
+  }
+
+  console.log(nextSteps({ target, domain, owner, repo, prefix }));
+}
+
+function configYml({ title, domain, author, owner, repo }) {
+  return `title: ${title}
+description: ""
+url: "https://${domain}"
+baseurl: ""
+author:
+  name: ${author}
+
+theme: cms-platform-theme
+
+markdown: kramdown
+highlighter: rouge
+permalink: /blog/:slug/
+
+# Gem-shipped admin assets are copied into _site/admin by the post_write render
+# hook (not generated by Jekyll), so Jekyll's cleanup phase would delete them
+# each build (incl. in-test rebuilds) — a TOCTOU the e2e admin link-crawler
+# HEADs into (transient 404). keep_files spares _site/admin from cleanup.
+keep_files:
+  - admin
+
+cms:
+  repository: ${owner}/${repo}
+  oauth_base_url: ""
+
+# Profiles this site cross-posts to. Each becomes a <link rel="me"> in <head>
+# (the theme's rel-me.html), which lets Mastodon mark the site as verified on
+# the profile. Values must be absolute https:// URLs; leave unset for none.
+# cross_post:
+#   profiles:
+#     mastodon: https://mastodon.example/@you
+#     linkedin: https://www.linkedin.com/in/you
+#     substack: https://you.substack.com
+
+collections:
+  projects: { output: false, permalink: /projects/:slug/ }
+  tags: { output: true, permalink: /tags/:slug/ }
+  e2e: { output: true, permalink: /e2e/:slug/ }
+
+defaults:
+  - { scope: { path: "", type: "posts" },    values: { layout: "post" } }
+  - { scope: { path: "", type: "projects" }, values: { layout: "project" } }
+  - { scope: { path: "", type: "tags" },     values: { layout: "tag" } }
+  - { scope: { path: "pages" },              values: { layout: "page" } }
+  - { scope: { path: "", type: "e2e" },      values: { layout: "canary", sitemap: false, robots: "noindex,nofollow" } }
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-feed
+  - jekyll-sitemap
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - infrastructure
+  - oauth-proxy
+  - scripts
+  - README.md
+  - "*.env"
+  # The e2e lane checks the platform out into .cms-platform/ and (for the
+  # local lane) PLACES the harness at <site>/e2e. Neither is site content;
+  # excluding them keeps the harness (specs, configs, node_modules) and the
+  # platform checkout out of _site so they can't pollute the build or break
+  # the e2e-posts-exclusion / sitemap specs that read _site. (.cms-platform
+  # is dot-prefixed so Jekyll ignores it by default; listing it is explicit.)
+  - e2e
+  - .cms-platform
+  - platform.lock
+  - admin/collections.site.yml.example
+`;
+}
+
+// SessionStart wiring for the platform-delivered pre-commit guards. Runs the
+// (sync-managed) setup-hooks.sh idempotently each session so secrets-scan +
+// lint-staged are wired into git config on every clone. (issue #116)
+const DEV_HOOKS_SETTINGS_JSON =
+  JSON.stringify(
+    {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup|resume",
+            hooks: [
+              {
+                type: "command",
+                command: 'bash "$CLAUDE_PROJECT_DIR/scripts/setup-hooks.sh"',
+                timeout: 30,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  ) + "\n";
+
+// The new site's Gemfile. The theme gem MUST carry a `tag:` pin: it is one of
+// the platform-version references check-platform-pin-consistency.js compares
+// against platform.lock's platform_ref, so an untagged gem line means a freshly
+// scaffolded site FAILS its own pin-consistency gate on the first run (measured:
+// `gem "cms-platform-theme" tag:` found "(no tag: pin)", expected the canonical
+// ref → exit 1). An untagged git gem also floats to the platform's default
+// branch, which is the drift this whole pinning model exists to prevent.
+// platform-bump moves this tag in lockstep with the uses:@ pins; Dependabot
+// ignores it (#242).
+const gemfile = (platformVersion) => `source "https://rubygems.org"
+gem "jekyll", "~> 4.3"
+gem "webrick"
+
+group :jekyll_plugins do
+  gem "cms-platform-theme", git: "https://github.com/Adam-S-Daniel/cms-platform", glob: "theme/*.gemspec", tag: "${platformVersion}"
+end
+`;
+
+// The site-owned placeholder logo seeded into assets/images/logo.svg. It's the
+// gem's NEUTRAL placeholder (read from theme/assets/images/logo.svg so the two
+// can't drift) with a leading "replace me" note for the new owner. The owner
+// drops in their real logo here (it shadows the gem asset) or sets cms.logo_url.
+function seedLogo() {
+  const gemLogo = fs.readFileSync(
+    path.join(PLATFORM_ROOT, "theme/assets/images/logo.svg"),
+    "utf8",
+  );
+  const note =
+    "<!--\n" +
+    "  REPLACE ME. This is a neutral placeholder logo for your new site's /admin.\n" +
+    "  Drop in your own logo at this path (assets/images/logo.svg) or set\n" +
+    "  cms.logo_url in _config.yml. This file shadows the cms-platform-theme gem's\n" +
+    "  placeholder; until you replace it, /admin shows the generic mark below.\n" +
+    "-->\n";
+  // Keep the gem's own <svg> + override comment; just prepend the owner note
+  // (after any XML declaration, so the decl stays first).
+  const m = gemLogo.match(/^(<\?xml[^>]*\?>\s*)/);
+  return m ? m[1] + note + gemLogo.slice(m[1].length) : note + gemLogo;
+}
+
+// The site-owned placeholder favicon seeded into assets/favicon.svg (issue
+// #325) — same shadowing pattern as seedLogo() above. It's the gem's NEUTRAL
+// placeholder (read from theme/assets/favicon.svg so the two can't drift)
+// with a leading "replace me" note for the new owner. The owner drops in
+// their real icon here (it shadows the gem asset) or sets cms.favicon_url.
+function seedFavicon() {
+  const gemFavicon = fs.readFileSync(
+    path.join(PLATFORM_ROOT, "theme/assets/favicon.svg"),
+    "utf8",
+  );
+  const note =
+    "<!--\n" +
+    "  REPLACE ME. This is a neutral placeholder favicon for your new site.\n" +
+    "  Drop in your own icon at this path (assets/favicon.svg) or set\n" +
+    "  cms.favicon_url in _config.yml. This file shadows the cms-platform-theme\n" +
+    "  gem's placeholder; until you replace it, browser tabs show the generic\n" +
+    "  mark below.\n" +
+    "-->\n";
+  const m = gemFavicon.match(/^(<\?xml[^>]*\?>\s*)/);
+  return m ? m[1] + note + gemFavicon.slice(m[1].length) : note + gemFavicon;
+}
+
+const seedDate = () => new Date().toISOString().slice(0, 10);
+const SEED_POST = (t) => `---
+title: Hello world
+date: ${new Date().toISOString().slice(0, 19).replace("T", " ")} +0000
+published: true
+---
+
+Welcome to ${t}. Edit or replace this post in the CMS at \`/admin/\`.
+`;
+const SEED_ABOUT = (t) => `---
+title: About
+layout: page
+permalink: /pages/about/
+published: true
+---
+
+About ${t}.
+`;
+const SEED_CANARY = `---
+layout: canary
+title: E2E Canary
+permalink: /e2e/canary-post/
+canary_id: canary-post
+sitemap: false
+robots: "noindex,nofollow"
+---
+E2E canary entry
+`;
+const SEED_INDEX = `---
+layout: default
+title: Home
+---
+<h1>{{ site.title }}</h1>
+<ul>
+{% for post in site.posts %}<li><a href="{{ post.url | relative_url }}">{{ post.title }}</a></li>{% endfor %}
+</ul>
+`;
+// The admin "Live Preview" surface (issue #23). Front-matter ONLY — the gem
+// theme/_layouts/preview.html IS the shell (it hosts the hidden post/page/
+// project variants the admin preview-bridge streams draft content into). It
+// HARDCODES `<meta name="robots" content="noindex, nofollow">`, so we DON'T
+// add a front-matter robots here (a second one would duplicate the meta) —
+// mirrors adamdaniel.ai/preview.md.
+const SEED_PREVIEW = `---
+layout: preview
+permalink: /preview/
+sitemap: false
+title: "Live Preview"
+description: "Internal CMS preview surface — not a real post."
+---
+`;
+// A friendly, SELF-CONTAINED not-found page (issue #23; redesigned #326).
+// Generic + site-agnostic; links back to home. Deliberately carries NO
+// \`layout:\` — it is its own full <html> document and does NOT extend the
+// gem's \`default\` layout or load assets/css/main.css. That layout is the
+// gem's own opinionated dark/monospace look (adamdaniel.ai's whole site IS
+// that look), which reads as "a different project" when it's the only gem
+// surface a visitor to a site with its OWN design system (e.g. a light,
+// custom-font single-page site) ever lands on. Instead this page ships its
+// own minimal, neutral, system-font styling and exposes a SMALL set of CSS
+// custom properties (--nf-*) up top so a site can restyle it to match its
+// brand with a one-line edit each, rather than rewriting the whole page.
+// Sensible defaults below sit acceptably next to either the gem's default
+// look or a fully custom one. LOCKED bits a restyle must not lose: the
+// \`permalink: /404.html\` contract (correct HTTP 404 behavior),
+// \`robots: noindex,nofollow\` + \`sitemap: false\`, and a working link home.
+// \`page.robots\` is still read from front matter (this page has no layout to
+// render it FOR it, so it emits its own <meta> tag directly).
+const SEED_404 = `---
+permalink: /404.html
+sitemap: false
+robots: "noindex,nofollow"
+title: Page Not Found
+description: The page you were looking for does not exist.
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="{{ page.robots }}">
+  <title>{{ page.title }}</title>
+  <style>
+    /* A site can restyle this page by overriding these few custom
+       properties (in its own copy of this file — it is site-owned, not
+       gem-shadowed) rather than rewriting the markup below. */
+    :root {
+      --nf-bg: #fafafa;
+      --nf-fg: #1f2430;
+      --nf-muted: #5b6472;
+      --nf-accent: #2f5fd6;
+      --nf-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      background: var(--nf-bg);
+      color: var(--nf-fg);
+      font-family: var(--nf-font);
+      line-height: 1.5;
+      text-align: center;
+    }
+    .not-found__code {
+      margin: 0;
+      font-size: 3.5rem;
+      font-weight: 700;
+      color: var(--nf-muted);
+    }
+    .not-found__heading {
+      margin: 0.25rem 0 0.75rem;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    .not-found__message {
+      margin: 0 0 1.5rem;
+      color: var(--nf-muted);
+    }
+    .not-found__home {
+      color: var(--nf-accent);
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <p class="not-found__code" aria-hidden="true">404</p>
+    <h1 class="not-found__heading">Page not found</h1>
+    <p class="not-found__message">
+      The page you were looking for doesn't exist, or it may have moved.
+    </p>
+    <p>
+      <a class="not-found__home" href="{{ '/' | relative_url }}">Return to the homepage</a>
+    </p>
+  </div>
+</body>
+</html>
+`;
+// The preview-media probe sentinel (issue #84) — a canonical 1x1 PNG, 69 bytes.
+// Byte-identical to e2e/fixtures/tiny-pixel.png (git blob sha
+// 62a5f8f47fec02344e5bf9061888262f677cf5d6); embedded here (rather than read
+// from the e2e/ tree at scaffold time) so scaffold output stays hermetic.
+const PROBE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+const SITE_GITIGNORE = `_site/
+.jekyll-cache/
+Gemfile.lock
+vendor/
+infrastructure/site-params.env
+.bundle/
+admin/config.yml
+admin/config-local.yml
+`;
+
+function siteReadme({ title, domain, owner, repo, platformVersion }) {
+  return `# ${title}
+
+A [cms-platform](https://github.com/${PLATFORM_REPO}) site. Machinery (theme,
+workflows, infra) flows in from the platform; this repo holds the
+content + identity.
+
+- Production: https://${domain}
+- Repo: ${owner}/${repo}
+- Platform: \`${PLATFORM_REPO}@${platformVersion}\` (see \`platform.lock\`)
+
+## Local dev
+
+\`\`\`bash
+bundle install
+bundle exec jekyll serve
+\`\`\`
+`;
+}
+
+function nextSteps({ target, domain, owner, repo, prefix }) {
+  return `
+✓ Scaffolded ${repo} at ${target}
+
+Next:
+  1. cd ${target} && git init && git add -A && git commit -m "Initial site from cms-platform"
+  2. Create GitHub repo ${owner}/${repo} and push.
+  3. Edit infrastructure/site-params.env (GitHub OAuth app id/secret, etc.).
+  4. Deploy infra (one-time, shared AWS account; needs the AWS CLI, git, Ruby, python3).
+     The bootstrap stack is ${prefix}-bootstrap (BOOTSTRAP_STACK_NAME); site-params.env's
+     STACK_NAME names the OAuth proxy stack and is never used for it:
+       ALLOW_STACK_CREATE=1 bash infrastructure/bootstrap/deploy.sh   # first bootstrap creates the stack;
+                                                                      # later redeploys drop the flag
+       bash oauth-proxy/deploy.sh                # committed delegating wrapper (scope repo,read:user,workflow)
+  5. Add GitHub secrets (exact fine-grained PAT permissions: see the
+     /cms-platform:consumer-repo-provisioning skill, from the adam-agentskills bundle):
+       - CMS_E2E_PAT      this repo: Contents R/W, Pull requests R/W, Actions R/W; PAT user = reviewer of the regression-review env
+       - CMS_AUTOMATION_APP_PRIVATE_KEY (+ the CMS_AUTOMATION_APP_ID variable, step 6) -- the CMS
+                          automation GitHub App; powers platform-bump + dev-hooks-sync, nothing to rotate
+       (CMS_PLATFORM_PAT is GONE as of v0.1.103 -- do not create it. The App
+        above is the only push credential for platform-bump and dev-hooks-sync;
+        without it platform-bump fails loudly naming both knobs.)
+       - AWS_ROLE_ARN, PREVIEW_CLOUDFRONT_ID, PRODUCTION_CLOUDFRONT_ID (bootstrap stack outputs)
+     Also enable Settings -> General -> Allow auto-merge.
+  6. Set the repo VARIABLES the reusable workflows read via vars.* (CMS_APEX,
+     CMS_PROD_URL, PREVIEW_BUCKET, AWS_REGION) — all DERIVED from APEX_DOMAIN in
+     infrastructure/site-params.env, so nothing is retyped:
+       set -a; source infrastructure/site-params.env; set +a
+       bash <cms-platform>/scripts/set-repo-variables.sh        # add --dry-run to preview
+     (Leave PROD_PLAYGROUND_MODE unset on a real prod site so the prod-mutate
+     loop stays report-only; set PROD_PLAYGROUND_MODE=true in site-params.env
+     only for a throwaway sandbox you want the loop to actually mutate.)
+  7. Set _config.yml cms.oauth_base_url to the oauth-proxy ApiUrl output.
+  8. Point ${domain} + *.${domain} DNS at the CloudFront distributions.
+  9. If ${owner} is a GitHub ORG with OAuth App access restrictions enabled, an
+     org owner must approve the CMS OAuth App before editors can save (login
+     works, but saves fail until then — see jodidaniel#27). Check with:
+       node <cms-platform>/scripts/preflight-oauth.js --repo ${owner}/${repo}
+ 10. Add ${owner}/${repo} to cms-platform's repo-settings.yml under \`repos:\`
+     (usually \`main: consumer-main\` + \`cms-feature-branches\`) so the daily
+     repo-settings drift audit governs the new repo's settings/rulesets, then
+     apply them: node <cms-platform>/scripts/audit-repo-settings.js --fix --yes --repo ${owner}/${repo}
+
+Resource prefix: ${prefix}   Buckets: ${prefix}-{cfn-artifacts,previews,production}
+`;
+}
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error("create-site:", e.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { resolvePlatformVersion, PLATFORM_VERSION, PLATFORM_REPO, substitute };
