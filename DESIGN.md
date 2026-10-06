@@ -185,8 +185,9 @@ design, recorded verbatim:
   additions` in `AGENTS.md` and `CLAUDE.md`, and their fleet copies) and the
   agent settings and hooks, but keep each repository's own "Repo-specific
   additions" section.
-- **Q7, the primary efficiency KPI:** "Tokens (Recommended)". Nothing here
-  implements accept or reject on it yet.
+- **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
+  `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
+  acceptance"); nothing else does.
 
 Q3 (private repositories and Class C sources), Q4 (one fixture for many
 subjects), Q6 (where the scaffolder runs) and Q8 (training cutoffs) remain
@@ -614,7 +615,8 @@ is objectively decidable from the resulting files alone.
   that metric's `n_missing`, never averaged as 0. `report.md` prints them per
   arm with the with-minus-without delta, and `scripts/local_eval.py`'s
   `aggregate.json` carries the same blocks. They are reported, not decided
-  on: no accept/reject rule reads them.
+  on, except by `scripts/propose_skill_edit.py`, which sums the four token
+  means per fixture and reads that (ADR 0005, "Token-aware acceptance").
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's

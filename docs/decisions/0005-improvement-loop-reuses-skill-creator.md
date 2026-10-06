@@ -97,9 +97,10 @@ this harness or it is not measured the way every other number here is.
    unscored fixture, or missing expected judge score, rejects as inconclusive.
    **Superseded in part (2026-10-06):** the acceptance basis becomes
    real-work fixtures plus a token and cost metric (Amendment 2). This
-   decision's objective and judge rule is what the code implements today
-   (see "Not yet implemented"). The trigger half only picks the candidate
-   description; it does not decide acceptance.
+   decision's objective and judge rule is the quality input of `decide`;
+   tokens are read beside it (see "Token-aware acceptance (implemented)").
+   The trigger half only picks the candidate description; it does not
+   decide acceptance.
 5. **Output stays local.** `improvements/<skill>/<ts>.json` is written every
    time (rejections are the high-value record), `<ts>.patch` whenever a
    candidate existed (rooted at the registry, `git apply`-able), and
@@ -370,7 +371,7 @@ runs as root there is expected but, per ADR 0010 ("Resulting direction" and
 its open questions), not yet shown. The baseline and candidate measurements
 already share one mode, because both are built by the same `run_eval_argv`
 helper and pass no `--permission-mode`
-(`scripts/propose_skill_edit.py:805-810`).
+(`scripts/propose_skill_edit.py:817-822`).
 
 This supersedes the "local exhibit ... never runs in CI ... no workflow"
 framing of decision 6 for routine runs only. Decisions 3 and 4 of
@@ -403,20 +404,42 @@ to the original after 183 skill-creator calls (three iterations, reported as
 10/12 and 7/8, 10/12 and 6/8, then 12/12 and 6/8). Its raw record is not in
 this repository.
 
+### Token-aware acceptance (implemented)
+
+`decide` (`scripts/propose_skill_edit.py:889`) now reads tokens beside the
+objective and judge rule of decision 4, which it keeps as the quality input.
+`fixture_metrics` (`:825`) adds `tokens` per fixture: the mean per trial of
+the four `usage` counts (input, output, cache creation, cache read) from the
+per-arm efficiency aggregate of
+[PR #301](https://github.com/Adam-S-Daniel/skills-evals/pull/301), or null
+when any trial lacks any count (`mean_tokens`, `:863`). Then:
+
+- **Missing token data is inconclusive.** A null `tokens` on either side for
+  any measured fixture (train, validation, holdout) rejects with
+  "inconclusive: missing token data" naming the side and fixture. It never
+  passes as zero.
+- **More tokens without a quality gain is not accepted.** Tokens are summed
+  over the measured fixtures. A candidate above the baseline by more than
+  `TOKEN_INCREASE_TOLERANCE` (0, so any increase) without a quality gain is
+  rejected with that reason. The quality gain is the train gain of
+  `--min-gain`, which acceptance already required, so the code accepts a
+  candidate that costs more tokens only alongside one and records the rise.
+- **Cost is recorded, not decided on.** Q7 names tokens the primary KPI; the
+  decision does not read `cost_usd`.
+
+The ADR text leaves open, and the code answers conservatively, whether a
+gain may buy any rise in tokens or only up to a ceiling (any rise is
+accepted today), whether a flat-quality candidate that costs fewer tokens may
+be accepted (it is rejected today), and whether cache reads and writes count
+(they do). These are for the owner.
+
 ### Not yet implemented
 
-Both are as of `origin/main` at `ec9cf33`.
+As of `origin/main` at `ec9cf33`:
 
-- **`propose_skill_edit.py`'s acceptance does not read tokens.** `decide`
-  compares objective pass rate and judge mean only
-  (`scripts/propose_skill_edit.py:862-921`), and the per-fixture metrics it
-  reads carry `passed`, `total` and `judge_mean`
-  (`scripts/propose_skill_edit.py:813-848`). The trigger half records
-  `tokens` and `cost_usd` as null (`scripts/propose_skill_edit.py:129-132`,
-  `:596-599`). PR #301 says the same of its aggregates: tokens are not wired
-  into accept/reject yet, and `DESIGN.md` says so of Q7. Decision 4's objective and judge
-  rule is therefore what the code implements today; this amendment records
-  the intended basis, not a behavior change.
+- **The trigger half's tokens stay null.** It records `tokens` and
+  `cost_usd` as null (`scripts/propose_skill_edit.py:611`): skill-creator
+  reports neither, so they are not part of the decision.
 - **The loop is not wired into the routine.** No file under `.github/`
   mentions `scripts/propose_skill_edit.py`, and `routine-eval-fire.yml`
   fires a fixture, arms and trials (its payload carries `run_id`, `fixture`,

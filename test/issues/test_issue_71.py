@@ -98,10 +98,19 @@ def flag(argv: list[str], name: str) -> str:
     return argv[argv.index(name) + 1]
 
 
+def usage_block(tokens: int) -> dict:
+    """A CLI `usage` block whose four token counts sum to `tokens`."""
+    tenth = tokens // 10
+    return {"input_tokens": tenth, "output_tokens": tenth,
+            "cache_creation_input_tokens": tenth,
+            "cache_read_input_tokens": tokens - 3 * tenth}
+
+
 def write_arm(run_dir: Path, ts: str, fixture: str,
               passed: int, total: int, judge: float | None,
-              trials: int = 3) -> None:
-    """The per-trial layout written by local_eval's run_eval children."""
+              trials: int = 3, tokens: int | None = 1000) -> None:
+    """The per-trial layout written by local_eval's run_eval children. Every
+    trial reports `tokens` in total (None: an agent block with no usage)."""
     for k in range(1, trials + 1):
         trial = run_dir / f"t{k}" / SKILL / ts / fixture / "with_skill"
         (trial / "transcripts").mkdir(parents=True)
@@ -109,6 +118,8 @@ def write_arm(run_dir: Path, ts: str, fixture: str,
                   for i in range(total)]
         (trial / "summary.json").write_text(json.dumps(
             {"error": None, "objective_checks": checks, "trial": k,
+             "agent": {"cost_usd": 0.1,
+                       **({"usage": usage_block(tokens)} if tokens is not None else {})},
              "judge": {"overall": judge} if judge is not None else None}),
             encoding="utf-8")
         (trial / "transcripts" / "raw.json").write_text(
@@ -121,6 +132,8 @@ class FakeRunner:
     def __init__(self, baseline: dict, candidate: dict, proposal: str | None,
                  best_description: str | None = None):
         self.numbers = {"baseline": baseline, "candidate": candidate}
+        #: Tokens every trial reports, per phase; a test overrides these.
+        self.tokens = {"baseline": 1000, "candidate": 1000}
         self.proposal = proposal
         self.best_description = best_description
         self.calls: list[tuple] = []
@@ -138,7 +151,7 @@ class FakeRunner:
         for fixture, (passed, total, judge) in self.numbers[label].items():
             write_arm(run_dir, flag(argv, "--timestamp"), fixture,
                       passed, total, judge,
-                      int(flag(argv, "--trials")))
+                      int(flag(argv, "--trials")), self.tokens[label])
         return 1
 
     def run_description_loop(self, argv, *, cwd, skill_creator):
@@ -911,8 +924,9 @@ class DescriptionRewriteTests(unittest.TestCase):
             pse.set_description(ORIGINAL_SKILL_MD, "x" * 1025)
 
 
-def m(passed, total, judge=None, error=None):
-    return {"passed": passed, "total": total, "judge_mean": judge, "error": error}
+def m(passed, total, judge=None, error=None, tokens=1000):
+    return {"passed": passed, "total": total, "judge_mean": judge, "error": error,
+            "tokens": tokens}
 
 
 class DecisionTableTests(unittest.TestCase):
@@ -1012,6 +1026,181 @@ class HardeningDecisionTests(unittest.TestCase):
                 pse.parse_args([SKILL, "--min-gain", value])
             self.assertEqual(exc.exception.code, 2)
         self.assertEqual(pse.parse_args([SKILL, "--min-gain", "1"]).min_gain, 1)
+
+
+class TokenDecisionTests(unittest.TestCase):
+    """ADR 0005 amendment 2: tokens are the efficiency metric beside quality.
+    A candidate that costs more tokens without a quality gain is not accepted;
+    token data that is missing or incomparable never passes silently."""
+
+    BASE = {"t": m(50, 100, tokens=1000), "v": m(80, 100, tokens=1000)}
+
+    def gain(self, **tokens):
+        """Train gains .1 (the default minimum) and validation holds."""
+        return {"t": m(60, 100, tokens=tokens.get("t", 1000)),
+                "v": m(80, 100, tokens=tokens.get("v", 1000))}
+
+    def flat(self, **tokens):
+        return {"t": m(50, 100, tokens=tokens.get("t", 1000)),
+                "v": m(80, 100, tokens=tokens.get("v", 1000))}
+
+    def test_gain_at_equal_tokens_is_accepted(self):
+        accepted, reasons = pse.decide(self.BASE, self.gain(), ["t"], "v")
+        self.assertTrue(accepted, reasons)
+        self.assertIn("tokens 2000 -> 2000", " ".join(reasons))
+
+    def test_gain_with_fewer_tokens_is_accepted(self):
+        accepted, reasons = pse.decide(self.BASE, self.gain(t=800), ["t"], "v")
+        self.assertTrue(accepted, reasons)
+        self.assertIn("tokens 2000 -> 1800", " ".join(reasons))
+
+    def test_gain_that_costs_more_tokens_is_accepted_and_says_so(self):
+        accepted, reasons = pse.decide(self.BASE, self.gain(t=1500), ["t"], "v")
+        self.assertTrue(accepted, reasons)
+        text = " ".join(reasons)
+        self.assertIn("tokens 2000 -> 2500", text)
+        self.assertIn("more tokens", text)
+
+    def test_more_tokens_without_a_quality_gain_is_rejected_with_that_reason(self):
+        accepted, reasons = pse.decide(self.BASE, self.flat(t=1001), ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertIn("costs more tokens without a quality gain", " ".join(reasons))
+
+    def test_fewer_tokens_without_a_quality_gain_is_still_rejected(self):
+        # An efficiency-only win is an owner question, not accepted silently.
+        accepted, reasons = pse.decide(self.BASE, self.flat(t=500, v=500), ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertNotIn("without a quality gain", " ".join(reasons))
+        self.assertIn("did not meet minimum gain", " ".join(reasons))
+
+    def test_a_gain_below_the_minimum_is_not_a_quality_gain(self):
+        cand = {"t": m(55, 100, tokens=1200), "v": m(80, 100, tokens=1000)}
+        accepted, reasons = pse.decide(self.BASE, cand, ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertIn("costs more tokens without a quality gain", " ".join(reasons))
+
+    def test_equal_tokens_do_not_count_as_costing_more(self):
+        accepted, reasons = pse.decide(self.BASE, self.flat(), ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertNotIn("more tokens", " ".join(reasons))
+
+    def test_tokens_are_summed_over_every_measured_fixture(self):
+        base = {"t": m(50, 100, tokens=1000), "v": m(80, 100, tokens=1000),
+                "h": m(80, 100, tokens=1000)}
+        cand = {"t": m(60, 100, tokens=500), "v": m(80, 100, tokens=1000),
+                "h": m(80, 100, tokens=1000)}
+        accepted, reasons = pse.decide(base, cand, ["t"], "v", holdout="h")
+        self.assertTrue(accepted, reasons)
+        self.assertIn("tokens 3000 -> 2500", " ".join(reasons))
+
+    def test_missing_token_data_is_inconclusive_for_every_fixture_and_side(self):
+        for side in ("baseline", "candidate"):
+            for fixture in ("t", "v", "h"):
+                with self.subTest(side=side, fixture=fixture):
+                    base = {"t": m(50, 100), "v": m(80, 100), "h": m(80, 100)}
+                    cand = {"t": m(60, 100), "v": m(80, 100), "h": m(80, 100)}
+                    {"baseline": base, "candidate": cand}[side][fixture]["tokens"] = None
+                    accepted, reasons = pse.decide(base, cand, ["t"], "v", holdout="h")
+                    self.assertFalse(accepted)
+                    self.assertEqual(len(reasons), 1, reasons)
+                    self.assertIn("inconclusive: missing token data", reasons[0])
+                    self.assertIn(fixture, reasons[0])
+                    self.assertIn(side, reasons[0])
+
+    def test_a_fixture_with_no_tokens_key_is_missing_not_zero(self):
+        cand = self.gain()
+        del cand["t"]["tokens"]
+        accepted, reasons = pse.decide(self.BASE, cand, ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertIn("inconclusive: missing token data", reasons[0])
+
+    def test_a_non_numeric_token_figure_is_missing(self):
+        for bad in ("1000", float("nan"), float("inf"), True):
+            with self.subTest(bad=bad):
+                accepted, reasons = pse.decide(self.BASE, self.gain(t=bad), ["t"], "v")
+                self.assertFalse(accepted)
+                self.assertIn("inconclusive: missing token data", reasons[0])
+
+    def test_an_errored_fixture_is_reported_before_token_data(self):
+        cand = {"t": m(60, 100, error="trial_errors", tokens=None), "v": m(80, 100)}
+        accepted, reasons = pse.decide(self.BASE, cand, ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertIn("errored or unscored", reasons[0])
+
+
+class FixtureTokenMetricTests(unittest.TestCase):
+    """`fixture_metrics` reduces the four usage counts to one tokens figure."""
+
+    def metrics(self, usages, trials=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            for k, usage in enumerate(usages, start=1):
+                trial = run_dir / f"t{k}" / SKILL / TS / "fx" / "with_skill"
+                trial.mkdir(parents=True)
+                agent = {"cost_usd": 0.1}
+                if usage is not None:
+                    agent["usage"] = usage
+                (trial / "summary.json").write_text(json.dumps(
+                    {"error": None, "trial": k, "agent": agent,
+                     "objective_checks": [{"id": "c", "passed": True}]}))
+            return pse.fixture_metrics(run_dir, SKILL, TS, "fx", trials or len(usages))
+
+    def test_tokens_is_the_mean_per_trial_of_all_four_counts(self):
+        out = self.metrics([usage_block(1000), usage_block(2000), usage_block(3000)])
+        self.assertEqual(out["tokens"], 2000)
+
+    def test_one_trial_without_usage_leaves_tokens_unknown(self):
+        out = self.metrics([usage_block(1000), None, usage_block(1000)])
+        self.assertIsNone(out["tokens"])
+
+    def test_a_usage_block_missing_one_count_leaves_tokens_unknown(self):
+        partial = usage_block(1000)
+        del partial["cache_read_input_tokens"]
+        self.assertIsNone(self.metrics([usage_block(1000), partial])["tokens"])
+
+    def test_a_missing_trial_leaves_tokens_unknown(self):
+        self.assertIsNone(self.metrics([usage_block(1000)], trials=2)["tokens"])
+
+
+class TokenPipelineTests(PipelineCase):
+
+    ACCEPTED = {"bootstrap": (4, 4, 7.0), "existing-convention": (3, 4, 6.5),
+                "supersede": (3, 4, 7.0)}
+
+    def test_accept_record_carries_tokens_and_the_decision_line(self):
+        runner = FakeRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
+        runner.tokens["candidate"] = 800
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 0, err)
+        record = self.record()
+        self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
+        self.assertEqual(record["candidate"]["bootstrap"]["tokens"], 800)
+        self.assertIn("tokens 3000 -> 2400", " ".join(record["reasons"]))
+
+    def test_gain_at_higher_cost_is_accepted_and_recorded(self):
+        runner = FakeRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
+        runner.tokens["candidate"] = 1200
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("more tokens", " ".join(self.record()["reasons"]))
+
+    def test_missing_candidate_usage_is_rejected_as_inconclusive(self):
+        runner = FakeRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
+        runner.tokens["candidate"] = None
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "rejected")
+        self.assertIsNone(record["candidate"]["bootstrap"]["tokens"])
+        self.assertIn("inconclusive: missing token data", " ".join(record["reasons"]))
+
+    def test_missing_baseline_usage_is_rejected_as_inconclusive(self):
+        runner = FakeRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
+        runner.tokens["baseline"] = None
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        self.assertIn("inconclusive: missing token data",
+                      " ".join(self.record()["reasons"]))
 
 
 class HardeningPipelineTests(PipelineCase):
