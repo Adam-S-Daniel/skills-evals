@@ -310,6 +310,24 @@ class FireStepTests(unittest.TestCase):
             **extra})
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_cse_id_with_a_session_url_is_accepted(self):
+        # The first real fire (run 37518720233) was refused with its body
+        # unseen; list_runs shows that run as cse_<X> with a URL on
+        # session_<X>, so the fire response is inferred to match. The docs
+        # example shows session_<X> for both; the fix accepts either id
+        # prefix over the same <X>.
+        body = json.dumps({
+            "type": "routine_fire",
+            "claude_code_session_id": "cse_01TestOnlyAbc",
+            "claude_code_session_url": "https://claude.ai/code/session_01TestOnlyAbc"})
+        proc = self.run_step("200", body)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertNotIn("01TestOnlyAbc", out)
+        self.assertIn("- Session: https://claude.ai/code/session_01TestOnlyAbc",
+                      self.summary.read_text())
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_success_sends_four_fields_and_keeps_the_bearer_off_argv(self):
         proc = self.run_step("200", self.ok_body(note="BODY-SENTINEL"))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -342,6 +360,18 @@ class FireStepTests(unittest.TestCase):
                 "type": "routine_fire",
                 "claude_code_session_id": "BODY-SENTINEL; rm",
                 "claude_code_session_url": "https://claude.ai/code/x"})),
+            "cse_url_other_key": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/session_Other"})),
+            "cse_url_cse_prefix": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/cse_BODYSENTINEL"})),
+            "other_prefix": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "evil_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/session_BODYSENTINEL"})),
             "url_mismatch": ("200", self.ok_body(
                 claude_code_session_url="https://example.com/BODY-SENTINEL")),
             "not_json": ("200", "BODY-SENTINEL"),
@@ -353,6 +383,76 @@ class FireStepTests(unittest.TestCase):
                 self.assertNotEqual(proc.returncode, 0)
                 out = proc.stdout + proc.stderr
                 self.assertIn(f"status: {status}", out)
+                self.assertNotIn("BODY-SENTINEL", out)
+                self.assertNotIn("BODYSENTINEL", out)
+                self.assertNotIn(self.BEARER, out)
+                self.assertEqual(self.summary.read_text(), "")
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_refused_body_prints_only_its_shape(self):
+        ok_url = "https://claude.ai/code/session_X"
+        cases = {
+            "not_json": ("BODY-SENTINEL not json",
+                         ["body_is_json=no"], ["top_level_keys"]),
+            "wrapped": (json.dumps({"data": {
+                "type": "routine_fire", "claude_code_session_id": "BODY-SENTINEL",
+                "claude_code_session_url": ok_url}}),
+                ["body_is_json=yes", "top_level_type=object",
+                 "type_is_routine_fire=missing", "id_type=null", "id_length=0",
+                 "id_prefix=none", "url_starts_with_claude_code=no",
+                 "top_level_keys=1", "has_wrapper_key=yes"], []),
+            "missing_type": (json.dumps({
+                "claude_code_session_id": "session_X",
+                "claude_code_session_url": ok_url}),
+                ["type_is_routine_fire=missing", "id_type=string",
+                 "id_length=9", "id_prefix=session_",
+                 "url_starts_with_claude_code=yes", "top_level_keys=2",
+                 "has_wrapper_key=no"], []),
+            "wrong_type": (json.dumps({
+                "type": "BODY-SENTINEL", "claude_code_session_id": "session_X",
+                "claude_code_session_url": ok_url}),
+                ["type_is_routine_fire=no"], []),
+            "cse_with_bad_url": (json.dumps({
+                "type": "routine_fire", "claude_code_session_id": "cse_01Abc",
+                "claude_code_session_url": "https://example.com/BODY-SENTINEL"}),
+                ["type_is_routine_fire=yes", "id_type=string", "id_length=9",
+                 "id_prefix=cse_", "url_starts_with_claude_code=no"], []),
+            "numeric_id": (json.dumps({
+                "type": "routine_fire", "claude_code_session_id": 12345,
+                "claude_code_session_url": ok_url}),
+                ["id_type=number", "id_length=0", "id_prefix=none"], []),
+            "free_form_id": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "BODY-SENTINEL; rm -rf",
+                "claude_code_session_url": ok_url}),
+                ["id_type=string", "id_length=21", "id_prefix=other"], []),
+            "uppercase_prefix": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "BODY-SENTINEL_x",
+                "claude_code_session_url": ok_url}),
+                ["id_length=15", "id_prefix=other"], []),
+            "eleven_letter_prefix": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "abcdefghijk_x",
+                "claude_code_session_url": ok_url}),
+                ["id_length=13", "id_prefix=other"], ["id_prefix=abcdefghijk_"]),
+            "array_body": ('["BODY-SENTINEL"]',
+                ["body_is_json=yes", "top_level_type=array",
+                 "type_is_routine_fire=missing", "top_level_keys=0",
+                 "has_wrapper_key=no"], []),
+        }
+        for label, (body, expected, absent) in cases.items():
+            with self.subTest(case=label):
+                proc = self.run_step("200", body)
+                self.assertNotEqual(proc.returncode, 0)
+                out = proc.stdout + proc.stderr
+                shape = [l for l in out.splitlines()
+                         if l.startswith("response shape:")]
+                self.assertEqual(len(shape), 1, out)
+                for token in expected:
+                    self.assertIn(token, shape[0].split(" "))
+                for token in absent:
+                    self.assertNotIn(token, shape[0])
                 self.assertNotIn("BODY-SENTINEL", out)
                 self.assertNotIn(self.BEARER, out)
                 self.assertEqual(self.summary.read_text(), "")
