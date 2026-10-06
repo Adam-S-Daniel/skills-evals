@@ -217,16 +217,47 @@ user can, so the file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` names, and any
 on-disk copy of the GitHub tokens, may be readable from an arm. Whether it is,
 and what that token can do, is not yet known.
 
-### Probe 2: the real harness inside a routine (pending)
+### Probe 2: the real harness inside a routine (blocked)
 
-Pending: the guidance `_delivery` fixture, both arms, N=1, plus the
-`writing-adrs` bootstrap fixture's skill arm, N=1, run by the real harness in
-a routine. Its result will be recorded here.
+Routine [`trig_018bKqzSugdDPUkiA4hD4BMQ`](https://claude.ai/code/routines/trig_018bKqzSugdDPUkiA4hD4BMQ),
+run session `cse_01CtmcBYPtdNuTnjB3WraW2J` (no link recorded), 2026-10-06
+14:06Z, 106 seconds. The real harness ran the guidance `_delivery` fixture
+(both arms, N=1, judge off) and the `writing-adrs` bootstrap fixture (with
+and without the skill). No repo edit and no workaround was made.
+
+- **Setup works, with one wrinkle.** The pins are `eval.yml`'s
+  (`pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0
+  tree-sitter-bash==0.25.1`). Plain `pip` belongs to `/usr/bin/python3`
+  while the harness runs `/usr/local/bin/python3`, so they install with
+  `python3 -m pip install --user`.
+- **Guidance `_delivery`: exit 2 after 16 seconds.** Every arm (5 of 5)
+  errored `nonzero_exit` with "--dangerously-skip-permissions cannot be used
+  with root/sudo privileges for security reasons". The steps before the
+  agent worked on every arm: the hook installed, the delivery guard reported
+  `ok` true and `contaminated` false.
+- **`writing-adrs` bootstrap: exit 2 after 1 second**, the same error.
+- **Cause:** the routine session runs as uid 0. `IS_SANDBOX` is set in the
+  routine's shell, but `agent_env` does not pass it to the arm, so the CLI
+  refuses `bypassPermissions` as root.
+
+**Consequence:** the routine path needs a harness change before any real
+run. Two options, and the choice is **open** (it is a design decision about
+arm isolation, the same concern as ADR 0002 decision 1):
+
+- run the arms as a non-root user inside the routine; or
+- pass `IS_SANDBOX` through `agent_env`, for routine runs only.
+
+The eval runner routine now exists:
+[`trig_014cqgegCtJUqXYjAKmkr4J5`](https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5),
+fired by API only, with no schedule. Adam creates its fire bearer in the web
+UI.
 
 ### Open questions
 
 - Whether an arm can read the ingress token file or an on-disk GitHub token,
   and what each grants (the open risk above).
+- Which harness change unblocks root arms in a routine: a non-root user,
+  or `IS_SANDBOX` passed through `agent_env` for routine runs only (Probe 2).
 - What "modest scale" is in fires per week.
 - Whether routine results agree with API-path results on a paired run (see
   Consequences); until then they are not compared.
@@ -246,8 +277,8 @@ a routine. Its result will be recorded here.
 
 ## Smallest next PRs
 
-1. **Probe, no code change** (done 2026-10-06, Probe 1 above; Probe 2
-   pending): a routine created in the web UI, fired once by
+1. **Probe, no code change** (done 2026-10-06: Probe 1 met; Probe 2
+   blocked on running arms as root): a routine created in the web UI, fired once by
    hand with a toy spec, records `claude --version`, the nested auth probe
    and whether a nested `claude -p` under an `agent_env`-shaped environment
    runs, then pushes `claude/eval-probe-<id>`.
