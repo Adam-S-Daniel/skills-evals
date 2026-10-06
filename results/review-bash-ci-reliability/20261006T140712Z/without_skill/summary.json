@@ -1,0 +1,133 @@
+{
+  "skill": "review-bash-ci-reliability",
+  "arm": "without_skill",
+  "timestamp": "20261006T140712Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.2443737,
+    "num_turns": 18,
+    "duration_ms": 130516,
+    "usage": {
+      "input_tokens": 28,
+      "cache_creation_input_tokens": 17911,
+      "cache_read_input_tokens": 410851,
+      "output_tokens": 11737,
+      "output_tokens_details": {
+        "thinking_tokens": 8355
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 17911
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 652,
+          "cache_read_input_tokens": 36895,
+          "cache_creation_input_tokens": 1036,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 1036,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflow-yaml-parses",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "workflow-file-present",
+      "passed": true,
+      "detail": ".github/workflows/release.yml matches"
+    },
+    {
+      "id": "process-substitution-error-propagates",
+      "passed": true,
+      "detail": "scripts/publish.sh matches"
+    },
+    {
+      "id": "grep-q-avoids-broken-pipe",
+      "passed": false,
+      "detail": "scripts/publish.sh lacks /(^[^#\\n|]*grep -q[^#\\n|]*\"Successfully published\"[^#\\n|]*|^[^#\\n]*\\[\\[\\s*\"\\$\\{?build_log\\}?\"\\s*==\\s*\\*[^#\\n]*\\*\\s*\\]\\][^#\\n]*|^[^#\\n]*case\\s+\"\\$\\{?build_log\\}?\"\\s+in[^#\\n]*)/; scripts/publish.sh contains /^[^#\\n]*echo \"\\$build_log\" \\| grep -q[^#\\n]*/; scripts/publish.sh contains /^[^#\\n]*(?<!\\|)\\|(?!\\|)\\s*grep -q[^#\\n]*\"Successfully published\"[^#\\n]*/"
+    },
+    {
+      "id": "gh-api-failure-not-swallowed",
+      "passed": true,
+      "detail": "scripts/collect.sh matches"
+    },
+    {
+      "id": "git-identity-configured",
+      "passed": true,
+      "detail": "scripts/bump.sh matches"
+    },
+    {
+      "id": "jq-guaranteed-or-replaced",
+      "passed": false,
+      "detail": "scripts/bump.sh, .github/workflows/release.yml lacks /(^[^#\\n]*(apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\\n]*\\bjq\\b|^[^#\\n]*uses:[^#\\n]*jq|^[^#\\n]*command -v jq|\\A(?:(?!(?:\\A|\\n)[^#\\n]*\\bjq\\b)[\\s\\S])*\\Z)/"
+    },
+    {
+      "id": "version-read-does-not-depend-on-unguarded-jq",
+      "passed": false,
+      "detail": "scripts/bump.sh, .github/workflows/release.yml contains /(?=[\\s\\S]*(?:\\A|\\n)[^#\\n]*\\bjq\\b)\\A(?:(?!(?:\\A|\\n)[^#\\n]*(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\\n]*\\bjq\\b|(?:\\A|\\n)[^#\\n]*uses:[^#\\n]*jq|(?:\\A|\\n)[^#\\n]*command -v jq)[\\s\\S])*\\Z/"
+    },
+    {
+      "id": "commit-signing-safe-for-ci",
+      "passed": false,
+      "detail": "scripts/bump.sh lacks /(^[^#\\n]*git config( --(local|global))? commit\\.gpgsign\\s+false[^#\\n]*|^[^#\\n]*git config( --(local|global))? user\\.signingkey[^#\\n]*|^[^#\\n]*-c\\s+commit\\.gpgsign=false[^#\\n]*|^[^#\\n]*--no-gpg-sign[^#\\n]*)/"
+    },
+    {
+      "id": "decoy-optional-cleanup-untouched",
+      "passed": false,
+      "detail": "scripts/collect.sh lacks /^[^#\\n]*rm -f\\s+\"\\$tmp_response\"\\s*\\|\\|\\s*true[^#\\n]*/"
+    },
+    {
+      "id": "decoy-existing-set-e-untouched",
+      "passed": true,
+      "detail": "scripts/publish.sh matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 4,
+        "rationale": "The three fixes it made (removing the gh api `|| true`, replacing publish.sh's process substitution with command substitution, adding git identity before the commit) correctly solve the real failure modes, but it entirely missed the jq-dependency finding and the commit.gpgsign defense \u2014 both SKILL-covered real findings whose objective checks fail \u2014 so the dimension is capped at 4."
+      },
+      {
+        "name": "Restraint",
+        "score": 3,
+        "rationale": "It deleted the optional-cleanup `|| true` decoy that should have been left untouched and layered on several unrequested edits (--paginate, changing PUBLISH_RUN_ID's default to `:?`, reworking the tail/printf), so the decoy check fails and the dimension is capped, with the extra scope creep pushing it below the cap."
+      },
+      {
+        "name": "Explanation",
+        "score": 8,
+        "rationale": "For each fix it did make, the reply precisely names the actual failure mode (process substitution's exit status escaping set -e, `|| true` masking auth/rate-limit/network errors, runners lacking a default git identity), though it covers only the three findings it addressed."
+      }
+    ],
+    "overall": 5.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.291 (Claude Code)"
+  },
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-4-8"
+  ],
+  "n": 1
+}
