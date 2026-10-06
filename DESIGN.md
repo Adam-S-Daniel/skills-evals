@@ -462,6 +462,16 @@ is objectively decidable from the resulting files alone.
   here. Flagging this rather than silently dropping the requirement.
 - **Cost capture:** CHOSEN and implemented — from the CLI's `--output-format
   json` payload: `total_cost_usd`, `usage`, `num_turns`, `duration_ms`.
+- **Efficiency aggregates:** with `--trials N`, N > 1, each arm's
+  `aggregate.efficiency` carries `n`, `n_missing`, `mean`, `median`, `min`,
+  `max` and `sum` across trials for the agent cost, `num_turns`,
+  `duration_ms`, the four `usage` token counts and `tool_errors` (the
+  `is_error` tool results in the trial's tool trace; unknown, so missing, when
+  the trace hit its cap). A trial that did not report a metric is counted in
+  that metric's `n_missing`, never averaged as 0. `report.md` prints them per
+  arm with the with-minus-without delta, and `scripts/local_eval.py`'s
+  `aggregate.json` carries the same blocks. They are reported, not decided
+  on: no accept/reject rule reads them.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's

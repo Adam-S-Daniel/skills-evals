@@ -735,9 +735,20 @@ class TestIssue66Trials(_HarnessCase):
                          (3, 0.04, 0.04))
         self.assertAlmostEqual(cost["mean"], 0.04)
         self.assertAlmostEqual(cost["sum"], 0.12)
+        # The efficiency figures ride beside the cost, from the same trials.
+        # The scripted CLI reports 3 turns and 1234 input tokens each time,
+        # and makes no tool call.
+        efficiency = block["efficiency"]
+        self.assertEqual(efficiency["num_turns"],
+                         {"n": 3, "n_missing": 0, "mean": 3.0, "median": 3,
+                          "min": 3, "max": 3, "sum": 9})
+        self.assertEqual(efficiency["input_tokens"]["median"], 1234)
+        self.assertEqual(efficiency["tool_errors"]["n"], 3)
+        self.assertEqual(efficiency["tool_errors"]["max"], 0)
 
         report = self._report()
         self.assertIn(f"## Fixture: {self.SKILL} (n=3)", report)
+        self.assertIn("| num_turns | 3 / 3 |", report)
         self.assertIn("- Trials per arm: 3", report)
         self.assertIn("| without_skill | 3 | 0 | 1.7/2 | "
                       "7.5 (6.0 to 9.0, 3 judged) | 0.0400 / 0.1200 |", report)
@@ -820,9 +831,13 @@ class TestIssue66Trials(_HarnessCase):
         self.assertEqual((summary["n"], summary["errors"], summary["scored"]),
                          (2, 2, 0))
         self.assertEqual([e["trial"] for e in summary["trial_errors"]], [1, 2])
+        efficiency = summary["aggregate"].pop("efficiency")
         self.assertEqual(summary["aggregate"],
                          {"objective": None, "judge": None, "cost_usd": None,
                           "cost_unknown_trials": 2})
+        # No agent call returned, so no efficiency figure exists to average.
+        self.assertTrue(all(block["n"] == 0 and block["n_missing"] == 2
+                            for block in efficiency.values()))
         self.assertIn("no trial was scored", summary["error"]["detail"])
         self.assertEqual(self._calls("judges"), [])
         self.assertIn("| without_skill | 2 | 2 | - | - | -; 2 unknown |",
@@ -1280,6 +1295,7 @@ class TestIssue66Statistics(unittest.TestCase):
         stats = run_eval.aggregate_trials(trials)
         self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
                          (3, 3, 0))
+        stats["aggregate"].pop("efficiency")  # pinned in test_issue_efficiency_metrics
         self.assertEqual(stats["aggregate"], {
             "objective": None, "judge": None,
             "cost_usd": {"n": 2, "mean": 4.5, "min": 0.0, "max": 9.0,
