@@ -342,8 +342,9 @@ Routine run [`session_01HV5BrZ2WgqHVzRq6K7pLka`](https://claude.ai/code/session_
    draft pull request in adam-agentskills with a GitHub App token, once
    the App and its two secrets exist
    ([ADR 0005](0005-improvement-loop-reuses-skill-creator.md), "Routine
-   improve mode addendum"). The routine's saved prompt and the fire
-   workflow's mode input are not yet changed.
+   improve mode addendum"). `routine-eval-fire.yml` fires it with
+   `mode: improve`, a `skill` and an optional `holdout`; the routine's
+   saved prompt is not yet changed.
 
 ## Alternatives considered
 

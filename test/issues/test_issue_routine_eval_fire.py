@@ -7,7 +7,7 @@ routines fire API. What is pinned here:
 
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
-    inputs mode, candidate, fixture, arms and trials, and
+    inputs mode, candidate, fixture, skill, holdout, arms and trials, and
     `permissions: contents: read`;
   * every `uses:` is a 40-character SHA with nothing after it on the line,
     at the same SHA this repo's other workflows already pin;
@@ -22,10 +22,16 @@ routines fire API. What is pinned here:
     scaffold mode and be empty in eval mode, and `fixture` must be empty in
     scaffold mode; both are checked in the same validation step, before the
     bearer is in any step's env;
+  * improve mode (ADR 0005, "Routine improve mode addendum"): `skill` must
+    match the skill-name pattern and own at least three committed
+    `evals/<skill>/<name>` fixtures, `holdout` must be empty or one of those
+    names, both must be empty in the other modes, and `fixture` and
+    `candidate` must be empty in improve mode;
   * the fire step, run against a fake curl, sends the bearer on stdin (never
     argv) and a jq-built payload: eval mode's four fields plus `mode`, or
-    exactly `mode`, `run_id` and `candidate` in scaffold mode; it never
-    prints the response body, on success or failure.
+    exactly `mode`, `run_id` and `candidate` in scaffold mode, or exactly
+    `run_id`, `mode`, `skill`, `trials` and `holdout` (null when empty) in
+    improve mode; it never prints the response body, on success or failure.
 
 The workflow is parsed with PyYAML, never scanned line by line. Discovered
 and run by test/run_tests.py; also runnable on its own with
@@ -55,6 +61,10 @@ SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
 CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
+# A skill with at least three committed fixtures, and one of them.
+SKILL = "writing-adrs"
+HOLDOUT = "supersede"
+SKILL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # The miner key pattern the routine re-checks (routine-delta.md, Payload).
 CANDIDATE_RE = re.compile(r"^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$")
 # A lexical check on the expression token only, applied to a `run:` value
@@ -112,15 +122,22 @@ class WorkflowShapeTests(unittest.TestCase):
                          "pull_request or push (it would need a required check)")
         inputs = on["workflow_dispatch"]["inputs"]
         self.assertEqual(set(inputs),
-                         {"mode", "candidate", "fixture", "arms", "trials"})
+                         {"mode", "candidate", "fixture", "skill", "holdout",
+                          "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
-        self.assertEqual(inputs["mode"]["options"], ["eval", "scaffold"])
+        self.assertEqual(inputs["mode"]["options"],
+                         ["eval", "scaffold", "improve"])
         self.assertEqual(inputs["mode"]["default"], "eval")
         self.assertEqual(inputs["candidate"]["type"], "string")
         # Required in scaffold mode only, so the form cannot require it; the
         # validation step does. Likewise `fixture`, required in eval mode only.
         self.assertIs(inputs["candidate"]["required"], False)
         self.assertIs(inputs["fixture"]["required"], False)
+        # Improve mode only; `holdout` may stay empty even there.
+        for name in ("skill", "holdout"):
+            self.assertEqual(inputs[name]["type"], "string")
+            self.assertIs(inputs[name]["required"], False)
+            self.assertNotIn("default", inputs[name])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["arms"]["options"],
                          ["both", "with", "without"])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["trials"]["options"],
@@ -185,7 +202,8 @@ class WorkflowShapeTests(unittest.TestCase):
         env = self.steps[fire]["env"]
         for key, output in (("RUN_ID", "run_id"), ("FIXTURE", "fixture"),
                             ("ARMS", "arms"), ("TRIALS", "trials"),
-                            ("MODE", "mode"), ("CANDIDATE", "candidate")):
+                            ("MODE", "mode"), ("CANDIDATE", "candidate"),
+                            ("SKILL", "skill"), ("HOLDOUT", "holdout")):
             self.assertEqual(env[key], f"${{{{ steps.validate.outputs.{output} }}}}")
         self.assertEqual(
             env["FIRE_URL"],
@@ -249,6 +267,7 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(values["mode"], "eval")
         self.assertEqual(values["candidate"], "")
         self.assertEqual(values["fixture"], FIXTURE)
+        self.assertEqual((values["skill"], values["holdout"]), ("", ""))
         self.assertEqual((values["arms"], values["trials"]), ("with", "3"))
         self.assertRegex(values["run_id"], RUN_ID)
 
@@ -302,7 +321,8 @@ class ValidateStepTests(unittest.TestCase):
             "nul": {"candidate": "Adam-S-Daniel__repo__12\u0000"},
             "non_ascii": {"candidate": "Adam-S-Daniel__r\u00e9po__12"},
             "candidate_number": {"candidate": 12},
-            "mode_unknown": {"mode": "improve"},
+            "mode_unknown": {"mode": "improved"},
+            "mode_case_improve": {"mode": "Improve"},
             "mode_case": {"mode": "Scaffold"},
             "mode_newline": {"mode": "scaffold\n"},
             "mode_missing": {"mode": None},
@@ -319,7 +339,98 @@ class ValidateStepTests(unittest.TestCase):
             "missing_fixture": {"fixture": None},
         })
 
-    def _refuse_all(self, good, cases):
+    def test_accepts_an_improve_run(self):
+        # writing-adrs has four committed fixtures; adam-writing-style has
+        # exactly three, the minimum.
+        cases = (
+            ({"skill": SKILL, "holdout": HOLDOUT}, SKILL, HOLDOUT),
+            ({"skill": SKILL, "holdout": ""}, SKILL, ""),
+            ({"skill": SKILL}, SKILL, ""),
+            ({"skill": "adam-writing-style", "holdout": "proposal-bio"},
+             "adam-writing-style", "proposal-bio"),
+        )
+        for extra, skill, holdout in cases:
+            with self.subTest(**extra):
+                self.assertRegex(skill, SKILL_RE)
+                proc, values = self.run_step(
+                    {"mode": "improve", "candidate": "", "fixture": "",
+                     "arms": "both", "trials": "2", **extra})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(values["mode"], "improve")
+                self.assertEqual(values["skill"], skill)
+                self.assertEqual(values["holdout"], holdout)
+                self.assertEqual(values["trials"], "2")
+                self.assertEqual((values["fixture"], values["candidate"]), ("", ""))
+                self.assertRegex(values["run_id"], RUN_ID)
+
+    def test_refuses_bad_improve_inputs_without_echoing_them(self):
+        good = {"mode": "improve", "candidate": "", "fixture": "",
+                "skill": SKILL, "holdout": HOLDOUT, "arms": "both",
+                "trials": "1"}
+        # Each refusal is pinned to its own check by its message, with an
+        # empty holdout, so a later check cannot mask a missing earlier one.
+        no_holdout = {**good, "holdout": ""}
+        self._refuse_all(no_holdout, {
+            "missing_skill": {"skill": None},
+            "empty_skill": {"skill": ""},
+            "whitespace_skill": {"skill": " "},
+            "skill_is_a_fixture_path": {"skill": "writing-adrs/bootstrap"},
+            "skill_with_evals": {"skill": "evals/writing-adrs"},
+            "skill_dotdot": {"skill": "../writing-adrs"},
+            "skill_leading_dash": {"skill": "-writing-adrs"},
+            "skill_leading_dot": {"skill": ".writing-adrs"},
+            "skill_too_long": {"skill": "w" * 65},
+            "skill_glob": {"skill": "writing-adr*"},
+            "skill_subst": {"skill": "$(id)"},
+            "skill_space": {"skill": "writing adrs"},
+            "skill_non_ascii": {"skill": "writing-adr\u00e9"},
+        }, expect="is not a skill name")
+        self._refuse_all(no_holdout, {
+            "unknown_skill": {"skill": "no-such-skill-xyz"},
+            "skill_prefix_only": {"skill": "writing-adr"},
+            # One committed fixture each: fewer than three.
+            "one_fixture_skill": {"skill": "debug-github-workflows"},
+            "flat_fixture_skill": {"skill": "browser-testing"},
+        }, expect="fewer than three committed fixtures")
+        self._refuse_all(good, {
+            "holdout_not_a_fixture": {"holdout": "no-such-holdout-xyz"},
+            "holdout_of_another_skill": {"holdout": "proposal-bio"},
+            "holdout_dotdot": {"holdout": ".."},
+        }, expect="names no committed fixture of that skill")
+        self._refuse_all(good, {
+            "skill_trailing_newline": {"skill": SKILL + "\n"},
+            "skill_tab": {"skill": SKILL + "\t"},
+            "skill_del": {"skill": SKILL + "\u007f"},
+            "skill_nul": {"skill": SKILL + "\u0000"},
+            "skill_number": {"skill": 7},
+            "holdout_full_path": {"holdout": FIXTURE},
+            "holdout_nested": {"holdout": "supersede/x"},
+            "holdout_whitespace": {"holdout": " "},
+            "holdout_trailing_newline": {"holdout": HOLDOUT + "\n"},
+            "holdout_tab": {"holdout": HOLDOUT + "\t"},
+            "holdout_nul": {"holdout": HOLDOUT + "\u0000"},
+            "holdout_number": {"holdout": 1},
+            "fixture_given": {"fixture": FIXTURE},
+            "candidate_given": {"candidate": CANDIDATE},
+            "trials_high": {"trials": "4"},
+        })
+
+    def test_refuses_improve_inputs_in_other_modes(self):
+        eval_good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
+                     "arms": "both", "trials": "1"}
+        scaffold_good = {"mode": "scaffold", "candidate": CANDIDATE,
+                         "fixture": "", "arms": "both", "trials": "1"}
+        for good in (eval_good, scaffold_good):
+            with self.subTest(mode=good["mode"]):
+                self._refuse_all(good, {
+                    "skill_given": {"skill": SKILL},
+                    "whitespace_skill": {"skill": " "},
+                    "holdout_given": {"holdout": HOLDOUT},
+                    "skill_number": {"skill": 7},
+                    "holdout_nul": {"holdout": "\u0000"},
+                })
+
+    def _refuse_all(self, good, cases, expect=None):
         for label, override in cases.items():
             with self.subTest(case=label):
                 inputs = {**good, **override}
@@ -328,6 +439,8 @@ class ValidateStepTests(unittest.TestCase):
                 self.assertNotEqual(proc.returncode, 0)
                 self.assertEqual(values, {}, "no output on a refusal")
                 self.assertIn("::error::", proc.stdout + proc.stderr)
+                if expect is not None:
+                    self.assertIn(expect, proc.stdout + proc.stderr)
                 bad = next(iter(override.values()))
                 if isinstance(bad, str) and bad.strip():
                     self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)
@@ -428,7 +541,7 @@ class FireStepTests(unittest.TestCase):
             "EVAL_ROUTINE_FIRE_BEARER": self.BEARER,
             "RUN_ID": "20261006T120000Z-a1b2c3",
             "FIXTURE": FIXTURE, "ARMS": "both", "TRIALS": "2",
-            "MODE": "eval", "CANDIDATE": "",
+            "MODE": "eval", "CANDIDATE": "", "SKILL": "", "HOLDOUT": "",
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log),
             "FAKE_CURL_STATUS": status, "FAKE_CURL_BODY": body,
@@ -530,13 +643,55 @@ class FireStepTests(unittest.TestCase):
         self.assertNotIn("claude/eval-", summary)
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_improve_sends_exactly_five_keys(self):
+        # FIXTURE, ARMS and CANDIDATE hold junk: improve mode sends none of
+        # them. `holdout` is null when empty, never "".
+        for holdout, sent in ((HOLDOUT, HOLDOUT), ("", None)):
+            with self.subTest(holdout=holdout):
+                proc = self.run_step(
+                    "200", self.ok_body(), MODE="improve", SKILL=SKILL,
+                    TRIALS="3", HOLDOUT=holdout, FIXTURE="FIXTURE-SENTINEL",
+                    ARMS="ARMS-SENTINEL", CANDIDATE="CANDIDATE-SENTINEL")
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                argv = json.loads((self.log / "argv.json").read_text())
+                self.assertFalse(any(self.BEARER in a for a in argv))
+                self.assertEqual((self.log / "stdin").read_text(),
+                                 f"Authorization: Bearer {self.BEARER}\n")
+                body = json.loads(argv[argv.index("--data-binary") + 1])
+                self.assertEqual(set(body), {"text"})
+                payload = json.loads(body["text"])
+                self.assertEqual(payload, {
+                    "run_id": "20261006T120000Z-a1b2c3", "mode": "improve",
+                    "skill": SKILL, "trials": 3, "holdout": sent})
+                self.assertEqual(list(payload),
+                                 ["run_id", "mode", "skill", "trials", "holdout"])
+                self.assertIs(type(payload["trials"]), int)
+                out = proc.stdout + proc.stderr
+                self.assertNotIn("SENTINEL", out)
+                self.assertNotIn(self.BEARER, out)
+                summary = self.summary.read_text()
+                self.assertNotIn("SENTINEL", summary)
+                self.assertIn("improve mode", summary)
+                self.assertIn(f"`{SKILL}`", summary)
+                self.assertIn("claude/eval-improve-20261006T120000Z-a1b2c3", summary)
+                self.assertIn("routine-improve-gate.yml", summary)
+                self.assertIn(f"https://claude.ai/code/{self.SESSION}", summary)
+                if holdout:
+                    self.assertIn(f"`{HOLDOUT}`", summary)
+                else:
+                    self.assertIn("Holdout: none", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_values_are_json_encoded_by_jq(self):
         # Defense in depth past validation: a value with JSON metacharacters
         # arrives intact as one string, never as extra keys.
         tricky = 'x", "evil": "1'
         for mode, extra, key in (("scaffold", {"CANDIDATE": tricky}, "candidate"),
-                                 ("eval", {"FIXTURE": tricky}, "fixture")):
-            with self.subTest(mode=mode):
+                                 ("eval", {"FIXTURE": tricky}, "fixture"),
+                                 ("improve", {"SKILL": tricky}, "skill"),
+                                 ("improve", {"SKILL": SKILL, "HOLDOUT": tricky},
+                                  "holdout")):
+            with self.subTest(mode=mode, key=key):
                 proc = self.run_step("200", self.ok_body(), MODE=mode, **extra)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 argv = json.loads((self.log / "argv.json").read_text())
@@ -550,7 +705,8 @@ class FireStepTests(unittest.TestCase):
         jq = self.bin / "jq"
         jq.write_text(FAKE_JQ, encoding="utf-8")
         jq.chmod(jq.stat().st_mode | stat.S_IXUSR)
-        for mode, extra in (("eval", {}), ("scaffold", {"CANDIDATE": CANDIDATE})):
+        for mode, extra in (("eval", {}), ("scaffold", {"CANDIDATE": CANDIDATE}),
+                            ("improve", {"SKILL": SKILL, "HOLDOUT": HOLDOUT})):
             with self.subTest(mode=mode):
                 (self.log / "jq.jsonl").unlink(missing_ok=True)
                 proc = self.run_step("200", self.ok_body(), MODE=mode,
@@ -570,10 +726,12 @@ class FireStepTests(unittest.TestCase):
                 self.assertNotIn("20261006T120000Z-a1b2c3", program)
                 self.assertNotIn(CANDIDATE, program)
                 self.assertNotIn(FIXTURE, program)
+                self.assertNotIn(SKILL, program)
+                self.assertNotIn(HOLDOUT, program)
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_an_unknown_mode_never_calls_the_api(self):
-        for mode in ("", "improve", "Scaffold"):
+        for mode in ("", "improved", "Scaffold", "Improve"):
             with self.subTest(mode=mode):
                 proc = self.run_step("200", self.ok_body(), MODE=mode)
                 self.assertNotEqual(proc.returncode, 0)

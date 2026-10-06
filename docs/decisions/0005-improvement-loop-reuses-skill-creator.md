@@ -466,6 +466,8 @@ The second "Not yet implemented" bullet (the loop is not wired into the
 routine) is half done: the branch contract and its gate are built; the
 routine's saved prompt and the fire workflow's `mode` input are not changed
 here. Built red-first with fakes; no routine run and no real pull request.
+The fire workflow's input has since landed (the last bullet below); the
+routine's saved prompt is still unchanged.
 
 - **The routine opens no pull request.** In improve mode it runs
   `scripts/propose_skill_edit.py` and, only when the candidate is
@@ -515,3 +517,13 @@ here. Built red-first with fakes; no routine run and no real pull request.
   changed: the routine launches the loop under an `env -u` prefix built at
   run time from `refused_env_names(os.environ)`, not from a fixed list. The
   loop also needs skill-creator installed in the session.
+- **The fire workflow's improve mode.** `routine-eval-fire.yml` takes
+  `mode: improve` with a `skill` and an optional `holdout`. Before the
+  bearer is in any step's env it checks that `skill` matches
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and owns at least three committed
+  `evals/<skill>/<name>` fixtures (from `plan_scheduled_evals.py
+  --committed`), that `holdout` is empty or one of those names, that
+  neither has a control character, and that `fixture` and `candidate` are
+  empty (and `skill` and `holdout` empty in the other modes). It sends
+  exactly five keys built by jq: `run_id`, `mode`, `skill`, `trials` and
+  `holdout` (null when empty). Still dispatch only, with no schedule.
