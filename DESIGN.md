@@ -796,6 +796,47 @@ The expected A/B delta comes free: a real agent already missed this once, so
 the ceiling-effect risk is pre-tested, and `with_skill` catching what the
 baseline plausibly misses is exactly the delta the skill exists to buy.
 
+### Real-work fixtures from merged pull requests (2026-10-06)
+
+Merged fleet pull requests that carry their own tests are the second mined
+source: the task is what was asked, the checker is the PR's tests, red on
+its base and green on its merge. Part of
+[#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65) and
+[#98](https://github.com/Adam-S-Daniel/skills-evals/issues/98).
+`scripts/mine_real_work.py` is the read-only first stage:
+
+- **mine** enumerates `_agent-guidance`'s `repos.yml` `cron_coverage.fleet`
+  under every owner in `sync.yml`'s `SYNC_OWNERS` (a name no owner resolves
+  is an error), lists merged pull requests, drops bot and `on-hold` ones and
+  writes `candidates.json` to a path outside this repo;
+- **prepare** builds the red (base plus the merge's tests) and green trees
+  with `git archive`, and runs nothing;
+- **admit** reads JUnit XML from both runs. FAIL_TO_PASS is what fails red
+  and passes green. A test that fails on the merge too, or fails red on a
+  missing package or the network, is environmental and excluded
+  ([_agent-guidance#82](https://github.com/Adam-S-Daniel/_agent-guidance/pull/82)'s pattern); a red failure on a name the fix invented
+  (`is not a function`, `ImportError`, `AttributeError`) rejects the
+  candidate unless the task text names it ([cms-platform#430](https://github.com/Adam-S-Daniel/cms-platform/pull/430)'s pattern). Both
+  runs must finish under 60 s.
+
+Adam's answers (2026-10-06) to the questions this stage depends on,
+recorded verbatim. Q1, Q2, Q5 and Q7 are recorded in "Real-work fixture
+decisions (Adam, 2026-10-06)".
+
+- **Q3, sources:** "Public repos + PR bodies (Recommended)". Only public
+  fleet repos are mined and the PR body is the task text; no private repos,
+  no mail. Each candidate carries an `answer_leak` flag (the body quotes a
+  line the pull request added), a warning for review, not a rejection.
+- **Q4, one fixture for many subjects:** "Subject-agnostic (Recommended)".
+  The skill or guidance subject is named at run time, so a candidate records
+  no subject.
+- **Q6, where the scaffolder runs:** "Routine + own gate (Recommended)". Its
+  model call runs in the ADR 0010 routine, and scaffold PRs get their own
+  review gate, separate from #71's three improvement PRs.
+- **Q8, training cutoffs:** "Keep, report apart (Recommended)". Each
+  candidate records its merge date, so pre- and post-cutoff fixtures are
+  reported separately rather than excluded.
+
 ### Harness-wide rules (promoted from the first fixture)
 
 The `workflow-path-audit` fixture learned these the hard way; they are policy
