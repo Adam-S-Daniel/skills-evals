@@ -54,6 +54,13 @@ WHAT IT DOES, in order:
     higher by at least `--min-gain` (default .10), or equal with judge mean
     higher by at least ten times that gain). A fixed holdout must not regress
     on either score. This is a conservative heuristic, not a significance test.
+    TOKENS (ADR 0005 amendment 2) sit beside that quality rule: each fixture's
+    tokens are the mean per trial of the four `usage` counts, summed over the
+    measured fixtures. A fixture without token data on either side makes the
+    run inconclusive (rejected), never a pass. A candidate that costs more
+    tokens than the baseline (`TOKEN_INCREASE_TOLERANCE`, 0: any rise)
+    without a quality gain is not accepted; a gain at a higher cost is
+    accepted and the rise recorded in the reasons.
  9. Writes `<results>/improvements/<skill>/<ts>.json` always, `<ts>.patch`
     whenever a candidate existed, and `<ts>.pr-body.md` on accept. Nothing is
     pushed and no pull request is opened: a human reads the record first.
@@ -104,6 +111,18 @@ DEFAULT_TRIALS = 3
 DEFAULT_MIN_GAIN = 0.10
 #: The judge may drop by at most this much on validation (#71 step 3).
 JUDGE_TOLERANCE = 0.5
+#: How much more total tokens a candidate may cost than the baseline, as a
+#: fraction of the baseline, before it "costs more tokens". ADR 0005
+#: amendment 2 says no number, only that the metric sits beside quality, so
+#: this is the most conservative reading: any increase counts. A candidate
+#: that costs more tokens without a quality gain is not accepted. OPEN
+#: OWNER QUESTION: whether a gain may buy an increase up to a ceiling, and
+#: whether a flat-quality candidate that costs fewer tokens may be accepted.
+TOKEN_INCREASE_TOLERANCE = 0.0
+#: The four `usage` counts that make up one trial's tokens (all of them,
+#: cache reads and writes included; a trial missing any one is unknown).
+TOKEN_USAGE_METRICS = ("input_tokens", "output_tokens",
+                       "cache_creation_input_tokens", "cache_read_input_tokens")
 #: skill-creator's own hard limit on a description (improve_description.py).
 DESCRIPTION_MAX_CHARS = 1024
 #: How much of one failing trial's final reply the proposal prompt carries.
@@ -844,7 +863,29 @@ def fixture_metrics(run_dir: Path, skill: str, ts: str,
         error = "trial_exit"
     return {"error": error,
             "passed": objective.get("passed"), "total": objective.get("total"),
-            "judge_mean": judge.get("mean"), "n": stats.get("n")}
+            "judge_mean": judge.get("mean"), "n": stats.get("n"),
+            "tokens": mean_tokens(stats["aggregate"]["efficiency"])}
+
+
+def valid_tokens(value) -> bool:
+    """A usable token figure: a finite number, never negative."""
+    return run_eval._is_number(value) and value >= 0
+
+
+def mean_tokens(efficiency: dict) -> float | None:
+    """Mean total tokens of one trial (the four `TOKEN_USAGE_METRICS`
+    summed), from an `aggregate.efficiency` block. None when any trial lacks
+    any of the four: a partial sum is a silent undercount, and a missing
+    figure is never zero."""
+    total = 0
+    for name in TOKEN_USAGE_METRICS:
+        block = efficiency.get(name) or {}
+        mean = block.get("mean")
+        if (not block.get("n") or block.get("n_missing")
+                or not valid_tokens(mean)):
+            return None
+        total += block["mean"]
+    return total
 
 
 def group_metrics(per_fixture: dict, names: list[str]) -> dict:
@@ -863,7 +904,15 @@ def decide(baseline: dict, candidate: dict, train: list[str],
            validation: str, min_gain: float = DEFAULT_MIN_GAIN,
            holdout: str | None = None,
            judge_required: bool | set[str] = False) -> tuple[bool, list[str]]:
-    """(accepted, reasons). Pure: reads the two per-fixture metric maps."""
+    """(accepted, reasons). Pure: reads the two per-fixture metric maps.
+
+    ADR 0005 amendment 2: quality (objective and judge, below) is judged
+    beside tokens. Token data missing for any measured fixture on either side
+    is inconclusive, never a pass. A candidate that costs more tokens than the
+    baseline (`TOKEN_INCREASE_TOLERANCE`) without a quality gain is not
+    accepted; quality gain here is the train gain of `min_gain`, which
+    acceptance has always required, so a rise in tokens is accepted only
+    alongside one and is recorded in the reasons."""
     reasons = []
     b_train, c_train = group_metrics(baseline, train), group_metrics(candidate, train)
     b_val, c_val = group_metrics(baseline, [validation]), group_metrics(candidate, [validation])
@@ -881,6 +930,17 @@ def decide(baseline: dict, candidate: dict, train: list[str],
         for metrics in (baseline, candidate))]
     if missing_judge:
         return False, [f"inconclusive: missing expected judge scores {missing_judge}"]
+
+    unknown = [f"{side} {n}" for side, metrics in (("baseline", baseline),
+                                                   ("candidate", candidate))
+               for n in measured
+               if not valid_tokens(metrics.get(n, {}).get("tokens"))]
+    if unknown:
+        return False, [f"inconclusive: missing token data for {unknown}"]
+    b_tokens = sum(baseline[n]["tokens"] for n in measured)
+    c_tokens = sum(candidate[n]["tokens"] for n in measured)
+    limit = b_tokens * (1 + TOKEN_INCREASE_TOLERANCE)
+    costs_more = c_tokens > limit and not math.isclose(c_tokens, limit, rel_tol=1e-9)
 
     held = c_val["pass_rate"] >= b_val["pass_rate"]
     if not held:
@@ -917,6 +977,13 @@ def decide(baseline: dict, candidate: dict, train: list[str],
         reasons.append(f"train did not meet minimum gain {min_gain:g}: "
                        f"objective {b_train['pass_rate']:.3f} -> "
                        f"{c_train['pass_rate']:.3f}")
+    reasons.append(f"tokens {b_tokens:g} -> {c_tokens:g} per trial over "
+                   f"{', '.join(measured)}")
+    if costs_more and not improved:
+        reasons.append("candidate costs more tokens without a quality gain")
+    elif costs_more and held:
+        reasons.append("candidate costs more tokens; accepted only because "
+                       "train gained at least the minimum")
     if held and improved:
         reasons.append("validation held and train improved")
     return held and improved, reasons

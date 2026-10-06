@@ -421,3 +421,40 @@ Both are as of `origin/main` at `ec9cf33`.
   mentions `scripts/propose_skill_edit.py`, and `routine-eval-fire.yml`
   fires a fixture, arms and trials (its payload carries `run_id`, `fixture`,
   `arms`, `trials`), not the improvement loop. The loop still runs from an operator's shell.
+
+## Token-aware acceptance addendum (2026-10-06)
+
+Amendment 2's first "Not yet implemented" bullet is done; the text above is
+left as it was written, so read it with this note. Decision 4's rule is now
+the quality input of `decide`, with tokens read beside it, and the line
+references above (`scripts/propose_skill_edit.py:805-810`, `:862-921`,
+`:813-848`, `:129-132`, `:596-599`) predate this change. Adam answered the
+rule question as "Keep as built (Recommended)": quality first, tokens veto
+only a candidate with no quality gain, cache tokens count, and `cost_usd` is
+not decided on.
+
+`decide` (`scripts/propose_skill_edit.py:903`) reads `tokens` from
+`fixture_metrics` (`:832`): the mean per trial of the four `usage` counts
+(input, output, cache creation, cache read) from the per-arm efficiency
+aggregate of
+[PR #301](https://github.com/Adam-S-Daniel/skills-evals/pull/301), computed
+by `mean_tokens` (`:875`). It is null when any trial lacks any count or a
+figure is negative or not finite.
+
+- **Missing or invalid token data is inconclusive.** A null `tokens` on either
+  side for any measured fixture (train, validation, holdout) rejects with
+  "inconclusive: missing token data" naming the side and fixture. It never
+  passes as zero.
+- **More tokens without a quality gain is not accepted.** Tokens are summed
+  over the measured fixtures. A candidate above the baseline by more than
+  `TOKEN_INCREASE_TOLERANCE` (0, so any rise) without a quality gain is
+  rejected with that reason. The quality gain is the train gain of
+  `--min-gain`, which acceptance already required, so a candidate that costs
+  more tokens is accepted only alongside one, with validation and holdout
+  held, and the rise is recorded in the reasons.
+- **Cost is recorded, not decided on.** Q7 names tokens the primary KPI.
+
+The trigger half still records `tokens` and `cost_usd` as null
+(`scripts/propose_skill_edit.py:618`): skill-creator reports neither, so they
+are not part of the decision. The second "Not yet implemented" bullet (the
+loop is not wired into the routine) still holds.
