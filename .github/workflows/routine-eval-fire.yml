@@ -183,17 +183,24 @@ jobs:
             echo "::error::the fire API answered ${status}; the response body is not printed"
             exit 1
           fi
-          # Fail closed on any response shape the docs do not describe.
-          if ! session_id="$(jq -er '
+          # Fail closed on any response shape the docs do not describe. The
+          # docs show `session_<X>` for both the id and the URL; the first
+          # real fire (run 37518720233) answered an id of `cse_<X>` with the
+          # URL on `session_<X>`, so accept either id prefix and require the
+          # URL to be built from the same <X>.
+          if ! session_key="$(jq -er '
                 select(.type == "routine_fire")
                 | .claude_code_session_id
-                | select(type == "string" and test("^session_[A-Za-z0-9]{1,128}$"))' \
+                | select(type == "string")
+                | capture("^(session|cse)_(?<key>[A-Za-z0-9]{1,128})$")
+                | .key' \
                 "$response" 2>/dev/null)"; then
             echo "::error::the fire API answered 200 with an unrecognized body; it is not printed"
             exit 1
           fi
-          if ! jq -e --arg id "$session_id" \
-               '.claude_code_session_url == ("https://claude.ai/code/" + $id)' \
+          session_url="https://claude.ai/code/session_${session_key}"
+          if ! jq -e --arg url "$session_url" \
+               '.claude_code_session_url == $url' \
                "$response" >/dev/null 2>&1; then
             echo "::error::the fire API's session URL does not match its session id; the body is not printed"
             exit 1
@@ -204,6 +211,6 @@ jobs:
             echo
             echo "- Run id: \`${RUN_ID}\`"
             echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
-            echo "- Session: https://claude.ai/code/${session_id}"
+            echo "- Session: ${session_url}"
             echo "- Results branch: \`claude/eval-${RUN_ID}\`"
           } >> "$GITHUB_STEP_SUMMARY"

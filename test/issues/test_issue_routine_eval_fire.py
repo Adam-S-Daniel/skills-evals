@@ -310,6 +310,22 @@ class FireStepTests(unittest.TestCase):
             **extra})
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_cse_id_with_a_session_url_is_accepted(self):
+        # The first real fire (run 37518720233) answered an id of cse_<X>
+        # beside a URL on session_<X>. The docs example shows session_<X>
+        # for both; the fix accepts either id prefix over the same <X>.
+        body = json.dumps({
+            "type": "routine_fire",
+            "claude_code_session_id": "cse_01TestOnlyAbc",
+            "claude_code_session_url": "https://claude.ai/code/session_01TestOnlyAbc"})
+        proc = self.run_step("200", body)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertNotIn("01TestOnlyAbc", out)
+        self.assertIn("- Session: https://claude.ai/code/session_01TestOnlyAbc",
+                      self.summary.read_text())
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_success_sends_four_fields_and_keeps_the_bearer_off_argv(self):
         proc = self.run_step("200", self.ok_body(note="BODY-SENTINEL"))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -342,6 +358,18 @@ class FireStepTests(unittest.TestCase):
                 "type": "routine_fire",
                 "claude_code_session_id": "BODY-SENTINEL; rm",
                 "claude_code_session_url": "https://claude.ai/code/x"})),
+            "cse_url_other_key": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/session_Other"})),
+            "cse_url_cse_prefix": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/cse_BODYSENTINEL"})),
+            "other_prefix": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "evil_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/session_BODYSENTINEL"})),
             "url_mismatch": ("200", self.ok_body(
                 claude_code_session_url="https://example.com/BODY-SENTINEL")),
             "not_json": ("200", "BODY-SENTINEL"),
@@ -354,6 +382,7 @@ class FireStepTests(unittest.TestCase):
                 out = proc.stdout + proc.stderr
                 self.assertIn(f"status: {status}", out)
                 self.assertNotIn("BODY-SENTINEL", out)
+                self.assertNotIn("BODYSENTINEL", out)
                 self.assertNotIn(self.BEARER, out)
                 self.assertEqual(self.summary.read_text(), "")
 
