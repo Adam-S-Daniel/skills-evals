@@ -1,12 +1,14 @@
 # ADR 0010: Run the AI steps of skill and guidance evals in a routine fired by Actions, and measure agent effectiveness on real work
 
-- **Status:** proposed (2026-10-06). Nothing is built; the open decisions
-  below are Adam's.
+- **Status:** accepted (2026-10-06), on Adam's decisions of the same day
+  (see [Decisions (2026-10-06)](#decisions-2026-10-06)). Nothing is built
+  yet. Supersedes [ADR 0002](0002-runs-bill-the-api-org-not-the-subscription.md)
+  decision 1 **for routine runs only**.
 - **Issues:** [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71)
   (the improvement loop),
   [#122](https://github.com/Adam-S-Daniel/skills-evals/issues/122) (the same
   loop for guidance sections).
-- **Decider:** Adam (pending).
+- **Decider:** Adam (2026-10-06).
 
 ## Context
 
@@ -77,7 +79,7 @@ says is now optional):
 - #71 item 5: the improvement workflow is not scheduled "until three
   human-reviewed PRs from it have merged".
 
-## Decision (proposed)
+## Decision
 
 1. **GitHub Actions owns scheduling, bookkeeping and ingestion; a routine
    owns the AI steps.** A workflow builds a JSON task spec (run id, roster
@@ -100,7 +102,10 @@ says is now optional):
    (with/without the section). skill-creator stays one proposer among
    others, not the loop's definition.
 
-## Open decisions for Adam
+## Open decisions for Adam (as proposed)
+
+Kept as they were put to Adam; each is answered under
+[Decisions (2026-10-06)](#decisions-2026-10-06).
 
 1. **ADR 0002 decision 1.** A routine's nested arms run on the account's
    subscription credential, which decision 1 forbids for arms. Options:
@@ -120,6 +125,108 @@ says is now optional):
    and the rest) wherever it is serialized beside a value in a generated
    file.
 
+## Decisions (2026-10-06)
+
+Adam answered the five open decisions on 2026-10-06. Three he picked
+directly from the options offered:
+
+- Badge or exhibit: "Local exhibit for now (Recommended)".
+- #71's gate: "Keep it (Recommended)".
+- Usage terms at scale: "Yes, modest scale".
+
+He then asked "What were the motivations behind ADR 0002 decision-1, and are
+they applicable in the new Routines setup?" and, on the answer, said "Let’s
+go with your recommendations". Those recommendations, now decided:
+
+1. **ADR 0002 decision 1 is superseded for routine runs only.** Its reason
+   was that a `bypassPermissions` arm running registry content must not be
+   able to read a long-lived subscription credential (in `eval.yml`, a
+   one-year `setup-token` value in the arm's environment). A routine run
+   holds no such value where an arm can read it (Probe 1 below), so arms may
+   run as nested `claude -p` inside a routine, on two conditions:
+   - **The condition holds.** The arm cannot read a long-lived subscription
+     credential. Probe 1 met it for the environment and the CLI's credential
+     file; the session's other token-bearing files are an open risk (below)
+     that must be closed before the first scheduled run.
+   - **Arms run only trusted content:** the default branches of the
+     `adam-agentskills`, `cms-platform` and `adamdaniel.ai` skill registries,
+     plus `_agent-guidance` as the guidance source. No pull-request, fork or
+     third-party content runs in a routine arm.
+
+   For every other path (`eval.yml` and any Actions runner, a workstation,
+   any future runner) ADR 0002 decision 1 holds unchanged.
+2. **Usage terms: yes, at modest scale.** Routine-fired evals run on the
+   subscription at a modest scale; how many fires a week that means is not
+   yet set (open question below).
+3. **Local exhibit, not badge input.** Routine results stay a local exhibit,
+   as ADR 0002 decision 4 treats every non-`main`-pinned run. They do not
+   feed the badge.
+4. **#71's three-PR gate stays.** No scheduled improvement loop, routine or
+   otherwise, until three human-reviewed PRs from the loop have merged.
+5. **The fire bearer is a repository secret** whose name contains none of
+   gitleaks' `generic-api-key` keywords (`access`, `auth`, `api`,
+   `credential`, `creds`, `key`, `passwd`, `password`, `secret`, `token`).
+   Proposed name: `EVAL_ROUTINE_FIRE_BEARER`. The dispatch-workflow PR
+   adopts it or records why not.
+
+### Facts this rests on
+
+- Fire API: `POST https://api.anthropic.com/v1/claude_code/routines/{routine_id}/fire`
+  with `anthropic-version: 2023-06-01`; the per-routine bearer is generated
+  only in the web UI.
+- The fire `text` arrives wrapped as untrusted; the saved prompt must opt in
+  to acting on it, so the task spec is validated, never obeyed blindly.
+- Runs act as Adam's GitHub identity and push only `claude/`-prefixed
+  branches by default, so results go to `claude/eval-<run id>` and the
+  Actions ingest workflow ([Decision](#decision) 2) validates them and moves them
+  to `persistent/eval-results`.
+
+## Probe results
+
+### Probe 1: what a routine session can authenticate with (met)
+
+Routine [`trig_01LYVkqGRE5iUQgJRhC3hdd3`](https://claude.ai/code/routines/trig_01LYVkqGRE5iUQgJRhC3hdd3),
+run [`session_01QChJ3696fACnRhj4CrLArm`](https://claude.ai/code/session_01QChJ3696fACnRhj4CrLArm),
+2026-10-06, 40 seconds. Variable and file names only; no value was recorded.
+
+- `claude --version`: 2.1.291. The auth probe reported `oauth_token`,
+  `firstParty`.
+- **No credential in reach:** neither `CLAUDE_CODE_OAUTH_TOKEN` nor
+  `ANTHROPIC_API_KEY` was set, and there was no `~/.claude/.credentials.json`.
+- A nested `claude -p` launched under `env -i` with a fresh `HOME` and
+  `CLAUDE_CONFIG_DIR` and no credential at all **still authenticated** (it
+  answered "ok"). Auth is supplied by the sandbox, most likely its egress
+  proxy, not by anything the arm holds.
+- `pip download markdown-it-py` and PyYAML both worked, so the harness's
+  dependencies install.
+- **Present in the session:** `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (the file
+  it names exists), `CLAUDE_CODE_MESSAGING_TOKEN`, `GH_TOKEN`,
+  `GITHUB_TOKEN`, `CLOUDSDK_AUTH_ACCESS_TOKEN` and `ANTHROPIC_BASE_URL`.
+  `agent_env` (`harness/guidance.py`) builds an arm's environment from an
+  allowlist, so none of these variables reaches an arm except
+  `ANTHROPIC_BASE_URL`, which its `ANTHROPIC_*` passthrough keeps (and which
+  the nested run plausibly needs).
+
+**Open risk, to verify before the first scheduled run:** `agent_env` strips
+variables, not files. A `bypassPermissions` arm can read any path the session
+user can, so the file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` names, and any
+on-disk copy of the GitHub tokens, may be readable from an arm. Whether it is,
+and what that token can do, is not yet known.
+
+### Probe 2: the real harness inside a routine (pending)
+
+Pending: the guidance `_delivery` fixture, both arms, N=1, plus the
+`writing-adrs` bootstrap fixture's skill arm, N=1, run by the real harness in
+a routine. Its result will be recorded here.
+
+### Open questions
+
+- Whether an arm can read the ingress token file or an on-disk GitHub token,
+  and what each grants (the open risk above).
+- What "modest scale" is in fires per week.
+- Whether routine results agree with API-path results on a paired run (see
+  Consequences); until then they are not compared.
+
 ## Consequences
 
 - Guidance and loop runs stop competing for API dollars; they compete for
@@ -135,7 +242,8 @@ says is now optional):
 
 ## Smallest next PRs
 
-1. **Probe, no code change:** a routine created in the web UI, fired once by
+1. **Probe, no code change** (done 2026-10-06, Probe 1 above; Probe 2
+   pending): a routine created in the web UI, fired once by
    hand with a toy spec, records `claude --version`, the nested auth probe
    and whether a nested `claude -p` under an `agent_env`-shaped environment
    runs, then pushes `claude/eval-probe-<id>`.

@@ -1,6 +1,16 @@
 # 0002. Real runs bill the API organisation; subscription credentials are not adopted
 
 - Status: accepted (2026-09-23)
+- **Decision 1 superseded for routine runs only by
+  [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
+  (2026-10-06):** arms may run as nested `claude -p` inside a Claude Code
+  routine, because there the sandbox supplies auth and the arm holds no
+  readable long-lived subscription credential (ADR 0010, Probe 1), and only
+  default-branch content from the fleet's own registries and
+  `_agent-guidance` runs in them. The supersession is conditional on that
+  staying true; ADR 0010 lists one open risk (a token file on disk) to close
+  before the first scheduled run. For every other path, `eval.yml`, any
+  Actions runner and a workstation included, decision 1 holds as written.
 - Related: [0001](0001-roster-trusted-on-main.md),
   [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170)
 
