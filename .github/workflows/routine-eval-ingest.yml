@@ -14,10 +14,13 @@ name: Ingest routine eval results
 # * The validator rejects the whole branch unless it only ADDS regular
 #   files (no symlink, submodule or executable bit, no change to any
 #   existing path: no workflow, script or main-tree edit) under one
-#   `<root>/<run id>/` matching the branch name, each in a shape the harness
+#   `eval-results/<run id>/` matching the branch name, each in a shape the harness
 #   writes, under its size cap, and passing its schema. It stages exactly the
 #   bytes it validated; `place` copies them without overwriting a file that
 #   differs, so a re-run is a no-op and a conflicting one fails.
+#   Only summary.json and report.md are kept (KEEP_LONG_TERM); a validated
+#   tool_trace.json is dropped. `git add` runs without -f, so
+#   persistent/eval-results' .gitignore stays in force.
 # * Branch names, shas and file content are never interpolated into a `run:`
 #   block: the event is read from $GITHUB_EVENT_PATH by the validator, which
 #   emits only values that matched a strict pattern, and every later step
@@ -133,7 +136,7 @@ jobs:
               echo "run ${RUN_ID} is already on persistent/eval-results; nothing to commit"
               exit 0
             fi
-            git -C "$tree" add -f -- "routine-results/${RUN_ID}"
+            git -C "$tree" add -- "routine-results/${RUN_ID}"
             git -C "$tree" \
               -c user.name="skills-evals routine-ingest bot" \
               -c user.email="skills-evals@users.noreply.github.com" \

@@ -13,17 +13,18 @@ name: Routine eval results pushed
 # the branch. This job therefore holds no permissions, checks nothing out
 # and runs nothing from the branch.
 #
-# Salient paths: the two directories the routine has pushed results under
-# (scripts/ingest_routine_results.py SOURCE_ROOTS). A push that touches
-# neither has nothing to ingest. This is not a pull_request workflow, so it
-# publishes no required check.
+# Salient path: `eval-results/**`, the one directory the routine's saved
+# prompt pushes results under (scripts/ingest_routine_results.py
+# SOURCE_ROOT). A push that touches nothing there has nothing to ingest. The
+# one branch pushed before the root was pinned (LEGACY_ROOTS) is already on
+# the remote and can only be ingested by dispatch. This is not a
+# pull_request workflow, so it publishes no required check.
 
 on:
   push:
     branches:
       - claude/eval-*
     paths:
-      - results/**
       - eval-results/**
 
 permissions: {}

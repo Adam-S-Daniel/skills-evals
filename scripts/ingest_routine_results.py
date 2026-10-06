@@ -14,8 +14,8 @@ What a branch must look like to be ingested:
   * its tip, diffed against its merge-base with the default branch, ADDS
     files and nothing else, every one a regular non-executable file (mode
     100644: no symlink, no submodule, no executable bit), all under ONE
-    `<root>/<run id>/` directory, where `<root>` is one of SOURCE_ROOTS and
-    `<run id>` is the branch's own;
+    `eval-results/<run id>/` directory (SOURCE_ROOT), where `<run id>` is
+    the branch's own;
   * every added path has one of the shapes the harness writes
     (`parse_result_path`): `<key>/<timestamp>/report.md`,
     `<key>/<timestamp>/[<fixture>/]<arm>[/trial-<k>]/summary.json` and the
@@ -66,22 +66,28 @@ MAX_TRIALS = 20
 RESERVED_NAMES = frozenset({"report.md", "summary.json", "transcripts",
                             "tool_trace.json", "raw.json"})
 
-#: Top-level directories the routine has pushed results under. Both are
-#: real: claude/eval-20261006T192432Z-93755e used `results/`, and
-#: claude/eval-20261006T194256Z-f944ea used `eval-results/`. A branch uses
-#: exactly one of them.
-SOURCE_ROOTS = ("results", "eval-results")
+#: The one top-level directory the routine pushes results under: its saved
+#: prompt (edited 2026-10-06, owner's answer "Pin eval-results/") writes
+#: `eval-results/<run id>/` at the repo root and commits nothing else.
+SOURCE_ROOT = "eval-results"
+#: Branches pushed before the root was pinned, by run id, with the root each
+#: used. Only claude/eval-20261006T192432Z-93755e needs an entry
+#: (`results/<run id>/`); claude/eval-20261006T194256Z-f944ea already used
+#: `eval-results/`. claude/eval-20261006T195724Z-a3f2d3 wrote
+#: `results/<key>/` with no run id directory and stays rejected.
+LEGACY_ROOTS = {"20261006T192432Z-93755e": "results"}
 #: Where accepted results land on persistent/eval-results. Not `results/`:
 #: that tree is eval.yml's main-pinned WIF output and the badge input, and
 #: routine results are a local exhibit only (ADR 0010, decision 3), not
 #: comparable to it until a paired run shows they agree.
 DEST_ROOT = "routine-results"
 
-#: OWNER CHOICE (open question in the PR): which validated result files are
-#: kept long-term on persistent/eval-results. Every file is validated either
-#: way; a file left out of this set is checked and then not copied. The
-#: default keeps all three as the routine pushed them.
-KEEP_LONG_TERM = frozenset({"summary.json", "tool_trace.json", "report.md"})
+#: Which validated result files are kept long-term on persistent/eval-results
+#: (owner's answer, 2026-10-06: "summary + report only"). Every file is
+#: validated either way; a file left out of this set is checked and then not
+#: copied. `tool_trace.json` is dropped: harness/cli_json.py's tool-trace
+#: notes say traces are never committed to persistent/eval-results.
+KEEP_LONG_TERM = frozenset({"summary.json", "report.md"})
 
 #: Byte caps, per file kind. The real files are 1.8 to 7.6 KB; the trace cap
 #: leaves room for the harness's own 64 KiB event cap (TRACE_MAX_BYTES,
@@ -107,25 +113,25 @@ class Rejected(Exception):
 # Paths.
 
 def parse_result_path(rel: str) -> dict:
-    """The parts of one path below `<root>/<run id>/`, or Rejected.
+    """The parts of one path below `eval-results/<run id>/`, or Rejected.
 
     Returns {"kind", "key", "timestamp", "fixture", "arm", "trial"}; kind is
     the file's basename, which is also its schema.
     """
     parts = rel.split("/")
     if any(not p for p in parts) or len(parts) > 8:
-        raise Rejected(f"{rel}: not a result path")
+        raise Rejected(f"{rel!r}: not a result path")
     stamps = [i for i, p in enumerate(parts) if TIMESTAMP_RE.fullmatch(p)]
     if len(stamps) != 1:
-        raise Rejected(f"{rel}: needs exactly one timestamp segment")
+        raise Rejected(f"{rel!r}: needs exactly one timestamp segment")
     at = stamps[0]
     key_parts, below = parts[:at], parts[at + 1:]
     if key_parts and key_parts[0] == "guidance" and len(key_parts) == 2:
         if not NAME_RE.fullmatch(key_parts[1]):
-            raise Rejected(f"{rel}: bad guidance section name")
+            raise Rejected(f"{rel!r}: bad guidance section name")
     elif len(key_parts) != 1 or not NAME_RE.fullmatch(key_parts[0]) \
             or key_parts[0] == "guidance":
-        raise Rejected(f"{rel}: bad subject key")
+        raise Rejected(f"{rel!r}: bad subject key")
     found = {"key": "/".join(key_parts), "timestamp": parts[at],
              "fixture": None, "arm": None, "trial": None}
     if below == ["report.md"]:
@@ -135,19 +141,19 @@ def parse_result_path(rel: str) -> dict:
     elif below[-2:] == ["transcripts", "tool_trace.json"]:
         kind, arm_path = "tool_trace.json", below[:-2]
     else:
-        raise Rejected(f"{rel}: not a file the harness publishes")
+        raise Rejected(f"{rel!r}: not a file the harness publishes")
     if arm_path and TRIAL_RE.fullmatch(arm_path[-1]):
         trial = int(TRIAL_RE.fullmatch(arm_path[-1]).group("k"))
         if trial > MAX_TRIALS:
-            raise Rejected(f"{rel}: trial number out of range")
+            raise Rejected(f"{rel!r}: trial number out of range")
         found["trial"] = trial
         arm_path = arm_path[:-1]
     if len(arm_path) not in (1, 2):
-        raise Rejected(f"{rel}: expected [<fixture>/]<arm>")
+        raise Rejected(f"{rel!r}: expected [<fixture>/]<arm>")
     for name in arm_path:
         if not NAME_RE.fullmatch(name) or name in RESERVED_NAMES \
                 or TRIAL_RE.fullmatch(name) or TIMESTAMP_RE.fullmatch(name):
-            raise Rejected(f"{rel}: bad fixture or arm name")
+            raise Rejected(f"{rel!r}: bad fixture or arm name")
     if len(arm_path) == 2:
         found["fixture"] = arm_path[0]
     found["arm"] = arm_path[-1]
@@ -469,12 +475,12 @@ def added_files(repo: str, base: str, tip: str) -> list[tuple[str, str, str]]:
         except (UnicodeDecodeError, ValueError):
             raise Rejected("a changed path is not plain UTF-8") from None
         if status != "A":
-            raise Rejected(f"{name}: modified or deleted (status {status}); "
+            raise Rejected(f"{name!r}: modified or deleted (status {status}); "
                            "only additions are ingestible")
         if new_mode != "100644":
-            raise Rejected(f"{name}: mode {new_mode} is not a regular file")
+            raise Rejected(f"{name!r}: mode {new_mode} is not a regular file")
         if not SHA_RE.fullmatch(new_oid):
-            raise Rejected(f"{name}: unexpected blob id")
+            raise Rejected(f"{name!r}: unexpected blob id")
         out.append((name, new_mode, new_oid))
     return out
 
@@ -505,34 +511,32 @@ def validate(repo: str, base: str, source: str, branch: str,
         raise Rejected("the branch adds no files")
     if len(files) > MAX_FILES:
         raise Rejected(f"the branch adds more than {MAX_FILES} files")
-    roots = {name.split("/", 1)[0] for name, _, _ in files}
-    if len(roots) != 1 or not roots <= set(SOURCE_ROOTS):
-        raise Rejected(f"every file must be under one of {list(SOURCE_ROOTS)}")
-    prefix = f"{roots.pop()}/{run_id}/"
+    prefix = f"{LEGACY_ROOTS.get(run_id, SOURCE_ROOT)}/{run_id}/"
 
     staged, total = [], 0
     for name, _, oid in files:
         if not name.startswith(prefix):
-            raise Rejected(f"{name}: not under {prefix}")
+            raise Rejected(f"{name!r}: not under {prefix!r}")
         rel = name[len(prefix):]
+        where = repr(name)
         parts = parse_result_path(rel)
         kind = parts["kind"]
         size = int(git(repo, "cat-file", "-s", oid).decode().strip())
         if size > SIZE_CAPS[kind]:
-            raise Rejected(f"{name}: {size} bytes is over the {kind} cap")
+            raise Rejected(f"{name!r}: {size} bytes is over the {kind} cap")
         total += size
         if total > MAX_TOTAL_BYTES:
             raise Rejected("the branch's results are over the total size cap")
         data = git(repo, "cat-file", "blob", oid)
         if len(data) != size:
-            raise Rejected(f"{name}: size changed while reading")
-        text = decode_text(data, name)
+            raise Rejected(f"{name!r}: size changed while reading")
+        text = decode_text(data, where)
         if kind == "summary.json":
-            check_summary(load_json(text, name), name, parts)
+            check_summary(load_json(text, where), where, parts)
         elif kind == "tool_trace.json":
-            check_tool_trace(load_json(text, name), name)
+            check_tool_trace(load_json(text, where), where)
         else:
-            check_report(text, name, parts)
+            check_report(text, where, parts)
         if kind in KEEP_LONG_TERM:
             staged.append((rel, data))
     if not any(rel.endswith("summary.json") for rel, _ in staged) \
@@ -564,13 +568,13 @@ def place(staged: Path, tree: Path) -> dict:
         for part in rel.parts:
             cursor = cursor / part
             if cursor.is_symlink():
-                raise Rejected(f"{rel}: the destination path has a symlink")
+                raise Rejected(f"{str(rel)!r}: the destination path has a symlink")
         if not target.resolve().is_relative_to(tree_root):
-            raise Rejected(f"{rel}: escapes the destination tree")
+            raise Rejected(f"{str(rel)!r}: escapes the destination tree")
         data = path.read_bytes()
         if target.exists():
             if not target.is_file() or target.read_bytes() != data:
-                raise Rejected(f"{rel}: already ingested with different content")
+                raise Rejected(f"{str(rel)!r}: already ingested with different content")
             continue
         plan.append((target, data))
     for target, data in plan:
@@ -636,7 +640,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result = place(args.staged, args.tree)
     except Rejected as exc:
-        print(f"rejected: {exc}", file=sys.stderr)
+        # Paths are already repr()-escaped; this is the backstop, so no
+        # message can start a new log line (a `::workflow-command::`).
+        message = "".join(c if c.isprintable() else repr(c)[1:-1]
+                          for c in str(exc))
+        print(f"rejected: {message}", file=sys.stderr)
         return 1
     for key, value in result.items():
         print(f"{key}={value}")

@@ -179,26 +179,35 @@ class GitCase(unittest.TestCase):
 
 class AcceptTests(GitCase):
 
-    def test_accepts_both_roots_and_stages_exact_bytes(self):
-        for root in ingest.SOURCE_ROOTS:
-            with self.subTest(root=root):
-                self.git("checkout", "-q", "main")
-                self.git("branch", "-q", "-D", BRANCH)
-                self.git("checkout", "-q", "-b", BRANCH)
-                files = good_files(root)
-                sha = self.commit(files)
-                out = self.tmp / f"staged-{root}"
-                result = self.validate(expect=sha, out=out)
-                self.assertEqual(result, {"run_id": RUN_ID, "sha": sha,
-                                          "files": "5"})
-                staged = {str(p.relative_to(out)): p.read_bytes()
-                          for p in out.rglob("*") if p.is_file()}
-                expected = {"routine-results/" + name[len(root) + 1:]: data
-                            for name, data in files.items()}
-                self.assertEqual(staged, expected)
+    def test_accepts_the_canonical_root_and_stages_exact_kept_bytes(self):
+        files = good_files()
+        sha = self.commit(files)
+        out = self.tmp / "staged"
+        result = self.validate(expect=sha, out=out)
+        self.assertEqual(result, {"run_id": RUN_ID, "sha": sha, "files": "3"})
+        staged = {str(p.relative_to(out)): p.read_bytes()
+                  for p in out.rglob("*") if p.is_file()}
+        prefix = f"{ingest.SOURCE_ROOT}/"
+        expected = {"routine-results/" + name[len(prefix):]: data
+                    for name, data in files.items()
+                    if not name.endswith("tool_trace.json")}
+        self.assertEqual(staged, expected)
+
+    def test_legacy_root_only_for_its_own_run(self):
+        legacy = "20261006T192432Z-93755e"
+        self.assertEqual(ingest.LEGACY_ROOTS, {legacy: "results"})
+        branch = f"claude/eval-{legacy}"
+        self.git("checkout", "-q", "-b", branch, "main")
+        self.commit({n.replace(f"eval-results/{RUN_ID}", f"results/{legacy}"): d
+                     for n, d in good_files().items()})
+        result = ingest.validate(str(self.repo), "main", branch, branch, None,
+                                 self.tmp / "staged")
+        self.assertEqual(result["run_id"], legacy)
+        self.assertTrue((self.tmp / "staged" / "routine-results" / legacy)
+                        .is_dir())
 
     def test_trials_and_guidance_keys_are_accepted(self):
-        base = f"results/{RUN_ID}"
+        base = f"eval-results/{RUN_ID}"
         trial = summary(trial=2)
         del trial["n"]
         guidance = summary("with_guidance", subject="guidance",
@@ -212,14 +221,26 @@ class AcceptTests(GitCase):
                 json.dumps(guidance).encode()})
         self.assertEqual(self.validate()["files"], "2")
 
+    def test_keep_long_term_is_summary_and_report_only(self):
+        # Owner's answer (2026-10-06): "summary + report only". A trace is
+        # still validated (RejectContentTests), then dropped.
+        self.assertEqual(ingest.KEEP_LONG_TERM,
+                         frozenset({"summary.json", "report.md"}))
+        self.commit()
+        self.validate()
+        kept = sorted(p.name for p in (self.tmp / "staged").rglob("*")
+                      if p.is_file())
+        self.assertEqual(kept, ["report.md", "summary.json", "summary.json"])
+
     def test_keep_long_term_is_the_one_allowlist(self):
         self.commit()
         with mock.patch.object(ingest, "KEEP_LONG_TERM",
-                               frozenset({"summary.json"})):
+                               frozenset({"summary.json", "tool_trace.json"})):
             self.validate()
         kept = sorted(p.name for p in (self.tmp / "staged").rglob("*")
                       if p.is_file())
-        self.assertEqual(kept, ["summary.json", "summary.json"])
+        self.assertEqual(kept, ["summary.json", "summary.json",
+                                "tool_trace.json", "tool_trace.json"])
 
     def test_real_routine_branches_parse(self):
         # The two path shapes the routine really pushed on 2026-10-06.
@@ -237,7 +258,7 @@ class RejectPathTests(GitCase):
         files = good_files()
         files["README.md"] = b"changed\n"
         self.commit(files)
-        self.assertRejected(r"README\.md: modified or deleted")
+        self.assertRejected(r"'README\.md': modified or deleted")
 
     def test_rejects_a_deleted_main_file(self):
         self.commit()
@@ -300,11 +321,46 @@ class RejectPathTests(GitCase):
         self.commit(files)
         self.assertRejected(r"not under")
 
-    def test_rejects_two_roots(self):
+    def test_rejects_the_old_results_root_for_a_new_run(self):
+        self.commit(good_files("results"))
+        self.assertRejected(r"not under 'eval-results/")
+
+    def test_rejects_a_second_root_beside_the_canonical_one(self):
         files = good_files("results")
-        files.update(good_files("eval-results"))
+        files.update(good_files())
         self.commit(files)
-        self.assertRejected(r"one of")
+        self.assertRejected(r"not under")
+
+    def test_rejects_the_a3f2d3_layout_with_no_run_id_directory(self):
+        # claude/eval-20261006T195724Z-a3f2d3 pushed results/<key>/<ts>/...
+        # with no run id directory; it stays rejected.
+        branch = "claude/eval-20261006T195724Z-a3f2d3"
+        self.git("checkout", "-q", "-b", branch, "main")
+        self.commit({n.replace(f"eval-results/{RUN_ID}/", "results/"): d
+                     for n, d in good_files().items()})
+        with self.assertRaisesRegex(ingest.Rejected, "not under"):
+            ingest.validate(str(self.repo), "main", branch, branch, None,
+                            self.tmp / "staged")
+
+    def test_untrusted_paths_are_escaped_in_messages(self):
+        files = good_files()
+        evil = (f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/x\n"
+                "::error::injected")
+        files[evil] = b"{}"
+        self.commit(files)
+        exc = self.assertRejected()
+        self.assertNotIn("\n", str(exc))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = ingest.main(["validate", "--repo", str(self.repo),
+                                "--base", "main", "--source", BRANCH,
+                                "--branch", BRANCH,
+                                "--out", str(self.tmp / "staged2")])
+        self.assertEqual(code, 1)
+        lines = err.getvalue().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("rejected: "))
 
     def test_rejects_bad_branch_names(self):
         self.commit()
@@ -587,7 +643,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(set(on), {"push"})
         self.assertEqual(on["push"]["branches"], ["claude/eval-*"])
         self.assertEqual(on["push"]["paths"],
-                         [f"{root}/**" for root in ingest.SOURCE_ROOTS])
+                         [f"{ingest.SOURCE_ROOT}/**"])
         self.assertEqual(self.signal["permissions"], {})
         for job in self.signal["jobs"].values():
             self.assertNotIn("permissions", job)
@@ -643,6 +699,12 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(checkouts[0]["with"]["ref"],
                          "${{ github.event.repository.default_branch }}")
         self.assertIs(checkouts[0]["with"]["persist-credentials"], False)
+
+    def test_git_add_keeps_gitignore_in_force(self):
+        adds = [body for _, body in run_blocks(self.ingest) if " add " in body]
+        self.assertTrue(adds)
+        for body in adds:
+            self.assertIsNone(re.search(r"\badd\s+(-f|--force)\b", body))
 
     def test_every_push_targets_persistent_eval_results(self):
         targets = [t for _, body in run_blocks(self.ingest)
