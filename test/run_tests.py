@@ -17367,8 +17367,11 @@ class TestIssue81(unittest.TestCase):
         calls = [call for call in calls if call.func.attr == "score"]
         for call in calls:
             with self.subTest(line=call.lineno):
+                # `permission_mode` (#71) is the run's CLI launch mode; it
+                # changes how the judge process starts, not which instrument
+                # scores: still no `mode`, no `references`.
                 self.assertEqual(sorted(kw.arg for kw in call.keywords),
-                                 ["model", "timeout", "weights"],
+                                 ["model", "permission_mode", "timeout", "weights"],
                                  "run_eval.py's judge.score() call changed shape")
         readme = (self.STYLE_DIR / "README.md").read_text(encoding="utf-8")
         self.assertIn("run_eval.py` does not honour `judge.mode` yet", readme)

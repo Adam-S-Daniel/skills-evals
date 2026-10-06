@@ -58,7 +58,8 @@
   },
   "harness": {
     "name": "claude-code",
-    "version": "fake-claude 0.0.0 (hermetic test stub)"
+    "version": "fake-claude 0.0.0 (hermetic test stub)",
+    "permission_mode": "auto"
   },
   "models_used": [
     "fake-agent-model"

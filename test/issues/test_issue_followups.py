@@ -87,7 +87,7 @@ class RunAgentFollowupTests(unittest.TestCase):
     # A multi-turn arm's first call: it must persist, or `--resume` finds
     # no conversation.
     BASE_CMD = ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
-                "json", "--verbose", "--permission-mode", "bypassPermissions",
+                "json", "--verbose", "--permission-mode", "auto",
                 "--setting-sources", "project", "--strict-mcp-config",
                 "--model", "model-a"]
     # A one-turn arm writes no transcript.

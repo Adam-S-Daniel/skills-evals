@@ -161,7 +161,8 @@ JUDGE_ISOLATION_FLAGS = ("--setting-sources", "", "--strict-mcp-config",
                          "--no-session-persistence")
 
 
-def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
+def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
+                    permission_mode: str | None = None) -> str:
     """Run the judge CLI on `prompt` and return its `result` text.
 
     Shared by both modes, so a judge invocation is spelled exactly once.
@@ -187,13 +188,22 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
     guidance.check_timeout(timeout, "judge._run_judge_cli(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
+    # The run's permission mode (guidance.PERMISSION_MODES), default `auto`.
+    # The judge needs no tool — it reads a prompt and answers JSON — so the
+    # mode matters only because `bypassPermissions` is refused as root (a
+    # routine's sandbox, ADR 0010). It follows the arms' mode rather than a
+    # mode of its own so a `--permission-mode bypassPermissions` run (eval.yml)
+    # launches the judge exactly as every run before this setting did.
+    permission_mode = guidance.check_permission_mode(
+        guidance.DEFAULT_PERMISSION_MODE if permission_mode is None
+        else permission_mode)
     # Isolated from the account and the checkout: no settings source (so no
     # user or project CLAUDE.md, hooks or plugins from settings), no MCP
     # connector, no transcript, and (env below) no auto-memory. The judge
     # still needs the real HOME for its login (a scratch HOME or config dir
     # loses it, measured on CLI 2.1.289), so these flags are the isolation.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
-          "--output-format", "json", "--permission-mode", "bypassPermissions",
+          "--output-format", "json", "--permission-mode", permission_mode,
           *JUDGE_ISOLATION_FLAGS]
     if model:
         cmd += ["--model", model]
@@ -244,7 +254,8 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
          weights: dict[str, float] | None = None,
          mode: str | None = "absolute",
          references: list | None = None,
-         trial_index: int = 0, scope: str = "") -> dict:
+         trial_index: int = 0, scope: str = "",
+         permission_mode: str | None = None) -> dict:
     """Score one arm. `mode` picks the instrument; absolute is the default.
 
     ## absolute (the historical behaviour, unchanged)
@@ -293,13 +304,15 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
                 "mode.")
         return score_pairwise(rubric, transcript, references or [],
                               trial_index=trial_index, model=model,
-                              timeout=timeout, scope=scope)
+                              timeout=timeout, scope=scope,
+                              permission_mode=permission_mode)
     if mode not in (None, "", "absolute"):
         raise ValueError(
             f"unknown judge mode {mode!r} — known modes: absolute, pairwise")
 
     judge_prompt = _build_prompt(rubric, transcript, workspace_diff)
-    judge_text = _run_judge_cli(judge_prompt, model=model, timeout=timeout)
+    judge_text = _run_judge_cli(judge_prompt, model=model, timeout=timeout,
+                                permission_mode=permission_mode)
     parsed = _extract_json(judge_text)
 
     if not isinstance(parsed, dict) or not isinstance(parsed.get("dimensions"), list):
@@ -662,7 +675,8 @@ def _build_pairwise_prompt(rubric: str, ordered: list[dict],
 def score_pairwise(rubric: str, candidate_text: str, references: list, *,
                    trial_index: int = 0, model: str | None = None,
                    timeout: int = 120, scope: str = "",
-                   dimensions=PAIRWISE_DIMENSIONS) -> dict:
+                   dimensions=PAIRWISE_DIMENSIONS,
+                   permission_mode: str | None = None) -> dict:
     """Rank the writing under test against the fixture's references, blind.
 
     Returns:
@@ -697,7 +711,8 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
     """
     ordered = blind_order(candidate_text, references, trial_index, scope)
     prompt = _build_pairwise_prompt(rubric, ordered, dimensions)
-    parsed = _extract_json(_run_judge_cli(prompt, model=model, timeout=timeout))
+    parsed = _extract_json(_run_judge_cli(prompt, model=model, timeout=timeout,
+                                          permission_mode=permission_mode))
     if not isinstance(parsed, dict):
         raise ValueError(f"judge output is not a JSON object: {parsed!r}")
 
