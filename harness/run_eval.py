@@ -45,6 +45,7 @@ import math
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -1777,11 +1778,125 @@ def _stats(values: list) -> dict | None:
             "min": min(values), "max": max(values), "sum": total}
 
 
-def aggregate_trials(trials: list[dict]) -> dict:
+# The per-trial efficiency figures the harness records, as (name, path into
+# the trial summary's `agent` block). `usage` is the CLI's own token block; a
+# CLI that omits a key leaves that trial missing from that metric.
+EFFICIENCY_METRICS = (
+    ("cost_usd", ("cost_usd",)),
+    ("num_turns", ("num_turns",)),
+    ("duration_ms", ("duration_ms",)),
+    ("input_tokens", ("usage", "input_tokens")),
+    ("output_tokens", ("usage", "output_tokens")),
+    ("cache_creation_input_tokens", ("usage", "cache_creation_input_tokens")),
+    ("cache_read_input_tokens", ("usage", "cache_read_input_tokens")),
+)
+# `tool_errors` is the one metric not in a summary: it is counted from the
+# trial's `transcripts/tool_trace.json` (see `_trial_tool_errors`), so adding
+# it to the summary's `agent` block would change every summary this harness
+# writes, which the one-trial default must not do (#66).
+EFFICIENCY_NAMES = (*(name for name, _ in EFFICIENCY_METRICS), "tool_errors")
+
+
+def _tool_error_count(tool_trace: dict | None) -> int | None:
+    """How many tool results of one trial were errors, from its tool trace.
+
+    A run always asks the CLI for the whole message array (`--verbose`), so a
+    trial with no trace made no tool call: 0, not unknown. A trace that hit
+    its size cap kept only the first events (`omitted_events`), so a count
+    from it would be a silent undercount; that is None, which the aggregate
+    reports as missing rather than as a small number.
+    """
+    if tool_trace is None:
+        return 0
+    if tool_trace.get("omitted_events"):
+        return None
+    return sum(1 for event in tool_trace.get("events") or []
+               if isinstance(event, dict) and event.get("kind") == "tool_result"
+               and event.get("is_error") is True)
+
+
+def _trial_tool_errors(trial_dir: Path) -> int | None:
+    """`_tool_error_count` of the trace one trial wrote under `trial_dir`.
+    No trace file is a trial that made no tool call; a file that cannot be
+    read as a trace is unknown."""
+    path = trial_dir / "transcripts" / TOOL_TRACE_NAME
+    if not path.exists():
+        return 0
+    try:
+        trace = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _tool_error_count(trace) if isinstance(trace, dict) else None
+
+
+def _metric_stats(values: list, n_trials: int) -> dict:
+    """`n`, `n_missing`, `mean`, `median`, `min`, `max` and `sum` of one
+    efficiency metric. `n_missing` is the trials that did not report it.
+    Unlike `_stats`, an empty list still returns a block (every figure null),
+    so a reader can tell "no trial reported it" from "the key is absent"."""
+    if not values:
+        return {"n": 0, "n_missing": n_trials, "mean": None, "median": None,
+                "min": None, "max": None, "sum": None}
+    total = sum(values)
+    return {"n": len(values), "n_missing": n_trials - len(values),
+            "mean": total / len(values), "median": statistics.median(values),
+            "min": min(values), "max": max(values), "sum": total}
+
+
+def efficiency_stats(trials: list[dict],
+                     tool_errors: list | None = None) -> dict:
+    """`_metric_stats` for every `EFFICIENCY_NAMES` entry over `trials`
+    (per-trial summaries). A trial without an `agent` block, or whose value
+    is absent or not a finite number, counts in `n_missing`.
+
+    `tool_errors` is one count (or None) per trial, in trial order, from
+    `_trial_tool_errors`; the summaries do not carry it. Without it every
+    trial is missing for that metric. Only a trial with an `agent` block (an
+    agent call that returned) can have one."""
+    out = {}
+    for name, path in EFFICIENCY_METRICS:
+        values = []
+        for trial in trials:
+            value = trial.get("agent")
+            for key in path:
+                value = value.get(key) if isinstance(value, dict) else None
+            if _is_number(value):
+                values.append(value)
+        out[name] = _metric_stats(values, len(trials))
+    counted = [
+        count for index, trial in enumerate(trials)
+        if isinstance(trial.get("agent"), dict) and tool_errors is not None
+        and index < len(tool_errors)
+        and _is_number(count := tool_errors[index])]
+    out["tool_errors"] = _metric_stats(counted, len(trials))
+    return out
+
+
+def efficiency_delta(with_stats: dict, without_stats: dict) -> dict:
+    """Per metric, `with` minus `without` of the mean and of the median, from
+    two `efficiency_stats` blocks. Negative means the `with` arm used less.
+    A delta is null when either side has no value for the metric. This
+    reports a difference; it does not say which metric matters or whether the
+    difference is enough."""
+    out = {}
+    for name in EFFICIENCY_NAMES:
+        a, b = with_stats.get(name) or {}, without_stats.get(name) or {}
+        entry = {"with_n": a.get("n"), "without_n": b.get("n")}
+        for figure in ("mean", "median"):
+            x, y = a.get(figure), b.get(figure)
+            entry[f"delta_{figure}"] = (
+                x - y if _is_number(x) and _is_number(y) else None)
+        out[name] = entry
+    return out
+
+
+def aggregate_trials(trials: list[dict],
+                     tool_errors: list | None = None) -> dict:
     """One arm's trial summaries, reduced to the fields an aggregate carries.
 
     `trials` is the list of per-trial summaries in trial order (trial 1
-    first), each in the shape `_write_summary` writes.
+    first), each in the shape `_write_summary` writes. `tool_errors` is the
+    optional per-trial tool-error count `efficiency_stats` takes.
 
     EVERY TRIAL COUNTS IN `n`. A trial whose `error` is set is counted in
     `errors` and listed in `trial_errors`; it is in no score mean or pass
@@ -1809,6 +1924,11 @@ def aggregate_trials(trials: list[dict]) -> dict:
         including errored trials, or null when none reported a usable cost.
       * `cost_unknown_trials` — trials without a usable agent cost. A zero
         cost is known; an absent or invalid cost is unknown, not free.
+      * `efficiency` — `efficiency_stats` over the same trials as
+        `cost_usd` (errored trials with an agent block included): one block
+        per `EFFICIENCY_METRICS` name, each with `n`, `n_missing`, `mean`,
+        `median`, `min`, `max` and `sum`. Added alongside the figures above,
+        which are unchanged.
     """
     scored = [t for t in trials if not t.get("error")]
     trial_errors = [
@@ -1867,7 +1987,8 @@ def aggregate_trials(trials: list[dict]) -> dict:
             "scored": len(scored), "trial_errors": trial_errors,
             "aggregate": {"objective": objective_stats, "judge": judge_stats,
                           "cost_usd": _stats(costs),
-                          "cost_unknown_trials": len(trials) - len(costs)}}
+                          "cost_unknown_trials": len(trials) - len(costs),
+                          "efficiency": efficiency_stats(trials, tool_errors)}}
 
 
 def _trials_error(stats: dict) -> dict | None:
@@ -1896,6 +2017,67 @@ def _fmt_mean(value: float) -> str:
     `7.0`) — the same rule scripts/make_badge.py prints its means by."""
     rounded = round(value, 1)
     return str(int(rounded)) if rounded == int(rounded) else f"{rounded:.1f}"
+
+
+def _fmt_figure(name: str, value: float) -> str:
+    """Cost to four decimals, as the cost column prints it; everything else
+    (turns, milliseconds, token and error counts) to one."""
+    return f"{value:.4f}" if name == "cost_usd" else _fmt_mean(value)
+
+
+def _fmt_metric(name: str, block: dict | None) -> str:
+    """One efficiency cell: `mean / median` of the trials that reported it,
+    plus `(n of N)` when some did not. `-` when none did."""
+    if not block or not block.get("n"):
+        return "-"
+    cell = (f"{_fmt_figure(name, block['mean'])} / "
+            f"{_fmt_figure(name, block['median'])}")
+    if block.get("n_missing"):
+        cell += f" ({block['n']} of {block['n'] + block['n_missing']})"
+    return cell
+
+
+def _fmt_delta(name: str, value) -> str:
+    if not _is_number(value):
+        return "-"
+    text = _fmt_figure(name, abs(value))
+    if float(text) == 0:
+        return "0"
+    return ("+" if value > 0 else "-") + text
+
+
+def _render_efficiency_table(arms: list[dict]) -> list[str]:
+    """The efficiency table of one fixture: a row per metric, a column per
+    arm (`mean / median`), and, when the arms are `with_skill` and
+    `without_skill`, the with-minus-without delta of the mean and the
+    median. Rows no arm reported are left out."""
+    blocks = {arm["arm"]: arm["stats"]["aggregate"].get("efficiency") or {}
+              for arm in arms}
+    names = [name for name in EFFICIENCY_NAMES
+             if any((blocks[a].get(name) or {}).get("n") for a in blocks)]
+    if not names:
+        return []
+    paired = "with_skill" in blocks and "without_skill" in blocks
+    delta = (efficiency_delta(blocks["with_skill"], blocks["without_skill"])
+             if paired else {})
+    header = "| Metric (mean / median) | " + " | ".join(blocks) + " |"
+    rule = "| --- |" + " --- |" * len(blocks)
+    if paired:
+        header += " Delta mean | Delta median |"
+        rule += " --- | --- |"
+    lines = ["", "Efficiency per trial (a trial that did not report a metric "
+             "is left out and the cell says how many did; delta is "
+             "with_skill minus without_skill):" if paired else
+             "Efficiency per trial (a trial that did not report a metric is "
+             "left out and the cell says how many did):", "", header, rule]
+    for name in names:
+        row = f"| {name} | " + " | ".join(
+            _fmt_metric(name, blocks[a].get(name)) for a in blocks) + " |"
+        if paired:
+            row += (f" {_fmt_delta(name, delta[name]['delta_mean'])} |"
+                    f" {_fmt_delta(name, delta[name]['delta_median'])} |")
+        lines.append(row)
+    return lines
 
 
 def _render_trials_report(skill: str, timestamp: str, trials: int,
@@ -1948,6 +2130,8 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                 cost_str += f"; {block['cost_unknown_trials']} unknown"
             lines.append(f"| {arm['arm']} | {stats['n']} | {stats['errors']} | "
                          f"{objective_str} | {judge_str} | {cost_str} |")
+
+        lines += _render_efficiency_table(arms)
 
         errored = [(arm["arm"], entry) for arm in arms
                    for entry in arm["stats"]["trial_errors"]]
@@ -2244,8 +2428,9 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                                 args, timestamp, selection, out_dir=arm_dir,
                                 extra={**label, "n": 1}))
         written.append(_read_summary(arm_dir))
-        stats = aggregate_trials(written)
+        stats = aggregate_trials(written, [_trial_tool_errors(arm_dir)])
     else:
+        tool_errors = []
         for index in range(1, args.trials + 1):
             trial_dir = arm_dir / f"{TRIAL_DIR_PREFIX}{index}"
             results.append(_run_arm(arm_name, fixture, item["seed"], registries,
@@ -2253,7 +2438,8 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                                     out_dir=trial_dir,
                                     extra={**label, "trial": index}))
             written.append(_read_summary(trial_dir))
-        stats = aggregate_trials(written)
+            tool_errors.append(_trial_tool_errors(trial_dir))
+        stats = aggregate_trials(written, tool_errors)
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        _trials_error(stats), None, None, None, None,
                        extra={**label, **stats},

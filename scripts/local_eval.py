@@ -145,6 +145,12 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    `(flat)`), per arm: `n` (trials), `errors`, per-check pass counts and
    `pass_rate`, the objective total's mean/min/max, the judge's `overall` and
    per-dimension mean/min/max when judged, and the agent cost's mean and sum.
+   Each arm also has `efficiency`: for the agent cost, turns, wall time and
+   the four token counts, `n`, `n_missing`, mean, median, min, max and sum
+   over the scored trials (`run_eval.efficiency_stats`; `tool_errors` is
+   always missing here, because a trial's tool trace is not read). A fixture
+   run with both `with_skill` and `without_skill` also has `efficiency_delta`,
+   with minus without, of each metric's mean and median.
    Errored arm-trials are excluded from every statistic and counted in
    `errors`.
 
@@ -628,6 +634,7 @@ def aggregate_arm(records: list) -> dict:
         },
         "cost_usd": None if not costs else {
             "n": len(costs), "mean": sum(costs) / len(costs), "sum": sum(costs)},
+        "efficiency": run_eval.efficiency_stats(scored),
         "models_used": sorted(models),
         "judge_models_used": sorted(judge_models),
     }
@@ -649,7 +656,12 @@ def build_aggregate(out: Path, skill: str, names: list, arms: list[str],
                 summary, problem = read_arm_summary(out / f"t{k}", skill, arm, name)
                 records.append((k, summary, problem))
             per_arm[arm] = aggregate_arm(records)
-        fixtures[name or FLAT_NAME] = {"arms": per_arm}
+        entry = {"arms": per_arm}
+        if "with_skill" in per_arm and "without_skill" in per_arm:
+            entry["efficiency_delta"] = run_eval.efficiency_delta(
+                per_arm["with_skill"]["efficiency"],
+                per_arm["without_skill"]["efficiency"])
+        fixtures[name or FLAT_NAME] = entry
     aggregate = {"exhibit": EXHIBIT, "skill": skill, "trials": trials,
                  "fixtures": fixtures}
     if len(fixtures) == 1:
