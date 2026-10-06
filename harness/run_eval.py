@@ -3018,8 +3018,20 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
     return "\n".join(lines) + "\n"
 
 
-def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
-    """`subject: guidance` — the whole run, from section id to exit code."""
+def guidance_results_key(section: str, fixture_name: str | None) -> str:
+    """The results/ subtree of a guidance run: `guidance/<section>`, plus the
+    fixture's directory name for a `subject: any` fixture run with --section."""
+    return f"guidance/{section}" + (f"/{fixture_name}" if fixture_name else "")
+
+
+def _run_guidance(args: argparse.Namespace, fixture: dict,
+                  fixture_name: str | None = None) -> int:
+    """`subject: guidance` — the whole run, from section id to exit code.
+
+    `fixture_name` is set for a `subject: any` fixture run with --section: its
+    results go under `guidance/<section>/<fixture name>/`, so two real-work
+    fixtures run under one section never share a results directory.
+    """
     section = fixture.get("section")
     if not isinstance(section, str) or not section:
         print(f"{args.eval_dir / 'fixture.yaml'} has `subject: guidance` but no "
@@ -3030,7 +3042,7 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
         print(f"invalid section id {section!r}: it becomes a results/ path segment")
         return 2
 
-    key = f"guidance/{section}"
+    key = guidance_results_key(section, fixture_name)
     seed = args.eval_dir / "seed"
 
     if args.arm == "objective-only":
@@ -3594,7 +3606,13 @@ def main() -> int:
                       "run it by its own directory without them")
                 return 2
             try:
-                return _run_guidance(args, fixture)
+                if agnostic:
+                    name = fixture_position(eval_dir).name
+                    _validate_fixture_name(name)
+                return _run_guidance(args, fixture, name if agnostic else None)
+            except FixtureLayoutError as exc:
+                print(f"fixture configuration error: {exc}")
+                return 2
             except guidance.GuidanceError as exc:
                 # The sink checks (S1-a-2) raise from inside whichever function
                 # was about to spawn. Caught HERE so every one of them lands on

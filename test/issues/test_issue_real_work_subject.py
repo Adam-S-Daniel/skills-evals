@@ -137,6 +137,31 @@ class SubjectAtRunTimeTests(_Fixture):
                     run_eval.apply_runtime_subject(fixture, skill, section, arm, path)
                 self.assertIn(message, str(caught.exception))
 
+    def test_section_flag_names_the_results_after_the_fixture(self):
+        # Two real-work fixtures run under one section must not share
+        # results/guidance/<section>/<timestamp>/, so a `subject: any` fixture
+        # adds its own directory name, as it does under --skill.
+        self.assertEqual(run_eval.guidance_results_key("security", None),
+                         "guidance/security")
+        self.assertEqual(run_eval.guidance_results_key("security", "toy-1"),
+                         "guidance/security/toy-1")
+        self.write_fixture(draft=None)
+        seen = []
+        with mock.patch.object(run_eval, "_run_guidance",
+                               side_effect=lambda args, fixture, name=None:
+                               seen.append((fixture["section"], name)) or 0):
+            code, out = self.main("--arm", "both", "--section", "security")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(seen, [("security", "toy-1")])
+        # A fixture that fixes its own guidance subject keeps today's path.
+        self.write_fixture(subject="guidance", section="security", draft=None)
+        seen.clear()
+        with mock.patch.object(run_eval, "_run_guidance",
+                               side_effect=lambda args, fixture, name=None:
+                               seen.append((fixture["section"], name)) or 0):
+            self.main("--arm", "both")
+        self.assertEqual(seen, [("security", None)])
+
     def test_an_agent_arm_without_a_subject_is_refused_before_any_arm(self):
         self.write_fixture(draft=None)
         code, out = self.main("--arm", "with_skill")
@@ -197,6 +222,14 @@ class AnswerLeakTests(_Fixture):
             answer_leak.leaked_runs("Print REFUSING to report on, then stop.", answer),
             ["refusing to report on"])
 
+    def test_a_run_spanning_two_added_lines_is_not_a_hit(self):
+        # Matched within one added line: two unrelated lines never join.
+        answer = "    x = report on\n    a partial read = 1"
+        self.assertEqual(answer_leak.leaked_runs("report on a partial read", answer), [])
+        self.assertEqual(answer_leak.leaked_runs(
+            "report on a partial read", "report on a partial read"),
+            ["report on a partial", "on a partial read"])
+
     def test_declared_interface_strings_are_exempt(self):
         answer = "\n".join(answer_leak.added_lines(self.PATCH))
         prompt = "The error must contain `refusing to report on a partial read`."
@@ -208,6 +241,42 @@ class AnswerLeakTests(_Fixture):
             "Write: return a b refusing to report", answer,
             ["refusing to report on a partial read"]),
             ["return a b refusing", "a b refusing to", "b refusing to report"])
+
+    def test_text_the_issue_held_before_the_fix_is_not_a_leak(self):
+        # The diff quoting the issue is not the issue quoting the diff: a run
+        # the issue already held before the pull request's first commit is
+        # exempt; a run only the diff and the task text share is not.
+        answer = "\n".join(answer_leak.added_lines(self.PATCH))
+        before = "Bug: the report keeps refusing to report on stale data."
+        prompt = before + "\nAdd a check refusing to report on a partial read."
+        self.assertEqual(answer_leak.leaked_runs(prompt, answer, preexisting=before),
+                         ["to report on a", "report on a partial", "on a partial read"])
+        self.assertEqual(answer_leak.leaked_runs(before, answer, preexisting=before), [])
+        # Matched as runs of words, so rewrapping or recasing the issue text
+        # does not make it new.
+        self.assertEqual(answer_leak.leaked_runs(
+            "REFUSING to\nreport on", answer, preexisting=before), [])
+
+    def test_the_issue_snapshot_is_a_file_in_the_fixture_outside_the_seed(self):
+        directory = self.fixture_dir
+        (directory / "issue-before-fix.txt").write_text("Bug text\n", encoding="utf-8")
+        path = directory / "fixture.yaml"
+        fixture = {"issue_before_fix": "issue-before-fix.txt"}
+        answer_leak.validate_fixture(fixture, path)
+        self.assertEqual(answer_leak.preexisting_text(fixture, directory), "Bug text\n")
+        self.assertEqual(answer_leak.preexisting_text({}, directory), "")
+        (directory / "seed" / "issue.txt").write_text("x", encoding="utf-8")
+        (directory / "link.txt").symlink_to(directory / "issue-before-fix.txt")
+        for bad in ("missing.txt", "../outside.txt", "/etc/hostname", "seed/issue.txt",
+                    "link.txt", "checker", "", 3):
+            with self.subTest(bad=bad), self.assertRaises(guidance.GuidanceError):
+                answer_leak.validate_fixture({"issue_before_fix": bad}, path)
+
+    def test_a_bad_issue_snapshot_is_refused_by_run_eval_before_scoring(self):
+        self.write_fixture(issue_before_fix="missing.txt")
+        code, out = self.main("--arm", "objective-only")
+        self.assertEqual(code, 2, out)
+        self.assertIn("issue_before_fix", out)
 
     def test_interface_strings_are_validated_at_fixture_load(self):
         path = Path("fixture.yaml")
