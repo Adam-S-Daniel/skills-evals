@@ -29,9 +29,13 @@ trimmed; `checker/` is the merge commit's copy of each selected test file;
 `solution.patch` is the rest of the pull request's diff; and
 `issue-before-fix.txt` is the closing issue's title and body as they stood
 before the pull request's first commit, with the three provenance keys,
-read with `gh api graphql` (a read). `fixture.yaml` is `draft: true` and
-`subject: any`. It reads the clone with `git archive`, `git cat-file` and
-`git diff` only, and never writes the clone.
+read with `gh api graphql` (a read). That is the one GraphQL read on the
+routine's path: REST has no issue body revisions (`userContentEdits`), and a
+Claude Code cloud session refuses GraphQL, so there BUILD stops naming the
+gap (SNAPSHOT_NEEDS_GRAPHQL) rather than snapshot the issue's current body;
+how the routine gets the snapshot is an open owner question on #65.
+`fixture.yaml` is `draft: true` and `subject: any`. It reads the clone with
+`git archive`, `git cat-file` and `git diff` only, and never writes the clone.
 
 CHECK is the validation, reusing the harness's own code: the fixture loads
 as the harness loads it, the seed carries no agent context, the size caps
@@ -172,6 +176,15 @@ query($owner: String!, $name: String!, $issue: Int!, $pr: Int!) {
 }"""
 
 
+#: BUILD's refusal when GraphQL is refused (a Claude Code cloud session).
+SNAPSHOT_NEEDS_GRAPHQL = (
+    "the issue snapshot needs GitHub GraphQL, which is not available to this "
+    "credential: an issue's body revisions (userContentEdits) have no REST read, "
+    "so the body as it stood before the first commit cannot be recovered here, and "
+    "the scaffold stops rather than use the current body (open question on "
+    "https://github.com/Adam-S-Daniel/skills-evals/issues/65)")
+
+
 class ScaffoldError(Exception):
     """Refusal: exit 2, nothing written."""
 
@@ -278,6 +291,8 @@ def read_snapshot(repo: str, issue: int, pr: int) -> dict:
         doc = miner.gh_json("api", "graphql", "-f", f"query={SNAPSHOT_QUERY}",
                             "-F", f"owner={owner}", "-F", f"name={name}",
                             "-F", f"issue={issue}", "-F", f"pr={pr}")
+    except miner.GhGraphQLUnavailable:
+        raise ScaffoldError(SNAPSHOT_NEEDS_GRAPHQL) from None
     except (miner.MineError, miner.GhNotFound) as error:
         raise ScaffoldError(f"the issue snapshot read failed: {error}") from None
     return snapshot_from_graphql(doc)
