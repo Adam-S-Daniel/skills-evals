@@ -23,10 +23,13 @@ routines fire API. What is pinned here:
     scaffold mode; both are checked in the same validation step, before the
     bearer is in any step's env;
   * improve mode (ADR 0005, "Routine improve mode addendum"): `skill` must
-    match the skill-name pattern and own at least three committed
-    `evals/<skill>/<name>` fixtures, `holdout` must be empty or one of those
-    names, both must be empty in the other modes, and `fixture` and
-    `candidate` must be empty in improve mode;
+    match the skill-name pattern and pass `improve_gate.py fire-check` (the
+    loop's own resolution: nested `evals/<skill>/<name>` fixtures that all
+    name the skill and adam-agentskills, at least `MIN_FIXTURES` of them),
+    so `guidance`, `real-work` and other non-skill dirs are refused with
+    their own message; `holdout` must be empty or one of those names; both
+    must be empty in the other modes, and `fixture` and `candidate` must be
+    empty in improve mode;
   * the fire step, run against a fake curl, sends the bearer on stdin (never
     argv) and a jq-built payload: eval mode's four fields plus `mode`, or
     exactly `mode`, `run_id` and `candidate` in scaffold mode, or exactly
@@ -224,6 +227,16 @@ class WorkflowShapeTests(unittest.TestCase):
                 self.assertNotIn("secrets", text)
                 self.assertNotIn("BEARER", text)
 
+    def test_pinned_pyyaml_is_installed_before_validation(self):
+        # improve_gate.py fire-check loads fixture.yaml with PyYAML, at the
+        # pin the gate workflows install; no secret is in this step's reach.
+        ids = [s.get("id") for s in self.steps]
+        installs = [i for i, s in enumerate(self.steps)
+                    if s.get("run") == "python3 -m pip install pyyaml==6.0.3"]
+        self.assertEqual(len(installs), 1)
+        self.assertLess(installs[0], ids.index("validate"))
+        self.assertNotIn("env", self.steps[installs[0]])
+
     def test_checkout_does_not_persist_credentials(self):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
@@ -340,14 +353,12 @@ class ValidateStepTests(unittest.TestCase):
         })
 
     def test_accepts_an_improve_run(self):
-        # writing-adrs has four committed fixtures; adam-writing-style has
-        # exactly three, the minimum.
+        # writing-adrs: four nested adam-agentskills fixtures.
         cases = (
             ({"skill": SKILL, "holdout": HOLDOUT}, SKILL, HOLDOUT),
             ({"skill": SKILL, "holdout": ""}, SKILL, ""),
             ({"skill": SKILL}, SKILL, ""),
-            ({"skill": "adam-writing-style", "holdout": "proposal-bio"},
-             "adam-writing-style", "proposal-bio"),
+            ({"skill": SKILL, "holdout": "bootstrap"}, SKILL, "bootstrap"),
         )
         for extra, skill, holdout in cases:
             with self.subTest(**extra):
@@ -385,18 +396,29 @@ class ValidateStepTests(unittest.TestCase):
             "skill_space": {"skill": "writing adrs"},
             "skill_non_ascii": {"skill": "writing-adr\u00e9"},
         }, expect="is not a skill name")
+        # The loop's own resolution (improve_gate.py fire-check): not a
+        # skill's fixture set, another registry's skill, too few fixtures.
         self._refuse_all(no_holdout, {
             "unknown_skill": {"skill": "no-such-skill-xyz"},
             "skill_prefix_only": {"skill": "writing-adr"},
-            # One committed fixture each: fewer than three.
-            "one_fixture_skill": {"skill": "debug-github-workflows"},
             "flat_fixture_skill": {"skill": "browser-testing"},
-        }, expect="fewer than three committed fixtures")
+            "guidance": {"skill": "guidance"},
+            "real_work": {"skill": "real-work"},
+        }, expect="is not one skill's fixture set")
+        self._refuse_all(no_holdout, {
+            # Three nested fixtures, but for adam-agentskills-private.
+            "private_registry_skill": {"skill": "adam-writing-style"},
+        }, expect="is not an adam-agentskills skill")
+        self._refuse_all(no_holdout, {
+            # One nested fixture each.
+            "one_fixture_skill": {"skill": "debug-github-workflows"},
+            "one_fixture_skill_2": {"skill": "skills-doctor"},
+        }, expect="fewer than 3 nested fixtures")
         self._refuse_all(good, {
             "holdout_not_a_fixture": {"holdout": "no-such-holdout-xyz"},
             "holdout_of_another_skill": {"holdout": "proposal-bio"},
             "holdout_dotdot": {"holdout": ".."},
-        }, expect="names no committed fixture of that skill")
+        }, expect="names no nested fixture of that skill")
         self._refuse_all(good, {
             "skill_trailing_newline": {"skill": SKILL + "\n"},
             "skill_tab": {"skill": SKILL + "\t"},

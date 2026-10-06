@@ -18,9 +18,11 @@ name: Fire eval routine
 #   that one candidate into one draft real-work fixture on its own branch.
 #   `improve` (ADR 0005, "Routine improve mode addendum") sends exactly
 #   five: run_id, mode, skill, trials and holdout (null when empty), and
-#   the routine runs the improvement loop on that skill. `skill` must own
-#   at least three committed evals/<skill>/<name> fixtures and `holdout`
-#   must be empty or one of those names. Each mode's own text inputs must
+#   the routine runs the improvement loop on that skill. `skill` must pass
+#   the loop's own fixture resolution (`scripts/improve_gate.py
+#   fire-check`): nested evals/<skill>/<name> fixtures that all name it and
+#   adam-agentskills, at least the loop's minimum of them, and `holdout`
+#   empty or one of their names. Each mode's own text inputs must
 #   be empty in the others (`candidate` and `skill`/`holdout` in eval mode,
 #   `fixture` and `skill`/`holdout` in scaffold mode, `fixture` and
 #   `candidate` in improve mode), so no input is silently ignored except
@@ -115,11 +117,16 @@ jobs:
 
       # Pinned, not the runner's system Python (WorkflowPinnedPythonTests):
       # the validation step lists committed fixtures with
-      # scripts/plan_scheduled_evals.py.
+      # scripts/plan_scheduled_evals.py and, in improve mode, runs
+      # scripts/improve_gate.py fire-check.
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+
+      # fire-check loads fixture.yaml files: the gate workflows' PyYAML pin.
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
 
       - name: Validate the dispatch inputs
         id: validate
@@ -243,29 +250,16 @@ jobs:
           fi
 
           if [ "$mode" = improve ]; then
-            # The loop needs at least three fixtures: train, validation and
-            # holdout. Count the committed fixtures exactly one level under
-            # evals/<skill>/, comparing literal strings (a skill name may
-            # hold `.`, so no regex), from a here-string, never a pipe.
-            committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
-            prefix="evals/${skill}/"
-            count=0
-            while IFS= read -r line; do
-              case "$line" in
-                "$prefix"*)
-                  name="${line#"$prefix"}"
-                  case "$name" in
-                    ''|*/*) ;;
-                    *) count=$((count + 1)) ;;
-                  esac ;;
-              esac
-            done <<<"$committed"
-            if [ "$count" -lt 3 ]; then
-              echo "::error::input 'skill' has fewer than three committed fixtures on the default branch"
-              exit 1
-            fi
-            if [ -n "$holdout" ] && ! grep -Fxq -- "${prefix}${holdout}" <<<"$committed"; then
-              echo "::error::input 'holdout' names no committed fixture of that skill"
+            # The loop's own resolution, read-only and offline: the nested
+            # evals/<skill>/<name> fixtures must all name this skill and
+            # one registry, harness/registries.yml must map it to
+            # adam-agentskills (the one registry the routine checks out),
+            # there must be at least the loop's MIN_FIXTURES, and a holdout
+            # must be one of them. Only the registry-side SKILL.md lookup,
+            # which needs the registry checkout, is left to the routine.
+            # Its refusals are fixed text and never echo the input.
+            if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout "$holdout"; then
+              echo "::error::input 'skill' or 'holdout' is refused by the improvement loop's fixture check"
               exit 1
             fi
           fi

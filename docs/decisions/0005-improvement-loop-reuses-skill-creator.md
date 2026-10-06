@@ -520,10 +520,17 @@ routine's saved prompt is still unchanged.
 - **The fire workflow's improve mode.** `routine-eval-fire.yml` takes
   `mode: improve` with a `skill` and an optional `holdout`. Before the
   bearer is in any step's env it checks that `skill` matches
-  `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and owns at least three committed
-  `evals/<skill>/<name>` fixtures (from `plan_scheduled_evals.py
-  --committed`), that `holdout` is empty or one of those names, that
-  neither has a control character, and that `fixture` and `candidate` are
-  empty (and `skill` and `holdout` empty in the other modes). It sends
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and passes
+  `scripts/improve_gate.py fire-check`: the loop's own `skill_fixtures` and
+  `load_fixtures` (every nested `evals/<skill>/<name>` fixture names this
+  skill and one registry), `harness/registries.yml` mapping that registry
+  to adam-agentskills (the one the routine checks out), and at least
+  `MIN_FIXTURES` fixtures. So `guidance`, `real-work`, a flat fixture and
+  another registry's skill are refused before a session starts. Only the
+  registry-side `SKILL.md` lookup needs the registry checkout and stays
+  with the routine. It also checks that `holdout` is empty or one of those
+  names (at most 128 characters of `[A-Za-z0-9._-]`), that neither input
+  has a control character, and that `fixture` and `candidate` are empty
+  (and `skill` and `holdout` empty in the other modes). It sends
   exactly five keys built by jq: `run_id`, `mode`, `skill`, `trials` and
   `holdout` (null when empty). Still dispatch only, with no schedule.
