@@ -283,7 +283,10 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
             --registry adam-agentskills=test/fixtures/fake_registry \\
             --results-dir <out>
 
-    and copied in unedited. Its run directory is named for the second that
+    and copied in unedited, with one later edit: #71 added
+    `"permission_mode": "auto"` to each summary's `harness` block, the only
+    byte that harness change makes in this tree (regenerating would also
+    bake in `n`, which this test appends itself). Its run directory is named for the second that
     command ran in, which is the timestamp these tests inject. To regenerate
     it, repeat that command from a checkout of the commit to compare against.
 

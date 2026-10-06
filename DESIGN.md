@@ -558,9 +558,13 @@ is objectively decidable from the resulting files alone.
 - **Agent under test:** CHOSEN and implemented — the Claude Code CLI, invoked
   headlessly per arm:
   `claude -p <prompt> --output-format json --verbose --permission-mode
-  bypassPermissions --setting-sources project` (`--verbose` makes the CLI print
+  auto --setting-sources project` (`--verbose` makes the CLI print
   every turn's result, not only the last) (plus `--model <model>` if the fixture or CLI
-  flag sets one). The binary is `$CLAUDE_BIN` if set, else `claude` on `PATH`,
+  flag sets one). The mode is run_eval.py's `--permission-mode` (`auto`, the
+  default, or `bypassPermissions`, which every run before #71 used and which
+  the CLI refuses as root); it applies to the judge too, is recorded in every
+  summary.json as `harness.permission_mode`, and the badge never averages runs
+  made under different modes. eval.yml passes `bypassPermissions` explicitly. The binary is `$CLAUDE_BIN` if set, else `claude` on `PATH`,
   so tests can substitute a fake CLI. `--setting-sources project` scopes skill
   discovery to the workspace's own `.claude/`, which is what makes the
   with_skill/without_skill split possible in the same environment.

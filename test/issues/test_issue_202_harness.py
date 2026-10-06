@@ -510,7 +510,8 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
                                      .read_text(encoding="utf-8"))
                 self.assertEqual(summary["harness"],
                                  {"name": "claude-code",
-                                  "version": FAKE_VERSION_LINE})
+                                  "version": FAKE_VERSION_LINE,
+                                  "permission_mode": "auto"})
                 self.assertEqual(summary["models_used"], [pinned])
                 self.assertEqual(summary["judge_models_used"], [judge_model])
         report = (run_dir / "report.md").read_text(encoding="utf-8")
@@ -555,7 +556,8 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
                               "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["error"]["type"], "setup_failed")
         self.assertEqual(summary["harness"],
-                         {"name": "claude-code", "version": FAKE_VERSION_LINE})
+                         {"name": "claude-code", "version": FAKE_VERSION_LINE,
+                          "permission_mode": "auto"})
         self.assertEqual(summary["models_used"], [])
 
     def test_an_unreadable_version_is_null_and_the_run_goes_on(self):
@@ -571,7 +573,8 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         self.assertIn("exit 9", proc.stderr)
         summary = json.loads((self._run_dir(skill) / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(summary["harness"], {"name": "claude-code", "version": None})
+        self.assertEqual(summary["harness"], {"name": "claude-code", "version": None,
+                                              "permission_mode": "auto"})
         self.assertIsNone(summary["error"])
         self.assertEqual(summary["judge_models_used"], [])
 
@@ -644,7 +647,8 @@ class TestGuidanceArmsRecordVersions(unittest.TestCase):
         result = self._run()
         summary = self._summary()
         self.assertEqual(summary["harness"],
-                         {"name": "claude-code", "version": "9.9.9 (Claude Code)"})
+                         {"name": "claude-code", "version": "9.9.9 (Claude Code)",
+                          "permission_mode": "auto"})
         self.assertEqual(summary["models_used"], ["fake-model-a"])
         self.assertEqual(result["models_used"], ["fake-model-a"])
 

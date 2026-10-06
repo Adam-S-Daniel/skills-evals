@@ -43,6 +43,12 @@ NOT the wall clock) so a stale badge is self-evident: the newest run that
 contributed to the aggregate, or — when nothing was usable — the newest run
 directory found. Output is deterministic for the same inputs. Stdlib only.
 
+Runs made under different CLI permission modes (harness/run_eval.py
+`--permission-mode`, recorded as `harness.permission_mode`) are never averaged
+together: the window keeps only the pairs whose mode matches the newest usable
+pair's, and drops the rest the way it drops an errored pair. A summary that
+records no mode predates the setting and ran under `bypassPermissions`.
+
 Also accepts a nested skill fixture as `<skill>/<fixture>`; its summaries
 are under results/<skill>/<timestamp>/<fixture>/, and only that fixture
 contributes to its own badge and run window.
@@ -156,10 +162,29 @@ def _number(value) -> float | None:
         return None
 
 
+#: What a summary that records no `harness.permission_mode` ran under: every
+#: run before the setting existed launched its agent with bypassPermissions.
+#: Mirrors harness/guidance.py's LEGACY_PERMISSION_MODE (this script is
+#: stdlib-only and imports nothing from the harness).
+LEGACY_PERMISSION_MODE = "bypassPermissions"
+
+
+def permission_mode(summary: dict) -> str | None:
+    """The mode a summary's run launched its agents with; the legacy mode
+    when it records none, and None when the field is there but malformed."""
+    harness = summary.get("harness")
+    if not isinstance(harness, dict) or "permission_mode" not in harness:
+        return LEGACY_PERMISSION_MODE
+    mode = harness["permission_mode"]
+    return mode if isinstance(mode, str) and mode else None
+
+
 def arm_stats(unit_dir: Path, arm: str) -> dict | None:
     """One arm's totals, or None if missing, errored or malformed.
 
-    Returns `{"n", "passed", "total", "judge_sum", "judge_n"}`: the number of
+    Returns `{"n", "passed", "total", "judge_sum", "judge_n", "mode"}`: the
+    `mode` is the run's permission mode (`permission_mode()`), and the rest
+    are the number of
     trials, the objective checks passed and run summed over them, and the sum
     and count of the trials' numeric judge overalls. Sums rather than means,
     so that averaging several of these is one division of integer counts by
@@ -197,7 +222,8 @@ def arm_stats(unit_dir: Path, arm: str) -> dict | None:
     if not isinstance(summary, dict) or summary.get("error"):
         return None
     n = _count(summary.get("n", 1))
-    if not n:
+    mode = permission_mode(summary)
+    if not n or mode is None:
         return None
 
     checks = summary.get("objective_checks")
@@ -215,6 +241,7 @@ def arm_stats(unit_dir: Path, arm: str) -> dict | None:
             "total": len(checks),
             "judge_sum": overall,
             "judge_n": 0 if overall is None else 1,
+            "mode": mode,
         }
 
     block = summary.get("aggregate")
@@ -231,7 +258,7 @@ def arm_stats(unit_dir: Path, arm: str) -> dict | None:
     if judge_sum is None or not judge_n:
         judge_sum, judge_n = None, 0
     return {"n": n, "passed": passed, "total": total,
-            "judge_sum": judge_sum, "judge_n": judge_n}
+            "judge_sum": judge_sum, "judge_n": judge_n, "mode": mode}
 
 
 def _cmp(a: float, b: float) -> int:
@@ -293,6 +320,12 @@ def usable_units(results_dir: Path, skill: str,
     invocation gives both arms the same `--trials`, so a mismatch means the
     pair was assembled from two, and there is then no single `n` for the
     badge to print.
+
+    So is a pair whose arms ran under different permission modes, and then
+    every pair whose mode differs from the NEWEST usable pair's: an average
+    across modes compares two different agents. The newest mode wins so a
+    mode change shows up in the badge as soon as it lands, with `n` shrinking
+    until the window has filled with runs under the new mode.
     """
     treatment, control = arm_names(skill)
     out = []
@@ -307,8 +340,10 @@ def usable_units(results_dir: Path, skill: str,
                 continue
             if with_stats["n"] != without_stats["n"]:
                 continue
+            if with_stats["mode"] != without_stats["mode"]:
+                continue
             out.append((run_dir, with_stats, without_stats))
-    return out
+    return [unit for unit in out if unit[1]["mode"] == out[0][1]["mode"]]
 
 
 def aggregate(stats: list[dict]) -> dict:

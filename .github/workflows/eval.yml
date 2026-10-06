@@ -8,8 +8,9 @@
 #
 # * Triggers are `schedule` + `workflow_dispatch` ONLY. NEVER add pull_request
 #   or pull_request_target: this workflow holds an API key, and the harness
-#   runs the agent under test with `--permission-mode bypassPermissions` (see
-#   harness/run_eval.py) inside a throwaway temp workspace. Key +
+#   runs the agent under test with `--permission-mode bypassPermissions` (the
+#   explicit `--permission-mode` on the run_eval.py step below; the harness
+#   default is `auto` since #71) inside a throwaway temp workspace. Key +
 #   bypassPermissions must never meet untrusted fixture content. The fixtures
 #   here are trusted because only maintainers can push to this repo; the only
 #   prompts ever run are this repo's committed fixtures. Never accept external
@@ -1774,8 +1775,13 @@ jobs:
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           fixture="$(cat "$RUNNER_TEMP/eval-fixture")"
+          # `--permission-mode bypassPermissions` keeps this paid path launching
+          # its arms and judge exactly as every run before the harness default
+          # became `auto` (#71), so the badge window stays like-for-like. Moving
+          # it to `auto` is an owner decision, not a side effect.
           python3 harness/run_eval.py "$fixture" \
             --arm both \
+            --permission-mode bypassPermissions \
             --guidance ../_agent-guidance \
             --registry adam-agentskills=../adam-agentskills \
             --registry cms-platform=../cms-platform \

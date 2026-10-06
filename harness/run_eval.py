@@ -958,7 +958,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     `arm` carries: name ("with_skill"/"without_skill"), skill + registry (Path,
     only for with_skill), optional model, optional timeout (default 600s),
     optional env (the fixture's `env:` mapping, see agent_env), optional
-    followups (the fixture's `followups:` list, see ADR 0009).
+    followups (the fixture's `followups:` list, see ADR 0009), optional
+    permission_mode (guidance.PERMISSION_MODES; default
+    guidance.DEFAULT_PERMISSION_MODE, `auto`).
 
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
@@ -978,6 +980,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     timeout = arm.get("timeout", 600)
     guidance.check_timeout(timeout, "run_eval.run_agent(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
+    # Checked at the sink too, before anything is installed or spawned: the
+    # value becomes an argv element, and an unknown one is a configuration
+    # error (GuidanceError, rc 2 through main), never a CLI failure scored as
+    # the agent's.
+    permission_mode = guidance.check_permission_mode(
+        arm.get("permission_mode", guidance.DEFAULT_PERMISSION_MODE))
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         try:
@@ -1045,7 +1053,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # accepts both shapes.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--verbose",
-           "--permission-mode", "bypassPermissions",
+           # One `--permission-mode` flag, never alongside
+           # `--dangerously-skip-permissions` (guidance.PERMISSION_MODES).
+           "--permission-mode", permission_mode,
            "--setting-sources", arm.get("setting_sources", "project"),
            # The account's claude.ai MCP connectors (mail, drive, GitHub)
            # load even under `--setting-sources project` (CLI 2.1.289,
@@ -1524,6 +1534,14 @@ def _build_judge_diff(workspace: Path) -> str:
 # ---------------------------------------------------------------------------
 
 HARNESS_NAME = "claude-code"
+
+
+def _permission_mode(args: argparse.Namespace) -> str:
+    """The run's `--permission-mode`. A caller that built its own Namespace
+    without one gets the default — the mode run_agent and the judge then
+    launch with, so the summary records what actually ran."""
+    return getattr(args, "permission_mode", None) or guidance.DEFAULT_PERMISSION_MODE
+
 # The bound on the `--version` probe. Named rather than inlined so the sink
 # check and the `timeout=` argument are provably the same value.
 VERSION_TIMEOUT_S = 30
@@ -1620,6 +1638,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    raw: dict | None, key: str | None = None,
                    extra: dict | None = None, *,
                    harness_version: str | None = None,
+                   permission_mode: str | None = None,
                    models: list | None = None,
                    tool_trace: dict | None = None,
                    judge_models: list | None = None,
@@ -1632,7 +1651,9 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     fields (subject/section/mode/bytes/delivery/guard).
 
     Every summary, error paths included, records `harness` (the CLI version
-    read once per run, or null) and `models_used` / `judge_models_used`
+    read once per run, or null, plus `permission_mode`, the mode every agent
+    and judge call of the run was launched with) and `models_used` /
+    `judge_models_used`
     (`models_used()` of the agent's and the judge's results; empty when that
     call never ran) — #202.
 
@@ -1654,7 +1675,8 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         "agent": agent,
         "objective_checks": objective_checks,
         "judge": judge_result,
-        "harness": {"name": HARNESS_NAME, "version": harness_version},
+        "harness": {"name": HARNESS_NAME, "version": harness_version,
+                    "permission_mode": permission_mode},
         "models_used": list(models or []),
         "judge_models_used": list(judge_models or []),
     })
@@ -2201,6 +2223,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     # Read once per run by main() (#202); a caller that built its own
     # Namespace without it records null rather than probing the CLI here.
     harness_version = getattr(args, "harness_version", None)
+    permission_mode = _permission_mode(args)
     if selection_error:
         # A runner-level error, recorded on the arm exactly like an agent
         # failure, so it leaves through main()'s existing exit-2 path instead
@@ -2211,7 +2234,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         error = {"type": "model-selection", "detail": selection_error}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, None, None, None, None, extra=extra,
-                       harness_version=harness_version, arm_dir=out_dir)
+                       harness_version=harness_version,
+                       permission_mode=permission_mode, arm_dir=out_dir)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": []}
 
@@ -2231,7 +2255,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, None, None, None, None, extra=extra,
-                       harness_version=harness_version, arm_dir=out_dir)
+                       harness_version=harness_version,
+                       permission_mode=permission_mode, arm_dir=out_dir)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": []}
@@ -2245,6 +2270,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
             "followups": fixture.get("followups"),
+            "permission_mode": permission_mode,
         }
         # A bad `registry:` (missing field, wrong type, unknown URL, or a
         # resolved path that doesn't exist) becomes an error dict here — the
@@ -2339,6 +2365,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
                                timestamp, error, agent_summary, None, None, raw,
                                extra=extra, harness_version=harness_version,
+                               permission_mode=permission_mode,
                                models=agent_models, arm_dir=out_dir,
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
@@ -2349,6 +2376,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
                                timestamp, error, agent_summary, None, None, raw,
                                extra=extra, harness_version=harness_version,
+                               permission_mode=permission_mode,
                                models=agent_models, arm_dir=out_dir,
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
@@ -2369,6 +2397,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                             diff, model=roster_judge_model,
                             timeout=judge_cfg.get("timeout_s", 120),
                             weights=judge_cfg.get("weights"),
+                            permission_mode=permission_mode,
                         )
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
@@ -2383,6 +2412,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, objective_checks, judge_result, raw,
                        extra=extra, harness_version=harness_version,
+                       permission_mode=permission_mode,
                        models=agent_models, judge_models=judge_models,
                        arm_dir=out_dir, tool_trace=tool_trace)
 
@@ -2454,6 +2484,7 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                        _trials_error(stats), None, None, None, None,
                        extra={**label, **stats},
                        harness_version=getattr(args, "harness_version", None),
+                       permission_mode=_permission_mode(args),
                        models=_union(written, "models_used"),
                        judge_models=_union(written, "judge_models_used"),
                        arm_dir=arm_dir)
@@ -2744,6 +2775,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
     harness_version = getattr(args, "harness_version", None)
+    permission_mode = _permission_mode(args)
     scratch = Path(tempfile.mkdtemp(
         prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
@@ -2806,7 +2838,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             _write_summary(args.results_dir, None, arm["name"], timestamp,
                            error, None, None, None, None,
                            key=ctx["key"], extra=extra,
-                           harness_version=harness_version)
+                           harness_version=harness_version,
+                           permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
                     "guard": None, "inconclusive": True, "models_used": []}
@@ -2833,7 +2866,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             _write_summary(args.results_dir, None, arm["name"], timestamp,
                            error, None, None, None, None,
                            key=ctx["key"], extra=extra,
-                           harness_version=harness_version)
+                           harness_version=harness_version,
+                           permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
                     "guard": guard, "inconclusive": True, "models_used": []}
@@ -2845,6 +2879,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             "setting_sources": setting_sources,
             "env_override": env,
             "followups": fixture.get("followups"),
+            "permission_mode": permission_mode,
             # A multi-turn arm's transcript lands under `config`, inside this
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
@@ -2904,7 +2939,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                             fixture["judge_rubric"], result.get("transcript") or "",
                             diff, model=judge_cfg.get("model"),
                             timeout=judge_cfg.get("timeout_s", 120),
-                            weights=judge_cfg.get("weights"))
+                            weights=judge_cfg.get("weights"),
+                            permission_mode=permission_mode)
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
                     # error, not a judge result: recorded as `{"error": ...}`
@@ -2918,7 +2954,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
                        agent_summary, objective_checks, judge_result, raw,
                        key=ctx["key"], extra=extra,
-                       harness_version=harness_version, models=agent_models,
+                       harness_version=harness_version,
+                       permission_mode=permission_mode, models=agent_models,
                        judge_models=judge_models, tool_trace=tool_trace)
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
@@ -3320,6 +3357,15 @@ def main() -> int:
     parser.add_argument("--roster", type=Path, default=None,
                         help="override the committed evals/roster.yml model "
                              "roster (tests and deliberate local runs only)")
+    parser.add_argument("--permission-mode", default=guidance.DEFAULT_PERMISSION_MODE,
+                        choices=list(guidance.PERMISSION_MODES),
+                        help="the CLI permission mode every agent arm and "
+                             "the judge are launched with (default "
+                             f"{guidance.DEFAULT_PERMISSION_MODE}). Recorded "
+                             "in every summary.json's `harness` block; "
+                             "`bypassPermissions` reproduces runs recorded "
+                             "before this option existed, and is refused by "
+                             "the CLI when it runs as root")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds); "

@@ -123,6 +123,32 @@ ISOLATION_NAMES = ("HOME", "TMPDIR", "CLAUDE_CONFIG_DIR")
 DELIVERIES = ("user", "project")
 SETTING_SOURCES = {"user": "user,project", "project": "project"}
 
+# The `--permission-mode` every agent arm (skill and guidance alike, both
+# through run_eval.run_agent) and the judge are launched with. `auto` is the
+# default: it is how the owner runs nearly everything, so it is the context
+# the evals should measure, and `bypassPermissions` is refused outright when
+# the CLI runs as root (a Claude routine's sandbox, ADR 0010; probe
+# 2026-10-06). `bypassPermissions` stays selectable so a run can be made
+# comparable with results recorded before this setting existed — every one
+# of which ran under it, which is why a summary WITHOUT a recorded mode is
+# read as `LEGACY_PERMISSION_MODE` (scripts/make_badge.py). The mode is
+# recorded in every summary.json's `harness` block, and runs under different
+# modes are never averaged together. The guard probe (run_canary.run_leg)
+# is tool-free and passes no mode at all; it is not governed by this.
+PERMISSION_MODES = ("auto", "bypassPermissions")
+DEFAULT_PERMISSION_MODE = "auto"
+LEGACY_PERMISSION_MODE = "bypassPermissions"
+
+
+def check_permission_mode(mode) -> str:
+    """`mode` if it is one of PERMISSION_MODES; else GuidanceError. Checked
+    at the sink (the argv builder), whatever a caller passed."""
+    if mode not in PERMISSION_MODES:
+        raise GuidanceError(
+            f"permission mode {mode!r} is not one of "
+            f"{', '.join(PERMISSION_MODES)}")
+    return mode
+
 MANIFEST_REL = Path("agents-md") / "eval-coverage.yml"
 BASE_REL = Path("agents-md") / "base.md"
 STUB_REL = Path("agents-md") / "stub.md"

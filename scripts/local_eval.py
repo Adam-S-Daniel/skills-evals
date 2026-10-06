@@ -114,6 +114,7 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    the variable back to every arm), whose models cannot be selected, or whose
    registry checkout is missing.
 4. Records the harness identity in `<out>/manifest.json`: `claude --version`,
+   the `--permission-mode` every trial's arms and judge run under,
    the fixture's pinned models and the models `run_eval.select_models` picks,
    the UTC start time, and the git SHA (plus a dirty flag) of this checkout
    and of the registry checkout the fixture's `registry:` resolves to.
@@ -175,7 +176,8 @@ Limits a reader must know:
 - The probe measures which SKILLS an empty workspace sees. It does not
   measure user memory, hooks or MCP servers, and it does not include the
   fixture's seed.
-- On a workstation a `bypassPermissions` arm inherits the real `HOME`, where
+- On a workstation an arm (auto mode by default, `bypassPermissions` with
+  `--permission-mode bypassPermissions`) inherits the real `HOME`, where
   the account's own credentials live (ADR 0002, decision 4), and it can read
   the credential file there. A scratch HOME, a scratch CLAUDE_CONFIG_DIR and
   `--bare` each lose the `/login` (measured), so arms are isolated by flags:
@@ -728,6 +730,12 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="passed to run_eval.py, repeatable: NAME=PATH")
     parser.add_argument("--timestamp", default=None,
                         help="validated timestamp passed to each run_eval.py trial")
+    parser.add_argument("--permission-mode",
+                        default=run_eval.guidance.DEFAULT_PERMISSION_MODE,
+                        choices=list(run_eval.guidance.PERMISSION_MODES),
+                        help="passed to run_eval.py and recorded in "
+                             "manifest.json (default "
+                             f"{run_eval.guidance.DEFAULT_PERMISSION_MODE})")
     args = parser.parse_args(argv)
     if not 1 <= args.trials <= MAX_TRIALS:
         parser.error(f"--trials must be 1..{MAX_TRIALS}, got {args.trials}")
@@ -873,6 +881,7 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
                        "no_judge": args.no_judge, "fixture": args.fixture,
                        "registries": [f.split("=", 1)[0] for f in registry_flags]},
         "harness": {"claude_version": run_eval.claude_version(),
+                    "permission_mode": args.permission_mode,
                     "claude_path": real_cli,
                     "claude_guard": "a temporary launcher checks the settings "
                                     "in each CLI launch's directory, then "
@@ -922,7 +931,8 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         trial_dir.mkdir()
         _write_marker(trial_dir)
         cmd = [sys.executable, str(RUN_EVAL), str(eval_dir), "--arm", args.arm,
-               "--results-dir", str(trial_dir)]
+               "--results-dir", str(trial_dir),
+               "--permission-mode", args.permission_mode]
         if args.fixture is not None:
             cmd += ["--fixture", args.fixture]
         for flag in registry_flags:
