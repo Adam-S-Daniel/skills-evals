@@ -1121,6 +1121,34 @@ class TokenDecisionTests(unittest.TestCase):
                 self.assertFalse(accepted)
                 self.assertIn("inconclusive: missing token data", reasons[0])
 
+    def test_a_negative_token_figure_is_invalid_and_inconclusive(self):
+        for side in ("baseline", "candidate"):
+            with self.subTest(side=side):
+                base, cand = dict(self.BASE), self.gain()
+                {"baseline": base, "candidate": cand}[side]["t"] = m(
+                    50 if side == "baseline" else 60, 100, tokens=-1)
+                accepted, reasons = pse.decide(base, cand, ["t"], "v")
+                self.assertFalse(accepted)
+                self.assertIn("inconclusive: missing token data", reasons[0])
+
+    def test_extra_tokens_are_not_called_accepted_when_validation_failed(self):
+        # Regression: the "accepted only because" note appeared on a reject.
+        base = {"t": m(5, 10, tokens=1000), "v": m(8, 10, tokens=1000)}
+        cand = {"t": m(8, 10, tokens=2000), "v": m(5, 10, tokens=2000)}
+        accepted, reasons = pse.decide(base, cand, ["t"], "v")
+        self.assertFalse(accepted)
+        self.assertNotIn("accepted only because", " ".join(reasons))
+        self.assertIn("validation objective fell", " ".join(reasons))
+
+    def test_extra_tokens_are_not_called_accepted_when_the_holdout_regressed(self):
+        base = {"t": m(5, 10, tokens=1000), "v": m(8, 10, tokens=1000),
+                "h": m(8, 10, tokens=1000)}
+        cand = {"t": m(8, 10, tokens=2000), "v": m(8, 10, tokens=1000),
+                "h": m(5, 10, tokens=1000)}
+        accepted, reasons = pse.decide(base, cand, ["t"], "v", holdout="h")
+        self.assertFalse(accepted)
+        self.assertNotIn("accepted only because", " ".join(reasons))
+
     def test_an_errored_fixture_is_reported_before_token_data(self):
         cand = {"t": m(60, 100, error="trial_errors", tokens=None), "v": m(80, 100)}
         accepted, reasons = pse.decide(self.BASE, cand, ["t"], "v")
@@ -1157,6 +1185,11 @@ class FixtureTokenMetricTests(unittest.TestCase):
         partial = usage_block(1000)
         del partial["cache_read_input_tokens"]
         self.assertIsNone(self.metrics([usage_block(1000), partial])["tokens"])
+
+    def test_a_negative_count_leaves_tokens_unknown(self):
+        bad = usage_block(1000)
+        bad["output_tokens"] = -5
+        self.assertIsNone(self.metrics([bad, bad])["tokens"])
 
     def test_a_missing_trial_leaves_tokens_unknown(self):
         self.assertIsNone(self.metrics([usage_block(1000)], trials=2)["tokens"])

@@ -867,6 +867,11 @@ def fixture_metrics(run_dir: Path, skill: str, ts: str,
             "tokens": mean_tokens(stats["aggregate"]["efficiency"])}
 
 
+def valid_tokens(value) -> bool:
+    """A usable token figure: a finite number, never negative."""
+    return run_eval._is_number(value) and value >= 0
+
+
 def mean_tokens(efficiency: dict) -> float | None:
     """Mean total tokens of one trial (the four `TOKEN_USAGE_METRICS`
     summed), from an `aggregate.efficiency` block. None when any trial lacks
@@ -875,7 +880,9 @@ def mean_tokens(efficiency: dict) -> float | None:
     total = 0
     for name in TOKEN_USAGE_METRICS:
         block = efficiency.get(name) or {}
-        if not block.get("n") or block.get("n_missing") or not run_eval._is_number(block.get("mean")):
+        mean = block.get("mean")
+        if (not block.get("n") or block.get("n_missing")
+                or not valid_tokens(mean)):
             return None
         total += block["mean"]
     return total
@@ -927,7 +934,7 @@ def decide(baseline: dict, candidate: dict, train: list[str],
     unknown = [f"{side} {n}" for side, metrics in (("baseline", baseline),
                                                    ("candidate", candidate))
                for n in measured
-               if not run_eval._is_number(metrics.get(n, {}).get("tokens"))]
+               if not valid_tokens(metrics.get(n, {}).get("tokens"))]
     if unknown:
         return False, [f"inconclusive: missing token data for {unknown}"]
     b_tokens = sum(baseline[n]["tokens"] for n in measured)
@@ -974,7 +981,7 @@ def decide(baseline: dict, candidate: dict, train: list[str],
                    f"{', '.join(measured)}")
     if costs_more and not improved:
         reasons.append("candidate costs more tokens without a quality gain")
-    elif costs_more:
+    elif costs_more and held:
         reasons.append("candidate costs more tokens; accepted only because "
                        "train gained at least the minimum")
     if held and improved:
