@@ -24,11 +24,11 @@
 # pull request's own test file, byte-equal to the merge commit's. The fix
 # itself is in solution.patch, which only the fixture's tests read.
 
-# issue-before-fix.txt is Adam-S-Daniel/cms-platform#220 as it stood before the pull request's
-# first commit: created 2026-08-08T16:21:06Z, never edited (GraphQL
-# userContentEdits empty, lastEditedAt null) and never renamed (0
-# RENAMED_TITLE_EVENT), so its current title and body; first commit
-# 2026-08-08T16:41:05Z. Read 2026-10-06.
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#220's title and body as they stood before the
+# pull request's first commit. The three times beside issue_before_fix:
+# below were read from GitHub on 2026-10-06 (GraphQL createdAt, lastEditedAt
+# with no userContentEdits and no RENAMED_TITLE_EVENT, and the first
+# commit's committedDate); the harness checks their order at load.
 
 subject: any
 draft: true
@@ -90,6 +90,9 @@ interface_strings:
   - "scripts/check-platform-pin-consistency.js"
 
 issue_before_fix: issue-before-fix.txt
+issue_created_at: "2026-08-08T16:21:06Z"
+issue_last_edited_at: null
+first_commit_at: "2026-08-08T16:41:05Z"
 
 objective_checks:
   - id: hidden-tests
