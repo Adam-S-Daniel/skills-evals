@@ -3878,8 +3878,10 @@ class TestIssue97(unittest.TestCase):
         for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
             with self.subTest(fixture=str(path.relative_to(REPO_ROOT))):
                 fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+                # `any`: a subject-agnostic real-work fixture, which the run
+                # names a skill or section for (Adam, 2026-10-06, Q4).
                 self.assertIn(fixture.get("subject", "skill"),
-                              ("skill", "guidance"))
+                              ("skill", "guidance", "any"))
 
     # ------------------------------------------------------------------
     # Item 8 + the dispatch input — .github/workflows/eval.yml
@@ -4923,6 +4925,10 @@ class TestIssue97(unittest.TestCase):
         for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
             fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
             name = str(path.parent.relative_to(REPO_ROOT))
+            if fixture.get("subject") == "any":
+                # Subject-agnostic: eval.yml passes no --skill or --section,
+                # so run_eval.py refuses it (exit 2) before any agent call.
+                continue
             if not self._dispatchable_by_run_eval(fixture):
                 skipped.append(name)
                 continue

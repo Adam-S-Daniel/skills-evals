@@ -175,7 +175,10 @@ class DraftTests(_Fixture):
     def test_eval_workflows_never_pass_allow_draft(self):
         for name in ("eval.yml", "routine-eval-fire.yml"):
             text = (REPO / ".github" / "workflows" / name).read_text(encoding="utf-8")
-            self.assertNotIn("--allow-draft", text, name)
+            # Nor a subject: a `subject: any` fixture dispatched there is
+            # refused by run_eval before any agent call.
+            for flag in ("--allow-draft", "--skill", "--section"):
+                self.assertNotIn(flag, text, f"{name} passes {flag}")
 
 
 class AnswerLeakTests(_Fixture):
