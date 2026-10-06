@@ -29,8 +29,11 @@ repositories are mined (owner decision Q3); a private one is listed under
 excluded. A candidate is a merged pull request that changes a test file and
 a non-test, non-doc file, and whose body (the task text, Q3) is non-empty.
 Each candidate records its merge date (Q8: pre/post training-cutoff fixtures
-are reported apart, not excluded), its base (the merge's first parent) and an
-`answer_leak` flag: the body quotes a line the pull request added.
+are reported apart, not excluded), its base and an `answer_leak` flag: the
+body quotes a line the pull request added. The base is a true merge's first
+parent, else (squash or rebase merge) the PR's `baseRefOid`, which can predate
+the base branch at merge time; `base_from` says which. A repo whose pull
+requests 404, or a PR with no readable merge commit, is skipped with a warning.
 
 PREPARE is the `redgreen.sh` tree step: `git archive` of base and merge into
 `<out>/red` and `<out>/green`, with the merge's test files laid over `red`.
@@ -68,6 +71,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+
+def _repo_roots() -> list[Path]:
+    """This checkout and, when it is a worktree, the main checkout too."""
+    roots = [REPO_ROOT]
+    done = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--path-format=absolute",
+                           "--git-common-dir"], capture_output=True, text=True)
+    if done.returncode == 0 and done.stdout.strip():
+        common = Path(done.stdout.strip()).resolve()
+        if common.name == ".git" and common.parent not in roots:
+            roots.append(common.parent)
+    return roots
+
 #: Head refs that automation opens (session-23 classify.py, plus DESIGN.md's
 #: own `scaffold/`).
 BOT_HEAD = re.compile(r"^(cms/|agents-md-sync|skills-lock-bump|dependabot|platform/"
@@ -84,7 +99,7 @@ TOUCHES = {
     "guidance": re.compile(r"agents-md/(base\.md|sections/)"),
 }
 PR_FIELDS = ("number,title,body,files,closingIssuesReferences,mergeCommit,headRefName,"
-             "additions,deletions,author,mergedAt,labels,url")
+             "additions,deletions,author,mergedAt,labels,url,baseRefOid")
 #: A quoted diff line shorter than this is too generic to call a leak.
 LEAK_MIN_CHARS = 20
 #: `gh pr list` returns at most this many files per pull request.
@@ -249,10 +264,17 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
         if view.get("visibility") != "PUBLIC":
             out["skipped"].append({"repo": repo, "reason": "not-public"})
             continue
-        prs = gh_json("pr", "list", "--repo", repo, "--state", "merged",
-                      "--limit", str(limit), "--json", PR_FIELDS)
+        try:
+            prs = gh_json("pr", "list", "--repo", repo, "--state", "merged",
+                          "--limit", str(limit), "--json", PR_FIELDS)
+        except GhNotFound:
+            print(f"mine_real_work: warning: {repo}: pull requests not readable (404); skipped",
+                  file=sys.stderr)
+            out["skipped"].append({"repo": repo, "reason": "pr-list-404"})
+            continue
         counts = {"repo": repo, "merged": len(prs), "bot": 0, "on_hold": 0,
-                  "not_replayable": 0, "no_task_text": 0, "candidates": 0}
+                  "not_replayable": 0, "no_task_text": 0, "no_merge_commit": 0,
+                  "candidates": 0}
         for pr in prs:
             if is_bot(pr):
                 counts["bot"] += 1
@@ -269,8 +291,27 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
                 counts["no_task_text"] += 1
                 continue
             merge_sha = (pr.get("mergeCommit") or {}).get("oid")
-            commit = gh_json("api", f"repos/{repo}/commits/{merge_sha}")
+            commit = None
+            if merge_sha:
+                try:
+                    commit = gh_json("api", f"repos/{repo}/commits/{merge_sha}")
+                except GhNotFound:
+                    commit = None
+            if commit is None:
+                print(f"mine_real_work: warning: {repo}#{pr['number']}: no readable merge "
+                      "commit; skipped", file=sys.stderr)
+                counts["no_merge_commit"] += 1
+                continue
             parents = [p["sha"] for p in commit.get("parents") or []]
+            # A true merge's first parent is the base. A single-parent merge
+            # commit is a squash or a rebase merge, and for a rebase merge the
+            # first parent is the previous rebased commit, so the base is the
+            # PR's own baseRefOid (which may predate the base branch's tip at
+            # merge time).
+            if len(parents) >= 2:
+                base_sha, base_from = parents[0], "merge-first-parent"
+            else:
+                base_sha, base_from = pr.get("baseRefOid"), "pr-base-ref-oid"
             diff = gh_text("pr", "diff", str(pr["number"]), "--repo", repo)
             paths = [f["path"] for f in pr.get("files") or []]
             out["candidates"].append({
@@ -279,7 +320,7 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
                 "title": pr.get("title"), "task_text": body,
                 "spec_style": "sketch" if "```" in body else "symptom",
                 "merged_at": pr.get("mergedAt"), "merge_sha": merge_sha,
-                "base_sha": parents[0] if parents else None,
+                "base_sha": base_sha, "base_from": base_from,
                 "head_ref": pr.get("headRefName"),
                 "closing_issues": [i.get("number") for i in pr.get("closingIssuesReferences") or []],
                 "churn": (pr.get("additions") or 0) + (pr.get("deletions") or 0),
@@ -296,7 +337,8 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
 # ── prepare (redgreen.sh's tree step) ────────────────────────────────────────
 
 def _extract(clone: Path, ref: str, dest: Path) -> None:
-    done = subprocess.run(["git", "-C", str(clone), "archive", "--format=tar", ref],
+    done = subprocess.run(["git", "-C", str(clone), "archive", "--format=tar",
+                           "--end-of-options", ref],
                           capture_output=True)
     if done.returncode:
         raise MineError(f"git archive {ref} failed (exit {done.returncode})")
@@ -337,6 +379,10 @@ def read_junit(path: Path) -> dict[str, dict]:
                 break
             if child.tag == "skipped":
                 outcome = "skip"
+        # A repeated id (a retry, a parametrized name) never lets a later
+        # pass hide an earlier failure.
+        if cases.get(test_id, {}).get("outcome") == "fail":
+            continue
         cases[test_id] = {"outcome": outcome, "message": message}
     return cases
 
@@ -412,8 +458,15 @@ def admit_all(candidates: Path, results: Path, cap_seconds: int) -> dict:
             continue
         run_path = where / "run.json"
         run = json.loads(run_path.read_text(encoding="utf-8")) if run_path.is_file() else {"timed_out": True}
-        rows.append(admit(cand, read_junit(where / "red.xml"), read_junit(where / "green.xml"),
-                          run, cap_seconds))
+        try:
+            red, green = read_junit(where / "red.xml"), read_junit(where / "green.xml")
+        except ET.ParseError:
+            rows.append({"key": cand["key"], "admitted": False,
+                         "reasons": ["unreadable-results"], "fail_to_pass": [],
+                         "pass_to_pass": [], "environmental": [], "interface_coupled": [],
+                         "merged_at": cand.get("merged_at")})
+            continue
+        rows.append(admit(cand, red, green, run, cap_seconds))
     return {"cap_seconds": cap_seconds, "admissions": rows, "not_run": missing}
 
 
@@ -421,8 +474,9 @@ def admit_all(candidates: Path, results: Path, cap_seconds: int) -> dict:
 
 def _outside_repo(path: Path) -> Path:
     resolved = path.resolve()
-    if resolved.is_relative_to(REPO_ROOT):
-        raise MineError(f"--out {path} is inside {REPO_ROOT}; this script never writes the repo")
+    for root in _repo_roots():
+        if resolved.is_relative_to(root):
+            raise MineError(f"--out {path} is inside {root}; this script never writes the repo")
     return resolved
 
 

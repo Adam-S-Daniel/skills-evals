@@ -693,23 +693,23 @@ its base and green on its merge. Part of
   candidate unless the task text names it ([cms-platform#430](https://github.com/Adam-S-Daniel/cms-platform/pull/430)'s pattern). Both
   runs must finish under 60 s.
 
-Adam's decisions (2026-10-06):
+Adam's answers (2026-10-06) to the questions this stage depends on,
+recorded verbatim. Q1, Q2, Q5 and Q7 are recorded in "Real-work fixture
+decisions (Adam, 2026-10-06)".
 
-- **Sources (Q3): public repos and PR bodies.** Only public fleet repos are
-  mined, and the PR body is the task text. No private repos, no mail.
-  Each candidate carries an `answer_leak` flag: the body quotes a line the
-  pull request added (a warning for review, not a rejection).
-- **Subject-agnostic (Q4).** One fixture per task; the skill or guidance
-  subject is named at run time, so a candidate records no subject.
-- **Training cutoff (Q8): keep, report apart.** Each candidate records its
-  merge date, so pre- and post-cutoff fixtures are reported separately
-  rather than excluded.
-- **Scaffolding (Q6): in the ADR 0010 routine, with its own review gate,**
-  separate from #71's three improvement PRs.
-- Also: per-test selection keeps every checker under the 60 s cap (Q1);
-  dependencies install lockfile-pinned in `setup:` (Q2); a stripped seed
-  keeps the repo's own "Repo-specific additions" (Q5); tokens are the
-  primary efficiency metric (Q7).
+- **Q3, sources:** "Public repos + PR bodies (Recommended)". Only public
+  fleet repos are mined and the PR body is the task text; no private repos,
+  no mail. Each candidate carries an `answer_leak` flag (the body quotes a
+  line the pull request added), a warning for review, not a rejection.
+- **Q4, one fixture for many subjects:** "Subject-agnostic (Recommended)".
+  The skill or guidance subject is named at run time, so a candidate records
+  no subject.
+- **Q6, where the scaffolder runs:** "Routine + own gate (Recommended)". Its
+  model call runs in the ADR 0010 routine, and scaffold PRs get their own
+  review gate, separate from #71's three improvement PRs.
+- **Q8, training cutoffs:** "Keep, report apart (Recommended)". Each
+  candidate records its merge date, so pre- and post-cutoff fixtures are
+  reported separately rather than excluded.
 
 ### Harness-wide rules (promoted from the first fixture)
 

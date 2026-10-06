@@ -54,12 +54,20 @@ if args[:2] == ["repo", "view"]:
         missing(args[2])
     print(json.dumps(view))
 elif args[:2] == ["pr", "list"]:
-    print(json.dumps(data["prs"][args[args.index("--repo") + 1]]))
+    repo = args[args.index("--repo") + 1]
+    if repo not in data["prs"]:
+        sys.stderr.write("HTTP 404: Not Found\n")
+        raise SystemExit(1)
+    print(json.dumps(data["prs"][repo]))
 elif args[:2] == ["pr", "diff"]:
     sys.stdout.write(data["diffs"][args[args.index("--repo") + 1] + "#" + args[2]])
 elif args[0] == "api" and len(args) == 2:
     repo, sha = args[1].removeprefix("repos/").split("/commits/")
-    print(json.dumps({"sha": sha, "parents": [{"sha": "b" * 40}]}))
+    parents = data.get("parents", {}).get(sha, ["b" * 40, "c" * 40])
+    if parents is None:
+        sys.stderr.write("HTTP 404: Not Found\n")
+        raise SystemExit(1)
+    print(json.dumps({"sha": sha, "parents": [{"sha": p} for p in parents]}))
 else:
     sys.stderr.write("fake gh: refused " + " ".join(args) + "\n")
     raise SystemExit(3)
@@ -80,7 +88,7 @@ def _pr(number, *, head="feat/x", login="Adam-S-Daniel", is_bot=False, body="Fix
             "mergeCommit": {"oid": f"{number:040x}"}, "headRefName": head,
             "additions": 10, "deletions": 2, "author": {"login": login, "is_bot": is_bot},
             "mergedAt": merged, "labels": [{"name": n} for n in labels],
-            "url": f"https://github.com/example/r/pull/{number}"}
+            "url": f"https://github.com/example/r/pull/{number}", "baseRefOid": "d" * 40}
 
 
 DIFF = ("diff --git a/scripts/tool.py b/scripts/tool.py\n--- a/scripts/tool.py\n"
@@ -131,12 +139,13 @@ class _MinerCase(unittest.TestCase):
             encoding="utf-8")
         return root / "repos.yml"
 
-    def gh_data(self, repos, prs, diffs=None):
+    def gh_data(self, repos, prs, diffs=None, parents=None):
         diffs = dict(diffs or {})
         for repo, rows in prs.items():
             for row in rows:
                 diffs.setdefault(f"{repo}#{row['number']}", DIFF)
-        self.data_path.write_text(json.dumps({"repos": repos, "prs": prs, "diffs": diffs}),
+        self.data_path.write_text(json.dumps({"repos": repos, "prs": prs, "diffs": diffs,
+                                              "parents": parents or {}}),
                                   encoding="utf-8")
 
     def run_main(self, *argv):
@@ -148,6 +157,7 @@ class _MinerCase(unittest.TestCase):
     def mine(self, registry):
         rc, err = self.run_main("mine", "--registry", str(registry), "--out", str(self.out))
         self.assertEqual(rc, 0, err)
+        self.stderr = err
         return json.loads(self.out.read_text(encoding="utf-8"))
 
     def calls(self):
@@ -203,6 +213,34 @@ class TestFleetEnumeration(_MinerCase):
                 self.assertIn(tuple(call[:2]), {("repo", "view"), ("pr", "list"), ("pr", "diff")})
             self.assertFalse({"-X", "--method", "-f", "-F", "--field"} & set(call), call)
 
+    def test_a_repo_whose_pull_requests_404_is_skipped_with_a_warning(self):
+        self.gh_data(repos={f"{ADAM}/skills-evals": _view(ADAM, "skills-evals"),
+                            f"{ADAM}/GHA-bench": _view(ADAM, "GHA-bench")},
+                     prs={f"{ADAM}/skills-evals": [_pr(1)]})
+        doc = self.mine(self.registry(["GHA-bench", "skills-evals"]))
+        self.assertEqual([c["repo"] for c in doc["candidates"]], [f"{ADAM}/skills-evals"])
+        self.assertEqual(doc["skipped"], [{"repo": f"{ADAM}/GHA-bench", "reason": "pr-list-404"}])
+        self.assertIn("GHA-bench: pull requests not readable", self.stderr)
+
+    def test_out_inside_the_main_checkout_is_refused_from_a_worktree(self):
+        main = self.tmp / "main"
+        main.mkdir()
+        git = ["git", "-c", "user.name=seed", "-c", "user.email=seed@example.com",
+               "-c", "commit.gpgsign=false"]
+        subprocess.run([*git, "-C", str(main), "init", "-q"], check=True)
+        subprocess.run([*git, "-C", str(main), "commit", "-q", "--allow-empty", "-m", "seed"],
+                       check=True)
+        worktree = self.tmp / "main-wt"
+        subprocess.run([*git, "-C", str(main), "worktree", "add", "-q", str(worktree)],
+                       check=True, capture_output=True)
+        target = main / "candidates.json"
+        with mock.patch.object(mine_real_work, "REPO_ROOT", worktree.resolve()):
+            rc, err = self.run_main("mine", "--registry", str(self.registry(["x"])),
+                                    "--out", str(target))
+        self.assertEqual(rc, 2)
+        self.assertIn("never writes the repo", err)
+        self.assertFalse(target.exists())
+
     def test_out_inside_the_repo_is_refused_and_nothing_is_written(self):
         registry = self._both_owner_world()
         inside = REPO_ROOT / "candidates.json"
@@ -214,9 +252,9 @@ class TestFleetEnumeration(_MinerCase):
 
 
 class TestCandidateFilters(_MinerCase):
-    def _mine(self, prs, diffs=None):
+    def _mine(self, prs, diffs=None, parents=None):
         self.gh_data(repos={f"{ADAM}/cms-platform": _view(ADAM, "cms-platform")},
-                     prs={f"{ADAM}/cms-platform": prs}, diffs=diffs)
+                     prs={f"{ADAM}/cms-platform": prs}, diffs=diffs, parents=parents)
         return self.mine(self.registry(["cms-platform"]))
 
     def test_bot_prs_are_excluded_by_head_ref_and_author(self):
@@ -242,13 +280,27 @@ class TestCandidateFilters(_MinerCase):
         cand = self._mine([_pr(9, body=body, merged="2025-12-31T23:00:00Z")])["candidates"][0]
         self.assertEqual(cand["merged_at"], "2025-12-31T23:00:00Z")
         self.assertEqual(cand["merge_sha"], f"{9:040x}")
-        self.assertEqual(cand["base_sha"], "b" * 40)
+        self.assertEqual((cand["base_sha"], cand["base_from"]), ("b" * 40, "merge-first-parent"))
         self.assertEqual(cand["task_text"], body)
         self.assertEqual(cand["spec_style"], "sketch")
         self.assertEqual((cand["test_files"], cand["source_files"]),
                          (["test/test_tool.py"], ["scripts/tool.py"]))
         self.assertEqual(cand["key"], "Adam-S-Daniel__cms-platform__9")
         self.assertNotIn("subject", cand)
+
+    def test_a_single_parent_merge_takes_the_prs_base_ref_oid(self):
+        # A rebase merge's first parent is the previous rebased commit, not the base.
+        cand = self._mine([_pr(9)], parents={f"{9:040x}": ["e" * 40]})["candidates"][0]
+        self.assertEqual((cand["base_sha"], cand["base_from"]), ("d" * 40, "pr-base-ref-oid"))
+
+    def test_a_pr_without_a_readable_merge_commit_is_skipped_with_a_warning(self):
+        no_commit = _pr(2)
+        no_commit["mergeCommit"] = None
+        doc = self._mine([_pr(1), no_commit, _pr(3)], parents={f"{3:040x}": None})
+        self.assertEqual([c["pr"] for c in doc["candidates"]], [1])
+        self.assertEqual(doc["summary"][0]["no_merge_commit"], 2)
+        self.assertIn("#2: no readable merge commit", self.stderr)
+        self.assertIn("#3: no readable merge commit", self.stderr)
 
     def test_answer_leak_flags_a_body_that_quotes_an_added_line(self):
         doc = self._mine([
@@ -338,6 +390,37 @@ class TestAdmission(unittest.TestCase):
                 row = mine_real_work.admit(self.CAND, red, green, run)
                 self.assertEqual(row["reasons"], ["over-cap"])
 
+    def test_a_repeated_test_id_cannot_hide_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "red.xml"
+            path.write_text(_junit([("a", "fail", "AssertionError"), ("a", "pass", ""),
+                                    ("b", "pass", ""), ("b", "fail", "AssertionError")]),
+                            encoding="utf-8")
+            cases = mine_real_work.read_junit(path)
+        self.assertEqual({k: v["outcome"] for k, v in cases.items()},
+                         {"suite::a": "fail", "suite::b": "fail"})
+
+    def test_malformed_junit_rejects_only_that_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "candidates.json").write_text(json.dumps({"candidates": [
+                dict(self.CAND, key="broken"), dict(self.CAND, key="fine")]}), encoding="utf-8")
+            for key, red in (("broken", "<testsuites><testsuite><testcase name="),
+                             ("fine", _junit([("a", "fail", "AssertionError")]))):
+                where = tmp / "rg" / key
+                where.mkdir(parents=True)
+                (where / "red.xml").write_text(red, encoding="utf-8")
+                (where / "green.xml").write_text(_junit([("a", "pass", "")]), encoding="utf-8")
+                (where / "run.json").write_text(json.dumps(self.RUN), encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = mine_real_work.main(["admit", "--candidates", str(tmp / "candidates.json"),
+                                          "--results", str(tmp / "rg"), "--out", str(tmp / "a.json")])
+            self.assertEqual(rc, 0)
+            rows = {r["key"]: r for r in json.loads((tmp / "a.json").read_text())["admissions"]}
+        self.assertEqual((rows["broken"]["admitted"], rows["broken"]["reasons"]),
+                         (False, ["unreadable-results"]))
+        self.assertTrue(rows["fine"]["admitted"], rows["fine"])
+
     def test_admit_cli_reads_junit_and_reports_unrun_candidates(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -394,11 +477,19 @@ class TestPrepare(unittest.TestCase):
             self.assertEqual((out / "red/tool.py").read_text(encoding="utf-8"), "BUG = True\n")
             self.assertEqual((out / "red/test/test_tool.py").read_text(encoding="utf-8"), "new\n")
             self.assertEqual((out / "green/tool.py").read_text(encoding="utf-8"), "BUG = False\n")
-            with contextlib.redirect_stderr(io.StringIO()):
-                again = mine_real_work.main(["prepare", "--clone", str(clone), "--base", base,
-                                             "--merge", merge, "--test-file", "../escape",
-                                             "--out", str(tmp / "rg2")])
-            self.assertEqual(again, 2)
+            # Both paths name a real file outside the merge tree, so only the
+            # escape guard (not "not in the merge tree") can refuse them.
+            for n, escape in enumerate(("../../clone/tool.py", "/etc/hostname")):
+                with self.subTest(escape=escape):
+                    if escape.startswith("/"):
+                        self.assertTrue(Path(escape).is_file())
+                    err = io.StringIO()
+                    with contextlib.redirect_stderr(err):
+                        again = mine_real_work.main(
+                            ["prepare", "--clone", str(clone), "--base", base, "--merge", merge,
+                             "--test-file", escape, "--out", str(tmp / f"esc{n}")])
+                    self.assertEqual(again, 2)
+                    self.assertIn("escapes the tree", err.getvalue())
 
 
 if __name__ == "__main__":
