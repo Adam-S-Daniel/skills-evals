@@ -20,20 +20,25 @@ name: Gate routine improvement candidate
 #   skill's SKILL.md only, and a report with the loop's title and no closing
 #   keyword or @mention.
 # * Three jobs. `validate` holds `contents: read` and no secret. `credential`
-#   holds nothing and learns only WHETHER the cross-repository credential
-#   exists (a boolean). `draft-pr` runs only when it does, re-validates the
-#   branch at the sha `validate` judged, and only then holds the credential,
-#   in one step. Workflow permissions are `{}`; no workflow- or job-level
-#   `env:`.
+#   holds nothing and learns only WHETHER the GitHub App's two secrets exist
+#   (a boolean). `draft-pr` runs only when they do, re-validates the branch
+#   at the sha `validate` judged, and only then mints an App installation
+#   token; one later step uses it. Workflow permissions are `{}`; no
+#   workflow- or job-level `env:`.
 #
-# OWNER QUESTION, NOT DECIDED HERE: which credential the draft-PR job uses.
-# Opening a pull request in another repository needs a credential this
-# repository's GITHUB_TOKEN does not have (it is scoped to skills-evals).
-# The job reads repository secret EVAL_IMPROVE_PR_BEARER as a token `git`
-# and `gh` accept, and is SKIPPED, with a job-summary note, while that secret
-# is unset. Options and trade-offs are in the pull request that added this
-# file; until the owner picks one, no draft pull request is opened and the
-# validated candidate stays on its branch.
+# The credential (owner decision, Adam: "GitHub App (Recommended)"): this
+# repository's GITHUB_TOKEN cannot write adam-agentskills, so the draft-PR
+# job mints a short-lived installation token with
+# actions/create-github-app-token from repository secrets
+# EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM, scoped to owner
+# Adam-S-Daniel, repository adam-agentskills only, contents and
+# pull-requests write only. The token is revoked when the job ends. The App
+# must have Contents: write and Pull requests: write, be installed on
+# adam-agentskills only, and both secrets must be set in skills-evals; while
+# either is unset the job is SKIPPED with a job-summary note and the
+# validated candidate stays on its branch. A pull request the App opens
+# starts adam-agentskills' own CI, which one opened with a GITHUB_TOKEN
+# would not.
 #
 # * The draft-PR job pushes one branch, `eval-improve/<skill>`, in
 #   adam-agentskills, based on the registry sha the loop measured (which must
@@ -147,10 +152,10 @@ jobs:
     outputs:
       present: ${{ steps.check.outputs.present }}
     steps:
-      - name: Is the draft-PR credential configured?
+      - name: Are the GitHub App's secrets configured?
         id: check
         env:
-          PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_PR_BEARER != '' }}
+          PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
         run: |
           set -euo pipefail
           if [ "$PR_CREDENTIAL_SET" = "true" ]; then
@@ -158,11 +163,11 @@ jobs:
             exit 0
           fi
           echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::the candidate passed the gate; no draft pull request is opened because repository secret EVAL_IMPROVE_PR_BEARER is not set (an open owner question)"
+          echo "::notice::the candidate passed the gate; no draft pull request is opened because the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are not both set"
           {
             echo "### Improvement candidate validated; draft PR skipped"
             echo
-            echo "The candidate passed the gate. The draft-PR job is skipped because repository secret \`EVAL_IMPROVE_PR_BEARER\` is not set: which credential opens pull requests in adam-agentskills is an open owner question (see routine-improve-gate.yml's header)."
+            echo "The candidate passed the gate. The draft-PR job is skipped because repository secrets \`EVAL_IMPROVE_APP_CLIENT_ID\` and \`EVAL_IMPROVE_APP_PEM\` are not both set (see routine-improve-gate.yml's header for the App this needs)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   draft-pr:
@@ -209,10 +214,23 @@ jobs:
             > "$RUNNER_TEMP/revalidate.out"
           cat "$RUNNER_TEMP/revalidate.out"
 
+      # Minted only now, after re-validation: an installation token for
+      # adam-agentskills alone, with contents and pull-requests write only.
+      - name: Mint the GitHub App token for adam-agentskills
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Open the draft pull request in adam-agentskills
         working-directory: skills-evals
         env:
-          GH_TOKEN: ${{ secrets.EVAL_IMPROVE_PR_BEARER }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TARGET_REPO: Adam-S-Daniel/adam-agentskills
           BRANCH: ${{ needs.validate.outputs.branch }}
           RUN_ID: ${{ needs.validate.outputs.run_id }}

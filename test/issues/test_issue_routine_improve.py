@@ -414,6 +414,22 @@ class RejectContentTests(GitCase):
             (report_text(extra=" Resolved: https://github.com/a/b/issues/4"),
              r"closing keyword"),
             (report_text(extra=" cc @someone " + MARKER), r"mention"),
+            # Markdown around a keyword or a reference does not hide it.
+            (report_text(extra="\n\n**Fixes** #1"), r"closing keyword"),
+            (report_text(extra="\n\n_Closes_ #2"), r"closing keyword"),
+            (report_text(extra="\n\n`Resolves` #5"), r"closing keyword"),
+            (report_text(extra="\n\nFixes [#1](https://github.com/o/r/issues/1)"),
+             r"closing keyword"),
+            (report_text(extra="\n\nCloses [the bug](https://github.com/o/r/issues/7)"),
+             r"closing keyword"),
+            (report_text(extra="\n\nfixes: <https://github.com/o/r/pull/8>"),
+             r"closing keyword"),
+            # Punctuation before an @ does not hide a mention.
+            (report_text(extra=" _@octocat_"), r"mention"),
+            (report_text(extra=" see.@octocat"), r"mention"),
+            (report_text(extra=" x-@octocat"), r"mention"),
+            (report_text(extra=" a /@octocat"), r"mention"),
+            (report_text(extra=" (`@octocat`)"), r"mention"),
         ]
         for text, pattern in cases:
             with self.subTest(pattern=pattern, text=text[-30:]):
@@ -529,6 +545,30 @@ class ApplyTests(unittest.TestCase):
                 with self.assertRaisesRegex(ingest.Rejected, "frontmatter"):
                     gate.apply(self.staged, self.tree, SKILL_MD)
 
+    def test_refuses_any_other_frontmatter_value_change(self):
+        """propose_skill_edit.set_description's rule: only `description`
+        may change in the frontmatter."""
+        original = ORIGINAL.replace("description:", "allowed-tools: Read\n"
+                                    "description:")
+        (self.tree / SKILL_MD).write_text(original, encoding="utf-8")
+        self.run_git("commit", "-q", "-am", "tools")
+        for new in (original.replace("allowed-tools: Read",
+                                     "allowed-tools: Bash(*)"),
+                    original.replace("allowed-tools: Read",
+                                     "allowed-tools: [Read, Bash]")):
+            with self.subTest(new=new[:70]):
+                self.run_git("checkout", "-q", "--", ".")
+                self.stage(patch_text(old=original, new=new))
+                with self.assertRaisesRegex(ingest.Rejected, "frontmatter"):
+                    gate.apply(self.staged, self.tree, SKILL_MD)
+
+    def test_refuses_a_patch_that_changes_a_second_file(self):
+        """`validate` already refuses such a patch; `apply` checks the tree
+        on its own, so a patch staged any other way cannot widen it."""
+        self.stage(patch_text() + pse.registry_patch("x\n", "y\n", "README.md"))
+        with self.assertRaisesRegex(ingest.Rejected, "more than the one"):
+            gate.apply(self.staged, self.tree, SKILL_MD)
+
     def test_refuses_a_patch_that_does_not_apply(self):
         self.stage(patch_text(old=ORIGINAL.replace("Keep", "Make"),
                               new=CANDIDATE.replace("Keep", "Make")))
@@ -559,6 +599,7 @@ class PrBodyTests(unittest.TestCase):
         self.assertIn("Part of https://github.com/Adam-S-Daniel/skills-evals/"
                       "issues/71", body)
         self.assertIsNone(gate.CLOSING_RE.search(body))
+        self.assertIsNone(gate.CLOSING_URL_RE.search(gate.closing_text(body)))
 
 
 # ---------------------------------------------------------------------------
@@ -668,26 +709,48 @@ class WorkflowShapeTests(unittest.TestCase):
                              else [self.jobs["credential"]["needs"]]),
                          {"validate"})
 
-    def test_the_credential_reaches_only_the_draft_pr_step(self):
-        refs = [(path, text) for path, text in strings(self.gate)
-                if "secrets." in text]
-        secret = gate.PR_CREDENTIAL_SECRET
-        self.assertEqual(sorted(p[:2] for p, _ in refs),
-                         [("jobs", "credential"), ("jobs", "draft-pr")])
-        for path, text in refs:
-            with self.subTest(path=path):
-                self.assertEqual(path[2:3], ("steps",))
-                self.assertEqual(path[4], "env")
-                if path[1] == "credential":
-                    self.assertEqual(text.strip(),
-                                     "${{ secrets.%s != '' }}" % secret)
-                else:
-                    self.assertEqual(text.strip(),
-                                     "${{ secrets.%s }}" % secret)
-        draft_steps = [s for s in self.jobs["draft-pr"]["steps"]
-                       if any("secrets." in v for _, v in strings(s))]
-        self.assertEqual(len(draft_steps), 1, "one step holds the credential")
+    def mint_step(self) -> dict:
+        steps = [s for s in self.jobs["draft-pr"]["steps"]
+                 if str(s.get("uses", "")).startswith(
+                     "actions/create-github-app-token@")]
+        self.assertEqual(len(steps), 1, "one step mints the App token")
+        return steps[0]
+
+    def test_the_app_secrets_reach_only_the_mint_step(self):
+        """Owner decision (Adam): "GitHub App (Recommended)". The App's two
+        secrets reach the credential check as one boolean and the mint step
+        as its inputs; nothing else."""
+        client, pem = gate.APP_CLIENT_ID_SECRET, gate.APP_PEM_SECRET
+        refs = sorted((path, text.strip()) for path, text in strings(self.gate)
+                      if "secrets." in text)
+        mint = self.jobs["draft-pr"]["steps"].index(self.mint_step())
+        self.assertEqual(refs, sorted([
+            (("jobs", "credential", "steps", "0", "env", "PR_CREDENTIAL_SET"),
+             "${{ secrets.%s != '' && secrets.%s != '' }}" % (client, pem)),
+            (("jobs", "draft-pr", "steps", str(mint), "with", "client-id"),
+             "${{ secrets.%s }}" % client),
+            (("jobs", "draft-pr", "steps", str(mint), "with", "private-key"),
+             "${{ secrets.%s }}" % pem),
+        ]))
         self.assertNotIn("secrets.", json.dumps(self.jobs["validate"]))
+
+    def test_the_app_token_is_narrow_and_used_by_one_step(self):
+        step = self.mint_step()
+        self.assertEqual(step["id"], "app-token")
+        self.assertEqual(step["with"]["owner"], "Adam-S-Daniel")
+        self.assertEqual(step["with"]["repositories"], "adam-agentskills")
+        self.assertEqual(
+            {k: v for k, v in step["with"].items() if k.startswith("permission-")},
+            {"permission-contents": "write", "permission-pull-requests": "write"})
+        self.assertNotIn("skip-token-revoke", step["with"])
+        users = [(path, text) for path, text in strings(self.gate)
+                 if "steps.app-token.outputs" in text]
+        self.assertEqual(len(users), 1)
+        path, text = users[0]
+        self.assertEqual(path[-2:], ("env", "GH_TOKEN"))
+        self.assertEqual(text.strip(), "${{ steps.app-token.outputs.token }}")
+        holder = self.jobs["draft-pr"]["steps"][int(path[3])]
+        self.assertIn("gh pr create", holder["run"])
 
     def test_the_draft_pr_job_is_skipped_without_the_credential(self):
         job = self.jobs["draft-pr"]
@@ -702,6 +765,8 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("revalidate", names)
         holder = next(i for i, s in enumerate(steps)
                       if any("secrets." in v for _, v in strings(s)))
+        self.assertEqual(holder, steps.index(self.mint_step()),
+                         "the mint step is the first to hold a secret")
         self.assertLess(names.index("revalidate"), holder)
         body = steps[names.index("revalidate")]["run"]
         self.assertIn("--expect-sha", body)
@@ -731,6 +796,12 @@ class WorkflowShapeTests(unittest.TestCase):
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
 
+    #: Pins first introduced here: actions/create-github-app-token v3.2.0
+    #: (published 2026-05-12, a lightweight tag: `git ls-remote` shows no
+    #: `^{}` line), the newest release more than seven days old.
+    NEW_PINS = {"actions/create-github-app-token@"
+                "bcd2ba49218906704ab6c1aa796996da409d3eb1"}
+
     def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
@@ -746,7 +817,7 @@ class WorkflowShapeTests(unittest.TestCase):
                     rest = lines[node.end_mark.line][node.end_mark.column:]
                     self.assertEqual(rest.strip(), "",
                                      "a pin carries no trailing comment")
-                    self.assertIn(node.value, pinned)
+                    self.assertIn(node.value, pinned | self.NEW_PINS)
 
     def test_no_expressions_in_run_blocks(self):
         for doc in (self.gate, self.signal):

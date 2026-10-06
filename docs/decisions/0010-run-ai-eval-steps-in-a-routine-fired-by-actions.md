@@ -320,7 +320,8 @@ UI.
 5. The improvement loop's routine mode: the routine pushes an accepted
    candidate to `claude/eval-improve-<run id>`, and
    `.github/workflows/routine-improve-gate.yml` validates it and opens a
-   draft pull request in adam-agentskills once its credential is chosen
+   draft pull request in adam-agentskills with a GitHub App token, once
+   the App and its two secrets exist
    ([ADR 0005](0005-improvement-loop-reuses-skill-creator.md), "Routine
    improve mode addendum"). The routine's saved prompt and the fire
    workflow's mode input are not yet changed.

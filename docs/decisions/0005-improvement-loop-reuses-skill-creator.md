@@ -478,22 +478,29 @@ here. Built red-first with fakes; no routine run and no real pull request.
   only. `scripts/improve_gate.py` reads the branch through git plumbing and
   accepts it only as an accepted schema-1 record for adam-agentskills at a
   full sha, a patch of that skill's `SKILL.md` alone whose hunks parse, and
-  a report with the loop's title and no closing keyword or @mention. The
+  a report with the loop's title and no closing keyword or @mention
+  (checked with its Markdown emphasis and link syntax stripped). The
   root is `eval-improve/`, not `eval-results/`: the improve branch also
   matches the results signal's `claude/eval-*`, and the two path filters
   are what keep each push to its own gate.
-- **The draft pull request needs an owner decision.** It is opened in
-  Adam-S-Daniel/adam-agentskills, which this repository's `GITHUB_TOKEN`
-  cannot write. The `draft-pr` job reads repository secret
-  `EVAL_IMPROVE_PR_BEARER` and is skipped, with a summary note, while it is
-  unset; which credential that is (a fine-grained token, a GitHub App, or
-  the routine's own identity) is not decided. When it runs, the job
-  re-validates the judged sha, checks the measured registry sha is on
-  adam-agentskills' default branch, applies the patch there (refusing a
-  frontmatter name or key change, or any second file), pushes
-  `eval-improve/<skill>` without force (or does nothing if that branch
-  exists: one candidate per skill waits for a person), and opens a draft.
-  It never merges.
+- **The draft pull request is opened with a GitHub App token.** It is
+  opened in Adam-S-Daniel/adam-agentskills, which this repository's
+  `GITHUB_TOKEN` cannot write. Adam chose the credential on 2026-10-06:
+  "GitHub App (Recommended)". After re-validating the judged sha, the
+  `draft-pr` job mints an installation token with
+  `actions/create-github-app-token` from repository secrets
+  `EVAL_IMPROVE_APP_CLIENT_ID` and `EVAL_IMPROVE_APP_PEM`. The token is
+  limited to adam-agentskills, with contents and pull-requests write only,
+  and one later step uses it. While either secret is unset the job is
+  skipped with a summary note. It does not run until Adam creates the App
+  (Contents: write and Pull requests: write, installed on adam-agentskills
+  only) and adds both secrets to skills-evals. When it runs, it checks the
+  measured registry sha is on adam-agentskills' default branch and applies
+  the patch there. It refuses any frontmatter change other than the
+  description, and any second file. It pushes `eval-improve/<skill>`
+  without force, or does nothing if that branch exists (one candidate per
+  skill waits for a person), and opens a draft. It never merges. A pull
+  request the App opens starts adam-agentskills' CI.
 - **#71's gate stays.** Nothing here is scheduled; a suite test fails if any
   workflow that fires the routine or handles an improve branch gains a
   schedule. The three human-reviewed loop pull requests are the draft pull

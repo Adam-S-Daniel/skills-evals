@@ -86,10 +86,12 @@ NAME_RE = re.compile(NAME)
 #: branch").
 TARGET_BRANCH = "eval-improve/{skill}"
 
-#: The repository secret the draft-PR job needs. Which credential goes in it
-#: is an open owner question (see routine-improve-gate.yml); the name holds
-#: none of gitleaks' generic-api-key keywords (ADR 0010 decision 5).
-PR_CREDENTIAL_SECRET = "EVAL_IMPROVE_PR_BEARER"
+#: The repository secrets the draft-PR job mints its GitHub App token from
+#: (owner decision, Adam: "GitHub App (Recommended)"): the App's client id
+#: and its private key in PEM form. Neither name holds one of gitleaks'
+#: generic-api-key keywords (ADR 0010 decision 5).
+APP_CLIENT_ID_SECRET = "EVAL_IMPROVE_APP_CLIENT_ID"
+APP_PEM_SECRET = "EVAL_IMPROVE_APP_PEM"
 
 #: propose_skill_edit.improve()'s record keys (the suite reads them from its
 #: AST and checks they stay inside these sets).
@@ -106,14 +108,26 @@ MAX_RECORD_ITEMS = 512
 REPORT_TITLE = "## Proposed `{skill}` SKILL.md edit (validation-gated)"
 #: GitHub closes an issue or pull request named after one of these keywords
 #: in a merged pull request's body, in any repository; a model-written
-#: report must not be able to do that.
-_KEYWORD = r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[\s:]*"
+#: report must not be able to do that. Matched against the text with its
+#: Markdown emphasis, code and link syntax stripped (`closing_text`), so
+#: `**Fixes** #1` or `Fixes [#1](...)` cannot hide one; a link's target URL
+#: is kept, so `Closes [x](https://github.com/o/r/issues/7)` is caught too.
+_KEYWORD = r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[\s:<]*"
 CLOSING_RE = re.compile(
     _KEYWORD + r"(?:(?:[\w.-]+/[\w.-]+)?#\d+"
     r"|https?://github\.com/[^\s/]+/[^\s/]+/(?:issues|pull)/\d+)", re.I)
-#: An @mention notifies a person; an email address or an `action@sha` pin
-#: is not one.
-MENTION_RE = re.compile(r"(?<![\w.`/@-])@[A-Za-z0-9][A-Za-z0-9-]*")
+#: A keyword with an issue or pull request URL anywhere later on its line
+#: (a link label can sit between the two). Over-rejects; that is fine.
+CLOSING_URL_RE = re.compile(
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b[^\n]*?"
+    r"https?://github\.com/[^\s/]+/[^\s/]+/(?:issues|pull)/\d+", re.I)
+#: Markdown that can sit between a keyword and its reference.
+_MARKDOWN_NOISE = re.compile(r"[*_`~\[\]]")
+_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]*)[^)]*\)")
+#: An @mention notifies a person. Only a letter or digit right before the @
+#: (an email address, an `action@sha` pin) makes it something else;
+#: punctuation does not, so this over-rejects rather than miss one.
+MENTION_RE = re.compile(r"(?<![A-Za-z0-9])@[A-Za-z0-9][A-Za-z0-9-]*")
 HUNK_RE = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?")
 
 
@@ -235,11 +249,19 @@ def check_patch(text: str, where: str, skill_md: str) -> None:
         raise Rejected(f"{where}: changes nothing")
 
 
+def closing_text(text: str) -> str:
+    """`text` with each Markdown link reduced to its label and target, and
+    emphasis, code and bracket characters removed."""
+    return _MARKDOWN_NOISE.sub("", _LINK.sub(r"\1 \2", text))
+
+
 def check_report(text: str, where: str, skill: str) -> None:
     if text.split("\n", 1)[0] != REPORT_TITLE.format(skill=skill):
         raise Rejected(f"{where}: does not open with the loop's title for "
                        "this skill")
-    if CLOSING_RE.search(text):
+    stripped = closing_text(text)
+    if CLOSING_RE.search(text) or CLOSING_RE.search(stripped) \
+            or CLOSING_URL_RE.search(stripped):
         raise Rejected(f"{where}: has a closing keyword before an issue or "
                        "pull request reference")
     if MENTION_RE.search(text):
@@ -317,8 +339,9 @@ def _frontmatter(text: str, where: str) -> dict:
 
 def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     """Apply the staged patch to a registry checkout at `tree`. Only
-    `skill_md` may change, and its frontmatter keeps its keys and its name
-    (the description is the trigger half's to change)."""
+    `skill_md` may change, and only its frontmatter's `description` may
+    change there (propose_skill_edit.set_description's rule: the name is
+    fixed, the description is the trigger half's, and nothing else moves)."""
     if not SKILL_MD_RE.fullmatch(skill_md) or ".." in skill_md.split("/"):
         raise Rejected("skill_md is not a registry SKILL.md path")
     cursor = tree
@@ -338,9 +361,11 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
             raise Rejected("the patch does not apply to the registry at the "
                            "recorded sha")
     after = _frontmatter(target.read_text(encoding="utf-8"), skill_md)
-    if set(after) != set(before) or after.get("name") != before.get("name"):
-        raise Rejected(f"{skill_md!r}: the patch changes the frontmatter's "
-                       "name or keys")
+    if {k: v for k, v in after.items() if k != "description"} \
+            != {k: v for k, v in before.items() if k != "description"} \
+            or ("description" in after) != ("description" in before):
+        raise Rejected(f"{skill_md!r}: the patch changes the frontmatter "
+                       "beyond its description")
     changed = ingest.git(str(tree), "status", "--porcelain=v1", "-z").decode()
     if changed.split("\0")[:-1] != [f" M {skill_md}"]:
         raise Rejected("the patch changed more than the one SKILL.md")
@@ -356,7 +381,7 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str) -> str:
         f"at `{sha}`, and `routine-improve-gate.yml` validated it without "
         "running it and applied its `skill.patch` here.",
         "",
-        "A person reviews and merges this, or closes it; nothing merges "
+        "A person reviews and merges this, or declines it; nothing merges "
         "itself. Merging it counts toward the three human-reviewed loop pull "
         "requests that must merge before any scheduled loop "
         "([skills-evals#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71)). The "
