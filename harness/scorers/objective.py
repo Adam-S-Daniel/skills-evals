@@ -37,6 +37,7 @@ from . import invisibles, wrapping
 from .bash_ast import ScorerUnavailableError  # noqa: F401  (re-exported)
 from .shell_capture import shell_capture_safe
 from .commands import command_succeeds
+from .repo_tests import repo_tests, CONSTRAINT_KEYS as _REPO_TESTS_KEYS
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -3905,6 +3906,7 @@ CHECKS = {
     "parsed_config_values": parsed_config_values,
     "shell_staged_tool_guard": shell_staged_tool_guard,
     "command_succeeds": command_succeeds,
+    "repo_tests": repo_tests,
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
@@ -3971,6 +3973,9 @@ _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "parsed_config_values": {"format", "expected"},
     "shell_staged_tool_guard": {"tools"},
     "command_succeeds": {"argv", "timeout_s"},
+    # The overlay directory is resolved against the fixture directory, the
+    # parent of the injected `seed` (see `scorers/repo_tests.py`).
+    "repo_tests": set(_REPO_TESTS_KEYS),
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     # `require_present` is `file_matches`'s only opt-in: it makes a check
     # whose evidence IS the file fail closed when that file is absent or
@@ -4035,7 +4040,8 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             raise ValueError(f"unknown {check['type']!r} constraint key(s) in "
                             f"check {check.get('id')!r}: {sorted(extra)}")
         kwargs = {key: check[key] for key in allowed if key in check}
-        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged", "dir_listing_matches"):
+        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged",
+                             "dir_listing_matches", "repo_tests"):
             kwargs["seed"] = seed
         elif check["type"] == "shell_capture_safe":
             kwargs["transcript"] = transcript
