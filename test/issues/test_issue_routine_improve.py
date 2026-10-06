@@ -846,6 +846,109 @@ class WorkflowShapeTests(unittest.TestCase):
                          [("jobs", "j", "steps", "0", "env", "T")])
 
 
+class FireCheckTests(unittest.TestCase):
+    """`improve_gate.py fire-check`, run by routine-eval-fire.yml before the
+    bearer exists: the loop's own fixture resolution (`skill_fixtures`,
+    `load_fixtures`, `MIN_FIXTURES`) plus harness/registries.yml, read-only
+    and offline. The registry checkout is not in the fire job, so the last
+    resolution step (`find_skill_dir`) is left to the routine."""
+
+    def check(self, skill, holdout=""):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = gate.main(["fire-check", skill, "--holdout", holdout])
+        return code, err.getvalue()
+
+    def assert_rejected(self, skill, message, holdout=""):
+        code, err = self.check(skill, holdout)
+        self.assertEqual(code, 1, err)
+        self.assertEqual(err, f"rejected: {message}\n")
+        for value in (skill, holdout):
+            if value:
+                self.assertNotIn(value, err, "a rejection never echoes the input")
+
+    def test_accepts_a_registry_skill_with_enough_fixtures(self):
+        for holdout in ("", "supersede", "bootstrap"):
+            with self.subTest(holdout=holdout):
+                self.assertEqual(self.check(SKILL, holdout), (0, ""))
+
+    def test_refuses_dirs_that_are_not_one_skill(self):
+        # guidance and real-work fixtures name no skill; a flat fixture or a
+        # missing directory has no nested fixture for the loop to split.
+        for skill in ("guidance", "real-work", "browser-testing",
+                      "no-such-skill-xyz", "writing-adr", "harness"):
+            with self.subTest(skill=skill):
+                self.assert_rejected(skill, gate.FIRE_NOT_A_SKILL)
+
+    def test_refuses_a_skill_of_another_registry(self):
+        # Three nested fixtures, but for adam-agentskills-private, which the
+        # routine never checks out.
+        self.assertGreaterEqual(len(pse.skill_fixtures("adam-writing-style")),
+                                pse.MIN_FIXTURES)
+        self.assert_rejected("adam-writing-style", gate.FIRE_NOT_ROUTINE_REGISTRY)
+
+    def test_refuses_too_few_fixtures(self):
+        for skill in ("debug-github-workflows", "skills-doctor"):
+            with self.subTest(skill=skill):
+                self.assert_rejected(skill, gate._fire_too_few())
+
+    def test_refuses_a_holdout_that_is_not_a_fixture_of_the_skill(self):
+        for holdout in ("no-such-holdout-xyz", "proposal-bio", "..", "."):
+            with self.subTest(holdout=holdout):
+                code, err = self.check(SKILL, holdout)
+                self.assertEqual((code, err),
+                                 (1, f"rejected: {gate.FIRE_BAD_HOLDOUT}\n"))
+
+    def test_messages_are_distinct(self):
+        messages = (gate.FIRE_NOT_A_SKILL, gate.FIRE_NOT_ROUTINE_REGISTRY,
+                    gate._fire_too_few(), gate.FIRE_BAD_HOLDOUT)
+        self.assertEqual(len(set(messages)), len(messages))
+        self.assertIn(str(pse.MIN_FIXTURES), gate._fire_too_few())
+
+    def _evals(self, fixtures):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        for rel, doc in fixtures.items():
+            (tmp / rel).mkdir(parents=True)
+            (tmp / rel / "fixture.yaml").write_text(yaml.safe_dump(doc),
+                                                    encoding="utf-8")
+        return mock.patch.object(pse, "EVALS_DIR", tmp)
+
+    def test_synthetic_layouts(self):
+        url = gate.REGISTRY_URL
+        sk = "zqx-synthetic"
+        cases = {
+            "another_skill_named": ({f"{sk}/{n}": {"skill": "other", "registry": url}
+                                     for n in "abc"}, gate.FIRE_NOT_A_SKILL),
+            "one_fixture_names_no_skill": (
+                {f"{sk}/a": {"skill": sk, "registry": url},
+                 f"{sk}/b": {"skill": sk, "registry": url},
+                 f"{sk}/c": {"registry": url}}, gate.FIRE_NOT_A_SKILL),
+            "unreadable": ({f"{sk}/a": ["not", "a", "mapping"],
+                            f"{sk}/b": {"skill": sk, "registry": url},
+                            f"{sk}/c": {"skill": sk, "registry": url}},
+                           gate.FIRE_NOT_A_SKILL),
+            "two_registries": (
+                {f"{sk}/a": {"skill": sk, "registry": url},
+                 f"{sk}/b": {"skill": sk, "registry": url},
+                 f"{sk}/c": {"skill": sk,
+                         "registry": "https://github.com/Adam-S-Daniel/cms-platform"}},
+                gate.FIRE_NOT_A_SKILL),
+            "unlisted_registry": ({f"{sk}/{n}": {"skill": sk,
+                                              "registry": "https://example.com/r"}
+                                   for n in "abc"}, gate.FIRE_NOT_ROUTINE_REGISTRY),
+            "no_registry": ({f"{sk}/{n}": {"skill": sk} for n in "abc"},
+                            gate.FIRE_NOT_ROUTINE_REGISTRY),
+        }
+        for label, (fixtures, message) in cases.items():
+            with self.subTest(case=label), self._evals(fixtures):
+                self.assert_rejected(sk, message)
+        with self._evals({f"{sk}/{n}": {"skill": sk, "registry": url}
+                          for n in "abc"}):
+            self.assertEqual(self.check(sk, "b"), (0, ""))
+
+
 class ThreePrGateTests(unittest.TestCase):
     """#71 item 5 / ADR 0010 decision 4: no scheduled loop until three
     human-reviewed loop pull requests have merged. Nothing that fires the

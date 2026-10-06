@@ -46,6 +46,15 @@ $GITHUB_OUTPUT):
            [--expect-sha SHA] --out DIR
   apply    --staged DIR --tree DIR --skill-md PATH
   pr-body  --staged DIR --run-id ID --sha SHA --branch NAME   (body on stdout)
+  fire-check SKILL [--holdout NAME]                     (no output; exit 0 or 1)
+
+`fire-check` is the other end: `routine-eval-fire.yml` runs it before the
+fire bearer exists, so a skill the loop would refuse never starts a routine
+session. It reuses the loop's own resolution (`skill_fixtures`,
+`load_fixtures`, `MIN_FIXTURES`) and harness/registries.yml, read-only and
+offline. The loop's last step, finding `<skill>/SKILL.md` in the registry
+checkout, needs that checkout, which the fire job does not have, so that
+step stays the routine's.
 """
 
 from __future__ import annotations
@@ -396,6 +405,48 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str) -> str:
         ""])
 
 
+#: fire-check's refusals: fixed text, so no input value reaches the log.
+FIRE_NOT_A_SKILL = ("input 'skill' is not one skill's fixture set: the loop "
+                    "finds no nested fixture under evals/<skill>/, or one "
+                    "naming another skill or none, or more than one registry")
+FIRE_NOT_ROUTINE_REGISTRY = (f"input 'skill' is not an {REGISTRY_NAME} skill "
+                             "(harness/registries.yml), the one registry the "
+                             "routine checks out")
+FIRE_BAD_HOLDOUT = "input 'holdout' names no nested fixture of that skill"
+
+
+def _fire_too_few() -> str:
+    import propose_skill_edit as loop  # noqa: PLC0415 — only fire-check needs it
+    return (f"input 'skill' has fewer than {loop.MIN_FIXTURES} nested "
+            "fixtures, the loop's minimum")
+
+
+def fire_check(skill: str, holdout: str) -> None:
+    """Refuse a skill or holdout the improvement loop would refuse, as far as
+    the committed fixtures and harness/registries.yml can tell."""
+    import propose_skill_edit as loop  # noqa: PLC0415 — only fire-check needs it
+    run_eval = loop.run_eval
+    try:
+        names = loop.skill_fixtures(skill)
+        fixtures = loop.load_fixtures(skill, names)
+    except (ValueError, loop.Refusal):
+        raise Rejected(FIRE_NOT_A_SKILL) from None
+    url = next(iter(fixtures.values())).get("registry")
+    if not isinstance(url, str):
+        raise Rejected(FIRE_NOT_ROUTINE_REGISTRY)
+    try:
+        entry = run_eval.registry_for_url(
+            run_eval.resolve_registries(None, None, loop.REPO_ROOT), url)
+    except ValueError:
+        raise Rejected(FIRE_NOT_ROUTINE_REGISTRY) from None
+    if entry["name"] != REGISTRY_NAME or entry["url"] != REGISTRY_URL:
+        raise Rejected(FIRE_NOT_ROUTINE_REGISTRY)
+    if len(names) < loop.MIN_FIXTURES:
+        raise Rejected(_fire_too_few())
+    if holdout and holdout not in names:
+        raise Rejected(FIRE_BAD_HOLDOUT)
+
+
 def resolve(event_name: str, event_path: str) -> dict:
     return ingest.resolve(event_name, event_path, BRANCH_RE, BRANCH_SHAPE)
 
@@ -422,8 +473,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id", required=True)
     p.add_argument("--sha", required=True)
     p.add_argument("--branch", required=True)
+    p = sub.add_parser("fire-check")
+    p.add_argument("skill")
+    p.add_argument("--holdout", default="")
     args = parser.parse_args(argv)
     try:
+        if args.command == "fire-check":
+            fire_check(args.skill, args.holdout)
+            return 0
         if args.command == "resolve":
             result = resolve(args.event_name, args.event_path)
         elif args.command == "validate":

@@ -16,11 +16,20 @@ name: Fire eval routine
 #   run_id, fixture, arms, trials. `scaffold` sends exactly three: mode,
 #   run_id, candidate (a miner key, OWNER__REPO__PR), and the routine turns
 #   that one candidate into one draft real-work fixture on its own branch.
-#   `candidate` must be empty in eval mode and `fixture` empty in scaffold
-#   mode, so no input is silently ignored except arms and trials, which are
-#   choices and are not sent in scaffold mode. The routine treats the
-#   payload as untrusted, and so does this workflow when it builds it: jq
-#   encodes every value.
+#   `improve` (ADR 0005, "Routine improve mode addendum") sends exactly
+#   five: run_id, mode, skill, trials and holdout (null when empty), and
+#   the routine runs the improvement loop on that skill. `skill` must pass
+#   the loop's own fixture resolution (`scripts/improve_gate.py
+#   fire-check`): nested evals/<skill>/<name> fixtures that all name it and
+#   adam-agentskills, at least the loop's minimum of them, and `holdout`
+#   empty or one of their names. Each mode's own text inputs must
+#   be empty in the others (`candidate` and `skill`/`holdout` in eval mode,
+#   `fixture` and `skill`/`holdout` in scaffold mode, `fixture` and
+#   `candidate` in improve mode), so no input is silently ignored except
+#   arms and trials, which are choices; arms is sent in eval mode only and
+#   trials in eval and improve. The routine treats the payload as
+#   untrusted, and so does this workflow when it builds it: jq encodes
+#   every value.
 # * The fire bearer (EVAL_ROUTINE_FIRE_BEARER, a repository secret per ADR
 #   0010 decision 5) reaches only the fire step, via `env`, and goes to curl
 #   on stdin, never in argv. The HTTP response body is never printed: the
@@ -31,7 +40,9 @@ name: Fire eval routine
 # * Results land on `claude/eval-<run id>`, pushed by the routine; the
 #   validator and ingester for that branch is a separate workflow (ADR 0010,
 #   decision 2). A scaffold run pushes `claude/scaffold-<fixture id>`
-#   instead, which its own gate validates. Nothing here writes to the
+#   instead, which its own gate validates, and an improve run pushes
+#   `claude/eval-improve-<run id>` only for an accepted candidate, which
+#   routine-improve-gate.yml validates. Nothing here writes to the
 #   repository.
 #
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
@@ -42,10 +53,11 @@ on:
       mode:
         description: >-
           eval runs a fixture; scaffold turns one miner candidate into a
-          draft real-work fixture.
+          draft real-work fixture; improve runs the improvement loop on
+          one skill.
         required: true
         type: choice
-        options: [eval, scaffold]
+        options: [eval, scaffold, improve]
         default: eval
       candidate:
         description: >-
@@ -55,9 +67,22 @@ on:
         type: string
       fixture:
         description: >-
-          Eval mode only (leave empty for scaffold): fixture directory under
+          Eval mode only (leave empty otherwise): fixture directory under
           evals/, e.g. evals/writing-adrs/bootstrap. Must be a committed
           evals/**/fixture.yaml directory on the default branch.
+        required: false
+        type: string
+      skill:
+        description: >-
+          Improve mode only (leave empty otherwise): the skill name, e.g.
+          writing-adrs. evals/<skill>/ must hold at least three committed
+          fixtures on the default branch.
+        required: false
+        type: string
+      holdout:
+        description: >-
+          Improve mode only, optional: one fixture name under
+          evals/<skill>/ to hold out, e.g. supersede. Empty means none.
         required: false
         type: string
       arms:
@@ -92,11 +117,16 @@ jobs:
 
       # Pinned, not the runner's system Python (WorkflowPinnedPythonTests):
       # the validation step lists committed fixtures with
-      # scripts/plan_scheduled_evals.py.
+      # scripts/plan_scheduled_evals.py and, in improve mode, runs
+      # scripts/improve_gate.py fire-check.
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+
+      # fire-check loads fixture.yaml files: the gate workflows' PyYAML pin.
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
 
       - name: Validate the dispatch inputs
         id: validate
@@ -107,10 +137,12 @@ jobs:
           # NUL first, on the event file itself: bash's $( ) drops a NUL, so
           # every check below would otherwise judge a different string than
           # the dispatcher sent. No rejection echoes the value back.
-          # `fixture` and `candidate` are optional strings (each is required
-          # in one mode only), so an absent one reads as empty.
+          # `fixture`, `candidate`, `skill` and `holdout` are optional
+          # strings (each is used in one mode only), so an absent one reads
+          # as empty.
           if jq -e '[.inputs.mode, .inputs.arms, .inputs.trials,
-                     (.inputs.fixture // ""), (.inputs.candidate // "")]
+                     (.inputs.fixture // ""), (.inputs.candidate // ""),
+                     (.inputs.skill // ""), (.inputs.holdout // "")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
@@ -118,15 +150,18 @@ jobs:
           fi
           # Also on the event file: $( ) strips trailing newlines, so a
           # value ending in one would otherwise pass the pattern below.
-          if jq -e '[.inputs.mode, (.inputs.candidate // "")]
+          if jq -e '[.inputs.mode, (.inputs.candidate // ""),
+                     (.inputs.skill // ""), (.inputs.holdout // "")]
                     | any(test("[\u0000-\u001f\u007f]"))' \
                "$event" >/dev/null; then
-            echo "::error::input 'mode' or 'candidate' contains a control character"
+            echo "::error::input 'mode', 'candidate', 'skill' or 'holdout' contains a control character"
             exit 1
           fi
           mode="$(jq -r '.inputs.mode' "$event")"
           candidate="$(jq -r '.inputs.candidate // ""' "$event")"
           fixture="$(jq -r '.inputs.fixture // ""' "$event")"
+          skill="$(jq -r '.inputs.skill // ""' "$event")"
+          holdout="$(jq -r '.inputs.holdout // ""' "$event")"
           arms="$(jq -r '.inputs.arms' "$event")"
           trials="$(jq -r '.inputs.trials' "$event")"
 
@@ -144,6 +179,13 @@ jobs:
           esac
 
           case "$mode" in
+            eval|scaffold)
+              if [ -n "$skill" ] || [ -n "$holdout" ]; then
+                echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve"
+                exit 1
+              fi ;;
+          esac
+          case "$mode" in
             eval)
               if [ -n "$candidate" ]; then
                 echo "::error::input 'candidate' must be empty in eval mode"
@@ -160,8 +202,24 @@ jobs:
                 echo "::error::input 'candidate' is empty or is not a miner key (OWNER__REPO__PR)"
                 exit 1
               fi ;;
+            improve)
+              if [ -n "$fixture" ] || [ -n "$candidate" ]; then
+                echo "::error::inputs 'fixture' and 'candidate' must be empty in improve mode"
+                exit 1
+              fi
+              # The skill-name pattern the routine re-checks.
+              if ! [[ "$skill" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
+                echo "::error::input 'skill' is empty or is not a skill name"
+                exit 1
+              fi
+              # The holdout is a single fixture name, no path; fire-check
+              # below checks it is one of the skill's fixtures.
+              if [ -n "$holdout" ] && ! [[ "$holdout" =~ ^[A-Za-z0-9._-]{1,128}$ ]]; then
+                echo "::error::input 'holdout' is longer than 128 characters or has characters outside [A-Za-z0-9._-]"
+                exit 1
+              fi ;;
             *)
-              echo "::error::input 'mode' must be eval or scaffold"
+              echo "::error::input 'mode' must be eval, scaffold or improve"
               exit 1 ;;
           esac
 
@@ -191,6 +249,21 @@ jobs:
             fi
           fi
 
+          if [ "$mode" = improve ]; then
+            # The loop's own resolution, read-only and offline: the nested
+            # evals/<skill>/<name> fixtures must all name this skill and
+            # one registry, harness/registries.yml must map it to
+            # adam-agentskills (the one registry the routine checks out),
+            # there must be at least the loop's MIN_FIXTURES, and a holdout
+            # must be one of them. Only the registry-side SKILL.md lookup,
+            # which needs the registry checkout, is left to the routine.
+            # Its refusals are fixed text and never echo the input.
+            if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout "$holdout"; then
+              echo "::error::input 'skill' or 'holdout' is refused by the improvement loop's fixture check"
+              exit 1
+            fi
+          fi
+
           run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
           if ! [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$ ]]; then
             echo "::error::generated run id has an unexpected shape"
@@ -201,6 +274,8 @@ jobs:
             echo "mode=${mode}"
             echo "candidate=${candidate}"
             echo "fixture=${fixture}"
+            echo "skill=${skill}"
+            echo "holdout=${holdout}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
@@ -208,6 +283,8 @@ jobs:
           echo "run id: ${run_id}"
           if [ "$mode" = scaffold ]; then
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
+          elif [ "$mode" = improve ]; then
+            echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
           else
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
           fi
@@ -222,6 +299,8 @@ jobs:
           TRIALS: ${{ steps.validate.outputs.trials }}
           MODE: ${{ steps.validate.outputs.mode }}
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
+          SKILL: ${{ steps.validate.outputs.skill }}
+          HOLDOUT: ${{ steps.validate.outputs.holdout }}
         run: |
           set -euo pipefail
           if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
@@ -241,8 +320,15 @@ jobs:
                 --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
                 --arg arms "$ARMS" --argjson trials "$TRIALS" \
                 '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials} | tojson)}')" ;;
+            improve)
+              # Exactly five keys; an empty holdout is null, never "".
+              body="$(jq -n -c \
+                --arg run_id "$RUN_ID" --arg skill "$SKILL" \
+                --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
+                '{text: ({run_id: $run_id, mode: "improve", skill: $skill, trials: $trials,
+                          holdout: (if $holdout == "" then null else $holdout end)} | tojson)}')" ;;
             *)
-              echo "::error::mode must be eval or scaffold"
+              echo "::error::mode must be eval, scaffold or improve"
               exit 1 ;;
           esac
           response="$(mktemp)"
@@ -345,6 +431,20 @@ jobs:
               echo "- Candidate: \`${CANDIDATE}\`"
               echo "- Session: ${session_url}"
               echo "- Branch: \`claude/scaffold-<fixture id>\`, pushed by the routine; its gate opens the draft PR"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$MODE" = improve ]; then
+            {
+              echo "### Eval routine fired (improve mode)"
+              echo
+              echo "- Run id: \`${RUN_ID}\`"
+              echo "- Skill: \`${SKILL}\`, trials: \`${TRIALS}\`"
+              if [ -n "$HOLDOUT" ]; then
+                echo "- Holdout: \`${HOLDOUT}\`"
+              else
+                echo "- Holdout: none"
+              fi
+              echo "- Session: ${session_url}"
+              echo "- Results branch: \`claude/eval-improve-${RUN_ID}\`, pushed only on an accepted candidate; routine-improve-gate.yml validates it and opens the draft PR"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
