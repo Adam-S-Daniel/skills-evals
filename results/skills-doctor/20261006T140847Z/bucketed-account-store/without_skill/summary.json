@@ -1,0 +1,104 @@
+{
+  "skill": "skills-doctor",
+  "arm": "without_skill",
+  "timestamp": "20261006T140847Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1283418,
+    "num_turns": 16,
+    "duration_ms": 59720,
+    "usage": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 12676,
+      "cache_read_input_tokens": 207949,
+      "output_tokens": 5503,
+      "output_tokens_details": {
+        "thinking_tokens": 2587
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 12676
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 402,
+          "cache_read_input_tokens": 30241,
+          "cache_creation_input_tokens": 2455,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 2455,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "findings-written",
+      "passed": true,
+      "detail": "1 file(s) matched ['FINDINGS.md']"
+    },
+    {
+      "id": "the-account-store-was-read-not-called-empty",
+      "passed": false,
+      "detail": "FINDINGS.md lacks /00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/"
+    },
+    {
+      "id": "the-duplicated-skill-is-named-with-its-two-sources",
+      "passed": true,
+      "detail": "FINDINGS.md matches"
+    },
+    {
+      "id": "the-missing-section-is-identified",
+      "passed": true,
+      "detail": "FINDINGS.md matches"
+    },
+    {
+      "id": "nothing-in-the-capture-was-repaired",
+      "passed": true,
+      "detail": "unchanged (registry/plugins/adam/skills/writing-adrs/SKILL.md, session/skills.lock, session/skills/.skills-bootstrap-installed.json, session/skills/adam-writing-style/SKILL.md, session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/manifest.json, session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/writing-adrs/SKILL.md, session/skills/writing-adrs/SKILL.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "root-cause",
+        "score": 10,
+        "rationale": "FINDINGS.md correctly identifies that the account-synced store is bucketed one directory below where it was listed and holds a different, older `writing-adrs` custom copy whose SKILL.md drops 'Alternatives considered', and does not blame the registry copy, lock, or hook."
+      },
+      {
+        "name": "which-copy-the-model-reads",
+        "score": 4,
+        "rationale": "It asserts flatly that 'the session resolves the name to the synced custom copy' as though disk proved the winner, rather than being honest that nothing on disk or in any log records which copy the model actually read, though it does avoid naming the merely-expected copy and partly leans on corroborating behavioral contrast."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "It diagnosed and stopped, changing no captured files ('No other files were changed'), and only wrote its own FINDINGS.md without editing, re-uploading, or claiming any repair."
+      }
+    ],
+    "overall": 8.2
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.291 (Claude Code)"
+  },
+  "models_used": [
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-4-8"
+  ],
+  "fixture": "bucketed-account-store",
+  "n": 1
+}
