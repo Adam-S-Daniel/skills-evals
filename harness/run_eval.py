@@ -60,6 +60,7 @@ from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
+import answer_leak  # noqa: E402
 
 
 FIXTURE_FILE = "fixture.yaml"
@@ -3239,6 +3240,72 @@ def _mixed_layout_error(directory: Path, nested: list[str]) -> FixtureLayoutErro
         "its own, or remove the nested ones")
 
 
+SUBJECT_ANY = "any"
+
+
+def apply_runtime_subject(fixture: dict, skill: str | None, section: str | None,
+                          arm: str, fixture_path: Path) -> dict:
+    """The fixture with its subject named for this run.
+
+    `subject: any` is a real-work fixture that names no treatment of its own
+    (Adam, 2026-10-06, Q4: "Subject-agnostic"): `--skill NAME` runs it as a
+    skill fixture and `--section ID` as a guidance fixture, so one fixture
+    serves every subject instead of being copied once per subject. With
+    neither, only `--arm objective-only` can run it: scoring a workspace
+    needs no treatment. A fixture that fixes its own subject refuses both
+    flags, so a flag never silently changes what a committed fixture means.
+    The input is never mutated.
+    """
+    for flag, value in (("--skill", skill), ("--section", section)):
+        if value is not None and not value.strip():
+            raise guidance.GuidanceError(f"{flag} must be a nonblank name")
+    subject = fixture.get("subject", "skill")
+    if subject != SUBJECT_ANY:
+        if skill is not None or section is not None:
+            raise guidance.GuidanceError(
+                f"{fixture_path} fixes its subject ({subject!r}); --skill and "
+                f"--section name the subject only for a `subject: "
+                f"{SUBJECT_ANY}` fixture")
+        return fixture
+    if "skill" in fixture or "section" in fixture:
+        raise guidance.GuidanceError(
+            f"{fixture_path} is `subject: {SUBJECT_ANY}`, so it names no "
+            "`skill:` or `section:`; the run names one with --skill or --section")
+    if skill is not None and section is not None:
+        raise guidance.GuidanceError(
+            "pass one of --skill and --section, not both --skill and --section")
+    if skill is not None:
+        return {**fixture, "subject": "skill", "skill": skill}
+    if section is not None:
+        return {**fixture, "subject": "guidance", "section": section}
+    if arm != "objective-only":
+        raise guidance.GuidanceError(
+            f"{fixture_path} is `subject: {SUBJECT_ANY}` and this run names no "
+            "subject: pass --skill NAME or --section ID, or score it with "
+            "--arm objective-only")
+    return fixture
+
+
+def check_draft(fixture: dict, arm: str, allow_draft: bool, fixture_path: Path) -> None:
+    """`draft: true` (#65's key) marks a fixture no human has reviewed yet.
+
+    objective-only still runs it, which is how a draft proves its checks
+    execute; an agent arm needs `--allow-draft`, which no workflow passes, so
+    a draft is never paid for or published until a person removes the key.
+    """
+    if "draft" not in fixture:
+        return
+    if not isinstance(fixture["draft"], bool):
+        raise guidance.GuidanceError(
+            f"{fixture_path}: `draft:` must be true or false, got {fixture['draft']!r}")
+    if fixture["draft"] and arm != "objective-only" and not allow_draft:
+        raise guidance.GuidanceError(
+            f"{fixture_path} is `draft: true`: a person removes the key after "
+            "reviewing that its task text is the real ask and its checks encode "
+            "it. Score it with --arm objective-only, or pass --allow-draft for a "
+            "local run")
+
+
 def fixture_position(eval_dir: Path) -> Path:
     """`eval_dir` as named: absolute and normalized (`.`, `..`, a trailing
     slash), symlinks NOT followed. The layout rule reads a fixture's name and
@@ -3377,6 +3444,15 @@ def main() -> int:
                         help="when eval_dir is a skill directory holding "
                              "nested fixtures (<name>/fixture.yaml), run only "
                              "this one; without it, every nested fixture runs")
+    parser.add_argument("--skill", default=None, metavar="NAME",
+                        help="the skill a `subject: any` fixture runs under "
+                             "(a subject-agnostic real-work fixture)")
+    parser.add_argument("--section", default=None, metavar="ID",
+                        help="the guidance section a `subject: any` fixture "
+                             "runs under")
+    parser.add_argument("--allow-draft", action="store_true",
+                        help="run an agent arm of a `draft: true` fixture "
+                             "(local review only; no workflow passes it)")
     parser.add_argument("--trials", type=int, default=1,
                         help="trials per arm, each a fresh workspace, a fresh "
                              "agent call and its own judge call "
@@ -3458,6 +3534,12 @@ def main() -> int:
         fixture = None
         try:
             fixture = load_fixture(eval_dir)
+            agnostic = fixture.get("subject") == SUBJECT_ANY
+            fixture = apply_runtime_subject(fixture, args.skill, args.section,
+                                            args.arm, eval_dir / FIXTURE_FILE)
+            check_draft(fixture, args.arm, args.allow_draft,
+                        eval_dir / FIXTURE_FILE)
+            answer_leak.validate_fixture(fixture, eval_dir / FIXTURE_FILE)
             validate_mapping_keys(fixture, eval_dir / FIXTURE_FILE)
             validate_timeouts(fixture, eval_dir / FIXTURE_FILE)
             validate_followups(fixture, eval_dir / FIXTURE_FILE)
@@ -3519,9 +3601,23 @@ def main() -> int:
                 # the rc-2 configuration contract instead of a traceback.
                 print(f"configuration error: {exc}")
                 return 2
+        if subject == SUBJECT_ANY:
+            # Only objective-only reaches here (apply_runtime_subject refused
+            # every other arm): no skill, no results path, no judge. A
+            # subject-agnostic fixture is named after its own directory.
+            try:
+                name = fixture_position(eval_dir).name
+                _validate_fixture_name(name)
+            except FixtureLayoutError as exc:
+                print(f"fixture configuration error: {exc}")
+                return 2
+            prepared.append({"fixture": fixture, "seed": eval_dir / SEED_DIR,
+                             "name": name})
+            continue
         if subject != "skill":
             print(f"{eval_dir / FIXTURE_FILE} has unknown subject "
-                  f"{subject!r} — expected 'skill' or 'guidance'")
+                  f"{subject!r} — expected 'skill', 'guidance' or "
+                  f"'{SUBJECT_ANY}'")
             return 2
         if args.arm not in SKILL_ARMS:
             print(f"--arm {args.arm!r} is not valid for a skill fixture "
@@ -3571,7 +3667,13 @@ def main() -> int:
         # Flat or nested (#66), decided by where the fixture sits and before any
         # results path is built: every path below hangs off this name.
         try:
-            name = nested_fixture_name(eval_dir, fixture["skill"])
+            if agnostic:
+                # Named after its own directory whatever --skill says, so two
+                # real-work fixtures run under one skill never share results.
+                name = fixture_position(eval_dir).name
+                _validate_fixture_name(name)
+            else:
+                name = nested_fixture_name(eval_dir, fixture["skill"])
         except FixtureLayoutError as exc:
             print(f"fixture configuration error: {exc}")
             return 2
@@ -3703,18 +3805,21 @@ def main() -> int:
         except objective.ScorerUnavailableError as exc:
             # Not a fixture error and not a failed check: exit 2, named.
             print(f"scorer_unavailable: {exc}")
-            _write_pre_run_error(args, fixture, "scorer_unavailable", str(exc),
-                                 fixture_name=prepared[0]["name"])
+            if "skill" in fixture:  # a `subject: any` run has no results path
+                _write_pre_run_error(args, fixture, "scorer_unavailable", str(exc),
+                                     fixture_name=prepared[0]["name"])
             return 2
         except objective.FixtureError as exc:
             # `SeedTooLarge` is a `FixtureError`, so one clause covers both.
             print(f"invalid_fixture: {exc}")
-            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc),
-                                 fixture_name=prepared[0]["name"])
+            if "skill" in fixture:  # a `subject: any` run has no results path
+                _write_pre_run_error(args, fixture, "invalid_fixture", str(exc),
+                                     fixture_name=prepared[0]["name"])
             return 2
 
-        print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
-                          "checks": results}, indent=2))
+        head = ({"skill": fixture["skill"]} if "skill" in fixture
+                else {"subject": SUBJECT_ANY, "fixture": prepared[0]["name"]})
+        print(json.dumps({**head, "arm": args.arm, "checks": results}, indent=2))
         return 0 if all(r["passed"] for r in results) else 1
 
     timestamp = args.run_timestamp
