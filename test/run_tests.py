@@ -4638,7 +4638,8 @@ class CiDispatchTests(unittest.TestCase):
     SALIENT = [".github/workflows/ci.yml", ".github/workflows/eval.yml",
                ".github/workflows/routine-eval-fire.yml",
                ".github/workflows/routine-eval-ingest.yml",
-               ".github/workflows/routine-eval-results-pushed.yml", "evals/**",
+               ".github/workflows/routine-eval-results-pushed.yml",
+               ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md"]
 

@@ -1,0 +1,93 @@
+# Cut a cms-platform release.
+#
+# Releases are the platform's down-sync trigger: platform-bump.yml reads
+# `gh release view` (the latest RELEASE, not a bare tag) to bump each site's
+# platform_ref + platform.lock, and Dependabot bumps the `uses:@<tag>` pins +
+# the theme gem. Cutting was previously a manual `git tag` / UI step; this
+# makes it a one-click workflow_dispatch that creates the tag + GitHub Release
+# server-side from the current main HEAD.
+name: Cut release
+run-name: "${{ format('cut {0} — @{1}', inputs.version, github.actor) }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to cut (vX.Y.Z). Tags the dispatched ref + creates a GitHub Release.'
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          TARGET: ${{ github.sha }}
+          GH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Releases are the down-sync trigger: platform-bump fans the LATEST
+          # release out to every consuming site. workflow_dispatch lets the
+          # operator pick any branch in the "Use workflow from" dropdown, and
+          # github.sha then points at THAT ref's HEAD — so without this guard a
+          # feature branch could be tagged + released as "latest" and bumped
+          # into every site. Enforce the header's "from main HEAD" invariant
+          # rather than leaving it a convention.
+          if [ "$GH_REF" != "refs/heads/main" ]; then
+            echo "::error::releases must be cut from main (dispatched ref: ${GH_REF}). Re-run with 'main' selected in the branch dropdown."
+            exit 1
+          fi
+          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must look like vX.Y.Z (got '${VERSION}')"
+            exit 1
+          fi
+          if gh release view "$VERSION" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "::error::release ${VERSION} already exists"
+            exit 1
+          fi
+          gh release create "$VERSION" \
+            --repo "$GH_REPO" \
+            --target "$TARGET" \
+            --title "$VERSION" \
+            --generate-notes
+          echo "::notice::Cut ${VERSION} at ${TARGET}. platform-bump + Dependabot will fan it out to consuming sites."
+
+      # Chained down-sync: dispatch each consumer's platform-bump the moment
+      # the release exists, instead of waiting for its weekly cron (Mondays
+      # 07:00 UTC — up to six days of latency between "decided" and "bump PR
+      # exists"). Reuses the cron's exact entry point (`workflow_dispatch` on
+      # the consumer's platform-bump.yml caller), so consumers need no changes.
+      #
+      # FAIL-OPEN by design: a missing/expired token or a failed dispatch
+      # degrades to exactly the pre-chaining behavior (the cron picks the
+      # release up) — warnings, never a job failure. Fine-grained PATs are
+      # minted per RESOURCE OWNER, so each consumer owner supplies its own
+      # secret: Actions read+write on that one repo, nothing else.
+      - name: Fan out bump dispatches to consumers
+        env:
+          VERSION: ${{ inputs.version }}
+          TOKEN_ADAMDANIEL_AI: ${{ secrets.BUMP_DISPATCH_ADAMDANIEL_AI }}
+          TOKEN_JODIDANIEL_COM: ${{ secrets.BUMP_DISPATCH_JODIDANIEL_COM }}
+        run: |
+          set -euo pipefail
+          dispatch() {
+            repo="$1" token="$2"
+            if [ -z "$token" ]; then
+              echo "::warning::no bump-dispatch token for ${repo} — its weekly platform-bump cron will pick up ${VERSION}."
+              return 0
+            fi
+            if GH_TOKEN="$token" gh workflow run platform-bump.yml -R "$repo"; then
+              echo "::notice::dispatched platform-bump in ${repo} for ${VERSION}."
+            else
+              echo "::warning::platform-bump dispatch failed for ${repo} — its weekly cron will pick up ${VERSION}."
+            fi
+          }
+          dispatch "Adam-S-Daniel/adamdaniel.ai"   "$TOKEN_ADAMDANIEL_AI"
+          dispatch "jodidaniel/jodidaniel.com"     "$TOKEN_JODIDANIEL_COM"

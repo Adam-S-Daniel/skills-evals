@@ -1,0 +1,52 @@
+A stale `platform_ref` INPUT silently breaks a loop, and the pin guard can't see it
+
+## Symptom
+
+jodidaniel.com's `cms-scheduled-publish-loop` has been failing at **`Install Playwright browser + system deps`**:
+
+```
+##[error]Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under
+'/home/runner/work/jodidaniel.com/jodidaniel.com/.cms-platform/.github/actions/...'
+```
+
+Observed: scheduled run 31242320695 (2026-08-08 05:43) and a clean re-dispatch at v0.1.73 (run 31266342355) — so this is **not** transient and **not** the apt/dpkg issue fixed in #216, despite failing at the same step name.
+
+## Root cause
+
+jodidaniel's caller disagrees with itself:
+
+```yaml
+uses: Adam-S-Daniel/cms-platform/.github/workflows/cms-scheduled-publish-loop.yml@v0.1.72
+with:
+  platform_ref: v0.1.59      # <-- the checkout obeys THIS
+```
+
+The reusable's platform checkout uses `ref: ${{ inputs.platform_ref }}`, so it fetched a **v0.1.59** platform tree. The `install-playwright-browsers` composite was introduced in **v0.1.70** (#204), so at v0.1.59 the path genuinely does not exist and the `uses: ./.cms-platform/.github/actions/...` step cannot resolve.
+
+Verified present at v0.1.70 / v0.1.72 / v0.1.73, absent at v0.1.59.
+
+That dates the breakage to v0.1.70's composite conversion, silently, on a scheduled workflow — the invisible-failure class that motivated the scheduled-run-health audit.
+
+## The gap that let it hide
+
+`scripts/check-platform-pin-consistency.js` validates:
+- every `uses: …@<ref>` against `platform.lock`
+- SHA-pinned composite `# vX.Y.Z` comments
+- `Gemfile` / `Gemfile.lock` tags
+
+It does **not** validate the `platform_ref` **input value**, because the workflow-content parity check deliberately masks `with:` VALUES as site-specific. So the single value that decides *which platform tree gets checked out* is the one thing the anti-skew guard doesn't check — and a caller can pass a ref 13 releases stale while every check reports consistent.
+
+## Fix
+
+1. Extend the guard: assert every `platform_ref` input value equals `platform.lock`'s `platform_ref`. It is not a site-specific value — it is the canonical version by definition, and the docs already say so ("`platform_ref` equal to the `@vX.Y.Z` pin on the `uses:` line").
+2. Correct jodidaniel's `cms-scheduled-publish-loop.yml`.
+3. Add a self-test fixture: a caller whose `uses:@ref` is current but whose `platform_ref` input is stale must fail the guard.
+4. Re-dispatch the loop and confirm green.
+
+## Needs verification, not asserted
+
+A crude grep also flagged possible `platform_ref` skew in both consumers' `e2e-tests.yml` (adamdaniel `platform_ref: v0.1.71`, jodidaniel `v0.1.72`, against `platform.lock` v0.1.73). The grep failed to extract those files' `uses:@` pin, so those hits may be artifacts. Check properly before changing anything — but if real, the bump workflow is not updating `platform_ref` inputs in lockstep, which would make item 1 more urgent, not less.
+
+## Also noted, out of scope
+
+`visual-regression.yml`'s `generate` job declares no `timeout-minutes`, so a hung run can burn up to GitHub's 360-minute default.
