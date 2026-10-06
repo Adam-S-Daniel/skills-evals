@@ -310,12 +310,26 @@ class FireStepTests(unittest.TestCase):
             **extra})
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_cse_id_with_the_documented_url_relation_is_accepted(self):
+        # Observed (re-fire run 37521038032, shape line only): the id is
+        # cse_<24 chars> and the URL is not code/session_<X>. The docs
+        # relation is url == "https://claude.ai/code/" + id.
+        body = json.dumps({
+            "type": "routine_fire",
+            "claude_code_session_id": "cse_01TestOnlyAbc",
+            "claude_code_session_url": "https://claude.ai/code/cse_01TestOnlyAbc"})
+        proc = self.run_step("200", body)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        out = proc.stdout + proc.stderr
+        self.assertNotIn("01TestOnlyAbc", out)
+        self.assertIn("- Session: https://claude.ai/code/cse_01TestOnlyAbc",
+                      self.summary.read_text())
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_a_cse_id_with_a_session_url_is_accepted(self):
-        # The first real fire (run 37518720233) was refused with its body
-        # unseen; list_runs shows that run as cse_<X> with a URL on
-        # session_<X>, so the fire response is inferred to match. The docs
-        # example shows session_<X> for both; the fix accepts either id
-        # prefix over the same <X>.
+        # list_runs shows the first fire (run 37518720233) as cse_<X> with a
+        # URL on session_<X>; the fire response itself was never seen, so
+        # this relation is accepted as a possibility, not an observation.
         body = json.dumps({
             "type": "routine_fire",
             "claude_code_session_id": "cse_01TestOnlyAbc",
@@ -364,9 +378,18 @@ class FireStepTests(unittest.TestCase):
                 "type": "routine_fire",
                 "claude_code_session_id": "cse_BODYSENTINEL",
                 "claude_code_session_url": "https://claude.ai/code/session_Other"})),
-            "cse_url_cse_prefix": ("200", json.dumps({
+            "cse_url_other_host": ("200", json.dumps({
                 "type": "routine_fire",
                 "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://example.com/code/cse_BODYSENTINEL"})),
+            "cse_url_trailing_text": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "cse_BODYSENTINEL",
+                "claude_code_session_url": "https://claude.ai/code/cse_BODYSENTINEL/x"})),
+            # A session_ id has no cse_ spelling: only code/<id> fits.
+            "session_id_cse_url": ("200", json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "session_BODYSENTINEL",
                 "claude_code_session_url": "https://claude.ai/code/cse_BODYSENTINEL"})),
             "other_prefix": ("200", json.dumps({
                 "type": "routine_fire",
@@ -406,17 +429,33 @@ class FireStepTests(unittest.TestCase):
                 "claude_code_session_url": ok_url}),
                 ["type_is_routine_fire=missing", "id_type=string",
                  "id_length=9", "id_prefix=session_",
-                 "url_starts_with_claude_code=yes", "top_level_keys=2",
+                 "url_starts_with_claude_code=yes",
+                 "url_equals_code_plus_id=yes",
+                 "url_equals_code_session_suffix=yes", "top_level_keys=2",
                  "has_wrapper_key=no"], []),
             "wrong_type": (json.dumps({
                 "type": "BODY-SENTINEL", "claude_code_session_id": "session_X",
                 "claude_code_session_url": ok_url}),
-                ["type_is_routine_fire=no"], []),
+                ["type_is_routine_fire=no", "url_equals_code_plus_id=yes",
+                 "url_equals_code_session_suffix=yes"], []),
+            "wrong_type_documented_url": (json.dumps({
+                "type": "BODY-SENTINEL", "claude_code_session_id": "cse_X",
+                "claude_code_session_url": "https://claude.ai/code/cse_X"}),
+                ["type_is_routine_fire=no", "id_prefix=cse_",
+                 "url_equals_code_plus_id=yes",
+                 "url_equals_code_session_suffix=no"], []),
+            "cse_url_other_key": (json.dumps({
+                "type": "routine_fire", "claude_code_session_id": "cse_X",
+                "claude_code_session_url": "https://claude.ai/code/cse_BODY"}),
+                ["url_equals_code_plus_id=no",
+                 "url_equals_code_session_suffix=no"], ["cse_BODY"]),
             "cse_with_bad_url": (json.dumps({
                 "type": "routine_fire", "claude_code_session_id": "cse_01Abc",
                 "claude_code_session_url": "https://example.com/BODY-SENTINEL"}),
                 ["type_is_routine_fire=yes", "id_type=string", "id_length=9",
-                 "id_prefix=cse_", "url_starts_with_claude_code=no"], []),
+                 "id_prefix=cse_", "url_starts_with_claude_code=no",
+                 "url_equals_code_plus_id=no",
+                 "url_equals_code_session_suffix=no"], []),
             "numeric_id": (json.dumps({
                 "type": "routine_fire", "claude_code_session_id": 12345,
                 "claude_code_session_url": ok_url}),
