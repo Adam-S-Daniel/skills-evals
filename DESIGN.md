@@ -181,8 +181,15 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
 - **`issue_before_fix:`** (optional) — a fixture-relative path to a regular
   file outside `seed/`, at most 256 KiB, holding the issue's text as it stood
   before the pull request's first commit. A run of that text is not an
-  answer-leak hit. Validated at load (exit 2): an absolute path, `..`, a
-  symlink, a directory, a missing file or a file under `seed/` is refused.
+  answer-leak hit. It needs three keys beside it: `issue_created_at`,
+  `issue_last_edited_at` (null when the snapshot is the issue as first
+  written) and `first_commit_at`, each a quoted ISO-8601 UTC time such as
+  `"2026-10-05T15:59:07Z"`. Validated at load (exit 2): an absolute path,
+  `..`, a symlink, a directory, a missing file, a file under `seed/`, a file
+  over 256 KiB or one that is not UTF-8; a missing, unquoted, non-UTC or
+  unparseable time; an issue created after the first commit; an edit time
+  before creation or after the first commit; and any of the three keys
+  without the snapshot.
 - **`deps:`** (optional, skill subject only) — a list of 1 to 4
   `{manager: npm, dir: <workspace-relative directory>}` entries (`dir`
   defaults to `.`), installed during setup, before `setup:`, from the
@@ -238,21 +245,31 @@ fixture has no hits. Whether the scaffolder treats a hit as a
 warning for review or a rejection stays open; the miner records it as a
 warning (Q3 below).
 
-**How "pre-existing" is established.** A fixture's `issue_before_fix:` names
-a file in the fixture directory (outside `seed/`) holding the issue's title
-and body as they stood before the pull request's first commit. Whoever
-writes the fixture reads three things from GitHub: the issue's `createdAt`
-and its `userContentEdits` (GraphQL), its `RENAMED_TITLE_EVENT` timeline
-items, and the timestamp of the pull request's first commit. An issue
-created before that commit and never edited or renamed has its current text
-as the snapshot. An edited issue's snapshot is the last revision
-`userContentEdits` dates before the first commit. The fixture's comments say
-which case applies and give the three timestamps. **Limits:** the snapshot is
-recorded by hand at authoring time, and the lint trusts it; it is not
-re-fetched. A first commit's date is the author's claim, so a rebased or
-backdated branch can move it. Comments on the issue are not part of the
-snapshot, so text first written in a comment counts as new. And an issue
-written after work began, quoting code already drafted on a branch, is
+**What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
+file in the fixture directory (outside `seed/`) holding the issue's title and
+body as they stood before the pull request's first commit, and three keys
+record why that holds, read from GitHub when the fixture is written:
+
+- `issue_created_at`: the issue's `createdAt`;
+- `issue_last_edited_at`: the time of the revision the snapshot holds. It is
+  null for an issue never edited (`lastEditedAt` null, no
+  `userContentEdits`). For an issue edited before the fix began, it is that
+  last edit's time. For one edited only after, it is null with the original
+  text, or the last earlier revision's time with that revision's text (a
+  `userContentEdits` entry);
+- `first_commit_at`: the `committedDate` of the pull request's first commit.
+
+The harness checks the order at load: created no later than the first
+commit, and the snapshot's edit, when there is one, between the two. Title
+renames (`RENAMED_TITLE_EVENT`) are read the same way, and the snapshot
+carries the title as it stood then.
+
+**Limits.** The times are hand-recorded and trusted at load; nothing
+re-fetches them yet, so a test that replays the GitHub reads could confirm
+them later. A commit's date is set by whoever made the commit, so a rebased
+or backdated branch can move it. Comments on the issue are not part of the
+snapshot, so text first written in a comment counts as new. An issue written
+after work began on an unpushed branch, quoting code already drafted, is
 exempt even though it may describe the answer.
 
 ### Ordered invocation objective check

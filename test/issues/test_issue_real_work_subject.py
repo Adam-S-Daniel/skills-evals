@@ -34,6 +34,13 @@ HIDDEN_TEST = ("import unittest\n\nimport calc\n\n\n"
                "class CalcTests(unittest.TestCase):\n"
                "    def test_add(self):\n        self.assertEqual(calc.add(2, 3), 5)\n")
 ADD = "test_calc.CalcTests.test_add"
+# `write_fixture(key=DROP)` leaves a default key out of the fixture.
+DROP = object()
+# A snapshot's recorded provenance: cms-platform#677's real times, as YAML
+# strings (`issue_last_edited_at` null: never edited).
+PROVENANCE = {"issue_created_at": "2026-10-05T15:59:07Z",
+              "issue_last_edited_at": None,
+              "first_commit_at": "2026-10-05T17:50:08Z"}
 
 
 class _Fixture(unittest.TestCase):
@@ -61,7 +68,7 @@ class _Fixture(unittest.TestCase):
                        "argv": ["python3", "-m", "unittest"],
                        "fail_to_pass": [ADD]}]}
         fixture.update(changes)
-        fixture = {key: value for key, value in fixture.items() if value is not None}
+        fixture = {key: value for key, value in fixture.items() if value is not DROP}
         (self.fixture_dir / "fixture.yaml").write_text(
             yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
 
@@ -145,7 +152,7 @@ class SubjectAtRunTimeTests(_Fixture):
                          "guidance/security")
         self.assertEqual(run_eval.guidance_results_key("security", "toy-1"),
                          "guidance/security/toy-1")
-        self.write_fixture(draft=None)
+        self.write_fixture(draft=DROP)
         seen = []
         with mock.patch.object(run_eval, "_run_guidance",
                                side_effect=lambda args, fixture, name=None:
@@ -154,7 +161,7 @@ class SubjectAtRunTimeTests(_Fixture):
         self.assertEqual(code, 0, out)
         self.assertEqual(seen, [("security", "toy-1")])
         # A fixture that fixes its own guidance subject keeps today's path.
-        self.write_fixture(subject="guidance", section="security", draft=None)
+        self.write_fixture(subject="guidance", section="security", draft=DROP)
         seen.clear()
         with mock.patch.object(run_eval, "_run_guidance",
                                side_effect=lambda args, fixture, name=None:
@@ -163,13 +170,13 @@ class SubjectAtRunTimeTests(_Fixture):
         self.assertEqual(seen, [("security", None)])
 
     def test_an_agent_arm_without_a_subject_is_refused_before_any_arm(self):
-        self.write_fixture(draft=None)
+        self.write_fixture(draft=DROP)
         code, out = self.main("--arm", "with_skill")
         self.assertEqual(code, 2, out)
         self.assertIn("names no subject", out)
 
     def test_a_fixed_subject_fixture_refuses_the_flag(self):
-        self.write_fixture(subject=None, skill="toy-skill")
+        self.write_fixture(subject=DROP, skill="toy-skill")
         code, out = self.main("--arm", "objective-only", "--skill", "other")
         self.assertEqual(code, 2, out)
         self.assertIn("fixes its subject", out)
@@ -261,7 +268,7 @@ class AnswerLeakTests(_Fixture):
         directory = self.fixture_dir
         (directory / "issue-before-fix.txt").write_text("Bug text\n", encoding="utf-8")
         path = directory / "fixture.yaml"
-        fixture = {"issue_before_fix": "issue-before-fix.txt"}
+        fixture = {"issue_before_fix": "issue-before-fix.txt", **PROVENANCE}
         answer_leak.validate_fixture(fixture, path)
         self.assertEqual(answer_leak.preexisting_text(fixture, directory), "Bug text\n")
         self.assertEqual(answer_leak.preexisting_text({}, directory), "")
@@ -270,10 +277,76 @@ class AnswerLeakTests(_Fixture):
         for bad in ("missing.txt", "../outside.txt", "/etc/hostname", "seed/issue.txt",
                     "link.txt", "checker", "", 3):
             with self.subTest(bad=bad), self.assertRaises(guidance.GuidanceError):
-                answer_leak.validate_fixture({"issue_before_fix": bad}, path)
+                answer_leak.validate_fixture({"issue_before_fix": bad, **PROVENANCE}, path)
+
+    def test_the_snapshot_size_cap_is_256_kib(self):
+        path = self.fixture_dir / "fixture.yaml"
+        snapshot = self.fixture_dir / "issue-before-fix.txt"
+        fixture = {"issue_before_fix": "issue-before-fix.txt", **PROVENANCE}
+        snapshot.write_bytes(b"a" * (256 * 1024))
+        answer_leak.validate_fixture(fixture, path)
+        self.write_fixture(issue_before_fix="issue-before-fix.txt", **PROVENANCE)
+        code, out = self.main("--arm", "objective-only")
+        self.assertEqual(code, 1, out)  # accepted at load, then scored red
+        snapshot.write_bytes(b"a" * (256 * 1024 + 1))
+        with self.assertRaisesRegex(guidance.GuidanceError, "262144 bytes"):
+            answer_leak.validate_fixture(fixture, path)
+        self.write_fixture(issue_before_fix="issue-before-fix.txt", **PROVENANCE)
+        code, out = self.main("--arm", "objective-only")
+        self.assertEqual(code, 2, out)
+        self.assertIn("issue_before_fix", out)
+
+    def test_a_snapshot_that_is_not_utf8_is_refused_at_load(self):
+        (self.fixture_dir / "issue-before-fix.txt").write_bytes(b"Bug \xff text\n")
+        with self.assertRaisesRegex(guidance.GuidanceError, "UTF-8"):
+            answer_leak.validate_fixture(
+                {"issue_before_fix": "issue-before-fix.txt", **PROVENANCE},
+                self.fixture_dir / "fixture.yaml")
+        self.write_fixture(issue_before_fix="issue-before-fix.txt", **PROVENANCE)
+        code, out = self.main("--arm", "objective-only")
+        self.assertEqual(code, 2, out)
+
+    def test_the_snapshot_provenance_is_checked_at_load(self):
+        # "Pre-existing" rests on three recorded times: the issue existed,
+        # and was last edited (or never), no later than the first commit.
+        (self.fixture_dir / "issue-before-fix.txt").write_text("Bug\n", encoding="utf-8")
+        path = self.fixture_dir / "fixture.yaml"
+        base = {"issue_before_fix": "issue-before-fix.txt"}
+        good = [
+            PROVENANCE,
+            {**PROVENANCE, "issue_last_edited_at": "2026-10-05T16:30:00Z"},
+            {**PROVENANCE, "issue_last_edited_at": "2026-10-05T17:50:08Z"},
+            {**PROVENANCE, "issue_created_at": "2026-10-05T17:50:08Z"},
+        ]
+        for provenance in good:
+            with self.subTest(good=provenance):
+                answer_leak.validate_fixture({**base, **provenance}, path)
+        missing = [{k: v for k, v in PROVENANCE.items() if k != key} for key in PROVENANCE]
+        bad = missing + [
+            {**PROVENANCE, "issue_created_at": "2026-10-05"},
+            {**PROVENANCE, "issue_created_at": "2026-10-05T15:59:07+02:00"},
+            {**PROVENANCE, "issue_created_at": "yesterday"},
+            {**PROVENANCE, "issue_created_at": None},
+            {**PROVENANCE, "first_commit_at": 1759680608},
+            {**PROVENANCE, "issue_created_at": "2026-10-05T18:00:00Z"},
+            {**PROVENANCE, "issue_last_edited_at": "2026-10-05T17:50:09Z"},
+            {**PROVENANCE, "issue_last_edited_at": "2026-10-05T15:00:00Z"},
+            {**PROVENANCE, "issue_last_edited_at": ""},
+        ]
+        for provenance in bad:
+            with self.subTest(bad=provenance), self.assertRaises(guidance.GuidanceError):
+                answer_leak.validate_fixture({**base, **provenance}, path)
+        # The keys mean nothing without a snapshot, so they are refused alone.
+        with self.assertRaisesRegex(guidance.GuidanceError, "issue_before_fix"):
+            answer_leak.validate_fixture(dict(PROVENANCE), path)
+        self.write_fixture(issue_before_fix="issue-before-fix.txt",
+                           **{**PROVENANCE, "issue_created_at": "2026-10-06T00:00:00Z"})
+        code, out = self.main("--arm", "objective-only")
+        self.assertEqual(code, 2, out)
+        self.assertIn("issue_created_at", out)
 
     def test_a_bad_issue_snapshot_is_refused_by_run_eval_before_scoring(self):
-        self.write_fixture(issue_before_fix="missing.txt")
+        self.write_fixture(issue_before_fix="missing.txt", **PROVENANCE)
         code, out = self.main("--arm", "objective-only")
         self.assertEqual(code, 2, out)
         self.assertIn("issue_before_fix", out)

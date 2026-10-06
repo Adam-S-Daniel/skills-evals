@@ -27,6 +27,7 @@ the fix began. How a snapshot is established, and its limits, is in DESIGN.md.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import guidance
@@ -35,6 +36,12 @@ RUN_WORDS = 4
 KEY = "interface_strings"
 SNAPSHOT_KEY = "issue_before_fix"
 MAX_SNAPSHOT_BYTES = 256 * 1024
+# What "pre-existing" rests on, recorded beside the snapshot from GitHub.
+CREATED_KEY = "issue_created_at"
+EDITED_KEY = "issue_last_edited_at"
+FIRST_COMMIT_KEY = "first_commit_at"
+PROVENANCE_KEYS = (CREATED_KEY, EDITED_KEY, FIRST_COMMIT_KEY)
+_TIME_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 MAX_STRINGS = 32
 MAX_STRING_CHARS = 200
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -93,7 +100,55 @@ def _snapshot_path(fixture: dict, fixture_dir: Path) -> Path | None:
         raise guidance.GuidanceError(problem)
     if resolved.stat().st_size > MAX_SNAPSHOT_BYTES:
         raise guidance.GuidanceError(f"`{SNAPSHOT_KEY}:` is over {MAX_SNAPSHOT_BYTES} bytes")
+    try:
+        resolved.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        raise guidance.GuidanceError(f"`{SNAPSHOT_KEY}:` is not UTF-8 text") from None
     return resolved
+
+
+def _utc_time(fixture: dict, key: str, nullable: bool = False) -> datetime | None:
+    if key not in fixture:
+        raise guidance.GuidanceError(
+            f"`{SNAPSHOT_KEY}:` needs `{key}:` beside it: what the snapshot's "
+            "\"before the fix\" rests on")
+    value = fixture[key]
+    if value is None and nullable:
+        return None
+    if not isinstance(value, str) or not _TIME_RE.fullmatch(value):
+        raise guidance.GuidanceError(
+            f"`{key}:` must be a quoted ISO-8601 UTC time like "
+            f"\"2026-10-05T15:59:07Z\"" + (", or null" if nullable else "")
+            + f", got {value!r}")
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise guidance.GuidanceError(f"`{key}:` is not a real time: {value!r}") from None
+
+
+def _check_provenance(fixture: dict) -> None:
+    """The snapshot predates the fix: the issue was created, and last edited
+    (or never), no later than the pull request's first commit."""
+    if SNAPSHOT_KEY not in fixture:
+        present = [key for key in PROVENANCE_KEYS if key in fixture]
+        if present:
+            raise guidance.GuidanceError(
+                f"{', '.join(f'`{k}:`' for k in present)} describe an "
+                f"`{SNAPSHOT_KEY}:` snapshot, and the fixture has none")
+        return
+    created = _utc_time(fixture, CREATED_KEY)
+    edited = _utc_time(fixture, EDITED_KEY, nullable=True)
+    first = _utc_time(fixture, FIRST_COMMIT_KEY)
+    if created > first:
+        raise guidance.GuidanceError(
+            f"`{CREATED_KEY}:` is after `{FIRST_COMMIT_KEY}:`: the issue did not "
+            "exist before the fix began, so none of its text is pre-existing")
+    if edited is not None and not created <= edited <= first:
+        raise guidance.GuidanceError(
+            f"`{EDITED_KEY}:` must fall between `{CREATED_KEY}:` and "
+            f"`{FIRST_COMMIT_KEY}:`: an issue edited after the fix began needs "
+            "the revision from before it as its snapshot, recorded with that "
+            "revision's time")
 
 
 def preexisting_text(fixture: dict, fixture_dir) -> str:
@@ -106,6 +161,7 @@ def validate_fixture(fixture: dict, fixture_path) -> None:
     """`interface_strings:` is absent, or a list of 1-32 nonblank strings;
     `issue_before_fix:` is absent, or a file in the fixture outside seed/."""
     _snapshot_path(fixture, Path(fixture_path).parent)
+    _check_provenance(fixture)
     if KEY not in fixture:
         return
     value = fixture[KEY]
