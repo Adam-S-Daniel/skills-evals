@@ -457,9 +457,12 @@ def resolve_commit(repo: str, ref: str) -> str:
     return sha
 
 
-def added_files(repo: str, base: str, tip: str) -> list[tuple[str, str, str]]:
+def added_files(repo: str, base: str, tip: str,
+                modes: tuple[str, ...] = ("100644",)) -> list[tuple[str, str, str]]:
     """(path, mode, blob id) of every file `tip` changes against `base`,
-    rejecting any change that is not the addition of a regular file."""
+    rejecting any change that is not the addition of a regular file whose
+    mode is one of `modes` (results: non-executable only; a scaffolded seed
+    also keeps git's executable bit, scripts/scaffold_real_work.py)."""
     raw = git(repo, "diff", "--raw", "-z", "--no-abbrev", "--no-renames",
               "--no-ext-diff", "--no-textconv", base, tip)
     fields = raw.split(b"\0")
@@ -477,8 +480,8 @@ def added_files(repo: str, base: str, tip: str) -> list[tuple[str, str, str]]:
         if status != "A":
             raise Rejected(f"{name!r}: modified or deleted (status {status}); "
                            "only additions are ingestible")
-        if new_mode != "100644":
-            raise Rejected(f"{name!r}: mode {new_mode} is not a regular file")
+        if new_mode not in modes:
+            raise Rejected(f"{name!r}: mode {new_mode} is not an accepted regular file")
         if not SHA_RE.fullmatch(new_oid):
             raise Rejected(f"{name!r}: unexpected blob id")
         out.append((name, new_mode, new_oid))
