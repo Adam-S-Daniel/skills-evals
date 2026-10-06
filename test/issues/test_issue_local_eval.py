@@ -1053,6 +1053,49 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(seen.read_text(encoding="utf-8").split(), ["True"])
 
+    def test_every_trial_launches_run_eval_under_the_recorded_mode(self):
+        # The arms' CLI permission mode (#71) must reach each trial's
+        # run_eval.py argv and be recorded in manifest.json, for the default
+        # and for an explicit mode. A spy stands in for harness/run_eval.py,
+        # logs its argv, then hands over to the real one.
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        argv_log = self.root / "run-eval-argv.jsonl"
+        spy = self.root / "run_eval_argv_spy.py"
+        spy.write_text(
+            "import json, os, sys\n"
+            f"open({str(argv_log)!r}, 'a').write(\n"
+            "    json.dumps(sys.argv[1:]) + '\\n')\n"
+            f"os.execv(sys.executable, [sys.executable, {str(local_eval.RUN_EVAL)!r},"
+            " *sys.argv[1:]])\n", encoding="utf-8")
+        env = self._env(self._dispatcher())
+        for flag, mode in ((None, "auto"),
+                           ("bypassPermissions", "bypassPermissions")):
+            with self.subTest(mode=mode):
+                argv_log.unlink(missing_ok=True)
+                out = self.root / f"out-{mode}"
+                extra = [] if flag is None else ["--permission-mode", flag]
+                with mock.patch.dict(os.environ, env, clear=True), \
+                        mock.patch.object(local_eval, "RUN_EVAL", spy), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    code = local_eval.main(
+                        [str(EVAL_DIR), "--results-dir", str(out), "--trials", "2",
+                         "--no-judge", "--arm", "without_skill", *extra])
+                self.assertEqual(code, 0)
+                launches = [json.loads(line) for line in
+                            argv_log.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual(len(launches), 2, launches)
+                for argv in launches:
+                    positions = [i for i, a in enumerate(argv)
+                                 if a == "--permission-mode"]
+                    self.assertEqual(len(positions), 1, argv)
+                    self.assertEqual(argv[positions[0] + 1], mode, argv)
+                manifest = json.loads(
+                    (out / "manifest.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["harness"]["permission_mode"], mode)
+
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 
     def _assert_clean(self, proc, trials, fixtures):
