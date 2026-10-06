@@ -1,0 +1,127 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261006T192519Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.3829146,
+    "num_turns": 13,
+    "duration_ms": 91678,
+    "usage": {
+      "input_tokens": 24,
+      "cache_creation_input_tokens": 52799,
+      "cache_read_input_tokens": 516978,
+      "output_tokens": 6731,
+      "output_tokens_details": {
+        "thinking_tokens": 1676
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 52799,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 337,
+          "cache_read_input_tokens": 52193,
+          "cache_creation_input_tokens": 606,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 606
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "readme-bootstrapped-in-skill-shape",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0001",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "adr-0001-sections-in-order",
+      "passed": true,
+      "detail": "docs/decisions/0001-cap-retries-with-exponential-backoff.md matches"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": true,
+      "detail": "scripts/retry.sh matches"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/README.md)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-adr-file",
+      "passed": true,
+      "detail": "1 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (CHANGELOG.md, README.md)"
+    },
+    {
+      "id": "agents-md-gained-the-pointer",
+      "passed": true,
+      "detail": "AGENTS.md matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 10,
+        "rationale": "Context describes the outage/problem space without naming the decision, Decision matches retry.sh's implementation (5 attempts, 1/2/4/8/16s backoff, centralized), and it rejects both header-named alternatives (retry forever, fail fast) plus a third, with honest positive and negative consequences."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 10,
+        "rationale": "Both the ADR title and index row read \"Cap upstream retries with exponential backoff, centralized in scripts/retry.sh\" \u2014 an imperative verb + object, not a noun phrase or past-tense narration."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "Landed the folder and single ADR with the sanctioned AGENTS.md pointer and no second CHANGELOG ADR; the retry.sh comment edit is a tightly-related signpost to the new ADR rather than an unrelated change, a defensible but non-required extra."
+      }
+    ],
+    "overall": 9.8
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.292 (Claude Code)",
+    "permission_mode": "auto"
+  },
+  "models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-8"
+  ],
+  "fixture": "bootstrap",
+  "n": 1
+}

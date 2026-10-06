@@ -1,0 +1,127 @@
+{
+  "skill": "writing-adrs",
+  "arm": "without_skill",
+  "timestamp": "20261006T192519Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.09996059999999998,
+    "num_turns": 5,
+    "duration_ms": 35115,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 8812,
+      "cache_read_input_tokens": 200113,
+      "output_tokens": 2370,
+      "output_tokens_details": {
+        "thinking_tokens": 1509
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 8812,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 119,
+          "cache_read_input_tokens": 42755,
+          "cache_creation_input_tokens": 470,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 470
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "readme-bootstrapped-in-skill-shape",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /(?im)^## When to write one\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Naming and numbering\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Status values\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Index\\s*$/; no file matched ['docs/decisions/README.md'] lacks /NNNN-kebab-title\\.md/"
+    },
+    {
+      "id": "index-gained-a-row-for-0001",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /\\[0001\\]\\(0001-[a-z0-9-]+\\.md\\)/"
+    },
+    {
+      "id": "adr-0001-sections-in-order",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/0001-*.md'] lacks /(?s)^## Context\\b.*^## Decision\\b.*^## Consequences\\b.*^## Alternatives considered\\b.*^## References\\b/"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": false,
+      "detail": "scripts/retry.sh lacks /(?s)^#[^\\n]*docs/decisions/0001-[a-z0-9-]+\\.md.*^set -euo pipefail$/"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (no file matched)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-adr-file",
+      "passed": false,
+      "detail": "found 0, expected at least 1"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": false,
+      "detail": "CHANGELOG.md: modified"
+    },
+    {
+      "id": "agents-md-gained-the-pointer",
+      "passed": false,
+      "detail": "AGENTS.md lacks /(?im)^### Architecture Decision Records\\s*$/; AGENTS.md lacks /docs/decisions/"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 1,
+        "rationale": "No ADR was created at all; the content was placed in CHANGELOG.md rather than as an ADR with proper Context/Decision/Alternatives/Consequences sections, and negative consequences are not honestly discussed."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 1,
+        "rationale": "There is no ADR title or index row; the CHANGELOG version heading '1.4.0' is not an imperative decision statement."
+      },
+      {
+        "name": "restraint",
+        "score": 2,
+        "rationale": "The agent failed to create the ADR folder, the needed ADR, and the AGENTS.md Bootstrap-step-4 pointer paragraph, and instead edited CHANGELOG.md \u2014 exactly the kind of misplaced change that should cost points."
+      }
+    ],
+    "overall": 1.2000000000000002
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.292 (Claude Code)",
+    "permission_mode": "auto"
+  },
+  "models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-8"
+  ],
+  "fixture": "bootstrap",
+  "n": 1
+}
