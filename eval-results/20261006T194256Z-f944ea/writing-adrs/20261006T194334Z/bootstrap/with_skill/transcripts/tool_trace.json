@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011JJwbxvEmPcoPEfnzX4afz",
+      "name": "Bash",
+      "input": "git log --oneline -20 && echo --- && git status && echo --- && find . -iname \"*retry*\" -not -path \"*<path>*\" && echo --- && ls docs/decisions 2><path>",
+      "input_chars": 161,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011JJwbxvEmPcoPEfnzX4afz",
+      "is_error": true,
+      "output": "Exit code 2\nb0eda10 initial commit\n---\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.claude/\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n---\n./scripts/retry.sh\n---",
+      "output_chars": 252,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019VtAdH7Kw82vqX9W6XAK8b",
+      "name": "Bash",
+      "input": "echo \"=== retry.sh ===\" && cat scripts/retry.sh && echo \"=== CHANGELOG ===\" && cat CHANGELOG.md 2><path> && echo \"=== repo tree ===\" && find . -not -path \"./.git/*\" -type f | sort",
+      "input_chars": 182,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019VtAdH7Kw82vqX9W6XAK8b",
+      "is_error": false,
+      "output": "=== retry.sh ===\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# Added after the 2026-03 outage (PR #41): a single 503 from\n# https://example.com/api/orders was retried in a tight loop with no cap and\n# no delay, pinning a worker for 40 minutes and st...",
+      "output_chars": 1358,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014HJr6SUNKM4nPgrTa33jt4",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014HJr6SUNKM4nPgrTa33jt4",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GYhDc4MnaUJQQiSsVpDhcL",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GYhDc4MnaUJQQiSsVpDhcL",
+      "is_error": false,
+      "output": "1\t# Architecture Decision Records\n2\t\n3\tThis folder captures **why** non-obvious decisions were made in this repo \u2014\n4\tcontext that isn't in the code, that `git blame` won't surface, and that a\n5\tcontributor a year from now would otherwise re-derive (badly).\n6\t\n7\tEach ADR is one Markdown file, `NNNN-k...",
+      "output_chars": 3686,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NfDGABKYaiDUNfjLFVPMXn",
+      "name": "Bash",
+      "input": "mkdir -p <path>",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NfDGABKYaiDUNfjLFVPMXn",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014NtxWj6ns5GUjkHZH8DkvV",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 48,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014NtxWj6ns5GUjkHZH8DkvV",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 144,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W7obACgEncbdc67h693qXr",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W7obACgEncbdc67h693qXr",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 190,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01252xCCcYorZyEEgpE8tAgL",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 33,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01252xCCcYorZyEEgpE8tAgL",
+      "is_error": false,
+      "output": "1\t# AGENTS.md\n2\t\n3\tOrder Sync polls the upstream fulfillment service and mirrors order status\n4\tinto the local database.\n5\t\n6\t## Conventions\n7\t\n8\t- Keep `scripts/retry.sh` as the one retry helper for transient upstream\n9\t  failures; do not reimplement backoff logic elsewhere.\n10\t- Record user-visibl...",
+      "output_chars": 332,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JK2txN7vu8dvP5utwQyBy3",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 33,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JK2txN7vu8dvP5utwQyBy3",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 139,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QAaeBfLVd3c9asikMS5oRz",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QAaeBfLVd3c9asikMS5oRz",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 80,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011QKXzQ2Ee3yD2NJfSGRvdB",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011QKXzQ2Ee3yD2NJfSGRvdB",
+      "is_error": false,
+      "output": "1\t# Changelog\n2\t\n3\t## 1.3.0 - 2026-08-11\n4\t\n5\t- Removed the unused `moment` dependency in favor of the platform `Date` APIs.\n6\t- Fixed a typo in the `--verbose` flag's help text.\n7\t",
+      "output_chars": 181,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LACuc5Nmv69Mkmdf799ctH",
+      "name": "Bash",
+      "input": "git status && echo --- && git diff -- AGENTS.md scripts/retry.sh",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LACuc5Nmv69Mkmdf799ctH",
+      "is_error": false,
+      "output": "On branch master\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   AGENTS.md\n\tmodified:   scripts/retry.sh\n\nUntracked files:\n  (use \"git add <file>...\" to include in what wi...",
+      "output_chars": 2024,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0
+}
