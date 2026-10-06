@@ -1,0 +1,127 @@
+{
+  "skill": "writing-adrs",
+  "arm": "without_skill",
+  "timestamp": "20261006T195807Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.08463600000000002,
+    "num_turns": 4,
+    "duration_ms": 20803,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 8136,
+      "cache_read_input_tokens": 157255,
+      "output_tokens": 1966,
+      "output_tokens_details": {
+        "thinking_tokens": 1254
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 8136,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "not_available",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 148,
+          "cache_read_input_tokens": 42030,
+          "cache_creation_input_tokens": 519,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 519
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "readme-bootstrapped-in-skill-shape",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /(?im)^## When to write one\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Naming and numbering\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Status values\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Index\\s*$/; no file matched ['docs/decisions/README.md'] lacks /NNNN-kebab-title\\.md/"
+    },
+    {
+      "id": "index-gained-a-row-for-0001",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /\\[0001\\]\\(0001-[a-z0-9-]+\\.md\\)/"
+    },
+    {
+      "id": "adr-0001-sections-in-order",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/0001-*.md'] lacks /(?s)^## Context\\b.*^## Decision\\b.*^## Consequences\\b.*^## Alternatives considered\\b.*^## References\\b/"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": false,
+      "detail": "scripts/retry.sh lacks /(?s)^#[^\\n]*docs/decisions/0001-[a-z0-9-]+\\.md.*^set -euo pipefail$/"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (no file matched)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-adr-file",
+      "passed": false,
+      "detail": "found 0, expected at least 1"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": false,
+      "detail": "CHANGELOG.md: modified"
+    },
+    {
+      "id": "agents-md-gained-the-pointer",
+      "passed": false,
+      "detail": "AGENTS.md lacks /(?im)^### Architecture Decision Records\\s*$/; AGENTS.md lacks /docs/decisions/"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 1,
+        "rationale": "No ADR was created at all \u2014 there is no Context or Decision section; the CHANGELOG blurb mentions the implemented policy and both rejected alternatives with consequences, but none of this lives in the required ADR structure."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 0,
+        "rationale": "There is no ADR title or index row; the CHANGELOG heading is just 'Unreleased' and the bullet opens with past-tense narration ('Standardized retries...'), not an imperative decision statement."
+      },
+      {
+        "name": "restraint",
+        "score": 2,
+        "rationale": "The agent avoided a spurious second ADR and added nothing unrelated, but it edited CHANGELOG.md instead of landing the ADR folder/ADR and omitted the AGENTS.md pointer paragraph \u2014 exactly the substitution the rubric says should cost points."
+      }
+    ],
+    "overall": 0.9
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.292 (Claude Code)",
+    "permission_mode": "auto"
+  },
+  "models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-8"
+  ],
+  "fixture": "bootstrap",
+  "n": 1
+}
