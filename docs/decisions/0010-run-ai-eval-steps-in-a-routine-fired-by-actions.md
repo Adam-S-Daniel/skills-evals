@@ -23,8 +23,10 @@ CI path":
 
 **What routines offer** ([Routines](https://code.claude.com/docs/en/routines),
 [Trigger a routine via API](https://platform.claude.com/docs/en/api/claude-code/routines-fire),
-read 2026-10-06; research preview, beta header
-`experimental-cc-routine-2026-04-01`):
+read 2026-10-06; research preview; requests require
+`anthropic-version: 2023-06-01`; the routines page says the endpoint ships
+under beta header `experimental-cc-routine-2026-04-01`, which the fire page
+says is now optional):
 
 - Triggers: schedule, API, GitHub events. The API trigger is
   `POST https://api.anthropic.com/v1/claude_code/routines/{routine_id}/fire`
@@ -58,10 +60,10 @@ read 2026-10-06; research preview, beta header
   `bypassPermissions` arm running registry content must not reach one. Its
   alternatives table (line 115) records a routine fired from `eval.yml` as
   permitted but outside the `main`-pinned WIF trust model; decision 4
-  (lines 101-108) makes locally produced results "a local exhibit, not badge
+  (lines 102-107) makes locally produced results "a local exhibit, not badge
   input".
 - `scripts/local_eval_guard.py:23` refuses `CLAUDE_CODE_OAUTH_TOKEN` and
-  `CLAUDE_CONFIG_DIR` in the environment; `harness/guidance.py:780-801`
+  `CLAUDE_CONFIG_DIR` in the environment; `harness/guidance.py:780-812`
   (`agent_env`) builds an arm's environment from an allowlist (lines
   150-155) that passes `ANTHROPIC_*` and drops every ambient `CLAUDE_*`.
 - [ADR 0005](0005-improvement-loop-reuses-skill-creator.md) measures the
@@ -81,8 +83,8 @@ read 2026-10-06; research preview, beta header
    owns the AI steps.** A workflow builds a JSON task spec (run id, roster
    ref, fixture list, arms, trial count, base sha) and fires one routine via
    the API trigger with the spec as `text`. The routine's saved prompt
-   checks out the named sha, runs the eval arms, the judge and (for the
-   loop) the proposer, and pushes results to `claude/eval-<run id>`. It
+   checks out the named sha, runs the AI steps (arms, judge and, for the
+   loop, the proposer; see open decision 1), and pushes results to `claude/eval-<run id>`. It
    never writes `persistent/eval-results` or `main`.
 2. **Results are untrusted input to Actions.** A workflow on push to
    `claude/eval-*` validates the result files against a schema (run id
@@ -125,8 +127,8 @@ read 2026-10-06; research preview, beta header
 - The trust model splits: WIF runs remain `main`-pinned; routine runs are
   attested only by the validator, so their numbers are not comparable to
   API-path numbers until a paired run shows they agree.
-- The research-preview API can change shape; the firing step pins the beta
-  header and fails closed on an unknown response.
+- The research-preview API can change shape; the firing step sends
+  `anthropic-version: 2023-06-01` (and the beta header) and fails closed on an unknown response.
 - Real-work fixtures cost more to write and to score than trigger queries,
   and need objective checks first, per DESIGN.md's rule that decidable
   facts never go to a judge.
