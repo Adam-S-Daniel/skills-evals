@@ -459,3 +459,59 @@ The trigger half still records `tokens` and `cost_usd` as null
 (`scripts/propose_skill_edit.py:618`): skill-creator reports neither, so they
 are not part of the decision. The second "Not yet implemented" bullet (the
 loop is not wired into the routine) still holds.
+
+## Routine improve mode addendum (2026-10-06)
+
+The second "Not yet implemented" bullet (the loop is not wired into the
+routine) is half done: the branch contract and its gate are built; the
+routine's saved prompt and the fire workflow's `mode` input are not changed
+here. Built red-first with fakes; no routine run and no real pull request.
+
+- **The routine opens no pull request.** In improve mode it runs
+  `scripts/propose_skill_edit.py` and, only when the candidate is
+  `accepted`, pushes one branch `claude/eval-improve-<run id>` that adds
+  exactly `eval-improve/<run id>/summary.json` (the record),
+  `report.md` (the record's `<ts>.pr-body.md`) and `skill.patch` (its
+  `<ts>.patch`). A rejected or refused run pushes nothing.
+- **A gate in skills-evals validates it**, on the pattern of the results
+  ingest: `routine-improve-pushed.yml` (no permissions) and
+  `routine-improve-gate.yml` on its `workflow_run`, the default branch's copy
+  only. `scripts/improve_gate.py` reads the branch through git plumbing and
+  accepts it only as an accepted schema-1 record for adam-agentskills at a
+  full sha, a patch of that skill's `SKILL.md` alone whose hunks parse, and
+  a report with the loop's title and no closing keyword or @mention
+  (checked with its Markdown emphasis and link syntax stripped). The
+  root is `eval-improve/`, not `eval-results/`: the improve branch also
+  matches the results signal's `claude/eval-*`, and the two path filters
+  are what keep each push to its own gate.
+- **The draft pull request is opened with a GitHub App token.** It is
+  opened in Adam-S-Daniel/adam-agentskills, which this repository's
+  `GITHUB_TOKEN` cannot write. Adam chose the credential on 2026-10-06:
+  "GitHub App (Recommended)". After re-validating the judged sha, the
+  `draft-pr` job mints an installation token with
+  `actions/create-github-app-token` from repository secrets
+  `EVAL_IMPROVE_APP_CLIENT_ID` and `EVAL_IMPROVE_APP_PEM`. The token is
+  limited to adam-agentskills, with contents and pull-requests write only,
+  and one later step uses it. While either secret is unset the job is
+  skipped with a summary note. It does not run until Adam creates the App
+  (Contents: write and Pull requests: write, installed on adam-agentskills
+  only) and adds both secrets to skills-evals. When it runs, it checks the
+  measured registry sha is on adam-agentskills' default branch and applies
+  the patch there. It refuses any frontmatter change other than the
+  description, and any second file. It pushes `eval-improve/<skill>`
+  without force, or does nothing if that branch exists (one candidate per
+  skill waits for a person), and opens a draft. It never merges. A pull
+  request the App opens starts adam-agentskills' CI.
+- **#71's gate stays.** Nothing here is scheduled; a suite test fails if any
+  workflow that fires the routine or handles an improve branch gains a
+  schedule. The three human-reviewed loop pull requests are the draft pull
+  requests this gate opens, once a person merges them.
+- **The launch guard and the routine's environment.** In a routine
+  session `propose_skill_edit.py`'s guard (`local_eval_guard.refused_env_names`)
+  refuses ten variables the sandbox sets, `ANTHROPIC_BASE_URL` and
+  `CLOUDSDK_AUTH_ACCESS_TOKEN` among them. ADR 0010's Probe 3 (2026-10-06)
+  showed a nested `claude -p` still authenticates with every one of them
+  unset. Adam chose "Probe unset first (Recommended)", so the guard is not
+  changed: the routine launches the loop under an `env -u` prefix built at
+  run time from `refused_env_names(os.environ)`, not from a fixed list. The
+  loop also needs skill-creator installed in the session.

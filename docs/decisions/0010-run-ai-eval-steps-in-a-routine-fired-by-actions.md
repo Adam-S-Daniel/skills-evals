@@ -275,6 +275,25 @@ The eval runner routine now exists:
 fired by API only, with no schedule. Adam creates its fire bearer in the web
 UI.
 
+### Probe 3: the loop's launch guard in a routine session (passed)
+
+Routine run [`session_01HV5BrZ2WgqHVzRq6K7pLka`](https://claude.ai/code/session_01HV5BrZ2WgqHVzRq6K7pLka),
+2026-10-06 22:20Z. Variable names only; no value was recorded.
+
+- `local_eval_guard.refused_env_names(os.environ)` returned ten names:
+  `ANTHROPIC_BASE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_CA_BUNDLE`,
+  `AWS_SECRET_ACCESS_KEY`, `CLAUDE_CODE_USE_CCR_V2`,
+  `CLOUDSDK_AUTH_ACCESS_TOKEN`, `CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE`,
+  `CLOUDSDK_PROXY_ADDRESS`, `CLOUDSDK_PROXY_PORT` and `CLOUDSDK_PROXY_TYPE`.
+  So `scripts/propose_skill_edit.py` refuses to start in a routine as it
+  stands.
+- A nested `claude -p ... --permission-mode auto` run through `env -u` for
+  all ten exited 0 and authenticated, and the guard then returned none.
+- Adam chose "Probe unset first (Recommended)": the guard is not changed.
+  The improvement loop's routine mode launches the loop under an `env -u`
+  prefix built at run time from `refused_env_names(os.environ)` (ADR 0005,
+  "Routine improve mode addendum").
+
 ### Open questions
 
 - Whether an arm can read the ingress token file or an on-disk GitHub token,
@@ -317,6 +336,14 @@ UI.
    the badge's `results/`). Not yet built: the fire record decision 2
    matches a run id against, and the missing-push deadline.
 4. Two real-work fixtures (one writer, one CI-debug) with objective checks.
+5. The improvement loop's routine mode: the routine pushes an accepted
+   candidate to `claude/eval-improve-<run id>`, and
+   `.github/workflows/routine-improve-gate.yml` validates it and opens a
+   draft pull request in adam-agentskills with a GitHub App token, once
+   the App and its two secrets exist
+   ([ADR 0005](0005-improvement-loop-reuses-skill-creator.md), "Routine
+   improve mode addendum"). The routine's saved prompt and the fire
+   workflow's mode input are not yet changed.
 
 ## Alternatives considered
 

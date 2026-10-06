@@ -1,0 +1,313 @@
+name: Gate routine improvement candidate
+
+# The improvement loop's review gate (ADR 0005 amendment 1; ADR 0010; #71).
+# In improve mode the eval routine runs scripts/propose_skill_edit.py and, on
+# an ACCEPTED candidate only, pushes `claude/eval-improve-<run id>` holding
+# `eval-improve/<run id>/{summary.json, report.md, skill.patch}`. The routine
+# never opens a pull request; this workflow decides whether the candidate
+# becomes a DRAFT pull request in Adam-S-Daniel/adam-agentskills.
+#
+# * The branch is UNTRUSTED (a model run wrote it). This workflow runs on
+#   `workflow_run`, so GitHub always runs the DEFAULT BRANCH's copy of it,
+#   never one the branch carries (see routine-improve-pushed.yml). Every
+#   checkout is the default branch; the branch is only fetched into a private
+#   ref and read through git plumbing by scripts/improve_gate.py. Nothing
+#   from it is checked out, imported or executed; its patch reaches
+#   `git apply` in a registry checkout as data, after validation.
+# * The validator rejects the whole branch unless it ADDS exactly the three
+#   files, regular and non-executable, under its own run id: an accepted
+#   record for the adam-agentskills registry at a full sha, a patch of that
+#   skill's SKILL.md only, and a report with the loop's title and no closing
+#   keyword or @mention.
+# * Three jobs. `validate` holds `contents: read` and no secret. `credential`
+#   holds nothing and learns only WHETHER the GitHub App's two secrets exist
+#   (a boolean). `draft-pr` runs only when they do, re-validates the branch
+#   at the sha `validate` judged, and only then mints an App installation
+#   token; one later step uses it. Workflow permissions are `{}`; no
+#   workflow- or job-level `env:`.
+#
+# The credential (owner decision, Adam: "GitHub App (Recommended)"): this
+# repository's GITHUB_TOKEN cannot write adam-agentskills, so the draft-PR
+# job mints a short-lived installation token with
+# actions/create-github-app-token from repository secrets
+# EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM, scoped to owner
+# Adam-S-Daniel, repository adam-agentskills only, contents and
+# pull-requests write only. The token is revoked when the job ends. The App
+# must have Contents: write and Pull requests: write, be installed on
+# adam-agentskills only, and both secrets must be set in skills-evals; while
+# either is unset the job is SKIPPED with a job-summary note and the
+# validated candidate stays on its branch. A pull request the App opens
+# starts adam-agentskills' own CI, which one opened with a GITHUB_TOKEN
+# would not.
+#
+# * The draft-PR job pushes one branch, `eval-improve/<skill>`, in
+#   adam-agentskills, based on the registry sha the loop measured (which must
+#   be on that repository's default branch), and opens a DRAFT pull request
+#   from it. If that branch already exists it does nothing: one candidate per
+#   skill waits for a person. It never merges, approves, force-pushes or
+#   deletes anything.
+# * #71's gate stays: nothing here is scheduled, and no scheduled loop runs
+#   until three human-reviewed loop pull requests have merged (ADR 0010
+#   decision 4).
+# * Branch names, shas and file content are never interpolated into a
+#   `run:` block: the event is read from $GITHUB_EVENT_PATH by the
+#   validator, which emits only values that matched a strict pattern, and
+#   every later step reads them through `env`.
+# * No `concurrency` group: GitHub keeps only the newest pending run in a
+#   group, so a burst of pushes would cancel gates silently.
+# * `workflow_dispatch` re-gates a branch by name (for a missed or failed
+#   run); only the default branch's copy may run.
+
+on:
+  workflow_run:
+    workflows: [Routine improve pushed]
+    types: [completed]
+    branches:
+      - claude/eval-improve-*
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: The improve branch, claude/eval-improve-<run id>.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  validate:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && (github.event_name == 'workflow_dispatch'
+          || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      branch: ${{ steps.resolve.outputs.branch }}
+      run_id: ${{ steps.gate.outputs.run_id }}
+      sha: ${{ steps.gate.outputs.sha }}
+      skill: ${{ steps.gate.outputs.skill }}
+      registry_sha: ${{ steps.gate.outputs.registry_sha }}
+      skill_md: ${{ steps.gate.outputs.skill_md }}
+      target_branch: ${{ steps.gate.outputs.target_branch }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install the validator's one dependency
+        run: python3 -m pip install pyyaml==6.0.3
+
+      - name: Resolve the branch to gate
+        id: resolve
+        working-directory: skills-evals
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/improve_gate.py resolve \
+            --event-name "$EVENT_NAME" --event-path "$GITHUB_EVENT_PATH" \
+            > "$RUNNER_TEMP/resolve.out"
+          cat "$RUNNER_TEMP/resolve.out" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch the improve branch into a private ref
+        working-directory: skills-evals
+        env:
+          BRANCH: ${{ steps.resolve.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/${BRANCH}:refs/improve/source"
+
+      - name: Validate the candidate
+        id: gate
+        working-directory: skills-evals
+        env:
+          BRANCH: ${{ steps.resolve.outputs.branch }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          python3 scripts/improve_gate.py validate \
+            --repo . --base "refs/remotes/origin/${DEFAULT_BRANCH}" \
+            --source refs/improve/source --branch "$BRANCH" \
+            --expect-sha "$SHA" --out "$RUNNER_TEMP/staged" \
+            > "$RUNNER_TEMP/gate.out"
+          cat "$RUNNER_TEMP/gate.out" >> "$GITHUB_OUTPUT"
+
+  credential:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - name: Are the GitHub App's secrets configured?
+        id: check
+        env:
+          PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$PR_CREDENTIAL_SET" = "true" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::the candidate passed the gate; no draft pull request is opened because the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are not both set"
+          {
+            echo "### Improvement candidate validated; draft PR skipped"
+            echo
+            echo "The candidate passed the gate. The draft-PR job is skipped because repository secrets \`EVAL_IMPROVE_APP_CLIENT_ID\` and \`EVAL_IMPROVE_APP_PEM\` are not both set (see routine-improve-gate.yml's header for the App this needs)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  draft-pr:
+    needs: [validate, credential]
+    if: needs.credential.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install the validator's one dependency
+        run: python3 -m pip install pyyaml==6.0.3
+
+      # The same validator, on the sha `validate` judged: this job stages its
+      # own copy of the files instead of trusting an artifact, and fails if
+      # the branch moved (its newer push runs its own gate).
+      - name: Re-validate the candidate at the judged sha
+        id: revalidate
+        working-directory: skills-evals
+        env:
+          BRANCH: ${{ needs.validate.outputs.branch }}
+          SHA: ${{ needs.validate.outputs.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/${BRANCH}:refs/improve/source"
+          python3 scripts/improve_gate.py validate \
+            --repo . --base "refs/remotes/origin/${DEFAULT_BRANCH}" \
+            --source refs/improve/source --branch "$BRANCH" \
+            --expect-sha "$SHA" --out "$RUNNER_TEMP/staged" \
+            > "$RUNNER_TEMP/revalidate.out"
+          cat "$RUNNER_TEMP/revalidate.out"
+
+      # Minted only now, after re-validation: an installation token for
+      # adam-agentskills alone, with contents and pull-requests write only.
+      - name: Mint the GitHub App token for adam-agentskills
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open the draft pull request in adam-agentskills
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TARGET_REPO: Adam-S-Daniel/adam-agentskills
+          BRANCH: ${{ needs.validate.outputs.branch }}
+          RUN_ID: ${{ needs.validate.outputs.run_id }}
+          SHA: ${{ needs.validate.outputs.sha }}
+          SKILL: ${{ needs.validate.outputs.skill }}
+          REGISTRY_SHA: ${{ needs.validate.outputs.registry_sha }}
+          SKILL_MD: ${{ needs.validate.outputs.skill_md }}
+          TARGET_BRANCH: ${{ needs.validate.outputs.target_branch }}
+        run: |
+          set -euo pipefail
+          # The values re-derived from the judged sha must be the ones
+          # `validate` handed over.
+          for pair in "run_id=${RUN_ID}" "sha=${SHA}" "skill=${SKILL}" \
+                      "registry_sha=${REGISTRY_SHA}" "skill_md=${SKILL_MD}" \
+                      "target_branch=${TARGET_BRANCH}"; do
+            if ! grep -qxF -- "$pair" "$RUNNER_TEMP/revalidate.out"; then
+              echo "::error::re-validation disagrees with the validate job"
+              exit 1
+            fi
+          done
+          base="$(gh api "repos/${TARGET_REPO}" --jq '.default_branch')" || base=""
+          if ! [[ "$base" =~ ^[A-Za-z0-9._/-]{1,100}$ ]]; then
+            echo "::error::could not read ${TARGET_REPO}'s default branch"
+            exit 1
+          fi
+          reg="$RUNNER_TEMP/registry"
+          b64="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::${b64}"
+          auth="AUTHORIZATION: basic ${b64}"
+          git init -q "$reg"
+          git -C "$reg" remote add origin "https://github.com/${TARGET_REPO}.git"
+          # One candidate per skill: an existing branch means one is already
+          # waiting for a person, so leave it alone.
+          existing="$(git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
+            ls-remote --heads origin "refs/heads/${TARGET_BRANCH}")"
+          if [ -n "$existing" ]; then
+            echo "::notice::${TARGET_BRANCH} already exists in ${TARGET_REPO}; a candidate for ${SKILL} is already waiting, so this one is not opened"
+            exit 0
+          fi
+          git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
+            fetch -q --no-tags origin "+refs/heads/${base}:refs/remotes/origin/${base}"
+          git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
+            fetch -q --no-tags origin "$REGISTRY_SHA"
+          # ADR 0010 decision 1: routine arms run only the registry's
+          # default branch, so the measured sha must be on it.
+          if ! git -C "$reg" merge-base --is-ancestor "$REGISTRY_SHA" "refs/remotes/origin/${base}"; then
+            echo "::error::the measured registry sha is not on ${TARGET_REPO}'s ${base}"
+            exit 1
+          fi
+          git -C "$reg" checkout -q --detach "$REGISTRY_SHA"
+          python3 scripts/improve_gate.py apply \
+            --staged "$RUNNER_TEMP/staged" --tree "$reg" --skill-md "$SKILL_MD"
+          git -C "$reg" add -- "$SKILL_MD"
+          git -C "$reg" \
+            -c user.name="skills-evals improve-gate bot" \
+            -c user.email="skills-evals@users.noreply.github.com" \
+            commit -q -m "Propose a ${SKILL} SKILL.md edit from improvement run ${RUN_ID}"
+          commit="$(git -C "$reg" rev-parse HEAD)"
+          git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
+            push origin "HEAD:refs/heads/${TARGET_BRANCH}"
+          git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
+            fetch -q --no-tags origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+          if ! git -C "$reg" merge-base --is-ancestor "$commit" "refs/remotes/origin/${TARGET_BRANCH}"; then
+            echo "::error::the push reported success but ${commit} is not on ${TARGET_BRANCH}"
+            exit 1
+          fi
+          body="$RUNNER_TEMP/body.md"
+          python3 scripts/improve_gate.py pr-body --staged "$RUNNER_TEMP/staged" \
+            --run-id "$RUN_ID" --sha "$SHA" --branch "$BRANCH" > "$body"
+          gh pr create --repo "$TARGET_REPO" --draft --base "$base" \
+            --head "$TARGET_BRANCH" \
+            --title "Proposed ${SKILL} SKILL.md edit (improvement run ${RUN_ID})" \
+            --body-file "$body"
+          {
+            echo "### Draft pull request opened"
+            echo
+            echo "- Run id: \`${RUN_ID}\`"
+            echo "- Source commit: \`${SHA}\`"
+            echo "- ${TARGET_REPO} branch: \`${TARGET_BRANCH}\` at \`${commit}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
