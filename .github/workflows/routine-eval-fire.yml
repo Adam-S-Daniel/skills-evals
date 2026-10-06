@@ -1,0 +1,209 @@
+name: Fire eval routine
+
+# Fires the eval runner routine (ADR 0010, "Smallest next PRs" item 2):
+# https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5
+#
+# * `workflow_dispatch` ONLY. No schedule: #71's three-PR gate (ADR 0010,
+#   decision 4) keeps every scheduled run off until three human-reviewed
+#   loop PRs have merged. No pull_request or push: a pull_request job would
+#   have to be a required check, and nothing here should run, or spend
+#   subscription usage, because a pull request changed.
+# * Every dispatch input is read from $GITHUB_EVENT_PATH as data, never
+#   interpolated into a `run:` block (the rendered command is echoed into a
+#   public log), and validated before the bearer is ever in a step's env.
+# * The payload the routine receives carries exactly four fields: run_id,
+#   fixture, arms, trials. The routine treats it as untrusted, and so does
+#   this workflow when it builds it: jq encodes every value.
+# * The fire bearer (EVAL_ROUTINE_FIRE_BEARER, a repository secret per ADR
+#   0010 decision 5) reaches only the fire step, via `env`, and goes to curl
+#   on stdin, never in argv. The HTTP response body is never printed: the
+#   log names the status code and the run id, and the session URL goes to the
+#   job summary only after it matches the documented shape.
+# * No retry: the fire API has no idempotency key, so a retry after a lost
+#   response would start a second session (and spend a second fire).
+# * Results land on `claude/eval-<run id>`, pushed by the routine; the
+#   validator and ingester for that branch is a separate workflow (ADR 0010,
+#   decision 2). Nothing here writes to the repository.
+#
+# API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: >-
+          Fixture directory under evals/, e.g. evals/writing-adrs/bootstrap.
+          Must be a committed evals/**/fixture.yaml directory on the default
+          branch.
+        required: true
+        type: string
+      arms:
+        description: Which arms to run.
+        required: true
+        type: choice
+        options: [both, with, without]
+        default: both
+      trials:
+        description: Trials per arm (1-3).
+        required: true
+        type: choice
+        options: ["1", "2", "3"]
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  fire:
+    # The secret is repository-wide, so refuse a dispatch of this file from
+    # any other branch: only the default branch's copy may fire the routine.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      # Pinned, not the runner's system Python (WorkflowPinnedPythonTests):
+      # the validation step lists committed fixtures with
+      # scripts/plan_scheduled_evals.py.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Validate the dispatch inputs
+        id: validate
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          event="${GITHUB_EVENT_PATH:?}"
+          # NUL first, on the event file itself: bash's $( ) drops a NUL, so
+          # every check below would otherwise judge a different string than
+          # the dispatcher sent. No rejection echoes the value back.
+          if jq -e '[.inputs.fixture, .inputs.arms, .inputs.trials]
+                    | any(type != "string" or test("\u0000"))' \
+               "$event" >/dev/null; then
+            echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
+            exit 1
+          fi
+          fixture="$(jq -r '.inputs.fixture' "$event")"
+          arms="$(jq -r '.inputs.arms' "$event")"
+          trials="$(jq -r '.inputs.trials' "$event")"
+
+          case "$fixture" in
+            *[!A-Za-z0-9/_.-]*|'')
+              echo "::error::input 'fixture' is empty or has characters outside [A-Za-z0-9/_.-]"
+              exit 1 ;;
+          esac
+          case "/$fixture/" in
+            */../*|*/./*|*//*)
+              echo "::error::input 'fixture' has an empty, '.' or '..' path segment"
+              exit 1 ;;
+          esac
+          case "$fixture" in
+            evals/*) ;;
+            *)
+              echo "::error::input 'fixture' is not under evals/"
+              exit 1 ;;
+          esac
+          # Exact, whole-line match against git's index of committed
+          # fixtures: a here-string, never a pipe into an early-exit grep.
+          committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
+          if ! grep -Fxq -- "$fixture" <<<"$committed"; then
+            echo "::error::input 'fixture' names no committed fixture on the default branch"
+            exit 1
+          fi
+
+          case "$arms" in
+            both|with|without) ;;
+            *)
+              echo "::error::input 'arms' must be both, with or without"
+              exit 1 ;;
+          esac
+          case "$trials" in
+            1|2|3) ;;
+            *)
+              echo "::error::input 'trials' must be 1, 2 or 3"
+              exit 1 ;;
+          esac
+
+          run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
+          if ! [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$ ]]; then
+            echo "::error::generated run id has an unexpected shape"
+            exit 1
+          fi
+
+          {
+            echo "fixture=${fixture}"
+            echo "arms=${arms}"
+            echo "trials=${trials}"
+            echo "run_id=${run_id}"
+          } >> "$GITHUB_OUTPUT"
+          echo "run id: ${run_id}"
+          echo "fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
+
+      - name: Fire the eval routine
+        env:
+          FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_014cqgegCtJUqXYjAKmkr4J5/fire
+          EVAL_ROUTINE_FIRE_BEARER: ${{ secrets.EVAL_ROUTINE_FIRE_BEARER }}
+          RUN_ID: ${{ steps.validate.outputs.run_id }}
+          FIXTURE: ${{ steps.validate.outputs.fixture }}
+          ARMS: ${{ steps.validate.outputs.arms }}
+          TRIALS: ${{ steps.validate.outputs.trials }}
+        run: |
+          set -euo pipefail
+          if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
+            echo "::error::repository secret EVAL_ROUTINE_FIRE_BEARER is not set"
+            exit 1
+          fi
+          # The payload is the routine's untrusted input: these four fields
+          # and nothing else, every value encoded by jq.
+          body="$(jq -n -c \
+            --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
+            --arg arms "$ARMS" --argjson trials "$TRIALS" \
+            '{text: ({run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials} | tojson)}')"
+          response="$(mktemp)"
+          trap 'rm -f "$response"' EXIT
+          # The bearer goes to curl on stdin (`-H @-`), so it is never in
+          # argv, where any process on the runner could read it.
+          status="$(printf 'Authorization: Bearer %s\n' "$EVAL_ROUTINE_FIRE_BEARER" \
+            | curl --silent --proto '=https' --max-time 60 \
+                --request POST "$FIRE_URL" \
+                --header @- \
+                --header 'anthropic-version: 2023-06-01' \
+                --header 'Content-Type: application/json' \
+                --data-binary "$body" \
+                --output "$response" --write-out '%{http_code}')" || status="000"
+          echo "fire API status: ${status}"
+          if [ "$status" != "200" ]; then
+            echo "::error::the fire API answered ${status}; the response body is not printed"
+            exit 1
+          fi
+          # Fail closed on any response shape the docs do not describe.
+          if ! session_id="$(jq -er '
+                select(.type == "routine_fire")
+                | .claude_code_session_id
+                | select(type == "string" and test("^session_[A-Za-z0-9]{1,128}$"))' \
+                "$response" 2>/dev/null)"; then
+            echo "::error::the fire API answered 200 with an unrecognized body; it is not printed"
+            exit 1
+          fi
+          if ! jq -e --arg id "$session_id" \
+               '.claude_code_session_url == ("https://claude.ai/code/" + $id)' \
+               "$response" >/dev/null 2>&1; then
+            echo "::error::the fire API's session URL does not match its session id; the body is not printed"
+            exit 1
+          fi
+          echo "run id: ${RUN_ID}; session link is in the job summary"
+          {
+            echo "### Eval routine fired"
+            echo
+            echo "- Run id: \`${RUN_ID}\`"
+            echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
+            echo "- Session: https://claude.ai/code/${session_id}"
+            echo "- Results branch: \`claude/eval-${RUN_ID}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
