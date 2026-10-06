@@ -359,6 +359,133 @@ class SeedStripTests(_Base):
             self.assertNotIn(marker, seen["text"])
 
 
+class StrippedSeedScoringTests(_Base):
+    """Checks that compare against the seed see the seed the agent got.
+
+    The workspace is stripped before the agent runs, so a check that reads
+    the pristine, unstripped seed reports the strip itself as the agent's
+    change.
+    """
+
+    def setUp(self):
+        super().setUp()
+        write_fleet_seed(self.seed)
+
+    def fixture(self, **extra):
+        fixture = {
+            "strip_agent_context": True,
+            "objective_checks": [
+                {"id": "kept", "type": "files_unchanged",
+                 "paths": ["AGENTS.md", "CLAUDE.md"]},
+                {"id": "listing", "type": "dir_listing_matches",
+                 "paths": ["."], "ignore": [".git"],
+                 "expected": ["AGENTS.md", "CLAUDE.md", "calc.py"]},
+                {"id": "hidden-tests", "type": "repo_tests",
+                 "overlay": "checker", "argv": ["python3", "-m", "unittest"],
+                 "fail_to_pass": [ADD], "pass_to_pass": [SUB]},
+            ]}
+        fixture.update(extra)
+        return fixture
+
+    def stripped_workspace(self, source=FIXED):
+        ws = self.workspace(source)
+        seed_prep.strip_agent_context(ws)
+        return ws
+
+    def test_seed_comparing_checks_see_the_stripped_seed(self):
+        results = objective.run_checks(self.fixture(), str(self.stripped_workspace()),
+                                       str(self.seed))
+        self.assertEqual([(r["id"], r["passed"]) for r in results],
+                         [("kept", True), ("listing", True), ("hidden-tests", True)],
+                         results)
+
+    def test_dir_listing_expected_file_is_read_from_the_pristine_seed(self):
+        # `expected_file` is read from the pristine seed, so it may live in a
+        # path the strip removes.
+        (self.seed / ".claude" / "expected.txt").write_text(
+            "AGENTS.md\nCLAUDE.md\ncalc.py\n", encoding="utf-8")
+        fixture = self.fixture(objective_checks=[
+            {"id": "listing", "type": "dir_listing_matches", "paths": ["."],
+             "ignore": [".git"], "expected_file": ".claude/expected.txt"}])
+        results = objective.run_checks(fixture, str(self.stripped_workspace()),
+                                       str(self.seed))
+        self.assertEqual([(r["id"], r["passed"]) for r in results],
+                         [("listing", True)], results)
+
+    def test_a_real_change_to_a_kept_file_still_fails(self):
+        ws = self.stripped_workspace()
+        (ws / "AGENTS.md").write_text("## Repo-specific additions\n\nEdited.\n",
+                                      encoding="utf-8")
+        results = objective.run_checks(self.fixture(), str(ws), str(self.seed))
+        kept = next(r for r in results if r["id"] == "kept")
+        self.assertFalse(kept["passed"])
+        self.assertIn("AGENTS.md: modified", kept["detail"])
+
+    def test_without_the_key_the_seed_is_compared_as_is(self):
+        fixture = self.fixture()
+        del fixture["strip_agent_context"]
+        ws = self.workspace(FIXED)
+        results = objective.run_checks(
+            dict(fixture, objective_checks=[
+                {"id": "fleet", "type": "files_unchanged",
+                 "paths": [".claude/settings.json", "skills.lock", "AGENTS.md"]}]),
+            str(ws), str(self.seed))
+        self.assertTrue(results[0]["passed"], results)
+
+    def test_the_stripped_copy_is_removed_and_the_seed_is_untouched(self):
+        before = sorted(p.relative_to(self.seed).as_posix() for p in self.seed.rglob("*"))
+        scratch = self.root / "tmp"
+        scratch.mkdir()
+        with mock.patch.object(tempfile, "tempdir", str(scratch)):
+            objective.run_checks(self.fixture(), str(self.stripped_workspace()),
+                                 str(self.seed))
+        self.assertEqual(list(scratch.iterdir()), [])
+        after = sorted(p.relative_to(self.seed).as_posix() for p in self.seed.rglob("*"))
+        self.assertEqual(before, after)
+        self.assertIn(".claude/settings.json", after)
+
+
+class GuidanceObjectiveOnlyStripTests(_Base):
+    """`subject: guidance` with `--arm objective-only` strips like every arm."""
+
+    def write_fixture(self, checks):
+        write_fleet_seed(self.seed)
+        fixture = {"subject": "guidance", "section": "toy-section",
+                   "strip_agent_context": True, "objective_checks": checks}
+        (self.fixture_dir / "fixture.yaml").write_text(
+            yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+
+    def main(self):
+        out = io.StringIO()
+        args = ["run_eval.py", str(self.fixture_dir), "--arm", "objective-only",
+                "--results-dir", str(self.root / "results")]
+        with mock.patch.object(sys, "argv", args), contextlib.redirect_stdout(out):
+            code = run_eval.main()
+        return code, out.getvalue()
+
+    def test_the_scored_workspace_carries_no_fleet_context(self):
+        self.write_fixture([
+            {"id": "no-fleet-dir", "type": "dir_listing_matches", "paths": ["."],
+             "expected": ["AGENTS.md", "CLAUDE.md", "calc.py"]},
+            {"id": "kept", "type": "files_unchanged",
+             "paths": ["AGENTS.md", "CLAUDE.md", "calc.py"]}])
+        code, out = self.main()
+        self.assertEqual(code, 0, out)
+        self.assertEqual([(c["id"], c["passed"]) for c in json.loads(out)["checks"]],
+                         [("no-fleet-dir", True), ("kept", True)])
+
+    def test_a_seed_the_strip_cannot_clean_fails_with_exit_2(self):
+        self.write_fixture([{"id": "kept", "type": "files_unchanged",
+                             "paths": ["AGENTS.md"]}])
+        (self.seed / "AGENTS.md").write_text(
+            "## Repo-specific additions\n\nQuoting: BEGIN MANAGED SECTION\n",
+            encoding="utf-8")
+        code, out = self.main()
+        self.assertEqual(code, 2, out)
+        self.assertIn("seed still carries agent context", out)
+        self.assertNotIn('"checks"', out)
+
+
 class DepsTests(_Base):
     def fake_npm(self, exit_code=0):
         bin_dir = self.root / "fake-bin"
