@@ -1,0 +1,92 @@
+# Real-work fixture: cms-platform#221
+# https://github.com/Adam-S-Daniel/cms-platform/pull/221, the fix for
+# https://github.com/Adam-S-Daniel/cms-platform/issues/220. The CI fixture: a
+# workflow pin guard that misses the ref a reusable workflow actually checks
+# out. It replaces _agent-guidance#82, whose only test runner has no per-test
+# filter (Adam, 2026-10-06: "Swap #82 for another"). The prompt is the
+# issue's title and body, verbatim, without its "## Fix", "## Needs
+# verification" and "## Also noted, out of scope" sections (the first sketches
+# the solution; the other two are about the consumer repositories, which are
+# not in the seed), then one line of task and the interface the hidden tests
+# read.
+#   base  3d7ca3e69033f2f85c9afb0b0a8eae58b4afe04d (squash merge: its only parent)
+#   merge dd429bd4f948b9b7ad5aa797a871206d4fb79177
+# Trimmed from the seed: skills/ (an evaluated path). solution.patch leaves
+# out the pull request's AGENTS.md edit, which the stripped seed cannot take
+# and no test reads.
+
+# The seed is the base tree as `git archive` wrote it, with the fleet agent
+# context already stripped (strip_agent_context: below re-checks it on every
+# run) and the trimmed paths listed above removed. The checker overlay is the
+# pull request's own test file, byte-equal to the merge commit's. The fix
+# itself is in solution.patch, which only the fixture's tests read.
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+  - manager: npm
+    dir: e2e
+
+prompt: |
+  A stale `platform_ref` INPUT silently breaks a loop, and the pin guard can't see it
+
+  ## Symptom
+
+  jodidaniel.com's `cms-scheduled-publish-loop` has been failing at **`Install Playwright browser + system deps`**:
+
+  ```
+  ##[error]Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under
+  '/home/runner/work/jodidaniel.com/jodidaniel.com/.cms-platform/.github/actions/...'
+  ```
+
+  Observed: scheduled run 31242320695 (2026-08-08 05:43) and a clean re-dispatch at v0.1.73 (run 31266342355) — so this is **not** transient and **not** the apt/dpkg issue fixed in #216, despite failing at the same step name.
+
+  ## Root cause
+
+  jodidaniel's caller disagrees with itself:
+
+  ```yaml
+  uses: Adam-S-Daniel/cms-platform/.github/workflows/cms-scheduled-publish-loop.yml@v0.1.72
+  with:
+    platform_ref: v0.1.59      # <-- the checkout obeys THIS
+  ```
+
+  The reusable's platform checkout uses `ref: ${{ inputs.platform_ref }}`, so it fetched a **v0.1.59** platform tree. The `install-playwright-browsers` composite was introduced in **v0.1.70** (#204), so at v0.1.59 the path genuinely does not exist and the `uses: ./.cms-platform/.github/actions/...` step cannot resolve.
+
+  Verified present at v0.1.70 / v0.1.72 / v0.1.73, absent at v0.1.59.
+
+  That dates the breakage to v0.1.70's composite conversion, silently, on a scheduled workflow — the invisible-failure class that motivated the scheduled-run-health audit.
+
+  ## The gap that let it hide
+
+  `scripts/check-platform-pin-consistency.js` validates:
+  - every `uses: …@<ref>` against `platform.lock`
+  - SHA-pinned composite `# vX.Y.Z` comments
+  - `Gemfile` / `Gemfile.lock` tags
+
+  It does **not** validate the `platform_ref` **input value**, because the workflow-content parity check deliberately masks `with:` VALUES as site-specific. So the single value that decides *which platform tree gets checked out* is the one thing the anti-skew guard doesn't check — and a caller can pass a ref 13 releases stale while every check reports consistent.
+
+  ## Task
+
+  Close this gap in `scripts/check-platform-pin-consistency.js`.
+
+  ## Interface the reviewer's tests use
+
+  A stale input fails the guard (nonzero exit), and its output names the workflow file, `platform_ref`, the stale value and the version `platform.lock` expects. A `platform_ref:` whose value is a `${{ ... }}` expression, or an input declaration in a reusable workflow, is not a pin and passes.
+
+interface_strings:
+  - "platform_ref"
+  - "platform.lock"
+  - "scripts/check-platform-pin-consistency.js"
+
+objective_checks:
+  - id: hidden-tests
+    type: repo_tests
+    description: The pull request's own tests, hidden from the agent
+    overlay: checker
+    argv: [node, e2e/node_modules/@playwright/test/cli.js, test, --config=e2e/playwright.unit.config.js]
+    fail_to_pass:
+      - [check-platform-pin-consistency.test.js, -g, platform_ref input is stale]
+    pass_to_pass:
+      - [check-platform-pin-consistency.test.js, --grep-invert, platform_ref input is stale]

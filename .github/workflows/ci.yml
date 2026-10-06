@@ -235,6 +235,18 @@ jobs:
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals/evals/browser-testing/seed
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # The real-work fixtures' checkers (test/issues/test_issue_real_work_fixtures.py)
+      # run each seed's own tests, which need the seed's npm dependencies,
+      # installed here from the seed's committed lockfile as a run's `deps:`
+      # step would. That test pins this list to the fixtures' `deps:` entries.
+      - name: Install real-work fixture dependencies
+        if: steps.salient.outputs.run == 'true'
+        working-directory: skills-evals/evals/real-work
+        run: |
+          set -euo pipefail
+          for dir in _agent-guidance-196/seed cms-platform-221/seed/e2e cms-platform-693/seed/e2e; do
+            (cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund)
+          done
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals

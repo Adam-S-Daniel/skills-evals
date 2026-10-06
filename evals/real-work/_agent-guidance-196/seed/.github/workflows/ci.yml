@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  # Manual re-run, no inputs. `test` publishes a status context meant to be
+  # REQUIRED on main — cms-platform#437 declares it in repo-settings'
+  # fleet.yml — so this trigger's safety no longer rests on nothing here
+  # being required. It rests on a narrower fact instead: this file carries NO
+  # `concurrency:` block, at workflow or job level, so a same-sha burst — a
+  # `push` on `**`, a `pull_request` event, and any manual dispatch, all
+  # landing on one head sha — leaves only runs that FINISH, never a cancelled
+  # run shadowing a success (the shape that hard-blocks a merge on a required
+  # check). Test 7g in test/run-tests.sh locks that absence and the trigger
+  # set off this file. The residual that absence does not cover: a human who
+  # cancels a dispatched run sitting on a PR's head sha leaves the required
+  # `test` context itself concluded `cancelled` on that sha until someone
+  # re-runs it — this trigger only guards against the multi-event race
+  # GitHub can produce on its own, not against a person cancelling one by
+  # hand.
+  #
+  # BRANCH PROTECTION IS NOT THE ONLY READER OF A CHECK CONCLUSION HERE, and
+  # the other one does not care whether a check is required — so the paragraph
+  # above is the safety argument for one consumer, not for all of them. The
+  # nightly sweep in `scripts/bump-consumer-locks.sh` judges its own pull
+  # requests with `pr_merge_verdict`, which SKIPs on ANY statusCheckRollup
+  # entry that is not green or has not concluded. That strictness is
+  # deliberate: nothing is required anywhere in this fleet, so "ignore what is
+  # not required" would there read as "merge it red". This repo's own
+  # `skills.lock` is in that bumper's scope (see repos.yml — the allowlist
+  # governs hook delivery, not lock bumping), so it opens a PR here on
+  # `skills-lock-bump/update`, and this workflow runs on every push and every
+  # pull request, that branch included.
+  #
+  # THE RESIDUAL, stated rather than argued away: dispatch this workflow AT
+  # the bump branch and cancel it — or watch it fail — and that conclusion
+  # lands on a sha the bumper will not advance. It refuses to force-push, and
+  # a branch whose content already matches is a branch it does not push again.
+  # The sweep then declines that PR every night until someone re-dispatches it
+  # green or the bundle genuinely moves and rewrites the branch onto a fresh
+  # sha. A stall, not a deadlock, and not a silent one: the SKIP line names the
+  # offending check and its conclusion. Deliberately NOT fixed by teaching
+  # `pr_merge_verdict` to ignore non-required checks — that would trade a stall
+  # that announces itself for a merge gate standing open on every repo in the
+  # fleet. Dispatch this at your own branch or at the default branch instead,
+  # where it has no pull request to stall.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 (full history), not a targeted fetch of just the PR's
+      # base sha: scripts/check-guidance-touch.js (the "Guidance touch gate"
+      # step below) resolves BOTH the PR's base and head commits with
+      # `git show <sha>:<path>`, and ALSO runs `git merge-base` between them
+      # (base.sha is the base branch's tip at event time, not the PR's fork
+      # point, so the touch gate diffs from the merge-base instead — see that
+      # script's own header). A shallow (depth 1) checkout of a `pull_request`
+      # event's synthetic merge ref fetches only that merge commit's own
+      # objects; at depth 1 its parents are grafted — absent from the object
+      # database entirely, not merely thin — so neither `git show` nor `git
+      # merge-base` could resolve base.sha or head.sha as real commits. A full
+      # fetch removes that doubt outright, and this repo carries no binary
+      # assets and a modest history, so the extra fetch cost is negligible
+      # next to a targeted fetch's added complexity (reading the base sha out
+      # of $GITHUB_EVENT_PATH a second time, in its own step) for a near-zero
+      # saving.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      # A `run:` block is the blind spot in the fleet's SHA-pinning rule: that
+      # rule governs `uses:`, and this step downloads a third-party binary,
+      # marks it executable and runs it as root — the same trust the rule
+      # exists to constrain, in a shape it does not reach. Until 2026-08-20 the
+      # ref here was `releases/latest`, i.e. mutable, in the repo that HOSTS
+      # the pinning rule. It is now pinned by version AND by digest, and the
+      # fetch is retried, because an unretried single fetch also reds CI for
+      # reasons unrelated to any diff: run 32383649430 lost `wget` to exit 4
+      # four seconds in, before a test body ran. docs/decisions/0008 has the
+      # argument, including why the digest is stated HERE rather than fetched
+      # from the release alongside the binary. The same step is duplicated in
+      # sync.yml, drift-report.yml and skills-lock-bump.yml and test 7h asserts
+      # all four stay byte-identical, so edit it in one place and copy.
+      - name: Install yq
+        env:
+          # Pinned exactly like a `uses:`, and for the same reason — see
+          # docs/decisions/0008. Bump the two together: the digest is
+          # `yq_linux_amd64`'s, taken from that release's own `checksums`
+          # (the SHA-256 column, per its `checksums_hashes_order`) and
+          # re-computed from the downloaded bytes.
+          YQ_VERSION: v4.53.3
+          YQ_SHA256: fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4
+        run: |
+          set -euo pipefail
+          # Fetch AND verify as one retryable unit. A truncated body is a 200
+          # with the wrong digest, so a checksum miss is a transient to retry
+          # rather than a reason to stop; only a run that fails all three is
+          # reporting something real. Bounded at three because a fourth is
+          # waiting out an outage, which is a red run's job to announce.
+          tmp="$(mktemp -d)"
+          for attempt in 1 2 3; do
+            if wget -nv --tries=1 --timeout=30 -O "$tmp/yq" \
+                 "https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/yq_linux_amd64" \
+               && printf '%s  %s\n' "$YQ_SHA256" "$tmp/yq" | sha256sum -c - >/dev/null; then
+              # Verified bytes only, and they arrive already +x: there is no
+              # window in which /usr/local/bin/yq exists unchecked.
+              sudo install -m 0755 "$tmp/yq" /usr/local/bin/yq
+              yq --version
+              exit 0
+            fi
+            echo "::warning::yq $YQ_VERSION: fetch or checksum failed on attempt $attempt of 3"
+            rm -f "$tmp/yq"
+            if [ "$attempt" -lt 3 ]; then sleep $(( attempt * 5 )); fi
+          done
+          echo "::error::yq $YQ_VERSION could not be installed: three attempts failed to produce bytes matching $YQ_SHA256"
+          exit 1
+
+      # The suite now covers a Node gate (scripts/check-cron-coverage.js) that
+      # parses workflow YAML with a real parser rather than a line scanner, so
+      # the one pinned dev dependency behind it has to be here. `npm ci`, not
+      # `npm install`: the lockfile is the version under test.
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+
+      - name: Install the workflow parser
+        run: npm ci
+
+      - name: Run integration tests
+        run: |
+          chmod +x scripts/build-agents-md.sh scripts/sync.sh scripts/drift-report.sh
+          chmod +x test/run-tests.sh
+          ./test/run-tests.sh
+
+      # This repo runs crons of its own (drift-report, the Dependabot sweep),
+      # and a scheduled failure notifies nobody — drift-report.yml was red 26
+      # consecutive nights unnoticed. So the repo must also run the
+      # scheduled-run-health audit, and that audit must be able to fire and to
+      # file. Deliberately keyed to the CHECKED-OUT repo rather than to sibling
+      # clones on a disk: a runner has exactly one repo, so a disk-root gate
+      # could never run here and would rot while looking like a guarantee.
+      - name: Cron-coverage self-check
+        run: node scripts/check-cron-coverage.js
+
+      # The sibling gate, over the OTHER two-key scope block. It asserts that
+      # `skills_bootstrap.repos` and `skills_bootstrap.out_of_scope` stay a
+      # partition -- disjoint, well-formed, every exclusion reasoned -- and
+      # REFUSES (exit 2) rather than certifying when the complement key is
+      # missing or empty, because a gate that can find nothing prints the same
+      # clean line as a gate that found nothing. Offline by design: whether
+      # the two keys together still cover the account is a discovery question
+      # and belongs to the nightly drift report, so the two never contend.
+      - name: Skills-bootstrap scope is a partition
+        run: node scripts/check-registry.js
+
+      # Structure BEFORE staleness: the staleness diff below only proves
+      # AGENTS.md is a FIXED POINT of the regen recipe, and a doubled managed
+      # block is a fixed point too — the corruption at c86465f regenerated to
+      # itself for four commits (through 7b87581) because the recipe's
+      # first-occurrence-shaped marker match always re-anchored on the same
+      # truncated fragment. Only a check that counts markers and their order
+      # can tell a doubled file from a well-formed one; the diff below cannot,
+      # so this runs first and a failure here is reported as a structural
+      # defect rather than an unreadable multi-hundred-line diff.
+      - name: AGENTS.md structure is sound
+        run: ./scripts/check-agents-md.sh AGENTS.md
+
+      # The graduation gate (_agent-guidance#119): every `##` heading in
+      # agents-md/base.md and agents-md/sections/*.md must have exactly one
+      # row in agents-md/eval-coverage.yml, and a `covered` row's fixture must
+      # actually exist. That last check needs skills-evals on disk, read-only
+      # — no credential, no write, just enough to prove a claimed fixture path
+      # is real rather than a `covered` row nobody backed up. Same pinned
+      # `actions/checkout` SHA this file already uses elsewhere.
+      #
+      # No `ref:` — this tracks skills-evals' default branch. That means once
+      # any row here is `covered`, a fixture rename on that branch reds THIS
+      # repo's CI on the next run, with no change on this side at all.
+      - name: Check out skills-evals (read-only, for fixture existence)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/skills-evals
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Section manifest covers every guidance heading
+        run: node scripts/check-guidance-coverage.js --skills-evals skills-evals --check-bytes
+
+      # The touch gate (_agent-guidance#120), after the graduation gate above
+      # so a heading with no row at all is reported once, by that step, not
+      # twice. `pull_request`-only: the check diffs base vs head, and a push
+      # or workflow_dispatch run has no base to diff against. No `if:`
+      # condition reads `${{ github.event.pull_request.* }}` — the script
+      # itself reads pull_request.base.sha / pull_request.head.sha out of
+      # $GITHUB_EVENT_PATH, so nothing PR-shaped is ever interpolated into a
+      # `run:` block, where it would be echoed into the log.
+      - name: Guidance touch gate
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-guidance-touch.js
+
+      # This repo is excluded from its own sync (SYNC_SELF_REPO), so nothing
+      # ever wrote an AGENTS.md here — it was the one repo in the fleet whose
+      # agents could not read the fleet's guidance while editing it. The fix is
+      # a committed artifact, and this is what stops it going stale. The
+      # composition below must stay byte-identical to sync.sh's: managed content
+      # with its trailing newlines stripped, then the marker line and everything
+      # under it, then exactly one closing newline.
+      - name: Self-guidance is current
+        run: |
+          printf '%s\n%s\n' \
+            "$(./scripts/build-agents-md.sh)" \
+            "$(sed -n '/^## Repo-specific additions/,$p' AGENTS.md)" \
+            > /tmp/expected-AGENTS.md
+          if ! diff -u AGENTS.md /tmp/expected-AGENTS.md; then
+            echo "::error::AGENTS.md is stale. Regenerate it — see its 'Repo-specific additions' section."
+            exit 1
+          fi
+          test "$(./scripts/bridge-status.sh CLAUDE.md)" = bridge-ok

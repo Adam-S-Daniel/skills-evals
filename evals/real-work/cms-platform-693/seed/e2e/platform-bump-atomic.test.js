@@ -1,0 +1,432 @@
+// @lane: local — pure-fs lint of the platform-bump reusable workflow.
+//
+// Locks the two halves of issue #13 so the automated down-sync can't regress
+// to a state that either (a) can't push or (b) produces a PR that fails the
+// single-version pin-consistency guard (#29):
+//
+//   1. PUSH AUTH — the bump rewrites `.github/workflows/*` (the `uses:@` pins +
+//      `platform_ref:` inputs), so the push needs `workflows` permission. The
+//      default Actions GITHUB_TOKEN's App lacks it, so the checkout MUST use the
+//      App installation token as the persisted push credential (the
+//      `secrets.gh_token` PAT fallback was removed in v0.1.103).
+//      Without it: "refusing to allow a GitHub App to ... update workflow ...
+//      without 'workflows' permission" → the whole bump fails.
+//   2. ATOMIC BUMP — the bump must move EVERY pinned reference in one PR, not
+//      just `platform_ref:`: the `uses:@<tag>` pins, the `cms-platform-theme`
+//      Gemfile `tag:`, and `Gemfile.lock` (`tag:` + git `revision:`). A
+//      `platform_ref:`-only PR fails pin-consistency until Dependabot's piecemeal
+//      PRs land. So the run script must resolve the release COMMIT sha and
+//      rewrite the Gemfile / Gemfile.lock revision too.
+const fs = require("node:fs");
+const path = require("node:path");
+const { test, expect } = require("./base");
+const { readWorkflow, parseYaml } = require("./workflow-yaml-utils");
+
+const wf = parseYaml(readWorkflow("platform-bump.yml"));
+const steps = wf.jobs.bump.steps;
+const checkout = steps.find((s) => typeof s.uses === "string" && /actions\/checkout/.test(s.uses));
+// The bump step, by id. It used to be found as "the run step that reads
+// /releases/latest", but since #238 the App-token mint step ahead of it reads
+// the same endpoint (to pin the script it fetches to the release the bump
+// targets), so content no longer identifies it — `id: bump` does. The step
+// calls `gh api repos/$PLATFORM/releases/latest` (cms-platform#244), NOT
+// `gh release view`, which it no longer calls (see the test below locking that
+// it stays gone).
+const runStep = steps.find((s) => s.id === "bump");
+
+// Drop full-line `#` comments before checking that a call does NOT reappear.
+// The run script's own header comment quotes the OLD `gh release view` line
+// verbatim as incident documentation (house style — comments carry the WHY,
+// with evidence), so a plain substring/regex check over the whole script
+// would false-positive on its own explanatory prose. Only the EXECUTABLE
+// text is what the regression guard cares about.
+function stripBashComments(script) {
+  return script
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+}
+
+test.describe("platform-bump reusable — pushable + atomic (#13)", () => {
+  test("checks out with a workflows:write credential so the workflow-file push is authorised", () => {
+    expect(checkout, "an actions/checkout step must exist").toBeTruthy();
+    expect(checkout.with, "checkout must pass a token").toBeTruthy();
+    // The PAT must remain in the chain: it is the fallback a consumer runs on
+    // until it provisions the App, and what the FIRST bump to an App-capable
+    // release runs on. The App-first ORDER of that chain is locked separately,
+    // in app-token-platform-writers.test.js (#238).
+    expect(
+      String(checkout.with.token),
+      "checkout MUST persist the App installation token (workflows:write) " +
+        "in its push-credential chain — the default GITHUB_TOKEN can't push .github/workflows/* changes",
+    ).toMatch(/steps\.app\.outputs\.token/);
+  });
+
+  test("the bump step exists and resolves the latest release", () => {
+    expect(runStep, "the bump run-step must exist").toBeTruthy();
+    expect(runStep.run).toMatch(/releases\/latest/);
+  });
+
+  test("a release lookup FAILURE is loud, not a green no-op (#244)", () => {
+    expect(runStep, "the bump run-step must exist").toBeTruthy();
+    const run = runStep.run;
+
+    // Queries the /releases/latest endpoint (not `gh release view`) so a
+    // "no release yet" 404 is DISTINGUISHABLE from every other failure —
+    // cms-platform is a public repo, so a 404 here can only mean "nothing
+    // published yet," never "you lack access."
+    expect(run, "must query the /releases/latest endpoint so 404 is unambiguous").toMatch(
+      /gh api "repos\/\$PLATFORM\/releases\/latest"/,
+    );
+
+    // The benign path: a 404 (genuinely no release yet) is a quiet, GREEN
+    // no-op — this is the one case the old line got right.
+    expect(run, "a 404 (no release yet) must still exit 0, not fail the job").toMatch(
+      /REL_CODE" = "404"[\s\S]{0,200}exit 0/,
+    );
+
+    // Every OTHER failure — an expired/under-scoped CMS_PLATFORM_PAT, a
+    // revoked cross-repo grant, an API outage — must emit an `::error::`
+    // annotation and exit non-zero. A red run here has to explain the
+    // incident on its face, not just fail silently: it must name what to
+    // check (the token) and reference the issue that root-caused the fix.
+    expect(
+      run,
+      "a non-404 lookup failure must emit ::error:: naming the token to check, and exit 1",
+    ).toMatch(/::error::could not read the latest release[\s\S]{0,400}exit 1/);
+
+    // An empty tag_name (the API call itself succeeded but returned no
+    // usable release) is its own distinct failure — also loud, also non-zero.
+    expect(run, "an empty tag_name response must also be loud, not silently swallowed").toMatch(
+      /returned no tag_name[\s\S]{0,100}exit 1/,
+    );
+
+    // The old swallow-everything-into-green form must never reappear as
+    // EXECUTABLE code in this step (comments are stripped first — see
+    // stripBashComments — because the step's own header comment quotes the
+    // old line verbatim as incident documentation). `gh release view`
+    // legitimately exists elsewhere in this repo (release.yml's own,
+    // unrelated, use) — this assertion is scoped to THIS step's `run`
+    // script, not the whole file.
+    expect(
+      stripBashComments(run),
+      "the old 'gh release view ... || echo \"\"' swallow must not come back as executable code " +
+        "in this step",
+    ).not.toMatch(/gh\s+release\s+view/);
+  });
+
+  test("it bumps EVERY reference atomically (not just platform_ref)", () => {
+    const run = runStep.run;
+    // Resolves the release tag -> commit sha (deref annotated) for the revision.
+    expect(run, "must resolve the release tag's commit sha").toMatch(/git\/refs\/tags/);
+    expect(run, "must dereference annotated tags").toMatch(/object\.type/);
+    // The pins (and the Gemfile.lock revision, via --new-sha) are moved by
+    // scripts/rewrite-platform-pins.js, fetched at the release commit
+    // ($NEW_SHA, not the movable tag) and handed the old ref, the new ref and the new commit (#530).
+    const script = stripBashComments(run);
+    expect(script).toMatch(/contents\/scripts\/rewrite-platform-pins\.js\?ref=\$NEW_SHA/);
+    expect(script).toMatch(
+      /node "\$PIN_TOOLS\/scripts\/rewrite-platform-pins\.js" \\\n\s*--root \. --slug "\$PLATFORM" --from "\$CUR" --to "\$LATEST" --new-sha "\$NEW_SHA"/,
+    );
+    // A rewrite that fails must fail the step, never leave a half-moved tree
+    // to be committed.
+    expect(script).toMatch(/if ! node "\$PIN_TOOLS\/scripts\/rewrite-platform-pins\.js"[\s\S]{0,300}exit 1/);
+  });
+
+  test("no text-wide version replace survives (#530)", () => {
+    // `s/\Q$ENV{CUR}\E/$ENV{LATEST}/g` over whole files re-dated every comment
+    // naming the current version (jodidaniel/jodidaniel.com#303). Only the
+    // seeding stamp below may still edit a file as text, and it is anchored
+    // to the platform slug and a line-leading `platform_ref:`.
+    const script = stripBashComments(runStep.run);
+    expect(script).not.toMatch(/\\Q\$ENV\{CUR\}\\E/);
+    expect(script).not.toMatch(/\\Q\$ENV\{OLD_SHA\}\\E/);
+  });
+
+  test("opens the bump PR", () => {
+    expect(runStep.run).toMatch(/gh pr create/);
+  });
+});
+
+test.describe("platform-bump reusable — seeds newly-dictated workflow callers", () => {
+  test("fetches the platform-dictated set from examples/site AT THE NEW ref", () => {
+    expect(runStep.run).toMatch(/examples\/site\/\.github\/workflows/);
+    expect(runStep.run).toMatch(/ref=\$LATEST/);
+  });
+
+  test("only seeds a caller that's wholly MISSING — never touches one that already exists", () => {
+    expect(runStep.run, "must skip seeding when the destination file already exists").toMatch(
+      /\[ -f "\$dest" \] && continue/,
+    );
+  });
+
+  test("stamps the seeded file's platform-ref pin to $LATEST (not the example's own, possibly stale, pin)", () => {
+    expect(runStep.run).toMatch(/ENV\{LATEST\}/);
+  });
+
+  test("logs which workflows were seeded", () => {
+    expect(runStep.run).toMatch(/seeded.*newly platform-dictated workflow/i);
+  });
+
+  test("detects an add-only diff (untracked seeded file), not just a modified-file diff", () => {
+    expect(runStep.run, "git diff --quiet alone misses brand-new untracked files").toMatch(
+      /git status --porcelain/,
+    );
+  });
+});
+
+test.describe("platform-bump reusable — closes superseded platform/bump-* PRs", () => {
+  // Each bump PR is an ATOMIC absolute rewrite (see #13 above), so it fully
+  // supersedes whatever an older `platform/bump-*` PR proposed. Without a
+  // closure step these pile up every time a release is cut before a
+  // consumer merges the previous bump PR (observed live: a consumer accrued
+  // 4 open bump PRs at once). These lints lock the closure step in place
+  // and its fail-open shape — this is cosmetic cleanup, never worth failing
+  // the bump over.
+  test("closes other open PRs, scoped to the platform/bump- prefix", () => {
+    const run = runStep.run;
+    expect(run, "must list open PRs to find other bump PRs").toMatch(/gh pr list --state open/);
+    expect(run, "must filter the enumeration to the platform/bump- prefix").toMatch(
+      /startswith\(\\"platform\/bump-\\"\)/,
+    );
+    expect(run, "must close the matched PRs").toMatch(/gh pr close/);
+  });
+
+  test("excludes the current $BRANCH from the closure candidates", () => {
+    expect(runStep.run, "must select .headRefName != the current bump's own $BRANCH").toMatch(
+      /select\(\.headRefName\s*!=\s*\\"\$\{BRANCH\}\\"\)/,
+    );
+  });
+
+  test("the closure step is fail-open under set -euo pipefail", () => {
+    const run = runStep.run;
+    expect(run, "the run block must be strict (set -euo pipefail)").toMatch(
+      /set -euo pipefail/,
+    );
+    // Under `set -euo pipefail` a bare `gh pr close` would fail the whole
+    // job on the first stale PR it can't close. It must be guarded inline —
+    // `|| echo "::warning::..."` — exactly like the `gh pr merge --auto`
+    // line it follows, never a bare unguarded call.
+    expect(run, "gh pr close must degrade to a warning, not fail the job").toMatch(
+      /gh pr close[\s\S]{0,300}\|\|\s*echo "::warning::/,
+    );
+    // The enumeration itself (gh pr list piped through mapfile) must also
+    // be guarded — a transient `gh pr list` failure must not abort the bump.
+    expect(run, "the gh pr list enumeration must also be fail-open").toMatch(
+      /2>\/dev\/null \|\| true/,
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #315. Seeding moves a wholly-MISSING file INTO a consumer. Two other kinds of
+// consumer-side change a release can require had no mechanism at all, and both
+// reddened a required check on both consumers as delivered:
+//
+//   1. a caller that LEFT the canonical set was rewritten to a tag at which its
+//      reusable no longer exists, instead of being deleted;
+//   2. an input the platform dictates inside an EXISTING caller
+//      (`required_contexts`) was never rewritten, so it went stale in the very
+//      commit that moved the pin.
+//
+// Neither can be split into its own PR: pin-consistency compares the consumer's
+// workflow set against the platform at that consumer's OWN pinned ref, so each
+// half fails in the mirror-image direction on its own. They have to ride the
+// bump commit, which is why they belong here rather than in a follow-up.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe("platform-bump reusable — retires de-dictated callers (#315)", () => {
+  test("it reads the canonical set at the OLD ref, not just the new one", () => {
+    // The whole judgement call: "was this file ever platform-dictated?" is
+    // answered by the canonical set at $CUR. Deciding from "the consumer has a
+    // file we don't recognise" would delete site-authored workflows.
+    expect(runStep.run).toMatch(
+      /contents\/examples\/site\/\.github\/workflows\?ref=\$CUR/,
+    );
+    expect(runStep.run, "the new set is still read at the NEW ref").toMatch(
+      /contents\/examples\/site\/\.github\/workflows\?ref=\$LATEST/,
+    );
+  });
+
+  test("a file still in the new set is kept; one that left it is git rm'd", () => {
+    const script = stripBashComments(runStep.run);
+    expect(script).toMatch(/for name in "\$\{WAS_DICTATED\[@\]\}"/);
+    expect(
+      script,
+      "membership of the NEW set must be an exact whole-line match — a substring " +
+        "test would spare `e2e-tests.yml` on the strength of `e2e-tests.yml.bak`",
+    ).toMatch(/grep -qxF -- "\$name"/);
+    expect(script).toMatch(/git rm -q --ignore-unmatch -- "\$dest"/);
+  });
+
+  test("an unreadable canonical set on EITHER side deletes nothing", () => {
+    // "Could not tell" must never become "not in the new set, so retire it".
+    // An empty listing is exactly what a $CUR predating examples/site returns.
+    const script = stripBashComments(runStep.run);
+    expect(script).toMatch(
+      /if \[ "\$\{#DICTATED\[@\]\}" -eq 0 \] \|\| \[ "\$\{#WAS_DICTATED\[@\]\}" -eq 0 \]; then/,
+    );
+    // …and the guard must come BEFORE the loop it guards, or it guards nothing.
+    expect(script.indexOf('-eq 0 ] || [ "${#WAS_DICTATED[@]}" -eq 0 ]')).toBeLessThan(
+      script.indexOf('for name in "${WAS_DICTATED[@]}"'),
+    );
+  });
+
+  test("membership is tested with `if`, never `cmd && continue`", () => {
+    // GitHub runs `run:` under `bash -e`, so a false AND-list as a loop body's
+    // last command exits the step — the trap scheduled-run-health.yml's header
+    // already records. A `continue` reached that way would abort the bump.
+    const script = stripBashComments(runStep.run);
+    expect(script).not.toMatch(/grep -qxF[^\n]*&&\s*continue/);
+    expect(script).toMatch(/if printf '%s\\n' "\$\{DICTATED\[@\]\}" \| grep -qxF -- "\$name"; then continue; fi/);
+  });
+
+  test("the PR body names what was retired, so the diff is never a surprise", () => {
+    expect(runStep.run).toMatch(/Retired de-dictated workflow caller\(s\)/);
+  });
+});
+
+test.describe("platform-bump reusable — reconciles dictated caller inputs (#315)", () => {
+  test("it derives the list from the MANIFEST at the new ref, not from the template", () => {
+    // A consumer may map `main` to a library entry other than `consumer-main`.
+    // Copying the template's list would silently impose the wrong set on it —
+    // and a `required_contexts` shorter than the repo's real required set asks
+    // the nudge for a merge it has not established (jodidaniel.com#156).
+    expect(runStep.run).toMatch(/contents\/repo-settings\.yml\?ref=\$LATEST/);
+    expect(runStep.run).toMatch(/contents\/scripts\/reconcile-nudge-contexts\.py\?ref=\$LATEST/);
+    expect(runStep.run, "the consumer's own slug is what selects the ruleset").toMatch(
+      /SLUG="\$GITHUB_REPOSITORY"/,
+    );
+  });
+
+  test("a caller the consumer does not have is not conjured up", () => {
+    const script = stripBashComments(runStep.run);
+    expect(script).toMatch(/if \[ -f "\$NUDGE" \]; then/);
+  });
+
+  test("every non-success outcome reaches the PR body instead of passing quietly", () => {
+    // Direction 3 of #315 as the fallback for directions 1-2: when it cannot be
+    // done automatically the PR must SAY so. A silent skip is the failure mode
+    // the issue exists to end ("the bump PR arrives red and a human works out
+    // why"), and it is worse when the PR is green and merely wrong.
+    const script = stripBashComments(runStep.run);
+    for (const arm of ["UPDATED*", "MANUAL*"]) {
+      expect(script, `the ${arm} outcome must be handled explicitly`).toContain(arm);
+    }
+    expect(script).toMatch(/CONTEXT_NOTE=/);
+    expect(script, "and the note must actually reach the PR body").toMatch(
+      /SEED_NOTE="\$\{SEED_NOTE\}\$\{CONTEXT_NOTE\}/,
+    );
+  });
+
+  test("the reconciler exists, parses both sides, and verifies its own splice", () => {
+    // The script is the reviewable home for this logic — the workflow only
+    // fetches and runs it. These assert the three properties that make a text
+    // splice of a YAML block scalar defensible at all.
+    const src = fs.readFileSync(
+      path.resolve(__dirname, "..", "scripts", "reconcile-nudge-contexts.py"),
+      "utf8",
+    );
+    expect(src, "both sides are read with a real parser, never line-scanned").toMatch(
+      /yaml\.safe_load/,
+    );
+    expect(
+      src,
+      "the write is a splice so the caller's comments survive — including the " +
+        "block telling the next reader to DERIVE this list rather than copy it",
+    ).toMatch(/def splice_block_scalar/);
+    expect(
+      src,
+      "and the splice is re-parsed and compared before anything is saved: a " +
+        "splice nobody checks is how a mangled workflow ships",
+    ).toMatch(/sorted\(verified\) != sorted\(contexts\)/);
+  });
+});
+
+test.describe("platform-bump reusable — seeds a missing delegating deploy wrapper (#518)", () => {
+  // jodidaniel.com was scaffolded at v0.1.0, before the wrappers existed
+  // (v0.1.29), and nothing delivered them later, so it has neither. The bump
+  // seeds a wholly-missing one. This EXECUTES the loop, lifted out of the run
+  // script, in a scratch repo with a stub `gh` on PATH.
+  const os = require("node:os");
+  const { spawnSync } = require("node:child_process");
+
+  function seedLoop() {
+    const lines = runStep.run.split("\n");
+    const start = lines.findIndex((l) => l.trim() === "SEEDED_WRAPPERS=()");
+    expect(start, "the run script must declare SEEDED_WRAPPERS=()").toBeGreaterThan(-1);
+    const indent = lines[start].match(/^\s*/)[0];
+    const end = lines.findIndex((l, i) => i > start && l === `${indent}done`);
+    expect(end, "the wrapper loop must close with `done` at its own indent").toBeGreaterThan(start);
+    return lines.slice(start, end + 1).join("\n");
+  }
+
+  function runLoop({ existing = {}, unreadable = [] }) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bump-wrappers-"));
+    const bin = path.join(dir, "bin");
+    const work = path.join(dir, "work");
+    fs.mkdirSync(bin);
+    fs.mkdirSync(work);
+    for (const [rel, body] of Object.entries(existing)) {
+      fs.mkdirSync(path.join(work, path.dirname(rel)), { recursive: true });
+      fs.writeFileSync(path.join(work, rel), body);
+    }
+    // Stub gh: base64 of "WRAPPER <path>" for a contents call at v9.9.9;
+    // fails (as a 404 would) for a path listed in UNREADABLE.
+    fs.writeFileSync(
+      path.join(bin, "gh"),
+      [
+        "#!/usr/bin/env bash",
+        'for u in $UNREADABLE; do [[ "$2" == *"/contents/$u.delegating?"* ]] && exit 1; done',
+        '[[ "$2" =~ ^repos/example/platform/contents/(.+)\\.delegating\\?ref=v9\\.9\\.9$ ]] || exit 1',
+        'printf "WRAPPER %s\\n" "${BASH_REMATCH[1]}" | base64',
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const res = spawnSync("bash", ["-euo", "pipefail", "-c", `${seedLoop()}\necho "seeded=\${SEEDED_WRAPPERS[*]}"`], {
+      cwd: work,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PLATFORM: "example/platform", LATEST: "v9.9.9", UNREADABLE: unreadable.join(" ") },
+    });
+    return { res, work, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  test("a missing wrapper is written from <path>.delegating at $LATEST, executable", () => {
+    const { res, work, cleanup } = runLoop({});
+    try {
+      expect(res.status, res.stderr).toBe(0);
+      for (const rel of ["oauth-proxy/deploy.sh", "infrastructure/bootstrap/deploy.sh"]) {
+        expect(fs.readFileSync(path.join(work, rel), "utf8")).toBe(`WRAPPER ${rel}\n`);
+        expect(fs.statSync(path.join(work, rel)).mode & 0o111).not.toBe(0);
+      }
+      expect(res.stdout).toContain("seeded=oauth-proxy/deploy.sh infrastructure/bootstrap/deploy.sh");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("an existing wrapper is left byte-for-byte alone", () => {
+    const { res, work, cleanup } = runLoop({ existing: { "oauth-proxy/deploy.sh": "SITE-OWNED\n" } });
+    try {
+      expect(res.status, res.stderr).toBe(0);
+      expect(fs.readFileSync(path.join(work, "oauth-proxy/deploy.sh"), "utf8")).toBe("SITE-OWNED\n");
+      expect(res.stdout).toContain("seeded=infrastructure/bootstrap/deploy.sh");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("an unreadable template warns and seeds nothing for that path, without failing the bump", () => {
+    const { res, work, cleanup } = runLoop({ unreadable: ["oauth-proxy/deploy.sh"] });
+    try {
+      expect(res.status, res.stderr).toBe(0);
+      expect(fs.existsSync(path.join(work, "oauth-proxy/deploy.sh"))).toBe(false);
+      expect(res.stdout).toMatch(/::warning::could not read oauth-proxy\/deploy\.sh\.delegating/);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("the PR body names the seeded wrappers", () => {
+    expect(runStep.run).toMatch(/Seeded missing delegating deploy wrapper\(s\): \$\{SEEDED_WRAPPERS\[\*\]\}/);
+  });
+});

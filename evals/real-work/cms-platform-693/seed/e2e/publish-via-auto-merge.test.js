@@ -1,0 +1,553 @@
+// @lane: local — pure-Node sandbox unit tests for the publish-via-auto-merge shim
+/*
+ * Unit tests for admin/publish-via-auto-merge.js. Pure-Node, no browser:
+ * we load the shim source as a string, run it inside a minimal sandbox
+ * that fakes `window`, `document`, and `fetch`, then drive the wrapped
+ * fetch with synthetic GitHub responses and assert the recovery path.
+ *
+ * This catches matcher regressions (URL/method/status filters) and
+ * recovery-call shape errors without paying for the browser-driving
+ * specs. The browser-driving coverage lives in:
+ *
+ *   - e2e/publish-via-auto-merge-mocked.spec.js     (non-prod, Decap test-repo backend with route mocks)
+ *   - e2e/cms-publish-loop.spec.js                  (prod, real GitHub, RUN_HOST_REPO_PUBLISH_LOOP gate)
+ */
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+const { test, expect } = require("./base");
+
+const SHIM_PATH = path.resolve(__dirname, "../theme/admin/publish-via-auto-merge.js");
+const SHIM_SOURCE = fs.readFileSync(SHIM_PATH, "utf8");
+
+// The shim builds its recovery API base from `window.CMS_REPO` — the
+// platform is parameterized, so a site injects `window.CMS_REPO` (mirrors
+// admin/config.yml's `repo:`). The test sets a SITE-AGNOSTIC value and
+// asserts the configured repo flows through into the issues/labels URL.
+const TEST_REPO = "TestOwner/test-repo";
+const API_BASE = `https://api.github.com/repos/${TEST_REPO}`;
+
+/** Build a fresh sandbox + load the shim into it; returns helpers. */
+function bootShim(hostname) {
+  const appended = [];
+  const calls = [];
+  let nextResponses = [];
+
+  // A minimal Response stand-in matching the bits the shim and tests
+  // touch: status, ok, json(), text(), and clone(). The real browser
+  // Response would also expose .body etc., but we don't read those.
+  function makeResponse(body, init) {
+    const status = (init && init.status) || 200;
+    const headers = (init && init.headers) || {};
+    const text = typeof body === "string" ? body : JSON.stringify(body);
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      headers,
+      json: () => Promise.resolve(JSON.parse(text || "null")),
+      text: () => Promise.resolve(text),
+      clone() {
+        return makeResponse(text, init);
+      },
+    };
+  }
+
+  const fakeFetch = (url, init) => {
+    const u = typeof url === "string" ? url : url.url;
+    const method = (init && init.method) || (url && url.method) || "GET";
+    calls.push({
+      url: u,
+      method: method.toUpperCase(),
+      body: init && init.body,
+      headers: init && init.headers,
+      // `rawInit` is the literal second arg the shim passed through.
+      // The wrap MUST forward `init` exactly as the caller supplied it
+      // (including `undefined`) for non-matching requests, otherwise
+      // Safari re-derives the Request body / credentials / signal from
+      // defaults and `loadEntries` hangs forever on "Loading Entries…".
+      rawInit: init,
+    });
+    if (nextResponses.length === 0) {
+      throw new Error(`fake fetch out of canned responses for ${method} ${u}`);
+    }
+    return Promise.resolve(nextResponses.shift());
+  };
+
+  const sandbox = {
+    console: {
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+      log: () => {},
+    },
+    setTimeout: (fn) => fn,
+    document: {
+      createElement: () => ({
+        textContent: "",
+        setAttribute: () => {},
+        style: { cssText: "" },
+        remove: () => {},
+      }),
+      body: { appendChild: (node) => appended.push(node) },
+    },
+    window: {
+      fetch: fakeFetch,
+      // Site identity is injected by the host page; the shim reads it to
+      // build the recovery API base. Site-agnostic test value.
+      CMS_REPO: TEST_REPO,
+      CMSHostname: hostname,
+    },
+  };
+  sandbox.window.window = sandbox.window;
+  // Mirror common globals onto the sandbox itself so `fetch`, `Response`,
+  // etc., resolve when the shim references them via either path.
+  sandbox.fetch = fakeFetch;
+
+  // The shim does `new Response(...)`. Provide a constructor-shaped
+  // shim that produces our fake-Response objects.
+  function FakeResponseCtor(body, init) {
+    return makeResponse(body, init);
+  }
+  sandbox.window.Response = FakeResponseCtor;
+  sandbox.Response = FakeResponseCtor;
+
+  // The shim references Object.assign(...) and JSON — both already on
+  // sandbox via vm's default global proxy. No more setup needed.
+
+  vm.createContext(sandbox);
+  vm.runInContext(SHIM_SOURCE, sandbox);
+
+  return {
+    sandbox,
+    calls,
+    appended,
+    queueResponse: (body, init) => nextResponses.push(makeResponse(body, init)),
+    fetch: (url, init) => sandbox.window.fetch(url, init),
+  };
+}
+
+test.describe("publish-via-auto-merge.js (unit)", () => {
+  test("installs by setting window.__publishViaAutoMergeInstalled", () => {
+    const { sandbox } = bootShim();
+    expect(sandbox.window.__publishViaAutoMergeInstalled).toBe(true);
+    expect(sandbox.window.__publishViaAutoMerge.installed).toBe(true);
+    expect(sandbox.window.__publishViaAutoMerge.matchers).toEqual(["merge", "delete-ref"]);
+  });
+
+  test("PATCH /git/refs/heads/main 200 passes through (no recovery)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ ref: "refs/heads/main", object: { sha: "new" } }, { status: 200 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("delete PATCH /git/refs/heads/main 422 rule-violation → create branch + open PR + cms/ready label + synthetic merged", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    // 1) the PATCH itself → 422 rule violations
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    // 2) POST /git/refs (create the cms/ delete branch) → 201
+    queueResponse({ ref: "refs/heads/cms/posts/delete-deadbeef-1" }, { status: 201 });
+    // 3) POST /pulls (open the delete PR) → 201 with a number
+    queueResponse({ number: 777 }, { status: 201 });
+    // 4) POST /issues/777/labels → 200
+    queueResponse([{ name: "cms/ready" }, { name: "decap-cms/pending_publish" }], { status: 200 });
+
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.merged).toBe(true);
+    expect(body.sha).toBe("pending-auto-merge-delete");
+
+    expect(calls).toHaveLength(4);
+    // create branch ref at the deletion commit sha read from the PATCH body
+    expect(calls[1].method).toBe("POST");
+    expect(calls[1].url).toBe(`${API_BASE}/git/refs`);
+    const refBody = JSON.parse(calls[1].body);
+    expect(refBody.sha).toBe("deadbeefcafef00d");
+    expect(refBody.ref).toMatch(/^refs\/heads\/cms\/posts\/delete-deadbeef-/);
+    // open the PR, base=main
+    expect(calls[2].method).toBe("POST");
+    expect(calls[2].url).toBe(`${API_BASE}/pulls`);
+    expect(JSON.parse(calls[2].body).base).toBe("main");
+    // label the delete PR cms/ready + decap-cms/pending_publish (the latter
+    // keeps Decap's "adding labels…" migration dialog from ever seeing it)
+    expect(calls[3].method).toBe("POST");
+    expect(calls[3].url).toBe(`${API_BASE}/issues/777/labels`);
+    expect(JSON.parse(calls[3].body)).toEqual({
+      labels: ["cms/ready", "decap-cms/pending_publish"],
+    });
+    expect(calls[3].headers.Authorization).toBe("Bearer t");
+  });
+
+  test("delete PATCH 422 with non-ruleset message does NOT recover", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Update is not a fast forward" }, { status: 422 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "abc", force: false }),
+    });
+    expect(res.status).toBe(422);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("delete PATCH 422 but branch-ref create fails → original 422 propagates", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ message: "Bad credentials" }, { status: 401 }); // POST /git/refs fails
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+    });
+    expect(res.status).toBe(422);
+    expect(calls).toHaveLength(2); // PATCH + failed ref create, then bail
+  });
+
+  // OVER-MATCH GUARDS (#1815 close-out audit): the delete-ref matcher must
+  // recover ONLY the published-delete's ref move (PATCH /git/refs/heads/<single-
+  // segment>), never an editorial DRAFT branch teardown or a non-PATCH verb.
+  test("delete-ref does NOT recover a MULTI-segment editorial draft ref (PATCH /git/refs/heads/cms/posts/<x> 422)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/cms/posts/some-draft-slug`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+    });
+    expect(res.status).toBe(422); // original 422, untouched
+    expect(calls).toHaveLength(1); // only the PATCH; NO ref-create/PR/label recovery
+  });
+
+  // BACKEND-BRANCH SCOPING (#114): Decap PATCHes
+  // git/refs/heads/${encodeURIComponent(backend.branch)}, so a MULTI-segment
+  // backend branch (a preview deploy's PR head ref) arrives percent-encoded
+  // as ONE raw segment — the matcher already matches it and decodeURIComponent
+  // recovers the true name. recover() only proceeds for such a ref when it
+  // EQUALS window.CMS_BACKEND_BRANCH (set from commit.json.branch by the
+  // index.html commit-pill script); unknown/mismatched fails CLOSED.
+  test("ENCODED multi-segment delete PATCH (heads/cms%2Fposts%2Fslug) RECOVERS when it equals window.CMS_BACKEND_BRANCH (#114)", async () => {
+    const { fetch, queueResponse, calls, sandbox } = bootShim();
+    sandbox.window.CMS_BACKEND_BRANCH = "cms/posts/slug";
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ ref: "refs/heads/cms/posts/delete-deadbeef-1" }, { status: 201 });
+    queueResponse({ number: 888 }, { status: 201 });
+    queueResponse([{ name: "cms/ready" }, { name: "decap-cms/pending_publish" }], { status: 200 });
+
+    const res = await fetch(
+      `${API_BASE}/git/refs/heads/${encodeURIComponent("cms/posts/slug")}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: "Bearer t" },
+        body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.merged).toBe(true);
+    expect(body.sha).toBe("pending-auto-merge-delete");
+    // The synthetic ref echoes the DECODED multi-segment branch.
+    expect(body.ref).toBe("refs/heads/cms/posts/slug");
+
+    expect(calls).toHaveLength(4);
+    expect(calls[1].url).toBe(`${API_BASE}/git/refs`);
+    expect(JSON.parse(calls[1].body).sha).toBe("deadbeefcafef00d");
+    // The delete PR's base is the decoded multi-segment backend branch.
+    expect(calls[2].url).toBe(`${API_BASE}/pulls`);
+    expect(JSON.parse(calls[2].body).base).toBe("cms/posts/slug");
+    expect(calls[3].url).toBe(`${API_BASE}/issues/888/labels`);
+    expect(JSON.parse(calls[3].body)).toEqual({
+      labels: ["cms/ready", "decap-cms/pending_publish"],
+    });
+  });
+
+  test("ENCODED multi-segment delete PATCH fails CLOSED when window.CMS_BACKEND_BRANCH is unset (the unit-sandbox / no-commit.json case, #114)", async () => {
+    const { fetch, queueResponse, calls, sandbox } = bootShim();
+    // The sandbox never sets it — exactly the fail-closed environment.
+    expect(sandbox.window.CMS_BACKEND_BRANCH).toBe(undefined);
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    const res = await fetch(
+      `${API_BASE}/git/refs/heads/${encodeURIComponent("cms/posts/slug")}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: "Bearer t" },
+        body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+      },
+    );
+    expect(res.status).toBe(422); // original 422 passes through untouched
+    expect(calls).toHaveLength(1); // NO recovery POSTs
+  });
+
+  test("ENCODED multi-segment delete PATCH fails CLOSED on a MISMATCHED window.CMS_BACKEND_BRANCH (prod backend, stray preview-shaped PATCH, #114)", async () => {
+    const { fetch, queueResponse, calls, sandbox } = bootShim();
+    sandbox.window.CMS_BACKEND_BRANCH = "main";
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    const res = await fetch(
+      `${API_BASE}/git/refs/heads/${encodeURIComponent("cms/posts/slug")}`,
+      {
+        method: "PATCH",
+        headers: { Authorization: "Bearer t" },
+        body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+      },
+    );
+    expect(res.status).toBe(422); // original 422 passes through untouched
+    expect(calls).toHaveLength(1); // NO recovery POSTs
+  });
+
+  test("single-segment delete PATCH (heads/main) still recovers with window.CMS_BACKEND_BRANCH unset — the legacy prod path is NOT gated (#114)", async () => {
+    const { fetch, queueResponse, calls, sandbox } = bootShim();
+    expect(sandbox.window.CMS_BACKEND_BRANCH).toBe(undefined);
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ ref: "refs/heads/cms/posts/delete-deadbeef-1" }, { status: 201 });
+    queueResponse({ number: 999 }, { status: 201 });
+    queueResponse([{ name: "cms/ready" }, { name: "decap-cms/pending_publish" }], { status: 200 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+      body: JSON.stringify({ sha: "deadbeefcafef00d", force: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).merged).toBe(true);
+    expect(calls).toHaveLength(4);
+    expect(JSON.parse(calls[2].body).base).toBe("main");
+  });
+
+  test("delete-ref does NOT match a non-PATCH verb on /git/refs/heads/main (e.g. DELETE)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(422); // original, untouched
+    expect(calls).toHaveLength(1); // only the DELETE; NO recovery
+  });
+
+  test("re-invocation is a no-op (idempotent install)", () => {
+    const ctx = bootShim();
+    const fetchAfterFirst = ctx.sandbox.window.fetch;
+    // Re-run the shim source against the same sandbox.
+    vm.runInContext(SHIM_SOURCE, ctx.sandbox);
+    expect(ctx.sandbox.window.fetch).toBe(fetchAfterFirst);
+  });
+
+  test("non-targeted requests pass through untouched", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ ok: 1 }, { status: 200 });
+    const res = await fetch(`${API_BASE}/contents/_posts/x.md`, { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe("GET");
+  });
+
+  test("non-targeted fetch(request) with NO init forwards init as undefined (Safari loadEntries fix)", async () => {
+    // Regression test for the Safari-stuck-on-"Loading Entries…" bug.
+    // Decap CMS's GitHub backend calls fetch with a Request object and
+    // no second arg, attaching its AbortSignal to the Request. The
+    // wrap used to normalise `init = init || {}` at the entry point,
+    // which turned every such call into `origFetch(request, {})`.
+    // Safari treats an empty `init` object as "re-derive Request
+    // defaults" — it drops the AbortSignal Decap attached, the tree
+    // fetch never resolves, and isFetching stays true forever. The
+    // wrap MUST pass `undefined` straight through when the caller
+    // didn't supply init.
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ tree: [] }, { status: 200 });
+    const request = {
+      url: `${API_BASE}/git/trees/main?recursive=1`,
+      method: "GET",
+    };
+    const res = await fetch(request);
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].rawInit).toBe(undefined);
+  });
+
+  test("PR merge that returns 200 passes through (no recovery)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ merged: true, sha: "abc" }, { status: 200 });
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("PR merge 422 with rule-violations arms cms/ready and returns a synthetic NON-2xx (no merged:true)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ id: 1 }, { status: 200 }); // labels response
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    // MUST be a non-2xx so Decap's mergePR re-throws and SKIPS its
+    // unconditional deleteBranch (which would auto-close the PR — #80 layer 9).
+    // MUST NOT be 405: Decap routes exactly 405 to forceMergePR (a direct
+    // commit to the default branch).
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(422);
+    expect(res.status).not.toBe(405);
+    const body = await res.json();
+    // No synthetic merged:true — that white lie was the bug.
+    expect(body.merged).toBeUndefined();
+    expect(body.sha).toBeUndefined();
+    expect(typeof body.message).toBe("string");
+    // …but cms/ready WAS still armed (the PR merges via auto-merge-when-ready).
+    expect(calls).toHaveLength(2);
+    expect(calls[0].method).toBe("PUT");
+    expect(calls[1].method).toBe("POST");
+    // The recovery POST targets the CONFIGURED repo's issues/labels endpoint.
+    expect(calls[1].url).toBe(`${API_BASE}/issues/42/labels`);
+    expect(JSON.parse(calls[1].body)).toEqual({ labels: ["cms/ready"] });
+    expect(calls[1].headers.Authorization).toBe("Bearer t");
+  });
+
+  test("PR merge 405 (not mergeable yet) arms cms/ready and recovers to a synthetic NON-405 NON-2xx (#85, #80 layer 9)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    // Decap "Publish Now" PUT /merge returns 405 when the required checks
+    // have not recomputed yet (an unpublish/re-edit right after the base
+    // moved). The shim arms cms/ready the SAME way as the 422 ruleset case,
+    // else the editorial PR never merges (#85 / #80 layer 8).
+    queueResponse({ message: "Pull Request is not mergeable" }, { status: 405 });
+    queueResponse({ id: 1 }, { status: 200 }); // labels response
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    // The recovered response is REWRITTEN away from 405 → 422. Returning the
+    // raw 405 would make Decap call forceMergePR (direct default-branch
+    // commit + PATCH /git/refs/heads/<base>) — the #80 layer-9 landmine.
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(422);
+    expect(res.status).not.toBe(405);
+    const body = await res.json();
+    expect(body.merged).toBeUndefined();
+    expect(body.sha).toBeUndefined();
+    expect(calls).toHaveLength(2);
+    expect(calls[0].method).toBe("PUT");
+    expect(calls[1].method).toBe("POST");
+    expect(calls[1].url).toBe(`${API_BASE}/issues/42/labels`);
+    expect(JSON.parse(calls[1].body)).toEqual({ labels: ["cms/ready"] });
+  });
+
+  test("PR merge 409 (head moved) also recovers via cms/ready (non-2xx return)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Head branch was modified. Review and try the merge again." }, { status: 409 });
+    queueResponse({ id: 1 }, { status: 200 });
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(422);
+    expect((await res.json()).merged).toBeUndefined();
+    expect(calls).toHaveLength(2);
+    expect(calls[1].url).toBe(`${API_BASE}/issues/42/labels`);
+  });
+
+  test("delete-ref PATCH 405 does NOT recover (405/409 widening is merge-only)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Method Not Allowed" }, { status: 405 });
+    const res = await fetch(`${API_BASE}/git/refs/heads/main`, {
+      method: "PATCH",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(405); // untouched — only the merge matcher widens
+    expect(calls).toHaveLength(1); // no recovery POST
+  });
+
+  test("PR merge 422 with non-ruleset message does NOT recover", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Pull request is in unstable state" }, { status: 422 });
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(422);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("PR merge 422 + label-add fails → original error propagates", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ message: "Bad credentials" }, { status: 401 });
+    const res = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(422);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("URL with query string after /merge does NOT match (defends against PUT to /pulls/N/merge?foo=bar)", async () => {
+    // Practical reality: GitHub's merge endpoint never takes a query
+    // string, but if Decap ever appended one we want to noisy-fail
+    // rather than silently pass through. Today the regex anchors `/merge$`
+    // so query strings would slip through. This test pins that
+    // behaviour so a future refactor knows what was intentional.
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    const res = await fetch(`${API_BASE}/pulls/42/merge?foo=bar`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer t" },
+    });
+    expect(res.status).toBe(422);
+    expect(calls).toHaveLength(1); // no recovery
+  });
+
+  test("Authorization header is forwarded as-is to the recovery call (Headers instance variant)", async () => {
+    const { fetch, queueResponse, calls } = bootShim();
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ id: 1 }, { status: 200 });
+    // Pass a Headers-like object exposing .get(...).
+    const headers = {
+      _store: {
+        authorization: "token gho_xyz",
+        "x-github-api-version": "2022-11-28",
+      },
+      get(k) {
+        return this._store[k.toLowerCase()] || null;
+      },
+    };
+    await fetch(`${API_BASE}/pulls/7/merge`, {
+      method: "PUT",
+      headers,
+    });
+    expect(calls[1].headers.Authorization).toBe("token gho_xyz");
+    expect(calls[1].headers["X-GitHub-Api-Version"]).toBe("2022-11-28");
+  });
+});
+
+for (const [access, destination] of [
+  ["preview-pr42.example.com", "example.com"],
+  ["example.com", "preview-pr42.example.com"],
+  ["example.com", "example.com"],
+  ["preview-pr42.example.com", "preview-pr42.example.com"],
+]) {
+  test(`auto-merge toast names ${destination} when opened on ${access} (#533)`, async () => {
+    const { fetch, queueResponse, appended } = bootShim({
+      current: () => access,
+      destination: () => destination,
+    });
+    queueResponse({ message: "Repository rule violations found" }, { status: 422 });
+    queueResponse({ id: 1 }, { status: 200 });
+    const response = await fetch(`${API_BASE}/pulls/42/merge`, {
+      method: "PUT",
+      headers: { Authorization: "Bearer fixture" },
+    });
+    expect(response.status).toBe(422);
+    expect(appended).toHaveLength(1);
+    expect(appended[0].textContent).toContain(`the entry appears on ${destination} automatically.`);
+  });
+}

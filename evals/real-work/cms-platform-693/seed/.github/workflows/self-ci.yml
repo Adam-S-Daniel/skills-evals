@@ -1,0 +1,502 @@
+# Self-CI — the platform lints ITSELF.
+#
+# WHY THIS EXISTS
+# Every other workflow in this repo is an `on: workflow_call` reusable except
+# this workflow's sibling `self-secrets-scan.yml` (which dogfoods the
+# secrets-scan reusable on this repo's own history) — without these two, a
+# pull_request against cms-platform would run ZERO checks of its own (the
+# v0.1.1 PR had none — a workflow YAML typo, a broken theme filter, or a
+# regressed harness lint could merge unnoticed). This workflow runs the platform's own
+# LIGHT, high-value self-checks directly on `pull_request` + `push` to main so
+# the machinery repo has a real merge gate without standing up a full
+# Playwright browser matrix or any AWS credentials.
+#
+# WHAT IT RUNS (all fast — target < a few minutes)
+#   1. actionlint over .github/workflows/*.yml AND the examples/site
+#      thin-caller templates                          (hard-fail)
+#   2. theme-gem ruby unit specs: theme/spec/*_test.rb (hard-fail)
+#   3. node pure-fs harness lints: e2e/*.test.js that need no browser/build
+#                                                      (hard-fail)
+#   4. claude plugin validate over this repo's plugin ROOT (hard-fail)
+#   5. cfn-lint over the CloudFormation templates      (hard-fail since #525)
+#   6. python-unit-tests: scripts/cross_post's and oauth-proxy's pytest suites
+#                                                      (hard-fail)
+#
+# ALL SIX job ids are REQUIRED status contexts (repo-settings.yml ->
+# `ruleset_library.platform-main`, which also requires self-secrets-scan.yml's
+# `scan / scan`). A new job here is a new PR-time check, so it must join that
+# list or carry a stated exemption in e2e/ruleset-context-publishable.test.js —
+# that lint fails otherwise.
+#
+# NOT RUN HERE (needs a browser / a built Jekyll site / AWS — covered by the
+# e2e reusable + dogfood/consumer CI, not by a unit-speed PR gate):
+#   - the Playwright browser matrix (`*.spec.js`). Since #527 the platform runs
+#     the `@lane: local` specs itself on the two ADMIN projects against
+#     e2e/fixture-site, in the sibling workflow self-fixture-e2e.yml (required
+#     context `fixture-e2e`) — kept separate so this file stays browser-free.
+#     The public projects still run only in consumer CI.
+#   - the build-dependent harness lints (canary-content / canary-ondemand-
+#     noindex / e2e-posts-public-exclusion / prod-mutate-fixture — they read a
+#     `bundle exec jekyll build` `_site` or the `_e2e/` content fixtures;
+#     base-collections-skip-meta — it BUILDS both fixture-site variants and
+#     subprocess-runs the #33-guarded specs against each; its build-FREE
+#     counterpart base-collections-guard-registry.test.js DOES run here and is
+#     the real PR gate on the #33 admin-write skip-guards) and
+#     `playwright-image-drift` (reads a root package-lock.json + ci-runner
+#     Dockerfile this machinery repo intentionally doesn't ship — see
+#     docs/ARCHITECTURE.md § "Remaining work").
+#   - `aws cloudformation validate-template` (no creds in CI) — cfn-lint is the
+#     credential-free stand-in. It is PINNED rather than advisory, so a new
+#     cfn-lint release can't block an unrelated PR: only a deliberate pin bump
+#     changes its rule set.
+
+name: Self CI
+
+# Dynamic per-run title (issue #1776 grammar; enforced by
+# e2e/workflow-run-name.test.js — which this very workflow runs). Two events,
+# so the run-name branches on `github.event_name`.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+        && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
+   || format('push — {0} @{1}', github.ref_name, github.actor) }}
+
+on:
+  # No `edited` (#222): a skipped caller emits NO check-run, so an `edited` run
+  # WITHDRAWS contexts an earlier run reported green, and only a new SHA restores
+  # them. Everything else is GitHub's default types list. `workflow_dispatch` is
+  # absent because these six jobs are a MERGE GATE, not an on-demand tool — a
+  # dispatch would report the six required contexts against a ref nobody is
+  # merging.
+  #
+  # NO `paths:` / `paths-ignore:` / `branches:` filter, and no job-level `if:`,
+  # on purpose: every job here publishes a REQUIRED context, and a required
+  # context that a filtered or skipped run never reports blocks the merge
+  # forever. Locked by e2e/ruleset-context-publishable.test.js.
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+# Least privilege: every job here only reads the checked-out tree. Nothing
+# posts comments, pushes, or touches deployments.
+permissions:
+  contents: read
+
+# NO `concurrency:` BLOCK — a deliberate, load-bearing ABSENCE. Do not add one.
+#
+# The six jobs below publish six of this repo's REQUIRED status contexts
+# (repo-settings.yml -> `ruleset_library.platform-main`: actionlint,
+# ruby-theme-specs, node-unit-lints, plugin-validate, cfn-lint,
+# python-unit-tests). AGENTS.md's rule for a job
+# in that position is categorical — no `concurrency` block at all — and this
+# workflow carried `group: self-ci-<event>-<pr|ref>` with
+# `cancel-in-progress: true` until cms-platform#285.
+#
+# The reason the group could not stay, even keyed per PR and even with an
+# explicit `types: [opened, synchronize]`: those two types CAN share a head SHA.
+# Measured on adamdaniel.ai PR #3006 (2026-08-09) — opened 01:57:10Z, force-push
+# 01:57:38Z, and two runs created 01:57:41Z BOTH carrying head_sha 68d7c777,
+# because webhook latency dispatches the `opened` run after the force-push has
+# already advanced the ref. Neither type can be dropped (without them the
+# required contexts never report), so no trigger set makes a shared key
+# collision-free.
+#
+# WHAT RE-ADDING A GROUP WOULD COST. A cancelled run shadowing a successful one
+# for the same context+SHA hard-blocks the merge: the API answers
+# `405 Required status check "<ctx>" is cancelled`, and NOTHING overrides it —
+# not native auto-merge, not an explicit merge call, not a nudge bot, not an
+# admin. GitHub picks between the two NON-DETERMINISTICALLY, so the PR reads
+# all-green and never lands, and it will not reproduce on demand.
+# `cancel-in-progress: false` is not a fix: GitHub keeps the in-progress run plus
+# only the LATEST pending run in a group and cancels the other pending duplicates.
+#
+# WHAT THE ABSENCE COSTS. Pushing three times in a minute now runs self-CI three
+# times to completion instead of once. These are the FAST lanes (target: a few
+# minutes, no browser, no AWS), so the bill is small — and runner minutes are
+# recoverable where a wedged required check is not. Locked by
+# e2e/required-context-cancellable.test.js.
+
+jobs:
+  # ── 1. actionlint — static analysis of every workflow YAML ───────────────
+  # Downloads the pinned actionlint BINARY directly (the repo's gitleaks
+  # pattern in secrets-scan.yml) rather than a marketplace action: one fewer
+  # third-party action in the supply chain, and the version is pinned + dated
+  # right here. Hard-fails on any finding — a malformed workflow is a real bug.
+  # TWO invocations: this repo's own workflows, then the examples/site
+  # thin-caller TEMPLATES (an explicit path list replaces actionlint's default
+  # tree walk, so one command cannot cover both).
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # actionlint runs whatever `shellcheck` it finds on PATH over every `run:`
+      # block, so the runner image's shellcheck (0.9.0 today, 0.11.0 on Ubuntu
+      # 26.04 from 2026-10-19) silently decides what this REQUIRED lane flags.
+      # Pin the binary and verify its checksum (the digest GitHub publishes for
+      # the release asset). /usr/local/bin precedes /usr/bin on PATH.
+      # 0.11.0 is 2025-08-04; measured: actionlint 1.7.7 with it exits 0 on both
+      # invocations below.
+      - name: Install shellcheck
+        env:
+          SHELLCHECK_VERSION: '0.11.0'
+          SHELLCHECK_SHA256: '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198'
+        run: |
+          set -euo pipefail
+          tarball="shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          url="https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${tarball}"
+          curl -fsSL --retry 3 "$url" -o /tmp/shellcheck.tar.xz
+          echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          sudo install -m 0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      - name: Install actionlint
+        env:
+          # Pin the binary so behaviour is reproducible across runs. Bump
+          # deliberately (7-day cooling-off, per AGENTS.md / pin-actions policy).
+          ACTIONLINT_VERSION: '1.7.7'  # 2025-05-30
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          curl -fsSL --retry 3 "$url" -o /tmp/actionlint.tgz
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+          actionlint --version
+
+      - name: Lint workflows
+        # `-color` keeps the annotations readable in the run log. actionlint
+        # exits non-zero on any finding, which fails the job.
+        run: actionlint -color
+
+      - name: Lint the examples/site workflow TEMPLATES
+        # A BARE `actionlint` walks only the repo's OWN .github/workflows, so the
+        # thin-caller templates under examples/site/.github/workflows had NO
+        # static analysis at all — measured: a deliberately broken canary file
+        # dropped in that tree left `actionlint -color` at exit 0, while naming
+        # the same file explicitly exited 1. That tree is what `scaffold/
+        # create-site.js` copies into every NEW SITE and what docs/SYNC.md tells
+        # a maintainer to hand-copy callers out of, so a malformed template
+        # propagates instead of just sitting there.
+        #
+        # Explicit paths REPLACE actionlint's default tree walk rather than
+        # adding to it, which is why this is a second invocation and not a flag
+        # on the one above.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          templates=(examples/site/.github/workflows/*.yml examples/site/.github/workflows/*.yaml)
+          if [ ${#templates[@]} -eq 0 ]; then
+            # Never pass silently on an empty glob: this lane's whole value is
+            # that the template tree IS analysed, so "found nothing to lint"
+            # is a failure, not a green run.
+            echo "::error::no workflow templates found under examples/site/.github/workflows" >&2
+            exit 1
+          fi
+          echo "Linting ${#templates[@]} workflow template(s)."
+          actionlint -color "${templates[@]}"
+
+  # ── 2. theme-gem ruby unit specs ─────────────────────────────────────────
+  # Plain-ruby tests (no rspec, no bundle) — each `ruby <file>` exits
+  # non-zero on a failed assertion. These guard the Liquid filters + Jekyll
+  # generator plugins the gem ships (cachebust, auto_tag_pages, tag_feeds,
+  # exclude_e2e_posts). Hard-fail.
+  ruby-theme-specs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9
+        with:
+          # Most specs stub Liquid/Jekyll hooks. Real render/build regressions
+          # use the pinned gems below without a site bundle install.
+          ruby-version: '3.2'
+
+      # The RUM include renders through real Liquid (#517), and fixture
+      # exclusion builds a real Jekyll site with sitemap generation (#531), and
+      # the layout's head (#654) and share image (#655) build through the real
+      # jekyll-seo-tag.
+      - name: Install theme spec dependencies
+        run: |
+          gem install liquid --version 4.0.4 --no-document
+          gem install jekyll --version 4.4.1 --no-document
+          gem install jekyll-sitemap --version 1.4.0 --no-document
+          gem install jekyll-seo-tag --version 2.9.0 --no-document
+
+      - name: Run theme specs
+        run: |
+          set -euo pipefail
+          # Escape workflow-command data before printing repository-controlled text.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          shopt -s nullglob
+          specs=(theme/spec/*_test.rb)
+          if [ ${#specs[@]} -eq 0 ]; then
+            echo "No theme specs found under theme/spec/*_test.rb" >&2
+            exit 1
+          fi
+          status=0
+          for spec in "${specs[@]}"; do
+            printf '::group::ruby %s\n' "$(escape_workflow_data "$spec")"
+            ruby "${spec}" || status=1
+            echo "::endgroup::"
+          done
+          exit "${status}"
+
+  # ── 3. node pure-fs harness lints ────────────────────────────────────────
+  # The e2e harness's `*.test.js` files are Playwright-runner tests that are
+  # pure-fs LINTS — they assert against the workflow YAML, admin JS, scripts,
+  # and harness internals and never call page.goto / launch a browser. Running
+  # them with TARGET=prod makes playwright.config.js skip the local Jekyll +
+  # decap-server webServer bring-up entirely (it's `local`-only), and pinning a
+  # single project (`chromium-light`) runs each lint once without launching any
+  # browser. `npm ci` with PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 installs the test
+  # runner but no ~100MB browser binaries. Hard-fail.
+  #
+  # PARALLELISM (cms-platform#461): PW_WORKERS=100% raises resolveWorkers()'s
+  # default of 50% of the runner's 4 vCPUs (2 workers) to 4. Four shapes were
+  # measured with the browser-download cache above already in place — job-wall
+  # averages over 2-3 samples each, table + run ids in
+  # docs/E2E-PARALLELISM.md#node-unit-lints-self-ci:
+  #
+  #     V0 unchanged (2 workers)                    64.0 s
+  #     V1 PW_WORKERS=100% (this)                   58.7 s  <- chosen
+  #     V2 PW_WORKERS=150%                          60.0 s
+  #     V3 3-way --shard at 100%, behind a gate      61.7 s (52-76 s spread)
+  #
+  # V3 was tried too — Playwright's native `--shard`, not a hand-grouped split
+  # (docs/E2E-PARALLELISM.md's "Measured: --shard cannot balance this suite" is
+  # about the BROWSER suite's 5 ms-49 s per-test spread; these pure-fs lints
+  # don't have that spread, and `--list --shard=i/3` on the DENY-filtered
+  # 2112-test set confirmed an exact 704/704/704 split), behind the same
+  # work/gate split `site-verify.yml` and `e2e-tests.yml`'s `e2e` job use so no
+  # job publishing the required context carries a `timeout-minutes`
+  # (cms-platform#289). It lost on the numbers that matter here: each shard
+  # re-pays the ~15-20 s fixed cost (checkout, setup-node, npm ci, cache
+  # restore) that splitting 42 s of test time three ways barely covers, and one
+  # of three samples caught GitHub staggering the three runners' allocation by
+  # ~36 s, landing WORSE than doing nothing (76 s). Simpler and faster on
+  # average wins: one job, higher worker count, no matrix/gate wiring, no
+  # extra runner-minutes, no allocation-stagger exposure.
+  node-unit-lints:
+    runs-on: ubuntu-latest
+    env:
+      # No browser, no built site, no network — the lint specs are pure-fs.
+      TARGET: prod
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      # …which is exactly why PW_PROJECT matters here: `npm ci` installs no browser
+      # binaries, so e2e/install-browsers-on-miss.js's blanket missing-engine check
+      # reported ALL THREE as missing and downloaded them (~16 s, measured on job
+      # 92855380065) before running lints that never launch a browser. Pin it to the
+      # one project this lane runs. Locked by e2e/engine-scope-lint.test.js.
+      PW_PROJECT: chromium-light
+      # See the PARALLELISM block above the job — measured the best of four
+      # shapes on this runner size and spec mix.
+      PW_WORKERS: '100%'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '20'
+
+      - name: Install harness deps (no browser binaries)
+        working-directory: e2e
+        run: npm ci
+
+      # `npx playwright test` below launches install-browsers-on-miss.js as
+      # globalSetup, which downloads chromium (+ FFmpeg + the headless shell)
+      # into ~/.cache/ms-playwright every run: this lane's `npm ci` sets
+      # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 and installs no browser at all, so the
+      # self-heal always finds it missing (~10 s, measured job 107641619807) — a
+      # pure download, no apt/`--with-deps` to cache around. e2e/package-lock.json
+      # pins @playwright/test, which pins the exact browser BUILD the self-heal
+      # checks for, so the key below is exact: a hit restores precisely what this
+      # run needs, a miss just falls back to the self-heal downloading it, same as
+      # today.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-light-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: Run pure-fs harness lints
+        working-directory: e2e
+        # Explicit DENY list of the build-/repo-dependent specs (they need a
+        # `jekyll build` _site, the `_e2e/` content fixtures, or a root
+        # package-lock.json + ci-runner Dockerfile the machinery repo doesn't
+        # ship — see docs/ARCHITECTURE.md § "Remaining work"). Everything else under e2e/*.test.js is a
+        # hermetic pure-fs lint. Building the allowlist by exclusion means a
+        # newly-added pure-fs lint is picked up automatically; a new build-
+        # dependent one is the only thing that ever needs adding to DENY.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          deny='canary-content.test.js|canary-ondemand-noindex.test.js|e2e-posts-public-exclusion.test.js|playwright-image-drift.test.js|prod-mutate-fixture.test.js|base-collections-skip-meta.test.js'
+          specs=()
+          for f in ./*.test.js; do
+            base=${f#./}
+            if [[ ! "${base}" =~ ^(${deny})$ ]]; then
+              specs+=("${base}")
+            fi
+          done
+          if [ ${#specs[@]} -eq 0 ]; then
+            echo "No pure-fs *.test.js lints matched" >&2
+            exit 1
+          fi
+          echo "Running ${#specs[@]} pure-fs lint spec file(s)."
+          npx playwright test --project=chromium-light --reporter=line "${specs[@]}"
+
+  # ── 4. claude plugin validate — this repo's own plugin ROOT ──────────────
+  # This repo's ROOT is a plugin root: `adam-agentskills` publishes `cms-platform`
+  # as a FEDERATED marketplace entry sourced straight from here, so nothing in
+  # that repo can see these manifests or these skills — if this workflow
+  # doesn't check them, nothing does (see e2e/plugin-manifests.test.js's
+  # header for the full federation model).
+  #
+  # NON-STRICT, DELIBERATELY. Do NOT add `--strict`, and do NOT "fix" a red
+  # strict run by deleting CLAUDE.md. `--strict` treats warnings as errors,
+  # and this plugin root emits exactly one warning, permanently:
+  #   "root: CLAUDE.md at the plugin root is not loaded as project context.
+  #    To ship context with your plugin, use a skill instead."
+  # CLAUDE.md is the repo's agent guidance, managed by the _agent-guidance
+  # sync and not ours to delete — so `--strict` would be a gate whose only
+  # green path is removing a file we must keep. Measured 2026-08-14 with CLI
+  # 2.1.221: `--strict` exits 1 on this tree, 0 on the identical tree with
+  # CLAUDE.md removed; non-strict exits 0.
+  #
+  # WHY GATE ON IT AT ALL, next to the pure-fs lint in lane 3: the two catch
+  # DIFFERENT defects and neither subsumes the other. The CLI is the only
+  # check here that parses every skills/*/SKILL.md the way the runtime does —
+  # unparseable frontmatter YAML is a hard exit 1 (measured), which is exactly
+  # the defect class that shipped in skills/consumer-repo-provisioning. It is blind,
+  # though, to a frontmatter `name` that disagrees with its directory, to an
+  # over-1024-character description, and to the root plugin.json altogether (a
+  # root manifest carrying a 2.0.0 `$schema` plus `category`/`defaultEnabled`/
+  # `skills`/`author.github` still exits 0 — all measured 2026-08-14).
+  # e2e/plugin-manifests.test.js is what covers those.
+  plugin-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '20'
+
+      - name: Install the Claude Code CLI
+        env:
+          # Pinned + dated like the actionlint binary above, and past the
+          # 7-day dependency cooling-off (published 2026-08-03). Bump
+          # deliberately: the validator's warning set is what lane behaviour
+          # depends on.
+          CLAUDE_CODE_VERSION: '2.1.221'  # 2026-08-03
+        run: |
+          set -euo pipefail
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+
+      - name: Validate the plugin root
+        # NON-STRICT on purpose — see the block comment above this job before
+        # changing this line.
+        run: claude plugin validate .
+
+  # ── 5. cfn-lint — CloudFormation templates (REQUIRED, hard-fail) ─────────
+  # `aws cloudformation validate-template` needs AWS credentials we don't have
+  # in CI, so cfn-lint is the credential-free stand-in.
+  #
+  # It carried a job-level `continue-on-error: true` until #525, so a finding
+  # could never fail a PR, and requiring the context would have required
+  # nothing. The reason given for it — "a cfn-lint version bump or a new rule
+  # shouldn't block an otherwise-good PR" — was a consequence of the UNPINNED
+  # `pip install cfn-lint`, so #525 fixes that cause instead: the version is
+  # pinned below, which means a new upstream rule reaches this lane only through
+  # a deliberate pin bump, whose PR shows its findings. Do not re-add
+  # `continue-on-error` (e2e/ruleset-context-publishable.test.js rejects it on
+  # any required-context job).
+  cfn-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install cfn-lint
+        env:
+          # Pinned + dated like the actionlint binary above. 1.57.0
+          # (2026-09-17) is the newest release at least 7 days old as of
+          # pinning (2026-10-03); 1.57.1 (2026-09-29) was still cooling off.
+          # Measured: 1.57.0 lints all three templates below with exit 0 and
+          # no findings.
+          CFN_LINT_VERSION: '1.57.0'  # 2026-09-17
+        run: pip install --disable-pip-version-check "cfn-lint==${CFN_LINT_VERSION}"
+
+      - name: Lint CloudFormation templates
+        # Every listed template must EXIST: a moved or renamed template used to
+        # drop out of the lint silently (and an all-missing list exited 0), which
+        # is a green verdict on nothing — the same rule actionlint's template
+        # step above applies to an empty glob.
+        run: |
+          set -euo pipefail
+          templates=(
+            oauth-proxy/template.yaml
+            infrastructure/rum/template.yaml
+            infrastructure/bootstrap/template.yaml
+          )
+          missing=0
+          for t in "${templates[@]}"; do
+            if [ ! -f "$t" ]; then
+              echo "::error::CloudFormation template not found: $t (update this list if it moved)" >&2
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          cfn-lint "${templates[@]}"
+
+  # ── 6. python-unit-tests — the pytest suites (cross_post + oauth-proxy) ──
+  # cross_post.py (cms-platform#442) and the OAuth proxy's lambda.py are the
+  # platform-owned Python with pytest suites instead of a node *.test.js lint,
+  # so they get their own job rather than folding into node-unit-lints.
+  # oauth-proxy/test_lambda.py used to run nowhere in CI, though it guards the
+  # login popup's token handoff. A REQUIRED context since #525
+  # (repo-settings.yml's `platform-main`), so a failing security suite blocks
+  # the merge instead of merely turning a non-required check red. No
+  # `concurrency:` block, for the reason the file-level comment above gives.
+  python-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      # pytest 9.1.1 (2026-06-19) and PyYAML 6.0.3 (2025-09-25) — each the
+      # newest release at least 7 days old as of pinning (2026-09-21), same
+      # pins adamdaniel.ai's retired cross-post-tests.yml carried.
+      # markdown-it-py 4.2.0 (2026-05-07) and mdurl 0.1.2 (2022-08-14), pinned
+      # 2026-09-29, match cross-post.yml's runtime install.
+      - name: Install test dependencies
+        run: python3 -m pip install --user 'pytest==9.1.1' 'pyyaml==6.0.3' 'markdown-it-py==4.2.0' 'mdurl==0.1.2'
+
+      - name: Run cross_post and oauth-proxy tests
+        run: python3 -m pytest scripts/cross_post oauth-proxy -q

@@ -1,0 +1,45 @@
+# Real-work fixture: cms-platform#693
+# https://github.com/Adam-S-Daniel/cms-platform/pull/693, the fix for
+# https://github.com/Adam-S-Daniel/cms-platform/issues/677 (the prompt below
+# is that issue's title and body, verbatim). The smoke fixture: 22 lines of
+# churn in admin JavaScript.
+#   base  5e66f6e3ced3e619e0fac869cff11c37c3877e2d (the merge's first parent)
+#   merge bf07257b08af74a4cb11bf9d49ab75f4be85671f
+# Trimmed from the seed (evaluated paths, and files over 100 KB the checker
+# never reads): skills/, .claude-plugin/,
+# theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY,
+# theme/assets/js/aws-rum-web/cwr-1.25.0.js, docs/health-audit-close-rule/runs.json,
+# docs/VERSION-HISTORY.md, docs/CI-INVARIANTS.md, scripts/audit-repo-settings.js,
+# e2e/repo-settings-audit.test.js, e2e/preview-only-label-description.test.js.
+
+# The seed is the base tree as `git archive` wrote it, with the fleet agent
+# context already stripped (strip_agent_context: below re-checks it on every
+# run) and the trimmed paths listed above removed. The checker overlay is the
+# pull request's own test file, byte-equal to the merge commit's. The fix
+# itself is in solution.patch, which only the fixture's tests read.
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+  - manager: npm
+    dir: e2e
+
+prompt: |
+  live-url-derive: add site-owned Tools collection to ROUTABLE_COLLECTIONS
+
+  theme/admin/live-url-derive.js `ROUTABLE_COLLECTIONS` is `{ pages, posts, tags, projects }`, so the "View page on site" banner and Live Preview link never appear for adamdaniel.ai's site-owned `tools` collection (folder `_tools`, `preview_path: /tools/{{slug}}/`, URL `/tools/<slug>/`). After publishing, an editor has no link to the tool page. Needs a `tools` entry in the map and in the `path` lookup, keyed on the slug field.
+
+  Found in https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/4083 (site half, slug pattern: see the PR linked there).
+
+objective_checks:
+  - id: hidden-tests
+    type: repo_tests
+    description: The pull request's own tests, hidden from the agent
+    overlay: checker
+    argv: [node, e2e/node_modules/@playwright/test/cli.js, test, --config=e2e/playwright.unit.config.js]
+    fail_to_pass:
+      - [live-url-derive-routable.test.js, -g, tools]
+      - [live-url-derive-routable.test.js, -g, LiveURL publication origin]
+    pass_to_pass:
+      - [live-url-derive-routable.test.js, --grep-invert, "tools|LiveURL publication origin"]
