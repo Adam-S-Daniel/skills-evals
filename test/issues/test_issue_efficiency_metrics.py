@@ -150,6 +150,30 @@ class TestToolErrorCount(unittest.TestCase):
     def test_counts_only_error_tool_results(self):
         self.assertEqual(run_eval._tool_error_count(self._trace()), 2)
 
+    def test_a_repeated_tool_use_id_counts_once(self):
+        # A replayed message (a resumed follow-up call, a re-emitted block)
+        # repeats a result under the same id; one tool call failed once.
+        events = [{"call": 0, "kind": "tool_result", "id": "a", "is_error": True},
+                  {"call": 1, "kind": "tool_result", "id": "a", "is_error": True},
+                  {"call": 1, "kind": "tool_result", "id": "a", "is_error": True},
+                  {"call": 1, "kind": "tool_result", "id": "c", "is_error": True}]
+        self.assertEqual(run_eval._tool_error_count(
+            {"events": events, "omitted_events": 0}), 2)
+
+    def test_results_without_a_usable_id_each_count(self):
+        # An id the CLI sent in a shape the trace refuses is None: nothing to
+        # deduplicate on, so each is its own failure.
+        events = [{"kind": "tool_result", "id": None, "is_error": True},
+                  {"kind": "tool_result", "id": None, "is_error": True}]
+        self.assertEqual(run_eval._tool_error_count(
+            {"events": events, "omitted_events": 0}), 2)
+
+    def test_a_replayed_error_that_was_not_one_still_is_not_counted(self):
+        events = [{"kind": "tool_result", "id": "a", "is_error": False},
+                  {"kind": "tool_result", "id": "a", "is_error": False}]
+        self.assertEqual(run_eval._tool_error_count(
+            {"events": events, "omitted_events": 0}), 0)
+
     def test_no_trace_is_a_run_with_no_tool_call(self):
         self.assertEqual(run_eval._tool_error_count(None), 0)
 

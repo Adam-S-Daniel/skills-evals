@@ -4027,6 +4027,17 @@ def run_checks(fixture: dict, workspace: str, seed: str,
     check than written and still report green, which is worse than failing
     loudly at load time.
     """
+    # Lazy: `seed_prep` imports this package's `repo_tests` and `commands`.
+    import seed_prep
+    with seed_prep.scoring_seed(seed, fixture) as compare_seed:
+        return _run_checks(fixture, workspace, seed, compare_seed, transcript)
+
+
+def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
+                transcript: str | None) -> list[dict]:
+    """`run_checks`' loop. `seed` is the fixture's own seed directory, whose
+    parent holds `repo_tests`' overlay; `compare_seed` is what the workspace
+    is compared against, which a `strip_agent_context:` fixture strips."""
     results = []
     for check in fixture.get("objective_checks", []):
         fn = CHECKS.get(check["type"])
@@ -4040,9 +4051,11 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             raise ValueError(f"unknown {check['type']!r} constraint key(s) in "
                             f"check {check.get('id')!r}: {sorted(extra)}")
         kwargs = {key: check[key] for key in allowed if key in check}
-        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged",
-                             "dir_listing_matches", "repo_tests"):
+        if check["type"] == "repo_tests":
             kwargs["seed"] = seed
+        elif check["type"] in ("non_remote_refs_unchanged", "files_unchanged",
+                               "dir_listing_matches"):
+            kwargs["seed"] = compare_seed
         elif check["type"] == "shell_capture_safe":
             kwargs["transcript"] = transcript
         elif check["type"] == "transcript_matches":
@@ -4067,7 +4080,7 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                     "by truthiness, so a value meaning 'no' turns the seed "
                     "pre-pass on")
             if strip_seed:
-                kwargs["seed"] = seed
+                kwargs["seed"] = compare_seed
         elif check["type"] == "file_count":
             # Fixture-YAML spelling ("min"/"max") and the Python-parameter
             # spelling ("min_count"/"max_count") are both accepted constraint

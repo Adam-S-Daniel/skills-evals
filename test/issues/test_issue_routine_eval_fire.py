@@ -253,9 +253,12 @@ with open(os.path.join(log, "argv.json"), "w") as f:
     json.dump(args, f)
 with open(os.path.join(log, "stdin"), "w") as f:
     f.write(sys.stdin.read())
+with open(os.path.join(log, "calls"), "a") as f:
+    f.write("call\\n")
 with open(args[args.index("--output") + 1], "w") as f:
     f.write(os.environ["FAKE_CURL_BODY"])
 sys.stdout.write(os.environ["FAKE_CURL_STATUS"])
+sys.exit(int(os.environ.get("FAKE_CURL_EXIT", "0")))
 """
 
 
@@ -280,9 +283,11 @@ class FireStepTests(unittest.TestCase):
             s for s in load(WORKFLOW)["jobs"]["fire"]["steps"]
             if s.get("name") == "Fire the eval routine")["env"]
 
-    def run_step(self, status, body):
+    def run_step(self, status, body, curl_exit=0):
         self.summary.write_text("", encoding="utf-8")
+        (self.log / "calls").unlink(missing_ok=True)
         env = {
+            "FAKE_CURL_EXIT": str(curl_exit),
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.tmp),
             "FIRE_URL": self.env_block["FIRE_URL"],
@@ -340,6 +345,7 @@ class FireStepTests(unittest.TestCase):
             "url_mismatch": ("200", self.ok_body(
                 claude_code_session_url="https://example.com/BODY-SENTINEL")),
             "not_json": ("200", "BODY-SENTINEL"),
+            "http_500": ("500", '{"type":"error","error":{"message":"BODY-SENTINEL"}}'),
         }
         for label, (status, body) in cases.items():
             with self.subTest(case=label):
@@ -350,6 +356,55 @@ class FireStepTests(unittest.TestCase):
                 self.assertNotIn("BODY-SENTINEL", out)
                 self.assertNotIn(self.BEARER, out)
                 self.assertEqual(self.summary.read_text(), "")
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_curl_failure_is_status_000_and_prints_no_body(self):
+        # curl exits nonzero with `%{http_code}` already written as 000 on a
+        # refused connection or a timeout, and writes nothing on a spawn
+        # failure; both must read as 000.
+        for label, printed, code in (("timeout", "000", 28), ("no_output", "", 7)):
+            with self.subTest(case=label):
+                proc = self.run_step(printed, "BODY-SENTINEL", curl_exit=code)
+                self.assertNotEqual(proc.returncode, 0)
+                out = proc.stdout + proc.stderr
+                self.assertIn("fire API status: 000", out)
+                self.assertIn("the fire API answered 000", out)
+                self.assertNotIn("BODY-SENTINEL", out)
+                self.assertNotIn(self.BEARER, out)
+                self.assertEqual(self.summary.read_text(), "")
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_it_never_retries(self):
+        # The fire API has no idempotency key: a second request after a lost
+        # response would start a second session. Exactly one curl call, on
+        # success and on every failure.
+        cases = {
+            "success": ("200", self.ok_body(), 0),
+            "http_500": ("500", "BODY-SENTINEL", 0),
+            "http_429": ("429", "BODY-SENTINEL", 0),
+            "http_401": ("401", "BODY-SENTINEL", 0),
+            "curl_failure": ("000", "", 28),
+            "bad_body": ("200", "BODY-SENTINEL", 0),
+        }
+        for label, (status, body, code) in cases.items():
+            with self.subTest(case=label):
+                self.run_step(status, body, curl_exit=code)
+                calls = (self.log / "calls").read_text().splitlines()
+                self.assertEqual(calls, ["call"])
+
+    def test_the_workflow_asks_for_no_retry(self):
+        doc = load(WORKFLOW)
+        self.assertNotIn("--retry", self.script)
+        self.assertNotIn("--retry-all-errors", self.script)
+        for path, value in scalars(doc):
+            if path[-1] in ("run",):
+                continue
+            self.assertNotRegex(str(value), r"(?i)\bretry\b")
+        for key_path in (("jobs", "fire"),):
+            node = doc
+            for key in key_path:
+                node = node[key]
+            self.assertNotIn("strategy", node)
 
 
 if __name__ == "__main__":

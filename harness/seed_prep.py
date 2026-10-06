@@ -23,6 +23,7 @@ setup (Recommended)"). A missing lockfile is a named `deps_failed` error.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -167,6 +168,26 @@ def prepare_seed(workspace: Path, fixture: dict) -> None:
     """Strip the agent context from a freshly copied seed, when asked to."""
     if strip_requested(fixture):
         strip_agent_context(workspace)
+
+
+@contextlib.contextmanager
+def scoring_seed(seed, fixture: dict):
+    """The seed directory a check should compare the workspace against.
+
+    The workspace is stripped before the agent runs, so a check that reads
+    the pristine seed (`files_unchanged`, `dir_listing_matches`,
+    `non_remote_refs_unchanged`, ...) would report the strip itself as the
+    agent's change. With `strip_agent_context:` set this yields a stripped
+    copy of the seed, removed on exit; otherwise the seed itself.
+    """
+    if not strip_requested(fixture) or seed is None or not os.path.isdir(seed):
+        yield seed
+        return
+    with tempfile.TemporaryDirectory(prefix="scoring-seed-") as temporary:
+        copy = Path(temporary) / "seed"
+        shutil.copytree(seed, copy, symlinks=True)
+        strip_agent_context(copy)
+        yield str(copy)
 
 
 def seed_guard(workspace: Path, fixture: dict) -> dict | None:

@@ -1830,7 +1830,11 @@ EFFICIENCY_NAMES = (*(name for name, _ in EFFICIENCY_METRICS), "tool_errors")
 
 
 def _tool_error_count(tool_trace: dict | None) -> int | None:
-    """How many tool results of one trial were errors, from its tool trace.
+    """How many tool calls of one trial ended in an error, from its tool trace.
+
+    Counted by DISTINCT tool-use id: a result repeated under one id (a replayed
+    message) is one failed call. A result with no usable id is counted as it
+    stands, since there is nothing to deduplicate on.
 
     A run always asks the CLI for the whole message array (`--verbose`), so a
     trial with no trace made no tool call: 0, not unknown. A trace that hit
@@ -1842,9 +1846,15 @@ def _tool_error_count(tool_trace: dict | None) -> int | None:
         return 0
     if tool_trace.get("omitted_events"):
         return None
-    return sum(1 for event in tool_trace.get("events") or []
-               if isinstance(event, dict) and event.get("kind") == "tool_result"
-               and event.get("is_error") is True)
+    ids, unidentified = set(), 0
+    for event in tool_trace.get("events") or []:
+        if (isinstance(event, dict) and event.get("kind") == "tool_result"
+                and event.get("is_error") is True):
+            if isinstance(event.get("id"), str):
+                ids.add(event["id"])
+            else:
+                unidentified += 1
+    return len(ids) + unidentified
 
 
 def _trial_tool_errors(trial_dir: Path) -> int | None:
@@ -3051,6 +3061,13 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
                 shutil.copytree(seed, workspace)
             else:
                 workspace.mkdir(parents=True)
+            # Every guidance arm strips and guards its copy of the seed; the
+            # objective-only path scores the workspace the same way.
+            seed_prep.prepare_seed(workspace, fixture)
+            seed_error = seed_prep.seed_guard(workspace, fixture)
+            if seed_error is not None:
+                print(f"setup failed: {seed_error['detail']}")
+                return 2
             try:
                 results = objective.run_checks(fixture, str(workspace), str(seed))
             except objective.ScorerUnavailableError as exc:
