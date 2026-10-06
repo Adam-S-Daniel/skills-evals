@@ -6,10 +6,12 @@
   (2026-10-06):** arms may run as nested `claude -p` inside a Claude Code
   routine, because there the sandbox supplies auth and the arm holds no
   readable long-lived subscription credential (ADR 0010, Probe 1), and only
-  default-branch content from the fleet's own registries and
-  `_agent-guidance` runs in them. The supersession is conditional on that
-  staying true; ADR 0010 lists one open risk (a token file on disk) to close
-  before the first scheduled run. For every other path, `eval.yml`, any
+  default-branch content from the `adam-agentskills`, `cms-platform` and
+  `adamdaniel.ai` registries and `_agent-guidance` runs in them. The
+  supersession is conditional on that staying true; ADR 0010 lists an open
+  risk (whether an arm can read the session's ingress token file or any
+  on-disk GitHub token) and proposes, pending Adam, closing it before the
+  first scheduled run. For every other path, `eval.yml`, any
   Actions runner and a workstation included, decision 1 holds as written.
 - Related: [0001](0001-roster-trusted-on-main.md),
   [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170)

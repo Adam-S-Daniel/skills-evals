@@ -58,12 +58,13 @@ says is now optional):
 **What this repo does today, and what blocks the routine path:**
 
 - [ADR 0002](0002-runs-bill-the-api-org-not-the-subscription.md) decision 1
-  (lines 82-85): arms never run on a subscription credential in CI, because a
-  `bypassPermissions` arm running registry content must not reach one. Its
-  alternatives table (line 115) records a routine fired from `eval.yml` as
+  (its "Decision" section, item 1): arms never run on a subscription
+  credential in CI, because a `bypassPermissions` arm running registry
+  content must not reach one. Its "Alternatives considered" table (the
+  cloud-session-or-routine row) records a routine fired from `eval.yml` as
   permitted but outside the `main`-pinned WIF trust model; decision 4
-  (lines 102-107) makes locally produced results "a local exhibit, not badge
-  input".
+  (the same section, item 4) makes locally produced results "a local
+  exhibit, not badge input".
 - `scripts/local_eval_guard.py:23` refuses `CLAUDE_CODE_OAUTH_TOKEN` and
   `CLAUDE_CONFIG_DIR` in the environment; `harness/guidance.py:780-812`
   (`agent_env`) builds an arm's environment from an allowlist (lines
@@ -140,14 +141,16 @@ go with your recommendations". Those recommendations, now decided:
 
 1. **ADR 0002 decision 1 is superseded for routine runs only.** Its reason
    was that a `bypassPermissions` arm running registry content must not be
-   able to read a long-lived subscription credential (in `eval.yml`, a
-   one-year `setup-token` value in the arm's environment). A routine run
+   able to read a long-lived subscription credential (in `eval.yml` that
+   would be a one-year `setup-token` value in the arm's environment; none
+   was ever stored there). A routine run
    holds no such value where an arm can read it (Probe 1 below), so arms may
    run as nested `claude -p` inside a routine, on two conditions:
    - **The condition holds.** The arm cannot read a long-lived subscription
      credential. Probe 1 met it for the environment and the CLI's credential
-     file; the session's other token-bearing files are an open risk (below)
-     that must be closed before the first scheduled run.
+     file; the session's other token-bearing files are an open risk (below).
+     Proposed gate, the author's and pending Adam: the risk must be closed
+     before the first scheduled run.
    - **Arms run only trusted content:** the default branches of the
      `adam-agentskills`, `cms-platform` and `adamdaniel.ai` skill registries,
      plus `_agent-guidance` as the guidance source. No pull-request, fork or
@@ -207,7 +210,8 @@ run [`session_01QChJ3696fACnRhj4CrLArm`](https://claude.ai/code/session_01QChJ36
   `ANTHROPIC_BASE_URL`, which its `ANTHROPIC_*` passthrough keeps (and which
   the nested run plausibly needs).
 
-**Open risk, to verify before the first scheduled run:** `agent_env` strips
+**Open risk (proposed gate, pending Adam: verify before the first scheduled
+run):** `agent_env` strips
 variables, not files. A `bypassPermissions` arm can read any path the session
 user can, so the file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` names, and any
 on-disk copy of the GitHub tokens, may be readable from an arm. Whether it is,
