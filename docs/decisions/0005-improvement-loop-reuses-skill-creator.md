@@ -505,9 +505,12 @@ here. Built red-first with fakes; no routine run and no real pull request.
   workflow that fires the routine or handles an improve branch gains a
   schedule. The three human-reviewed loop pull requests are the draft pull
   requests this gate opens, once a person merges them.
-- **Known blocker for a real routine run.** `propose_skill_edit.py` refuses
-  to start under `ANTHROPIC_BASE_URL` and `CLOUDSDK_AUTH_ACCESS_TOKEN`
-  (`local_eval_guard.REFUSED_ENV_PREFIXES`), and ADR 0010's Probe 1 found
-  both set in the routine session. Whether a nested run still authenticates
-  with them unset is not known; the loop also needs skill-creator installed
-  in the session. Neither is changed here.
+- **The launch guard and the routine's environment.** In a routine
+  session `propose_skill_edit.py`'s guard (`local_eval_guard.refused_env_names`)
+  refuses ten variables the sandbox sets, `ANTHROPIC_BASE_URL` and
+  `CLOUDSDK_AUTH_ACCESS_TOKEN` among them. ADR 0010's Probe 3 (2026-10-06)
+  showed a nested `claude -p` still authenticates with every one of them
+  unset. Adam chose "Probe unset first (Recommended)", so the guard is not
+  changed: the routine launches the loop under an `env -u` prefix built at
+  run time from `refused_env_names(os.environ)`, not from a fixed list. The
+  loop also needs skill-creator installed in the session.
