@@ -835,26 +835,44 @@ class TriggerLoopUsageTests(PipelineCase):
 
 
 class NumWorkersTests(PipelineCase):
+    """skill-creator's parallel trigger workers share one project directory
+    and undercount triggers (ADR 0005, serial trigger eval addendum), so the
+    loop runs serially and refuses anything else before any call."""
 
-    def test_default_is_four_and_is_recorded(self):
+    def test_default_is_one_and_is_recorded(self):
         runner = FakeRunner(GOOD, {}, proposal(""))
         rc, _, err = self.run_main(runner, "--rotation", "2")
         self.assertEqual(rc, 1, err)
         argv = next(c[1] for c in runner.calls if c[0] == "loop")
-        self.assertEqual(flag(argv, "--num-workers"), "4")
-        self.assertEqual(self.record()["description_half"]["num_workers"], 4)
+        self.assertEqual(flag(argv, "--num-workers"), "1")
+        self.assertEqual(self.record()["description_half"]["num_workers"], 1)
 
-    def test_flag_passes_through_to_skill_creator_and_plan(self):
+    def test_explicit_one_passes_through_to_skill_creator_and_plan(self):
         runner = FakeRunner(GOOD, {}, proposal(""))
-        rc, _, err = self.run_main(runner, "--rotation", "2", "--num-workers", "2")
+        rc, _, err = self.run_main(runner, "--rotation", "2", "--num-workers", "1")
         self.assertEqual(rc, 1, err)
         argv = next(c[1] for c in runner.calls if c[0] == "loop")
-        self.assertEqual(flag(argv, "--num-workers"), "2")
-        self.assertEqual(self.record()["description_half"]["num_workers"], 2)
+        self.assertEqual(flag(argv, "--num-workers"), "1")
         shutil.rmtree(self.results)
-        rc, out, _ = self.run_main(NoCallRunner(), "--dry-run", "--num-workers", "3")
+        rc, out, _ = self.run_main(NoCallRunner(), "--dry-run")
         self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(out)["num_workers"], 3)
+        self.assertEqual(json.loads(out)["num_workers"], 1)
+
+    def test_more_than_one_worker_is_refused_naming_the_undercount(self):
+        for value in ("2", "4", "10"):
+            err = io.StringIO()
+            with self.subTest(value=value), self.assertRaises(SystemExit) as exc, \
+                    contextlib.redirect_stderr(err):
+                pse.parse_args([SKILL, "--num-workers", value])
+            self.assertEqual(exc.exception.code, 2)
+            self.assertIn("share one project directory", err.getvalue())
+            self.assertIn("undercounts triggers", err.getvalue())
+
+    def test_parallel_workers_make_no_call(self):
+        with self.assertRaises(SystemExit) as exc:
+            self.run_main(NoCallRunner(), "--rotation", "2", "--num-workers", "4")
+        self.assertEqual(exc.exception.code, 2)
+        self.assertFalse((self.results / "improvements").exists())
 
     def test_num_workers_must_be_positive(self):
         for value in ("0", "-1"):

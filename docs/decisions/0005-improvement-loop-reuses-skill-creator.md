@@ -52,8 +52,8 @@ this harness or it is not measured the way every other number here is.
    reached through a link planted in the scratch project so the script path
    is a literal the suite's fork scan can classify. It gets its documented
    arguments (`--max-iterations 5 --runs-per-query 3 --holdout 0.4`, browser
-   report off), plus `--num-workers` (default 4, see the first-trial
-   addendum). It keeps skill-creator's split, its held-out selection and its
+   report off), plus `--num-workers 1` (serial only, see the serial
+   trigger eval addendum). It keeps skill-creator's split, its held-out selection and its
    proposer; nothing of it is copied into this repo. Its working directory is
    a scratch project holding `.claude/settings.json`, so the command files
    it plants never land in a real checkout. Settings disable every local
@@ -302,3 +302,33 @@ triggered 0 of 3 times. Three changes follow.
 All three were built red-first against fakes; the regression test replays
 the trial's rotation-0 split from the repository's own fixtures. No further
 real run was made for this change.
+
+## Serial trigger eval addendum (2026-10-06)
+
+The first real `writing-adrs` loop (`--num-workers 4`, 307 skill-creator
+calls) scored every rewrite exactly 7/12 train and 4/8 held-out, with
+positives at 0-1 of 3 even for "add an ADR". That was the measurement, not
+the descriptions.
+
+- **Mechanism, from skill-creator's code (commit `d4226d06`).** `run_loop.py`
+  calls `find_project_root()` once and hands that one directory to
+  `run_eval.py`. Each worker plants `.claude/commands/<skill>-skill-<uuid>.md`
+  there with the same description and counts a hit only when the `Skill` or
+  `Read` call names its own uuid. With N workers the model sees up to N
+  identical skills, and picking a sibling's copy, or declining to choose,
+  scores as a miss.
+- **A/B.** Three writing-adrs positives from `trigger-eval-set.json`, 3 runs
+  each, same description and model, through `run_eval.py` in a scratch
+  project like the script's: 7/9 triggers with 1 worker, 0/9 with 4, 7/9
+  with 1 again (27 calls).
+- **Decision: serial only.** `run_loop.py` takes no per-worker directory, so
+  isolating workers would mean modifying skill-creator, which decision 1
+  rules out. `--num-workers` now defaults to 1 and anything else is refused
+  at argument parsing, before any call. This supersedes the "Parallelism is
+  the operator's, default 4" bullet above; serial also removes its load
+  concern. A serial run takes roughly 7-12 seconds per call, so about
+  40-60 minutes for the ~300 calls of a five-iteration loop on a 20-query
+  set.
+- Records written with `num_workers` above 1 (the first real run's
+  `description_half`) undercount triggers and should not be compared with
+  serial ones.

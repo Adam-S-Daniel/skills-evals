@@ -8,7 +8,7 @@ decision record is docs/decisions/0005-improvement-loop-reuses-skill-creator.md.
     python3 scripts/propose_skill_edit.py <skill> \\
         --registry adam-agentskills=PATH [--ref REF] [--trials 3] \\
         [--rotation K] [--min-gain .10] [--holdout FIXTURE] \\
-        [--trigger-eval-set FILE] [--skill-creator DIR] [--num-workers 4] \\
+        [--trigger-eval-set FILE] [--skill-creator DIR] [--num-workers 1] \\
         [--results-dir DIR] [--no-judge] [--dry-run]
 
 WHAT IT DOES, in order:
@@ -39,7 +39,8 @@ WHAT IT DOES, in order:
     `evals/<skill>/trigger-eval-set.json` (writing-adrs ships one) and is
     passed explicitly; it must be a JSON list of exactly
     `{query: string, should_trigger: boolean}` objects.
-    `--num-workers` (default 4) caps skill-creator's parallel CLI calls.
+    `--num-workers` must be 1 (the default): skill-creator's parallel
+    workers share one project directory and undercount triggers.
     Scratch project settings disable the archived registry plugins that
     provide the skill, leaving the operator's login available.
  6. BODY HALF: one proposal call (roster judge model, no tools) returning
@@ -111,9 +112,20 @@ TRANSCRIPT_EXCERPT_CHARS = 4000
 ARM = "with_skill"
 #: skill-creator's held-out fraction, passed as run_loop's --holdout.
 TRIGGER_HOLDOUT = 0.4
-#: Parallel `claude -p` calls in skill-creator's trigger eval. Its own default
-#: of 10 pushed a 2026-10-05 watched run's five-minute load average to ~28.
-DEFAULT_NUM_WORKERS = 4
+#: Parallel `claude -p` calls in skill-creator's trigger eval: exactly one.
+#: run_eval.py plants every worker's command file (`<skill>-skill-<uuid>`) in
+#: the ONE project directory run_loop.py finds from its cwd, and counts a hit
+#: only when the model picks that worker's own copy, so with N > 1 the model
+#: sees N identical skills and a real trigger often scores as a miss. A
+#: 2026-10-06 A/B on three writing-adrs positives: 7/9 triggers serial, 0/9
+#: with 4 workers, 7/9 serial again. run_loop.py passes no per-worker
+#: directory, so the only fix that leaves skill-creator unmodified is serial.
+DEFAULT_NUM_WORKERS = 1
+NUM_WORKERS_REFUSAL = (
+    "--num-workers must be 1: skill-creator's parallel workers share one "
+    "project directory, each sees every other worker's identical command file, "
+    "and a trigger counts only when the model picks its own copy, so N > 1 "
+    "undercounts triggers (ADR 0005, serial trigger eval addendum)")
 #: What a trigger-loop usage record says about money: nothing is reported.
 TRIGGER_COST_NOTE = ("skill-creator reports no tokens or cost: run_eval.py "
                      "stops reading each stream-json CLI call once it has a "
@@ -545,8 +557,8 @@ def description_loop_argv(eval_set_path: Path, skill_dir: Path, model: str,
                           num_workers: int = DEFAULT_NUM_WORKERS) -> list[str]:
     """skill-creator's documented invocation (SKILL.md "Description
     Optimization", step 3), with its defaults spelled out so the record says
-    what ran, its browser report switched off, and fewer parallel workers
-    than its default 10."""
+    what ran, its browser report switched off, and one worker instead of its
+    default 10 (see DEFAULT_NUM_WORKERS)."""
     return ["--eval-set", str(eval_set_path), "--skill-path", str(skill_dir),
             "--model", model, "--max-iterations", "5", "--runs-per-query", "3",
             "--holdout", str(TRIGGER_HOLDOUT), "--num-workers", str(num_workers),
@@ -991,8 +1003,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--skill-creator", type=Path, default=None,
                         help="skill-creator's skill directory (holds scripts/run_loop.py)")
     parser.add_argument("--num-workers", type=int, default=DEFAULT_NUM_WORKERS,
-                        help="parallel CLI calls in skill-creator's trigger eval "
-                             f"(default {DEFAULT_NUM_WORKERS}; skill-creator's own is 10)")
+                        help="parallel CLI calls in skill-creator's trigger eval; "
+                             "only 1 is accepted (parallel workers undercount triggers)")
     parser.add_argument("--results-dir", type=Path, default=None)
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
@@ -1002,8 +1014,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error(f"--trials must be 1..{run_eval.MAX_TRIALS}")
     if args.rotation is not None and args.rotation < 0:
         parser.error("--rotation must be >= 0")
-    if args.num_workers < 1:
-        parser.error("--num-workers must be >= 1")
+    if args.num_workers != 1:
+        parser.error(NUM_WORKERS_REFUSAL)
     if not math.isfinite(args.min_gain) or not 0 < args.min_gain <= 1:
         parser.error("--min-gain must be finite and greater than 0, at most 1")
     return args
