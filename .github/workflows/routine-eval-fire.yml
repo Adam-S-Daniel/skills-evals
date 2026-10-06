@@ -183,6 +183,39 @@ jobs:
             echo "::error::the fire API answered ${status}; the response body is not printed"
             exit 1
           fi
+          # On a refused 200, say what SHAPE the body had without printing
+          # any of it. Every value comes from a fixed vocabulary or is an
+          # integer; the only text taken from the body is an id prefix that
+          # already matched ^[a-z]{1,10}_, anything else prints as "other".
+          describe_shape() {
+            if ! jq empty "$response" >/dev/null 2>&1; then
+              echo "response shape: body_is_json=no"
+              return 0
+            fi
+            jq -rn 'input
+              | (if type == "object" then . else {} end) as $o
+              | $o.claude_code_session_id as $id
+              | $o.claude_code_session_url as $url
+              | "response shape: body_is_json=yes"
+                + " top_level_type=\(type)"
+                + " type_is_routine_fire=\(
+                    if ($o | has("type")) | not then "missing"
+                    elif $o.type == "routine_fire" then "yes" else "no" end)"
+                + " id_type=\($id | type)"
+                + " id_length=\(if ($id | type) == "string" then ($id | length) else 0 end)"
+                + " id_prefix=\(
+                    if ($id | type) != "string" then "none"
+                    elif ($id | test("^[a-z]{1,10}_")) then ($id | capture("^(?<p>[a-z]{1,10}_)") | .p)
+                    else "other" end)"
+                + " url_starts_with_claude_code=\(
+                    if ($url | type) == "string" and ($url | startswith("https://claude.ai/code/"))
+                    then "yes" else "no" end)"
+                + " top_level_keys=\(if type == "object" then length else 0 end)"
+                + " has_wrapper_key=\(
+                    if type == "object" and (has("data") or has("result") or has("response"))
+                    then "yes" else "no" end)"' \
+              "$response" 2>/dev/null || echo "response shape: unavailable"
+          }
           # Fail closed on any response shape the docs do not describe. The
           # docs show `session_<X>` for both the id and the URL; the first
           # real fire (run 37518720233) answered an id of `cse_<X>` with the
@@ -196,6 +229,7 @@ jobs:
                 | .key' \
                 "$response" 2>/dev/null)"; then
             echo "::error::the fire API answered 200 with an unrecognized body; it is not printed"
+            describe_shape
             exit 1
           fi
           session_url="https://claude.ai/code/session_${session_key}"
@@ -203,6 +237,7 @@ jobs:
                '.claude_code_session_url == $url' \
                "$response" >/dev/null 2>&1; then
             echo "::error::the fire API's session URL does not match its session id; the body is not printed"
+            describe_shape
             exit 1
           fi
           echo "run id: ${RUN_ID}; session link is in the job summary"

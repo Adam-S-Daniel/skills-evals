@@ -387,6 +387,65 @@ class FireStepTests(unittest.TestCase):
                 self.assertEqual(self.summary.read_text(), "")
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_refused_body_prints_only_its_shape(self):
+        ok_url = "https://claude.ai/code/session_X"
+        cases = {
+            "not_json": ("BODY-SENTINEL not json",
+                         ["body_is_json=no"], ["top_level_keys"]),
+            "wrapped": (json.dumps({"data": {
+                "type": "routine_fire", "claude_code_session_id": "BODY-SENTINEL",
+                "claude_code_session_url": ok_url}}),
+                ["body_is_json=yes", "top_level_type=object",
+                 "type_is_routine_fire=missing", "id_type=null", "id_length=0",
+                 "id_prefix=none", "url_starts_with_claude_code=no",
+                 "top_level_keys=1", "has_wrapper_key=yes"], []),
+            "missing_type": (json.dumps({
+                "claude_code_session_id": "session_X",
+                "claude_code_session_url": ok_url}),
+                ["type_is_routine_fire=missing", "id_type=string",
+                 "id_length=9", "id_prefix=session_",
+                 "url_starts_with_claude_code=yes", "top_level_keys=2",
+                 "has_wrapper_key=no"], []),
+            "wrong_type": (json.dumps({
+                "type": "BODY-SENTINEL", "claude_code_session_id": "session_X",
+                "claude_code_session_url": ok_url}),
+                ["type_is_routine_fire=no"], []),
+            "cse_with_bad_url": (json.dumps({
+                "type": "routine_fire", "claude_code_session_id": "cse_01Abc",
+                "claude_code_session_url": "https://example.com/BODY-SENTINEL"}),
+                ["type_is_routine_fire=yes", "id_type=string", "id_length=9",
+                 "id_prefix=cse_", "url_starts_with_claude_code=no"], []),
+            "numeric_id": (json.dumps({
+                "type": "routine_fire", "claude_code_session_id": 12345,
+                "claude_code_session_url": ok_url}),
+                ["id_type=number", "id_length=0", "id_prefix=none"], []),
+            "free_form_id": (json.dumps({
+                "type": "routine_fire",
+                "claude_code_session_id": "BODY-SENTINEL; rm -rf",
+                "claude_code_session_url": ok_url}),
+                ["id_type=string", "id_length=21", "id_prefix=other"], []),
+            "array_body": ('["BODY-SENTINEL"]',
+                ["body_is_json=yes", "top_level_type=array",
+                 "type_is_routine_fire=missing", "top_level_keys=0",
+                 "has_wrapper_key=no"], []),
+        }
+        for label, (body, expected, absent) in cases.items():
+            with self.subTest(case=label):
+                proc = self.run_step("200", body)
+                self.assertNotEqual(proc.returncode, 0)
+                out = proc.stdout + proc.stderr
+                shape = [l for l in out.splitlines()
+                         if l.startswith("response shape:")]
+                self.assertEqual(len(shape), 1, out)
+                for token in expected:
+                    self.assertIn(token, shape[0].split(" "))
+                for token in absent:
+                    self.assertNotIn(token, shape[0])
+                self.assertNotIn("BODY-SENTINEL", out)
+                self.assertNotIn(self.BEARER, out)
+                self.assertEqual(self.summary.read_text(), "")
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_a_curl_failure_is_status_000_and_prints_no_body(self):
         # curl exits nonzero with `%{http_code}` already written as 000 on a
         # refused connection or a timeout, and writes nothing on a spawn
