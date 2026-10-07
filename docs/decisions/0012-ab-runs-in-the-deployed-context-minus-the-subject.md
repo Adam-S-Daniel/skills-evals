@@ -17,13 +17,15 @@ means.
   behavior?" The `with_skill` arm installs the one skill. The
   `without_skill` arm installs nothing. Neither arm carries the other skills
   or the fleet guidance: arms run with `--setting-sources project`, and a
-  real-work seed has its agent context stripped (`strip_agent_context:`,
-  Q5).
+  real-work seed has its fleet context stripped (`strip_agent_context:`).
+  A seed keeps its repository's own `## Repo-specific additions` (Q5), and
+  the CLI's bundled skills stay available in both arms.
 - **Guidance already names the right question, but defaults to the other
   one.** "Guidance subject" says a section stays only if "the full guidance
   WITH it beat[s] the full guidance WITHOUT it". Even so, the default pair is
-  `section`/`none`, and the in-place pair `full`/`full-minus-section` runs
-  only when a fixture declares `ablation:` (`harness/guidance.py:79`).
+  `section`/`none`. The in-place pair `full`/`full-minus-section` runs only
+  when a fixture declares `ablation:` and the run passes `--ablation`, or
+  when a fixture's explicit `arms:` selects it (`harness/guidance.py:79`).
 - **Neither kind of arm carries the other kind of subject.** Skill arms get
   no guidance, and guidance arms get no skills.
 
@@ -39,7 +41,10 @@ there:
 - **Triggering.** A skill has to be chosen from the 16 to 35 skills a
   session loads ("Guidance subject"), each competing on its description. An
   isolation pair has nothing to choose between.
-- **Context cost and interference.** The guidance corpus is about 56 KB.
+- **Context cost and interference.** The guidance corpus is tens of
+  kilobytes: `agents-md/base.md` alone was 24,962 bytes on 2026-10-07, and
+  the delivered size, with a repository's opt-in sections, still has to be
+  measured.
   Whether a subject still works inside it, or crowds something else out, is
   what `full-minus-section` exists to measure.
 - **Confounded model mix.** The fleet guidance tells agents to delegate to
@@ -69,11 +74,51 @@ there:
    mixed in.
 4. **`strip_agent_context:` still runs.** It removes the seed's own copy of
    the fleet context, which is stale and unverified. The harness then
-   delivers the deployed context itself, with each arm proving delivery as
-   guidance arms already do, through the guard and decoy.
+   delivers the deployed context itself, and each arm proves what it got
+   (see "Implementation requirements": the existing guard and decoy are not
+   enough).
 5. **Each summary records the context:** the repository it came from, the
    bundles and digests, the guidance bytes, and whether the subject was
    removed from the context or added to it.
+
+## Implementation requirements
+
+An independent review of this record (Codex, `gpt-6.1-sol`, 2026-10-07)
+found that the existing mechanisms do not deliver decision 1 as they stand.
+The build must cover each of these:
+
+- **A guard that proves leave-one-out.** Decoys are minted only for `mode:
+  none` (`harness/run_eval.py`, around `_mint_decoy`). `full` and
+  `full-minus-section` get the same treatment token and no distinct
+  forbidden token, so an arm that wrongly received `full` would pass both
+  guards. No guard checks a skill catalog or digest either. Each in-place
+  arm needs its own proof: the subject's marker must be present in the
+  `with` arm and absent from the `without` arm. That covers sections and
+  skills alike, by content digest, including plugin-qualified copies.
+- **Local authentication.** The guidance path's scratch `HOME` and
+  `CLAUDE_CONFIG_DIR` lose the interactive `/login` (`DESIGN.md`, "Guidance
+  subject"). Moving skill arms onto it breaks local subscription runs unless
+  authentication is resolved explicitly. Using the real user configuration
+  instead would bring back ambient context and trusted sandbox grants. The
+  ADR 0011 `--settings` flags must survive either way.
+- **An arm lifecycle and names.** `without_*` arm names must carry `none`
+  today, so a `full-minus-section` baseline is a configuration error.
+  Installing an adopted context that already holds the tested skill before
+  the `with_skill` install raises `FileExistsError`. Restoring `.claude` or
+  `skills.lock` before `seed_guard` fails the strip check. The order is:
+  strip, guard, deliver the context, then add or remove the subject.
+- **A context resolver.** `guidance.corpus()` returns base plus at most the
+  subject's own opt-in file, not every section a repository adopts.
+  Scaffolded seeds discard `skills.lock` and record their source repository
+  and revision only as comments. A lock can name further registries, each
+  with its own revision and layout. The resolver needs structured fixture
+  metadata (repository, revision) and must resolve the lock and sections as
+  of that revision, not today's `main`.
+- **Cost accounting.** Guards make their own model calls, and their usage is
+  discarded today. Running full-context guards on every skill arm adds
+  usage the totals don't show. Summaries should report agent tokens (the
+  efficiency KPI) separately from total evaluation cost, guards included.
+  The fixture schema needs a context-size budget.
 
 ## Consequences
 
