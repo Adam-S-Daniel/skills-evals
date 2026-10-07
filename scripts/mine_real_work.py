@@ -369,8 +369,15 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
             continue
         try:
             # Newest created first, as `gh pr list --state merged` listed them.
-            prs = [pr for pr in gh_list(f"repos/{repo}/pulls?state=closed&per_page=100")
-                   if pr.get("merged_at")][:limit]
+            prs, page = [], 1
+            while len(prs) < limit:
+                rows = gh_json("api",
+                               f"repos/{repo}/pulls?state=closed&per_page=100&page={page}")
+                prs.extend(pr for pr in rows if pr.get("merged_at"))
+                if len(rows) < 100:
+                    break
+                page += 1
+            prs = prs[:limit]
         except GhNotFound:
             print(f"mine_real_work: warning: {repo}: pull requests not readable (404); skipped",
                   file=sys.stderr)

@@ -97,10 +97,12 @@ if tail == "" and not flags:
     if view is None:
         not_found()
     print(json.dumps(view))
-elif tail == "/pulls" and listing and query == "state=closed&per_page=100":
+elif (tail == "/pulls" and not flags
+      and re.fullmatch(r"state=closed&per_page=100&page=[1-9]\d*", query)):
     if repo not in data["prs"]:
         not_found()
-    lines(data["prs"][repo])
+    page = int(query.rsplit("=", 1)[1])
+    print(json.dumps(data["prs"][repo][(page - 1) * 100:page * 100]))
 elif re.fullmatch(r"/pulls/\d+/files", tail) and listing and query == "per_page=100":
     key = repo + "#" + tail.split("/")[2]
     lines(data["files"][key])
@@ -271,7 +273,7 @@ class TestFleetEnumeration(_MinerCase):
     def test_a_private_repo_is_skipped_and_never_listed(self):
         doc = self.mine(self._both_owner_world())
         self.assertEqual(doc["skipped"], [{"repo": f"{ADAM}/repo-settings", "reason": "not-public"}])
-        listed = [c[2] for c in self.calls() if "/pulls?" in " ".join(c)]
+        listed = [c[1] for c in self.calls() if "/pulls?" in " ".join(c)]
         self.assertTrue(listed)
         self.assertFalse([c for c in listed if "repo-settings" in c])
 
@@ -282,7 +284,7 @@ class TestFleetEnumeration(_MinerCase):
         # died at its first `gh repo view`. Only `gh api` REST reads remain.
         self.mine(self._both_owner_world())
         rest = re.compile(r"^repos/[^/]+/[^/]+(/pulls\?state=closed&per_page=100"
-                          r"|/pulls/\d+(/files\?per_page=100)?|/commits/[0-9a-f]{40}"
+                          r"&page=[1-9]\d*|/pulls/\d+(/files\?per_page=100)?|/commits/[0-9a-f]{40}"
                           r"|/issues/\d+)?$")
         shapes = set()
         for call in self.calls():
@@ -456,6 +458,36 @@ class TestCandidateFilters(_MinerCase):
         doc = json.loads(self.out.read_text(encoding="utf-8"))
         self.assertEqual([c["pr"] for c in doc["candidates"]], [4, 3])
         self.assertEqual(doc["summary"][0]["merged"], 2)
+
+    def test_limit_stops_paging_after_collecting_merged_prs(self):
+        repo = f"{ADAM}/cms-platform"
+        rows = [_pr(n, merged=None, head="dependabot/x") for n in range(1, 100)]
+        rows += [_pr(100), _pr(101), _pr(102)]
+        self.gh_data(repos={repo: _view(ADAM, "cms-platform")}, prs={repo: rows})
+        registry = self.registry(["cms-platform"])
+        for limit, expected, pages in ((1, 1, [1]), (2, 2, [1, 2]), (9, 3, [1, 2])):
+            with self.subTest(limit=limit):
+                self.log.write_text("")
+                rc, err = self.run_main("mine", "--registry", str(registry),
+                                        "--out", str(self.out), "--limit", str(limit))
+                self.assertEqual(rc, 0, err)
+                doc = json.loads(self.out.read_text())
+                self.assertEqual(doc["summary"][0]["merged"], expected)
+                self.assertEqual([c["pr"] for c in doc["candidates"]],
+                                 [100, 101, 102][:expected])
+                self.assertEqual([c for c in self.calls() if "/pulls?" in c[1]],
+                                 [["api", f"repos/{repo}/pulls?state=closed&per_page=100&page={n}"]
+                                  for n in pages])
+
+    def test_full_unmerged_page_exhausts_on_an_empty_page(self):
+        repo = f"{ADAM}/cms-platform"
+        self.gh_data(repos={repo: _view(ADAM, "cms-platform")},
+                     prs={repo: [_pr(n, merged=None) for n in range(1, 101)]})
+        doc = self.mine(self.registry(["cms-platform"]))
+        self.assertEqual(doc["summary"][0]["merged"], 0)
+        self.assertEqual([c for c in self.calls() if "/pulls?" in c[1]],
+                         [["api", f"repos/{repo}/pulls?state=closed&per_page=100&page={n}"]
+                          for n in (1, 2)])
 
     def test_churn_and_files_come_from_the_files_listing(self):
         many = [f"scripts/m{i}.py" for i in range(150)] + ["test/test_tool.py"]
