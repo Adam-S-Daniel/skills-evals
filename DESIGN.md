@@ -224,7 +224,7 @@ design, recorded verbatim:
   additions" section.
 - **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
   `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
-  acceptance"); nothing else does.
+  acceptance addendum (2026-10-06)"); nothing else does.
 - **Answer leak, the exemption list:** "Exempt interface strings
   (Recommended)". Each fixture declares, in `interface_strings:`, the
   identifiers and messages its hidden tests check verbatim, and its task text
@@ -701,7 +701,8 @@ is objectively decidable from the resulting files alone.
   arm with the with-minus-without delta, and `scripts/local_eval.py`'s
   `aggregate.json` carries the same blocks. They are reported, not decided
   on, except by `scripts/propose_skill_edit.py`, which sums the four token
-  means per fixture and reads that (ADR 0005, "Token-aware acceptance").
+  means per fixture and reads that (ADR 0005, "Token-aware acceptance
+  addendum (2026-10-06)").
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's
