@@ -188,9 +188,21 @@ CLI 2.1.292 on WSL2:
   `/usr/bin` left every command with `bwrap: execvp /bin/bash: Permission
   denied`. A wildcard rule therefore carries no `/**` (a gitignore pattern
   matching a directory covers its contents; the Read tool refused a file
-  inside one), and a symlink at one of those levels that leaves HOME for a
-  system or PATH directory, or for one holding TMPDIR or the workspace,
-  fails the arm with `read_rules_unsafe`.
+  inside one). A symlink at one of those levels that leaves HOME (or the
+  profile) for a system or PATH directory, or for one holding TMPDIR or the
+  workspace, is spared instead: the complement patterns leave its name out
+  as they leave the arm's own, so no rule names it and the sandbox never
+  walks into its target, while every other name at that level, present or
+  later, stays denied. What it leads to is no secret: a GitHub
+  ubuntu-24.04 runner's HOME holds `.ghcup`, a link to `/usr/local/.ghcup`
+  (`/etc/skel/.ghcup`, made by actions/runner-images'
+  `install-haskell.sh`), and refusing it failed every arm in PR #345's CI.
+  The arm fails with `read_rules_unsafe` only when such a link also leads
+  into or around a path that must stay denied (any other deny root: a
+  checkout, an output directory, the archive, another profile; a harness
+  directory under TMPDIR or TMPDIR itself; or around HOME), since the Read
+  tool would reach it through the spared name, or when its name is not
+  spelled from the class above.
 - The settings are capped at 64 KiB (`settings_too_large`), and a CLI that
   cannot be started at all is `spawn_failed`, not a traceback.
 
@@ -211,7 +223,8 @@ extending it): the Read tool was refused on all three and on
 Not covered: a HOME or profile entry created later whose name leaves the
 kept one at a character outside the class above is readable by the Read
 tool (commands still lose all of HOME); a symlink in HOME that leads
-outside it is followed by the Read tool; a harness directory under TMPDIR
+outside it is followed by the Read tool, and a spared one (above) lets the
+Read tool list the system or PATH directory it leads to; a harness directory under TMPDIR
 whose name equals the arm's own but for case; commands
 cannot read the arm's own saved tool outputs, only the Read tool can.
 

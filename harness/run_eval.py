@@ -1161,71 +1161,117 @@ _CLASS_CHARS = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 def _class_without(char: str) -> str:
     """A bracket class of `_CLASS_CHARS` minus `char` in either case, `-`
     last (literal)."""
-    chars = [c for c in _CLASS_CHARS if c.lower() != char.lower() and c != "-"]
-    if char != "-":
-        chars.append("-")
-    return "[" + "".join(chars) + "]"
+    return _class_without_all(char)
 
 
-def _complement_patterns(keep: str) -> list[str]:
-    """gitignore patterns that match every name in a directory but `keep`,
-    including names created later: one leaving `keep` at each character
-    (`<prefix>[<every class char but keep's>]*`), each strict prefix of
-    `keep` by name (but `.`), and every longer name (`<keep>?*`). Wildcards
-    come without `/**`: a pattern that matches a directory covers what is in
-    it (measured with the Read tool)."""
-    out = []
-    for index, char in enumerate(keep):
-        prefix = keep[:index]
-        out.append(f"{prefix}{_class_without(char)}*")
-        if prefix and prefix not in (".", ".."):
-            out.append(prefix)
-    out.append(f"{keep}?*")
+def _class_without_all(chars: str) -> str:
+    """A bracket class of `_CLASS_CHARS` minus every one of `chars` in
+    either case, `-` last (literal) unless it is one of them."""
+    left = {c.lower() for c in chars}
+    kept = [c for c in _CLASS_CHARS if c.lower() not in left and c != "-"]
+    if "-" not in left:
+        kept.append("-")
+    return "[" + "".join(kept) + "]"
+
+
+def _complement_patterns(keep: str, spare=()) -> list[str]:
+    """gitignore patterns that match every name in a directory but `keep`
+    and the `spare` names, including names created later: at each prefix the
+    kept names share, one leaving them there (`<prefix>[<every class char
+    but theirs>]*`) and the prefix by name (but `.`, and a kept name), and
+    every longer name than a kept one no other extends (`<name>?*`). With
+    one kept name: one leaving `keep` at each character, each strict prefix
+    by name and `<keep>?*`. Every name is spelled from `_CLASS_CHARS`
+    (`_COMPLEMENT_NAME`). Wildcards come without `/**`: a pattern that
+    matches a directory covers what is in it (measured with the Read tool)."""
+    kept = [keep, *(name for name in spare
+                    if name.lower() != keep.lower())]
+    folded = {name.lower() for name in kept}
+    out, seen = [], set()
+    # Prefixes in the order the names spell them: depth first along `keep`.
+    for name in kept:
+        for index in range(len(name) + 1):
+            prefix = name[:index]
+            if prefix.lower() in seen:
+                continue
+            seen.add(prefix.lower())
+            nexts = "".join(sorted({other[index] for other in kept
+                                    if len(other) > index
+                                    and other[:index].lower() == prefix.lower()}))
+            if nexts:
+                out.append(f"{prefix}{_class_without_all(nexts)}*")
+            else:
+                out.append(f"{prefix}?*")
+            if (prefix and prefix not in (".", "..")
+                    and prefix.lower() not in folded):
+                out.append(prefix)
     return out
 
 
-def _outside_class(directory: Path, keep: str) -> list[str]:
+def _outside_class(directory: Path, keep: str, spare=()) -> list[str]:
     """The entries of `directory` the complement patterns cannot reach: the
-    character where they leave `keep` is not in `_CLASS_CHARS`."""
+    character where they leave every kept name is not in `_CLASS_CHARS`."""
     if not directory.is_dir():
         return []
+    kept = [keep.lower(), *(name.lower() for name in spare)]
     out = []
     for name in sorted(os.listdir(directory)):
-        # The matcher ignores case, so the patterns leave `keep` where the
-        # case-folded names part.
-        common = len(os.path.commonprefix([name.lower(), keep.lower()]))
-        if (name.lower() != keep.lower() and common < len(name)
-                and name[common] not in _CLASS_CHARS):
+        # The matcher ignores case, so the patterns leave a kept name where
+        # the case-folded names part.
+        if name.lower() in kept:
+            continue
+        common = max(len(os.path.commonprefix([name.lower(), k])) for k in kept)
+        if common < len(name) and name[common] not in _CLASS_CHARS:
             out.append(name)
     return out
 
 
 def _check_symlinks(directory: Path, root: Path, keep: str,
-                    protected: list[Path], needed: list[Path]) -> None:
-    """Refuse a symlink in `directory` that leaves `root` for a path the arm
-    needs: a wildcard rule would deny its target to every command (one HOME
-    entry linking into /usr/bin made `bwrap: execvp /bin/bash: Permission
-    denied`, measured). `protected` may not be reached at all (system and
-    PATH directories); `needed` (the workspace, TMPDIR) only not covered
-    whole, so a link to some other directory under /tmp is denied freely."""
+                    protected: list[Path], needed: list[Path],
+                    guarded=(), tmp_root: Path | None = None) -> list[str]:
+    """The symlinks in `directory` the wildcard rules must leave alone.
+
+    A wildcard rule that matches a symlink out of `root` denies its target
+    to every command (one HOME entry linking into /usr/bin made `bwrap:
+    execvp /bin/bash: Permission denied`, measured). So a link that leaves
+    `root` for a path the arm needs (`protected`, system and PATH
+    directories, reached at all; `needed`, the workspace and TMPDIR, covered
+    whole) is spared: no rule names it, and what it leads to is no secret (a
+    GitHub runner's and a container's HOME hold such links). A link to any
+    other directory outside `root` is denied as usual. Refused
+    (`read_rules_unsafe`): a link that would have to be spared but leads
+    into or around a path that must stay denied (`guarded`: a checkout, an
+    output directory, the archive, another profile, a harness directory
+    under TMPDIR, or `tmp_root` itself, where later ones appear), since the
+    Read tool would reach it through the spared name; and one whose name the
+    patterns cannot spell."""
     if not directory.is_dir():
-        return
-    for entry in directory.iterdir():
+        return []
+    spare = []
+    for entry in sorted(directory.iterdir()):
         if entry.name == keep or not entry.is_symlink():
             continue
         target = entry.resolve()
         if _within(target, root):
             continue
-        if (any(_within(target, p) or _within(p, target) for p in protected)
+        if not (any(_within(target, p) or _within(p, target) for p in protected)
                 or any(_within(n, target) for n in needed)):
+            continue
+        if (any(_within(target, g) or _within(g, target) for g in guarded)
+                or (tmp_root is not None and _within(tmp_root, target))
+                or _within(root, target)
+                or not _COMPLEMENT_NAME.match(entry.name)):
             raise ArmReadIsolationError(
-                f"a symlink in {PROFILE_LABEL} or HOME leads to a path the arm "
-                "needs, and the read rules would deny it to every command",
+                f"a symlink in {PROFILE_LABEL} or HOME leads both to a path "
+                "the arm needs and to one it may not read",
                 code="read_rules_unsafe")
+        spare.append(entry.name)
+    return spare
 
 
 def _profile_read_rules(root: Path, session_dir: Path | None,
-                        protected: list[Path], needed: list[Path]) -> list[str]:
+                        protected: list[Path], needed: list[Path],
+                        guarded=(), tmp_root: Path | None = None) -> list[str]:
     """The Read deny rules for HOME or a profile, which leave `session_dir`.
 
     `session_dir` is the arm's own session directory when it lies under
@@ -1234,8 +1280,10 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
     and a Read allow rule cannot carve a hole in a deny. So at each level on
     the way down, `_complement_patterns` deny every other name, present or
     future: another session's project directory created after these
-    settings were built is denied too. The sandbox still denies all of
-    `root` to commands. A name the patterns cannot spell denies `root` whole.
+    settings were built is denied too. A symlink out of `root` to a path
+    the arm needs is spared at its level (`_check_symlinks`). The sandbox
+    still denies all of `root` to commands. A name the patterns cannot spell
+    denies `root` whole.
     """
     whole = _read_rules(_glob_escape(str(root)))
     if session_dir is None or root not in session_dir.parents:
@@ -1245,14 +1293,15 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
         return whole
     rules, current = [], root
     for part in parts:
-        _check_symlinks(current, root, part, protected, needed)
+        spare = _check_symlinks(current, root, part, protected, needed,
+                                guarded, tmp_root)
         base = _glob_escape(str(current))
-        for pattern in _complement_patterns(part):
+        for pattern in _complement_patterns(part, spare):
             if "*" in pattern:
                 rules.append(f"Read(/{base}/{pattern})")
             else:
                 rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
-        for name in _outside_class(current, part):
+        for name in _outside_class(current, part, spare):
             rules += _read_rules(f"{base}/{_glob_escape(name)}")
         current = current / part
     return rules
@@ -1392,7 +1441,11 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
         protected, needed)
     read_rules = []
     for _, path in denied:
-        for rule in (_profile_read_rules(path, keep, protected, needed) if path in roots
+        # What a spared symlink in HOME or a profile must not lead to: every
+        # other denied path and the harness's directories under TMPDIR.
+        guarded = [p for _, p in denied if p != path] + tmp_denied
+        for rule in (_profile_read_rules(path, keep, protected, needed,
+                                         guarded, tmp_root) if path in roots
                      else _read_rules(_glob_escape(str(path)))):
             if rule not in read_rules:
                 read_rules.append(rule)

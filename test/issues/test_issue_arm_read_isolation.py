@@ -83,6 +83,11 @@ def covers(patterns, target: Path) -> bool:
                for candidate in (target, *target.parents))
 
 
+def covers_name(patterns, path: Path) -> bool:
+    """A pattern names `path` itself, unresolved (a symlink's own name)."""
+    return any(_matches(p, path) for p in patterns)
+
+
 class _TempLayout(unittest.TestCase):
     """HOME, a clone holding a linked worktree, its sibling, two checkouts."""
 
@@ -449,13 +454,76 @@ class ReadDenySettingsTests(_TempLayout):
         rules = read_rule_paths(self.settings(session_dir=projects / "-tmp-x"))
         self.assertTrue(covers(rules, projects / "(odd) name" / "s.jsonl"))
 
-    def test_a_link_out_of_home_to_a_path_the_arm_needs_is_refused(self):
+    def test_a_link_out_of_home_to_a_path_the_arm_needs_is_spared(self):
+        # It leads nowhere secret, and a wildcard rule naming it would deny
+        # /usr/bin to every command; so no rule names it, and the rest of
+        # HOME is still denied.
         projects = self.home / ".claude" / "projects"
         projects.mkdir(parents=True)
         (self.home / "tools").symlink_to("/usr/bin")
-        with self.assertRaises(run_eval.ArmReadIsolationError) as caught:
-            self.settings(session_dir=projects / "-tmp-x")
-        self.assertEqual(caught.exception.code, "read_rules_unsafe")
+        rules = read_rule_paths(self.settings(session_dir=projects / "-tmp-x"))
+        self.assertFalse(covers_name(rules, self.home / "tools"))
+        for path in (self.home / "toolsx", self.home / "tool", self.home / "t",
+                     self.home / ".cargo" / "f", self.home / "secret"):
+            self.assertTrue(covers(rules, path), path)
+
+    def test_a_github_runner_home_is_not_refused(self):
+        # ubuntu-24.04 runner images copy /etc/skel/.ghcup, a link to
+        # /usr/local/.ghcup, into HOME (actions/runner-images'
+        # install-haskell.sh); here the link leads to a PATH directory's
+        # parent. Every arm failed `read_rules_unsafe` on it (PR #345's CI).
+        ghcup = self.root / "usr-local" / ".ghcup"
+        (ghcup / "bin").mkdir(parents=True)
+        (self.home / ".ghcup").symlink_to(ghcup)
+        for name in (".cargo", ".rustup", ".dotnet", ".nvm", "work"):
+            (self.home / name).mkdir()
+        projects = self.home / ".claude" / "projects"
+        own = projects / "-tmp-workspace-abc"
+        own.mkdir(parents=True)
+        (projects / "-tmp-workspace-old").mkdir()
+        settings = self.settings(path_env=str(ghcup / "bin"), session_dir=own)
+        rules = read_rule_paths(settings)
+        self.assertFalse(covers_name(rules, self.home / ".ghcup"))
+        self.assertFalse(covers(rules, own / "s1" / "tool-results" / "out.txt"))
+        for path in (self.home / ".cargo" / "f", self.home / ".rustup" / "f",
+                     self.home / ".dotnet" / "f", self.home / ".nvm" / "f",
+                     self.home / "work" / "f", self.home / ".ghcupx" / "f",
+                     self.home / ".ghcu" / "f", self.home / ".g" / "f",
+                     projects / "-tmp-workspace-old" / "s.jsonl"):
+            self.assertTrue(covers(rules, path), path)
+        self.assertIn(str(self.home), settings["sandbox"]["filesystem"]["denyRead"])
+
+    def test_a_link_both_needed_and_denied_is_refused(self):
+        # Spared, the Read tool would reach a denied path through it: a
+        # checkout's PATH directory, TMPDIR (other arms' workspaces), or a
+        # directory around HOME.
+        projects = self.home / ".claude" / "projects"
+        projects.mkdir(parents=True)
+        (self.registry / "bin").mkdir()
+        cases = (("reg", self.registry / "bin", str(self.registry / "bin")),
+                 ("tmp", self.tmp, ""),
+                 ("up", self.root, ""))
+        for name, target, path_env in cases:
+            with self.subTest(name=name):
+                link = self.home / name
+                link.symlink_to(target)
+                try:
+                    with self.assertRaises(run_eval.ArmReadIsolationError) as caught:
+                        self.settings(path_env=path_env, workspace=self.workspace,
+                                      session_dir=projects / "-tmp-x")
+                    self.assertEqual(caught.exception.code, "read_rules_unsafe")
+                finally:
+                    link.unlink()
+
+    def test_spared_names_leave_every_other_name_denied(self):
+        patterns = run_eval._complement_patterns("-tmp-x", [".ghcup", ".gh"])
+        names = ["-tmp-x", ".ghcup", ".gh"]
+        for name in ("-tmp-y", ".ghcupx", ".ghc", ".g", ".x", "x", ".GHCUPX", "-tmp-xx"):
+            self.assertTrue(any(fnmatch.fnmatchcase(name.lower(), p.lower())
+                                for p in patterns), name)
+        for name in names + [".GHCUP"]:
+            self.assertFalse(any(fnmatch.fnmatchcase(name.lower(), p.lower())
+                                 for p in patterns), name)
 
     def test_no_wildcard_rule_reaches_below_its_match(self):
         # `<wildcard>/**` made the sandbox walk every file below a match.

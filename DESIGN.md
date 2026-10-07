@@ -1796,7 +1796,10 @@ its identity) and PATH directories under HOME with a `bin`'s sibling `lib`
 the Read tool, a skill arm's HOME and profile are denied structurally around
 its own `~/.claude/projects/<munged workspace>`, where the CLI saves large
 tool outputs the agent reads back: complement patterns deny every other
-name at each level, sessions created after the settings included. A workspace under a denied path (TMPDIR inside
+name at each level, sessions created after the settings included; a
+symlink there leading out to a system or PATH directory (a GitHub runner's
+`~/.ghcup`) is left out of those patterns rather than denied, and one that
+also leads to a denied path fails the arm with `read_rules_unsafe`. A workspace under a denied path (TMPDIR inside
 HOME, say) fails the arm with `workspace_read_denied` before the CLI starts.
 
 **Nothing else outside the sandbox runs for an arm** (ADR 0011's hardening

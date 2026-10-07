@@ -73,6 +73,14 @@ def failed(stderr: str) -> subprocess.CompletedProcess:
 
 class RunAgentFollowupTests(unittest.TestCase):
     def setUp(self):
+        # A TMPDIR of its own: the read rules list the harness directories
+        # under TMPDIR, and a concurrent test (a `--jobs` worker) making or
+        # removing one between two turns would change the flags compared.
+        self.tmp = Path(tempfile.mkdtemp(prefix="followups-tmp-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        patcher = mock.patch.object(tempfile, "tempdir", str(self.tmp))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.workspace = Path(tempfile.mkdtemp(prefix="workspace-"))
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
         # A HOME of its own: the arm's read rules list what is in HOME.
