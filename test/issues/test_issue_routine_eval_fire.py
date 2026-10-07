@@ -592,8 +592,7 @@ class SnapshotStepTests(unittest.TestCase):
 
     def test_writes_the_snapshot_file_and_names_it(self):
         rw = self.rw
-        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(3),
-                                     graphql=rw.graphql())
+        proc, values = self.run_step(**rw.rest(3), graphql=rw.graphql())
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         doc = json.loads(Path(values["file"]).read_text(encoding="utf-8"))
         self.assertEqual(doc, rw.precomputed())
@@ -601,13 +600,13 @@ class SnapshotStepTests(unittest.TestCase):
 
     def test_no_closing_issue_writes_null(self):
         rw = self.rw
-        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(), graphql=4)
+        proc, values = self.run_step(**rw.rest(), graphql=4)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIsNone(json.loads(Path(values["file"]).read_text(encoding="utf-8")))
 
     def test_a_refusal_fails_the_step_and_names_no_file(self):
         rw = self.rw
-        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(3, 4), graphql=4)
+        proc, values = self.run_step(**rw.rest(3, 4), graphql=4)
         self.assertNotEqual(proc.returncode, 0)
         self.assertNotIn("file", values)
 

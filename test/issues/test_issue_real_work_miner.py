@@ -17,6 +17,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -30,10 +31,14 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import mine_real_work  # noqa: E402
 
 #: A fake `gh` answered from `$FAKE_GH_DATA`. Every call is logged to
-#: `$FAKE_GH_LOG`; anything but the miner's read verbs exits 3.
+#: `$FAKE_GH_LOG`. It models a Claude Code cloud session (s27, 2026-10-06):
+#: every GraphQL-backed verb (`repo view`, `pr list`, `pr diff`, `api graphql`)
+#: exits 1 with the 403 such a session returns, and only REST reads under
+#: `gh api` are answered; anything else exits 3.
 FAKE_GH = r'''
 import json
 import os
+import re
 import sys
 
 args = sys.argv[1:]
@@ -42,57 +47,109 @@ with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as handle:
 with open(os.environ["FAKE_GH_DATA"], encoding="utf-8") as handle:
     data = json.load(handle)
 
+GRAPHQL_403 = ("HTTP 403: GitHub GraphQL is not available from Claude Code sessions; "
+               "use the REST API (gh api repos/{owner}/{repo}/...)")
+DIFF_ACCEPT = "Accept: application/vnd.github.diff"
 
-def missing(name):
-    sys.stderr.write(f"GraphQL: Could not resolve to a Repository with the name '{name}'.\n")
-    raise SystemExit(1)
+
+def fail(message, code=1):
+    sys.stderr.write(message + "\n")
+    raise SystemExit(code)
 
 
-if args[:2] == ["repo", "view"]:
-    view = data["repos"].get(args[2])
+def not_found():
+    sys.stdout.write('{"message":"Not Found","status":"404"}')
+    fail("gh: Not Found (HTTP 404)")
+
+
+def lines(rows):
+    for row in rows:
+        print(json.dumps(row))
+
+
+if args[:2] in (["repo", "view"], ["pr", "list"], ["pr", "diff"], ["pr", "view"],
+                ["issue", "view"], ["api", "graphql"]):
+    fail(GRAPHQL_403)
+if args[:1] != ["api"]:
+    fail("fake gh: refused " + " ".join(args), 3)
+flags, path, rest = set(), None, args[1:]
+while rest:
+    arg = rest.pop(0)
+    if arg == "--paginate":
+        flags.add(arg)
+    elif arg in ("-H", "--jq"):
+        flags.add((arg, rest.pop(0)))
+    elif path is None and not arg.startswith("-"):
+        path = arg
+    else:
+        fail("fake gh: refused " + " ".join(args), 3)
+listing = flags == {"--paginate", ("--jq", ".[]")}
+diff = flags == {("-H", DIFF_ACCEPT)}
+if not (listing or diff or not flags):
+    fail("fake gh: refused " + " ".join(args), 3)
+path, _, query = (path or "").partition("?")
+match = re.fullmatch(r"repos/([^/]+/[^/]+)(/.*)?", path)
+if not match:
+    fail("fake gh: refused " + " ".join(args), 3)
+repo, tail = match.group(1), match.group(2) or ""
+if tail == "" and not flags:
+    view = data["repos"].get(repo)
     if view is None:
-        missing(args[2])
+        not_found()
     print(json.dumps(view))
-elif args[:2] == ["pr", "list"]:
-    repo = args[args.index("--repo") + 1]
+elif tail == "/pulls" and listing and query == "state=closed&per_page=100":
     if repo not in data["prs"]:
-        sys.stderr.write("HTTP 404: Not Found\n")
-        raise SystemExit(1)
-    print(json.dumps(data["prs"][repo]))
-elif args[:2] == ["pr", "diff"]:
-    key = args[args.index("--repo") + 1] + "#" + args[2]
+        not_found()
+    lines(data["prs"][repo])
+elif re.fullmatch(r"/pulls/\d+/files", tail) and listing and query == "per_page=100":
+    key = repo + "#" + tail.split("/")[2]
+    lines(data["files"][key])
+elif re.fullmatch(r"/pulls/\d+", tail) and diff:
+    key = repo + "#" + tail.split("/")[2]
     if key in data.get("diff_errors", {}):
-        sys.stderr.write(data["diff_errors"][key] + "\n")
-        raise SystemExit(1)
+        fail(data["diff_errors"][key])
     sys.stdout.write(data["diffs"][key])
-elif args[0] == "api" and len(args) == 2:
-    repo, sha = args[1].removeprefix("repos/").split("/commits/")
+elif re.fullmatch(r"/commits/[0-9a-f]{40}", tail) and not flags:
+    sha = tail.split("/")[2]
     parents = data.get("parents", {}).get(sha, ["b" * 40, "c" * 40])
     if parents is None:
-        sys.stderr.write("HTTP 404: Not Found\n")
-        raise SystemExit(1)
+        not_found()
     print(json.dumps({"sha": sha, "parents": [{"sha": p} for p in parents]}))
+elif re.fullmatch(r"/issues/\d+", tail) and not flags:
+    number = int(tail.split("/")[2])
+    issue = data.get("issues", {}).get(f"{repo}#{number}", "issue")
+    if issue is None:
+        not_found()
+    row = {"number": number, "html_url": f"https://github.com/{repo}/issues/{number}"}
+    if issue == "pull":
+        row["pull_request"] = {"url": "https://api.github.com/x"}
+        row["html_url"] = f"https://github.com/{repo}/pull/{number}"
+    print(json.dumps(row))
 else:
-    sys.stderr.write("fake gh: refused " + " ".join(args) + "\n")
-    raise SystemExit(3)
+    fail("fake gh: refused " + " ".join(args), 3)
 '''
 
 ADAM, JODI = "Adam-S-Daniel", "jodidaniel"
 
 
-def _view(owner, name, visibility="PUBLIC"):
-    return {"nameWithOwner": f"{owner}/{name}", "visibility": visibility,
-            "isFork": False, "isArchived": False}
+def _view(owner, name, visibility="PUBLIC", default_branch="main"):
+    """The REST `GET /repos/{owner}/{repo}` answer (visibility is lower case)."""
+    return {"full_name": f"{owner}/{name}", "visibility": visibility.lower(),
+            "fork": False, "archived": False, "default_branch": default_branch}
 
 
-def _pr(number, *, head="feat/x", login="Adam-S-Daniel", is_bot=False, body="Fix the bug.",
-        files=("scripts/tool.py", "test/test_tool.py"), labels=(), merged="2026-09-01T10:00:00Z"):
+def _pr(number, *, head="feat/x", login="Adam-S-Daniel", is_bot=False, body="Fix the bug.\n\nCloses #7",
+        files=("scripts/tool.py", "test/test_tool.py"), labels=(), merged="2026-09-01T10:00:00Z",
+        base_ref="main"):
+    """One row of REST `GET /repos/{o}/{r}/pulls?state=closed`, with its files
+    (served by the fake as `/pulls/{n}/files`) under the private key `_files`."""
     return {"number": number, "title": f"PR {number}", "body": body,
-            "files": [{"path": p} for p in files], "closingIssuesReferences": [{"number": 7}],
-            "mergeCommit": {"oid": f"{number:040x}"}, "headRefName": head,
-            "additions": 10, "deletions": 2, "author": {"login": login, "is_bot": is_bot},
-            "mergedAt": merged, "labels": [{"name": n} for n in labels],
-            "url": f"https://github.com/example/r/pull/{number}", "baseRefOid": "d" * 40}
+            "_files": [{"filename": p, "additions": 5, "deletions": 1} for p in files],
+            "merge_commit_sha": f"{number:040x}", "head": {"ref": head},
+            "base": {"ref": base_ref, "sha": "d" * 40},
+            "user": {"login": login, "type": "Bot" if is_bot else "User"},
+            "merged_at": merged, "labels": [{"name": n} for n in labels],
+            "html_url": f"https://github.com/example/r/pull/{number}"}
 
 
 DIFF = ("diff --git a/scripts/tool.py b/scripts/tool.py\n--- a/scripts/tool.py\n"
@@ -143,14 +200,19 @@ class _MinerCase(unittest.TestCase):
             encoding="utf-8")
         return root / "repos.yml"
 
-    def gh_data(self, repos, prs, diffs=None, parents=None, diff_errors=None):
-        diffs = dict(diffs or {})
+    def gh_data(self, repos, prs, diffs=None, parents=None, diff_errors=None, issues=None):
+        diffs, files, listed = dict(diffs or {}), {}, {}
         for repo, rows in prs.items():
+            listed[repo] = []
             for row in rows:
+                row = dict(row)
+                files[f"{repo}#{row['number']}"] = row.pop("_files", [])
+                listed[repo].append(row)
                 diffs.setdefault(f"{repo}#{row['number']}", DIFF)
-        self.data_path.write_text(json.dumps({"repos": repos, "prs": prs, "diffs": diffs,
-                                              "parents": parents or {},
-                                              "diff_errors": diff_errors or {}}),
+        self.data_path.write_text(json.dumps({"repos": repos, "prs": listed, "files": files,
+                                              "diffs": diffs, "parents": parents or {},
+                                              "diff_errors": diff_errors or {},
+                                              "issues": issues or {}}),
                                   encoding="utf-8")
 
     def run_main(self, *argv):
@@ -188,7 +250,8 @@ class TestFleetEnumeration(_MinerCase):
         repos = sorted(c["repo"] for c in doc["candidates"])
         self.assertEqual(repos, [f"{ADAM}/_agent-guidance", f"{ADAM}/skills-evals",
                                  f"{JODI}/jodidaniel.com"])
-        probed = {c[2] for c in self.calls() if c[:2] == ["repo", "view"]}
+        probed = {c[1].removeprefix("repos/") for c in self.calls()
+                  if len(c) == 2 and c[1].count("/") == 2}
         self.assertEqual(probed, {f"{o}/{n}" for o in (ADAM, JODI) for n in
                                   ("skills-evals", "jodidaniel.com", "repo-settings",
                                    "_agent-guidance")})
@@ -205,18 +268,31 @@ class TestFleetEnumeration(_MinerCase):
     def test_a_private_repo_is_skipped_and_never_listed(self):
         doc = self.mine(self._both_owner_world())
         self.assertEqual(doc["skipped"], [{"repo": f"{ADAM}/repo-settings", "reason": "not-public"}])
-        listed = [c for c in self.calls() if c[:2] == ["pr", "list"]]
-        self.assertNotIn(f"{ADAM}/repo-settings", [c[c.index("--repo") + 1] for c in listed])
+        listed = [c[2] for c in self.calls() if "/pulls?" in " ".join(c)]
+        self.assertTrue(listed)
+        self.assertFalse([c for c in listed if "repo-settings" in c])
 
-    def test_only_read_verbs_reach_gh(self):
+    def test_only_rest_reads_reach_gh(self):
+        # s27 (2026-10-06): a Claude Code cloud session answers every GitHub
+        # GraphQL request with HTTP 403, and `gh repo view`, `gh pr list` and
+        # `gh pr diff` all go through GraphQL, so the routine's scaffold mode
+        # died at its first `gh repo view`. Only `gh api` REST reads remain.
         self.mine(self._both_owner_world())
+        rest = re.compile(r"^repos/[^/]+/[^/]+(/pulls\?state=closed&per_page=100"
+                          r"|/pulls/\d+(/files\?per_page=100)?|/commits/[0-9a-f]{40}"
+                          r"|/issues/\d+)?$")
+        shapes = set()
         for call in self.calls():
-            if call[0] == "api":
-                self.assertEqual(len(call), 2, call)
-                self.assertRegex(call[1], r"^repos/[^/]+/[^/]+/commits/[0-9a-f]{40}$")
-            else:
-                self.assertIn(tuple(call[:2]), {("repo", "view"), ("pr", "list"), ("pr", "diff")})
-            self.assertFalse({"-X", "--method", "-f", "-F", "--field"} & set(call), call)
+            self.assertEqual(call[0], "api", call)
+            self.assertNotIn("graphql", call)
+            path = [a for a in call[1:] if a.startswith("repos/")]
+            self.assertEqual(len(path), 1, call)
+            self.assertRegex(path[0], rest)
+            rest_flags = [a for a in call[1:] if a != path[0]]
+            self.assertIn(rest_flags, ([], ["--paginate", "--jq", ".[]"],
+                                       ["-H", "Accept: application/vnd.github.diff"]), call)
+            shapes.add(tuple(rest_flags))
+        self.assertEqual(len(shapes), 3, "repo, list and diff reads all ran")
 
     def test_a_repo_whose_pull_requests_404_is_skipped_with_a_warning(self):
         self.gh_data(repos={f"{ADAM}/skills-evals": _view(ADAM, "skills-evals"),
@@ -300,7 +376,7 @@ class TestCandidateFilters(_MinerCase):
 
     def test_a_pr_without_a_readable_merge_commit_is_skipped_with_a_warning(self):
         no_commit = _pr(2)
-        no_commit["mergeCommit"] = None
+        no_commit["merge_commit_sha"] = None
         doc = self._mine([_pr(1), no_commit, _pr(3)], parents={f"{3:040x}": None})
         self.assertEqual([c["pr"] for c in doc["candidates"]], [1])
         self.assertEqual(doc["summary"][0]["no_merge_commit"], 2)
@@ -315,14 +391,23 @@ class TestCandidateFilters(_MinerCase):
         return self.registry(["skills-evals"])
 
     def test_a_diff_github_will_not_render_skips_that_pr_and_mining_continues(self):
-        # skills-evals#311 (300+ files): HTTP 406 aborted the whole mine.
-        for kind in ("files (300)", "lines (20000)"):
-            with self.subTest(kind=kind):
-                registry = self._mine_with_diff_error(
-                    2, "could not find pull request diff: HTTP 406: Sorry, the diff exceeded "
-                       f"the maximum number of {kind}. Consider using 'List pull requests "
-                       "files' API or locally cloning the repository instead. "
-                       "(https://api.github.com/repos/o/r/pulls/2)")
+        # skills-evals#311 (300+ files): HTTP 406 aborted the whole mine. The
+        # REST read puts the status last (measured, gh 2.95.0, 2026-10-06);
+        # `gh pr diff` put it first.
+        messages = [
+            (kind, form.format(kind=kind))
+            for kind in ("files (300)", "lines (20000)")
+            for form in (
+                "gh: Sorry, the diff exceeded the maximum number of {kind}. Consider using "
+                "'List pull requests files' API or locally cloning the repository instead. "
+                "(HTTP 406)",
+                "could not find pull request diff: HTTP 406: Sorry, the diff exceeded the "
+                "maximum number of {kind}. Consider using 'List pull requests files' API or "
+                "locally cloning the repository instead. "
+                "(https://api.github.com/repos/o/r/pulls/2)")]
+        for kind, message in messages:
+            with self.subTest(kind=kind, message=message[:12]):
+                registry = self._mine_with_diff_error(2, message)
                 doc = self.mine(registry)
                 self.assertEqual([c["pr"] for c in doc["candidates"]], [1, 3])
                 self.assertEqual(doc["summary"][0]["diff_too_large"], 1)
@@ -338,7 +423,7 @@ class TestCandidateFilters(_MinerCase):
                 registry = self._mine_with_diff_error(2, message)
                 rc, err = self.run_main("mine", "--registry", str(registry), "--out", str(self.out))
                 self.assertEqual(rc, 2)
-                self.assertIn("gh pr diff failed (exit 1)", err)
+                self.assertIn("pulls/2 failed (exit 1)", err)
                 self.assertNotIn("secret-body-text", err)
                 self.assertFalse(self.out.exists())
 
@@ -352,6 +437,71 @@ class TestCandidateFilters(_MinerCase):
                                    "quoted_lines": ["return parse_listing(page, truncated=True)"]})
         self.assertEqual(leak[2], {"flag": False, "quoted_lines": []})
         self.assertFalse(leak[3]["flag"], "a quoted doc line is not the answer")
+
+
+    def test_closed_unmerged_prs_are_dropped_and_the_limit_counts_merged_ones(self):
+        # REST lists closed pull requests; `gh pr list --state merged` did the
+        # filtering server-side, so the miner now drops the unmerged ones and
+        # applies --limit to what is left, newest first as listed.
+        closed = _pr(2)
+        closed["merged_at"] = None
+        self.gh_data(repos={f"{ADAM}/cms-platform": _view(ADAM, "cms-platform")},
+                     prs={f"{ADAM}/cms-platform": [_pr(4), closed, _pr(3), _pr(1)]})
+        rc, err = self.run_main("mine", "--registry", str(self.registry(["cms-platform"])),
+                                "--out", str(self.out), "--limit", "2")
+        self.assertEqual(rc, 0, err)
+        doc = json.loads(self.out.read_text(encoding="utf-8"))
+        self.assertEqual([c["pr"] for c in doc["candidates"]], [4, 3])
+        self.assertEqual(doc["summary"][0]["merged"], 2)
+
+    def test_churn_and_files_come_from_the_files_listing(self):
+        many = [f"scripts/m{i}.py" for i in range(150)] + ["test/test_tool.py"]
+        doc = self._mine([_pr(1), _pr(2, files=many)])
+        cand = {c["pr"]: c for c in doc["candidates"]}
+        self.assertEqual(cand[1]["churn"], 12)
+        self.assertEqual((cand[1]["test_files"], cand[1]["source_files"]),
+                         (["test/test_tool.py"], ["scripts/tool.py"]))
+        # The REST listing pages past `gh pr list`'s 100-file cap.
+        self.assertEqual(len(cand[2]["source_files"]), 150)
+        self.assertFalse(cand[2]["files_truncated"])
+
+
+class TestClosingIssues(_MinerCase):
+    REPO = f"{ADAM}/cms-platform"
+
+    def test_closing_keywords_are_read_as_github_reads_them(self):
+        refs = mine_real_work.closing_refs
+        cases = {
+            "Closes #7": [7], "fixes: #8": [8], "RESOLVED #9": [9], "Fix #1 and close #2": [1, 2],
+            "Closes #1, #2": [1], "Fixes #3. Fixes #3": [3],
+            "Closes Adam-S-Daniel/cms-platform#5": [5], "closes adam-s-daniel/CMS-platform#6": [6],
+            "Fixes https://github.com/Adam-S-Daniel/cms-platform/issues/11": [11],
+            "Closes Adam-S-Daniel/skills-evals#5": [],
+            "Fixes https://github.com/Adam-S-Daniel/skills-evals/issues/11": [],
+            "Refs #3": [], "Part of #4": [], "prefixes #5": [], "Closes #": [],
+            "Closes #12abc": [], "`Resolves #14` in a code span": [14],
+        }
+        for body, want in cases.items():
+            with self.subTest(body=body):
+                self.assertEqual(refs(body, self.REPO), want)
+
+    def test_only_real_issues_in_this_repo_are_recorded(self):
+        # adam-agentskills#40 closes #24 then #12; GraphQL listed [12, 24].
+        body = "Closes #10, closes #8, closes #9 and fixes #7."
+        self.gh_data(repos={self.REPO: _view(ADAM, "cms-platform")},
+                     prs={self.REPO: [_pr(1, body=body)]},
+                     issues={f"{self.REPO}#8": "pull", f"{self.REPO}#9": None})
+        doc = self.mine(self.registry(["cms-platform"]))
+        self.assertEqual(doc["candidates"][0]["closing_issues"], [7, 10])
+
+    def test_a_pull_request_into_another_branch_closes_nothing(self):
+        self.gh_data(repos={self.REPO: _view(ADAM, "cms-platform")},
+                     prs={self.REPO: [_pr(1), _pr(2, base_ref="release")]})
+        doc = self.mine(self.registry(["cms-platform"]))
+        self.assertEqual({c["pr"]: c["closing_issues"] for c in doc["candidates"]},
+                         {1: [7], 2: []})
+        issue_reads = [c for c in self.calls() if "/issues/" in c[-1]]
+        self.assertEqual(len(issue_reads), 1, "the release PR's #7 is never looked up")
 
 
 class TestAdmission(unittest.TestCase):

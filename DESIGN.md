@@ -922,7 +922,16 @@ its base and green on its merge. Part of
 - **mine** enumerates `_agent-guidance`'s `repos.yml` `cron_coverage.fleet`
   under every owner in `sync.yml`'s `SYNC_OWNERS` (a name no owner resolves
   is an error), lists merged pull requests, drops bot and `on-hold` ones and
-  writes `candidates.json` to a path outside this repo;
+  writes `candidates.json` to a path outside this repo. It reads GitHub
+  through REST only (`gh api`): the eval routine runs it in a Claude Code
+  cloud session, which refuses every GraphQL request with HTTP 403, and
+  `gh repo view`, `gh pr list` and `gh pr diff` all use GraphQL (s27,
+  2026-10-06, the first scaffold-mode run). REST has no
+  `closingIssuesReferences`, so `closing_issues` is the body's closing
+  keywords read as GitHub reads them, each number confirmed as an issue of
+  the same repository, for a pull request into the default branch; over
+  the 40-PR-per-repo window it matched GraphQL on all 132 candidates, and an
+  issue linked only by hand in the sidebar is what it cannot see;
 - **prepare** builds the red (base plus the merge's tests) and green trees
   with `git archive`, and runs nothing;
 - **admit** reads JUnit XML from both runs. FAIL_TO_PASS is what fails red
@@ -975,7 +984,12 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   file; `solution.patch` is the rest of the diff, leaving out what the seed
   no longer holds; `issue-before-fix.txt` and its three times come from one
   `gh api graphql` read, picking the body revision and title from before
-  the first commit by the rules above. The fixture is `draft: true` and
+  the first commit by the rules above. It is the one GraphQL read left on
+  the routine's path, because REST has no body revisions
+  (`userContentEdits`); where GraphQL is refused (a Claude Code cloud
+  session) `build` stops and names the gap rather than use the issue's
+  current body. The routine gets it from the fire payload instead
+  (**snapshot** below). The fixture is `draft: true` and
   `subject: any`, and its header says the prompt was written by a model.
   It reads the clone with `git archive`, `git cat-file` and `git diff` and
   never writes it.
@@ -1004,7 +1018,9 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
 - **snapshot** is the issue snapshot read on its own. A Claude Code cloud
   session, where the routine runs, refuses GitHub GraphQL, and body
   revisions have no REST read, so `routine-eval-fire.yml` computes the
-  snapshot on Actions with its read-only token before the fire and sends it
+  snapshot on Actions with its read-only token before the fire (the pull
+  request and its closing issue through REST, as the miner reads them; the
+  revisions through GraphQL) and sends it
   as the payload's `issue_snapshot` (null for no closing issue), and the
   routine passes it to `build --issue-snapshot`, which validates it
   strictly instead of reading GitHub (Adam, 2026-10-06: "Fire workflow

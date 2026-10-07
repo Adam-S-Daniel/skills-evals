@@ -32,15 +32,20 @@ trimmed; `checker/` is the merge commit's copy of each selected test file;
 `solution.patch` is the rest of the pull request's diff; and
 `issue-before-fix.txt` is the closing issue's title and body as they stood
 before the pull request's first commit, with the three provenance keys,
-read with `gh api graphql` (a read). `fixture.yaml` is `draft: true` and
-`subject: any`. It reads the clone with `git archive`, `git cat-file` and
-`git diff` only, and never writes the clone.
+read with `gh api graphql` (a read). That is the one GraphQL read on the
+routine's path: REST has no issue body revisions (`userContentEdits`), and a
+Claude Code cloud session refuses GraphQL, so there BUILD stops naming the
+gap (SNAPSHOT_NEEDS_GRAPHQL) rather than snapshot the issue's current body;
+the routine passes the fire workflow's snapshot instead (SNAPSHOT below).
+`fixture.yaml` is `draft: true` and `subject: any`. It reads the clone with
+`git archive`, `git cat-file` and `git diff` only, and never writes the clone.
 
 SNAPSHOT is that read on its own, for routine-eval-fire.yml: a Claude Code
 cloud session refuses GitHub GraphQL, and an issue's body revisions
 (`userContentEdits`) have no REST read, so the fire workflow, on Actions with
-its read-only token, resolves the candidate's pull request (REST) and its
-closing issue and snapshot (GraphQL) and sends the result in the routine's
+its read-only token, resolves the candidate's pull request and its closing
+issue through REST, as the miner does (mine_real_work.closing_issues), and
+the snapshot through GraphQL, and sends the result in the routine's
 payload as `issue_snapshot` (Adam, 2026-10-06: "Fire workflow precomputes
 (Recommended)"). It writes JSON: null when the pull request closes no issue,
 else SNAPSHOT_FIELDS. BUILD's `--issue-snapshot FILE` takes that JSON instead
@@ -189,18 +194,6 @@ query($owner: String!, $name: String!, $issue: Int!, $pr: Int!) {
     pullRequest(number: $pr) { commits(first: 1) { nodes { commit { committedDate } } } }
   }
 }"""
-#: The pull request's closing issues, as the miner's `closing_issues` reads
-#: them on the default branch today (`closingIssuesReferences`).
-CLOSING_QUERY = """\
-query($owner: String!, $name: String!, $pr: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $pr) {
-      closingIssuesReferences(first: 10) {
-        totalCount nodes { number repository { nameWithOwner } }
-      }
-    }
-  }
-}"""
 
 #: A miner key, OWNER__REPO__PR: the fire workflow's pattern. An owner has no
 #: `_`, so the first `__` ends it; the last `__` starts the number.
@@ -221,6 +214,15 @@ SOURCE_LINE_RE = re.compile(
     r"# https://github\.com/(?P<repo>[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})"
     r"/pull/(?P<pr>[1-9][0-9]{0,6})"
     r"(?:, the fix for https://github\.com/(?P=repo)/issues/(?P<issue>[1-9][0-9]{0,6}))?\.")
+
+
+#: BUILD's refusal when GraphQL is refused (a Claude Code cloud session).
+SNAPSHOT_NEEDS_GRAPHQL = (
+    "the issue snapshot needs GitHub GraphQL, which is not available to this "
+    "credential: an issue's body revisions (userContentEdits) have no REST read, "
+    "so the body as it stood before the first commit cannot be recovered here, and "
+    "the scaffold stops rather than use the current body; in the eval routine, "
+    "pass the fire payload's issue_snapshot with --issue-snapshot")
 
 
 class ScaffoldError(Exception):
@@ -333,6 +335,8 @@ def read_snapshot(repo: str, issue: int, pr: int) -> dict:
         doc = miner.gh_json("api", "graphql", "-f", f"query={SNAPSHOT_QUERY}",
                             "-F", f"owner={owner}", "-F", f"name={name}",
                             "-F", f"issue={issue}", "-F", f"pr={pr}")
+    except miner.GhGraphQLUnavailable:
+        raise ScaffoldError(SNAPSHOT_NEEDS_GRAPHQL) from None
     except (miner.MineError, miner.GhNotFound) as error:
         raise ScaffoldError(f"the issue snapshot read failed: {error}") from None
     return snapshot_from_graphql(doc)
@@ -347,31 +351,17 @@ def parse_key(key: str) -> tuple[str, int]:
     return repo, int(match["pr"])
 
 
-def closing_issues(repo: str, pr: int) -> list[int]:
-    """The pull request's closing issues in `repo`, sorted."""
-    owner, name = repo.split("/", 1)
+def closing_issues(repo: str, pull: dict) -> list[int]:
+    """The pull request's closing issues, read as the miner reads them (REST
+    only, #322), so the snapshot names the issue the routine's candidate
+    names."""
     try:
-        doc = miner.gh_json("api", "graphql", "-f", f"query={CLOSING_QUERY}",
-                            "-F", f"owner={owner}", "-F", f"name={name}", "-F", f"pr={pr}")
-        conn = doc["data"]["repository"]["pullRequest"]["closingIssuesReferences"]
-        nodes, total = conn["nodes"], conn["totalCount"]
+        view = miner.gh_json("api", f"repos/{repo}")
+        if not isinstance(view, dict):
+            raise ScaffoldError("the repository read returned no repository")
+        return miner.closing_issues(repo, pull, view.get("default_branch"))
     except (miner.MineError, miner.GhNotFound) as error:
         raise ScaffoldError(f"the closing issues read failed: {error}") from None
-    except (KeyError, TypeError):
-        raise ScaffoldError("the closing issues query returned no pull request") from None
-    if not isinstance(nodes, list) or not isinstance(total, int) or total > len(nodes):
-        raise ScaffoldError("the pull request has more closing issues than one query reads")
-    numbers = set()
-    for node in nodes:
-        try:
-            other = node["repository"]["nameWithOwner"]
-            number = node["number"]
-        except (KeyError, TypeError):
-            raise ScaffoldError("the closing issues query returned a malformed issue") from None
-        if isinstance(other, str) and other.lower() == repo.lower() \
-                and isinstance(number, int) and not isinstance(number, bool) and number > 0:
-            numbers.add(number)
-    return sorted(numbers)
 
 
 def issue_snapshot(repo: str, pr: int) -> dict | None:
@@ -383,7 +373,7 @@ def issue_snapshot(repo: str, pr: int) -> dict | None:
         raise ScaffoldError(f"the pull request read failed: {error}") from None
     if not isinstance(pull, dict) or pull.get("number") != pr or not pull.get("merged_at"):
         raise ScaffoldError("the candidate is not a merged pull request")
-    issues = closing_issues(repo, pr)
+    issues = closing_issues(repo, pull)
     if not issues:
         return None
     if len(issues) > 1:
