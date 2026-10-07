@@ -156,7 +156,9 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   the same way. Checks that compare the workspace with the seed
   (`files_unchanged`, `non_remote_refs_unchanged`) read a stripped copy of the
   seed. Only the workspace root is touched: a nested
-  `AGENTS.md` can be a repository's own test data.
+  `AGENTS.md` can be a repository's own test data. The arm's network
+  sandbox arrives as a `--settings` flag, not a workspace file, so the guard
+  carries no exception for it (ADR 0011).
 - **`subject: any`** — a subject-agnostic real-work fixture (Q4, in
   "Real-work fixtures from merged pull requests" below). It names no `skill:` or `section:`; the run names one with
   `--skill NAME` (it then runs as a skill fixture) or `--section ID` (a
@@ -1740,7 +1742,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 
 | Spawn | Flags beyond its own |
 |---|---|
-| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox JSON>` and `--disallowedTools WebFetch,WebSearch` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
 | judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
@@ -1757,6 +1759,25 @@ fleet-memory SessionStart hook: that is the isolation, not a regression.
 What none of this stops: managed settings, the CLI's bundled skills, writes
 to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
 file under the real HOME.
+
+**Agent arms have no route to GitHub** ([ADR 0011](docs/decisions/0011-sandbox-agent-arm-network.md)).
+A real-work seed is a public repository's pre-fix tree, and the merged fix is
+one `git clone` away; the empty `GH_TOKEN`/`GITHUB_TOKEN` stop nothing a
+public repository serves. Every agent arm, skill or guidance, and every
+follow-up turn, runs with `--settings` carrying `run_eval.arm_sandbox_settings()`:
+Claude Code's sandbox on, `failIfUnavailable` (a CLI that cannot start it
+exits 1 and the arm fails with `sandbox_unavailable`, never runs with a
+network), `allowUnsandboxedCommands: false` (no `dangerouslyDisableSandbox`
+retry), `strictAllowlist` with no allowed domains, and `deniedDomains` naming
+`github.com`, `githubusercontent.com`, `codeload.github.com`, the fleet's
+deployed sites (`adamdaniel.ai`, `jodidaniel.com`, which serve built fixes)
+and `cdn.jsdelivr.net`. The sandbox covers Bash and its children only, so
+`--disallowedTools WebFetch,WebSearch` removes the two web tools. Nothing is
+written into the workspace: `seed_guard` still refuses any `.claude/`, and
+no scoring check sees a harness file. The judge, the guard and canary probes,
+`deps:`/`setup:` and objective commands are not sandboxed this way. Reads are
+not restricted: a sandboxed command and the Read tool can still read this
+checkout, `evals/real-work/*/checker/` and `solution.patch` included.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
