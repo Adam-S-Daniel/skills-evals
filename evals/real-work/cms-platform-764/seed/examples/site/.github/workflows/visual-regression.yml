@@ -1,0 +1,56 @@
+# Thin caller — copied into a site repo as
+# `.github/workflows/visual-regression.yml`. Owns the pull_request trigger
+# (no paths filter — fires on every PR) + run-name; delegates the
+# visual-regression video pipeline to the platform's reusable workflow,
+# which decides salience internally. The pipeline
+# (detect-changed-pages.js, compute-visual-diffs.js, generate-video.sh,
+# regression-video.spec.js, playwright.regression.config.js) lives in the
+# platform repo's e2e/. Keep `platform_ref` equal to the `@vX.Y.Z` pin on
+# the `uses:` line.
+#
+# Site identity (CMS_APEX / PREVIEW_BUCKET / AWS_REGION) is read from THIS
+# repo's VARS by the reusable workflow; AWS/CloudFront secrets are wired
+# through the `secrets:` block below.
+name: Visual Regression
+run-name: "${{ format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title) }}"
+
+on:
+  pull_request:
+    # No `edited`: a skipped caller emits NO check-run, so an `edited` run WITHDRAWS
+    # contexts an earlier run reported green — only a new SHA restores them (#222).
+    #
+    # `reopened` is back (cms-platform#285). It was briefly dropped because the
+    # reusable grouped its runs and a reopen re-enters that group on the same head
+    # SHA; the reusable now carries NO `concurrency:` block at all, so nothing can
+    # cancel anything and this list matches every other required-context caller
+    # here and on both live consumers.
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+    # NO `paths:` filter — this workflow fires on EVERY PR so the required
+    # `approve-regression` check always reports a status (a path-filtered
+    # workflow that never triggers would deadlock a required check). The
+    # "is this diff salient?" decision — content-only PRs (CMS collections +
+    # media uploads) are skipped; templates / styling / the admin shell /
+    # pipeline tooling build — now lives in the reusable's `detect` job,
+    # sourced from e2e/visual-regression-salient.js and locked by
+    # e2e/visual-regression-content-skip.test.js.
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  visual-regression:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/visual-regression.yml@v0.1.149
+    with:
+      # Pin to the SAME ref as the `uses:` pin above so the pipeline matches.
+      platform_ref: v0.1.149
+    secrets:
+      # Optional — drop any the site doesn't use. The AWS steps no-op when
+      # PREVIEW_BUCKET (a repo var) is unset; the CloudFront invalidation
+      # also gates on PREVIEW_CLOUDFRONT_ID.
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      PREVIEW_CLOUDFRONT_ID: ${{ secrets.PREVIEW_CLOUDFRONT_ID }}
+      CMS_E2E_PAT: ${{ secrets.CMS_E2E_PAT }}

@@ -1,0 +1,21 @@
+# Thin caller — weekly pre-commit guard sync from the platform. Pin platform_ref to a tag.
+# Delivers + keeps current the secrets-scan + lint-staged pre-commit guards (issue #116).
+name: Dev-hooks sync
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/dev-hooks-sync.yml@v0.1.149
+    with:
+      platform_ref: v0.1.149
+    secrets:
+      # So the sync PR triggers this repo's CI: the CMS automation App's private
+      # key, with vars.CMS_AUTOMATION_APP_ID set on this repo. The only credential
+      # since v0.1.103 — the CMS_PLATFORM_PAT fallback is gone. Without it the PR
+      # is opened by GITHUB_TOKEN and fires no CI (a warning, not a failure).
+      app_private_key: ${{ secrets.CMS_AUTOMATION_APP_PRIVATE_KEY }}

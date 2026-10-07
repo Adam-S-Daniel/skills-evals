@@ -1,0 +1,11 @@
+Tags input: held space uses stopImmediatePropagation, hiding the keystroke from other admin shims
+
+Follow-up from https://github.com/Adam-S-Daniel/cms-platform/pull/761 (Fixes #756), found in its independent review. This one is not blocking.
+
+`theme/admin/tags-input.js` `onInput` holds a typed trailing space with `stopImmediatePropagation()`. That also hides the event from input listeners registered later on the same target, namely `live-url-banner.js` and `autosave-on-hide.js`. The reviewer found that plain `stopPropagation()` passes all 28 #756 specs in Chromium and Firefox.
+
+**Expected:** use the narrowest stop that keeps the space, so other admin shims still see the keystroke. Add a test that a later-registered input listener still fires.
+
+**Also noted, by design:** after a paste or autocorrect that ends in a space, Decap's stored value lags until the next keystroke or blur. Save always blurs first, so no wrong data is saved.
+
+**Severity:** polish.

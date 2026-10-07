@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "cms-platform",
+  "version": "0.1.149",
+  "description": "cms-platform: a Jekyll + Decap CMS + AWS site platform.",
+  "author": { "name": "Adam Daniel" },
+  "repository": "https://github.com/Adam-S-Daniel/cms-platform",
+  "keywords": [
+    "jekyll",
+    "decap-cms",
+    "aws",
+    "cloudformation",
+    "cloudfront",
+    "github-actions",
+    "ci-cd",
+    "playwright",
+    "e2e",
+    "preview-environments",
+    "release-management",
+    "oauth"
+  ]
+}

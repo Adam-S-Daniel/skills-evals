@@ -1,0 +1,467 @@
+# Reusable: scheduled re-arm sweep for Dependabot PRs stranded by GitHub's
+# batch auto-merge disable.
+#
+# THE PROBLEM (observed live — cms-platform #118-#122, 2026-06-30)
+# dependabot-auto-merge.yml (via self-dependabot-auto-merge.yml) only fires on
+# `pull_request`, so it arms native GitHub auto-merge (`gh pr merge --auto
+# --squash`) exactly once, the moment Dependabot opens a PR. That's enough for
+# a single PR, but Dependabot often opens a BATCH of PRs against the same
+# base in one run — and a batch strands for TWO compounding reasons, not one:
+#   1. GitHub AUTO-DISABLES auto-merge on the remaining PRs as the first ones
+#      merge (PR #121's timeline: `auto_merge_disabled` performed by
+#      `github-actions[bot]` at 19:06:03, 46 seconds after `auto_merge_enabled`
+#      fired), and nothing re-arms them — no further `pull_request` event ever
+#      arrives for a PR nobody pushes to again.
+#   2. Each merge ADVANCES the base, so every PR still open in the batch goes
+#      OUT OF DATE with it. A stale branch is genuinely un-mergeable here, and
+#      re-arming auto-merge cannot fix staleness — only UPDATING the branch
+#      can. This is why #121 and #122 sat for 6 days until merged by hand.
+#
+# MEASURED EVIDENCE for (2) — verified live 2026-08-10, and it supersedes the
+# earlier assumption that BLOCKED was merely viewer-scoped noise:
+#   PR #194  behind_by=31  mergeable_state=blocked
+#   PR #179  behind_by=41  mergeable_state=blocked
+#   PR #228  behind_by=0   mergeable_state=clean   <- fresh PR, same protection,
+#                                                     all checks green
+# The ONLY structural difference is staleness, so GitHub really does consider
+# #194/#179 un-mergeable for being out of date with `main`.
+#
+# #458 CORRECTION (verified 2026-09-24, PR #450, runs 35868793028 /
+# 36006683129) — it is NOT classic branch protection. There is none:
+# `GET /repos/.../branches/main/protection` returns 404 "Branch not
+# protected", to an ADMIN token, not the earlier-assumed 403. An admin viewer
+# reads #450 `mergeable_state: clean` at behind_by=35 the SAME MOMENT the
+# sweep's GITHUB_TOKEN reads `blocked` on the identical PR — so BLOCKED really
+# is viewer-scoped after all, but by CAPABILITY, not by branch protection: for
+# a BEHIND workflow-file PR, resolving the merge (or the branch refresh) would
+# write `.github/workflows/*` content that exists in no commit Dependabot
+# pushed (main's own changes to the same files landed in between), and GitHub
+# refuses that write to any identity lacking `workflows` permission —
+# GITHUB_TOKEN can never hold it, no matter who triggered the run. An admin
+# token reads `clean` because it COULD perform that write; GITHUB_TOKEN
+# cannot, so it reads `blocked`. `allow_update_branch: true` is set
+# DELIBERATELY on these repos (repo-settings.yml records it as "lets bots/UI
+# refresh a stale PR head against the base"), so the capability the fix below
+# needs is enabled on purpose — it just needs a `workflows`-capable identity
+# to use it (see "THE APP-TOKEN REFRESH" below).
+#
+# THE FIX
+# A thin caller (self-dependabot-rearm.yml here; examples/site/.github/
+# workflows/dependabot-rearm-sweep.yml for consumers) schedules this reusable.
+# It lists every OPEN dependabot[bot] PR and, for each with ALL checks green
+# and no merge conflict, re-validates the SAME manifest-path allowlist
+# dependabot-auto-merge.yml enforces (scripts/check-dependabot-manifest-paths.sh
+# — the single shared source; see that script's header) and then:
+#   - merges DIRECTLY (`gh pr merge --squash`, no `--auto`) — ALWAYS the first
+#     attempt. The checks are already verified green above, and branch
+#     protection still enforces every required check at merge time (the `main`
+#     ruleset carries no bypass actors), so a direct attempt can never bypass
+#     a gate;
+#   - REFRESHES a BEHIND branch (`gh pr update-branch`) when the direct merge
+#     was refused and the compare API says the head is behind its base. That
+#     is the only action that can resolve reason (2), and it deliberately does
+#     NOT then re-arm: the refresh invalidates the currently-green checks and
+#     starts new ones, so such a PR cannot merge in THIS run by design. The
+#     next scheduled sweep (or native auto-merge once the fresh checks go
+#     green) finishes it — counted as UPDATED, which is a SUCCESSFUL outcome;
+#   - RE-ARMS auto-merge (`--auto --squash`) as RECOVERY, when the direct merge
+#     failed and the branch is NOT behind (or the refresh itself failed) — the
+#     right move for a PR GitHub does not yet consider mergeable, and still the
+#     working path for a non-workflow-file bump;
+#   - counts a PR where every attempt failed as FAILED and exits non-zero, so
+#     the sweep's own inability to act is visible (the same "a red run means a
+#     human is needed" contract as audit-editorial-labels.js --fix).
+#
+# WHY `github.token`, AND WHAT ACTUALLY FAILS HERE
+# GITHUB_TOKEN *can* merge a workflow-file PR: #182 changed 31 files, all of
+# them under `.github/workflows/`, and merged at 19:06:16 — merged_by
+# github-actions[bot], 3 seconds after its last required check (node-unit-lints)
+# completed at 19:06:13. So "GITHUB_TOKEN cannot merge workflow-file PRs" is
+# FALSE; don't write it down again. What DOES fail is any GITHUB_TOKEN write
+# that would have to synthesize workflow-file content GitHub can't find in a
+# commit Dependabot pushed: sweep job 93416787884 (2026-08-10) passed the
+# mergeable gate, checks_ok and the manifest re-check for BOTH #194 and #179,
+# then logged
+#   GraphQL: Pull request refusing to allow a GitHub App to create or update
+#   workflow `.github/workflows/deploy-preview.yml` without `workflows`
+#   permission (enablePullRequestAutoMerge)
+# and ended "Sweep complete — merged=0 re-armed=0 skipped=0". #458 (PR #450,
+# runs 35868793028 / 36006683129) reproduced the identical refusal on
+# `updatePullRequestBranch`, and #182's successful merge was of an
+# UP-TO-DATE PR (behind_by=0) — so **the discriminator is behind_by > 0 on a
+# workflow-file diff, not event context**: a fresh, up-to-date workflow-file
+# PR merges fine under GITHUB_TOKEN (#182, #448); a BEHIND one refuses every
+# GITHUB_TOKEN write that would touch `.github/workflows/`, on the merge path
+# AND the branch-refresh path alike. That is exactly why the direct merge
+# still goes first, and why the branch refresh below needs a
+# `workflows`-capable identity instead.
+#
+# The sweep deliberately KEEPS `github.token` on the merge path. A merge
+# attributed to GITHUB_TOKEN fires NO push workflows (verified: neither #182's
+# nor #193's merge commit produced a self-ci push run), whereas an App- or
+# PAT-attributed merge WOULD — and a Dependabot bump touching
+# cms-publish-loop-prod.yml + cms-publish-loop-host.yml +
+# cms-media-roundtrip.yml would then fire all three prod loops onto the shared
+# `prod-mutating-loop` concurrency group, which DROPS a co-arriving sibling.
+# Never put an App/PAT token on this path.
+#
+# THE APP-TOKEN REFRESH IS THE ONE EXCEPTION (#458). The CMS automation App
+# token rides the BRANCH REFRESH (`gh pr update-branch`) ONLY, never the
+# merge. That push lands on the PR's OWN branch, not `main` — it cannot reach
+# the prod-loop `push` triggers above, which all key off `main`. What it DOES
+# fire is the PR's own `pull_request` CI (the refreshed head's required
+# checks), which is the entire point: a GITHUB_TOKEN-pushed refresh fires no
+# workflow runs at all (GITHUB_TOKEN-authored pushes don't trigger new runs),
+# so a GITHUB_TOKEN-refreshed head's checks would never report and the PR
+# would sit UPDATED forever. Without the App configured, the refresh still
+# runs on GITHUB_TOKEN (degraded, not skipped) and a `::warning::` says so.
+#
+# WHY `mergeStateStatus` STILL GATES NOTHING (a corrected claim — do not
+# restore the old wording). The old `CLEAN`-gated direct-merge branch was
+# UNREACHABLE and never once executed: it read BLOCKED on #194/#179 while all
+# three required contexts (actionlint, ruby-theme-specs, node-unit-lints) were
+# SUCCESS and the ruleset requires zero approving reviews with no bypass
+# actors. It is now established that BLOCKED was substantively TRUE for those
+# PRs — they were 31 and 41 commits behind `main` (see MEASURED EVIDENCE
+# above). So the value was NOT meaningless; gating on it was still WRONG,
+# because `BLOCKED` conflates "out of date with the base" (fixable: refresh the
+# branch) with "unmergeable for any other reason", giving the sweep a single
+# bit it cannot act on. The sweep instead asks the compare API the precise
+# question — how many commits BEHIND is the head? — and acts on the answer.
+# `mergeStateStatus` is still LOGGED (useful diagnostics) but it gates nothing.
+name: Dependabot re-arm sweep (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      dry_run:
+        description: "List sweep candidates and the action that would be taken, without merging or re-arming anything."
+        type: boolean
+        default: false
+      platform_repo: { type: string, default: Adam-S-Daniel/cms-platform }
+      platform_ref: { type: string, default: main }
+    secrets:
+      # The CMS automation App's private key (with vars.CMS_AUTOMATION_APP_ID
+      # on the caller — same pair as dev-hooks-sync.yml's app_private_key).
+      # Without it, a stale workflow-file Dependabot PR cannot be refreshed by
+      # this sweep and needs a human (see "THE APP-TOKEN REFRESH" above).
+      app_private_key:
+        description: "The CMS automation GitHub App's private key (with vars.CMS_AUTOMATION_APP_ID on the caller). Without it a stale workflow-file PR cannot be refreshed and needs a human (#458)."
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rearm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the manifest-path allowlist + App-token mint scripts from the platform
+        # Same platform-owned-script gap as dependabot-auto-merge.yml's
+        # "Verify only manifest paths changed" step: this is a `workflow_call`
+        # job, the default checkout above brings down the CALLER's tree (a
+        # consumer site), and scripts/check-dependabot-manifest-paths.sh lives
+        # only in the platform. See that workflow's header comment for why
+        # this uses a `platform_repo` / `platform_ref` input pair (the
+        # pin-agreement.yml pattern) rather than `github.job_workflow_sha`.
+        # mint-app-token.js (#458) is fetched the same way, for the App-token
+        # refresh step below.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          sparse-checkout: |
+            scripts/check-dependabot-manifest-paths.sh
+            scripts/mint-app-token.js
+          sparse-checkout-cone-mode: false
+          path: .cms-platform
+
+      # Pinned: mint-app-token.js runs under node, and ubuntu-latest's default
+      # Node moves from 22 to 24 with Ubuntu 26.04
+      # (actions/runner-images#14748).
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+          package-manager-cache: false
+      - name: Mint the CMS automation App token (branch refresh only)
+        id: app
+        env:
+          APP_CLIENT_ID: ${{ vars.CMS_AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_CLIENT_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo "::notice::No CMS automation App on this repo (vars.CMS_AUTOMATION_APP_ID + secrets.app_private_key, sourced from secrets.CMS_AUTOMATION_APP_PRIVATE_KEY on the caller) — a stale workflow-file Dependabot PR cannot be refreshed by this sweep and will need a human instead (see the FAILED warning it prints)."
+            exit 0
+          fi
+          # workflows=write is exactly what `gh pr update-branch` needs on a
+          # workflow-file PR (updatePullRequestBranch — see the header's #458
+          # correction); never granted any more broadly, and never used on the
+          # merge path (see "THE APP-TOKEN REFRESH IS THE ONE EXCEPTION"
+          # above). An App-pushed refresh also fires the PR's own CI, where a
+          # GITHUB_TOKEN-pushed one fires none.
+          node .cms-platform/scripts/mint-app-token.js \
+            --owner "${GITHUB_REPOSITORY%%/*}" --repo "${GITHUB_REPOSITORY#*/}" \
+            --repositories "${GITHUB_REPOSITORY#*/}" \
+            --permissions contents=write,pull_requests=write,workflows=write
+
+      - name: Sweep stranded Dependabot PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          REFRESH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Escape workflow-command data before printing path or Git diagnostics.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          echo "::notice::Dependabot re-arm sweep starting (DRY_RUN=${DRY_RUN})."
+
+          mapfile -t PR_NUMBERS < <(gh pr list --state open --author "app/dependabot" \
+            --json number --jq '.[].number')
+
+          if [ "${#PR_NUMBERS[@]}" -eq 0 ]; then
+            echo "::notice::No open Dependabot PRs — nothing to sweep."
+            echo "Dependabot re-arm sweep: no open Dependabot PRs — nothing to sweep." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Open Dependabot PR(s): ${PR_NUMBERS[*]}"
+          REARMED=0
+          MERGED=0
+          UPDATED=0
+          SKIPPED=0
+          FAILED=0
+          UNDETERMINED=0
+
+          changed_paths=$(mktemp)
+          diff_stderr=""
+          trap 'rm -f -- "$changed_paths" "$diff_stderr"' EXIT
+          diff_stderr=$(mktemp)
+
+          for num in "${PR_NUMBERS[@]}"; do
+            # GitHub computes `mergeable` ASYNCHRONOUSLY, so a single read can
+            # come back UNKNOWN on a PR it simply hasn't got to yet — the
+            # 2026-08-09 run (job 93223897818) skipped BOTH open PRs on
+            # "mergeable=UNKNOWN" and reported skipped=2, and the very next day
+            # the same two PRs read MERGEABLE. So a single-shot read is an
+            # intermittent false skip: re-query while UNKNOWN. CONFLICTING (or
+            # anything else that isn't MERGEABLE) is TERMINAL — no retry.
+            pr_json=""
+            mergeable=""
+            merge_state=""
+            for attempt in 1 2 3 4 5; do
+              pr_json=$(gh pr view "$num" --json number,baseRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup)
+              mergeable=$(jq -r '.mergeable' <<<"$pr_json")
+              merge_state=$(jq -r '.mergeStateStatus' <<<"$pr_json")
+              if [ "$mergeable" != "UNKNOWN" ]; then
+                break
+              fi
+              echo "#${num} — mergeable=UNKNOWN (attempt ${attempt}/5); GitHub is still computing it, re-querying"
+              if [ "$attempt" -lt 5 ]; then
+                sleep 6
+              fi
+            done
+            base=$(jq -r '.baseRefName' <<<"$pr_json")
+            head_sha=$(jq -r '.headRefOid' <<<"$pr_json")
+
+            if [ "$mergeable" = "UNKNOWN" ]; then
+              echo "::warning::#${num} — mergeable still UNKNOWN after 5 queries; leaving it for the next sweep"
+              UNDETERMINED=$((UNDETERMINED + 1))
+              continue
+            fi
+
+            if [ "$mergeable" != "MERGEABLE" ]; then
+              echo "skip #${num} — mergeable=${mergeable} (merge conflict; terminal for this sweep)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            checks_ok=$(jq -r '
+              (.statusCheckRollup | length) > 0 and
+              (all(.statusCheckRollup[]?; ((.conclusion // .state) as $c | $c == "SUCCESS" or $c == "NEUTRAL" or $c == "SKIPPED")))
+            ' <<<"$pr_json")
+            if [ "$checks_ok" != "true" ]; then
+              echo "skip #${num} — checks not all green yet (mergeStateStatus=${merge_state})"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            if ! git fetch --force origin \
+              "refs/heads/${base}:refs/remotes/origin/${base}" \
+              "refs/pull/${num}/head:refs/remotes/dependabot-sweep/pr-${num}" \
+              >/dev/null 2>&1; then
+              echo "::warning::skip #${num} — could not fetch refs for the manifest re-check"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            if bash .cms-platform/scripts/check-dependabot-manifest-paths.sh \
+              "origin/${base}" "dependabot-sweep/pr-${num}"; then
+              :
+            else
+              manifest_status=$?
+              if [ "$manifest_status" -eq 1 ]; then
+                echo "::warning::skip #${num} — diff touches a non-manifest path on re-check; leaving for human review"
+                SKIPPED=$((SKIPPED + 1))
+              else
+                echo "::warning::#${num} — manifest diff failed on re-check; refusing to merge, refresh, or re-arm"
+                FAILED=$((FAILED + 1))
+              fi
+              continue
+            fi
+
+            # Does this PR's diff touch .github/workflows/? That is what makes
+            # a BEHIND head unrefreshable by GITHUB_TOKEN (see the header's
+            # #458 correction). NUL-delimited records preserve quoted,
+            # non-ASCII, and newline-containing paths. A failed read refuses
+            # every write for this PR and makes the sweep fail closed.
+            if ! git diff --name-only --no-renames -z \
+              "origin/${base}...dependabot-sweep/pr-${num}" > "$changed_paths" 2> "$diff_stderr"; then
+              printf 'Git diff diagnostic: %s\n' "$(escape_workflow_data "$(cat "$diff_stderr")")"
+              echo "::warning::#${num} — could not read the workflow-path diff; refusing to merge, refresh, or re-arm"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+            touches_workflows=false
+            while IFS= read -r -d '' changed_path; do
+              case "$changed_path" in
+                .github/workflows/*) touches_workflows=true ;;
+              esac
+            done < "$changed_paths"
+
+            # How far BEHIND its base is this head? That is the one question
+            # `mergeStateStatus` cannot answer (see the header) and the one a
+            # stale-branch strand turns on. Read-only, so it runs in DRY_RUN too.
+            #
+            # The fallback lives OUTSIDE the command substitution (#130: a
+            # `$(cmd) || true` swallows the exit code but still captures gh's
+            # HTTP error BODY as data), and the value must parse as a plain
+            # integer before it is trusted — a jq'd error body yields `null`,
+            # which is NOT a count. Anything unusable ⇒ behind_by=0 ⇒ do not act.
+            behind_by=0
+            behind_raw=$(gh api "repos/${GH_REPO}/compare/${base}...${head_sha}" --jq '.behind_by' 2>/dev/null) || behind_raw=""
+            if [ -n "$behind_raw" ] && [ -z "${behind_raw//[0-9]/}" ]; then
+              behind_by="$behind_raw"
+            else
+              echo "#${num} — could not read .behind_by from the compare API (unusable response; value not echoed); treating it as 0, so this sweep will NOT refresh the branch"
+            fi
+
+            # Every gate above has passed: checks green, no conflict, diff
+            # confined to the manifest allowlist. `merge_state` is logged for
+            # diagnostics ONLY — gating on it is what made the direct-merge
+            # branch unreachable (see the header).
+            echo "act on #${num} — checks green, manifest clean (behind_by=${behind_by}, mergeStateStatus=${merge_state}, diagnostic only)"
+
+            # Which identity a refresh would use — set once, read by both the
+            # DRY_RUN preview and the real refresh below (see "THE APP-TOKEN
+            # REFRESH IS THE ONE EXCEPTION" in the header).
+            refresh_identity="GITHUB_TOKEN"
+            if [ -n "${REFRESH_TOKEN:-}" ]; then
+              refresh_identity="the CMS automation App"
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+              if [ "$behind_by" -gt 0 ]; then
+                echo "would refresh #${num} using ${refresh_identity} — ${behind_by} commit(s) behind ${base}"
+                UPDATED=$((UPDATED + 1))
+              else
+                echo "would merge #${num} directly (squash)"
+                MERGED=$((MERGED + 1))
+              fi
+              continue
+            fi
+
+            if gh pr merge --squash "$num"; then
+              echo "merged #${num} directly (squash)"
+              MERGED=$((MERGED + 1))
+              continue
+            fi
+
+            if [ "$behind_by" -gt 0 ]; then
+              echo "#${num} — the direct merge was refused and the branch is ${behind_by} commit(s) behind ${base}. A stale branch cannot be merged, and re-arming auto-merge cannot make a stale branch mergeable either — refreshing it instead, using ${refresh_identity}."
+              if GH_TOKEN="${REFRESH_TOKEN:-$GH_TOKEN}" gh pr update-branch "$num"; then
+                # DELIBERATELY no `--auto` after this, and do NOT "fix" it into a
+                # busy-wait: the refresh pushes a merge commit onto the head, which
+                # invalidates the green checks this run verified and starts fresh
+                # ones. #${num} therefore cannot merge in THIS run BY DESIGN — the
+                # next scheduled sweep (or native auto-merge once the new checks go
+                # green) lands it. UPDATED is a SUCCESS outcome, not a failure.
+                if [ "$refresh_identity" = "GITHUB_TOKEN" ]; then
+                  echo "::warning::#${num} — refreshed using GITHUB_TOKEN, which fires NO workflow runs (a GITHUB_TOKEN-authored push triggers no new runs), so the refreshed head's required checks may never report. Pass the CMS automation App (vars.CMS_AUTOMATION_APP_ID + secrets.app_private_key) to this sweep so a refresh fires the PR's own CI instead."
+                  echo "refreshed #${num} against ${base} using GITHUB_TOKEN — the next sweep merges it once its checks report"
+                else
+                  echo "refreshed #${num} against ${base} using the CMS automation App — its push fires the PR's own CI, so its checks now re-run; the next sweep merges it"
+                fi
+                UPDATED=$((UPDATED + 1))
+                continue
+              fi
+              echo "::warning::#${num} — \`gh pr update-branch\` (${refresh_identity}) failed; falling through to the auto-merge re-arm"
+            fi
+
+            if gh pr merge --auto --squash "$num"; then
+              echo "re-armed auto-merge on #${num} — the direct merge was refused; GitHub lands it"
+              REARMED=$((REARMED + 1))
+            else
+              pr_url="${GITHUB_SERVER_URL}/${GH_REPO}/pull/${num}"
+              if [ "$behind_by" -gt 0 ] && [ "$touches_workflows" = "true" ]; then
+                human_action="Human action: comment \`@dependabot rebase\` on ${pr_url} (Dependabot pushes a fresh head; the pull_request-context auto-merge job re-arms and it lands on green)."
+                if [ "$refresh_identity" = "the CMS automation App" ]; then
+                  human_action="${human_action} The CMS automation App refresh also failed — see the warning above."
+                else
+                  human_action="${human_action} To let this sweep refresh it itself, pass the CMS automation App (vars.CMS_AUTOMATION_APP_ID + secrets.app_private_key)."
+                fi
+                echo "::warning::#${num} — could not be merged, refreshed, or re-armed: it is ${behind_by} commit(s) behind ${base} and changes .github/workflows/, so every GITHUB_TOKEN path would write workflow content Dependabot never pushed, which GitHub refuses without \`workflows\` permission. ${human_action}"
+              else
+                echo "::warning::#${num} — neither a direct merge, a branch refresh, nor an auto-merge re-arm succeeded; a human needs to merge it: ${pr_url}"
+              fi
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo "::notice::Sweep complete — merged=${MERGED} refreshed=${UPDATED} re-armed=${REARMED} skipped=${SKIPPED} failed=${FAILED} undetermined=${UNDETERMINED} (DRY_RUN=${DRY_RUN})"
+
+          # A month of "merged=0 skipped=2" read as success, and the 2026-08-10
+          # run reported 0/0/0 after failing twice — a failed merge/re-arm
+          # incremented NOTHING. FAILED and UNDETERMINED exist so "nothing to
+          # do" and "could not act" can never look the same again.
+          {
+            echo "### Dependabot re-arm sweep"
+            echo
+            echo "| outcome | count |"
+            echo "| --- | --- |"
+            echo "| merged | ${MERGED} |"
+            echo "| refreshed (was behind base; next sweep merges it) | ${UPDATED} |"
+            echo "| re-armed | ${REARMED} |"
+            echo "| skipped (conflict / not green / non-manifest diff) | ${SKIPPED} |"
+            echo "| failed (could not merge, refresh OR re-arm — needs a human) | ${FAILED} |"
+            echo "| undetermined (mergeable still UNKNOWN) | ${UNDETERMINED} |"
+            echo
+            echo "Candidates: ${#PR_NUMBERS[@]} · DRY_RUN=${DRY_RUN}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Exit non-zero ONLY when the sweep could not act. Same contract as
+          # audit-editorial-labels.js --fix: "a red run means a fix didn't
+          # stick and needs a human". UNDETERMINED stays green (a transient
+          # async read, not a refusal), UPDATED stays green (a refreshed branch
+          # is the sweep acting successfully — it just lands next run), and
+          # having nothing to sweep is never a failure.
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::${FAILED} Dependabot PR(s) could be neither merged, refreshed, nor re-armed — see the warnings above."
+            exit 1
+          fi
