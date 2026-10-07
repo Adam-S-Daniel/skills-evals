@@ -16,15 +16,17 @@ workspace the agent will actually get and fails the arm if any stripped path
 or fleet marker remains, so the strip is verified on every run rather than
 trusted.
 
-`deps:` installs a fixture's dependencies from the repository's committed
-lockfile during setup, pinned, with network (Adam, 2026-10-06: "Fetch in
-setup (Recommended)"). A missing lockfile is a named `deps_failed` error.
+`deps:` installs a fixture's dependencies during setup, pinned, with network
+(Adam, 2026-10-06: "Fetch in setup (Recommended)"). npm uses the repository's
+committed lockfile; Python uses complete exact pins from fixture YAML and a
+fresh isolated venv. Installation failures are named `deps_failed` errors.
 """
 
 from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -55,7 +57,12 @@ FLEET_MARKERS = (
 BRIDGE_IMPORT = "@AGENTS.md"
 
 MAX_DEPS = 4
-DEPS_MANAGERS = ("npm",)
+DEPS_MANAGERS = ("npm", "pip")
+PYTHON_DIR = ".fixture-python"
+MAX_REQUIREMENTS = 64
+# Lexical requirement tokens only: pip options, URLs and markers are forbidden.
+PINNED_REQUIREMENT = re.compile(
+    r"([A-Za-z0-9][A-Za-z0-9._-]*)==([0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+|\.post[0-9]+|\.dev[0-9]+)?)\Z")
 NPM_LOCKFILES = ("package-lock.json", "npm-shrinkwrap.json")
 DEPS_DETAIL_CHARS = 400
 
@@ -207,7 +214,7 @@ def seed_guard(workspace: Path, fixture: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# deps: install from the repository's lockfile
+# deps: install from the repository lockfile or fixture Python pins
 # ---------------------------------------------------------------------------
 
 def _deps_entries(value) -> list[dict]:
@@ -222,13 +229,35 @@ def _deps_entries(value) -> list[dict]:
         where = f"`{DEPS_KEY}[{index}]`"
         if not isinstance(entry, dict):
             raise guidance.GuidanceError(f"{where} must be a mapping")
-        unknown = set(entry) - {"manager", "dir"}
+        manager = entry.get("manager")
+        allowed = {"manager", "requirements"} if manager == "pip" else {"manager", "dir"}
+        unknown = set(entry) - allowed
         if unknown:
             raise guidance.GuidanceError(f"{where} has unknown key(s) {sorted(unknown)}")
         manager = entry.get("manager")
         if manager not in DEPS_MANAGERS:
             raise guidance.GuidanceError(
                 f"{where} `manager:` must be one of {list(DEPS_MANAGERS)}, got {manager!r}")
+        if manager == "pip":
+            requirements = entry.get("requirements")
+            if (not isinstance(requirements, list) or not requirements
+                    or len(requirements) > MAX_REQUIREMENTS):
+                raise guidance.GuidanceError(
+                    f"{where} `requirements:` must be a list of 1 to {MAX_REQUIREMENTS} exact pins")
+            names = set()
+            for requirement in requirements:
+                match = (PINNED_REQUIREMENT.fullmatch(requirement)
+                         if isinstance(requirement, str) and len(requirement) <= 200 else None)
+                if match is None:
+                    raise guidance.GuidanceError(f"{where} requires plain package==version pins")
+                name = re.sub(r"[-_.]+", "-", match[1]).lower()
+                if name in names:
+                    raise guidance.GuidanceError(f"{where} repeats a package")
+                names.add(name)
+            if any(item["manager"] == "pip" for item in entries):
+                raise guidance.GuidanceError("`deps:` may contain only one pip entry")
+            entries.append({"manager": "pip", "requirements": list(requirements)})
+            continue
         directory = entry.get("dir", ".")
         if (not isinstance(directory, str) or not directory.strip()
                 or "\x00" in directory or Path(directory).is_absolute()
@@ -241,7 +270,44 @@ def _deps_entries(value) -> list[dict]:
 
 def _deps_error(index: int, entry: dict, message: str) -> dict:
     return {"error": "deps_failed",
-            "detail": f"deps[{index}] ({entry['manager']} in {entry['dir']!r}): {message}"}
+            "detail": f"deps[{index}] ({entry['manager']} in {entry.get('dir', PYTHON_DIR)!r}): {message}"}
+
+
+def _install_python(workspace: Path, index: int, entry: dict, timeout) -> dict | None:
+    """Create a fresh venv and install only the fixture's complete exact pins."""
+    venv = workspace / PYTHON_DIR
+    if os.path.lexists(venv):
+        return _deps_error(index, entry, "reserved Python environment path already exists")
+    python = commands._fixed_interpreter("python3")
+    if python is None:
+        return _deps_error(index, entry, "system python3 is unavailable")
+    try:
+        venv.mkdir(mode=0o700)
+    except OSError:
+        return _deps_error(index, entry, "Python environment path could not be created")
+    with tempfile.TemporaryDirectory(prefix="deps-python-") as temporary:
+        root = Path(temporary)
+        env = commands._environment(root, workspace)
+        requirements = root / "requirements.txt"
+        requirements.write_text("\n".join(entry["requirements"]) + "\n", encoding="utf-8")
+        steps = [
+            ("venv", [python, "-I", "-m", "venv", str(venv)]),
+            ("pip install", [str(venv / "bin" / "python3"), "-I", "-m", "pip",
+                             "--isolated", "install", "--no-deps", "--only-binary=:all:",
+                             "--disable-pip-version-check", "--no-input",
+                             "--requirement", str(requirements)]),
+        ]
+        for label, argv in steps:
+            with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                try:
+                    code = commands._run_command(argv, workspace, env, stdout, stderr, timeout)
+                except OSError:
+                    return _deps_error(index, entry, f"{label} could not be started")
+                except subprocess.TimeoutExpired:
+                    return _deps_error(index, entry, f"{label} timed out after {timeout}s")
+                if code != 0:
+                    return _deps_error(index, entry, f"{label} exited {code}; output suppressed")
+    return None
 
 
 def install_deps(workspace: Path, fixture: dict, env: dict, timeout) -> dict | None:
@@ -258,6 +324,11 @@ def install_deps(workspace: Path, fixture: dict, env: dict, timeout) -> dict | N
         return {"error": "deps_failed", "detail": str(exc)}
     workspace = Path(workspace).resolve(strict=True)
     for index, entry in enumerate(entries):
+        if entry["manager"] == "pip":
+            error = _install_python(workspace, index, entry, timeout)
+            if error is not None:
+                return error
+            continue
         directory = (workspace / entry["dir"]).resolve()
         if not directory.is_relative_to(workspace) or not directory.is_dir():
             return _deps_error(index, entry, "the directory does not exist in the workspace")
@@ -325,6 +396,8 @@ def validate_fixture(fixture: dict, eval_dir: Path) -> None:
         _deps_entries(fixture.get(DEPS_KEY))
     except guidance.GuidanceError as exc:
         raise guidance.GuidanceError(f"{where}: {exc}") from None
+    if os.path.lexists(Path(eval_dir) / "seed" / PYTHON_DIR):
+        raise guidance.GuidanceError(f"{where}: seed carries reserved {PYTHON_DIR} path")
     for key, checks in _check_lists(fixture):
         if not isinstance(checks, list):
             continue
@@ -333,6 +406,11 @@ def validate_fixture(fixture: dict, eval_dir: Path) -> None:
                 continue
             try:
                 repo_tests.validate_check(check, Path(eval_dir))
+                files = repo_tests.overlay_files(Path(eval_dir), check["overlay"])
+                if (os.path.lexists(Path(eval_dir) / check["overlay"] / PYTHON_DIR)
+                        or any(Path(rel).parts[0] == PYTHON_DIR for _, rel in files)):
+                    raise repo_tests.RepoTestsConfigError(
+                        f"overlay carries reserved {PYTHON_DIR} path")
             except repo_tests.RepoTestsConfigError as exc:
                 raise guidance.GuidanceError(
                     f"{where}: {key} check {check.get('id')!r} (repo_tests): "

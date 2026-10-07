@@ -29,8 +29,9 @@ selection), and everything else is read from git and GitHub.
 BUILD writes `<dest>/<repo name>-<pr>/` in the shape of the first three
 fixtures (#311): `seed/` is the base tree from `git archive`, with the fleet
 agent context stripped (harness/seed_prep.py), the evaluated paths removed,
-and every file over TRIM_BYTES, every symlink and every other e2e spec
-trimmed; `checker/` is the merge commit's copy of each selected test file;
+and oversized files, every symlink and every other e2e spec trimmed;
+regular Python source stays through MAX_KEPT_LARGE_BYTES so its fix remains
+applicable. `checker/` is the merge commit's copy of each selected test file;
 `solution.patch` is the rest of the pull request's diff; and
 `issue-before-fix.txt` is the closing issue's title and body as they stood
 before the pull request's first commit, with the three provenance keys,
@@ -132,7 +133,8 @@ DRAFT_LABEL = "eval-scaffold"
 EVALUATED_PATHS = (".claude", "skills.lock", "agents-md", "skills", ".claude-plugin")
 #: A seed file over this size is trimmed, unless KEPT_LARGE names it (the
 #: lockfile `deps:` installs from, AGENTS.md's kept section) or it is the
-#: seed's copy of a checker file.
+#: seed's copy of a checker file. Regular .py files also stay through
+#: MAX_KEPT_LARGE_BYTES, preserving implementation code and its fix patch.
 TRIM_BYTES = 100 * 1024
 KEPT_LARGE = frozenset({"package-lock.json", "npm-shrinkwrap.json", "AGENTS.md"})
 #: e2e/ entries that are specs; only the checker's own stay (Adam,
@@ -553,6 +555,10 @@ def load_spec(path: Path, candidate: dict) -> dict:
             raise ScaffoldError(f"checker.files entry {rel!r} is not one of the candidate's test files")
     if len(set(files)) != len(files):
         raise ScaffoldError("checker.files repeats a file")
+    try:
+        seed_prep._deps_entries(spec.get("deps"))
+    except guidance.GuidanceError as error:
+        raise ScaffoldError(str(error)) from None
     trim = spec.get("trim") or []
     if not isinstance(trim, list) or len(trim) > MAX_TRIM:
         raise ScaffoldError(f"trim must be a list of at most {MAX_TRIM} paths")
@@ -603,7 +609,9 @@ def trim_seed(seed: Path, checker_files: list[str], extra: list[str], repo_name:
                 path.unlink()
                 trimmed.append(rel)
             elif path.is_file() and path.stat().st_size > TRIM_BYTES \
-                    and name not in KEPT_LARGE and rel not in keep:
+                    and name not in KEPT_LARGE and rel not in keep \
+                    and not (path.suffix == ".py"
+                             and path.stat().st_size <= MAX_KEPT_LARGE_BYTES):
                 path.unlink()
                 trimmed.append(rel)
         dirnames[:] = [d for d in dirnames if (Path(directory) / d).is_dir()
@@ -785,7 +793,8 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
         total += size
         rel = path.relative_to(fixture_dir).as_posix()
         if rel.startswith(SEED_DIR + "/") and size > TRIM_BYTES \
-                and (path.name not in KEPT_LARGE or size > MAX_KEPT_LARGE_BYTES):
+                and ((path.name not in KEPT_LARGE and path.suffix != ".py")
+                     or size > MAX_KEPT_LARGE_BYTES):
             problems.append(f"{rel!r} is over the seed's size cap")
     if count > MAX_FIXTURE_FILES or total > MAX_FIXTURE_BYTES:
         problems.append(f"the fixture holds {count} files and {total} bytes, over the caps "
