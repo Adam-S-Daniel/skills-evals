@@ -1226,6 +1226,9 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
                                            run_paths(results, "baseline", skill, ts),
                                            ts, args.trials, args.no_judge))
+        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
+                                       skill, ts, n, args.trials) for n in names}
+        record["baseline"] = baseline
         if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
             record.update(status="refused", phase="baseline", exit_code=rc,
                           reasons=[f"local_eval exited {rc} during baseline"])
@@ -1233,9 +1236,6 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             print(f"refused: local_eval baseline exited {rc}; record: "
                   f"{stem.with_suffix('.json')}", file=sys.stderr)
             return EXIT_REFUSED
-        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
-                                       skill, ts, n, args.trials) for n in names}
-        record["baseline"] = baseline
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
@@ -1373,6 +1373,9 @@ def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
 
 
 def write_record(stem: Path, record: dict) -> None:
+    record["decision"] = {"invalid-proposal": "rejected",
+                          "trigger-set-unusable": "refused"}.get(
+                              record["status"], record["status"])
     record["files"]["record"] = str(stem.with_suffix(".json"))
     stem.with_suffix(".json").write_text(json.dumps(record, indent=2) + "\n",
                                          encoding="utf-8")

@@ -246,6 +246,9 @@ design, recorded verbatim:
 - **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
   `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
   acceptance addendum (2026-10-06)"); nothing else does.
+  Each loop record saves an explicit outcome `decision` and the observed
+  mean tokens per trial in each fixture's baseline metrics, including
+  no-candidate and refused runs; unmeasured token usage stays `null`.
 - **Answer leak, the exemption list:** "Exempt interface strings
   (Recommended)". Each fixture declares, in `interface_strings:`, the
   identifiers and messages its hidden tests check verbatim, and its task text

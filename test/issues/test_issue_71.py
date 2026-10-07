@@ -314,6 +314,7 @@ class RefusalTests(PipelineCase):
                 record = self.record()
                 self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                                  ("refused", "preflight", 2))
+                self.assertEqual(record["decision"], "refused")
                 self.assertIn(next(iter(env)), err)
                 shutil.rmtree(self.results)
 
@@ -356,6 +357,7 @@ class RefusalTests(PipelineCase):
                 record = self.record()
                 self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                                  ("refused", phase, 2))
+                self.assertEqual(record["decision"], "refused")
                 self.assertIn("apiKeyHelper", record["reasons"][0])
                 self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
                                  ["baseline"])
@@ -369,6 +371,7 @@ class RefusalTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("refused", "baseline", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertEqual(runner.calls, [("refused", "baseline")])
 
     def test_candidate_local_eval_refusal_is_recorded_without_retry(self):
@@ -379,6 +382,7 @@ class RefusalTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("refused", "candidate", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertIn("candidate", record["runs"])
         self.assertEqual([c[0] for c in runner.calls].count("refused"), 1)
 
@@ -672,6 +676,7 @@ class RejectTests(PipelineCase):
         self.assertEqual(rc, 1)
         self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
         self.assertEqual(self.record()["status"], "invalid-proposal")
+        self.assertEqual(self.record()["decision"], "rejected")
         self.assertIn("README.md", self.record()["reasons"][0])
 
     def test_diff_touching_the_frontmatter_is_rejected_before_measurement(self):
@@ -695,7 +700,56 @@ class RejectTests(PipelineCase):
         rc, _, _ = self.run_main(runner)
         self.assertEqual(rc, 1)
         self.assertEqual(self.record()["status"], "no-candidate")
+        self.assertEqual(self.record()["decision"], "no-candidate")
         self.assertEqual(len([c for c in runner.calls if c[0] == "run_eval"]), 1)
+
+    def test_no_candidate_records_tokens_for_train_validation_and_fixed_holdout(self):
+        passes = {name: (4, 4, 7.0) for name in FIXTURES}
+        runner = FakeRunner(passes, {}, None)
+        rc, _, _ = self.run_main(runner, "--rotation", "0", "--holdout", "supersede")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "no-candidate")
+        self.assertEqual(record["decision"], "no-candidate")
+        self.assertEqual(record["split"], {"rotation": 0,
+                                           "train": ["existing-convention"],
+                                           "validation": "bootstrap",
+                                           "holdout": "supersede"})
+        self.assertEqual(set(record["baseline"]), set(FIXTURES))
+        self.assertTrue(all(metric["tokens"] == 1000
+                            for metric in record["baseline"].values()))
+        self.assertFalse(any(call[0] == "propose" for call in runner.calls))
+
+    def test_no_candidate_records_unknown_tokens_as_null(self):
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        runner.tokens["baseline"] = None
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["decision"], "no-candidate")
+        self.assertEqual(set(record["baseline"]), set(FIXTURES))
+        self.assertTrue(all(metric["tokens"] is None
+                            for metric in record["baseline"].values()))
+
+    def test_refused_baseline_keeps_any_fixture_metrics_already_written(self):
+        class PartialBaselineRunner(FakeRunner):
+            def run_eval(self, argv):
+                super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                missing = run_dir / "t1" / SKILL / TS / "existing-convention" / "with_skill"
+                shutil.rmtree(missing)
+                return 2
+
+        runner = PartialBaselineRunner(GOOD, {}, proposal(""))
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        record = self.record()
+        self.assertEqual(record["status"], "refused")
+        self.assertEqual(record["decision"], "refused")
+        self.assertEqual(record["phase"], "baseline")
+        self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
+        self.assertIsNone(record["baseline"]["existing-convention"]["tokens"])
+        self.assertEqual(record["baseline"]["supersede"]["tokens"], 1000)
 
 
 def trial_split(n: int, holdout: float = 0.4) -> tuple[int, int]:
@@ -720,6 +774,7 @@ class TriggerSetGuardTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("trigger-set-unusable", "trigger-set", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertIn("train split has no should-trigger query", record["reasons"][0])
         self.assertIn("--trigger-eval-set", record["reasons"][0])
         trigger_set = record["trigger_set"]
@@ -1206,6 +1261,7 @@ class TokenPipelineTests(PipelineCase):
         rc, _, err = self.run_main(runner, "--rotation", "2")
         self.assertEqual(rc, 0, err)
         record = self.record()
+        self.assertEqual(record["decision"], "accepted")
         self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
         self.assertEqual(record["candidate"]["bootstrap"]["tokens"], 800)
         self.assertIn("tokens 3000 -> 2400", " ".join(record["reasons"]))
@@ -1224,6 +1280,7 @@ class TokenPipelineTests(PipelineCase):
         self.assertEqual(rc, 1)
         record = self.record()
         self.assertEqual(record["status"], "rejected")
+        self.assertEqual(record["decision"], "rejected")
         self.assertIsNone(record["candidate"]["bootstrap"]["tokens"])
         self.assertIn("inconclusive: missing token data", " ".join(record["reasons"]))
 

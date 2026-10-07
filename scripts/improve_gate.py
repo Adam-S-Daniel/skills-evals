@@ -109,7 +109,7 @@ RECORD_REQUIRED = ("schema", "skill", "timestamp", "registry", "split",
                    "description_half", "body_half", "table", "files")
 RECORD_ALLOWED = RECORD_REQUIRED + (
     "local_exhibit", "no_judge", "min_gain", "models", "runs", "trigger_set",
-    "phase", "exit_code")
+    "phase", "exit_code", "decision")
 MAX_RECORD_STRING = 32 * 1024
 MAX_RECORD_DEPTH = 10
 MAX_RECORD_ITEMS = 512
@@ -179,6 +179,8 @@ def check_record(doc, where: str, repo: str) -> dict:
     if doc["status"] != "accepted":
         raise Rejected(f"{where}: status is not accepted; the routine pushes "
                        "only an accepted candidate")
+    if "decision" in doc and doc["decision"] != "accepted":
+        raise Rejected(f"{where}: decision is not accepted")
     skill = doc["skill"]
     if not isinstance(skill, str) or not NAME_RE.fullmatch(skill):
         raise Rejected(f"{where}: bad skill name")
