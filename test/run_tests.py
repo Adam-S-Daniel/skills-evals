@@ -4639,6 +4639,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-improve-gate.yml",
                ".github/workflows/routine-improve-pushed.yml",
                ".github/workflows/routine-eval-fire.yml",
+               ".github/workflows/routine-eval-weekly.yml",
                ".github/workflows/routine-eval-ingest.yml",
                ".github/workflows/routine-eval-results-pushed.yml",
                ".github/workflows/routine-scaffold-gate.yml",

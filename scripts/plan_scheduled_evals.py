@@ -93,6 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--committed", action="store_true")
     parser.add_argument("--validate", nargs=3, metavar=("FIXTURE", "KEY", "SLOT"))
+    parser.add_argument("--max-fixtures", type=int, metavar="COUNT")
     args = parser.parse_args()
     root = Path.cwd()
     try:
@@ -105,11 +106,15 @@ def main():
                 raise ValueError("matrix key or slot does not match a validated fixture")
             print(f"eval_key={expected}")
         else:
+            if args.max_fixtures is not None and args.max_fixtures < 1:
+                raise ValueError("fixture cap must be positive")
             event_path = os.environ.get("GITHUB_EVENT_PATH")
             event = json.loads(Path(event_path).read_text()) if event_path else {}
             if not isinstance(event, dict):
                 raise ValueError("event must be an object")
             matrix = plan(root, os.environ["GITHUB_EVENT_NAME"], event)
+            if args.max_fixtures is not None and len(matrix["include"]) > args.max_fixtures:
+                raise ValueError("fixture plan exceeds the caller's fire limit")
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError):

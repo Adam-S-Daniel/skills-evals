@@ -8,7 +8,8 @@ name: CI
 # evals/ (the fixture YAML and seed trees the eval and canary dirs load), and
 # eval.yml — which BadgeWorkflowOrderingTests parses to assert the badge is
 # built after the persistent/eval-results checkout; and routine-eval-fire.yml,
-# which test_issue_routine_eval_fire.py parses and runs; routine-eval-ingest.yml
+# which test_issue_routine_eval_fire.py parses and runs; routine-eval-weekly.yml,
+# which test_issue_scheduled_fixtures.py parses and runs; routine-eval-ingest.yml
 # and routine-eval-results-pushed.yml, which test_issue_routine_eval_ingest.py
 # parses; routine-improve-gate.yml and routine-improve-pushed.yml, which
 # test_issue_routine_improve.py parses; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
@@ -51,6 +52,7 @@ on:
       - .github/workflows/routine-improve-gate.yml
       - .github/workflows/routine-improve-pushed.yml
       - .github/workflows/routine-eval-fire.yml
+      - .github/workflows/routine-eval-weekly.yml
       - .github/workflows/routine-eval-ingest.yml
       - .github/workflows/routine-eval-results-pushed.yml
       - .github/workflows/routine-scaffold-gate.yml
@@ -102,6 +104,7 @@ jobs:
             .github/workflows/routine-improve-gate.yml
             .github/workflows/routine-improve-pushed.yml
             .github/workflows/routine-eval-fire.yml
+            .github/workflows/routine-eval-weekly.yml
             .github/workflows/routine-eval-ingest.yml
             .github/workflows/routine-eval-results-pushed.yml
             .github/workflows/routine-scaffold-gate.yml
