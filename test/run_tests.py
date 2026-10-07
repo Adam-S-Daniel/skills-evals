@@ -4646,7 +4646,9 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
-               "DESIGN.md"]
+               "DESIGN.md",
+               "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
+               "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]
 
     def _triggers(self) -> dict:
         # A real parser, never a line scan: a bare `on:` key is the YAML 1.1
@@ -5248,6 +5250,26 @@ class CiSalientDetectionTests(unittest.TestCase):
     def test_exact_root_file_readme_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._repo_with_merge(Path(tmp), {"README.md": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_adr_0008_only_change_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(
+                Path(tmp),
+                {"docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md": "x"},
+            )
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_adr_0010_only_change_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(
+                Path(tmp),
+                {"docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md": "x"},
+            )
             result, outputs = self._run(repo, "pull_request")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "true")
