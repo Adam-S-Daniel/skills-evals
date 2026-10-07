@@ -1106,6 +1106,85 @@ class ScaffoldAnswerRulesTests(_Case):
                 self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": source})
                 self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
 
+    def test_focused_sibling_discards_otherwise_selected_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": selected})
+        self.assertEqual(self.rules(root, fixture), [])
+        for focused in ('test.only("other", () => {});', 'it.only("other", () => {});',
+                        'test.describe.only("other", () => { test("other", () => {}); });',
+                        'describe.only("other", () => { it("other", () => {}); });'):
+            with self.subTest(focused=focused):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": selected + focused})
+                problems = self.rules(root, fixture)
+                self.assertTrue(any("interface" in p for p in problems), problems)
+                self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+
+    def test_named_setup_hook_skips_discard_calls_and_behavior(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        for modifier in ("skip", "fixme"):
+            for hook in ("beforeEach", "beforeAll"):
+                for declaration, helper in (
+                    (f'function stop() {{ test.{modifier}(true); }}', None),
+                    (f'const stop = () => test.{modifier}(true);', None),
+                    ('import { stop as halt } from "./stop.js";',
+                     f'export function stop() {{ test.{modifier}(true); }}'),
+                    ('const { stop: halt } = require("./stop.js");',
+                     f'function stop() {{ test.{modifier}(true); }} exports.stop = stop;'),
+                ):
+                    with self.subTest(modifier=modifier, hook=hook, declaration=declaration):
+                        callback = "halt" if helper else "stop"
+                        files = {"e2e/theme-overflow-wrap-css.test.js":
+                                 declaration + f"test.{hook}({callback});" + selected}
+                        if helper:
+                            files["e2e/stop.js"] = helper
+                        self.write(root / "checker", files)
+                        problems = self.rules(root, fixture)
+                        self.assertTrue(any("interface" in p for p in problems), problems)
+                        self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+
+    def test_named_hook_false_skip_and_unaffected_suite_still_grant_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        for hook in ("beforeEach", "beforeAll"):
+            with self.subTest(hook=hook):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    'function stop() { test.skip(false); } ' + f'test.{hook}(stop);' + selected})
+                self.assertEqual(self.rules(root, fixture), [])
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    'function stop() { test.skip(true); } '
+                    'test.describe("skipped", () => { ' + f'test.{hook}(stop);' + selected + ' });'
+                    'test.describe("running", () => { ' + selected + ' });'})
+                self.assertEqual(self.rules(root, fixture), [])
+
+    def test_unresolved_setup_callbacks_cannot_grant_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        for callback in ("unknown", "hooks.stop", "stop.bind(null)", "factory()"):
+            for hook in ("beforeEach", "beforeAll"):
+                with self.subTest(callback=callback, hook=hook):
+                    self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                        f'test.{hook}({callback});' + selected})
+                    problems = self.rules(root, fixture)
+                    self.assertTrue(any("interface" in p for p in problems), problems)
+                    self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'function setup() {} test.beforeEach("named hook", setup);' + selected})
+        self.assertEqual(self.rules(root, fixture), [])
+
     def test_runtime_skips_discard_calls_and_behavior(self):
         root, fixture = self.real(759)
         fixture["interface_strings"] = ["novelCallable"]
@@ -1265,6 +1344,234 @@ class ScaffoldAnswerRulesTests(_Case):
                     'class Selected:\n    def test_same(self):\n'
                     f'        {binding}\n        helper()\n'})
                 self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_unittest_skip_decorators_discard_selected_interfaces(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["checks.Selected.test_target"]}]
+        for imports, decorator in (
+            ("import unittest", '@unittest.skip("not runnable")'),
+            ("import unittest as ut", '@ut.skipIf(True, "not runnable")'),
+            ("import unittest", '@unittest.skipUnless(False, "not runnable")'),
+            ("import unittest", '@unittest.skipIf(condition, "unknown")'),
+            ("import unittest", '@unittest.skipUnless(condition, "unknown")'),
+            ("from unittest import skip as omit", '@omit("not runnable")'),
+            ("from unittest import skipIf as omit", '@omit(True, "not runnable")'),
+            ("from unittest import skipUnless as omit", '@omit(False, "not runnable")'),
+            ("import unittest\nomit = unittest.skip", '@omit("not runnable")'),
+        ):
+            for scope in ("method", "class"):
+                with self.subTest(imports=imports, decorator=decorator, scope=scope):
+                    source = imports + "\n"
+                    if scope == "class":
+                        source += decorator + "\n"
+                    source += "class Selected:\n"
+                    if scope == "method":
+                        source += "    " + decorator + "\n"
+                    source += "    def test_target(self):\n        novelCallable()\n"
+                    self.write(root / "checker", {"checks.py": source})
+                    calls, _ = scaffold.checker_facts(root, fixture)
+                    self.assertNotIn("novelCallable", calls)
+                    self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_unittest_runtime_and_setup_skips_discard_selected_interfaces(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["checks.Selected.test_target"]}]
+        for source in (
+            'class Selected:\n    def test_target(self):\n'
+                '        self.skipTest("not runnable")\n        novelCallable()\n',
+            'import unittest\nclass Selected:\n    def test_target(self):\n'
+                '        novelCallable()\n        raise unittest.SkipTest("not runnable")\n',
+            'from unittest import SkipTest as Stop\nclass Selected:\n    def test_target(self):\n'
+                '        raise Stop("not runnable")\n        novelCallable()\n',
+            'import unittest\nraise unittest.SkipTest("module skip")\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'import unittest\ndef setUpModule():\n    raise unittest.SkipTest("setup skip")\n'
+                'class Selected:\n    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def setUp(self):\n        self.skipTest("setup skip")\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'import unittest\nclass Selected:\n    @classmethod\n    def setUpClass(cls):\n'
+                '        raise unittest.SkipTest("setup skip")\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'import unittest\ndef stop():\n    raise unittest.SkipTest("helper skip")\n'
+                'class Selected:\n    def setUp(self):\n        stop()\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def stop(self):\n        self.skipTest("helper skip")\n'
+                '    def test_target(self):\n        self.stop()\n        novelCallable()\n',
+            'class Selected:\n    async def asyncSetUp(self):\n        self.skipTest("setup skip")\n'
+                '    async def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    @classmethod\n    def setUpClass(cls):\n'
+                '        cls.stop()\n    @classmethod\n    def stop(cls):\n'
+                '        cls.skipTest("helper skip")\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import stop\nclass Selected:\n    def setUp(self):\n        stop()\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def test_target(self):\n'
+                '        from unittest import SkipTest as Stop\n'
+                '        raise Stop("not runnable")\n        novelCallable()\n',
+            'class Selected:\n    def stop(self):\n'
+                '        from unittest import SkipTest as Stop\n        raise Stop("not runnable")\n'
+                '    def test_target(self):\n        self.stop()\n        novelCallable()\n',
+            'class Selected:\n    def test_target(self):\n'
+                '        from unittest import SkipTest as Stop\n        raise Stop("not runnable")\n'
+                '        Stop = lambda: None\n        novelCallable()\n',
+            'from unittest import SkipTest as Stop\nclass Selected:\n    def test_target(self):\n'
+                '        def unused():\n            Stop = lambda: None\n'
+                '        raise Stop("not runnable")\n        novelCallable()\n',
+        ):
+            with self.subTest(source=source):
+                self.write(root / "checker", {"checks.py": source})
+                calls, _ = scaffold.checker_facts(root, fixture)
+                self.assertNotIn("novelCallable", calls)
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_unittest_local_inherited_skips_discard_selected_interfaces(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["checks.Selected.test_target"]}]
+        for source in (
+            'import unittest\n@unittest.skip("not runnable")\nclass Base(unittest.TestCase):\n'
+                '    pass\nclass Selected(Base):\n    def test_target(self):\n        novelCallable()\n',
+            'import unittest\nclass Base(unittest.TestCase):\n    def setUp(self):\n'
+                '        self.skipTest("not runnable")\nclass Selected(Base):\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'import unittest\nclass Base(unittest.TestCase):\n'
+                '    @unittest.skip("not runnable")\n    def test_target(self):\n        novelCallable()\n'
+                'class Selected(Base):\n    pass\n',
+            'from external import Base\nclass Selected(Base):\n'
+                '    def test_target(self):\n        novelCallable()\n',
+        ):
+            with self.subTest(source=source):
+                self.write(root / "checker", {"checks.py": source})
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+        self.write(root / "checker", {"checks.py":
+            'import unittest\nclass Base(unittest.TestCase):\n'
+            '    def setUp(self):\n        self.value = 1\nclass Selected(Base):\n'
+            '    def test_target(self):\n        novelCallable()\n'})
+        self.assertEqual(self.rules(root, fixture), [])
+
+    def test_unittest_assigned_or_imported_setup_skips_discard_interfaces(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["checks.Selected.test_target"]}]
+        for source in (
+            'import unittest\ndef stop():\n    raise unittest.SkipTest("setup skip")\n'
+                'setUpModule = stop\nclass Selected(unittest.TestCase):\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import setUpModule\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import stop\nsetUpModule = stop\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def stop(self):\n        self.skipTest("setup skip")\n'
+                '    setUp = stop\n    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import stop\nclass Selected:\n    setUp = stop\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    from setup_helper import setUp\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import stop\nsetUpModule: object = stop\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'from setup_helper import stop\nclass Selected:\n    setUp: object = stop\n'
+                '    def test_target(self):\n        novelCallable()\n',
+        ):
+            with self.subTest(source=source):
+                self.write(root / "checker", {"checks.py": source})
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+        for source in (
+            'def setup():\n    pass\nsetUpModule = setup\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def setup(self):\n        self.value = 1\n'
+                '    setUp = setup\n    def test_target(self):\n        novelCallable()\n',
+            'def setup():\n    pass\nsetUpModule: object = setup\nclass Selected:\n'
+                '    def test_target(self):\n        novelCallable()\n',
+            'class Selected:\n    def setup(self):\n        self.value = 1\n'
+                '    setUp: object = setup\n    def test_target(self):\n        novelCallable()\n',
+        ):
+            with self.subTest(source=source):
+                self.write(root / "checker", {"checks.py": source})
+                self.assertEqual(self.rules(root, fixture), [])
+
+    def test_unittest_non_skipping_decorators_and_unaffected_siblings_count(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["checks.Selected"]}]
+        for decorator in ('@unittest.skipIf(False, "not skipped")',
+                          '@unittest.skipUnless(True, "not skipped")'):
+            for scope in ("method", "class"):
+                with self.subTest(decorator=decorator, scope=scope):
+                    source = "import unittest\n"
+                    if scope == "class":
+                        source += decorator + "\n"
+                    source += "class Selected:\n"
+                    if scope == "method":
+                        source += "    " + decorator + "\n"
+                    source += ('    def test_target(self):\n        helper()\n'
+                               'def helper():\n    novelCallable()\n')
+                    self.write(root / "checker", {"checks.py": source})
+                    self.assertEqual(self.rules(root, fixture), [])
+        for skipped in (
+            '    @unittest.skip("not runnable")\n    def test_skipped(self):\n        helper()\n',
+            '    def test_skipped(self):\n        helper()\n        self.skipTest("not runnable")\n',
+            '    def test_skipped(self):\n        from unittest import SkipTest as Stop\n'
+                '        helper()\n        raise Stop("not runnable")\n',
+        ):
+            with self.subTest(skipped=skipped):
+                self.write(root / "checker", {"checks.py":
+                    'import unittest\ndef helper():\n    novelCallable()\n'
+                    'class Selected:\n' + skipped + '    def test_target(self):\n        helper()\n'
+                    '@unittest.skip("not runnable")\nclass Excluded:\n'
+                    '    def setUp(self):\n        self.skipTest("setup skip")\n'
+                    '    def test_other(self):\n        helper()\n'})
+                self.assertEqual(self.rules(root, fixture), [])
+        self.write(root / "checker", {"checks.py":
+            'from unittest import SkipTest as Stop\nclass Selected:\n'
+            '    def test_target(self):\n        Stop = lambda: None\n        Stop()\n        novelCallable()\n'})
+        self.assertEqual(self.rules(root, fixture), [])
+        self.write(root / "checker", {"checks.py":
+            'def Stop():\n    pass\nclass Selected:\n    def test_target(self):\n'
+            '        def unused():\n            from unittest import SkipTest as Stop\n'
+            '            raise Stop("unused")\n        Stop()\n        novelCallable()\n'})
+        self.assertEqual(self.rules(root, fixture), [])
+
+    def test_skipped_contract_cannot_admit_real_red_green_fixture(self):
+        root = self.tmp / "arithmetic"
+        checker = ('import unittest\nfrom tool import add\nclass Selected(unittest.TestCase):\n'
+                   '    @unittest.skip("not runnable")\n    def test_contract(self):\n'
+                   '        novelCallable()\n    def test_actual(self):\n'
+                   '        self.assertEqual(add(2, 3), 5)\n')
+        broken = "def add(a, b):\n    return a - b\n"
+        self.write(root / "seed", {"tool.py": broken})
+        self.write(root / "checker", {"checks.py": checker})
+        self.write(root, {"solution.patch": 'diff --git a/tool.py b/tool.py\n'
+            '--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n'
+            '-    return a - b\n+    return a + b\n'})
+        fixture = {"subject": "any", "draft": True, "strip_agent_context": True,
+            "prompt": "Repair arithmetic addition.", "interface_strings": ["novelCallable"],
+            "objective_checks": [{"id": "hidden-tests", "type": "repo_tests",
+                "description": "Hidden arithmetic regression", "overlay": "checker",
+                "argv": ["python3", "-m", "unittest"],
+                "fail_to_pass": ["checks.Selected.test_actual"],
+                "pass_to_pass": ["checks.Selected.test_contract"]}]}
+        (root / "fixture.yaml").write_text(yaml.safe_dump(fixture))
+        runtime = self.tmp / "arithmetic-runtime"
+        self.write(runtime, {"tool.py": broken, "checks.py": checker})
+        args = ["python3", "-B", "-m", "unittest", "checks.Selected.test_actual",
+                "checks.Selected.test_contract"]
+        red = subprocess.run(args, cwd=runtime, capture_output=True, text=True, check=False)
+        self.assertEqual(red.returncode, 1)
+        self.assertIn("FAILED (failures=1, skipped=1)", red.stderr)
+        (runtime / "tool.py").write_text("def add(a, b):\n    return a + b\n")
+        green = subprocess.run(args, cwd=runtime, capture_output=True, text=True, check=False)
+        self.assertEqual(green.returncode, 0)
+        self.assertIn("OK (skipped=1)", green.stderr)
+        problems, warnings = scaffold.static_problems(root)
+        self.assertEqual(warnings, [])
+        self.assertTrue(any("interface" in p for p in problems), problems)
 
     def test_unsupported_selection_cannot_grant_admission(self):
         root, fixture = self.real(759)

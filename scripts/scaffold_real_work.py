@@ -840,32 +840,133 @@ def checker_facts(fixture_dir: Path, fixture: dict | None = None) -> tuple[set[s
             tree = ast.parse(source)
             function_types = (ast.FunctionDef, ast.AsyncFunctionDef)
             definitions = {node.name: node for node in tree.body if isinstance(node, function_types)}
+            classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+            aliases = {}
+            for node in tree.body:
+                if isinstance(node, ast.Import):
+                    aliases.update((item.asname or item.name.split(".")[0], item.name)
+                                   for item in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    aliases.update((item.asname or item.name, f"{node.module}.{item.name}")
+                                   for item in node.names)
+
+            def qualified(node, local=None):
+                if isinstance(node, ast.Call):
+                    return qualified(node.func, local)
+                if isinstance(node, ast.Name):
+                    if local is not None and node.id in local:
+                        return local[node.id] or node.id
+                    return aliases.get(node.id, node.id)
+                if isinstance(node, ast.Attribute):
+                    return qualified(node.value, local) + "." + node.attr
+                return ""
+
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    value = qualified(node.value)
+                    if value:
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                aliases[target.id] = value
+            module_setup = definitions.get("setUpModule")
+            unresolved_module_setup = "setUpModule" in aliases and module_setup is None
+            for node in tree.body:
+                if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    if any(isinstance(target, ast.Name) and target.id == "setUpModule" for target in targets):
+                        module_setup = definitions.get(node.value.id) if isinstance(node.value, ast.Name) else None
+                        unresolved_module_setup = module_setup is None
+
+            def decorated_skip(node):
+                for decorator in node.decorator_list:
+                    kind = qualified(decorator).split(".")[-1]
+                    if kind == "skip":
+                        return True
+                    if kind in {"skipIf", "skipUnless"}:
+                        condition = decorator.args[0] if isinstance(decorator, ast.Call) and decorator.args else None
+                        # Dynamic conditions cannot prove the test will run.
+                        safe = False if kind == "skipIf" else True
+                        if not isinstance(condition, ast.Constant) or condition.value is not safe:
+                            return True
+                    elif kind not in {"classmethod", "staticmethod", "expectedFailure"}:
+                        # An unsupported decorator may itself suppress execution.
+                        return True
+                return False
+
+            def class_context(node, seen=frozenset()):
+                if node in seen:
+                    return {}, True
+                methods = {}
+                skipped = decorated_skip(node)
+                for base in node.bases:
+                    parent = classes.get(base.id) if isinstance(base, ast.Name) else None
+                    if parent:
+                        inherited, parent_skip = class_context(parent, seen | {node})
+                        for method_name, method in inherited.items():
+                            methods.setdefault(method_name, method)
+                        skipped |= parent_skip
+                    elif qualified(base) not in {"unittest.TestCase", "unittest.IsolatedAsyncioTestCase", "object"}:
+                        skipped = True
+                methods.update((child.name, child) for child in node.body if isinstance(child, function_types))
+                for child in node.body:
+                    if isinstance(child, (ast.Import, ast.ImportFrom)) and any(
+                            (item.asname or item.name.split(".")[0]) in {"setUpClass", "setUp", "asyncSetUp"}
+                            for item in child.names):
+                        skipped = True
+                    if isinstance(child, (ast.Assign, ast.AnnAssign)):
+                        targets = child.targets if isinstance(child, ast.Assign) else [child.target]
+                        for target in targets:
+                            if isinstance(target, ast.Name) and target.id in {"setUpClass", "setUp", "asyncSetUp"}:
+                                callback = (methods.get(child.value.id) or definitions.get(child.value.id)
+                                            if isinstance(child.value, ast.Name) else None)
+                                if callback is None:
+                                    skipped = True
+                                else:
+                                    methods[target.id] = callback
+                return methods, skipped
+
             roots = []
             for node in tree.body:
                 if isinstance(node, function_types) and node.name in selected[relative]:
-                    roots.append((node, {}))
+                    roots.append((node, {}, decorated_skip(node)))
                 if isinstance(node, ast.ClassDef):
-                    methods = {child.name: child for child in node.body if isinstance(child, function_types)}
+                    methods, skipped = class_context(node)
                     for method_name, method in methods.items():
                         if (method_name.startswith("test_") and any(
                                 choice in {node.name, node.name + "." + method_name}
                                 for choice in selected[relative])):
-                            roots.append((method, methods))
-            visited = set()
+                            roots.append((method, methods, skipped or decorated_skip(method)))
             def bindings(function):
-                bound = {node.arg for node in ast.walk(function.args) if isinstance(node, ast.arg)}
+                bound = {node.arg: None for node in ast.walk(function.args) if isinstance(node, ast.arg)}
+                def collect(node):
+                    # Nested scopes bind their own names. Their imports and
+                    # assignments cannot hide an outer SkipTest alias.
+                    if isinstance(node, (*function_types, ast.ClassDef)):
+                        bound[node.name] = None
+                        return
+                    if isinstance(node, ast.Lambda):
+                        return
+                    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                        bound[node.id] = None
+                    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                        bound.update((item.asname or item.name.split(".")[0], None)
+                                     for item in node.names)
+                    for child in ast.iter_child_nodes(node):
+                        collect(child)
                 for statement in function.body:
-                    for node in ast.walk(statement):
-                        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                            bound.add(node.id)
-                        elif isinstance(node, (*function_types, ast.ClassDef)):
-                            bound.add(node.name)
-                        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                            bound.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+                    collect(statement)
                 return bound
-            def python_calls(node, methods, bound):
+            def python_calls(node, methods, bound, evidence, setup=False):
                 if isinstance(node, (*function_types, ast.Lambda, ast.ClassDef)):
                     return
+                if isinstance(node, ast.Import):
+                    bound.update((item.asname or item.name.split(".")[0], item.name)
+                                 for item in node.names)
+                elif isinstance(node, ast.ImportFrom):
+                    bound.update((item.asname or item.name, f"{node.module}.{item.name}")
+                                 for item in node.names)
+                if isinstance(node, ast.Raise) and qualified(node.exc, bound).split(".")[-1] == "SkipTest":
+                    evidence["skipped"] = True
                 if isinstance(node, ast.Call):
                     called = None
                     helper = None
@@ -874,20 +975,59 @@ def checker_facts(fixture_dir: Path, fixture: dict | None = None) -> tuple[set[s
                         helper = None if called in bound else definitions.get(called)
                     elif isinstance(node.func, ast.Attribute):
                         called = node.func.attr
-                        if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                        if isinstance(node.func.value, ast.Name) and node.func.value.id in {"self", "cls"}:
                             helper = methods.get(called)
                     if called:
-                        calls.add(called)
-                    if helper is not None and helper not in visited:
-                        visited.add(helper)
+                        evidence["calls"].add(called)
+                    if qualified(node.func, bound).split(".")[-1] in {"skipTest", "SkipTest"}:
+                        evidence["skipped"] = True
+                    if setup and helper is None and qualified(node.func, bound).split(".")[0] != "unittest":
+                        # Setup's external or dynamic calls may skip. They are
+                        # unsupported evidence paths, rather than executed to
+                        # discover whether they suppress the selected tests.
+                        evidence["skipped"] = True
+                    if helper is not None and helper not in evidence["visited"]:
+                        evidence["visited"].add(helper)
+                        evidence["skipped"] |= decorated_skip(helper)
+                        helper_bound = bindings(helper)
                         for statement in helper.body:
-                            python_calls(statement, methods, bindings(helper))
+                            python_calls(statement, methods, helper_bound, evidence, setup)
                 for child in ast.iter_child_nodes(node):
-                    python_calls(child, methods, bound)
-            for root, methods in roots:
-                visited.add(root)
+                    python_calls(child, methods, bound, evidence, setup)
+                if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    value = qualified(node.value, bound) if isinstance(node.value, (ast.Name, ast.Attribute)) else None
+                    for target in targets:
+                        if isinstance(target, ast.Name):
+                            bound[target.id] = value
+
+            module_evidence = {"calls": set(), "skipped": False, "visited": set()}
+            module_bound = {}
+            for statement in tree.body:
+                # Module executable statements and reachable helpers may skip;
+                # their calls never supply interface exemptions by themselves.
+                python_calls(statement, {}, module_bound, module_evidence)
+            for root, methods, skipped in roots:
+                evidence = {"calls": set(), "skipped": skipped or module_evidence["skipped"] or unresolved_module_setup,
+                            "visited": {root}}
+                setups = [module_setup, methods.get("setUpClass"),
+                          methods.get("setUp"), methods.get("asyncSetUp")]
+                for setup in setups:
+                    if setup is not None:
+                        evidence["visited"].add(setup)
+                        evidence["skipped"] |= decorated_skip(setup)
+                        bound = bindings(setup)
+                        for statement in setup.body:
+                            python_calls(statement, methods, bound, evidence, True)
+                evidence["calls"].clear()
+                # A helper reached by setup can be called again by the test;
+                # each candidate has its own reachability/skip state.
+                evidence["visited"] = {root}
+                bound = bindings(root)
                 for statement in root.body:
-                    python_calls(statement, methods, bindings(root))
+                    python_calls(statement, methods, bound, evidence)
+                if not evidence["skipped"]:
+                    calls.update(evidence["calls"])
         elif path.suffix == ".rb":
             # Ripper only parses stdin; it never loads the fixture or Ruby's
             # test framework. Missing parsers and malformed source fail closed.

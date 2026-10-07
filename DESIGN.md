@@ -333,8 +333,22 @@ Unselected files are not parsed unless a selected test
 calls an explicitly imported helper; only that helper's body is traversed.
 Direct module helpers and known collection callbacks are followed, while
 uncalled functions and arbitrary callbacks do not count. Locally shadowed
-helper names cannot reach module definitions. Python supports qualified
-`unittest` class/method selections and direct helpers; Ruby supports explicitly
+helper names cannot reach module definitions. Setup hooks may use inline,
+named local or explicitly imported callbacks; an unresolved callback grants
+no evidence. Python supports qualified `unittest` class/method selections,
+direct helpers and local class inheritance. Method/class `skip`, `skipIf` and
+`skipUnless` decorators, including imported aliases, discard skipped evidence;
+only literal `False` for `skipIf` and literal `True` for `skipUnless` prove
+execution. Runtime `skipTest()` and `SkipTest`, including calls reached through
+module, class, instance and asynchronous setup helpers, also discard the whole
+candidate. Setup aliases to local functions are resolved. Unknown base classes,
+decorators, imported setup callbacks and dynamic setup calls grant no evidence
+because their skip behavior is unavailable to the static parser. Calls collected
+from setup and module statements never supply interface exemptions themselves.
+Local imports and assignments update skip aliases in statement order; bindings
+inside unused nested functions do not alter the enclosing method's aliases.
+Each selected Python method uses its own evidence state, so a skipped sibling
+cannot contaminate a runnable method or preserve its own calls. Ruby supports explicitly
 selected plain scripts. Unsupported selection forms grant no exemption.
 Callable matching uses invoked method names, so aliases and dynamic dispatch
 are not a semantic proof. The behavioral test is conservative and supports JavaScript

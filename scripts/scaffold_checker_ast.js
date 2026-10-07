@@ -165,10 +165,21 @@ try {
         const definition = shadowed.has(called) ? null : helper(mod, called);
         if (definition && !evidence.visited.has(definition[1])) {
           evidence.visited.add(definition[1]);
-          analyze(definition[1], definition[0], evidence);
+          analyze(definition[1], definition[0], evidence, new Set(), hooks);
         }
-        if (["forEach", "map", "flatMap", "filter", "reduce", "some", "every", "find"].includes(called.split(".").pop()) ||
-            hooks && ["test.beforeEach", "test.beforeAll"].includes(called)) {
+        if (hooks && ["test.beforeEach", "test.beforeAll"].includes(called)) {
+          for (const argument of call.arguments) {
+            if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed);
+            else if (argument.type === "Identifier") {
+              const callback = shadowed.has(argument.name) ? null : helper(mod, argument.name);
+              if (!callback) evidence.skipped = true;
+              else if (!evidence.visited.has(callback[1])) {
+                evidence.visited.add(callback[1]);
+                analyze(callback[1], callback[0], evidence);
+              }
+            } else if (!(argument.type === "Literal" && typeof argument.value === "string")) evidence.skipped = true;
+          }
+        } else if (["forEach", "map", "flatMap", "filter", "reduce", "some", "every", "find"].includes(called.split(".").pop())) {
           for (const argument of call.arguments) if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed);
         }
       }
