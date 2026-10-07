@@ -974,9 +974,9 @@ fix), `interface_strings:` and the checker selection (`argv`,
 deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py):
 
 - **build** turns one miner candidate and the spec into
-  `evals/real-work/<repo name>-<pr>/` in the shape of the first three
-  fixtures: `seed/` is the base tree from `git archive`, with the agent
-  context stripped (`seed_prep.strip_agent_context`), the evaluated paths
+  `evals/real-work/<repo name>-<pr>/` (fixture ids are at most 72 characters)
+  in the shape of the first three fixtures: `seed/` is the base tree from
+  `git archive`, with the agent context stripped (`seed_prep.strip_agent_context`), the evaluated paths
   removed (`.claude`, `skills.lock`, `agents-md`, `skills`,
   `.claude-plugin`), and every symlink, every file over 100 KB but the
   lockfile and `AGENTS.md`, and every e2e spec but the checker's own
