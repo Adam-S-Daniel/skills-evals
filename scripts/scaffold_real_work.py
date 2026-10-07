@@ -1136,9 +1136,9 @@ def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
                     for start in range(len(check["argv"])))
                 for check in fixture["objective_checks"]))
             match = re.fullmatch(r"(?:[A-Za-z_$][\w$]*(?:\.|::))*"
-                                 r"([A-Za-z_$][\w$]*)(?:\((?:(?!true\b|false\b|null\b|undefined\b|None\b)"
+                                 r"([A-Za-z_$][\w$]*)(?:\((?:(?!true\b|false\b|True\b|False\b|null\b|undefined\b|None\b)"
                                  r"[A-Za-z_$][\w$]*:?"
-                                 r"(?:,\s*(?!true\b|false\b|null\b|undefined\b|None\b)"
+                                 r"(?:,\s*(?!true\b|false\b|True\b|False\b|null\b|undefined\b|None\b)"
                                  r"[A-Za-z_$][\w$]*:?)*\s*)?\))?", value)
             if not cli and (not match or match[1] not in calls):
                 problems.append("an interface string is absent from the seed and is not a "

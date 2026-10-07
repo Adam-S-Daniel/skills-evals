@@ -325,7 +325,9 @@ using each objective check's `argv` plus its `fail_to_pass` and `pass_to_pass`
 entries. JavaScript supports explicit Playwright CLI file selections and
 `--grep`/`-g`/`--grep-invert` title filters, including literal `describe` titles.
 Skipped suites/tests, focused tests, unresolved titles and unsupported command
-forms grant no evidence. Runtime `skip`/`fixme` modifiers also discard a test's
+forms grant no evidence. Focus is checked across every selected file in each
+Playwright invocation before collecting evidence; a separate invocation can
+still contribute. Runtime `skip`/`fixme` modifiers also discard a test's
 calls and assertions, including modifiers reached through helpers or inherited
 `beforeEach`/`beforeAll` hooks; only literal `false` conditions are safe to
 retain. Each suite is checked separately so unaffected siblings still count.
@@ -335,7 +337,9 @@ Direct module helpers and known collection callbacks are followed, while
 uncalled functions and arbitrary callbacks do not count. Locally shadowed
 helper names cannot reach module definitions. Setup hooks may use inline,
 named local or explicitly imported callbacks; an unresolved callback grants
-no evidence. Python supports qualified `unittest` class/method selections,
+no evidence. Calls reached inside setup callbacks are likewise disqualified
+when their target cannot be resolved, including namespace imports and dynamic
+collection calls that may skip. Python supports qualified `unittest` class/method selections,
 direct helpers and local class inheritance. Method/class `skip`, `skipIf` and
 `skipUnless` decorators, including imported aliases, discard skipped evidence;
 only literal `False` for `skipIf` and literal `True` for `skipUnless` prove

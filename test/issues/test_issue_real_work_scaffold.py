@@ -996,6 +996,33 @@ class ScaffoldAnswerRulesTests(_Case):
                 self.assertIn("freshCall", calls)
                 self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
 
+    def test_python_boolean_arguments_cannot_be_new_interface_values(self):
+        root, fixture = self.real(761)
+        fixture["prompt"] = "Exercise the public operation."
+        fixture["objective_checks"] = [{
+            "argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["tests.test_tool.Selected.test_target"],
+        }]
+        for signature in ("novelCallable(True)", "novelCallable(False)",
+                          "novelCallable(value, True)", "novelCallable(value, False)"):
+            with self.subTest(signature=signature):
+                self.write(root / "checker", {"tests/test_tool.py":
+                    "import unittest\nclass Selected(unittest.TestCase):\n"
+                    f"    def test_target(self):\n        {signature}\n"})
+                (root / "solution.patch").write_text(
+                    f"+++ b/tool.py\n+{signature}\n", encoding="utf-8")
+                calls, _ = scaffold.checker_facts(root, fixture)
+                self.assertIn("novelCallable", calls)
+                fixture["interface_strings"] = [signature]
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+        fixture["interface_strings"] = ["novelCallable(value, enabled)"]
+        self.write(root / "checker", {"tests/test_tool.py":
+            "import unittest\nclass Selected(unittest.TestCase):\n"
+            "    def test_target(self):\n        novelCallable(value, enabled)\n"})
+        (root / "solution.patch").write_text("+++ b/tool.py\n+novelCallable(value, enabled)\n",
+                                               encoding="utf-8")
+        self.assertFalse(any("interface" in p for p in self.rules(root, fixture)))
+
     def test_removed_solution_details_in_the_snapshot_do_not_reject(self):
         root, fixture = self.real(764)
         fixture["prompt"] = "Keep the trailing space while later listeners receive input."
@@ -1122,6 +1149,70 @@ class ScaffoldAnswerRulesTests(_Case):
                 problems = self.rules(root, fixture)
                 self.assertTrue(any("interface" in p for p in problems), problems)
                 self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+
+    def test_focus_in_another_selected_file_applies_to_whole_invocation(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        base = fixture["objective_checks"][0]["argv"]
+        test_file = "e2e/theme-overflow-wrap-css.test.js"
+        focus_file = "e2e/focus.test.js"
+        focus_forms = ('test.only("other", () => {});', 'it.only("other", () => {});',
+                       'test.describe.only("other", () => { test("other", () => {}); });',
+                       'describe.only("other", () => { it("other", () => {}); });')
+        for focused in focus_forms:
+            for order in ((test_file, focus_file), (focus_file, test_file)):
+                with self.subTest(focused=focused, order=order):
+                    self.write(root / "checker", {test_file: selected, focus_file: focused})
+                    fixture["objective_checks"] = [{"argv": base, "fail_to_pass":
+                        [[*order, "--grep", "breaks an unbroken string|other"]]}]
+                    problems = self.rules(root, fixture)
+                    self.assertTrue(any("interface" in p for p in problems), problems)
+                    self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+        # Focus in a file omitted from this invocation cannot suppress it.
+        fixture["objective_checks"] = [{"argv": base,
+                                        "fail_to_pass": [[test_file, "--grep", "breaks an unbroken string"]]}]
+        self.assertEqual(self.rules(root, fixture), [])
+        # A separate invocation can still contribute evidence when another
+        # invocation includes a focused file.
+        fixture["objective_checks"][0]["fail_to_pass"].append(
+            [test_file, focus_file, "--grep", "breaks an unbroken string|other"])
+        self.assertEqual(self.rules(root, fixture), [])
+
+    def test_unresolved_member_calls_in_setup_helpers_discard_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        selected = ('test("breaks an unbroken string", ({page}) => { novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });')
+        for hook in ("beforeEach", "beforeAll"):
+            for declaration, callback, helper in (
+                ('', '() => helpers.stop()', None),
+                ('function setup() { helpers.stop(); } ', 'setup', None),
+                ('function setup() { nested(); } function nested() { helpers.stop(); } ', 'setup', None),
+                ('function setup() { helpers.stop(); } setup(); ', 'setup', None),
+                ('', '() => helpers.map(() => {})', None),
+                ('import { setup } from "./setup.js";', 'setup',
+                 'export function setup() { helpers.stop(); }'),
+                ('const helpers = require("./helpers.js");', '() => helpers.stop()',
+                 'exports.stop = function () { test.skip(true); };'),
+                ('import * as helpers from "./helpers.js";', '() => helpers.stop()',
+                 'export function stop() { test.fixme(true); }'),
+            ):
+                with self.subTest(hook=hook, callback=callback, declaration=declaration):
+                    files = {"e2e/theme-overflow-wrap-css.test.js":
+                             declaration + f"test.{hook}({callback});" + selected}
+                    if helper:
+                        files["e2e/helpers.js" if "helpers.js" in declaration else "e2e/setup.js"] = helper
+                    self.write(root / "checker", files)
+                    problems = self.rules(root, fixture)
+                    self.assertTrue(any("interface" in p for p in problems), problems)
+                    self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'function setup() {} test.beforeEach(setup);' + selected})
+        self.assertEqual(self.rules(root, fixture), [])
 
     def test_named_setup_hook_skips_discard_calls_and_behavior(self):
         root, fixture = self.real(759)

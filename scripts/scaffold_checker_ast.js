@@ -122,7 +122,7 @@ try {
     });
     return observed;
   }
-  function analyze(node, mod, evidence, inherited = new Set(), hooks = false) {
+  function analyze(node, mod, evidence, inherited = new Set(), hooks = false, setup = false) {
     const shadowed = new Set(inherited);
     function bind(pattern) {
       if (!pattern) return;
@@ -158,80 +158,91 @@ try {
             !(call.arguments[0]?.type === "Literal" && call.arguments[0].value === false)) {
           evidence.skipped = true;
         }
+        const hookRegistration = hooks && ["test.beforeEach", "test.beforeAll"].includes(called);
         evidence.calls.add(called);
         evidence.calls.add(called.split(".").pop());
         if (!shadowed.has("expect") && assertion(call)) evidence.behavior = true;
         walk.base.CallExpression(call, state, recurse);
         const definition = shadowed.has(called) ? null : helper(mod, called);
-        if (definition && !evidence.visited.has(definition[1])) {
-          evidence.visited.add(definition[1]);
-          analyze(definition[1], definition[0], evidence, new Set(), hooks);
+        const visited = setup ? evidence.setupVisited : evidence.visited;
+        if (definition && !visited.has(definition[1])) {
+          visited.add(definition[1]);
+          analyze(definition[1], definition[0], evidence, new Set(), hooks, setup);
         }
-        if (hooks && ["test.beforeEach", "test.beforeAll"].includes(called)) {
+        if (hookRegistration) {
           for (const argument of call.arguments) {
-            if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed);
+            if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed, false, true);
             else if (argument.type === "Identifier") {
               const callback = shadowed.has(argument.name) ? null : helper(mod, argument.name);
               if (!callback) evidence.skipped = true;
-              else if (!evidence.visited.has(callback[1])) {
-                evidence.visited.add(callback[1]);
-                analyze(callback[1], callback[0], evidence);
+              else if (!evidence.setupVisited.has(callback[1])) {
+                evidence.setupVisited.add(callback[1]);
+                analyze(callback[1], callback[0], evidence, new Set(), false, true);
               }
             } else if (!(argument.type === "Literal" && typeof argument.value === "string")) evidence.skipped = true;
           }
         } else if (["forEach", "map", "flatMap", "filter", "reduce", "some", "every", "find"].includes(called.split(".").pop())) {
-          for (const argument of call.arguments) if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed);
+          for (const argument of call.arguments) if (functions.has(argument.type)) {
+            analyze(argument, mod, evidence, shadowed, false, setup);
+          }
+        }
+        if (setup && !definition && !["test.skip", "test.fixme", "it.skip", "it.fixme"].includes(called)) {
+          // An external or dynamic setup call may skip every selected test.
+          evidence.skipped = true;
         }
       }
     };
     walk.recursive(body, null, visitors);
   }
   function evidenceFor(node, mod, hooks = false) {
-    const evidence = { calls: new Set(), behavior: false, skipped: false, visited: new Set() };
+    const evidence = { calls: new Set(), behavior: false, skipped: false,
+                       visited: new Set(), setupVisited: new Set() };
     analyze(node, mod, evidence, new Set(), hooks);
     return evidence;
   }
-  for (const file of Object.keys(sources)) {
-    const choices = selected.filter(s => s.files.some(f => file === f || file.endsWith("/" + f)));
-    if (!choices.length) continue;
-    const mod = moduleFor(file);
-    // Focus changes the set of runnable tests throughout a project. Without
-    // evaluating configuration and all files, the safe result is no evidence.
+  for (const choice of selected) {
+    const files = Object.keys(sources).filter(file =>
+      choice.files.some(f => file === f || file.endsWith("/" + f)));
+    // Playwright focus applies across every file in one invocation. Finish
+    // this prepass before collecting evidence from any of its files.
     let focused = false;
-    walk.simple(mod.tree, { CallExpression(node) {
+    for (const file of files) walk.simple(moduleFor(file).tree, { CallExpression(node) {
       if (["test.only", "it.only", "test.describe.only", "describe.only"].includes(name(node.callee))) focused = true;
     }});
     if (focused) continue;
-    function collect(node, titles) {
-      // Module/suite modifiers and setup hooks apply to every nested test.
-      // Analyze their reachable helpers, excluding test registration callbacks.
-      if (evidenceFor(node, mod, true).skipped) return;
-      walk.recursive(node, titles, {
-        FunctionDeclaration() {}, FunctionExpression() {}, ArrowFunctionExpression() {},
-        CallExpression(call, parents, recurse) {
-          const called = name(call.callee);
-          if (["test", "it", "test.describe", "describe"].includes(called)) {
-            const title = call.arguments[0];
-            const callback = call.arguments.find(arg => functions.has(arg.type));
-            if (typeof title?.value !== "string" || !callback) return;
-            const full = [...parents, title.value];
-            if (["test.describe", "describe"].includes(called)) collect(callback.body, full);
-            else if (choices.some(s => (!s.grep || s.grep.test(full.join(" "))) &&
-                                        (!s.invert || !s.invert.test(full.join(" "))))) {
-              const evidence = evidenceFor(callback, mod);
-              if (!evidence.skipped) {
-                for (const called of evidence.calls) calls.add(called);
-                behavior ||= evidence.behavior;
+    for (const file of files) {
+      const mod = moduleFor(file);
+      function collect(node, titles) {
+        // Module/suite modifiers and setup hooks apply to every nested test.
+        // Analyze their reachable helpers, excluding test registration callbacks.
+        if (evidenceFor(node, mod, true).skipped) return;
+        walk.recursive(node, titles, {
+          FunctionDeclaration() {}, FunctionExpression() {}, ArrowFunctionExpression() {},
+          CallExpression(call, parents, recurse) {
+            const called = name(call.callee);
+            if (["test", "it", "test.describe", "describe"].includes(called)) {
+              const title = call.arguments[0];
+              const callback = call.arguments.find(arg => functions.has(arg.type));
+              if (typeof title?.value !== "string" || !callback) return;
+              const full = [...parents, title.value];
+              if (["test.describe", "describe"].includes(called)) collect(callback.body, full);
+              else if ((!choice.grep || choice.grep.test(full.join(" "))) &&
+                       (!choice.invert || !choice.invert.test(full.join(" ")))) {
+                const evidence = evidenceFor(callback, mod);
+                if (!evidence.skipped) {
+                  for (const called of evidence.calls) calls.add(called);
+                  behavior ||= evidence.behavior;
+                }
               }
+              return;
             }
-            return;
+            // Skipped tests/suites and arbitrary callback registrars have no roots.
+            walk.base.CallExpression(call, parents, recurse);
           }
-          // Skipped tests/suites and arbitrary callback registrars have no roots.
-          walk.base.CallExpression(call, parents, recurse);
-        }
-      });
+        });
+      }
+      collect(mod.tree, []);
     }
-    collect(mod.tree, []);
   }
   process.stdout.write(JSON.stringify({ calls: [...calls], behavior }));
 } catch {
