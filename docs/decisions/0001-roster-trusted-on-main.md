@@ -89,6 +89,14 @@ a one-way-door review of the writer.
   proposal prints the share it lowered. Each defect carries a regression row
   whose assertion is "the running set is unchanged by this input" — RED on
   `424eebf`, where `select_models` reads the published roster.
+- **An untrusted census can also produce no proposal.** If attributable but
+  unavailable historical ids dilute every available model below the entry bar,
+  and no previous arm is held, the computed roster has no arms. The roster
+  computation returns `rc 3` without a file; `eval.yml` warns and runs on the
+  committed roster, so no empty roster is proposed or used to run the eval. This is a
+  second fail-safe outcome alongside a wrong proposal with its evidence, and
+  is expected to be loud rather than silently repaired from untrusted history
+  ([issue 168](https://github.com/Adam-S-Daniel/skills-evals/issues/168)).
 - **The trusted history costs a human merge per meaningful change.** Model
   releases and retirements need review, and once a `catalogue_seen` entry's
   committed `last_seen` is at least half of `catalogue_seen_max_age_days`

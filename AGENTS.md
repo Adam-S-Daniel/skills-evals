@@ -41,8 +41,11 @@ The hook writes the same block to `~/.codex/AGENTS.md` whenever `~/.codex`
 exists — Codex's global **user** instructions, outside its 32 KiB
 `project_doc_max_bytes` project-doc budget. Register it once per machine with
 `scripts/register-codex-hook.sh` from an `_agent-guidance` checkout, then
-trust it in `/hooks`. `codex debug prompt-input` shows exactly what a session
-loaded; no `fleet-guidance:` line there means DEGRADED.
+trust it in `/hooks`. `codex debug prompt-input` renders instructions loaded
+from disk by its own diagnostic process; it does not run SessionStart hooks
+or inspect an existing session or daemon. Verify delivery in the launched
+session's initial instructions and verdict; see the
+[2026-10-04 evidence](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/evidence/codex-trust-and-daemon-0160.md#prompt-debugging-source-read-2026-10-04-cli-01600-rust-v01600).
 
 For Codex Cloud, use **Manual** environment setup with persistent
 `CODEX_HOME=/opt/codex`. Preserve the repository's dependency setup and run
@@ -106,6 +109,7 @@ session that lost the guidance must not also lose these.
   | `dependabot-auto-merge.yml` | `pull_request`, schedule, dispatch | acts only on Dependabot PRs whose changes stay inside the manifest-path allowlist |
   | `eval.yml`, `scheduled-run-health.yml` | schedule, dispatch | no push or PR trigger, so no path filter |
   | `routine-eval-fire.yml` | dispatch only | none needed |
+  | `routine-eval-weekly.yml` | schedule only | no push or PR trigger; plans the reviewed fixture list and dispatches eval mode through `routine-eval-fire.yml` |
   | `routine-eval-results-pushed.yml` | `push` to `claude/eval-*` | `paths: eval-results/**` (the routine's pinned result root); holds no permissions and runs nothing from the branch |
   | `routine-eval-ingest.yml` | `workflow_run` of the above, dispatch | runs the default branch's copy only; `scripts/ingest_routine_results.py` validates the branch and writes `persistent/eval-results` `routine-results/<run id>/` (ADR 0010 decision 2) |
   | `routine-improve-pushed.yml` | `push` to `claude/eval-improve-*` | `paths: eval-improve/**` (the one directory an improve branch adds to; disjoint from `eval-results/**`, which is what keeps it off the results ingest); holds no permissions and runs nothing from the branch |
