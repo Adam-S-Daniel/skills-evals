@@ -797,43 +797,97 @@ def shared_code_tokens(fixture: dict, fixture_dir: Path) -> set[str]:
     return issue_tokens & set(CODE_TOKEN.findall(additions))
 
 
-def checker_facts(fixture_dir: Path) -> tuple[set[str], bool]:
-    """Callable names and evidence of asserted rendered behavior, from ASTs."""
-    calls: set[str] = set()
-    behavior = False
-    sources = []
+def checker_facts(fixture_dir: Path, fixture: dict | None = None) -> tuple[set[str], bool]:
+    """Facts from explicitly selected tests; unsupported selections grant none."""
+    if fixture is None:
+        fixture = yaml.safe_load((fixture_dir / FIXTURE_FILE).read_text(encoding="utf-8"))
+    selections = []
+    for check in fixture.get("objective_checks", ()):
+        prefix = check.get("argv", [])
+        for entry in (check.get("fail_to_pass") or []) + (check.get("pass_to_pass") or []):
+            tail = entry if isinstance(entry, list) else [entry]
+            selections.append(prefix + tail)
+    js_sources = {}
+    selected = {}
     for path in _walk(fixture_dir / CHECKER_DIR):
         if not path.is_file() or path.is_symlink():
             continue
-        source = path.read_text(encoding="utf-8")
+        relative = path.relative_to(fixture_dir / CHECKER_DIR).as_posix()
         if path.suffix in {".js", ".mjs", ".cjs"}:
-            sources.append(source)
-        elif path.suffix == ".py":
+            js_sources[relative] = path.read_text(encoding="utf-8")
+        for argv in selections:
+            if argv[:3] == ["python3", "-m", "unittest"]:
+                module = relative.removesuffix(".py").replace("/", ".")
+                for argument in argv[3:]:
+                    if argument.startswith(module + "."):
+                        selected.setdefault(relative, set()).add(argument[len(module) + 1:])
+            elif (argv[:1] == ["ruby"] or
+                  argv[:4] == ["bash", "-c", 'exec ruby "$1"', "ruby"]):
+                # Plain Ruby scripts have no test-name filtering in this form.
+                offset = 1 if argv[0] == "ruby" else 4
+                if argv[offset:] == [relative]:
+                    selected[relative] = {"*"}
+    calls: set[str] = set()
+    behavior = False
+    for path in _walk(fixture_dir / CHECKER_DIR):
+        if not path.is_file() or path.is_symlink():
+            continue
+        relative = path.relative_to(fixture_dir / CHECKER_DIR).as_posix()
+        if relative not in selected:
+            continue
+        source = path.read_text(encoding="utf-8")
+        if path.suffix == ".py":
             tree = ast.parse(source)
-            definitions = {n.name: n for n in ast.walk(tree)
-                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            function_types = (ast.FunctionDef, ast.AsyncFunctionDef)
+            definitions = {node.name: node for node in tree.body if isinstance(node, function_types)}
+            roots = []
+            for node in tree.body:
+                if isinstance(node, function_types) and node.name in selected[relative]:
+                    roots.append((node, {}))
+                if isinstance(node, ast.ClassDef):
+                    methods = {child.name: child for child in node.body if isinstance(child, function_types)}
+                    for method_name, method in methods.items():
+                        if (method_name.startswith("test_") and any(
+                                choice in {node.name, node.name + "." + method_name}
+                                for choice in selected[relative])):
+                            roots.append((method, methods))
             visited = set()
-            def python_calls(node):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if not node.name.startswith("test_"):
-                        return
-                if isinstance(node, ast.Lambda):
+            def bindings(function):
+                bound = {node.arg for node in ast.walk(function.args) if isinstance(node, ast.arg)}
+                for statement in function.body:
+                    for node in ast.walk(statement):
+                        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                            bound.add(node.id)
+                        elif isinstance(node, (*function_types, ast.ClassDef)):
+                            bound.add(node.name)
+                        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                            bound.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+                return bound
+            def python_calls(node, methods, bound):
+                if isinstance(node, (*function_types, ast.Lambda, ast.ClassDef)):
                     return
                 if isinstance(node, ast.Call):
                     called = None
+                    helper = None
                     if isinstance(node.func, ast.Name):
                         called = node.func.id
+                        helper = None if called in bound else definitions.get(called)
                     elif isinstance(node.func, ast.Attribute):
                         called = node.func.attr
+                        if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                            helper = methods.get(called)
                     if called:
                         calls.add(called)
-                        if called in definitions and called not in visited:
-                            visited.add(called)
-                            for statement in definitions[called].body:
-                                python_calls(statement)
+                    if helper is not None and helper not in visited:
+                        visited.add(helper)
+                        for statement in helper.body:
+                            python_calls(statement, methods, bindings(helper))
                 for child in ast.iter_child_nodes(node):
-                    python_calls(child)
-            python_calls(tree)
+                    python_calls(child, methods, bound)
+            for root, methods in roots:
+                visited.add(root)
+                for statement in root.body:
+                    python_calls(statement, methods, bindings(root))
         elif path.suffix == ".rb":
             # Ripper only parses stdin; it never loads the fixture or Ruby's
             # test framework. Missing parsers and malformed source fail closed.
@@ -856,9 +910,9 @@ def checker_facts(fixture_dir: Path) -> tuple[set[str], bool]:
                 for child in node:
                     ruby_calls(child)
             ruby_calls(json.loads(result.stdout))
-    if sources:
+    if js_sources:
         result = subprocess.run(["node", str(REPO_ROOT / "scripts/scaffold_checker_ast.js")],
-                                input=json.dumps(sources), text=True, capture_output=True,
+                                input=json.dumps({"sources": js_sources, "selections": selections}), text=True, capture_output=True,
                                 timeout=10, check=True)
         facts = json.loads(result.stdout)
         calls.update(facts["calls"])
@@ -890,11 +944,13 @@ def styling_only(fixture_dir: Path) -> bool:
             paths.add(value[2:])
     # A test-lane registration is bookkeeping, not application behavior; the
     # 759 fix includes playwright.config.js beside its one CSS rule.
-    production = [p for p in paths if not (p.startswith(("e2e/", "test/", "tests/"))
-                  or "/spec/" in p or p.startswith(("docs/", ".github/")))]
-    return bool(production) and all(Path(p).suffix.lower() in {
+    asset_suffixes = {
         ".css", ".scss", ".sass", ".less", ".svg", ".png", ".jpg", ".jpeg",
-        ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf"} for p in production)
+        ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf"}
+    # Assets remain production changes even under documentation/test paths.
+    production = [p for p in paths if Path(p).suffix.lower() in asset_suffixes or not (
+        p.startswith(("e2e/", "test/", "tests/", "docs/", ".github/")) or "/spec/" in p)]
+    return bool(production) and all(Path(p).suffix.lower() in asset_suffixes for p in production)
 
 
 def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
@@ -922,7 +978,7 @@ def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
     style = styling_only(fixture_dir)
     if absent or style:
         try:
-            calls, behavior = checker_facts(fixture_dir)
+            calls, behavior = checker_facts(fixture_dir, fixture)
         except (OSError, ValueError, SyntaxError, subprocess.SubprocessError):
             return problems + ["the checker AST could not be parsed for answer-leak admission"]
         # A signature may introduce a new callable, never an argument value,

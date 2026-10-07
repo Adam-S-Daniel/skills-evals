@@ -296,7 +296,9 @@ admission checks; the historical four-word lint still applies afterward.
    documentation and workflow bookkeeping do not turn a CSS fix into an
    application-code fix. A checker that only reads and parses source is
    insufficient. The supported JavaScript check requires a rendered
-   observation inside an assertion (geometry, computed CSS or a screenshot).
+   observation inside an invoked asserting matcher (geometry, computed CSS or
+   a screenshot). A bare `expect(observation)` is not an assertion. Styling
+   and assets remain production changes under `docs/` and `docs/assets/`.
 4. The prompt must not carry local filesystem paths starting with `~/`,
    `/home/` or `/tmp/`; omit local evidence references.
 
@@ -316,12 +318,20 @@ checker and relevant seed files in
 The checker is parsed as data, never executed: Python uses `ast`, Ruby uses
 `Ripper`, and JavaScript uses the trusted browser-testing seed's exact Acorn
 lockfile through [`scripts/scaffold_checker_ast.js`](scripts/scaffold_checker_ast.js).
-JavaScript excludes uncalled function declarations and follows direct helper
-calls and known test/collection callback bodies; arbitrary callbacks do not
-count as invoked. Python follows direct helpers and test methods;
-Ruby recognizes calls in top-level test blocks and test methods. Callable
-matching uses invoked method names, so aliases and dynamic dispatch are not a
-semantic proof. The behavioral test is conservative and supports JavaScript
+Admission facts come only from explicitly selected tests and reachable helpers,
+using each objective check's `argv` plus its `fail_to_pass` and `pass_to_pass`
+entries. JavaScript supports explicit Playwright CLI file selections and
+`--grep`/`-g`/`--grep-invert` title filters, including literal `describe` titles.
+Skipped suites/tests, focused tests, unresolved titles and unsupported command
+forms grant no evidence. Unselected files are not parsed unless a selected test
+calls an explicitly imported helper; only that helper's body is traversed.
+Direct module helpers and known collection callbacks are followed, while
+uncalled functions and arbitrary callbacks do not count. Locally shadowed
+helper names cannot reach module definitions. Python supports qualified
+`unittest` class/method selections and direct helpers; Ruby supports explicitly
+selected plain scripts. Unsupported selection forms grant no exemption.
+Callable matching uses invoked method names, so aliases and dynamic dispatch
+are not a semantic proof. The behavioral test is conservative and supports JavaScript
 assertion expressions; an unsupported style checker needs review and a
 supported behavioral test. The overlap heuristic also misses unmarked plain
 word or numeric literals, so these checks supplement human review.

@@ -987,11 +987,197 @@ class ScaffoldAnswerRulesTests(_Case):
     def test_style_behavioral_checker_is_accepted(self):
         root, fixture = self.real(759)
         self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
-            'test("wraps", async ({ page }) => {\n'
+            'test("breaks an unbroken string", async ({ page }) => {\n'
             '  await page.goto("https://example.com");\n'
             '  expect(await page.locator("article").boundingBox()).toEqual({width: 300});\n'
             '});\n'})
         self.assertFalse(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_unused_checker_file_cannot_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        self.write(root / "checker", {"unused.js":
+            'test("breaks an unbroken string", async ({page}) => { novelCallable(); '
+            'expect(await page.screenshot()).toMatchSnapshot(); });'})
+        problems = self.rules(root, fixture)
+        self.assertTrue(any("interface" in p for p in problems))
+        self.assertTrue(any("behavioral checker" in p for p in problems))
+
+    def test_grep_excluded_test_cannot_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test("unselected", async ({page}) => { novelCallable(); '
+            'expect(await page.screenshot()).toMatchSnapshot(); });'})
+        problems = self.rules(root, fixture)
+        self.assertTrue(any("interface" in p for p in problems))
+        self.assertTrue(any("behavioral checker" in p for p in problems))
+
+    def test_selected_reachable_helper_grants_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'async function observe(page) { novelCallable(); '
+            'expect(await page.screenshot()).toMatchSnapshot(); } '
+            'test("breaks an unbroken string", ({page}) => observe(page));'})
+        problems = self.rules(root, fixture)
+        self.assertEqual(problems, [])
+
+    def test_selected_imported_helper_grants_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        self.write(root / "checker", {
+            "e2e/theme-overflow-wrap-css.test.js":
+                'import { observe } from "./observe.js"; '
+                'test("breaks an unbroken string", ({page}) => observe(page));',
+            "e2e/observe.js": 'export async function observe(page) { novelCallable(); '
+                'expect(await page.screenshot()).toMatchSnapshot(); }',
+            "e2e/unused.js": 'this is not valid JavaScript'})
+        problems = self.rules(root, fixture)
+        self.assertEqual(problems, [])
+
+    def test_documentation_assets_still_need_behavior(self):
+        root, fixture = self.real(759)
+        for target in ("docs/site.css", "docs/assets/site.css"):
+            with self.subTest(target=target):
+                (root / "solution.patch").write_text(
+                    f"--- a/{target}\n+++ b/{target}\n+article {{color: red;}}\n")
+                self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_bare_expect_observation_is_not_an_assertion(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test("breaks an unbroken string", async ({page}) => { '
+            'expect(await page.screenshot()); });'})
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_selected_screenshot_assertion_is_behavior(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test("breaks an unbroken string", async ({page}) => { '
+            'expect(await page.screenshot()).toMatchSnapshot(); });'})
+        self.assertFalse(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_skipped_or_focused_tests_cannot_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        for source in (
+            'test.skip("breaks an unbroken string", () => novelCallable());',
+            'test.fixme("breaks an unbroken string", () => novelCallable());',
+            'test.only("breaks an unbroken string", () => novelCallable());',
+            'test.describe.skip("group", () => { '
+            'test("breaks an unbroken string", () => novelCallable()); });',
+        ):
+            with self.subTest(source=source):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": source})
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_grep_matches_describe_prefix_and_respects_inversion(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        fixture["objective_checks"][0]["pass_to_pass"] = []
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test.describe("breaks an unbroken string", () => {'
+            'test("rendered", async ({page}) => { novelCallable(); '
+            'expect(await page.screenshot()).not.toEqual(null); }); });'})
+        self.assertEqual(self.rules(root, fixture), [])
+        fixture["objective_checks"][0]["fail_to_pass"][0] += ["--grep-invert", "rendered"]
+        problems = self.rules(root, fixture)
+        self.assertTrue(any("interface" in p for p in problems))
+        self.assertTrue(any("behavioral checker" in p for p in problems))
+
+    def test_nonasserting_matcher_forms_cannot_grant_behavior(self):
+        root, fixture = self.real(759)
+        for assertion in ('expect(await page.screenshot()).toEqual',
+                          'expect(await page.screenshot()).madeUp()',
+                          'expect(await page.screenshot()).not'):
+            with self.subTest(assertion=assertion):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    'test("breaks an unbroken string", async ({page}) => { ' + assertion + '; });'})
+                self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_unused_imported_helper_does_not_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        self.write(root / "checker", {
+            "e2e/theme-overflow-wrap-css.test.js":
+                'import { unused, observe } from "./observe.js"; '
+                'test("breaks an unbroken string", () => observe());',
+            "e2e/observe.js": 'export function observe() {} '
+                'export async function unused(page) { novelCallable(); '
+                'expect(await page.screenshot()).toMatchSnapshot(); }'})
+        problems = self.rules(root, fixture)
+        self.assertTrue(any("interface" in p for p in problems))
+        self.assertTrue(any("behavioral checker" in p for p in problems))
+
+    def test_shadowed_helper_cannot_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        for body in ('const observe = () => {}; observe();',
+                     'function observe() {} observe();'):
+            with self.subTest(body=body):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    'async function observe(page) { novelCallable(); '
+                    'expect(await page.screenshot()).toMatchSnapshot(); } '
+                    'test("breaks an unbroken string", ({page}) => {' + body + '});'})
+                problems = self.rules(root, fixture)
+                self.assertTrue(any("interface" in p for p in problems))
+                self.assertTrue(any("behavioral checker" in p for p in problems))
+
+    def test_unittest_selection_keeps_class_identity_and_ignores_top_level(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["tests.test_tool.Selected.test_same"]}]
+        self.write(root / "checker", {"tests/test_tool.py":
+            'unrelatedCallable()\n'
+            'class Selected:\n    def test_same(self):\n        pass\n'
+            'class Excluded:\n    def test_same(self):\n        novelCallable()\n'})
+        for value in ("novelCallable", "unrelatedCallable"):
+            with self.subTest(value=value):
+                fixture["interface_strings"] = [value]
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_unittest_shadowed_helper_cannot_grant_admission(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["objective_checks"] = [{"argv": ["python3", "-m", "unittest"],
+            "fail_to_pass": ["tests.test_tool.Selected.test_same"]}]
+        for binding in ("helper = lambda: None", "def helper(): pass"):
+            with self.subTest(binding=binding):
+                self.write(root / "checker", {"tests/test_tool.py":
+                    'def helper():\n    novelCallable()\n'
+                    'class Selected:\n    def test_same(self):\n'
+                    f'        {binding}\n        helper()\n'})
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_unsupported_selection_cannot_grant_admission(self):
+        root, fixture = self.real(759)
+        fixture["objective_checks"][0]["argv"].append("--unsupported-option")
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test("breaks an unbroken string", async ({page}) => { '
+            'expect(await page.screenshot()).toMatchSnapshot(); });'})
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_static_gate_rejects_unselected_evidence_and_accepts_selected_assertion(self):
+        root, fixture = self.real(759)
+        fixture["prompt"] = "Keep long strings within the viewport."
+        fixture.pop("interface_strings", None)
+        fixture["objective_checks"][0]["pass_to_pass"] = None
+        (root / "fixture.yaml").write_text(yaml.safe_dump(fixture))
+        for title, accepted in (("unselected", False), ("breaks an unbroken string", True)):
+            with self.subTest(title=title):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    f'test("{title}", async ({{page}}) => {{ '
+                    'expect(await page.screenshot()).toMatchSnapshot(); });'})
+                problems, _warnings = scaffold.static_problems(root)
+                if accepted:
+                    self.assertEqual(problems, [])
+                else:
+                    self.assertTrue(any("behavioral checker" in p for p in problems))
 
     def test_unformatted_followup_is_still_rejected(self):
         root, fixture = self.real(764)
@@ -1004,15 +1190,17 @@ class ScaffoldAnswerRulesTests(_Case):
         root, fixture = self.real(759)
         self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
             'function unused() { expect(page.boundingBox()).toEqual({width: 300}); }\n'
-            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1);\n'})
+            'test("breaks an unbroken string", () => { '
+            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1); });\n'})
         self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
 
     def test_an_ignored_callback_is_not_behavior(self):
         root, fixture = self.real(759)
         self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
             'function ignore(callback) {}\n'
+            'test("breaks an unbroken string", () => { '
             'ignore(() => expect(page.boundingBox()).toEqual({width: 300}));\n'
-            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1);\n'})
+            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1); });\n'})
         self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
 
     def test_cli_signature_must_match_the_invoked_argv(self):
