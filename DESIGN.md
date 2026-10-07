@@ -761,6 +761,11 @@ is objectively decidable from the resulting files alone.
   successful standalone literal `git push [-u|--set-upstream] REMOTE
   SHA:BRANCH` requires a later successful standalone
   `git merge-base --is-ancestor SHA REMOTE/BRANCH` for that same SHA and ref.
+  The equivalent `refs/remotes/REMOTE/BRANCH` spelling also matches; remote
+  and branch names remain case-sensitive. Abbreviated SHAs, revision
+  expressions, unsupported check options, opaque executables, and unfamiliar
+  Git subcommands stay unknown because the trace cannot establish what they
+  verified.
   A successful literal branch push with no later successful check for that
   ref counts as an omission. A branch push followed by a candidate check
   has unknown status because this trace cannot bind the branch to its SHA.

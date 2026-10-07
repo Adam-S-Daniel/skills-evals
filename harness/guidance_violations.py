@@ -221,9 +221,12 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
         if not standalone:
             known = False
         for words in commands:
-            if words and (words[0] in ("bash", "sh", "eval", "source", ".", "env", "command", "cd", "pushd", "popd")
-                          or words[0].endswith("/git")
-                          or (words[0] == "git" and words[1:2] and words[1].startswith("-"))):
+            # An opaque executable may verify a push or change repository
+            # context. Unfamiliar git subcommands may also be opaque aliases.
+            if words and (words[0] not in ("git", "echo", "printf", ":", "true", "false", "pwd")
+                          or (words[0] == "git" and (len(words) < 2 or words[1] not in (
+                              "push", "merge-base", "status", "diff", "log", "show", "fetch",
+                              "add", "commit", "rev-parse")))):
                 known = False
             if words[:2] not in (["git", "push"], ["git", "merge-base"]):
                 continue
@@ -255,7 +258,16 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
                                args[0] + "/" + branch))
             elif (len(words) == 5 and words[2] == "--is-ancestor"
                   and SHA.fullmatch(words[3])):
-                verified.append((index, words[3].lower(), words[4]))
+                ref = words[4].removeprefix("refs/remotes/")
+                if ("/" not in ref or ref.startswith("-")
+                        or any(marker in ref for marker in ("^", "~", ":", "@", "{", "}"))):
+                    known = False
+                else:
+                    verified.append((index, words[3].lower(), ref))
+            else:
+                # Abbreviated SHAs and revision expressions need repository
+                # state to resolve; unsupported options may also verify a push.
+                known = False
     count = 0
     for i, sha, ref in pushes:
         matching = [check_sha for j, check_sha, check_ref in verified if j > i and ref == check_ref]

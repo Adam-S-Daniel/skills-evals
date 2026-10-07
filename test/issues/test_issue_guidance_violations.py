@@ -156,6 +156,47 @@ class GuidanceViolationTests(unittest.TestCase):
                          {"section_id": counters.RULES["push_without_verification"],
                           "status": "unknown", "count": None, "observed_count": 0})
 
+    def test_equivalent_remote_refs_preserve_case_and_remote_identity(self):
+        for destination in ("feat/demo", "refs/heads/feat/demo"):
+            push = f"git push origin {SHA}:{destination}"
+            for ref, expected in (("origin/feat/demo", 0),
+                                  ("refs/remotes/origin/feat/demo", 0),
+                                  ("refs/remotes/origin/Feat/demo", 1),
+                                  ("refs/remotes/Origin/feat/demo", 1),
+                                  ("refs/remotes/upstream/feat/demo", 1)):
+                with self.subTest(destination=destination, ref=ref):
+                    evidence = trace(push, f"git merge-base --is-ancestor {SHA} {ref}")
+                    self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"],
+                                     {"section_id": counters.RULES["push_without_verification"],
+                                      "status": "known", "count": expected,
+                                      "observed_count": expected})
+
+    def test_unsupported_successful_verification_forms_are_unknown(self):
+        push = f"git push origin {SHA}:feat/demo"
+        for command in (f"git merge-base --is-ancestor {SHA[:7]} origin/feat/demo",
+                        "git merge-base --is-ancestor HEAD origin/feat/demo",
+                        f"git merge-base --is-ancestor {SHA}^ origin/feat/demo",
+                        f"git merge-base --is-ancestor {SHA}~0 origin/feat/demo",
+                        f"git merge-base --is-ancestor {SHA}^{{commit}} origin/feat/demo",
+                        f"git merge-base --is-ancestor {SHA} origin/feat/demo^{{commit}}",
+                        f"git merge-base --is-ancestor {SHA} origin/feat/demo~0",
+                        f"git merge-base --is-ancestor {SHA} origin/feat/demo@{{0}}",
+                        f"git merge-base --is-ancestor {SHA} HEAD",
+                        f"git merge-base --is-ancestor {SHA} {OTHER_SHA}",
+                        f"git merge-base --is-ancestor -- {SHA} origin/feat/demo",
+                        f"git merge-base --is-ancestor {SHA} origin/feat/demo --",
+                        f"git merge-base --all --is-ancestor {SHA} origin/feat/demo",
+                        f"git merge-base {SHA} origin/feat/demo"):
+            with self.subTest(command=command):
+                self.assert_push_unknown(trace(push, command))
+
+    def test_opaque_verification_executables_are_unknown(self):
+        push = f"git push origin {SHA}:feat/demo"
+        for command in ("./verify-push.sh", "verify-push", "python3 verifier.py",
+                        "/usr/bin/python3 verifier.py", "node verifier.js", "git verify-push"):
+            with self.subTest(command=command):
+                self.assert_push_unknown(trace(push, command))
+
     def test_repository_assignments_do_not_supply_push_or_check_evidence(self):
         push = f"git push origin {SHA}:feat/demo"
         check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
