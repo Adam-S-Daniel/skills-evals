@@ -1559,9 +1559,12 @@ class ScaffoldAnswerRulesTests(_Case):
                 "pass_to_pass": ["checks.Selected.test_contract"]}]}
         (root / "fixture.yaml").write_text(yaml.safe_dump(fixture))
         runtime = self.tmp / "arithmetic-runtime"
-        self.write(runtime, {"tool.py": broken, "checks.py": checker})
-        args = ["python3", "-B", "-m", "unittest", "checks.Selected.test_actual",
-                "checks.Selected.test_contract"]
+        self.write(runtime, {"tool.py": broken, "checks.py": checker +
+            '\nif __name__ == "__main__":\n    unittest.main()\n'})
+        # An explicit script target also proves to the suite-fork scanner
+        # that this arithmetic control cannot invoke the repository runner.
+        args = ["python3", "-B", "checks.py", "Selected.test_actual",
+                "Selected.test_contract"]
         red = subprocess.run(args, cwd=runtime, capture_output=True, text=True, check=False)
         self.assertEqual(red.returncode, 1)
         self.assertIn("FAILED (failures=1, skipped=1)", red.stderr)
