@@ -87,8 +87,13 @@ implements the scheduled eval part of [#65](https://github.com/Adam-S-Daniel/ski
 It uses [ADR 0008's reviewed list](../../evals/scheduled.yml), refuses a plan
 above 30 fires, and dispatches one eval-mode run per fixture through the
 [existing fire workflow](../../.github/workflows/routine-eval-fire.yml).
-The paid [eval workflow](../../.github/workflows/eval.yml) still has its own
-Tuesday schedule, so both schedules can run until Adam decides to retire it.
+Adam's 2026-10-06 decision, following the [weekly routine PR merge](https://github.com/Adam-S-Daniel/skills-evals/pull/331),
+retired the paid [`eval.yml`](../../.github/workflows/eval.yml) Tuesday
+schedule; its one-fixture manual dispatch remains. Routine evals use
+subscription usage, and Actions separately ingests their results as local
+exhibits. The routine path has no API-workflow OIDC exchanges, roster jobs,
+badge publishing, or API spending ceiling, and routine results are not badge
+input.
 The [#71 gate](https://github.com/Adam-S-Daniel/skills-evals/issues/71)
 applies to scheduled improvement runs, not these eval runs. Thirty is a
 per-run bound, while manual fires and other scheduled runs share the hourly
