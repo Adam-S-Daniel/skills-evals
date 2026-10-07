@@ -592,11 +592,14 @@ class PythonDepsTests(_Base):
         entry = {"manager": "pip", "requirements": pins}
         self.assertEqual(seed_prep._deps_entries([entry]), [entry])
         self.assertIsNot(seed_prep._deps_entries([entry])[0]["requirements"], pins)
+        maximum = {"manager": "pip", "requirements": [f"package{i}==1" for i in range(64)]}
+        self.assertEqual(seed_prep._deps_entries([maximum]), [maximum])
         invalid = [None, [], ["pytest"], ["pytest>=9"], ["pytest==9.*"],
                    ["-r local.txt"], ["https://example.com/pkg.whl"], ["./pkg"],
                    ["pytest[extra]==9.0"], ["pytest==9.0; python_version>'3'"],
                    ["pytest==9.0\n--index-url=https://example.com"], [7],
-                   ["Demo_pkg==1.0", "demo-pkg==2.0"], ["a==1"] * 65]
+                   ["Demo_pkg==1.0", "demo-pkg==2.0"],
+                   [f"package{i}==1" for i in range(65)]]
         for requirements in invalid:
             with self.subTest(requirements=requirements), self.assertRaises(guidance.GuidanceError):
                 seed_prep._deps_entries([{"manager": "pip", "requirements": requirements}])
