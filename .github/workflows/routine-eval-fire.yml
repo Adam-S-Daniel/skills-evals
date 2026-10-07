@@ -13,9 +13,10 @@ name: Fire eval routine
 #   public log), and validated before the bearer is ever in a step's env.
 # * Two modes (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
 #   (Recommended)"). `eval`, the default, sends exactly five fields: mode,
-#   run_id, fixture, arms, trials. `scaffold` sends exactly three: mode,
-#   run_id, candidate (a miner key, OWNER__REPO__PR), and the routine turns
-#   that one candidate into one draft real-work fixture on its own branch.
+#   run_id, fixture, arms, trials. `scaffold` sends exactly four: mode,
+#   run_id, candidate (a miner key, OWNER__REPO__PR) and issue_snapshot, and
+#   the routine turns that one candidate into one draft real-work fixture on
+#   its own branch.
 #   `improve` (ADR 0005, "Routine improve mode addendum") sends exactly
 #   five: run_id, mode, skill, trials and holdout (null when empty), and
 #   the routine runs the improvement loop on that skill. `skill` must pass
@@ -30,6 +31,21 @@ name: Fire eval routine
 #   trials in eval and improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
 #   every value.
+# * Scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow
+#   precomputes (Recommended)"): a routine session refuses GitHub GraphQL,
+#   and an issue's body revisions have no REST read, so after validation,
+#   with the bearer in no step's env, the snapshot step runs
+#   `scripts/scaffold_real_work.py snapshot` with the job's read-only token:
+#   the closing issue's title and body as they stood before the pull
+#   request's first commit, with the three provenance times, or null when
+#   it closes no issue. Several closing issues, or any failed read, stop the
+#   run before the fire. routine-scaffold-gate.yml recomputes the same
+#   snapshot and rejects a branch whose copy differs.
+# * The fire API caps `text` at 65,536 characters
+#   (https://platform.claude.com/docs/en/api/claude-code/routines-fire; 400
+#   above it). The payload's UTF-8 bytes, never fewer than its characters by
+#   any count, are checked against that before the call, and a larger
+#   payload is refused, never truncated.
 # * The fire bearer (EVAL_ROUTINE_FIRE_BEARER, a repository secret per ADR
 #   0010 decision 5) reaches only the fire step, via `env`, and goes to curl
 #   on stdin, never in argv. The HTTP response body is never printed: the
@@ -289,6 +305,22 @@ jobs:
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
           fi
 
+      # Scaffold mode only. The job's read-only token, never the bearer: the
+      # snapshot reads GitHub (REST for the pull request, GraphQL for its
+      # closing issue and the issue's revisions), and its log line is a
+      # status, never the issue's text.
+      - name: Compute the issue snapshot
+        id: snapshot
+        if: steps.validate.outputs.mode == 'scaffold'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ steps.validate.outputs.candidate }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:?}/issue-snapshot.json"
+          python3 scripts/scaffold_real_work.py snapshot --candidate "$CANDIDATE" --out "$out"
+          echo "file=${out}" >> "$GITHUB_OUTPUT"
+
       - name: Fire the eval routine
         env:
           FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_014cqgegCtJUqXYjAKmkr4J5/fire
@@ -301,6 +333,7 @@ jobs:
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
           SKILL: ${{ steps.validate.outputs.skill }}
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
+          ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
         run: |
           set -euo pipefail
           if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
@@ -312,9 +345,19 @@ jobs:
           # stops here, before the API is called.
           case "${MODE:-}" in
             scaffold)
+              # Exactly one JSON value, an object or null, as the snapshot
+              # step wrote it; it is sent as data, never read by the shell.
+              if [ -z "${ISSUE_SNAPSHOT_FILE:-}" ] || ! jq -e -s \
+                   'length == 1 and (.[0] | type == "object" or type == "null")' \
+                   "$ISSUE_SNAPSHOT_FILE" >/dev/null 2>&1; then
+                echo "::error::the scaffold issue snapshot is missing or is not one JSON object or null"
+                exit 1
+              fi
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg candidate "$CANDIDATE" \
-                '{text: ({mode: "scaffold", run_id: $run_id, candidate: $candidate} | tojson)}')" ;;
+                --slurpfile snapshot "$ISSUE_SNAPSHOT_FILE" \
+                '{text: ({mode: "scaffold", run_id: $run_id, candidate: $candidate,
+                          issue_snapshot: $snapshot[0]} | tojson)}')" ;;
             eval)
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
@@ -331,6 +374,12 @@ jobs:
               echo "::error::mode must be eval, scaffold or improve"
               exit 1 ;;
           esac
+          # The fire API's documented cap on `text`: 65,536 characters. Its
+          # UTF-8 bytes are never fewer, so cap those; refuse, never truncate.
+          if ! jq -e '.text | utf8bytelength <= 65536' <<<"$body" >/dev/null; then
+            echo "::error::the routine payload is over the fire API's 65,536-character text cap; nothing was sent"
+            exit 1
+          fi
           response="$(mktemp)"
           trap 'rm -f "$response"' EXIT
           # The bearer goes to curl on stdin (`-H @-`), so it is never in

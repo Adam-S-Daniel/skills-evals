@@ -1001,6 +1001,18 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   repo-settings (Recommended)"), and the routine is fired in scaffold mode
   by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
   fire-workflow input (Recommended)"); both land in their own PRs.
+- **snapshot** is the issue snapshot read on its own. A Claude Code cloud
+  session, where the routine runs, refuses GitHub GraphQL, and body
+  revisions have no REST read, so `routine-eval-fire.yml` computes the
+  snapshot on Actions with its read-only token before the fire and sends it
+  as the payload's `issue_snapshot` (null for no closing issue), and the
+  routine passes it to `build --issue-snapshot`, which validates it
+  strictly instead of reading GitHub (Adam, 2026-10-06: "Fire workflow
+  precomputes (Recommended)"). The gate recomputes it with the same code,
+  for the pull request the fixture's header names (which must be its id's),
+  and rejects the branch unless `issue-before-fix.txt` is the same bytes and
+  the three times are equal, so the routine cannot alter the issue text. A
+  payload over the fire API's 65,536-character `text` cap is refused.
 
 What a reviewer adds before the fixture can leave draft: the fixture's
 entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`

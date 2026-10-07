@@ -30,9 +30,18 @@ routines fire API. What is pinned here:
     their own message; `holdout` must be empty or one of those names; both
     must be empty in the other modes, and `fixture` and `candidate` must be
     empty in improve mode;
+  * scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow
+    precomputes (Recommended)"): a step between validation and the fire step,
+    holding only the read-only `github.token`, runs
+    `scaffold_real_work.py snapshot` (GraphQL works on Actions, not in the
+    routine), and the payload carries its JSON as `issue_snapshot` (null when
+    the pull request closes no issue), in scaffold mode only; a payload whose
+    `text` is over the fire API's documented 65,536-character cap is refused
+    before the API is called, never truncated;
   * the fire step, run against a fake curl, sends the bearer on stdin (never
     argv) and a jq-built payload: eval mode's four fields plus `mode`, or
-    exactly `mode`, `run_id` and `candidate` in scaffold mode, or exactly
+    exactly `mode`, `run_id`, `candidate` and `issue_snapshot` in scaffold
+    mode, or exactly
     `run_id`, `mode`, `skill`, `trials` and `holdout` (null when empty) in
     improve mode; it never prints the response body, on success or failure.
 
@@ -226,6 +235,30 @@ class WorkflowShapeTests(unittest.TestCase):
                 text = yaml.safe_dump(step)
                 self.assertNotIn("secrets", text)
                 self.assertNotIn("BEARER", text)
+
+    def test_the_snapshot_step_sits_between_validation_and_the_fire_step(self):
+        ids = [s.get("id") for s in self.steps]
+        fire = next(i for i, s in enumerate(self.steps)
+                    if s.get("name") == "Fire the eval routine")
+        self.assertIn("snapshot", ids)
+        snap = ids.index("snapshot")
+        self.assertLess(ids.index("validate"), snap)
+        self.assertLess(snap, fire)
+        step = self.steps[snap]
+        self.assertEqual(step["if"], "steps.validate.outputs.mode == 'scaffold'")
+        # The read-only job token for the GitHub reads, the validated
+        # candidate, and nothing else: never the bearer.
+        self.assertEqual(step["env"], {
+            "GH_TOKEN": "${{ github.token }}",
+            "CANDIDATE": "${{ steps.validate.outputs.candidate }}"})
+        self.assertIn("python3 scripts/scaffold_real_work.py snapshot "
+                      '--candidate "$CANDIDATE"', step["run"])
+        self.assertEqual(self.steps[fire]["env"]["ISSUE_SNAPSHOT_FILE"],
+                         "${{ steps.snapshot.outputs.file }}")
+        # The job token reaches the snapshot step only.
+        holders = [s.get("name") for s in self.steps
+                   if "github.token" in yaml.safe_dump(s)]
+        self.assertEqual(holders, [step["name"]])
 
     def test_pinned_pyyaml_is_installed_before_validation(self):
         # improve_gate.py fire-check loads fixture.yaml with PyYAML, at the
@@ -519,6 +552,66 @@ class ValidateStepTests(unittest.TestCase):
                     self.assertNotIn(bad, proc.stdout + proc.stderr)
 
 
+@unittest.skipUnless(shutil.which("git"), "needs git on PATH")
+class SnapshotStepTests(unittest.TestCase):
+    """The snapshot step, run for real against a fake gh (REST + GraphQL)."""
+
+    def setUp(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import test_issue_real_work_scaffold as rw
+        self.rw = rw
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        gh = self.bin / "gh"
+        gh.write_text(f"#!{sys.executable}\n" + rw.FAKE_GH, encoding="utf-8")
+        gh.chmod(0o755)
+        self.data = self.tmp / "gh.json"
+        self.script = step_script("Compute the issue snapshot")
+
+    def run_step(self, **answers):
+        self.data.write_text(json.dumps(answers), encoding="utf-8")
+        output = self.tmp / "output"
+        output.write_text("", encoding="utf-8")
+        runner_temp = self.tmp / "runner"
+        shutil.rmtree(runner_temp, ignore_errors=True)
+        runner_temp.mkdir()
+        env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+               "HOME": str(self.tmp), "LANG": "C.UTF-8",
+               "GH_TOKEN": "fake", "CANDIDATE": "example__toy__7",
+               "RUNNER_TEMP": str(runner_temp), "GITHUB_OUTPUT": str(output),
+               "FAKE_GH_LOG": str(self.tmp / "gh.log"),
+               "FAKE_GH_DATA": str(self.data)}
+        proc = subprocess.run(["bash", "-c", self.script], cwd=REPO_ROOT, env=env,
+                              capture_output=True, text=True, timeout=60)
+        values = dict(line.split("=", 1) for line in
+                      output.read_text(encoding="utf-8").splitlines())
+        return proc, values
+
+    def test_writes_the_snapshot_file_and_names_it(self):
+        rw = self.rw
+        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(3),
+                                     graphql=rw.graphql())
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        doc = json.loads(Path(values["file"]).read_text(encoding="utf-8"))
+        self.assertEqual(doc, rw.precomputed())
+        self.assertNotIn("subtracts", proc.stdout + proc.stderr)
+
+    def test_no_closing_issue_writes_null(self):
+        rw = self.rw
+        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(), graphql=4)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIsNone(json.loads(Path(values["file"]).read_text(encoding="utf-8")))
+
+    def test_a_refusal_fails_the_step_and_names_no_file(self):
+        rw = self.rw
+        proc, values = self.run_step(pull=rw.pull(), closing=rw.closing(3, 4), graphql=4)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertNotIn("file", values)
+
+
 FAKE_CURL = """#!/usr/bin/env python3
 import json, os, sys
 log = os.environ["FAKE_CURL_LOG"]
@@ -567,6 +660,8 @@ class FireStepTests(unittest.TestCase):
         self.log = self.tmp / "log"
         self.log.mkdir()
         self.summary = self.tmp / "summary.md"
+        self.snapshot = self.tmp / "issue-snapshot.json"
+        self.snapshot.write_text("null\n", encoding="utf-8")
         self.script = step_script("Fire the eval routine")
         self.env_block = next(
             s for s in load(WORKFLOW)["jobs"]["fire"]["steps"]
@@ -585,6 +680,7 @@ class FireStepTests(unittest.TestCase):
             "RUN_ID": "20261006T120000Z-a1b2c3",
             "FIXTURE": FIXTURE, "ARMS": "both", "TRIALS": "2",
             "MODE": "eval", "CANDIDATE": "", "SKILL": "", "HOLDOUT": "",
+            "ISSUE_SNAPSHOT_FILE": str(self.snapshot),
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log),
             "FAKE_CURL_STATUS": status, "FAKE_CURL_BODY": body,
@@ -659,7 +755,7 @@ class FireStepTests(unittest.TestCase):
         self.assertIn("claude/eval-20261006T120000Z-a1b2c3", summary)
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
-    def test_scaffold_sends_exactly_mode_run_id_and_candidate(self):
+    def test_scaffold_sends_exactly_mode_run_id_candidate_and_snapshot(self):
         # FIXTURE, ARMS and TRIALS are set to junk here: scaffold mode must
         # send none of them, whatever they hold.
         proc = self.run_step("200", self.ok_body(), MODE="scaffold",
@@ -675,8 +771,10 @@ class FireStepTests(unittest.TestCase):
         payload = json.loads(body["text"])
         self.assertEqual(payload, {"mode": "scaffold",
                                    "run_id": "20261006T120000Z-a1b2c3",
-                                   "candidate": CANDIDATE})
-        self.assertEqual(list(payload), ["mode", "run_id", "candidate"])
+                                   "candidate": CANDIDATE,
+                                   "issue_snapshot": None})
+        self.assertEqual(list(payload),
+                         ["mode", "run_id", "candidate", "issue_snapshot"])
         out = proc.stdout + proc.stderr
         self.assertNotIn("SENTINEL", out)
         summary = self.summary.read_text()
@@ -684,6 +782,96 @@ class FireStepTests(unittest.TestCase):
         self.assertIn(CANDIDATE, summary)
         self.assertIn("claude/scaffold-", summary)
         self.assertNotIn("claude/eval-", summary)
+
+    def sent_payload(self):
+        argv = json.loads((self.log / "argv.json").read_text())
+        return json.loads(json.loads(argv[argv.index("--data-binary") + 1])["text"])
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_scaffold_carries_the_snapshot_object_as_json(self):
+        snap = {"repo": "example/toy", "pr": 7, "issue": 3,
+                "title": 'Quote " and $(x)', "body": "line\r\n`y` \\ é\n",
+                "issue_created_at": "2026-09-01T09:00:00Z",
+                "issue_last_edited_at": None,
+                "first_commit_at": "2026-09-01T10:00:00Z"}
+        self.snapshot.write_text(json.dumps(snap), encoding="utf-8")
+        proc = self.run_step("200", self.ok_body(), MODE="scaffold",
+                             CANDIDATE=CANDIDATE)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        payload = self.sent_payload()
+        self.assertEqual(payload["issue_snapshot"], snap)
+        self.assertEqual(list(payload),
+                         ["mode", "run_id", "candidate", "issue_snapshot"])
+        out = proc.stdout + proc.stderr
+        self.assertNotIn("Quote", out)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_scaffold_refuses_a_missing_or_malformed_snapshot(self):
+        for content in (None, "", "[]", '"text"', "1", "{} {}", "{not json"):
+            with self.subTest(content=content):
+                if content is None:
+                    self.snapshot.unlink(missing_ok=True)
+                else:
+                    self.snapshot.write_text(content, encoding="utf-8")
+                proc = self.run_step("200", self.ok_body(), MODE="scaffold",
+                                     CANDIDATE=CANDIDATE)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("issue snapshot", proc.stdout)
+                self.assertFalse((self.log / "calls").exists())
+        proc = self.run_step("200", self.ok_body(), MODE="scaffold",
+                             CANDIDATE=CANDIDATE, ISSUE_SNAPSHOT_FILE="")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse((self.log / "calls").exists())
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_a_payload_over_the_fire_apis_text_cap_is_refused_not_truncated(self):
+        # https://platform.claude.com/docs/en/api/claude-code/routines-fire:
+        # `text` is "Maximum 65,536 characters" (400 above it). The cap is on
+        # UTF-8 bytes, never fewer than characters by any count.
+        def snap(body):
+            return {"repo": "example/toy", "pr": 7, "issue": 3, "title": "t",
+                    "body": body, "issue_created_at": "2026-09-01T09:00:00Z",
+                    "issue_last_edited_at": None,
+                    "first_commit_at": "2026-09-01T10:00:00Z"}
+        # Measure the payload around the body, then size the body to land
+        # exactly on the cap and one byte over it.
+        self.snapshot.write_text(json.dumps(snap("")), encoding="utf-8")
+        proc = self.run_step("200", self.ok_body(), MODE="scaffold", CANDIDATE=CANDIDATE)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        argv = json.loads((self.log / "argv.json").read_text())
+        base = len(json.loads(argv[argv.index("--data-binary") + 1])["text"].encode("utf-8"))
+        for extra, ok in ((65536 - base, True), (65536 - base + 1, False)):
+            with self.subTest(extra=extra):
+                (self.log / "calls").unlink(missing_ok=True)
+                self.snapshot.write_text(json.dumps(snap("x" * extra)), encoding="utf-8")
+                proc = self.run_step("200", self.ok_body(), MODE="scaffold",
+                                     CANDIDATE=CANDIDATE)
+                if ok:
+                    self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                    self.assertEqual(len(self.sent_payload()["issue_snapshot"]["body"]), extra)
+                else:
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertIn("over the fire API's 65,536-character", proc.stdout)
+                    self.assertFalse((self.log / "calls").exists())
+                    self.assertNotIn("xxxx", proc.stdout + proc.stderr)
+        # Multi-byte text counts in bytes: 2-byte characters reach the cap
+        # at half the count.
+        self.snapshot.write_text(json.dumps(snap("é" * (65536 // 2))), encoding="utf-8")
+        proc = self.run_step("200", self.ok_body(), MODE="scaffold", CANDIDATE=CANDIDATE)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse((self.log / "calls").exists())
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_no_snapshot_is_smuggled_into_eval_or_improve_mode(self):
+        self.snapshot.write_text(json.dumps({"issue": 3, "title": "SNAP-SENTINEL"}),
+                                 encoding="utf-8")
+        for mode, extra in (("eval", {}), ("improve", {"SKILL": SKILL})):
+            with self.subTest(mode=mode):
+                proc = self.run_step("200", self.ok_body(), MODE=mode, **extra)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                payload = self.sent_payload()
+                self.assertNotIn("issue_snapshot", payload)
+                self.assertNotIn("SNAP-SENTINEL", json.dumps(payload))
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_improve_sends_exactly_five_keys(self):
