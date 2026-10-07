@@ -287,6 +287,27 @@ class _BuildCase(_Case):
         path.write_text(json.dumps(spec(**spec_changes)), encoding="utf-8")
         return scaffold.build(self.candidates, "example__toy__7", self.clone, path, self.dest)
 
+    def pad_python_source(self, size: int) -> str:
+        """Replace both candidate commits with valid Python of exactly size bytes."""
+        def padded(source):
+            lines, remainder = divmod(size - len(source.encode("utf-8")), 10)
+            return source + "# padding\n" * lines + ("#" + " " * (remainder - 1) if remainder else "")
+
+        base_source = padded(BASE_FILES["tool.py"])
+        self.git(self.clone, "checkout", "-q", "--detach", self.base)
+        self.write(self.clone, {"tool.py": base_source})
+        self.git(self.clone, "commit", "-q", "-am", "padded base")
+        self.base = self.git(self.clone, "rev-parse", "HEAD")
+        self.write(self.clone, {"tool.py": padded(FIX), "tests/test_tool.py": TEST_AFTER,
+                                "other.txt": "another fix\n"})
+        self.git(self.clone, "add", "-A")
+        self.git(self.clone, "commit", "-q", "-m", "padded fix")
+        self.merge = self.git(self.clone, "rev-parse", "HEAD")
+        candidates = json.loads(self.candidates.read_text(encoding="utf-8"))
+        candidates["candidates"][0].update(base_sha=self.base, merge_sha=self.merge)
+        self.candidates.write_text(json.dumps(candidates), encoding="utf-8")
+        return base_source
+
     def assertRefused(self, pattern: str, **spec_changes):
         with self.assertRaisesRegex(scaffold.ScaffoldError, pattern):
             self.build(**spec_changes)
@@ -408,6 +429,49 @@ class BuildTests(_BuildCase):
         target = self.build()
         self.assertEqual(scaffold.static_problems(target), ([], []))
         self.assertEqual(scaffold.red_green(target), [])
+
+    def test_large_python_source_keeps_seed_fix_and_red_green(self):
+        source = self.pad_python_source(scaffold.TRIM_BYTES + 1024)
+        target = self.build()
+        self.assertEqual((target / "seed/tool.py").read_text(encoding="utf-8"), source)
+        expected = scaffold._git(self.clone, "diff", "--no-color", "--no-ext-diff",
+                                 "--no-textconv", "--no-renames", self.base, self.merge,
+                                 "--", "other.txt", "tool.py")
+        self.assertEqual((target / "solution.patch").read_bytes(), expected)
+        self.assertEqual(scaffold.static_problems(target), ([], []))
+        scores = []
+        run_checks = scaffold.objective.run_checks
+        def record(*args):
+            result = run_checks(*args)
+            scores.extend(result)
+            return result
+        with mock.patch.object(scaffold.objective, "run_checks", side_effect=record):
+            self.assertEqual(scaffold.red_green(target), [])
+        self.assertEqual([result["passed"] for result in scores], [False, True])
+        self.assertIn("fail_to_pass=0/1 pass_to_pass=1/1", scores[0]["detail"])
+        self.assertIn("fail_to_pass=1/1 pass_to_pass=1/1", scores[1]["detail"])
+
+    def test_python_source_at_cap_is_retained_and_validated(self):
+        source = self.pad_python_source(scaffold.MAX_KEPT_LARGE_BYTES)
+        target = self.build()
+        self.assertEqual((target / "seed/tool.py").read_bytes(), source.encode("utf-8"))
+        self.assertEqual(scaffold.static_problems(target), ([], []))
+
+    def test_python_source_above_cap_is_trimmed_and_rejected_by_validator(self):
+        source = self.pad_python_source(scaffold.MAX_KEPT_LARGE_BYTES + 1)
+        target = self.build()
+        self.assertFalse((target / "seed/tool.py").exists())
+        self.assertNotIn(b"tool.py", (target / "solution.patch").read_bytes())
+        self.assertEqual(scaffold.static_problems(target), ([], []))
+        (target / "seed/tool.py").write_text(source, encoding="utf-8")
+        problems, _ = scaffold.static_problems(target)
+        self.assertIn("'seed/tool.py' is over the seed's size cap", problems)
+
+    def test_explicit_trim_removes_retained_python_source_and_its_fix(self):
+        self.pad_python_source(scaffold.TRIM_BYTES + 1024)
+        target = self.build(trim=["tool.py"])
+        self.assertFalse((target / "seed/tool.py").exists())
+        self.assertNotIn(b"tool.py", (target / "solution.patch").read_bytes())
 
     def test_refuses_an_existing_fixture(self):
         (self.dest / "toy-7").mkdir(parents=True)
@@ -919,6 +983,16 @@ class GateTests(_GateCase):
     def test_rejects_an_oversized_seed_file(self):
         self.assertRejected("over the seed's size cap",
                             lambda w: self.write(w / "seed", {"blob.txt": "y" * (101 * 1024)}))
+
+    def test_accepts_python_source_at_size_cap(self):
+        self.commit(lambda w: self.write(w / "seed", {
+            "large.py": "#" + " " * (scaffold.MAX_KEPT_LARGE_BYTES - 2) + "\n"}))
+        self.assertEqual(self.gate()["fixture_id"], "toy-7")
+
+    def test_rejects_python_source_above_size_cap(self):
+        self.assertRejected("over the seed's size cap",
+                            lambda w: self.write(w / "seed", {
+                                "large.py": "#" + " " * (scaffold.MAX_KEPT_LARGE_BYTES - 1) + "\n"}))
 
     def test_rejects_bad_branches_and_moves(self):
         self.commit()
