@@ -84,7 +84,8 @@ class TestEfficiencyAggregation(unittest.TestCase):
                           "sum": 1.0})
         self.assertEqual(block["cost_unknown_trials"], 0)
         self.assertEqual({"objective", "judge", "cost_usd",
-                          "cost_unknown_trials", "efficiency"}, set(block))
+                          "cost_unknown_trials", "efficiency", "model_tokens",
+                          "cross_model"}, set(block))
 
     def test_a_trial_missing_a_figure_is_counted_missing_not_zero(self):
         trials = [trial(turns=4, read=100), trial(turns=8, num_turns=True,

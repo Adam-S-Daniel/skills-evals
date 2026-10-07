@@ -232,6 +232,26 @@ class AcceptTests(GitCase):
             record(decision="accepted"), indent=2).encode()))
         self.assertEqual(self.validate()["skill"], SKILL)
 
+    def test_accepts_metrics_with_and_without_per_model_tokens(self):
+        # The fields the loop writes since per-model token reporting, beside
+        # `tokens` in every fixture's metrics, and the older shape without.
+        per_model = {
+            "model_tokens": {"claude-opus-4-8": {
+                "input_tokens": 100.0, "output_tokens": 200.0,
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": 100.0}},
+            "cross_model": {"model": "model-a", "threshold": 0.5, "n": 1,
+                            "flagged_trials": 1, "other_share": 0.9,
+                            "flagged": True}}
+        for extra in ({}, per_model):
+            with self.subTest(new_fields=bool(extra)):
+                rec = record(baseline={"bootstrap": {**metrics(1), **extra}},
+                             candidate={"bootstrap": {**metrics(2), **extra}})
+                self.commit(good_files(summary_json=json.dumps(
+                    rec, indent=2).encode()))
+                out = self.tmp / f"staged-{bool(extra)}"
+                self.assertEqual(self.validate(out=out)["skill"], SKILL)
+
     def test_every_key_the_loop_writes_is_allowed(self):
         """AST-read improve() keys and the common writer's added field."""
         tree = ast.parse((REPO_ROOT / "scripts" /
@@ -270,6 +290,23 @@ class RejectPathTests(GitCase):
                 self.commit(good_files(summary_json=json.dumps(
                     record(decision=value), indent=2).encode()))
                 self.assertRejected(r"decision")
+                self.git("reset", "--hard", "main")
+                self.git("checkout", "-q", BRANCH)
+
+    def test_accepts_either_tokens_basis_or_none(self):
+        for value in ("model_usage_total", "usage_main_loop", "absent"):
+            with self.subTest(value=value):
+                rec = record() if value == "absent" else record(tokens_basis=value)
+                self.commit(good_files(summary_json=json.dumps(
+                    rec, indent=2).encode()))
+                self.assertEqual(self.validate(out=self.tmp / value)["skill"], SKILL)
+
+    def test_rejects_an_unknown_tokens_basis(self):
+        for value in (None, "tokens", 7, []):
+            with self.subTest(value=value):
+                self.commit(good_files(summary_json=json.dumps(
+                    record(tokens_basis=value), indent=2).encode()))
+                self.assertRejected(r"tokens_basis")
                 self.git("reset", "--hard", "main")
                 self.git("checkout", "-q", BRANCH)
 

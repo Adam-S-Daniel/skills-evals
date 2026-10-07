@@ -59,12 +59,31 @@
   "harness": {
     "name": "claude-code",
     "version": "fake-claude 0.0.0 (hermetic test stub)",
-    "permission_mode": "auto"
+    "permission_mode": "auto",
+    "effort": null
   },
   "models_used": [
     "fake-agent-model"
   ],
   "judge_models_used": [
     "fake-judge-model"
-  ]
+  ],
+  "model_tokens": {
+    "fake-agent-model": {
+      "input_tokens": 1234,
+      "output_tokens": 567,
+      "cache_read_input_tokens": null,
+      "cache_creation_input_tokens": null,
+      "canonical_model": null
+    }
+  },
+  "cross_model": {
+    "model": "fake-agent-model",
+    "canonical_model": null,
+    "complete": true,
+    "dropped": 0,
+    "other_share": null,
+    "threshold": 0.5,
+    "flagged": null
+  }
 }
