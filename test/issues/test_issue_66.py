@@ -287,7 +287,10 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     and copied in unedited, with one later edit: #71 added
     `"permission_mode": "auto"` to each summary's `harness` block, the only
     byte that harness change makes in this tree (regenerating would also
-    bake in `n`, which this test appends itself). Its run directory is named for the second that
+    bake in `n`, which this test appends itself). Per-model token reporting
+    and explicit effort later added `"effort": null` to the `harness` block
+    and the `model_tokens` and `cross_model` fields, regenerated with the
+    command below and with `n` removed. Its run directory is named for the second that
     command ran in, which is the timestamp these tests inject. To regenerate
     it, repeat that command from a checkout of the commit to compare against.
 
@@ -849,6 +852,9 @@ class TestIssue66Trials(_HarnessCase):
                          (2, 2, 0))
         self.assertEqual([e["trial"] for e in summary["trial_errors"]], [1, 2])
         efficiency = summary["aggregate"].pop("efficiency")
+        # No agent result, so no model's tokens (test_issue_model_tokens_effort).
+        self.assertEqual(summary["aggregate"].pop("model_tokens"), {})
+        self.assertEqual(summary["aggregate"].pop("cross_model")["n"], 0)
         self.assertEqual(summary["aggregate"],
                          {"objective": None, "judge": None, "cost_usd": None,
                           "cost_unknown_trials": 2})
@@ -1313,6 +1319,9 @@ class TestIssue66Statistics(unittest.TestCase):
         self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
                          (3, 3, 0))
         stats["aggregate"].pop("efficiency")  # pinned in test_issue_efficiency_metrics
+        # Pinned in test_issue_model_tokens_effort.
+        stats["aggregate"].pop("model_tokens")
+        stats["aggregate"].pop("cross_model")
         self.assertEqual(stats["aggregate"], {
             "objective": None, "judge": None,
             "cost_usd": {"n": 2, "mean": 4.5, "min": 0.0, "max": 9.0,

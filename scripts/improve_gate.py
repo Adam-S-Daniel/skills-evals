@@ -109,7 +109,10 @@ RECORD_REQUIRED = ("schema", "skill", "timestamp", "registry", "split",
                    "description_half", "body_half", "table", "files")
 RECORD_ALLOWED = RECORD_REQUIRED + (
     "local_exhibit", "no_judge", "min_gain", "models", "runs", "trigger_set",
-    "phase", "exit_code", "decision")
+    "phase", "exit_code", "decision", "tokens_basis")
+#: The values a record's `tokens_basis` may take (propose_skill_edit's
+#: TOKENS_BASIS and TOKENS_BASIS_LEGACY); a record without one predates it.
+TOKENS_BASES = ("model_usage_total", "usage_main_loop")
 MAX_RECORD_STRING = 32 * 1024
 MAX_RECORD_DEPTH = 10
 MAX_RECORD_ITEMS = 512
@@ -181,6 +184,8 @@ def check_record(doc, where: str, repo: str) -> dict:
                        "only an accepted candidate")
     if "decision" in doc and doc["decision"] != "accepted":
         raise Rejected(f"{where}: decision is not accepted")
+    if "tokens_basis" in doc and doc["tokens_basis"] not in TOKENS_BASES:
+        raise Rejected(f"{where}: unknown tokens_basis")
     skill = doc["skill"]
     if not isinstance(skill, str) or not NAME_RE.fullmatch(skill):
         raise Rejected(f"{where}: bad skill name")
