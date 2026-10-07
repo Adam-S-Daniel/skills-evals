@@ -148,7 +148,9 @@ evals/
     fixture.yaml           # three path citations, source restraint, pairwise rubric
     seed/                  # small export service, test, and architecture decision
     references/            # hand-written strong and shallow replies, outside seed
+  orchestrator-scenarios/ # five synthetic, offline orchestration decision fixtures
 scripts/
+  board_feed.py            # immutable git trees -> the board's dash documents
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
   refresh_models.py        # GET /v1/models -> availability document (the one network call)
@@ -170,6 +172,52 @@ test/
   fake-claude              # stand-in CLI used by the eval tests
   fake-claude-init         # stand-in CLI for the propagation probes (a simulator)
 ```
+
+## Board snapshot
+
+[`scripts/board_feed.py`](scripts/board_feed.py) reads fixture inventory from
+`origin/main` and summaries and reports from `origin/persistent/eval-results`
+through git plumbing, without checking either tree out or running an agent.
+Fetch those refs first, then write the board's four `dash` documents:
+
+```bash
+python3 scripts/board_feed.py --out board.json
+```
+
+Use `--repo DIR`, `--main-ref REF`, and `--results-ref REF` for another local
+repository or snapshot. The only written file is `--out`; its parent must exist.
+The main and results refs resolve once to immutable commits, and their source
+links use those commits. Guidance manifest links use the supplied manifest commit
+when available. The canonical board script link intentionally follows `main`.
+`meta.asOf` is the later input commit's committer timestamp, so identical
+input trees and commits produce identical JSON.
+
+Results cover `results/`, `eval-results/`, and `routine-results/`, including
+run-ID wrappers used by routine ingestion. The newest timestamp per fixture
+wins; equal timestamps use the source path as a stable tiebreak. `runs` counts
+distinct source/timestamp runs for that fixture. Reports remain plain text.
+Aggregate summaries take precedence over trial children, including when the
+aggregate is malformed. Trial-only runs use the mean of each metric when all
+trials report it. Token totals add input, output, and cache creation/read when
+present; aggregate token means require compatible observation counts.
+
+Unknown or malformed measurements remain `null`. Inventory `total` counts
+named-skill fixtures plus `subject: any` real-work fixtures on main, excluding
+`seed/`, `references/`, and guidance fixtures. `dirs` counts distinct named
+skills plus distinct fixture directories containing `subject: any` fixtures.
+`minFixtures` is the literal proposal policy from
+[`scripts/propose_skill_edit.py`](scripts/propose_skill_edit.py). `triggerSet`
+links to the validated
+[`evals/writing-adrs/trigger-eval-set.json`](evals/writing-adrs/trigger-eval-set.json).
+Guidance coverage comes from the immutable
+[`_agent-guidance` manifest](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml)
+supplied with `--guidance-repo` and `--guidance-ref`: `sections` counts its
+validated rows, and `gap` counts sections without a linked fixture on main,
+including sections marked skipped. Missing or malformed inputs make their
+affected values unknown. Notes expose only non-identifying error types; error
+details and free-form notes are omitted. The trend preserves each flat
+workflow-path-audit run separately, including missing arms, rather than joining
+measurements from different runs.
 
 ## Running
 

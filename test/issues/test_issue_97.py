@@ -3907,8 +3907,8 @@ class TestIssue97(unittest.TestCase):
         # could never be measured at all.
         doc = self._workflow()
         triggers = doc.get("on", doc.get(True))
-        self.assertEqual(set(triggers), {"schedule", "workflow_dispatch"},
-                         "eval.yml stays schedule + workflow_dispatch only")
+        self.assertEqual(set(triggers), {"workflow_dispatch"},
+                         "the weekly routine owns scheduled evals; eval.yml stays manual")
         inputs = (triggers["workflow_dispatch"] or {}).get("inputs") or {}
         self.assertIn("fixture", inputs)
         self.assertEqual(inputs["fixture"].get("default"), "evals/workflow-path-audit",

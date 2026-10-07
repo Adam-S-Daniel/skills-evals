@@ -18,7 +18,9 @@ name: CI
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
 # reads the former and test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate
 # reads the latter, so a change that drops the README's writing-adrs/ line or
-# DESIGN's graduation sentence needs this workflow to run — and
+# DESIGN's graduation sentence needs this workflow to run. The scheduled-fixture
+# suite also reads ADR 0008 and ADR 0010, so changes to either decision record
+# must run the checks that guard its wording — and
 # CiDispatchTests::test_every_root_markdown_file_this_suite_reads_is_salient
 # closes this as a class, not a one-off: it AST-walks this suite's own source
 # for every root Markdown file it reads and fails if one is ever missing from
@@ -64,6 +66,8 @@ on:
       - test/**
       - README.md
       - DESIGN.md
+      - docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
+      - docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md
   # Bare — no inputs, and deliberately no `paths:`, which GitHub ignores on a
   # dispatch anyway. That is the point rather than an omission: the push
   # filter above is what makes a docs-only push cheap, and it is therefore
@@ -116,6 +120,8 @@ jobs:
             test/**
             README.md
             DESIGN.md
+            docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
+            docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md
         run: |
           set -euo pipefail
 

@@ -1140,6 +1140,45 @@ first runs when a person pushes to it. The scaffold branches' head ref,
 `claude/scaffold-`, is in the miner's bot list, so a merged scaffold is never
 mined back.
 
+The first slice of
+[#98](https://github.com/Adam-S-Daniel/skills-evals/issues/98) is an offline
+authoring aid in
+[`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py), without a
+model, GitHub, or issue writes:
+
+```text
+python3 scripts/scaffold_real_work.py guidance [section-id] \
+  --guidance PATH [--dest evals/guidance]
+```
+
+`--guidance` is required. With no id, the command selects every `status: gap`
+row in
+[`agents-md/eval-coverage.yml`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml);
+with an id, it requires that exact row to be a GAP. It validates all ids and
+statuses, reads each Markdown heading's exact extent with
+[`harness/guidance.py`](harness/guidance.py), selects dated entries from
+[`docs/guidance-impact.md`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/guidance-impact.md)
+by exact id, and preflights the full batch before writing. `_agent-guidance`
+is read-only. The destination cannot overlap that checkout or pass through
+symlinks. Existing target directories are preserved and counted as skipped.
+
+Each new `evals/guidance/<id>/` contains `fixture.yaml` with explicit TODO
+prompt and rationale fields and a comment to choose the instrument, rebuild
+the seed, and author nonempty objective checks; it also has `section.md`,
+matching `guidance-impact.md`, a minimal `seed/README.md` TODO, and
+`tracking.json` (schema version 1) with the
+section provenance, lexical incident dates, proposed title and branch, issue
+links, marker, and reviewer instructions. The arms name `section` and `none`
+and have empty checks by design, so objective-only refuses to report a score
+until an author supplies real checks. Draft fixtures remain blocked from agent
+arms by the harness. This is tracking data only: it does not create a branch,
+pull request, or issue.
+
+[`test/issues/test_issue_98.py`](test/issues/test_issue_98.py) is discovered
+by [`test/run_tests.py`](test/run_tests.py)'s `test_issue_*.py` loader. The
+required `test` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+runs that loader.
+
 ### Harness-wide rules (promoted from the first fixture)
 
 The `workflow-path-audit` fixture learned these the hard way; they are policy
@@ -1214,19 +1253,31 @@ yet" must stay distinguishable.)
 
 ### Budget
 
-The scheduled real eval runs exactly the reviewed ready list in
-[`evals/scheduled.yml`](evals/scheduled.yml), with readiness evidence per
-fixture; dispatch still runs one fixture. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
-records admission and failure isolation. Two eval legs run concurrently at
-most, with separate credential exchanges and success artifacts; serialized
-publishers build each fixture's badge against accumulated history. Roster
-jobs still run once per workflow run.
+Adam's 2026-10-06 decision, after the merged
+[weekly routine PR](https://github.com/Adam-S-Daniel/skills-evals/pull/331),
+retired `eval.yml`'s Tuesday schedule. The scheduled path is the weekly
+routine: it plans the reviewed ready list in
+[`evals/scheduled.yml`](evals/scheduled.yml) and fires eval-mode routine runs
+through Actions. Routine runs use subscription usage; Actions separately
+validates and ingests their results as local exhibits. They do not use the
+manual API workflow's OIDC exchanges, roster jobs, badge publishing, or API
+workspace spending ceiling. Routine results are not badge input; see
+[ADR 0010](docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md).
 
-At the workflow's estimate of $0.30–0.90 per skill fixture, eight fixtures cost
-about $2.40–7.20 per scheduled run, or $12.00–36.00 for five weekly runs. This is an
-estimate; the API workspace spend limit is the hard ceiling. Every addition
-is a reviewed spend decision. Rotation, monthly sweeps, model products,
-trial changes, and automated budget enforcement remain deferred under
+Manual dispatch of [`eval.yml`](.github/workflows/eval.yml) still runs one
+fixture through the API-backed workflow. The following credentials, roster,
+and publication guarantees describe that manual path only. [ADR 0008](docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md)
+records the reviewed fixture list and its manual API workflow behavior. Two
+eval legs run concurrently at most, with separate credential exchanges and
+success artifacts; serialized publishers build each fixture's badge against
+accumulated history. Roster jobs run once per manual workflow run.
+
+One manual API dispatch selects one fixture. At the workflow's estimate of
+$0.30–0.90 per skill fixture, that is its estimated cost; actual usage varies,
+and the API workspace spend limit is the hard ceiling for this path. Adding a
+fixture to the weekly routine's reviewed list is a subscription-usage
+decision, not an API-spend estimate. Rotation, monthly sweeps, model
+products, trial changes, and automated budget enforcement remain deferred under
 [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
