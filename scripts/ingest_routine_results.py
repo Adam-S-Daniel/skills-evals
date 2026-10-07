@@ -70,12 +70,13 @@ RESERVED_NAMES = frozenset({"report.md", "summary.json", "transcripts",
 #: prompt (edited 2026-10-06, owner's answer "Pin eval-results/") writes
 #: `eval-results/<run id>/` at the repo root and commits nothing else.
 SOURCE_ROOT = "eval-results"
-#: Branches pushed before the root was pinned, by run id, with the root each
-#: used. Only claude/eval-20261006T192432Z-93755e needs an entry
+#: Branches pushed before the root was pinned, by run id and commit sha,
+#: with the root each used. Only claude/eval-20261006T192432Z-93755e needs an entry
 #: (`results/<run id>/`); claude/eval-20261006T194256Z-f944ea already used
 #: `eval-results/`. claude/eval-20261006T195724Z-a3f2d3 wrote
 #: `results/<key>/` with no run id directory and stays rejected.
-LEGACY_ROOTS = {"20261006T192432Z-93755e": "results"}
+LEGACY_ROOTS = {("20261006T192432Z-93755e",
+                 "c3521ee53809daea4570e5fe80f3ac847959f88a"): "results"}
 #: Where accepted results land on persistent/eval-results. Not `results/`:
 #: that tree is eval.yml's main-pinned WIF output and the badge input, and
 #: routine results are a local exhibit only (ADR 0010, decision 3), not
@@ -514,7 +515,7 @@ def validate(repo: str, base: str, source: str, branch: str,
         raise Rejected("the branch adds no files")
     if len(files) > MAX_FILES:
         raise Rejected(f"the branch adds more than {MAX_FILES} files")
-    prefix = f"{LEGACY_ROOTS.get(run_id, SOURCE_ROOT)}/{run_id}/"
+    prefix = f"{LEGACY_ROOTS.get((run_id, tip), SOURCE_ROOT)}/{run_id}/"
 
     staged, total = [], 0
     for name, _, oid in files:
