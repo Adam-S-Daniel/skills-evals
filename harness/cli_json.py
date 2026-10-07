@@ -306,11 +306,14 @@ def tool_events(decoded: object, secrets: list[str] = ()) -> list[dict]:
 
 
 def bounded_tool_trace(calls: list[list[dict]],
-                       max_bytes: int = TRACE_MAX_BYTES) -> dict:
+                       max_bytes: int = TRACE_MAX_BYTES, *,
+                       complete: bool = True) -> dict:
     """The `tool_trace.json` document for one trial: each CLI call's events
     (`tool_events`), tagged with the call's index (0 is the prompt, then each
     follow-up), kept in order until their serialized size would pass
-    `max_bytes`; the rest are only counted."""
+    `max_bytes`; the rest are only counted. `complete` records whether every
+    attempted CLI call supplied its full verbose message array. The cap also
+    makes the stored evidence incomplete, even when every call was decoded."""
     events, size, omitted = [], 0, 0
     for index, call in enumerate(calls):
         for event in call:
@@ -329,4 +332,5 @@ def bounded_tool_trace(calls: list[list[dict]],
         "calls": len(calls),
         "events": events,
         "omitted_events": omitted,
+        "complete": complete is True and omitted == 0,
     }

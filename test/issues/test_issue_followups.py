@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import local_eval  # noqa: E402
 import run_eval  # noqa: E402
+from cli_json import bounded_tool_trace  # noqa: E402
 
 RENAME_DIR = ROOT / "evals" / "rename-pdfs"
 
@@ -95,7 +96,7 @@ class RunAgentFollowupTests(unittest.TestCase):
 
     # -- no followups: unchanged -----------------------------------------
 
-    def test_without_followups_one_call_and_the_legacy_result(self):
+    def test_without_followups_one_call_and_the_same_scoring_result(self):
         first = result("proposed six renames")
         for followups in (None, []):
             with self.subTest(followups=followups):
@@ -105,13 +106,15 @@ class RunAgentFollowupTests(unittest.TestCase):
                 self.assertEqual(out, {
                     "transcript": "proposed six renames",
                     "usage": first["usage"], "cost_usd": 0.5, "num_turns": 2,
-                    "duration_ms": 100, "raw": first})
+                    "duration_ms": 100, "raw": first,
+                    "tool_trace": bounded_tool_trace([[]], complete=False)})
 
     def test_a_first_call_failure_is_unlabeled_and_sends_no_followup(self):
         cli = ScriptedCli(failed("boom"))
         out = self.run_agent(cli, ["yes"])
         self.assertEqual(out, {"error": "nonzero_exit", "detail": "boom",
-                               "returncode": 1})
+                               "returncode": 1,
+                               "tool_trace": bounded_tool_trace([[]], complete=False)})
         self.assertEqual(len(cli.calls), 1)
 
         cli = ScriptedCli(result("cannot", is_error=True))

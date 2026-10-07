@@ -1089,15 +1089,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     preexisting = session_dir is not None and os.path.lexists(session_dir)
     # Every call's tool events (#89), for `transcripts/tool_trace.json`. The
     # scorers never see them: they are attached to the returned dict under
-    # `tool_trace` only, beside `raw`, and only when some call made a tool
-    # call, so a run without one returns (and writes) exactly what it did
-    # before.
+    # `tool_trace` only, beside `raw`. Every attempted CLI call gets a slot,
+    # even when its evidence is unavailable or it observed no tool calls.
     secrets = secret_values(env, dict(os.environ))
     calls: list[list[dict]] = []
+    trace_complete = True
 
     def traced(answer: dict) -> dict:
-        if any(calls):
-            answer["tool_trace"] = bounded_tool_trace(calls)
+        if calls:
+            answer["tool_trace"] = bounded_tool_trace(calls, complete=trace_complete)
         return answer
 
     # The finally covers every return below: a multi-turn arm's transcript
@@ -1110,22 +1110,27 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             if index:
                 session_id = turns[-1].get("session_id")
                 if not isinstance(session_id, str) or not session_id:
-                    return {"error": "invalid_json",
-                            "detail": f"{label}the previous result has no "
-                                      "session_id to resume"}
+                    return traced({"error": "invalid_json",
+                                   "detail": f"{label}the previous result has no "
+                                             "session_id to resume"})
                 turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
+            calls.append([])
             try:
                 result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
                                         text=True, timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
-                return {"error": "timeout",
-                        "detail": f"{label}agent timed out after {timeout}s"}
+                trace_complete = False
+                return traced({"error": "timeout",
+                               "detail": f"{label}agent timed out after {timeout}s"})
 
             if result.returncode != 0:
                 try:
-                    calls.append(tool_events(json.loads(result.stdout), secrets))
+                    decoded = json.loads(result.stdout)
+                    calls[-1] = tool_events(decoded, secrets)
+                    normalize_cli_result(decoded)
+                    trace_complete = trace_complete and isinstance(decoded, list)
                 except ValueError:
-                    pass
+                    trace_complete = False
                 return traced({"error": "nonzero_exit",
                                "detail": label + failed_run_detail(result.stdout,
                                                                    result.stderr),
@@ -1133,16 +1138,19 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
             try:
                 decoded = json.loads(result.stdout)
-                calls.append(tool_events(decoded, secrets))
+                calls[-1] = tool_events(decoded, secrets)
                 data = normalize_cli_result(decoded)
+                trace_complete = trace_complete and isinstance(decoded, list)
             except json.JSONDecodeError as e:
+                trace_complete = False
                 # Shape only. The array form starts with the `system/init`
                 # message (cwd, tool and connector names), and this detail
                 # reaches summary.json, so no slice of stdout is echoed.
-                return {"error": "invalid_json",
-                        "detail": f"{label}stdout is not valid JSON ({e.msg} at "
-                                  f"character {e.pos} of {len(result.stdout)})"}
+                return traced({"error": "invalid_json",
+                               "detail": f"{label}stdout is not valid JSON ({e.msg} at "
+                                         f"character {e.pos} of {len(result.stdout)})"})
             except ValueError as e:
+                trace_complete = False
                 return traced({"error": "invalid_json", "detail": f"{label}{e}"})
 
             if data.get("is_error"):
@@ -1842,15 +1850,15 @@ def _tool_error_count(tool_trace: dict | None) -> int | None:
     message) is one failed call. A result with no usable id is counted as it
     stands, since there is nothing to deduplicate on.
 
-    A run always asks the CLI for the whole message array (`--verbose`), so a
-    trial with no trace made no tool call: 0, not unknown. A trace that hit
-    its size cap kept only the first events (`omitted_events`), so a count
-    from it would be a silent undercount; that is None, which the aggregate
-    reports as missing rather than as a small number.
+    New traces explicitly record whether every CLI call supplied complete
+    evidence. Lost evidence or a size cap makes the count None, which the
+    aggregate reports as missing rather than as a silent undercount. Legacy
+    trials without a trace or without the completeness field retain their
+    previous interpretation.
     """
     if tool_trace is None:
         return 0
-    if tool_trace.get("omitted_events"):
+    if tool_trace.get("complete") is False or tool_trace.get("omitted_events"):
         return None
     ids, unidentified = set(), 0
     for event in tool_trace.get("events") or []:

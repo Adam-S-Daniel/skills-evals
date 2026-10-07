@@ -781,7 +781,9 @@ is objectively decidable from the resulting files alone.
   `input_incomplete`/`output_incomplete`. YAML parse failures, aliases,
   duplicate keys, symlinks, unreadable files, and bounds (1 MiB per file,
   2,000 matching files, 20,000 traversal entries or YAML nodes) likewise
-  make the YAML totals unknown. Git metadata, profiles, and `node_modules`
+  make the YAML totals unknown. A push count is known only when the trace
+  explicitly has `complete: true` and `omitted_events: 0`; older traces
+  without completeness remain unknown. Git metadata, profiles, and `node_modules`
   are excluded from traversal.
 
   Arm aggregates carry `aggregate.guidance_violations`, per rule `section_id`,
@@ -800,7 +802,16 @@ is objectively decidable from the resulting files alone.
   result (`is_error`, `output_chars`, the head of the output), tagged with the
   CLI call (`call` 0 is the prompt, then each follow-up). Inputs are cut to 200
   characters, outputs to 300, and one trial's events to 64 KiB; events past
-  the cap are counted in `omitted_events`. Every string is redacted whole
+  the cap are counted in `omitted_events`. `calls` counts every attempted
+  CLI invocation, including attempts with no usable tool evidence; those
+  attempts retain their position in later events' `call` indices. `complete`
+  is true only when every attempted call supplied a valid verbose array
+  containing a result and the event cap omitted nothing. A timeout,
+  undecodable output, invalid array shape, or nonverbose result object makes
+  it false for the whole trial, even if a later call supplies valid evidence.
+  Earlier observed events remain available on every error return. A follow-up
+  blocked by a missing session id is not an attempted call and does not
+  change the prior evidence's completeness. Every string is redacted whole
   before it is cut (`cli_json.redact`; a cut first could split a secret so
   no pattern matches the kept part, and a string over 1 MiB is not kept at
   all): the values of credential-named variables in the arm's environment,
@@ -819,8 +830,10 @@ is objectively decidable from the resulting files alone.
   artifact is an allowlist (#289): `summary.json`, `report.md` and
   `tool_trace.json`; the unredacted `raw.json` stays on the runner. No
   objective scorer reads it; the passive fleet counter above does.
-  `run_agent` returns it under `tool_trace`, beside the
-  unchanged `transcript` and `raw`.
+  `run_agent` returns it under `tool_trace` after any CLI attempt, including
+  calls without tools, beside the unchanged `transcript` and `raw`. Tool-error
+  metrics treat explicit incomplete traces as unknown; legacy traces retain
+  their previous interpretation.
 
 ### Skill install path (corrected)
 

@@ -186,7 +186,7 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
     if not isinstance(trace, dict) or not isinstance(trace.get("events"), list):
         return 0, False
     events = trace["events"]
-    known = trace.get("omitted_events") == 0
+    known = trace.get("complete") is True and trace.get("omitted_events") == 0
     results = {}
     for index, event in enumerate(events):
         if isinstance(event, dict) and event.get("kind") == "tool_result":

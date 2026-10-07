@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -32,7 +33,26 @@ def trace(*commands):
              "input": command, "input_chars": len(command), "subagent": False},
             {"call": 0, "kind": "tool_result", "id": ident, "is_error": failed,
              "output": "", "output_chars": 0, "subagent": False}])
-    return {"schema_version": 1, "events": events, "omitted_events": 0}
+    return {"schema_version": 1, "events": events, "omitted_events": 0,
+            "complete": True}
+
+
+def verbose(*commands, session="session-1", is_error=False):
+    messages = []
+    for event in trace(*commands)["events"]:
+        if event["kind"] == "tool_use":
+            block = {"type": "tool_use", "id": event["id"], "name": "Bash",
+                     "input": {"command": event["input"]}}
+            role = "assistant"
+        else:
+            block = {"type": "tool_result", "tool_use_id": event["id"],
+                     "content": "", "is_error": event["is_error"]}
+            role = "user"
+        messages.append({"type": role, "message": {"content": [block]}})
+    result = {"type": "result", "result": "done", "is_error": is_error}
+    if session is not None:
+        result["session_id"] = session
+    return [*messages, result]
 
 
 def workflow(steps):
@@ -155,6 +175,153 @@ class GuidanceViolationTests(unittest.TestCase):
         self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"],
                          {"section_id": counters.RULES["push_without_verification"],
                           "status": "unknown", "count": None, "observed_count": 0})
+
+    def run_replies(self, *replies):
+        scripted = [reply if isinstance(reply, (subprocess.CompletedProcess, BaseException))
+                    else subprocess.CompletedProcess(["unused-cli"], 0,
+                                                     stdout=json.dumps(reply), stderr="")
+                    for reply in replies]
+        with mock.patch.object(run_eval.subprocess, "run", side_effect=scripted) as run, \
+                mock.patch.object(run_eval, "agent_env", return_value={"HOME": str(self.workspace)}), \
+                mock.patch.dict(run_eval.os.environ, {"CLAUDE_BIN": "unused-cli"}):
+            answer = run_eval.run_agent(self.workspace, "first", {
+                "name": "without_skill", "timeout": 5,
+                "followups": ["next"] * (len(replies) - 1)})
+        self.assertIsInstance(answer.get("tool_trace"), dict)
+        return answer, run.call_count
+
+    def test_trace_requires_explicit_true_completeness(self):
+        for value in (None, False, 0, 1, "true"):
+            evidence = trace(f"git push origin {SHA}:feat/demo")
+            if value is None:
+                del evidence["complete"]
+            else:
+                evidence["complete"] = value
+            with self.subTest(value=value):
+                self.assert_push_unknown(evidence)
+
+    def test_bounded_trace_propagates_completeness_and_omissions(self):
+        events = trace(f"git push origin {SHA}:feat/demo")["events"]
+        for evidence in (cli_json.bounded_tool_trace([events], complete=False),
+                         cli_json.bounded_tool_trace([events], max_bytes=0)):
+            self.assertIs(evidence["complete"], False)
+            self.assert_push_unknown(evidence)
+        self.assertIs(cli_json.bounded_tool_trace([[]])["complete"], True)
+
+    def test_followup_evidence_loss_keeps_prior_push_but_makes_count_unknown(self):
+        push = f"git push origin {SHA}:feat/demo"
+        check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
+        cases = [
+            ("malformed nonzero", subprocess.CompletedProcess(["unused-cli"], 1,
+                stdout="{", stderr=""), "nonzero_exit"),
+            ("malformed zero", subprocess.CompletedProcess(["unused-cli"], 0,
+                stdout="{", stderr=""), "invalid_json"),
+            ("timeout", subprocess.TimeoutExpired(["unused-cli"], 5), "timeout"),
+            ("nonverbose success", verbose()[-1], None),
+            ("nonverbose failure", subprocess.CompletedProcess(["unused-cli"], 1,
+                stdout=json.dumps(verbose()[-1]), stderr=""), "nonzero_exit"),
+        ]
+        for commands in ((push,), (push, check)):
+            first = verbose(*commands)
+            expected = cli_json.bounded_tool_trace([cli_json.tool_events(first), []],
+                                                  complete=False)
+            for label, reply, error in cases:
+                with self.subTest(label=label, verified=len(commands) == 2):
+                    answer, calls = self.run_replies(first, reply)
+                    self.assertEqual(answer.get("error"), error)
+                    self.assertEqual(calls, 2)
+                    self.assertEqual(answer["tool_trace"], expected)
+                    self.assert_push_unknown(answer["tool_trace"])
+
+    def test_first_nonverbose_call_keeps_later_verbose_call_index(self):
+        answer, calls = self.run_replies(verbose()[-1],
+                                        verbose(f"git push origin {SHA}:feat/demo"))
+        self.assertEqual(calls, 2)
+        self.assertEqual(answer["tool_trace"]["calls"], 2)
+        self.assertEqual([event["call"] for event in answer["tool_trace"]["events"]], [1, 1])
+        self.assert_push_unknown(answer["tool_trace"])
+
+    def test_later_verbose_call_cannot_restore_lost_completeness(self):
+        answer, calls = self.run_replies(
+            verbose(f"git push origin {SHA}:feat/demo"), verbose()[-1],
+            verbose(f"git merge-base --is-ancestor {SHA} origin/feat/demo"))
+        self.assertEqual(calls, 3)
+        self.assertEqual(answer["tool_trace"]["calls"], 3)
+        self.assertEqual([event["call"] for event in answer["tool_trace"]["events"]], [0, 0, 2, 2])
+        self.assert_push_unknown(answer["tool_trace"])
+
+    def test_verbose_no_tools_is_known_zero(self):
+        answer, calls = self.run_replies(verbose(), verbose())
+        self.assertEqual(calls, 2)
+        self.assertEqual(answer["tool_trace"], cli_json.bounded_tool_trace([[], []]))
+        entry = self.measure(evidence=answer["tool_trace"])["rules"]["push_without_verification"]
+        self.assertEqual(entry["status"], "known")
+        self.assertEqual(entry["count"], 0)
+
+    def test_completely_observed_verbose_followup_verifies_first_push(self):
+        answer, calls = self.run_replies(
+            verbose(f"git push origin {SHA}:feat/demo"),
+            verbose(f"git merge-base --is-ancestor {SHA} origin/feat/demo"))
+        self.assertEqual(calls, 2)
+        self.assertIs(answer["tool_trace"]["complete"], True)
+        entry = self.measure(evidence=answer["tool_trace"])["rules"]["push_without_verification"]
+        self.assertEqual(entry["status"], "known")
+        self.assertEqual(entry["count"], 0)
+
+    def test_valid_verbose_failures_preserve_complete_tool_evidence(self):
+        payload = verbose(f"git push origin {SHA}:feat/demo", is_error=True)
+        for reply, error in ((payload, "agent_error"),
+                             (subprocess.CompletedProcess(["unused-cli"], 1,
+                              stdout=json.dumps(payload), stderr=""), "nonzero_exit")):
+            with self.subTest(error=error):
+                answer, calls = self.run_replies(reply)
+                self.assertEqual(answer["error"], error)
+                self.assertEqual(calls, 1)
+                self.assertIs(answer["tool_trace"]["complete"], True)
+                entry = self.measure(evidence=answer["tool_trace"])["rules"]["push_without_verification"]
+                self.assertEqual(entry["status"], "known")
+                self.assertEqual(entry["count"], 1)
+
+    def test_unusable_verbose_array_is_incomplete_even_if_tools_were_extracted(self):
+        first = verbose(f"git push origin {SHA}:feat/demo")
+        for shape, incomplete in (("missing result", verbose("echo harmless")[:-1]),
+                                  ("invalid item", [*verbose("echo harmless"), None])):
+            for status in (0, 1):
+                with self.subTest(shape=shape, status=status):
+                    reply = subprocess.CompletedProcess(["unused-cli"], status,
+                                                         stdout=json.dumps(incomplete), stderr="")
+                    answer, calls = self.run_replies(first, reply)
+                    self.assertEqual(calls, 2)
+                    self.assertEqual(answer["tool_trace"]["calls"], 2)
+                    self.assertIs(answer["tool_trace"]["complete"], False)
+                    self.assertEqual([event["call"] for event in answer["tool_trace"]["events"]], [0, 0, 1, 1])
+                    self.assert_push_unknown(answer["tool_trace"])
+
+    def test_missing_resume_session_keeps_evidence_without_an_attempted_followup(self):
+        first = verbose(f"git push origin {SHA}:feat/demo", session=None)
+        answer, calls = self.run_replies(first, verbose())
+        self.assertEqual(answer["error"], "invalid_json")
+        self.assertEqual(calls, 1)
+        self.assertEqual(answer["tool_trace"],
+                         cli_json.bounded_tool_trace([cli_json.tool_events(first)]))
+        entry = self.measure(evidence=answer["tool_trace"])["rules"]["push_without_verification"]
+        self.assertEqual(entry["status"], "known")
+        self.assertEqual(entry["count"], 1)
+
+    def test_first_call_without_usable_evidence_is_explicitly_unknown(self):
+        for reply in (verbose()[-1], subprocess.TimeoutExpired(["unused-cli"], 5),
+                      subprocess.CompletedProcess(["unused-cli"], 0, stdout="{", stderr="")):
+            with self.subTest(reply=type(reply).__name__):
+                answer, calls = self.run_replies(reply)
+                self.assertEqual(calls, 1)
+                self.assertEqual(answer["tool_trace"],
+                                 cli_json.bounded_tool_trace([[]], complete=False))
+                self.assert_push_unknown(answer["tool_trace"])
+
+    def test_tool_error_count_does_not_report_false_zero_for_incomplete_trace(self):
+        self.assertIsNone(run_eval._tool_error_count(cli_json.bounded_tool_trace([[]], complete=False)))
+        self.assertEqual(run_eval._tool_error_count(cli_json.bounded_tool_trace([[]])), 0)
+        self.assertEqual(run_eval._tool_error_count({"events": [], "omitted_events": 0}), 0)
 
     def test_equivalent_remote_refs_preserve_case_and_remote_identity(self):
         for destination in ("feat/demo", "refs/heads/feat/demo"):
