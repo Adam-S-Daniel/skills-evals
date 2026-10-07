@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
+import guidance_violations  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
@@ -1736,6 +1737,10 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
+    lines += guidance_violations.render([
+        {"arm": s["arm"], "stats": {"aggregate": {
+            "guidance_violations": guidance_violations.aggregate([s])}}}
+        for s in arm_summaries])
     return "\n".join(lines) + "\n"
 
 
@@ -2026,12 +2031,14 @@ def aggregate_trials(trials: list[dict],
              if isinstance(t.get("agent"), dict)
              and _is_number(t["agent"].get("cost_usd"))]
 
+    violations = guidance_violations.aggregate(trials)
     return {"n": len(trials), "errors": len(trial_errors),
             "scored": len(scored), "trial_errors": trial_errors,
             "aggregate": {"objective": objective_stats, "judge": judge_stats,
                           "cost_usd": _stats(costs),
                           "cost_unknown_trials": len(trials) - len(costs),
-                          "efficiency": efficiency_stats(trials, tool_errors)}}
+                          "efficiency": efficiency_stats(trials, tool_errors),
+                          **({"guidance_violations": violations} if violations is not None else {})}}
 
 
 def _trials_error(stats: dict) -> dict | None:
@@ -2175,6 +2182,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                          f"{objective_str} | {judge_str} | {cost_str} |")
 
         lines += _render_efficiency_table(arms)
+        lines += guidance_violations.render(arms)
 
         errored = [(arm["arm"], entry) for arm in arms
                    for entry in arm["stats"]["trial_errors"]]
@@ -2235,6 +2243,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     # Namespace without it records null rather than probing the CLI here.
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    extra = dict(extra or {})
+    if fixture.get("_real_work"):
+        extra["guidance_violations"] = guidance_violations.measure(None, None, None)
     if selection_error:
         # A runner-level error, recorded on the arm exactly like an agent
         # failure, so it leaves through main()'s existing exit-2 path instead
@@ -2248,7 +2259,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        harness_version=harness_version,
                        permission_mode=permission_mode, arm_dir=out_dir)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None, "models_used": []}
+                "objective_checks": None, "judge": None, "models_used": [], **extra}
 
     # run_setup (inside materialize_workspace, before the bookkeeping commit)
     # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
@@ -2270,7 +2281,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        permission_mode=permission_mode, arm_dir=out_dir)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None, "models_used": []}
+                "objective_checks": None, "judge": None, "models_used": [], **extra}
     try:
         assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
                                  fixture.get("env"))
@@ -2332,8 +2343,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                         arm_config["layout"] = entry["layout"]
                         arm_config["registry_name"] = entry["name"]
 
+        baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = registry_error if registry_error is not None else run_agent(
             workspace, fixture["prompt"], arm_config)
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(
+                baseline, workspace, result.get("tool_trace"))
 
         error = None
         agent_summary = None
@@ -2381,7 +2396,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
-                        "judge": None, "models_used": agent_models}
+                        "judge": None, "models_used": agent_models, **extra}
             except objective.FixtureError as exc:
                 error = {"type": "invalid_fixture", "detail": str(exc)}
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
@@ -2392,7 +2407,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
-                        "judge": None, "models_used": agent_models}
+                        "judge": None, "models_used": agent_models, **extra}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
@@ -2429,7 +2444,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
-                "models_used": agent_models}
+                "models_used": agent_models, **extra}
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -2787,6 +2802,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    extra = {}
+    agent_summary = raw = tool_trace = None
+    agent_models = []
     scratch = Path(tempfile.mkdtemp(
         prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
@@ -2837,6 +2855,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                  "delivery": delivery, "hook_verdict": info["verdict"],
                  "installed": info["installed"], "decoy": decoy,
                  "hook_returncode": info["returncode"], "guard": None}
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(None, None, None)
         if info["returncode"] is not None and (
                 not info["installed"] or info["returncode"] != 0):
             error = {"type": "delivery_failed",
@@ -2853,7 +2873,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": None, "inconclusive": True, "models_used": []}
+                    "guard": None, "inconclusive": True, "models_used": [],
+                    **({"guidance_violations": extra["guidance_violations"]}
+                       if "guidance_violations" in extra else {})}
 
         setting_sources = guidance.SETTING_SOURCES[delivery]
         # The guard's preflight model: the fixture's own `model:` pin when it
@@ -2881,7 +2903,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": guard, "inconclusive": True, "models_used": []}
+                    "guard": guard, "inconclusive": True, "models_used": [],
+                    **({"guidance_violations": extra["guidance_violations"]}
+                       if "guidance_violations" in extra else {})}
 
         arm_config = {
             "name": arm["name"],
@@ -2895,7 +2919,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
         }
+        baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = run_agent(workspace, fixture["prompt"], arm_config)
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(
+                baseline, workspace, result.get("tool_trace"))
 
         error = None
         agent_summary = None
@@ -2971,7 +2999,25 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,
-                "models_used": agent_models}
+                "models_used": agent_models,
+                **({"guidance_violations": extra["guidance_violations"]}
+                   if "guidance_violations" in extra else {})}
+    except guidance.GuidanceError:
+        if not fixture.get("_real_work"):
+            raise
+        error = {"type": "guidance_configuration", "detail": "guidance trial setup failed"}
+        counts = extra.get("guidance_violations") or guidance_violations.measure(None, None, None)
+        _write_summary(args.results_dir, None, arm["name"], timestamp,
+                       error, agent_summary, None, None, raw, key=ctx["key"],
+                       extra={"subject": "guidance", "section": ctx["section"],
+                              "mode": arm["mode"], "bytes": None,
+                              "guidance_violations": counts},
+                       harness_version=harness_version, permission_mode=permission_mode,
+                       models=agent_models, tool_trace=tool_trace)
+        return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                "agent": agent_summary, "objective_checks": None, "judge": None,
+                "guard": None, "inconclusive": True, "models_used": [],
+                "guidance_violations": counts}
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -3025,6 +3071,10 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         lines.append(f"| {s['arm']} | {s['mode']} | {arm_bytes.get(s['arm'], '-')} | "
                      f"{guard_str} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{err_str} |")
+    lines += guidance_violations.render([
+        {"arm": s["arm"], "stats": {"aggregate": {
+            "guidance_violations": guidance_violations.aggregate([s])}}}
+        for s in arm_summaries])
     return "\n".join(lines) + "\n"
 
 
@@ -3304,9 +3354,9 @@ def apply_runtime_subject(fixture: dict, skill: str | None, section: str | None,
         raise guidance.GuidanceError(
             "pass one of --skill and --section, not both --skill and --section")
     if skill is not None:
-        return {**fixture, "subject": "skill", "skill": skill}
+        return {**fixture, "subject": "skill", "skill": skill, "_real_work": True}
     if section is not None:
-        return {**fixture, "subject": "guidance", "section": section}
+        return {**fixture, "subject": "guidance", "section": section, "_real_work": True}
     if arm != "objective-only":
         raise guidance.GuidanceError(
             f"{fixture_path} is `subject: {SUBJECT_ANY}` and this run names no "

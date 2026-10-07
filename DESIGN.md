@@ -705,6 +705,65 @@ is objectively decidable from the resulting files alone.
   addendum (2026-10-06)").
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
+- **Passive fleet-guidance counters:** every attempted real-work
+  `subject: any` agent trial retains `guidance_violations` in its
+  `summary.json`, whether selected with `--skill` or `--section`, including
+  agent, scorer, and pre-agent refusals. Objective-only runs launch no agent
+  trial and do not produce these counters. The detector is
+  [`harness/guidance_violations.py`](harness/guidance_violations.py); it never
+  executes candidate files. Schema version 1 carries `rules`, keyed by
+  `unpinned_actions`, `event_input_in_run`, and `push_without_verification`.
+  Each entry contains the stable `section_id`, `status` (`known` or
+  `unknown`), `count` (integer or null), and `observed_count` (the observed
+  lower bound when the total is unknown). No candidate text, command,
+  path, commit, or branch is copied into this block.
+
+  The section ids come from the registry's
+  [`agents-md/eval-coverage.yml`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml):
+  `pinning-github-actions`, `data-exposure-in-ci`, and
+  `git-push-does-not-mean-commit-exists`, respectively. YAML is parsed with
+  PyYAML nodes: workflow job-level reusable `uses`, workflow step `uses`
+  and `run`, and composite-action step `uses` and `run`. Remote actions
+  require a full 40-character hexadecimal SHA; local `./` and `docker://`
+  references are exempt, and this account's `cms-platform/.github/actions/`
+  and `cms-platform/.github/workflows/` references accept
+  `vMAJOR.MINOR.PATCH` release tags. The interpolation
+  counter counts direct `${{ inputs.* }}` and `${{ github.event.* }}`
+  expression tokens in parsed `run` scalars; composed expressions and
+  other exposure routes are outside its scope. Per-file occurrence
+  multisets are compared against the prepared workspace immediately before
+  the agent runs. Untouched inherited occurrences, comments, unrelated
+  `uses`/`run` data keys, and harmless changes around an existing
+  interpolation do not count; additional copies count separately.
+
+  Bash tool calls are parsed with the existing Tree-sitter parser. A
+  successful standalone literal `git push [-u|--set-upstream] REMOTE
+  SHA:BRANCH` requires a later successful standalone
+  `git merge-base --is-ancestor SHA REMOTE/BRANCH` for that same SHA and ref.
+  A successful literal branch push with no later successful check for that
+  ref counts as an omission. A branch push followed by a candidate check
+  has unknown status because this trace cannot bind the branch to its SHA.
+  Failed pushes do not count. Success requires a uniquely paired subsequent
+  tool result with `is_error: false`; shell compound commands, wrappers,
+  global git options, dynamic arguments, default pushes, subagent scope,
+  or missing results are unknown. Comments and heredoc data are not executed
+  commands. Missing, capped, clipped, or redacted evidence is unknown, never
+  a clean zero. The trace marks changed input/output text with
+  `input_incomplete`/`output_incomplete`. YAML parse failures, aliases,
+  duplicate keys, symlinks, unreadable files, and bounds (1 MiB per file,
+  2,000 matching files, 20,000 traversal entries or YAML nodes) likewise
+  make the YAML totals unknown. Git metadata, profiles, and `node_modules`
+  are excluded from traversal.
+
+  Arm aggregates carry `aggregate.guidance_violations`, per rule `section_id`,
+  `n`, `n_missing`, and `sum` (null when no total is known). Errored trials
+  remain in these denominators when they supplied evidence. Single-trial,
+  multi-trial, and guidance reports render the totals and unknown trial
+  counts. These counters do not change objective scores, improvement gates,
+  or graduation. Closing keywords from `git-practices` and model attribution
+  are deferred: a closing keyword may be authorized, and an ordinary product
+  mention does not establish attribution. This is a scoped measurement of
+  observable rules, not a claim of complete fleet-guidance compliance.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's
   result objects, so beside it the harness writes
   `transcripts/tool_trace.json` (`schema_version` 1): one event per tool call
@@ -730,7 +789,8 @@ is objectively decidable from the resulting files alone.
   it in the run's workflow artifact, which is public on this repository. That
   artifact is an allowlist (#289): `summary.json`, `report.md` and
   `tool_trace.json`; the unredacted `raw.json` stays on the runner. No
-  scorer reads it: `run_agent` returns it under `tool_trace`, beside the
+  objective scorer reads it; the passive fleet counter above does.
+  `run_agent` returns it under `tool_trace`, beside the
   unchanged `transcript` and `raw`.
 
 ### Skill install path (corrected)
