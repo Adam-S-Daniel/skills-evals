@@ -1,0 +1,61 @@
+# Real-work fixture: cms-platform#761, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/cms-platform/pull/761, the fix for https://github.com/Adam-S-Daniel/cms-platform/issues/756.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  dd22fe4a89e0085b2793155c57ff8289f3b9c1e6 (merge-first-parent)
+#   merge d78494f66a7b1cf0ce982ade823ba7eee5460dcc
+# Checker overlay: the merge commit's e2e/tags-suggest.test.js.
+# Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
+# Also every e2e spec but the checker's own (291 trimmed).
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#756 as it stood before the pull request's first commit (read with gh api graphql).
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+- {manager: npm, dir: e2e}
+prompt: |-
+  Tags box: a trailing space is swallowed, an applied suggestion leaves no separator, and the chips are small on a phone
+
+  Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai owner pass, local admin, platform v0.1.148). Follow-ups to the Tags box from https://github.com/Adam-S-Daniel/cms-platform/pull/746.
+
+  **Severity:** minor.
+
+  ## 1. A space typed at the end of a tag is swallowed
+
+  Steps (1440×900): in Posts → Tags type `agents, field`, press Space, type `notes`.
+  Seen: the box shows `agents, fieldnotes`; `Field Notes` becomes `FieldNotes`. Because the space is gone, the near-duplicate warning never compares `Field Notes` with `field-notes`. A space inserted mid-word (after ArrowLeft) stays.
+  Expected: the space stays, or the hint says multi-word tags use dashes.
+
+  ## 2. Applying a suggestion leaves no separator
+
+  Steps: type `rel`, Tab to the "release-notes" chip, Enter, then type `agent`.
+  Seen: `release-notesagent`.
+  Expected: `release-notes, ` after applying, as Enter in the box already does.
+
+  ## 3. Suggestion and warning chips are small tap targets on a phone
+
+  About 62×20 px at 390×844 (`p07-02-quo-typed.png`); 44 px tall would match the share buttons.
+
+  ## Task
+
+  Preserve a trailing space while a tag is being entered, leave a usable separator after applying a suggestion, and make suggestion and warning chips usable tap targets on a phone.
+
+  Interface the reviewer's tests use: `window.__tagsInput` exposes `replaceTag(value, index, replacement)` and `holdsTrailingSpace(value, atEnd)`, which returns a boolean. Preserve the existing `analyze(value, existing)` API.
+interface_strings: [window.__tagsInput, replaceTag, holdsTrailingSpace, analyze]
+issue_before_fix: issue-before-fix.txt
+issue_created_at: '2026-10-06T04:42:21Z'
+issue_last_edited_at: null
+first_commit_at: '2026-10-06T04:52:37Z'
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [node, e2e/node_modules/@playwright/test/cli.js, test, --config=e2e/playwright.unit.config.js, --workers=1]
+  fail_to_pass:
+  - [tags-suggest.test.js, -g, replaceTag swaps one piece and ends it with]
+  - [tags-suggest.test.js, -g, replaceTag never leaves an empty piece behind a trailing comma]
+  - [tags-suggest.test.js, -g, holdsTrailingSpace is true only for a lone space after a letter at the caret end]
+  pass_to_pass:
+  - [tags-suggest.test.js, --grep-invert, '#756']
