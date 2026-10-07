@@ -796,12 +796,6 @@ class WorkflowShapeTests(unittest.TestCase):
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
 
-    #: Pins first introduced here: actions/create-github-app-token v3.2.0
-    #: (published 2026-05-12, a lightweight tag: `git ls-remote` shows no
-    #: `^{}` line), the newest release more than seven days old.
-    NEW_PINS = {"actions/create-github-app-token@"
-                "bcd2ba49218906704ab6c1aa796996da409d3eb1"}
-
     def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
@@ -817,7 +811,7 @@ class WorkflowShapeTests(unittest.TestCase):
                     rest = lines[node.end_mark.line][node.end_mark.column:]
                     self.assertEqual(rest.strip(), "",
                                      "a pin carries no trailing comment")
-                    self.assertIn(node.value, pinned | self.NEW_PINS)
+                    self.assertIn(node.value, pinned)
 
     def test_no_expressions_in_run_blocks(self):
         for doc in (self.gate, self.signal):

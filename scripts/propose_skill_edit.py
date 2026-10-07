@@ -112,12 +112,10 @@ DEFAULT_MIN_GAIN = 0.10
 #: The judge may drop by at most this much on validation (#71 step 3).
 JUDGE_TOLERANCE = 0.5
 #: How much more total tokens a candidate may cost than the baseline, as a
-#: fraction of the baseline, before it "costs more tokens". ADR 0005
-#: amendment 2 says no number, only that the metric sits beside quality, so
-#: this is the most conservative reading: any increase counts. A candidate
-#: that costs more tokens without a quality gain is not accepted. OPEN
-#: OWNER QUESTION: whether a gain may buy an increase up to a ceiling, and
-#: whether a flat-quality candidate that costs fewer tokens may be accepted.
+#: fraction of the baseline, before it "costs more tokens". ADR 0005's
+#: Token-aware acceptance addendum (2026-10-06) records "Keep as built":
+#: quality first, tokens veto a candidate with no quality gain; any
+#: increase counts.
 TOKEN_INCREASE_TOLERANCE = 0.0
 #: The four `usage` counts that make up one trial's tokens (all of them,
 #: cache reads and writes included; a trial missing any one is unknown).

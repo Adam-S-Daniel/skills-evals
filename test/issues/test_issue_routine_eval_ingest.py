@@ -195,13 +195,19 @@ class AcceptTests(GitCase):
 
     def test_legacy_root_only_for_its_own_run(self):
         legacy = "20261006T192432Z-93755e"
-        self.assertEqual(ingest.LEGACY_ROOTS, {legacy: "results"})
+        self.assertEqual(ingest.LEGACY_ROOTS,
+                         {(legacy, "c3521ee53809daea4570e5fe80f3ac847959f88a"): "results"})
         branch = f"claude/eval-{legacy}"
         self.git("checkout", "-q", "-b", branch, "main")
-        self.commit({n.replace(f"eval-results/{RUN_ID}", f"results/{legacy}"): d
-                     for n, d in good_files().items()})
-        result = ingest.validate(str(self.repo), "main", branch, branch, None,
-                                 self.tmp / "staged")
+        sha = self.commit({n.replace(f"eval-results/{RUN_ID}", f"results/{legacy}"): d
+                           for n, d in good_files().items()})
+        with mock.patch.object(ingest, "LEGACY_ROOTS", {(legacy, sha): "results"}):
+            result = ingest.validate(str(self.repo), "main", branch, branch, None,
+                                     self.tmp / "staged")
+            self.git("commit", "-q", "--allow-empty", "-m", "Repush the same run")
+            with self.assertRaisesRegex(ingest.Rejected, "not under"):
+                ingest.validate(str(self.repo), "main", branch, branch, None,
+                                self.tmp / "repushed")
         self.assertEqual(result["run_id"], legacy)
         self.assertTrue((self.tmp / "staged" / "routine-results" / legacy)
                         .is_dir())
