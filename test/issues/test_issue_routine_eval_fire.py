@@ -58,9 +58,11 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -405,6 +407,24 @@ class ValidateStepTests(unittest.TestCase):
             "whitespace_candidate": {"candidate": " "},
             "missing_fixture": {"fixture": None},
         })
+
+    def test_accepts_a_holdout_of_exactly_128_characters(self):
+        # Isolate the dispatch shape boundary from fixture membership, which
+        # fire-check tests separately against the committed fixture names.
+        holdout = "h" * 128
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        checker = bin_dir / "python3"
+        checker.write_text(f"#!{sys.executable}\nimport sys\n"
+                           f"assert sys.argv[1:] == "
+                           f"{['scripts/improve_gate.py', 'fire-check', SKILL, '--holdout', holdout]!r}\n")
+        checker.chmod(0o755)
+        with mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}):
+            proc, values = self.run_step(
+                {"mode": "improve", "candidate": "", "fixture": "", "skill": SKILL,
+                 "holdout": holdout, "arms": "both", "trials": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(values["holdout"], holdout)
 
     def test_accepts_an_improve_run(self):
         # writing-adrs: four nested adam-agentskills fixtures.

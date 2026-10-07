@@ -323,8 +323,9 @@ jobs:
 
       # Scaffold mode only. The job's read-only token, never the bearer: the
       # snapshot refuses a candidate outside the fleet, or whose repository
-      # GitHub names differently (a rename redirect), before it reads GitHub (REST for the pull request, GraphQL for its
-      # closing issue and the issue's revisions), and its log line is a
+      # GitHub names differently (a rename redirect), before it reads GitHub
+      # (REST for the pull request, GraphQL for its closing issue and the
+      # issue's revisions), and its log line is a
       # status, never the issue's text.
       - name: Compute the issue snapshot
         id: snapshot

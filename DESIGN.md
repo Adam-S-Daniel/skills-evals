@@ -224,7 +224,7 @@ design, recorded verbatim:
   additions" section.
 - **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
   `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
-  acceptance"); nothing else does.
+  acceptance addendum (2026-10-06)"); nothing else does.
 - **Answer leak, the exemption list:** "Exempt interface strings
   (Recommended)". Each fixture declares, in `interface_strings:`, the
   identifiers and messages its hidden tests check verbatim, and its task text
@@ -701,7 +701,8 @@ is objectively decidable from the resulting files alone.
   arm with the with-minus-without delta, and `scripts/local_eval.py`'s
   `aggregate.json` carries the same blocks. They are reported, not decided
   on, except by `scripts/propose_skill_edit.py`, which sums the four token
-  means per fixture and reads that (ADR 0005, "Token-aware acceptance").
+  means per fixture and reads that (ADR 0005, "Token-aware acceptance
+  addendum (2026-10-06)").
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's
@@ -974,9 +975,9 @@ fix), `interface_strings:` and the checker selection (`argv`,
 deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py):
 
 - **build** turns one miner candidate and the spec into
-  `evals/real-work/<repo name>-<pr>/` in the shape of the first three
-  fixtures: `seed/` is the base tree from `git archive`, with the agent
-  context stripped (`seed_prep.strip_agent_context`), the evaluated paths
+  `evals/real-work/<repo name>-<pr>/` (fixture ids are at most 72 characters)
+  in the shape of the first three fixtures: `seed/` is the base tree from
+  `git archive`, with the agent context stripped (`seed_prep.strip_agent_context`), the evaluated paths
   removed (`.claude`, `skills.lock`, `agents-md`, `skills`,
   `.claude-plugin`), and every symlink, every file over 100 KB but the
   lockfile and `AGENTS.md`, and every e2e spec but the checker's own

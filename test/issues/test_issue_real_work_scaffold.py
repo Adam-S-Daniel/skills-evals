@@ -1180,6 +1180,16 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("github.event.workflow_run.conclusion == 'success'",
                       self.gate["jobs"]["validate"]["if"])
 
+    def test_validation_cannot_be_skipped_by_a_condition(self):
+        validate = self.gate["jobs"]["validate"]
+        self.assertEqual(" ".join(str(validate["if"]).split()),
+                         "github.ref == format('refs/heads/{0}', "
+                         "github.event.repository.default_branch) "
+                         "&& (github.event_name == 'workflow_dispatch' "
+                         "|| github.event.workflow_run.conclusion == 'success')")
+        for step in validate["steps"]:
+            self.assertNotIn("if", step, step.get("name"))
+
     def test_no_pull_request_trigger_and_no_concurrency_group(self):
         for doc in (self.gate, self.signal):
             self.assertNotIn("pull_request", triggers(doc))
