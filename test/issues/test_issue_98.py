@@ -230,6 +230,42 @@ class GuidanceScaffoldTests(unittest.TestCase):
         with self.assertRaises(scaffold.ScaffoldError):
             scaffold.scaffold_guidance(self.upstream, None, target_link_root)
 
+    def test_existing_directory_destination_symlinks_are_refused(self):
+        elsewhere = self.temp / "elsewhere"
+        elsewhere.mkdir()
+        marker = elsewhere / "marker.txt"
+        marker.write_text("preserve this directory\n", encoding="utf-8")
+        link = self.temp / "linked-output"
+        link.symlink_to(elsewhere, target_is_directory=True)
+
+        for destination in (link, link / "child"):
+            with self.subTest(destination=destination):
+                with self.assertRaisesRegex(
+                        scaffold.ScaffoldError,
+                        "destination path contains a symlink"):
+                    scaffold.scaffold_guidance(self.upstream, None, destination)
+
+        self.assertEqual(sorted(path.name for path in elsewhere.iterdir()), ["marker.txt"])
+        self.assertEqual(marker.read_text(encoding="utf-8"), "preserve this directory\n")
+
+    def test_existing_directory_target_symlink_is_refused(self):
+        elsewhere = self.temp / "elsewhere"
+        elsewhere.mkdir()
+        marker = elsewhere / "marker.txt"
+        marker.write_text("preserve this target\n", encoding="utf-8")
+        self.dest.mkdir()
+        target_link = self.dest / "coverage-gap"
+        target_link.symlink_to(elsewhere, target_is_directory=True)
+
+        with self.assertRaisesRegex(
+                scaffold.ScaffoldError, "a target path contains a symlink"):
+            scaffold.scaffold_guidance(self.upstream, None, self.dest)
+
+        self.assertTrue(target_link.is_symlink())
+        self.assertEqual(sorted(path.name for path in elsewhere.iterdir()), ["marker.txt"])
+        self.assertEqual(marker.read_text(encoding="utf-8"), "preserve this target\n")
+        self.assertFalse((elsewhere / "fixture.yaml").exists())
+
     def test_manifest_section_and_impact_symlink_escapes_are_refused(self):
         outside_manifest = self.temp / "outside.yml"
         outside_manifest.write_text(yaml.safe_dump([self.rows[0]]), encoding="utf-8")
