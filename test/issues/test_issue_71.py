@@ -505,6 +505,14 @@ class AcceptTests(PipelineCase):
             self.assertEqual(Path(argv[0]), pse.EVALS_DIR / SKILL)
             self.assertFalse(Path(flag(argv, "--results-dir")).is_relative_to(REPO_ROOT))
 
+    def test_both_measurements_deny_their_arms_the_whole_results_root(self):
+        # The candidate's arms must not read the baseline run or the proposed
+        # patch, both under the results root beside the candidate's own run.
+        evals = [c for c in self.runner.calls if c[0] == "run_eval"]
+        self.assertEqual(len(evals), 2)
+        for _, _, _, argv in evals:
+            self.assertEqual(Path(flag(argv, "--read-deny")), self.results.resolve())
+
     def test_trigger_half_never_sees_the_validation_prompt(self):
         validation_prompt = " ".join(pse.run_eval.load_fixture(
             REPO_ROOT / "evals" / SKILL / "supersede")["prompt"].split())

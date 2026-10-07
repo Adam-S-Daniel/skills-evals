@@ -820,10 +820,15 @@ def parse_proposal(reply: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_eval_argv(skill: str, registry_name: str, registry_root: Path,
-                  results: Path, ts: str, trials: int, no_judge: bool) -> list[str]:
+                  results: Path, ts: str, trials: int, no_judge: bool,
+                  read_deny: Path | None = None) -> list[str]:
+    """local_eval's argv. `read_deny` is this pipeline's results root: the
+    candidate's arms must not read the baseline run or the proposed patch."""
     argv = [str(EVALS_DIR / skill), "--arm", ARM, "--trials", str(trials),
             "--registry", f"{registry_name}={registry_root}",
             "--results-dir", str(results), "--timestamp", ts]
+    if read_deny is not None:
+        argv += ["--read-deny", str(read_deny)]
     return argv + (["--no-judge"] if no_judge else [])
 
 
@@ -1225,7 +1230,8 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
 
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
                                            run_paths(results, "baseline", skill, ts),
-                                           ts, args.trials, args.no_judge))
+                                           ts, args.trials, args.no_judge,
+                                           read_deny=results))
         if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
             record.update(status="refused", phase="baseline", exit_code=rc,
                           reasons=[f"local_eval exited {rc} during baseline"])
@@ -1319,7 +1325,8 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         record["runs"]["candidate"] = str(run_paths(results, "candidate", skill, ts))
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], cand_root,
                                            run_paths(results, "candidate", skill, ts),
-                                           ts, args.trials, args.no_judge))
+                                           ts, args.trials, args.no_judge,
+                                           read_deny=results))
         if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
             record.update(status="refused", phase="candidate", exit_code=rc,
                           reasons=[f"local_eval exited {rc} during candidate"])
