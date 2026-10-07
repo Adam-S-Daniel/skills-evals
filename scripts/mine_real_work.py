@@ -150,6 +150,10 @@ class GhNotFound(Exception):
     pass
 
 
+class GhGone(MineError):
+    """A deleted issue or disabled issue endpoint (HTTP 410)."""
+
+
 class GhDiffTooLarge(Exception):
     """GitHub refuses to render the diff (HTTP 406, over its line or file cap)."""
 
@@ -178,6 +182,8 @@ def _gh(args: tuple[str, ...], what: str, *, diff: bool = False) -> str:
             raise GhDiffTooLarge(what)
         if not diff and ("Could not resolve to a Repository" in err or "HTTP 404" in err):
             raise GhNotFound(what)
+        if not diff and "HTTP 410" in err:
+            raise GhGone(what)
         # Status only: never echo an API body.
         if GRAPHQL_UNAVAILABLE.search(err):
             raise GhGraphQLUnavailable(f"gh api {what} failed (exit {done.returncode}): "
@@ -322,7 +328,7 @@ def closing_issues(repo: str, pr: dict, default_branch: str | None) -> list[int]
     """`closing_refs` that GitHub reads back as issues of `repo`.
 
     Keywords close only from a pull request into the default branch. A number
-    that is a pull request, or that no longer reads (404, or a transfer that
+    that is a pull request, or that no longer reads (404, 410, or a transfer that
     lands in another repository), is dropped. Sorted by number, as GraphQL's
     `closingIssuesReferences` listed them (adam-agentskills#40: #24, #12)."""
     if not default_branch or (pr.get("base") or {}).get("ref") != default_branch:
@@ -331,7 +337,7 @@ def closing_issues(repo: str, pr: dict, default_branch: str | None) -> list[int]
     for number in closing_refs(pr.get("body") or "", repo):
         try:
             issue = gh_json("api", f"repos/{repo}/issues/{number}")
-        except GhNotFound:
+        except (GhNotFound, GhGone):
             continue
         # A pull request reads back at `/pull/N`, a transferred issue under
         # another repository: only `/issues/N` here is this repository's issue.

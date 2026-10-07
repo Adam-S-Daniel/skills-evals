@@ -120,6 +120,9 @@ elif re.fullmatch(r"/issues/\d+", tail) and not flags:
     issue = data.get("issues", {}).get(f"{repo}#{number}", "issue")
     if issue is None:
         not_found()
+    if issue == "gone":
+        sys.stdout.write('{"message":"PRIVATE ISSUE BODY","status":"410"}')
+        fail("gh: PRIVATE ISSUE BODY (HTTP 410)")
     row = {"number": number, "html_url": f"https://github.com/{repo}/issues/{number}"}
     if issue == "pull":
         row["pull_request"] = {"url": "https://api.github.com/x"}
@@ -493,6 +496,14 @@ class TestClosingIssues(_MinerCase):
                      issues={f"{self.REPO}#8": "pull", f"{self.REPO}#9": None})
         doc = self.mine(self.registry(["cms-platform"]))
         self.assertEqual(doc["candidates"][0]["closing_issues"], [7, 10])
+
+    def test_deleted_closing_issue_is_skipped_without_exposing_its_body(self):
+        self.gh_data(repos={self.REPO: _view(ADAM, "cms-platform")},
+                     prs={self.REPO: [_pr(1, body="Closes #7; fixes #8"), _pr(2)]},
+                     issues={f"{self.REPO}#8": "gone"})
+        doc = self.mine(self.registry(["cms-platform"]))
+        self.assertEqual([c["closing_issues"] for c in doc["candidates"]], [[7], [7]])
+        self.assertNotIn("PRIVATE ISSUE BODY", self.stderr)
 
     def test_a_pull_request_into_another_branch_closes_nothing(self):
         self.gh_data(repos={self.REPO: _view(ADAM, "cms-platform")},
