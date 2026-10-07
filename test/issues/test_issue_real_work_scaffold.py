@@ -71,7 +71,8 @@ GIT_ENV = {
 }
 
 #: A fake `gh` that answers only `api graphql`, from `$FAKE_GH_DATA`, and logs
-#: every call to `$FAKE_GH_LOG`; any other verb exits 3.
+#: every call to `$FAKE_GH_LOG`; any other verb exits 3. With
+#: `$FAKE_GH_GRAPHQL_403` set it answers as a Claude Code cloud session does.
 FAKE_GH = r'''
 import json, os, sys
 args = sys.argv[1:]
@@ -80,6 +81,10 @@ with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as handle:
 if args[:2] != ["api", "graphql"]:
     sys.stderr.write("fake gh: refused\n")
     raise SystemExit(3)
+if os.environ.get("FAKE_GH_GRAPHQL_403"):
+    sys.stderr.write("HTTP 403: GitHub GraphQL is not available from Claude Code sessions; "
+                     "use the REST API (gh api repos/{owner}/{repo}/...)\n")
+    raise SystemExit(1)
 with open(os.environ["FAKE_GH_DATA"], encoding="utf-8") as handle:
     print(handle.read())
 '''
@@ -297,6 +302,22 @@ class BuildTests(_BuildCase):
         self.assertEqual(self.git(self.clone, "status", "--porcelain"), "")
         self.assertEqual(self.git(self.clone, "for-each-ref"), refs)
 
+    def test_without_graphql_the_snapshot_gap_is_named_and_nothing_is_written(self):
+        # s27 (2026-10-06): the routine runs in a Claude Code cloud session,
+        # where every GitHub GraphQL request is refused with HTTP 403, and an
+        # issue's body revisions (userContentEdits) have no REST read. The
+        # build stops naming that gap instead of a bare `gh` failure, and never
+        # falls back to the issue's current body.
+        with mock.patch.dict(os.environ, {"FAKE_GH_GRAPHQL_403": "1"}):
+            with self.assertRaises(scaffold.ScaffoldError) as caught:
+                self.build()
+        message = str(caught.exception)
+        self.assertRegex(message, r"needs GitHub GraphQL")
+        self.assertIn("userContentEdits", message)
+        self.assertIn("not available", message)
+        self.assertNotIn("Claude Code sessions", message, "status only, never gh's text")
+        self.assertFalse((self.dest / "toy-7").exists())
+
     def test_no_issue_writes_no_snapshot_and_reads_nothing(self):
         target = self.build(issue=None)
         fixture = yaml.safe_load((target / "fixture.yaml").read_text(encoding="utf-8"))
@@ -471,8 +492,8 @@ class CommittedFixturesTests(unittest.TestCase):
                 self.assertEqual(scaffold.static_problems(REAL_WORK / name, detail=True), ([], []))
 
     def test_the_miner_never_mines_a_scaffold_branch(self):
-        self.assertTrue(mine_real_work.is_bot({"headRefName": "claude/scaffold-toy-7"}))
-        self.assertFalse(mine_real_work.is_bot({"headRefName": "claude/fix-toy"}))
+        self.assertTrue(mine_real_work.is_bot({"head": {"ref": "claude/scaffold-toy-7"}}))
+        self.assertFalse(mine_real_work.is_bot({"head": {"ref": "claude/fix-toy"}}))
 
 
 class _GateCase(_BuildCase):

@@ -3,9 +3,11 @@
 
 Part of https://github.com/Adam-S-Daniel/skills-evals/issues/65 and
 https://github.com/Adam-S-Daniel/skills-evals/issues/98 (DESIGN.md "Real-work
-fixtures from merged pull requests"). READ-ONLY: it calls only `gh` read verbs
-and `git archive`, writes only the `--out` path, and refuses an `--out` inside
-this repository.
+fixtures from merged pull requests"). READ-ONLY: it calls only `gh api` REST
+reads and `git archive`, writes only the `--out` path, and refuses an `--out`
+inside this repository. No GraphQL: a Claude Code cloud session, where the
+eval routine runs it, answers every GitHub GraphQL request with HTTP 403, and
+`gh repo view`, `gh pr list` and `gh pr diff` all go through GraphQL.
 
     python3 scripts/mine_real_work.py mine \\
         --registry PATH/_agent-guidance/repos.yml --out /tmp/candidates.json \\
@@ -21,17 +23,22 @@ this repository.
 MINE. The fleet is `cron_coverage.fleet` in `_agent-guidance`'s `repos.yml`,
 never a search. That list holds bare names; the owners are `SYNC_OWNERS` in
 the sibling `sync.yml`, read by parsing the YAML. Every name is resolved
-under EVERY owner (`gh repo view`), and a name no owner resolves is an error:
+under EVERY owner (`GET /repos/{owner}/{name}`), and a name no owner resolves is an error:
 the denominator must not shrink silently. A name that resolves to the same
 repository under two owners (a rename redirect) counts once. Only PUBLIC
 repositories are mined (owner decision Q3); a private one is listed under
 `skipped`. Bot pull requests (head ref or author) and `on-hold` ones are
 excluded. A candidate is a merged pull request that changes a test file and
 a non-test, non-doc file, and whose body (the task text, Q3) is non-empty.
+`--limit` counts merged pull requests, newest created first. `closing_issues`
+is what the body's closing keywords name in this repository (`closing_refs`),
+kept only when GitHub reads the number back as an issue and only for a pull
+request into the default branch: REST has no `closingIssuesReferences`, so an
+issue linked only by hand in the sidebar is not seen.
 Each candidate records its merge date (Q8: pre/post training-cutoff fixtures
 are reported apart, not excluded), its base and an `answer_leak` flag: the
 body quotes a line the pull request added. The base is a true merge's first
-parent, else (squash or rebase merge) the PR's `baseRefOid`, which can predate
+parent, else (squash or rebase merge) the PR's `base.sha`, which can predate
 the base branch at merge time; `base_from` says which. A repo whose pull
 requests 404, a PR with no readable merge commit, or a PR whose diff GitHub will
 not render (HTTP 406, over its line or file cap; counted as `diff_too_large`) is
@@ -101,12 +108,18 @@ TOUCHES = {
     "skill-md": re.compile(r"(^|/)SKILL\.md$"),
     "guidance": re.compile(r"agents-md/(base\.md|sections/)"),
 }
-PR_FIELDS = ("number,title,body,files,closingIssuesReferences,mergeCommit,headRefName,"
-             "additions,deletions,author,mergedAt,labels,url,baseRefOid")
 #: A quoted diff line shorter than this is too generic to call a leak.
 LEAK_MIN_CHARS = 20
-#: `gh pr list` returns at most this many files per pull request.
-FILES_CAP = 100
+#: `GET /pulls/{n}/files` returns at most this many files per pull request.
+FILES_CAP = 3000
+#: The one Accept header the miner sends: a pull request as a unified diff.
+DIFF_ACCEPT = "Accept: application/vnd.github.diff"
+#: GitHub's closing keywords, then a reference: `#N`, `owner/repo#N` or the
+#: issue's URL. A keyword closes only the reference right after it.
+CLOSING_REF = re.compile(
+    r"(?<![\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?::\s*|\s+)"
+    r"(?:(?P<slug>[\w.-]+/[\w.-]+)#|https://github\.com/(?P<url>[\w.-]+/[\w.-]+)/issues/|#)"
+    r"(?P<number>\d+)(?![\w-])", re.IGNORECASE)
 DEFAULT_CAP_SECONDS = 60
 
 #: A red failure that says the ENVIRONMENT is missing something.
@@ -141,31 +154,54 @@ class GhDiffTooLarge(Exception):
     """GitHub refuses to render the diff (HTTP 406, over its line or file cap)."""
 
 
-#: `gh pr diff` stderr for a diff GitHub will not render. A known, benign class:
-#: the pull request exists and is readable, only its diff is unavailable.
-DIFF_TOO_LARGE = re.compile(r"HTTP 406\b.*exceeded the maximum number of (?:lines|files)",
-                            re.DOTALL)
+class GhGraphQLUnavailable(MineError):
+    """GitHub GraphQL refused to this credential (a Claude Code cloud session)."""
 
 
-def gh_json(*args: str):
+#: The stderr of a diff GitHub will not render. A known, benign class: the
+#: pull request exists and is readable, only its diff is unavailable. The REST
+#: read puts `(HTTP 406)` last, `gh pr diff` put `HTTP 406:` first; both
+#: parts must be there.
+DIFF_TOO_LARGE = re.compile(r"(?=.*\bHTTP 406\b)(?=.*exceeded the maximum number of "
+                            r"(?:lines|files)\b)", re.DOTALL)
+#: What a Claude Code cloud session answers to any GitHub GraphQL request
+#: (s27, 2026-10-06: "HTTP 403: GitHub GraphQL is not available from Claude
+#: Code sessions; use the REST API").
+GRAPHQL_UNAVAILABLE = re.compile(r"GraphQL is not available")
+
+
+def _gh(args: tuple[str, ...], what: str, *, diff: bool = False) -> str:
     done = subprocess.run(["gh", *args], capture_output=True, text=True)
     if done.returncode:
         err = done.stderr or ""
-        if "Could not resolve to a Repository" in err or "HTTP 404" in err:
-            raise GhNotFound(" ".join(args[:3]))
+        if diff and DIFF_TOO_LARGE.search(err):
+            raise GhDiffTooLarge(what)
+        if not diff and ("Could not resolve to a Repository" in err or "HTTP 404" in err):
+            raise GhNotFound(what)
         # Status only: never echo an API body.
-        raise MineError(f"gh {' '.join(args[:2])} failed (exit {done.returncode})")
-    return json.loads(done.stdout)
-
-
-def gh_text(*args: str) -> str:
-    done = subprocess.run(["gh", *args], capture_output=True, text=True)
-    if done.returncode:
-        if DIFF_TOO_LARGE.search(done.stderr or ""):
-            raise GhDiffTooLarge(" ".join(args[:3]))
-        # Status only: never echo an API body.
-        raise MineError(f"gh {' '.join(args[:2])} failed (exit {done.returncode})")
+        if GRAPHQL_UNAVAILABLE.search(err):
+            raise GhGraphQLUnavailable(f"gh api {what} failed (exit {done.returncode}): "
+                                       "GitHub GraphQL is not available to this credential")
+        raise MineError(f"gh api {what} failed (exit {done.returncode})")
     return done.stdout
+
+
+def gh_json(*args: str):
+    """One `gh` call answered with one JSON document."""
+    what = next((a for a in args[1:] if not a.startswith("-")), args[0])
+    return json.loads(_gh(args, what))
+
+
+def gh_list(path: str) -> list:
+    """Every item of a paginated REST list (`gh api --paginate`, one per line)."""
+    out = _gh(("api", "--paginate", path, "--jq", ".[]"), path)
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
+
+
+def gh_diff(repo: str, number: int) -> str:
+    """A pull request's unified diff, read through REST."""
+    path = f"repos/{repo}/pulls/{number}"
+    return _gh(("api", "-H", DIFF_ACCEPT, path), path, diff=True)
 
 
 # ── the fleet ────────────────────────────────────────────────────────────────
@@ -205,14 +241,16 @@ def load_fleet(registry: Path, sync_workflow: Path) -> tuple[list[str], list[str
 
 
 def resolve_fleet(names: list[str], owners: list[str]) -> list[dict]:
-    """Every name under every owner; a name no owner resolves is an error."""
+    """Every name under every owner; a name no owner resolves is an error.
+
+    A renamed repository's old name redirects, so its `full_name` is the
+    new one and the repository counts once."""
     resolved, unresolved, seen = [], [], set()
     for name in names:
         hits = []
         for owner in owners:
             try:
-                view = gh_json("repo", "view", f"{owner}/{name}", "--json",
-                               "nameWithOwner,visibility,isFork,isArchived")
+                view = gh_json("api", f"repos/{owner}/{name}")
             except GhNotFound:
                 continue
             hits.append(view)
@@ -220,8 +258,8 @@ def resolve_fleet(names: list[str], owners: list[str]) -> list[dict]:
             unresolved.append(name)
             continue
         for view in hits:
-            if view["nameWithOwner"] not in seen:
-                seen.add(view["nameWithOwner"])
+            if view["full_name"] not in seen:
+                seen.add(view["full_name"])
                 resolved.append(view)
     if unresolved:
         raise MineError(f"fleet names no owner in {owners} resolves (a 404 can also mean "
@@ -232,18 +270,18 @@ def resolve_fleet(names: list[str], owners: list[str]) -> list[dict]:
 # ── classification ───────────────────────────────────────────────────────────
 
 def is_bot(pr: dict) -> bool:
-    author = pr.get("author") or {}
-    login = author.get("login") or ""
-    return bool(BOT_HEAD.search(pr.get("headRefName") or "") or author.get("is_bot")
-                or login.startswith("app/") or login.endswith("[bot]"))
+    user = pr.get("user") or {}
+    login = user.get("login") or ""
+    return bool(BOT_HEAD.search((pr.get("head") or {}).get("ref") or "")
+                or user.get("type") == "Bot" or login.startswith("app/")
+                or login.endswith("[bot]"))
 
 
 def on_hold(pr: dict) -> bool:
     return any((label or {}).get("name") == "on-hold" for label in pr.get("labels") or [])
 
 
-def split_files(pr: dict) -> tuple[list[str], list[str]]:
-    paths = [f["path"] for f in pr.get("files") or []]
+def split_files(paths: list[str]) -> tuple[list[str], list[str]]:
     tests = [p for p in paths if TEST_PATH.search(p)]
     source = [p for p in paths if not TEST_PATH.search(p) and not DOC_PATH.search(p)]
     return tests, source
@@ -258,6 +296,49 @@ def added_lines(diff: str) -> list[str]:
         elif line.startswith("+") and not DOC_PATH.search(current):
             lines.append(line[1:].strip())
     return lines
+
+
+def closing_refs(body: str, repo: str) -> list[int]:
+    """Issue numbers in `repo` that the body's closing keywords name, in order.
+
+    GitHub's rules (docs, "Linking a pull request to an issue"): one of
+    close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, any case,
+    an optional colon, then `#N`, `owner/repo#N` or the issue URL. A keyword
+    closes only the one reference after it (`Closes #1, #2` closes #1). A
+    reference into another repository is dropped: the candidate records bare
+    numbers, which the scaffolder reads in this repository."""
+    numbers = []
+    for match in CLOSING_REF.finditer(body):
+        other = match.group("slug") or match.group("url")
+        if other and other.lower() != repo.lower():
+            continue
+        number = int(match.group("number"))
+        if number not in numbers:
+            numbers.append(number)
+    return numbers
+
+
+def closing_issues(repo: str, pr: dict, default_branch: str | None) -> list[int]:
+    """`closing_refs` that GitHub reads back as issues of `repo`.
+
+    Keywords close only from a pull request into the default branch. A number
+    that is a pull request, or that no longer reads (404, or a transfer that
+    lands in another repository), is dropped. Sorted by number, as GraphQL's
+    `closingIssuesReferences` listed them (adam-agentskills#40: #24, #12)."""
+    if not default_branch or (pr.get("base") or {}).get("ref") != default_branch:
+        return []
+    issues = []
+    for number in closing_refs(pr.get("body") or "", repo):
+        try:
+            issue = gh_json("api", f"repos/{repo}/issues/{number}")
+        except GhNotFound:
+            continue
+        # A pull request reads back at `/pull/N`, a transferred issue under
+        # another repository: only `/issues/N` here is this repository's issue.
+        url = str(issue.get("html_url") or "").lower()
+        if url == f"https://github.com/{repo}/issues/{number}".lower():
+            issues.append(number)
+    return sorted(issues)
 
 
 def answer_leak(body: str, diff: str) -> dict:
@@ -276,13 +357,14 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
     out = {"registry": str(registry), "owners": owners, "fleet": names,
            "skipped": [], "summary": [], "candidates": []}
     for view in repos:
-        repo = view["nameWithOwner"]
-        if view.get("visibility") != "PUBLIC":
+        repo = view["full_name"]
+        if view.get("visibility") != "public" or view.get("private"):
             out["skipped"].append({"repo": repo, "reason": "not-public"})
             continue
         try:
-            prs = gh_json("pr", "list", "--repo", repo, "--state", "merged",
-                          "--limit", str(limit), "--json", PR_FIELDS)
+            # Newest created first, as `gh pr list --state merged` listed them.
+            prs = [pr for pr in gh_list(f"repos/{repo}/pulls?state=closed&per_page=100")
+                   if pr.get("merged_at")][:limit]
         except GhNotFound:
             print(f"mine_real_work: warning: {repo}: pull requests not readable (404); skipped",
                   file=sys.stderr)
@@ -298,7 +380,9 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
             if on_hold(pr):
                 counts["on_hold"] += 1
                 continue
-            tests, source = split_files(pr)
+            files = gh_list(f"repos/{repo}/pulls/{pr['number']}/files?per_page=100")
+            paths = [f["filename"] for f in files]
+            tests, source = split_files(paths)
             if not (tests and source):
                 counts["not_replayable"] += 1
                 continue
@@ -306,7 +390,7 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
             if not body:
                 counts["no_task_text"] += 1
                 continue
-            merge_sha = (pr.get("mergeCommit") or {}).get("oid")
+            merge_sha = pr.get("merge_commit_sha")
             commit = None
             if merge_sha:
                 try:
@@ -322,14 +406,14 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
             # A true merge's first parent is the base. A single-parent merge
             # commit is a squash or a rebase merge, and for a rebase merge the
             # first parent is the previous rebased commit, so the base is the
-            # PR's own baseRefOid (which may predate the base branch's tip at
+            # PR's own base.sha (which may predate the base branch's tip at
             # merge time).
             if len(parents) >= 2:
                 base_sha, base_from = parents[0], "merge-first-parent"
             else:
-                base_sha, base_from = pr.get("baseRefOid"), "pr-base-ref-oid"
+                base_sha, base_from = (pr.get("base") or {}).get("sha"), "pr-base-ref-oid"
             try:
-                diff = gh_text("pr", "diff", str(pr["number"]), "--repo", repo)
+                diff = gh_diff(repo, pr["number"])
             except GhDiffTooLarge:
                 # The answer-leak check needs the diff; without it the PR cannot
                 # be judged, so it is skipped (and counted), not guessed at.
@@ -337,17 +421,17 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
                       "for GitHub to render; skipped", file=sys.stderr)
                 counts["diff_too_large"] += 1
                 continue
-            paths = [f["path"] for f in pr.get("files") or []]
             out["candidates"].append({
                 "key": f"{repo.replace('/', '__')}__{pr['number']}",
-                "repo": repo, "pr": pr["number"], "url": pr.get("url"),
+                "repo": repo, "pr": pr["number"], "url": pr.get("html_url"),
                 "title": pr.get("title"), "task_text": body,
                 "spec_style": "sketch" if "```" in body else "symptom",
-                "merged_at": pr.get("mergedAt"), "merge_sha": merge_sha,
+                "merged_at": pr.get("merged_at"), "merge_sha": merge_sha,
                 "base_sha": base_sha, "base_from": base_from,
-                "head_ref": pr.get("headRefName"),
-                "closing_issues": [i.get("number") for i in pr.get("closingIssuesReferences") or []],
-                "churn": (pr.get("additions") or 0) + (pr.get("deletions") or 0),
+                "head_ref": (pr.get("head") or {}).get("ref"),
+                "closing_issues": closing_issues(repo, pr, view.get("default_branch")),
+                "churn": sum((f.get("additions") or 0) + (f.get("deletions") or 0)
+                             for f in files),
                 "test_files": tests, "source_files": source,
                 "files_truncated": len(paths) >= FILES_CAP,
                 "touches": sorted(k for k, rx in TOUCHES.items() if any(rx.search(p) for p in paths)),
