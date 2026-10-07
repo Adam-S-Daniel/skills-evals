@@ -140,6 +140,8 @@ class GuidanceViolationTests(unittest.TestCase):
         check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
         for evidence, expected in (
                 (trace(push, check), 0),
+                (trace(push, check.replace(SHA, SHA.upper())), 0),
+                (trace(push.replace(SHA, SHA.upper()), check), 0),
                 (trace(check, push), 1),
                 (trace(push, (check, True)), 1),
                 (trace(push, check.replace(SHA, OTHER_SHA)), 1),

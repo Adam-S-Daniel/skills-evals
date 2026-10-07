@@ -245,10 +245,11 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
                     known = False
                     continue
                 branch = branch.removeprefix("refs/heads/")
-                pushes.append((result_index, sha, args[0] + "/" + branch))
+                pushes.append((result_index, sha.lower() if sha is not None else None,
+                               args[0] + "/" + branch))
             elif (len(words) == 5 and words[2] == "--is-ancestor"
                   and SHA.fullmatch(words[3])):
-                verified.append((index, words[3], words[4]))
+                verified.append((index, words[3].lower(), words[4]))
     count = 0
     for i, sha, ref in pushes:
         matching = [check_sha for j, check_sha, check_ref in verified if j > i and ref == check_ref]
