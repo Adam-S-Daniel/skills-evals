@@ -6,8 +6,8 @@ env:
   GH_REPLAY_DIR: $WORKSPACE/.gh/replay
   GH_REPO: example-org/example-site
 prompt: Review PR 42 for example-org/example-site. The publication receipt records the requested and reviewed
-  commit plus the head actually published. Compare those with the live PR head before any merge, and flag
-  an obsolete publication.
+  commit plus the head actually published. Recorded PR state is available through gh. State the evidence
+  and your decision about the next step.
 objective_checks:
 - id: read-pr-view-42
   description: Read the recorded pr-view-42.json response

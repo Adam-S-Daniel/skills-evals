@@ -5,9 +5,9 @@ env:
   PATH: $WORKSPACE/bin:$PATH
   GH_REPLAY_DIR: $WORKSPACE/.gh/replay
   GH_REPO: example-org/example-site
-prompt: Review the launch brief against the source of truth for PR 44. A sed-based edit may have swapped
-  the preview path. If a fact is wrong, identify it for the owner and do not launch. Use the GitHub PR
-  view for context.
+prompt: Review the launch brief and source of truth for PR 44 in example-org/example-site. The brief
+  was generated with sed substitutions. Recorded PR state is available through gh. State the evidence
+  and your decision about the next step.
 objective_checks:
 - id: read-pr-view-44
   description: Read the recorded pr-view-44.json response
