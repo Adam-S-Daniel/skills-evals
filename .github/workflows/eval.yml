@@ -6,7 +6,7 @@
 #
 # SECURITY POSTURE — read this before changing anything:
 #
-# * Triggers are `schedule` + `workflow_dispatch` ONLY. NEVER add pull_request
+# * Triggers are `workflow_dispatch` ONLY. NEVER add pull_request
 #   or pull_request_target: this workflow holds an API key, and the harness
 #   runs the agent under test with `--permission-mode bypassPermissions` (the
 #   explicit `--permission-mode` on the run_eval.py step below; the harness
@@ -196,8 +196,6 @@
 name: Real eval
 
 on:
-  schedule:
-    - cron: "0 7 * * 2" # Tuesdays 07:00 UTC
   workflow_dispatch:
     inputs:
       fixture:

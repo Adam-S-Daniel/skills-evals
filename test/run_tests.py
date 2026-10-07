@@ -4217,14 +4217,14 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "#", line, f"line {lineno} has a trailing comment "
                         "on a uses: line")
 
-    def test_triggers_are_exactly_schedule_and_dispatch(self):
+    def test_triggers_are_exactly_manual_dispatch(self):
         doc = self._doc()
         triggers = doc.get("on", doc.get(True))
         self.assertEqual(
-            set(triggers), {"schedule", "workflow_dispatch"},
+            set(triggers), {"workflow_dispatch"},
             "eval.yml holds a live API key and runs the agent under "
-            "bypassPermissions — pull_request/pull_request_target must never "
-            "be added, per the header's first rule")
+            "bypassPermissions — scheduled runs use the weekly routine, and "
+            "pull_request/pull_request_target must never be added")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
         # B1 (round 3 on #209, blocker; extended round 4, blocker),
@@ -6327,9 +6327,10 @@ class TestIssue67(unittest.TestCase):
     def test_eval_workflow_keeps_its_security_posture(self):
         raw, doc = self._eval_workflow()
         triggers = doc.get("on", doc.get(True))
-        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
+        self.assertEqual(sorted(triggers), ["workflow_dispatch"],
                          "eval.yml holds a credential and runs the agent under "
-                         "bypassPermissions — no pull_request trigger, ever")
+                         "bypassPermissions — the weekly routine owns the "
+                         "schedule; no pull_request trigger, ever")
         # `issues: write` is #147's one addition, for the roster-proposal
         # tracking issue. Asserted for EQUALITY here too, so a fourth
         # scope reds this row as well as its sibling in

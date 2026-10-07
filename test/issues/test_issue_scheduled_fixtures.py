@@ -65,7 +65,7 @@ class TestScheduledFixtures(unittest.TestCase):
 
     def test_dispatch_defaults_and_explicit_fixture_are_unchanged(self):
         trigger = doc().get("on", doc().get(True))
-        self.assertEqual(trigger["schedule"], [{"cron": "0 7 * * 2"}])
+        self.assertEqual(set(trigger), {"workflow_dispatch"})
         self.assertEqual(trigger["workflow_dispatch"]["inputs"]["fixture"]["default"], EXPECTED[0])
         events = [{}, {"inputs": {}}, {"inputs": {"fixture": ""}},
                   {"inputs": {"fixture": None}}]

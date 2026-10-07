@@ -2,15 +2,18 @@
 
 - **Status:** proposed (2026-10-04)
 - **Issue:** [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68), partially implemented.
-- **Deciders:** the owner requested that scheduled runs include additional ready evals; this package fixes the initial four entries and then appends the fixtures that qualified locally on 2026-10-05.
+- **Deciders:** the owner requested that scheduled runs include additional ready evals; this package fixes the initial four entries and then appends the fixtures that qualified locally on 2026-10-05. On 2026-10-06, Adam decided the weekly routine replaces `eval.yml`'s Tuesday schedule after the [weekly routine PR](https://github.com/Adam-S-Daniel/skills-evals/pull/331) merged.
 
 ## Context
 
-[The real-eval workflow](../../.github/workflows/eval.yml) schedules one
-fixture because a schedule has no dispatch input and selection falls back
-to `evals/workflow-path-audit`. Three more fixtures have local qualification
-evidence. Automatically discovering every fixture would also run unfinished
-or unqualified work, and readiness must remain an explicit reviewed decision.
+[The weekly routine](../../.github/workflows/routine-eval-weekly.yml) plans
+the reviewed fixture list and dispatches eval mode through the routine fire
+workflow. Adam's 2026-10-06 decision, following the [weekly routine PR
+merge](https://github.com/Adam-S-Daniel/skills-evals/pull/331), retired
+`eval.yml`'s Tuesday schedule; `eval.yml` keeps its one-fixture manual
+dispatch. Three more fixtures have local qualification evidence.
+Automatically discovering every fixture would also run unfinished or
+unqualified work, and readiness must remain an explicit reviewed decision.
 
 The workflow runs committed fixture content with a short-lived, spend-capped
 federated bearer. Each agent runner has read-only repository access and its
@@ -52,9 +55,11 @@ and simultaneous publishers would compete for the same results branch.
    errored without-skill trial (a timeout and invalid JSON), and
    `evals/rename-pdfs` shows no with-skill advantage (objective 4 vs 4,
    judge 3.4 vs 3.97); all three stay off.
-2. A read-only planning job reads the schedule list only for `schedule`.
-   `workflow_dispatch` still reads `fixture` from `GITHUB_EVENT_PATH`, with
-   today's single-fixture default and unchanged `roster_only` behavior.
+2. The weekly routine's read-only planning job reads the reviewed schedule
+   list and dispatches each fixture through `routine-eval-fire.yml`.
+   `eval.yml`'s `workflow_dispatch` still reads `fixture` from
+   `GITHUB_EVENT_PATH`, with today's single-fixture default and unchanged
+   `roster_only` behavior.
    Reject malformed schemas, duplicate entries, invalid path characters,
    and paths outside the committed fixture set before emitting the matrix.
 3. Run one eval matrix leg per fixture, `fail-fast: false`, `max-parallel: 2`.
@@ -84,7 +89,7 @@ and simultaneous publishers would compete for the same results branch.
 
 ## Consequences
 
-The weekly schedule exercises exactly the reviewed list, and adding an entry
+The weekly routine exercises exactly the reviewed list, and adding an entry
 is a visible spend decision. The workflow's existing estimate is about
 $0.30–0.90 per skill fixture: eight fixtures imply about $2.40–7.20 per
 scheduled run, or $12.00–36.00 for five weekly runs. These are estimates rather than
