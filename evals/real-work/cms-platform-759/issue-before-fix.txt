@@ -1,0 +1,30 @@
+A long URL or identifier in a post widens the whole page (no overflow-wrap on post text, excerpts or inline code)
+
+Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai visitor pass, local build of https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4126 at platform v0.1.148).
+
+**Severity:** major (any post that quotes a long URL gives a phone a sideways-scrolling page).
+
+## Steps
+
+1. Put a paragraph in a post containing a long unbroken string, for example a 110-character `https://example.com/aaaa…/end` URL, and a 90-character inline `code` span.
+2. Open the post, then `/blog/`, `/` (Latest Posts) and the post's tag page (excerpts).
+
+Viewports: 390×844 (touch), 820×1180, 1440×900; Chromium, WebKit phone and Firefox desktop all the same.
+
+## Seen
+
+The URL runs on one line past the right margin. The document becomes about 1660px wide at a 1440 viewport (about 1330px at 390), so the header and footer rules stop short of the right edge and a phone scrolls sideways. The same happens in the excerpt on the blog index, home and tag page. The inline code span also pokes out of the column on a phone.
+
+## Expected
+
+Long words break inside the column; the page is never wider than the viewport.
+
+## Cause (verified at origin/main 0c0bf38)
+
+`theme/assets/css/main.css` has no `overflow-wrap` / `word-break` rule anywhere: not on `.post-content` (l.594), `.post-excerpt` (l.494) or inline `code` (l.141). `pre` and `table:not([class])` already scroll inside their own box (#540 / #729), so this is only about running text and inline code. Something like `overflow-wrap: anywhere` on `.post-content`, `.post-excerpt` and `:not(pre) > code` would do it; a browser fixture with a long URL at 390px would lock it.
+
+## Evidence (local)
+
+`~/sprint-out/s18/ux/ad-visitor/shots/`: `s4-desk-scratch-full.png`, `s4-phone-scratch-full.png`, `s4-desk-tag-aitools.png`, `s1-webkit-phone-home-full.png`, `s11-tablet-blog.png`. The tester used one scratch post in a throwaway copy; no real post has a string this long yet.
+
+Related: https://github.com/Adam-S-Daniel/cms-platform/issues/540 (tables and iframes, a different element).

@@ -1,0 +1,379 @@
+# Reusable per-PR @parity gate against the deployed preview surface.
+#
+# Runs the subset of @parity specs that are preview-compatible (no Decap
+# local_backend dependency) against the PR's already-deployed
+# preview-pr<N>.<apex> surface:
+#
+#   1. Each spec is path-conditioned — selectParityPreviewSpecs() in the
+#      platform's e2e/select-specs.js maps each spec to the paths whose
+#      changes can affect what it covers. No applicable file changed →
+#      the job reports success without running anything.
+#   2. TARGET=preview + PR_NUMBER set, so e2e/base.js routes every
+#      page.goto/page.request at https://preview-pr<N>.<apex>.
+#   3. needs:deploy-preview semantics via a bounded poll (GHA has no
+#      cross-workflow needs:): the wait step blocks until preview-pr<N>
+#      serves 200, max ~20 min.
+#
+# ALWAYS-RUN + EARLY-SKIP (NOT workflow `paths:`): the @parity selector
+# lives inside the job so the check context is always present.
+# Non-salient PRs early-skip green in ~10 s with no wait-for-preview.
+#
+# A consuming site calls this from a thin wrapper that owns the
+# pull_request trigger + run-name (see examples/site/.github/workflows/
+# parity-preview.yml). The harness + composite live in the platform,
+# checked out into `.cms-platform/`.
+#
+# PLATFORM PORT NOTES (vs adamdaniel.ai@origin/main): GHCR build-image +
+# `container:` DROPPED for inline deps; the `bundle exec jekyll build`
+# step (the parity-preview specs that read _site/ need a local build)
+# and the container-only `/__w/<repo>/<repo>` safe.directory line were
+# DROPPED — this reusable does NOT build the site itself, so a consuming
+# site that needs the _site/-reading parity specs must run them in a
+# job that has built the site. The deployed-preview parity specs
+# (sitemap/console-clean/admin-bundle-parity) work as-is.
+name: Parity (preview, reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "PR number whose preview surface to probe; wired to PR_NUMBER."
+        required: true
+        type: string
+      base_ref:
+        description: "Base ref the PR targets (e.g. main); used for the salient-path diff."
+        required: false
+        type: string
+        default: main
+      apex:
+        description: "Site apex domain, e.g. example.com (no scheme). Builds preview-pr<N>.<apex>; wired to CMS_APEX."
+        required: true
+        type: string
+      platform_repo:
+        description: "owner/name of the platform repo holding the e2e harness + composite action."
+        required: false
+        type: string
+        default: Adam-S-Daniel/cms-platform
+      platform_ref:
+        description: "Tag/sha of the platform repo to fetch the harness from (pin to the same ref as this workflow)."
+        required: false
+        type: string
+        default: main
+    secrets:
+      CMS_E2E_PAT:
+        required: false
+
+permissions:
+  contents: read
+  # post-failure-comment composite needs this to post the failure
+  # summary on the PR (preview-unreachable or spec failure).
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ── THE WORK JOB: it carries the wall clock and publishes NO required ────
+  #
+  # `timeout-minutes` lives HERE and never on the `parity` gate below, because a
+  # job GitHub kills at its wall concludes `cancelled`, NOT `timed_out`. A
+  # CANCELLED required context hard-blocks the merge — the API answers
+  # `405 Required status check "<ctx>" is cancelled` — and nothing overrides it:
+  # not native auto-merge, not an explicit merge call, not a nudge bot, not an
+  # admin. Measured on adamdaniel.ai PR #3217 (2026-08-19): `parity / parity` ran
+  # 15:22:19Z → 15:52:45Z — 30m26s, exactly this wall — and concluded `cancelled`
+  # with NO `concurrency` group anywhere near it, v0.1.87 having already deleted
+  # those. Again on PR #3202: 04:40:11Z → 05:10:27Z, 30m16s. So the group #285
+  # removed was only ONE route to a cancelled required context; the timeout is a
+  # second one, and the #285 rule never covered it. cms-platform#289.
+  #
+  # This job publishes `<caller job> / parity-probe`, which no ruleset names, so
+  # ITS cancellation is informational. The gate below turns it into a RED
+  # `parity / parity`, which a human can simply re-run.
+  #
+  # WHY A GATE JOB AND NOT AN IN-JOB WATCHDOG that exits just before the wall:
+  # this is the shape the repo already uses for exactly this problem —
+  # `e2e-tests.yml` publishes `e2e / e2e` from an `if: always()` job over its
+  # `project` matrix, and `visual-regression.yml` publishes
+  # `visual-regression / approve-regression` the same way. A watchdog would have
+  # to be threaded into every step's shell, would re-guess the remaining budget
+  # at each one, and still could not stop the wall arriving first inside a step
+  # it does not own (an `npx playwright test`, a composite action).
+  parity-probe:
+    runs-on: ubuntu-latest
+    env:
+      CMS_APEX: ${{ inputs.apex }}
+      CMS_REPO: ${{ github.repository }}
+    # Worst case: 20 min preview wait + spec runs. Generous bound so the
+    # gate doesn't flake on a slow deploy-preview.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout site
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The PR merge commit plus its two parents, not full history
+          # (cms-platform#541): the select step deepens it with
+          # ensure-merge-base.js until the diff against the base tip is
+          # provably the one a full clone gives.
+          fetch-depth: 2
+
+      - name: Checkout platform (e2e harness + composite action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+
+      - name: Install selector dep (yaml) for the early-skip gate
+        working-directory: .cms-platform/e2e
+        run: npm install --no-save --no-audit --no-fund yaml@2.9.1
+
+      - name: Select applicable @parity specs
+        id: select
+        # Reuse the platform's e2e/select-specs.js SPEC_RULES — the same
+        # single source of truth the regular e2e matrix uses. Runs the
+        # selector's git diff against the SITE tree (CWD = workspace
+        # root) while invoking the PLATFORM's copy of the script. Emits
+        # the subset as a space-separated list on `specs`, plus `count`
+        # for the early-skip gate. Runs BEFORE the heavy install so a
+        # non-salient PR pays nothing.
+        env:
+          GITHUB_BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          set -o pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # Fail closed: without a proven merge base the selector's diff is
+          # wrong or empty, and an empty selection reports success.
+          node .cms-platform/e2e/ensure-merge-base.js --base "$GITHUB_BASE_REF" || exit 1
+          node .cms-platform/e2e/select-specs.js --parity-preview --base "origin/$GITHUB_BASE_REF" \
+            | tee /tmp/parity-select.json
+          specs=$(node -e "
+            const j = JSON.parse(require('fs').readFileSync('/tmp/parity-select.json','utf8'));
+            process.stdout.write((j.files || []).join(' '));
+          ")
+          echo "specs=${specs}" >> "$GITHUB_OUTPUT"
+          if [ -z "$specs" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "No applicable parity-preview spec for this diff — reporting success."
+          else
+            echo "count=$(echo "$specs" | wc -w | tr -d ' ')" >> "$GITHUB_OUTPUT"
+            echo "Applicable specs:"
+            echo "$specs" | tr ' ' '\n' | sed 's/^/  /'
+          fi
+
+      - name: Install harness deps
+        if: steps.select.outputs.count != '0'
+        working-directory: .cms-platform/e2e
+        run: npm ci
+
+      - name: Install Playwright browser + system deps
+        if: steps.select.outputs.count != '0'
+        uses: ./.cms-platform/.github/actions/install-playwright-browsers
+        with:
+          browser: chromium
+          # The `parity-probe` job's timeout-minutes is 30; keep the composite's
+          # worst case under it so a stalled mirror surfaces as this action's
+          # diagnostic rather than an opaque job timeout, and still leaves room
+          # for the probe itself. (Locked by
+          # e2e/playwright-install-bounded.test.js.)
+          final-timeout-seconds: '900'
+
+      # A DEPENDABOT PR HAS NO PREVIEW, BY DESIGN — so it must not wait for one
+      # and must not be failed for its absence (#383). deploy-preview.yml's
+      # `deploy-preview` job carries `github.actor != 'dependabot[bot]'`
+      # because Dependabot runs cannot reach the OIDC role secret and the
+      # preview exists for a human reviewer. But select-specs.js classifies
+      # `Gemfile*` as render-salient (RENDER_FANOUT_PATTERNS — a gem bump can
+      # move every rendered byte), so a lockfile-only Dependabot PR selected
+      # specs, waited the full ~20 min for a host that was never going to
+      # exist, and hard-failed `parity / parity` — a REQUIRED context.
+      # Measured: adamdaniel.ai#3443 (Gemfile.lock only) stayed blocked until a
+      # human re-pushed the branch under their own name, which is the only
+      # thing that ever cleared it. The human-attributed update-branch path
+      # still gets the full probe, so nothing is weakened: the surface a
+      # reviewer actually looks at is still gated exactly as before.
+      #
+      # The clause below is BYTE-IDENTICAL to deploy-preview.yml's, and
+      # e2e/parity-preview-dependabot-skip.test.js extracts it from that file
+      # and asserts these steps carry it, so the two cannot drift apart again.
+      - name: Wait for the preview surface (bounded)
+        if: steps.select.outputs.count != '0' && github.actor != 'dependabot[bot]'
+        id: preview
+        # deploy-preview is a different workflow so we can't `needs:` it.
+        # Poll the preview host with a generous bound (~20 min), then
+        # hard-fail in the next step if it never came up.
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CMS_APEX: ${{ inputs.apex }}
+        run: |
+          set -uo pipefail
+          host="https://preview-pr${PR_NUMBER}.${CMS_APEX}"
+          echo "Probing ${host}/ for readiness (bounded ~20 min)…"
+          reachable=false
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${host}/" || echo "000")
+            echo "  ${host}/ -> ${code}"
+            if [ "$code" = "200" ]; then
+              reachable=true
+              break
+            fi
+            sleep 30
+          done
+          echo "reachable=${reachable}" >> "$GITHUB_OUTPUT"
+          echo "host=${host}" >> "$GITHUB_OUTPUT"
+
+      - name: Require preview (hard-fail if unreachable on a salient PR)
+        if: ${{ steps.select.outputs.count != '0' && steps.preview.outputs.reachable != 'true' && github.actor != 'dependabot[bot]' }}
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CMS_APEX: ${{ inputs.apex }}
+        run: |
+          msg="preview-pr${PR_NUMBER}.${CMS_APEX} was not reachable within ~20 min on a parity-salient PR. parity-preview asserts the deployed preview matches this PR's intent; without a live preview the gate cannot run. If deploy-preview was path-skipped or failed, make a change that triggers it (or re-run deploy-preview) and push again."
+          echo "::error title=parity-preview::${msg}"
+          echo "$msg" | tee /tmp/parity-preview.log
+          exit 1
+
+      # The positive half: SAY the gate was satisfied without a preview, and
+      # why. A silently-skipped required check is the shape #371 is about — a
+      # context nobody can explain reads either as broken or as ignorable.
+      # This step is what makes `parity / parity` green here a decision rather
+      # than an accident. The spec-run step below is skipped on its own
+      # `reachable == 'true'` condition, which is empty when the wait never
+      # ran, so the probe reaches the end and succeeds.
+      - name: Dependabot PR — preview gate satisfied without a preview
+        if: ${{ steps.select.outputs.count != '0' && github.actor == 'dependabot[bot]' }}
+        run: |
+          set -euo pipefail
+          msg="Dependabot PRs never get a preview environment (deploy-preview.yml skips them: no OIDC role secret, and the preview is for a human reviewer). This diff is parity-salient, but there is no preview surface to probe, so the preview wait and its hard-fail are skipped and this gate reports satisfied. A human-attributed push to the same branch — including the update-branch path — gets the full probe. See cms-platform#383."
+          echo "::notice title=parity-preview::${msg}"
+
+      - name: Run @parity-preview specs
+        if: ${{ steps.select.outputs.count != '0' && steps.preview.outputs.reachable == 'true' }}
+        working-directory: .cms-platform/e2e
+        env:
+          # PW_PROJECT — the project(s) this step runs. e2e/install-browsers-on-miss.js
+          # narrows its missing-engine check to these projects' engines; without it the
+          # blanket check reports the engines this job never installed as "missing" and
+          # re-downloads them, while crying wolf about ci-runner image drift.
+          # Locked by e2e/engine-scope-lint.test.js.
+          PW_PROJECT: "chromium-desktop-1080,chromium-desktop-3k"
+          # Routes Playwright baseURL + page.request at
+          # https://preview-pr<N>.<apex> (PR_NUMBER short-circuits base.js's
+          # gh lookup).
+          TARGET: preview
+          PR_NUMBER: ${{ inputs.pr_number }}
+          GITHUB_TOKEN: ${{ secrets.CMS_E2E_PAT || secrets.GITHUB_TOKEN }}
+          # The crawl specs (console-clean, sitemap) build their content-URL
+          # list from the CONSUMER's SOURCE tree and resolve it as
+          # `SITE_ROOT || __dirname/..`. The harness is checked out into
+          # `.cms-platform/`, so without SITE_ROOT they'd read the PLATFORM
+          # fixture _config.yml (keeps all base collections) and crawl
+          # /blog/ + /tags/ — which a `base_collections: []` single-page
+          # consumer 404s (jodidaniel.com #35). Point SITE_ROOT at the site
+          # checkout (the FIRST, default-path checkout) so the #33 single-page
+          # opt-out (cap.keepsBaseCollection) reads the right config.
+          SITE_ROOT: ${{ github.workspace }}
+          PW_SPECS: ${{ steps.select.outputs.specs }}
+        run: |
+          set -o pipefail
+          # The @parity specs span the public lane (chromium-desktop-1080)
+          # and the admin lane (chromium-desktop-3k); run both. Playwright
+          # handles per-spec project gating.
+          read -r -a specs <<< "$PW_SPECS"
+          export PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/parity-preview.log.json
+          status=0
+          npx playwright test "${specs[@]}" \
+            --project=chromium-desktop-1080 --project=chromium-desktop-3k \
+            --reporter=list,html,json \
+            > /tmp/parity-preview.log 2>&1 || status=$?
+          node summarize-playwright.js "${PLAYWRIGHT_JSON_OUTPUT_FILE}"
+          exit "$status"
+
+      - name: Upload artifacts
+        if: ${{ !cancelled() && steps.select.outputs.count != '0' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: test-results-parity-preview
+          path: |
+            .cms-platform/e2e/test-results/
+            /tmp/parity-preview.log
+            /tmp/parity-preview.log.json
+            .cms-platform/e2e/playwright-report/
+            /tmp/parity-select.json
+          retention-days: 7
+
+      - name: Post failure summary
+        if: ${{ failure() && steps.select.outputs.count != '0' }}
+        uses: ./.cms-platform/.github/actions/post-failure-comment
+        with:
+          mode: post
+          log-file: /tmp/parity-preview.log
+          marker: parity-preview-failure-summary
+          title: parity-preview
+          pr-number: ${{ inputs.pr_number }}
+
+      - name: Resolve failure summary on success
+        if: ${{ success() && steps.select.outputs.count != '0' }}
+        # FAIL-OPEN: this step only stamps an EXISTING failure comment as
+        # resolved. It runs on success(), so its own failure says nothing about
+        # the tests — but without this it turns a fully GREEN job red, and via
+        # the aggregating gate that blocks merges. Observed 2026-08-12:
+        # adamdaniel.ai e2e run 31569023550 passed its tests, failed HERE, reddened
+        # `e2e / e2e`, blocked seed PR #3063, timed out cms-scheduled-publish-loop
+        # after 25 min and filed health-audit issue #3064. Same fail-open rationale
+        # the ephemeral-branch cleanup steps already carry. Locked by
+        # e2e/resolve-summary-fail-open.test.js.
+        continue-on-error: true
+        uses: ./.cms-platform/.github/actions/post-failure-comment
+        with:
+          mode: resolve
+          marker: parity-preview-failure-summary
+          title: parity-preview
+          pr-number: ${{ inputs.pr_number }}
+
+  # ── THE REQUIRED STATUS CONTEXT ──────────────────────────────────────────
+  #
+  # Branch protection requires `<caller-job> / parity` (`parity / parity` on both
+  # consumers). This job is the ONLY thing that ruleset has to know about, so do
+  # NOT rename it — and do NOT give it a `timeout-minutes`. Being a job that
+  # cannot be killed at a wall IS its purpose: the context it publishes can then
+  # only ever be success or failure.
+  #
+  # `always()` so a red, skipped or CANCELLED probe still reports here instead of
+  # leaving the required check pending forever (the missing-check trap), and so a
+  # cancelled RUN still gets a translated verdict rather than a cancelled one.
+  #
+  # Locked by e2e/required-context-cancellable.test.js (platform tree + the
+  # examples/site templates) and its CONSUMER-mode sibling
+  # e2e/consumer-required-context-cancellable.test.js.
+  parity:
+    needs: parity-probe
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the parity probe
+        env:
+          PROBE_RESULT: ${{ needs.parity-probe.result }}
+        run: |
+          set -euo pipefail
+          echo "parity-probe result: ${PROBE_RESULT}"
+          if [ "${PROBE_RESULT}" = "success" ]; then
+            echo "The parity probe passed."
+            exit 0
+          fi
+          msg="The parity-probe job concluded ${PROBE_RESULT} — read that job for the reason."
+          if [ "${PROBE_RESULT}" = "cancelled" ]; then
+            msg="${msg} A cancelled probe is usually its 30-minute timeout-minutes wall:"
+            msg="${msg} GitHub reports a job it killed at the wall as cancelled, never as"
+            msg="${msg} timed_out. This gate reports that as FAILURE deliberately — a"
+            msg="${msg} cancelled REQUIRED context cannot be merged past by any mechanism,"
+            msg="${msg} whereas a failed one can be re-run (cms-platform#289)."
+          fi
+          echo "::error title=parity::${msg}"
+          exit 1

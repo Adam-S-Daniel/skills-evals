@@ -1,0 +1,64 @@
+# Real-work fixture: cms-platform#759, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/cms-platform/pull/759, the fix for https://github.com/Adam-S-Daniel/cms-platform/issues/753.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  1ec0b25c1336457f4613b06c90b054ad1539f89d (merge-first-parent)
+#   merge 1709778157b7b8dc87bfceff24a112dc5249367f
+# Checker overlay: the merge commit's e2e/theme-overflow-wrap-css.test.js.
+# Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
+# Also every e2e spec but the checker's own (291 trimmed).
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#753 as it stood before the pull request's first commit (read with gh api graphql).
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+- {manager: npm, dir: e2e}
+prompt: |
+  A long URL or identifier in a post widens the whole page (no overflow-wrap on post text, excerpts or inline code)
+
+  Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai visitor pass, local build of https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4126 at platform v0.1.148).
+
+  **Severity:** major (any post that quotes a long URL gives a phone a sideways-scrolling page).
+
+  ## Steps
+
+  1. Put a paragraph in a post containing a long unbroken string, for example a 110-character `https://example.com/aaaa…/end` URL, and a 90-character inline `code` span.
+  2. Open the post, then `/blog/`, `/` (Latest Posts) and the post's tag page (excerpts).
+
+  Viewports: 390×844 (touch), 820×1180, 1440×900; Chromium, WebKit phone and Firefox desktop all the same.
+
+  ## Seen
+
+  The URL runs on one line past the right margin. The document becomes about 1660px wide at a 1440 viewport (about 1330px at 390), so the header and footer rules stop short of the right edge and a phone scrolls sideways. The same happens in the excerpt on the blog index, home and tag page. The inline code span also pokes out of the column on a phone.
+
+  ## Expected
+
+  Long words break inside the column; the page is never wider than the viewport.
+
+  ## Evidence (local)
+
+  `~/sprint-out/s18/ux/ad-visitor/shots/`: `s4-desk-scratch-full.png`, `s4-phone-scratch-full.png`, `s4-desk-tag-aitools.png`, `s1-webkit-phone-home-full.png`, `s11-tablet-blog.png`. The tester used one scratch post in a throwaway copy; no real post has a string this long yet.
+
+  Related: https://github.com/Adam-S-Daniel/cms-platform/issues/540 (tables and iframes, a different element).
+
+  Keep long strings within the column in prose, listing previews and short code spans, preserving table sizing and scrolling blocks.
+
+  Interface the reviewer’s tests use
+
+  The reviewer parses `theme/assets/css/main.css` with PostCSS. It reads the final `overflow-wrap` declaration on each exact selector `.post-content`, `.post-excerpt` and `:not(pre) > code`, requiring the value `break-word`. It also checks that no declaration lowers table min-content sizing and that `pre` and `table:not([class])` keep their horizontal scroll behavior.
+interface_strings: [theme/assets/css/main.css, overflow-wrap, .post-content, .post-excerpt, ':not(pre) > code', break-word, pre, 'table:not([class])']
+issue_before_fix: issue-before-fix.txt
+issue_created_at: '2026-10-06T04:42:17Z'
+issue_last_edited_at: null
+first_commit_at: '2026-10-06T04:46:52Z'
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [node, e2e/node_modules/@playwright/test/cli.js, test, --config=e2e/playwright.unit.config.js, --workers=1]
+  fail_to_pass:
+  - [theme-overflow-wrap-css.test.js, --grep, breaks an unbroken string|wrap reaches inline code]
+  pass_to_pass:
+  - [theme-overflow-wrap-css.test.js, --grep, nothing lowers min-content|bare table]
