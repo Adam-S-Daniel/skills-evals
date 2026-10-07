@@ -4,7 +4,8 @@
 # the eval routine; a person confirms them before removing `draft: true`.
 #   base  22023bce0f1d1b70672d456341b927a77cc0035e (merge-first-parent)
 #   merge dd22fe4a89e0085b2793155c57ff8289f3b9c1e6
-# Checker overlay: the merge commit's theme/spec/auto_tag_pages_test.rb, theme/spec/tag_feeds_test.rb.
+# TRIAL (not the scaffolder's output): prompt is the ad-visitor tester's N2 finding plus cms-platform#735's text; tag_feeds_test dropped because the report never mentions feeds.
+# Checker overlay: the merge commit's theme/spec/auto_tag_pages_test.rb.
 # Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
 # Also every e2e spec but the checker's own (292 trimmed).
 # issue-before-fix.txt is Adam-S-Daniel/cms-platform#754 as it stood before the pull request's first commit (read with gh api graphql).
@@ -13,34 +14,37 @@ subject: any
 draft: true
 strip_agent_context: true
 prompt: |-
-  Tags that differ only by case (quotes / Quotes) show as two identical cards and one tag page drops the other's posts
+  **N2 — major — Tags that differ only by case show as two identical cards, and one tag page hides the other tag's posts**
+  - Where: /tags/, home Tags row, /tags/quotes/. cms-platform theme tag pages. Related to cms-platform#735 (editors can create "quote"/"Quotes" duplicates; its text is below). New.
+  - Steps: with posts tagged `quotes` (real Opus post) and `Quotes` (scratch post), opened /tags/ and clicked the second QUOTES card, then /tags/quotes/.
+  - Saw: two cards both reading "QUOTES 1", both linking to /tags/quotes/ (`s4-desk-tags.png`, home Tags row in `s1-firefox-desk-home-full.png`). The tag page lists only the scratch post: the original Opus post vanishes from its own tag page (`s5-tag-quotes-merged.png`).
+  - Expected: tags normalized (case-insensitively) so they merge, or at least both posts listed on the shared page; no indistinguishable duplicate cards.
 
-  Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai visitor pass, local build at platform v0.1.148).
+  Issue cms-platform#735, as it stood when this was reported:
 
-  **Severity:** minor (no live post has a case-variant tag today, but when one appears, a post silently drops off its own tag page).
+  # Tags field doesn't suggest existing tags, so "quote" and "Quotes" duplicates are easy to create
+
+  Found in the 2026-10-05 exploratory round on a local adamdaniel.ai admin (simple mode, platform v0.1.144), 1440×900.
 
   ## Steps
 
-  1. Have one post tagged `quotes` and another tagged `Quotes`.
-  2. Open `/tags/`, the home Tags row, and `/tags/quotes/`.
+  1. New post. In **Tags**, type `quo` — the site already has a tag `quotes`.
 
-  Viewport: 1440×900 Chromium (also seen in Firefox home).
+  ## What happens
 
-  ## Seen
+  No suggestion appears. Tags show as a plain comma-separated string, with a trailing comma after the last one. Nothing stops a writer from creating `quote` or `Quotes` next to `quotes`, and each would get its own archive page.
 
-  - Two identical cards, both "QUOTES 1", both linking to `/tags/quotes/`.
-  - `/tags/quotes/` lists only the `Quotes` post; the `quotes` post is gone from its own tag page.
+  **Severity:** minor (enhancement).
 
-  ## Expected
+  ## Suggested direction
 
-  Tags that slugify the same are one tag: one card with the combined count, and one archive (and tag feed) listing every post.
+  - [ ] Offer existing tags as you type (for example a relation-style or custom widget fed from the tags already used in `_posts`), while still allowing a new tag.
+  - [ ] Normalize case on save, or warn when a new tag differs from an existing one only by case or plural.
 
-  ## Task
+  Related: https://github.com/Adam-S-Daniel/cms-platform/issues/638 (closed) fixed the Tags hint and comma splitting.
 
-  Make case-variant tags behave consistently across the tag cards, archive pages, and feeds, with every matching post represented.
-
-  Interface the reviewer's tests use: `Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)` returns `[missing, all]`, where `missing` is a list of names and `all` is a list of rows with `name`, `slug`, `url`, `description`, and `count`; `Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)` returns a mapping from slugs to lists of distinct post objects; `Jekyll::TagFeeds::Generator.new.generate(site)` generates feeds and honors feed exclusions.
-interface_strings: ['Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)', 'Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)', 'Jekyll::TagFeeds::Generator.new.generate(site)']
+  Interface the reviewer's tests use: `Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)` returns `[missing, all]`, where `missing` is a list of names and `all` is a list of rows with `name`, `slug`, `url`, `description`, and `count`; `Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)` returns a mapping from slugs to lists of distinct post objects.
+interface_strings: ['Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)', 'Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)']
 issue_before_fix: issue-before-fix.txt
 issue_created_at: '2026-10-06T04:42:18Z'
 issue_last_edited_at: null
@@ -53,4 +57,3 @@ objective_checks:
   argv: [bash, -c, exec ruby "$1", ruby]
   fail_to_pass:
   - [theme/spec/auto_tag_pages_test.rb]
-  - [theme/spec/tag_feeds_test.rb]
