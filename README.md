@@ -185,8 +185,10 @@ python3 scripts/board_feed.py --out board.json
 
 Use `--repo DIR`, `--main-ref REF`, and `--results-ref REF` for another local
 repository or snapshot. The only written file is `--out`; its parent must exist.
-The refs resolve once to immutable commits, and every source link uses those
-commits. `meta.asOf` is the later input commit's committer timestamp, so identical
+The main and results refs resolve once to immutable commits, and their source
+links use those commits. Guidance manifest links use the supplied manifest commit
+when available. The canonical board script link intentionally follows `main`.
+`meta.asOf` is the later input commit's committer timestamp, so identical
 input trees and commits produce identical JSON.
 
 Results cover `results/`, `eval-results/`, and `routine-results/`, including

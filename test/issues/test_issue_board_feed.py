@@ -232,9 +232,7 @@ class BoardFeedTests(unittest.TestCase):
                       [row["fixture"] for row in self.build()["results"]["rows"]])
 
     def test_malformed_summaries_and_reports_remain_unknown(self):
-        cases = ("{", '{"agent":{},"agent":{}}', '{"judge":{"overall":NaN}}',
-                 '{"judge":{"overall":1e999}}', '[' * 20 + '0' + ']' * 20,
-                 "x" * 65537, "\x00")
+        cases = ("{", "\x00")
         for index, raw in enumerate(cases):
             self.summary(key=f"bad-{index}", doc=raw)
         self.write(f"results/report-only/{STAMP}/report.md", "# Report only\n")
@@ -249,6 +247,68 @@ class BoardFeedTests(unittest.TestCase):
             self.assertIsNone(row["model"])
         self.assertEqual(rows["report-only"]["arms"], [])
         self.assertEqual(rows["report-only"]["report"], "# Report only\n")
+
+    def test_duplicate_key_rejects_otherwise_valid_summary(self):
+        raw = json.dumps(single(unused=0))
+        self.summary(key="valid", doc=raw)
+        self.summary(key="duplicate", doc=raw[:-1] + ', "unused": 0}')
+        self.commit()
+        rows = {row["fixture"]: row for row in self.build()["results"]["rows"]}
+        self.assertEqual(rows["valid"]["arms"][0], {
+            "arm": "with_skill", "obj": 1, "total": 2, "judge": 8,
+            "tokens": 20, "turns": 4, "cost": 0.25, "n": 1})
+        self.assertTrue(all(value is None for key, value in
+                            rows["duplicate"]["arms"][0].items() if key != "arm"))
+        self.assertIsNone(rows["duplicate"]["model"])
+
+    def test_nonfinite_data_rejects_otherwise_valid_summary(self):
+        raw = json.dumps(single())
+        self.summary(key="valid", doc=single(unused=0))
+        for key, value in (("nan", "NaN"), ("infinity", "1e999")):
+            self.summary(key=key, doc=raw[:-1] + ', "unused": ' + value + '}')
+        self.commit()
+        rows = {row["fixture"]: row for row in self.build()["results"]["rows"]}
+        self.assertEqual(rows["valid"]["arms"][0], {
+            "arm": "with_skill", "obj": 1, "total": 2, "judge": 8,
+            "tokens": 20, "turns": 4, "cost": 0.25, "n": 1})
+        for key in ("nan", "infinity"):
+            with self.subTest(value=key):
+                self.assertTrue(all(value is None for field, value in
+                                    rows[key]["arms"][0].items() if field != "arm"))
+                self.assertIsNone(rows[key]["model"])
+
+    def test_nesting_limit_rejects_otherwise_valid_summary(self):
+        unused = 0
+        for _ in range(15):
+            unused = [unused]
+        self.summary(key="valid", doc=single(unused=unused))
+        self.summary(key="too-deep", doc=single(unused=[unused]))
+        self.commit()
+        rows = {row["fixture"]: row for row in self.build()["results"]["rows"]}
+        self.assertEqual(rows["valid"]["arms"][0], {
+            "arm": "with_skill", "obj": 1, "total": 2, "judge": 8,
+            "tokens": 20, "turns": 4, "cost": 0.25, "n": 1})
+        self.assertTrue(all(value is None for key, value in
+                            rows["too-deep"]["arms"][0].items() if key != "arm"))
+        self.assertIsNone(rows["too-deep"]["model"])
+
+    def test_blob_size_limit_rejects_otherwise_valid_summary(self):
+        raw = json.dumps(single(unused=""))
+        padding = 65536 - len(raw.encode("utf-8"))
+        valid = single(unused="x" * padding)
+        oversized = single(unused="x" * (padding + 1))
+        self.assertEqual(len(json.dumps(valid).encode("utf-8")), 65536)
+        self.assertEqual(len(json.dumps(oversized).encode("utf-8")), 65537)
+        self.summary(key="valid", doc=valid)
+        self.summary(key="too-large", doc=oversized)
+        self.commit()
+        rows = {row["fixture"]: row for row in self.build()["results"]["rows"]}
+        self.assertEqual(rows["valid"]["arms"][0], {
+            "arm": "with_skill", "obj": 1, "total": 2, "judge": 8,
+            "tokens": 20, "turns": 4, "cost": 0.25, "n": 1})
+        self.assertTrue(all(value is None for key, value in
+                            rows["too-large"]["arms"][0].items() if key != "arm"))
+        self.assertIsNone(rows["too-large"]["model"])
 
     def test_invalid_numeric_fields_and_missing_usage_are_null(self):
         docs = [single(agent={"usage": {"input_tokens": 2}, "num_turns": True,
