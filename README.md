@@ -616,13 +616,17 @@ fleet ran 6.3% and 3.0% of its turns on them — four arms' worth of spend per
 fixture to measure two tiers nobody uses. On the 2026-09-22 census (sonnet-5
 45.4%, opus-5 45.2%) the roster is two arms; ship an opus 5.1 and the opus
 tier, which qualifies, seats it beside opus-5 for three; ship a newer haiku or
-fable and nothing changes. **The no-census fallback is untouched**: with no
-usable usage there is no qualifying tier and a roster must not be empty, so
-the rule reverts to newest-per-tier across *all* tiers. When the census itself
-is unusable, each fallback reason names the degradation. When the census is
-usable but only its enter window fails a ranked-usage floor, the reason is
-the bare newest-per-tier sentence. No new threshold was added — rule 2 reads rule
-1's entry bar, and the numbers all stay in `evals/roster-policy.yml`.
+fable and nothing changes. Under that census the judge became
+`claude-fable-5-1` from `claude-fable-5`: the unchanged judge rule selects the
+strongest available model that is not an arm, so excluding `claude-fable-5-1`
+from the arm set changed the selection. **The no-census fallback is untouched**:
+with no usable usage there is no qualifying tier and a roster must not be
+empty, so the rule reverts to newest-per-tier across *all* tiers. When the
+census itself is unusable, each fallback reason names the degradation. When
+the census is usable but only its enter window fails a ranked-usage floor, the
+reason is the bare newest-per-tier sentence. No new threshold was added — rule
+2 reads rule 1's entry bar, and the numbers all stay in
+`evals/roster-policy.yml`.
 
 **A tier with a known vendor default follows the vendor** (Adam's decision,
 2026-09-27, [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202),

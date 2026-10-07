@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import importlib.util
 import json
 import os
 import shutil
@@ -547,6 +548,192 @@ class DepsTests(_Base):
         seed_prep.validate_fixture(
             {"strip_agent_context": True, "deps": [{"manager": "npm", "dir": "e2e"}]},
             self.fixture_dir)
+
+
+class PythonDepsTests(_Base):
+    PINS = ["pytest==9.0.3", "pluggy==1.6.0"]
+
+    def fixture(self):
+        return {"deps": [{"manager": "pip", "requirements": self.PINS}],
+                "objective_checks": [{"id": "python", "type": "repo_tests",
+                                      "overlay": "checker", "argv": ["python3", "-m", "pytest", "-q"],
+                                      "fail_to_pass": ["test_calc.py::test_venv"]}]}
+
+    def synthetic_venv(self, ws, pytest=False):
+        # A real interpreter symlink + venv config, without ensurepip/network.
+        venv = ws / seed_prep.PYTHON_DIR
+        (venv / "bin").mkdir(parents=True)
+        python = commands._fixed_interpreter("python3")
+        (venv / "bin" / "python3").symlink_to(python)
+        (venv / "pyvenv.cfg").write_text(
+            f"home = {Path(python).parent}\ninclude-system-site-packages = false\n", encoding="utf-8")
+        version = subprocess.run(
+            [python, "-I", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+        site = venv / "lib" / f"python{version}" / "site-packages"
+        site.mkdir(parents=True)
+        (site / "fixture_dependency.py").write_text("INSTALLED = True\n", encoding="utf-8")
+        if pytest:
+            for name in ("pytest", "_pytest", "pluggy", "packaging", "pygments", "iniconfig", "py"):
+                spec = importlib.util.find_spec(name)
+                if name == "py" and spec is None:
+                    # Older pytest versions import its standalone compatibility module.
+                    continue
+                self.assertIsNotNone(spec, f"runner dependency {name} must be installed")
+                if spec.submodule_search_locations is None:
+                    shutil.copyfile(spec.origin, site / (name + ".py"))
+                    continue
+                source = Path(importlib.util.find_spec(name).origin).parent
+                shutil.copytree(source, site / name)
+        return venv
+
+    def test_exact_complete_pins_are_validated_and_copied(self):
+        pins = ["pytest==9.0.3", "demo_pkg==1.0rc2"]
+        entry = {"manager": "pip", "requirements": pins}
+        self.assertEqual(seed_prep._deps_entries([entry]), [entry])
+        self.assertIsNot(seed_prep._deps_entries([entry])[0]["requirements"], pins)
+        maximum = {"manager": "pip", "requirements": [f"package{i}==1" for i in range(64)]}
+        self.assertEqual(seed_prep._deps_entries([maximum]), [maximum])
+        invalid = [None, [], ["pytest"], ["pytest>=9"], ["pytest==9.*"],
+                   ["-r local.txt"], ["https://example.com/pkg.whl"], ["./pkg"],
+                   ["pytest[extra]==9.0"], ["pytest==9.0; python_version>'3'"],
+                   ["pytest==9.0\n--index-url=https://example.com"], [7],
+                   ["Demo_pkg==1.0", "demo-pkg==2.0"],
+                   [f"package{i}==1" for i in range(65)]]
+        for requirements in invalid:
+            with self.subTest(requirements=requirements), self.assertRaises(guidance.GuidanceError):
+                seed_prep._deps_entries([{"manager": "pip", "requirements": requirements}])
+        for value in ([dict(entry, dir=".")], [entry, entry]):
+            with self.subTest(value=value), self.assertRaises(guidance.GuidanceError):
+                seed_prep._deps_entries(value)
+
+    def test_install_uses_clean_environment_exact_pins_and_bounded_children(self):
+        ws = self.workspace(FIXED)
+        calls = []
+        def install(argv, cwd, env, stdout, stderr, timeout):
+            calls.append((argv, cwd, env, timeout))
+            self.assertNotIn("PYTHONPATH", env)
+            self.assertNotIn("PIP_INDEX_URL", env)
+            self.assertNotIn("PRIVATE_VALUE", env)
+            self.assertNotIn(str(ws), env["PATH"])
+            if "venv" in argv:
+                self.synthetic_venv(ws)
+            else:
+                requirement_file = Path(argv[-1])
+                self.assertEqual(requirement_file.read_text().splitlines(), self.PINS)
+            return 0
+        with mock.patch.object(commands, "_run_command", side_effect=install):
+            self.assertIsNone(seed_prep.install_deps(
+                ws, self.fixture(), {"PATH": "/unsafe", "PYTHONPATH": "/unsafe",
+                                     "PIP_INDEX_URL": "https://example.com", "PRIVATE_VALUE": "private"}, 17))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], [commands._fixed_interpreter("python3"), "-I", "-m", "venv",
+                                     str(ws / seed_prep.PYTHON_DIR)])
+        self.assertEqual(calls[1][0][:-1], [str(ws / seed_prep.PYTHON_DIR / "bin" / "python3"),
+            "-I", "-m", "pip", "--isolated", "install", "--no-deps", "--only-binary=:all:",
+            "--disable-pip-version-check", "--no-input", "--requirement"])
+        self.assertEqual([call[3] for call in calls], [17, 17])
+        self.assertTrue(all(call[1] == ws for call in calls))
+
+    def test_install_failure_and_timeout_are_named_without_output(self):
+        for failure in (3, subprocess.TimeoutExpired(["pip"], 17), OSError("private")):
+            for step in (0, 1):
+                ws = self.workspace(FIXED)
+                count = 0
+                def install(argv, cwd, env, stdout, stderr, timeout):
+                    nonlocal count
+                    stderr.write(b"do-not-publish-this-marker")
+                    current, count = count, count + 1
+                    if current == step:
+                        if isinstance(failure, Exception):
+                            raise failure
+                        return failure
+                    self.synthetic_venv(ws)
+                    return 0
+                with self.subTest(failure=type(failure).__name__, step=step), \
+                        mock.patch.object(commands, "_run_command", side_effect=install):
+                    error = seed_prep.install_deps(ws, self.fixture(), {}, 17)
+                self.assertEqual(error["error"], "deps_failed")
+                self.assertNotIn("marker", error["detail"])
+                self.assertNotIn("private", error["detail"])
+                self.assertEqual(count, step + 1)
+
+    def test_preexisting_environment_paths_are_refused_before_spawn(self):
+        for kind in ("directory", "file", "symlink"):
+            ws = self.workspace(FIXED)
+            target = ws / seed_prep.PYTHON_DIR
+            if kind == "directory":
+                target.mkdir()
+            elif kind == "file":
+                target.write_text("keep")
+            else:
+                target.symlink_to(self.root / "missing")
+            with mock.patch.object(commands, "_run_command") as spawn:
+                error = seed_prep.install_deps(ws, self.fixture(), {}, 17)
+            self.assertEqual(error["error"], "deps_failed")
+            spawn.assert_not_called()
+            self.assertTrue(os.path.lexists(target))
+
+    def test_scorer_runs_pytest_in_venv_with_clean_env_and_no_install(self):
+        ws = self.workspace(FIXED)
+        self.synthetic_venv(ws, pytest=True)
+        (self.fixture_dir / "checker" / "test_calc.py").write_text(
+            "import os, sys, shutil\nimport fixture_dependency\n"
+            "def test_venv():\n"
+            "    assert sys.prefix.endswith('.fixture-python')\n"
+            "    assert fixture_dependency.INSTALLED\n"
+            "    assert 'PYTHONPATH' not in os.environ\n"
+            "    assert 'PIP_INDEX_URL' not in os.environ\n"
+            "    assert shutil.which('python3').startswith(sys.prefix)\n"
+            "    assert not shutil.which('claude').startswith(sys.prefix)\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"PYTHONPATH": "/unsafe", "PIP_INDEX_URL": "https://example.com"}), \
+                mock.patch.object(seed_prep, "install_deps") as install:
+            result = objective.run_checks(self.fixture(), str(ws), str(self.seed))[0]
+        self.assertTrue(result["passed"], result["detail"])
+        install.assert_not_called()
+
+    def test_missing_venv_fails_closed_and_private_flag_is_not_a_fixture_key(self):
+        ws = self.workspace(FIXED)
+        result = objective.run_checks(self.fixture(), str(ws), str(self.seed))[0]
+        self.assertFalse(result["passed"])
+        self.assertIn("not an allowed executable", result["detail"])
+        fixture = self.fixture()
+        fixture["objective_checks"][0]["_python_deps"] = True
+        with self.assertRaises(ValueError):
+            objective.run_checks(fixture, str(ws), str(self.seed))
+
+    def test_scorer_refuses_external_interpreter_and_symlinked_config(self):
+        for kind in ("python", "config", "bin", "root"):
+            ws = self.workspace(FIXED)
+            venv = self.synthetic_venv(ws)
+            if kind == "python":
+                (venv / "bin" / "python3").unlink()
+                other = self.root / "external-python"
+                other.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                other.chmod(0o700)
+                (venv / "bin" / "python3").symlink_to(other)
+            elif kind == "config":
+                other = self.root / "external-config"
+                (venv / "pyvenv.cfg").rename(other)
+                (venv / "pyvenv.cfg").symlink_to(other)
+            else:
+                path = venv / "bin" if kind == "bin" else venv
+                other = self.root / f"external-{kind}"
+                path.rename(other)
+                path.symlink_to(other, target_is_directory=True)
+            with self.subTest(kind=kind), mock.patch.object(commands, "_run_command") as spawn:
+                result = objective.run_checks(self.fixture(), str(ws), str(self.seed))[0]
+            self.assertFalse(result["passed"])
+            spawn.assert_not_called()
+
+    def test_reserved_seed_and_overlay_paths_are_refused_at_load(self):
+        for location in (self.seed, self.fixture_dir / "checker"):
+            path = location / seed_prep.PYTHON_DIR
+            path.mkdir()
+            (path / "payload").write_text("reserved", encoding="utf-8")
+            with self.subTest(location=location.name), self.assertRaises(guidance.GuidanceError):
+                seed_prep.validate_fixture(self.fixture(), self.fixture_dir)
+            shutil.rmtree(path)
 
 
 class ObjectiveOnlyRunTests(_Base):

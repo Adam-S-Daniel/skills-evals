@@ -4056,6 +4056,11 @@ def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
             # `dir_listing_matches` only reads `expected_file` from the seed,
             # which is pristine by contract (it may sit under a stripped path).
             kwargs["seed"] = seed
+            if check["type"] == "repo_tests":
+                import seed_prep
+                kwargs["_python_deps"] = any(
+                    entry["manager"] == "pip"
+                    for entry in seed_prep._deps_entries(fixture.get("deps")))
         elif check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
             kwargs["seed"] = compare_seed
         elif check["type"] == "shell_capture_safe":

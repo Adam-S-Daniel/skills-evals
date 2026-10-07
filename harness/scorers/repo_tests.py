@@ -195,11 +195,14 @@ def _lay_overlay(scratch: Path, files: list[tuple[Path, str]]) -> None:
 
 
 def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
-             timeout_s, prefix: list[str] | None) -> tuple[str, list[str]]:
+             timeout_s, prefix: list[str] | None, python_deps: bool = False) -> tuple[str, list[str]]:
     """One selected test in a fresh constant environment; its status word."""
     env_root = root / f"env-{index}"
     env_root.mkdir(mode=0o700)
     env = commands._environment(env_root, scratch)
+    if python_deps:
+        private_bin, rest = env["PATH"].split(os.pathsep, 1)
+        env["PATH"] = os.pathsep.join((private_bin, str(scratch / ".fixture-python" / "bin"), rest))
     if prefix is None:
         prefix = commands._network_prefix(env)
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
@@ -215,7 +218,7 @@ def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
 
 def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
                fail_to_pass=None, pass_to_pass=None,
-               timeout_s=DEFAULT_TIMEOUT_S, seed=None) -> tuple[bool, str]:
+               timeout_s=DEFAULT_TIMEOUT_S, seed=None, _python_deps=False) -> tuple[bool, str]:
     """Pass only when every selected hidden test exits 0 over the final workspace.
 
     `seed` is the fixture's seed directory, injected by `run_checks`; the
@@ -239,7 +242,18 @@ def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
             shutil.copytree(final, scratch, symlinks=True)
             _lay_overlay(scratch, config["files"])
             scratch = scratch.resolve(strict=True)
-            executable = commands._executable(scratch, config["argv"][0])
+            if _python_deps and config["argv"][0] == "python3":
+                # Keep the lexical symlink path: resolving it loses venv discovery.
+                venv = scratch / ".fixture-python"
+                python = venv / "bin" / "python3"
+                executable = (str(python) if not venv.is_symlink()
+                              and not (venv / "bin").is_symlink()
+                              and not (venv / "pyvenv.cfg").is_symlink()
+                              and (venv / "pyvenv.cfg").is_file()
+                              and python.resolve() == Path(commands._fixed_interpreter("python3") or "/").resolve()
+                              and python.is_file() and os.access(python, os.X_OK) else None)
+            else:
+                executable = commands._executable(scratch, config["argv"][0])
         except (OSError, shutil.Error, RuntimeError, ValueError):
             return False, "repo_tests_copy_failed"
         if executable is None:
@@ -251,7 +265,7 @@ def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
             passed = 0
             for test in config[group]:
                 status, prefix = _run_one(command + test, scratch, root, index,
-                                          config["timeout_s"], prefix)
+                                          config["timeout_s"], prefix, _python_deps)
                 index += 1
                 if status == "pass":
                     passed += 1
