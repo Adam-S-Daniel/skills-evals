@@ -6,22 +6,37 @@
 
 ## Context
 
-[The weekly routine](../../.github/workflows/routine-eval-weekly.yml) plans
-the reviewed fixture list and dispatches eval mode through the routine fire
-workflow. Adam's 2026-10-06 decision, following the [weekly routine PR
-merge](https://github.com/Adam-S-Daniel/skills-evals/pull/331), retired
-`eval.yml`'s Tuesday schedule; `eval.yml` keeps its one-fixture manual
-dispatch. Three more fixtures have local qualification evidence.
+The manual API workflow in [`eval.yml`](../../.github/workflows/eval.yml)
+supports one-fixture dispatch. Adam's 2026-10-06 decision, following the
+[weekly routine PR merge](https://github.com/Adam-S-Daniel/skills-evals/pull/331),
+retired that workflow's Tuesday schedule and made the weekly routine the
+scheduled path. Three more fixtures have local qualification evidence.
 Automatically discovering every fixture would also run unfinished or
 unqualified work, and readiness must remain an explicit reviewed decision.
 
-The workflow runs committed fixture content with a short-lived, spend-capped
-federated bearer. Each agent runner has read-only repository access and its
-own credential exchange. Publishing requires a separate fresh runner with
-write access. [ADR 0004](0004-eval-runs-on-the-roster-its-run-merged.md)
-requires the roster update and confirmed disarm to finish before any eval.
-GitHub matrix job outputs do not provide a reliable per-fixture result map,
-and simultaneous publishers would compete for the same results branch.
+The manual API workflow runs committed fixture content with a short-lived,
+spend-capped federated bearer. Each agent runner has read-only repository
+access and its own credential exchange. Publishing requires a separate fresh
+runner with write access. [ADR 0004](0004-eval-runs-on-the-roster-its-run-merged.md)
+requires the roster update and confirmed disarm to finish before any manual
+API eval. GitHub matrix job outputs do not provide a reliable per-fixture
+result map, and simultaneous publishers would compete for the same results
+branch. These guarantees describe `eval.yml`'s manual API path, not the
+weekly routine.
+
+## Amendment (2026-10-06): weekly routine replaces the Tuesday schedule
+
+Adam decided that the weekly routine replaces `eval.yml`'s Tuesday schedule
+after the [weekly routine PR merged](https://github.com/Adam-S-Daniel/skills-evals/pull/331).
+The [`routine-eval-weekly.yml` caller](../../.github/workflows/routine-eval-weekly.yml)
+plans the reviewed list and fires eval-mode routine runs through
+[`routine-eval-fire.yml`](../../.github/workflows/routine-eval-fire.yml).
+Routine runs use subscription usage; their results arrive on the routine
+branch and are separately validated and ingested by Actions as local exhibits.
+They do not use the manual workflow's OIDC exchanges, roster jobs, badge
+publishing, or API workspace spending ceiling. Routine results are not badge
+input, as [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
+records.
 
 ## Decision
 
@@ -59,10 +74,13 @@ and simultaneous publishers would compete for the same results branch.
    list and dispatches each fixture through `routine-eval-fire.yml`.
    `eval.yml`'s `workflow_dispatch` still reads `fixture` from
    `GITHUB_EVENT_PATH`, with today's single-fixture default and unchanged
-   `roster_only` behavior.
+   `roster_only` behavior. This manual API dispatch remains separate from the
+   scheduled routine path.
    Reject malformed schemas, duplicate entries, invalid path characters,
    and paths outside the committed fixture set before emitting the matrix.
-3. Run one eval matrix leg per fixture, `fail-fast: false`, `max-parallel: 2`.
+   The following matrix and publishing guarantees apply to manual API evals.
+3. For manual API evals, run one matrix leg per fixture, `fail-fast: false`,
+   `max-parallel: 2`.
    Each leg selects and validates again before its own OIDC exchange, uses
    its own runner and temporary files, and uploads a uniquely named artifact.
    The fixture-relative path remains its distinct `eval_key`; numeric matrix
@@ -89,20 +107,21 @@ and simultaneous publishers would compete for the same results branch.
 
 ## Consequences
 
-The weekly routine exercises exactly the reviewed list, and adding an entry
-is a visible spend decision. The workflow's existing estimate is about
-$0.30–0.90 per skill fixture: eight fixtures imply about $2.40–7.20 per
-scheduled run, or $12.00–36.00 for five weekly runs. These are estimates rather than
-a cap; model choice, judging, and actual usage affect cost. The API workspace
-spend limit remains the hard ceiling. Readiness evidence does not require a
-positive objective delta: the account-store fixture qualifies with a stronger
-judge score even though its supplied objective average is lower.
+For manual API evals, the workflow's estimate is about $0.30–0.90 per skill
+fixture. A manual dispatch selects one fixture; actual usage varies, and the
+API workspace spend limit remains the hard ceiling for that path. Adding a
+fixture to the weekly routine's reviewed list is a subscription-usage
+decision, not an API-spend estimate.
+Readiness evidence does not require a positive objective delta: the
+account-store fixture qualifies with a stronger judge score even though its
+supplied objective average is lower.
 
-Successful siblings publish despite an errored eval. Publishing is serialized
-and therefore adds runner time; a missing or unavailable payload is reported
-and never substituted with another fixture's output. Dispatch remains one
-fixture and gains no bulk input. Fixtures are admitted only through committed
-paths, not through results-branch content or an API response.
+For manual API evals, successful siblings publish despite an errored eval.
+Publishing is serialized and therefore adds runner time; a missing or
+unavailable payload is reported and never substituted with another fixture's
+output. Dispatch remains one fixture and gains no bulk input. Fixtures are
+admitted only through committed paths, not through results-branch content or
+an API response.
 
 This implements the owner-requested ready list, not all of #68: rotation,
 monthly sweeps, model products, trial changes, budget enforcement, and a

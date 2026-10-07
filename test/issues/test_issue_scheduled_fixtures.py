@@ -50,6 +50,33 @@ def step(job, name):
 
 
 class TestScheduledFixtures(unittest.TestCase):
+    def test_routine_retirement_amendment_scopes_api_workflow_guarantees(self):
+        adr = (
+            ROOT / "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md"
+        ).read_text()
+        design = (ROOT / "DESIGN.md").read_text()
+        routine_adr = (
+            ROOT / "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"
+        ).read_text()
+
+        self.assertIn(
+            "These guarantees describe `eval.yml`'s manual API path, not the\nweekly routine.",
+            adr,
+        )
+        self.assertIn(
+            "## Amendment (2026-10-06): weekly routine replaces the Tuesday schedule",
+            adr,
+        )
+        self.assertIn("Routine runs use subscription usage", adr)
+        self.assertIn("results are not badge\ninput", adr)
+        self.assertIn(
+            "manual API workflow's OIDC exchanges, roster jobs, badge publishing, or API\nworkspace spending ceiling",
+            design,
+        )
+        self.assertIn("retired the paid [`eval.yml`]", routine_adr)
+        self.assertIn("Routine evals use\nsubscription usage", routine_adr)
+        self.assertIn("routine results are not badge\ninput", routine_adr)
+
     def test_schedule_plan_matches_exact_reviewed_list(self):
         committed = planner.committed_fixtures(ROOT)
         paths = planner.scheduled_fixtures(ROOT / "evals/scheduled.yml", committed)
