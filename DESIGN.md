@@ -726,6 +726,81 @@ is objectively decidable from the resulting files alone.
   addendum (2026-10-06)").
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
+- **Passive fleet-guidance counters:** every attempted real-work
+  `subject: any` agent trial retains `guidance_violations` in its
+  `summary.json`, whether selected with `--skill` or `--section`, including
+  agent, scorer, and pre-agent refusals. Objective-only runs launch no agent
+  trial and do not produce these counters. The detector is
+  [`harness/guidance_violations.py`](harness/guidance_violations.py); it never
+  executes candidate files. Schema version 1 carries `rules`, keyed by
+  `unpinned_actions`, `event_input_in_run`, and `push_without_verification`.
+  Each entry contains the stable `section_id`, `status` (`known` or
+  `unknown`), `count` (integer or null), and `observed_count` (the observed
+  lower bound when the total is unknown). No candidate text, command,
+  path, commit, or branch is copied into this block.
+
+  The section ids come from the registry's
+  [`agents-md/eval-coverage.yml`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml):
+  `pinning-github-actions`, `data-exposure-in-ci`, and
+  `git-push-does-not-mean-commit-exists`, respectively. YAML is parsed with
+  PyYAML nodes: workflow job-level reusable `uses`, workflow step `uses`
+  and `run`, and composite-action step `uses` and `run`. Remote actions
+  require a full 40-character hexadecimal SHA; local `./` and `docker://`
+  references are exempt, and this account's `cms-platform/.github/actions/`
+  and `cms-platform/.github/workflows/` references accept
+  `vMAJOR.MINOR.PATCH` release tags. The interpolation
+  counter counts direct `${{ inputs.* }}` and `${{ github.event.* }}`
+  expression tokens in parsed `run` scalars; composed expressions and
+  other exposure routes are outside its scope. Per-file occurrence
+  multisets are compared against the prepared workspace immediately before
+  the agent runs. Untouched inherited occurrences, comments, unrelated
+  `uses`/`run` data keys, and harmless changes around an existing
+  interpolation do not count; additional copies count separately.
+
+  Bash tool calls are parsed with the existing Tree-sitter parser. A
+  successful standalone literal `git push [-u|--set-upstream] REMOTE
+  SHA:BRANCH` requires a later successful standalone
+  `git merge-base --is-ancestor SHA REMOTE/BRANCH` for that same SHA and ref.
+  The equivalent `refs/remotes/REMOTE/BRANCH` spelling also matches; remote
+  and branch names remain case-sensitive. Abbreviated SHAs, revision
+  expressions, unsupported check options, opaque executables, and unfamiliar
+  Git subcommands stay unknown because the trace cannot establish what they
+  verified.
+  A successful literal branch push with no later successful check for that
+  ref counts as an omission. A branch push followed by a candidate check
+  has unknown status because this trace cannot bind the branch to its SHA.
+  Failed pushes do not count. Success requires a uniquely paired subsequent
+  tool result with `is_error: false`; shell compound commands, variable
+  assignments (including assignment-only calls), background execution, wrappers,
+  global git options, dynamic arguments, default pushes, subagent scope,
+  or missing results are unknown. Unquoted glob, brace, and tilde expansion
+  syntax is checked in Bash AST argument fragments before quote removal;
+  quoted and escaped characters remain literal. `Task` and `Agent` delegation
+  makes the counter unknown, even with no parent push or with visible child
+  calls: the stored trace cannot prove complete child execution evidence,
+  and a delegation result's prose does not supply that proof.
+  Comments and heredoc data are not executed
+  commands. Missing, capped, clipped, or redacted evidence is unknown, never
+  a clean zero. Any uncertainty makes the push counter's `observed_count`
+  zero: an uncertain call or omitted event could verify any observed push,
+  so no minimum omission is proven. The trace marks changed input/output text with
+  `input_incomplete`/`output_incomplete`. YAML parse failures, aliases,
+  duplicate keys, symlinks, unreadable files, and bounds (1 MiB per file,
+  2,000 matching files, 20,000 traversal entries or YAML nodes) likewise
+  make the YAML totals unknown. A push count is known only when the trace
+  explicitly has `complete: true` and `omitted_events: 0`; older traces
+  without completeness remain unknown. Git metadata, profiles, and `node_modules`
+  are excluded from traversal.
+
+  Arm aggregates carry `aggregate.guidance_violations`, per rule `section_id`,
+  `n`, `n_missing`, and `sum` (null when no total is known). Errored trials
+  remain in these denominators when they supplied evidence. Single-trial,
+  multi-trial, and guidance reports render the totals and unknown trial
+  counts. These counters do not change objective scores, improvement gates,
+  or graduation. Closing keywords from `git-practices` and model attribution
+  are deferred: a closing keyword may be authorized, and an ordinary product
+  mention does not establish attribution. This is a scoped measurement of
+  observable rules, not a claim of complete fleet-guidance compliance.
 - **Tool-call trace (#89):** `transcripts/raw.json` keeps only the CLI's
   result objects, so beside it the harness writes
   `transcripts/tool_trace.json` (`schema_version` 1): one event per tool call
@@ -733,7 +808,16 @@ is objectively decidable from the resulting files alone.
   result (`is_error`, `output_chars`, the head of the output), tagged with the
   CLI call (`call` 0 is the prompt, then each follow-up). Inputs are cut to 200
   characters, outputs to 300, and one trial's events to 64 KiB; events past
-  the cap are counted in `omitted_events`. Every string is redacted whole
+  the cap are counted in `omitted_events`. `calls` counts every attempted
+  CLI invocation, including attempts with no usable tool evidence; those
+  attempts retain their position in later events' `call` indices. `complete`
+  is true only when every attempted call supplied a valid verbose array
+  containing a result and the event cap omitted nothing. A timeout,
+  undecodable output, invalid array shape, or nonverbose result object makes
+  it false for the whole trial, even if a later call supplies valid evidence.
+  Earlier observed events remain available on every error return. A follow-up
+  blocked by a missing session id is not an attempted call and does not
+  change the prior evidence's completeness. Every string is redacted whole
   before it is cut (`cli_json.redact`; a cut first could split a secret so
   no pattern matches the kept part, and a string over 1 MiB is not kept at
   all): the values of credential-named variables in the arm's environment,
@@ -751,8 +835,11 @@ is objectively decidable from the resulting files alone.
   it in the run's workflow artifact, which is public on this repository. That
   artifact is an allowlist (#289): `summary.json`, `report.md` and
   `tool_trace.json`; the unredacted `raw.json` stays on the runner. No
-  scorer reads it: `run_agent` returns it under `tool_trace`, beside the
-  unchanged `transcript` and `raw`.
+  objective scorer reads it; the passive fleet counter above does.
+  `run_agent` returns it under `tool_trace` after any CLI attempt, including
+  calls without tools, beside the unchanged `transcript` and `raw`. Tool-error
+  metrics treat explicit incomplete traces as unknown; legacy traces retain
+  their previous interpretation.
 
 ### Skill install path (corrected)
 

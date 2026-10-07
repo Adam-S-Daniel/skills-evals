@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
+import guidance_violations  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
@@ -1088,15 +1089,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     preexisting = session_dir is not None and os.path.lexists(session_dir)
     # Every call's tool events (#89), for `transcripts/tool_trace.json`. The
     # scorers never see them: they are attached to the returned dict under
-    # `tool_trace` only, beside `raw`, and only when some call made a tool
-    # call, so a run without one returns (and writes) exactly what it did
-    # before.
+    # `tool_trace` only, beside `raw`. Every attempted CLI call gets a slot,
+    # even when its evidence is unavailable or it observed no tool calls.
     secrets = secret_values(env, dict(os.environ))
     calls: list[list[dict]] = []
+    trace_complete = True
 
     def traced(answer: dict) -> dict:
-        if any(calls):
-            answer["tool_trace"] = bounded_tool_trace(calls)
+        if calls:
+            answer["tool_trace"] = bounded_tool_trace(calls, complete=trace_complete)
         return answer
 
     # The finally covers every return below: a multi-turn arm's transcript
@@ -1109,22 +1110,27 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             if index:
                 session_id = turns[-1].get("session_id")
                 if not isinstance(session_id, str) or not session_id:
-                    return {"error": "invalid_json",
-                            "detail": f"{label}the previous result has no "
-                                      "session_id to resume"}
+                    return traced({"error": "invalid_json",
+                                   "detail": f"{label}the previous result has no "
+                                             "session_id to resume"})
                 turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
+            calls.append([])
             try:
                 result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
                                         text=True, timeout=timeout, env=env)
             except subprocess.TimeoutExpired:
-                return {"error": "timeout",
-                        "detail": f"{label}agent timed out after {timeout}s"}
+                trace_complete = False
+                return traced({"error": "timeout",
+                               "detail": f"{label}agent timed out after {timeout}s"})
 
             if result.returncode != 0:
                 try:
-                    calls.append(tool_events(json.loads(result.stdout), secrets))
+                    decoded = json.loads(result.stdout)
+                    calls[-1] = tool_events(decoded, secrets)
+                    normalize_cli_result(decoded)
+                    trace_complete = trace_complete and isinstance(decoded, list)
                 except ValueError:
-                    pass
+                    trace_complete = False
                 return traced({"error": "nonzero_exit",
                                "detail": label + failed_run_detail(result.stdout,
                                                                    result.stderr),
@@ -1132,16 +1138,19 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
             try:
                 decoded = json.loads(result.stdout)
-                calls.append(tool_events(decoded, secrets))
+                calls[-1] = tool_events(decoded, secrets)
                 data = normalize_cli_result(decoded)
+                trace_complete = trace_complete and isinstance(decoded, list)
             except json.JSONDecodeError as e:
+                trace_complete = False
                 # Shape only. The array form starts with the `system/init`
                 # message (cwd, tool and connector names), and this detail
                 # reaches summary.json, so no slice of stdout is echoed.
-                return {"error": "invalid_json",
-                        "detail": f"{label}stdout is not valid JSON ({e.msg} at "
-                                  f"character {e.pos} of {len(result.stdout)})"}
+                return traced({"error": "invalid_json",
+                               "detail": f"{label}stdout is not valid JSON ({e.msg} at "
+                                         f"character {e.pos} of {len(result.stdout)})"})
             except ValueError as e:
+                trace_complete = False
                 return traced({"error": "invalid_json", "detail": f"{label}{e}"})
 
             if data.get("is_error"):
@@ -1736,6 +1745,10 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
+    lines += guidance_violations.render([
+        {"arm": s["arm"], "stats": {"aggregate": {
+            "guidance_violations": guidance_violations.aggregate([s])}}}
+        for s in arm_summaries])
     return "\n".join(lines) + "\n"
 
 
@@ -1837,15 +1850,15 @@ def _tool_error_count(tool_trace: dict | None) -> int | None:
     message) is one failed call. A result with no usable id is counted as it
     stands, since there is nothing to deduplicate on.
 
-    A run always asks the CLI for the whole message array (`--verbose`), so a
-    trial with no trace made no tool call: 0, not unknown. A trace that hit
-    its size cap kept only the first events (`omitted_events`), so a count
-    from it would be a silent undercount; that is None, which the aggregate
-    reports as missing rather than as a small number.
+    New traces explicitly record whether every CLI call supplied complete
+    evidence. Lost evidence or a size cap makes the count None, which the
+    aggregate reports as missing rather than as a silent undercount. Legacy
+    trials without a trace or without the completeness field retain their
+    previous interpretation.
     """
     if tool_trace is None:
         return 0
-    if tool_trace.get("omitted_events"):
+    if tool_trace.get("complete") is False or tool_trace.get("omitted_events"):
         return None
     ids, unidentified = set(), 0
     for event in tool_trace.get("events") or []:
@@ -2026,12 +2039,14 @@ def aggregate_trials(trials: list[dict],
              if isinstance(t.get("agent"), dict)
              and _is_number(t["agent"].get("cost_usd"))]
 
+    violations = guidance_violations.aggregate(trials)
     return {"n": len(trials), "errors": len(trial_errors),
             "scored": len(scored), "trial_errors": trial_errors,
             "aggregate": {"objective": objective_stats, "judge": judge_stats,
                           "cost_usd": _stats(costs),
                           "cost_unknown_trials": len(trials) - len(costs),
-                          "efficiency": efficiency_stats(trials, tool_errors)}}
+                          "efficiency": efficiency_stats(trials, tool_errors),
+                          **({"guidance_violations": violations} if violations is not None else {})}}
 
 
 def _trials_error(stats: dict) -> dict | None:
@@ -2175,6 +2190,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                          f"{objective_str} | {judge_str} | {cost_str} |")
 
         lines += _render_efficiency_table(arms)
+        lines += guidance_violations.render(arms)
 
         errored = [(arm["arm"], entry) for arm in arms
                    for entry in arm["stats"]["trial_errors"]]
@@ -2235,6 +2251,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     # Namespace without it records null rather than probing the CLI here.
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    extra = dict(extra or {})
+    if fixture.get("_real_work"):
+        extra["guidance_violations"] = guidance_violations.measure(None, None, None)
     if selection_error:
         # A runner-level error, recorded on the arm exactly like an agent
         # failure, so it leaves through main()'s existing exit-2 path instead
@@ -2248,7 +2267,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        harness_version=harness_version,
                        permission_mode=permission_mode, arm_dir=out_dir)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None, "models_used": []}
+                "objective_checks": None, "judge": None, "models_used": [], **extra}
 
     # run_setup (inside materialize_workspace, before the bookkeeping commit)
     # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
@@ -2270,7 +2289,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        permission_mode=permission_mode, arm_dir=out_dir)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None, "models_used": []}
+                "objective_checks": None, "judge": None, "models_used": [], **extra}
     try:
         assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
                                  fixture.get("env"))
@@ -2332,8 +2351,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                         arm_config["layout"] = entry["layout"]
                         arm_config["registry_name"] = entry["name"]
 
+        baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = registry_error if registry_error is not None else run_agent(
             workspace, fixture["prompt"], arm_config)
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(
+                baseline, workspace, result.get("tool_trace"))
 
         error = None
         agent_summary = None
@@ -2381,7 +2404,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
-                        "judge": None, "models_used": agent_models}
+                        "judge": None, "models_used": agent_models, **extra}
             except objective.FixtureError as exc:
                 error = {"type": "invalid_fixture", "detail": str(exc)}
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
@@ -2392,7 +2415,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                tool_trace=tool_trace)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
-                        "judge": None, "models_used": agent_models}
+                        "judge": None, "models_used": agent_models, **extra}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
@@ -2429,7 +2452,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
-                "models_used": agent_models}
+                "models_used": agent_models, **extra}
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -2787,6 +2810,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    extra = {}
+    agent_summary = raw = tool_trace = None
+    agent_models = []
     scratch = Path(tempfile.mkdtemp(
         prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
@@ -2837,6 +2863,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                  "delivery": delivery, "hook_verdict": info["verdict"],
                  "installed": info["installed"], "decoy": decoy,
                  "hook_returncode": info["returncode"], "guard": None}
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(None, None, None)
         if info["returncode"] is not None and (
                 not info["installed"] or info["returncode"] != 0):
             error = {"type": "delivery_failed",
@@ -2853,7 +2881,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": None, "inconclusive": True, "models_used": []}
+                    "guard": None, "inconclusive": True, "models_used": [],
+                    **({"guidance_violations": extra["guidance_violations"]}
+                       if "guidance_violations" in extra else {})}
 
         setting_sources = guidance.SETTING_SOURCES[delivery]
         # The guard's preflight model: the fixture's own `model:` pin when it
@@ -2881,7 +2911,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            permission_mode=permission_mode)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": guard, "inconclusive": True, "models_used": []}
+                    "guard": guard, "inconclusive": True, "models_used": [],
+                    **({"guidance_violations": extra["guidance_violations"]}
+                       if "guidance_violations" in extra else {})}
 
         arm_config = {
             "name": arm["name"],
@@ -2895,7 +2927,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
         }
+        baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = run_agent(workspace, fixture["prompt"], arm_config)
+        if fixture.get("_real_work"):
+            extra["guidance_violations"] = guidance_violations.measure(
+                baseline, workspace, result.get("tool_trace"))
 
         error = None
         agent_summary = None
@@ -2971,7 +3007,25 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,
-                "models_used": agent_models}
+                "models_used": agent_models,
+                **({"guidance_violations": extra["guidance_violations"]}
+                   if "guidance_violations" in extra else {})}
+    except guidance.GuidanceError:
+        if not fixture.get("_real_work"):
+            raise
+        error = {"type": "guidance_configuration", "detail": "guidance trial setup failed"}
+        counts = extra.get("guidance_violations") or guidance_violations.measure(None, None, None)
+        _write_summary(args.results_dir, None, arm["name"], timestamp,
+                       error, agent_summary, None, None, raw, key=ctx["key"],
+                       extra={"subject": "guidance", "section": ctx["section"],
+                              "mode": arm["mode"], "bytes": None,
+                              "guidance_violations": counts},
+                       harness_version=harness_version, permission_mode=permission_mode,
+                       models=agent_models, tool_trace=tool_trace)
+        return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                "agent": agent_summary, "objective_checks": None, "judge": None,
+                "guard": None, "inconclusive": True, "models_used": [],
+                "guidance_violations": counts}
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -3025,6 +3079,10 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         lines.append(f"| {s['arm']} | {s['mode']} | {arm_bytes.get(s['arm'], '-')} | "
                      f"{guard_str} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{err_str} |")
+    lines += guidance_violations.render([
+        {"arm": s["arm"], "stats": {"aggregate": {
+            "guidance_violations": guidance_violations.aggregate([s])}}}
+        for s in arm_summaries])
     return "\n".join(lines) + "\n"
 
 
@@ -3304,9 +3362,9 @@ def apply_runtime_subject(fixture: dict, skill: str | None, section: str | None,
         raise guidance.GuidanceError(
             "pass one of --skill and --section, not both --skill and --section")
     if skill is not None:
-        return {**fixture, "subject": "skill", "skill": skill}
+        return {**fixture, "subject": "skill", "skill": skill, "_real_work": True}
     if section is not None:
-        return {**fixture, "subject": "guidance", "section": section}
+        return {**fixture, "subject": "guidance", "section": section, "_real_work": True}
     if arm != "objective-only":
         raise guidance.GuidanceError(
             f"{fixture_path} is `subject: {SUBJECT_ANY}` and this run names no "
