@@ -82,6 +82,18 @@ says is now optional):
 
 ## Decision
 
+The [weekly routine caller](../../.github/workflows/routine-eval-weekly.yml)
+implements the scheduled eval part of [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65).
+It uses [ADR 0008's reviewed list](../../evals/scheduled.yml), refuses a plan
+above 30 fires, and dispatches one eval-mode run per fixture through the
+[existing fire workflow](../../.github/workflows/routine-eval-fire.yml).
+The paid [eval workflow](../../.github/workflows/eval.yml) still has its own
+Tuesday schedule, so both schedules can run until Adam decides to retire it.
+The [#71 gate](https://github.com/Adam-S-Daniel/skills-evals/issues/71)
+applies to scheduled improvement runs, not these eval runs. Thirty is a
+per-run bound, while manual fires and other scheduled runs share the hourly
+limit; a rate-limited dispatch fails without retry.
+
 1. **GitHub Actions owns scheduling, bookkeeping and ingestion; a routine
    owns the AI steps.** A workflow builds a JSON task spec (run id, roster
    ref, fixture list, arms, trial count, base sha) and fires one routine via

@@ -3,9 +3,10 @@ name: Fire eval routine
 # Fires the eval runner routine (ADR 0010, "Smallest next PRs" item 2):
 # https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5
 #
-# * `workflow_dispatch` ONLY. No schedule: #71's three-PR gate (ADR 0010,
-#   decision 4) keeps every scheduled run off until three human-reviewed
-#   loop PRs have merged. No pull_request or push: a pull_request job would
+# * `workflow_dispatch` ONLY. The weekly caller dispatches eval mode; #71's
+#   three-PR gate (ADR 0010, decision 4) keeps the improvement loop off the
+#   schedule until three human-reviewed loop PRs have merged. No pull_request
+#   or push: a pull_request job would
 #   have to be a required check, and nothing here should run, or spend
 #   subscription usage, because a pull request changed.
 # * Every dispatch input is read from $GITHUB_EVENT_PATH as data, never
