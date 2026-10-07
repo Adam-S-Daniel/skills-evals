@@ -5,6 +5,8 @@ Parse workflow structure with PyYAML and execute selection scripts offline.
 The caller must use the PID namespace and sentinel required by AGENTS.md.
 """
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -13,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -397,6 +400,149 @@ if args == ["diff", "--cached", "--quiet"]:
             summary.write_text(json.dumps({"local_exhibit": True}))
             with self.assertRaises(SystemExit):
                 badge.build_badge(results, key)
+
+
+class WeeklyRoutineCallerTests(unittest.TestCase):
+    """The scheduled caller only dispatches the reviewed eval fixtures."""
+
+    def workflow(self):
+        return yaml.safe_load((ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+
+    def test_weekly_caller_is_eval_only_and_leaves_fire_credentials_separate(self):
+        workflow = self.workflow()
+        trigger = workflow.get("on", workflow.get(True))
+        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"}]})
+        self.assertEqual(workflow["permissions"], {})
+        self.assertNotIn("concurrency", workflow)
+        jobs = workflow["jobs"]
+        self.assertEqual(set(jobs), {"plan", "dispatch"})
+        self.assertEqual(jobs["plan"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["dispatch"]["permissions"],
+                         {"contents": "read", "actions": "write"})
+        self.assertEqual(jobs["dispatch"]["needs"], "plan")
+        self.assertEqual(jobs["dispatch"]["if"], jobs["plan"]["if"])
+        self.assertEqual(jobs["plan"]["outputs"],
+                         {"matrix": "${{ steps.plan.outputs.matrix }}"})
+        self.assertEqual(jobs["dispatch"]["strategy"],
+                         {"fail-fast": False, "max-parallel": 1,
+                          "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})
+        self.assertEqual(jobs["plan"]["if"],
+                         "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
+        plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
+        self.assertEqual(plan_step["run"],
+                         "python3 scripts/plan_scheduled_evals.py --max-fixtures 30")
+        self.assertEqual(plan_step["env"], {"GITHUB_EVENT_NAME": "schedule"})
+        steps = jobs["dispatch"]["steps"]
+        self.assertLess(next(i for i, s in enumerate(steps) if s["name"].startswith("Revalidate")),
+                        next(i for i, s in enumerate(steps) if s["name"].startswith("Dispatch")))
+        fire = steps[-1]
+        self.assertEqual(fire["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertEqual(fire["env"]["DEFAULT_BRANCH"],
+                         "${{ github.event.repository.default_branch }}")
+        self.assertEqual(fire["env"]["FIXTURE"], "${{ matrix.fixture }}")
+        validate = steps[-2]
+        self.assertEqual(validate["env"],
+                         {"FIXTURE": "${{ matrix.fixture }}",
+                          "MATRIX_KEY": "${{ matrix.eval_key }}",
+                          "MATRIX_SLOT": "${{ matrix.slot }}"})
+        for job in jobs.values():
+            self.assertNotIn("concurrency", job)
+            for item in job["steps"]:
+                self.assertNotIn("${{", item.get("run", ""))
+                if "uses" in item:
+                    self.assertRegex(item["uses"], r"@[0-9a-f]{40}$")
+                    if "checkout@" in item["uses"]:
+                        self.assertEqual(item["with"]["persist-credentials"], False)
+                        self.assertEqual(item["with"]["ref"],
+                                         "${{ github.event.repository.default_branch }}")
+                if item is not fire:
+                    self.assertNotIn("GH_TOKEN", item.get("env", {}))
+                self.assertNotIn("EVAL_ROUTINE_FIRE_BEARER", str(item))
+
+    def test_actual_plan_and_revalidation_cover_the_reviewed_fixtures(self):
+        jobs = self.workflow()["jobs"]
+        plan_run = next(s["run"] for s in jobs["plan"]["steps"] if s.get("id") == "plan")
+        validate_run = jobs["dispatch"]["steps"][-2]["run"]
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            plan_script = base / "plan.sh"
+            plan_script.write_text(plan_run)
+            validate_script = base / "validate.sh"
+            validate_script.write_text(validate_run)
+            output = base / "output"
+            env = dict(os.environ, GITHUB_EVENT_NAME="schedule", GITHUB_OUTPUT=str(output),
+                       GITHUB_EVENT_PATH="")
+            result = subprocess.run(["bash", str(plan_script)], cwd=ROOT, env=env,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            matrix = json.loads(output.read_text().removeprefix("matrix=").strip())
+            self.assertEqual(matrix, {"include": [
+                {"fixture": path, "eval_key": path[6:], "slot": i}
+                for i, path in enumerate(EXPECTED)]})
+            for row in matrix["include"]:
+                selected = dict(env, FIXTURE=row["fixture"], MATRIX_KEY=row["eval_key"],
+                                MATRIX_SLOT=str(row["slot"]))
+                result = subprocess.run(["bash", str(validate_script)], cwd=ROOT,
+                                        env=selected, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                selected["MATRIX_KEY"] = "wrong-key"
+                result = subprocess.run(["bash", str(validate_script)], cwd=ROOT,
+                                        env=selected, text=True, capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_planner_refuses_31_fires_before_writing_a_matrix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "output"
+            argv = ["plan_scheduled_evals.py", "--max-fixtures", "30"]
+            env = {"GITHUB_EVENT_NAME": "schedule", "GITHUB_OUTPUT": str(output),
+                   "GITHUB_EVENT_PATH": ""}
+            for count, expected in [(30, 0), (31, 1)]:
+                output.write_text("")
+                matrix = {"include": [{"fixture": EXPECTED[0]}] * count}
+                captured = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), mock.patch.dict(os.environ, env), \
+                     mock.patch.object(planner, "plan", return_value=matrix), \
+                     contextlib.redirect_stdout(captured):
+                    self.assertEqual(planner.main(), expected)
+                self.assertEqual(bool(output.read_text()), count == 30)
+                if count == 31:
+                    self.assertEqual(captured.getvalue(),
+                                     "::error::Invalid eval plan or committed fixture selection\n")
+
+    def test_dispatch_uses_existing_fire_workflow_and_sanitizes_failure(self):
+        script = self.workflow()["jobs"]["dispatch"]["steps"][-1]["run"]
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            bin_dir = base / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            gh.write_text("#!/usr/bin/env python3\n"
+                          "import json, os, sys\n"
+                          "open(os.environ['CAPTURE'], 'w').write(json.dumps(sys.argv[1:]))\n"
+                          "if os.environ.get('FAIL_DISPATCH') == '1':\n"
+                          "    print('private-source-marker', file=sys.stderr)\n"
+                          "    sys.exit(1)\n")
+            gh.chmod(0o755)
+            command = base / "dispatch.sh"
+            command.write_text(script)
+            capture = base / "capture"
+            env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
+                       CAPTURE=str(capture), GITHUB_REPOSITORY="example.com/sample",
+                       DEFAULT_BRANCH="main", FIXTURE=EXPECTED[0])
+            result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(capture.read_text()),
+                             ["workflow", "run", "routine-eval-fire.yml", "--repo",
+                              "example.com/sample", "--ref", "main", "--raw-field",
+                              "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
+                              "--raw-field", "arms=both", "--raw-field", "trials=1"])
+            env["FAIL_DISPATCH"] = "1"
+            result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
+                                    text=True, capture_output=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Routine eval dispatch failed", result.stdout)
+            self.assertNotIn("private-source-marker", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
