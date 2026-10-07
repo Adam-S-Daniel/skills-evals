@@ -316,6 +316,35 @@ class _BuildCase(_Case):
 
 class BuildTests(_BuildCase):
 
+    def test_build_preserves_applicable_binary_asset_changes(self):
+        before = bytes(range(256)) * 4
+        after = bytes(reversed(range(256))) * 4
+        assets = ("theme/image.avif", "theme/font.otf")
+        self.git(self.clone, "checkout", "-q", "--detach", self.base)
+        self.write(self.clone, {name: before for name in assets})
+        self.git(self.clone, "add", "-A")
+        self.git(self.clone, "commit", "-q", "-m", "asset seed")
+        self.base = self.git(self.clone, "rev-parse", "HEAD")
+        self.write(self.clone, {"tool.py": FIX, "tests/test_tool.py": TEST_AFTER,
+                                **{name: after for name in assets}})
+        self.git(self.clone, "commit", "-q", "-am", "asset fix")
+        self.merge = self.git(self.clone, "rev-parse", "HEAD")
+        candidates = json.loads(self.candidates.read_text())
+        candidates["candidates"][0].update(base_sha=self.base, merge_sha=self.merge)
+        self.candidates.write_text(json.dumps(candidates))
+        target = self.build()
+        patch = target / "solution.patch"
+        self.assertEqual(patch.read_text().count("GIT binary patch"), 2)
+        self.assertFalse(scaffold.styling_only(target), "the Python change makes this mixed")
+        seed = target / "seed"
+        self.git(seed, "init", "-q")
+        self.assertEqual(self.git(seed, "remote"), "")
+        self.git(seed, "apply", "--check", str(patch))
+        self.git(seed, "apply", str(patch))
+        for asset in assets:
+            self.assertEqual((seed / asset).read_bytes(), after)
+        self.assertEqual((seed / "tool.py").read_text(), FIX)
+
     def test_writes_the_fixture_shape(self):
         target = self.build()
         self.assertEqual(target, self.dest / "toy-7")
@@ -960,8 +989,11 @@ class ScaffoldAnswerRulesTests(_Case):
         for literal in ("44", "true", "false", "null"):
             with self.subTest(literal=literal):
                 fixture["interface_strings"] = [f"freshCall({literal})"]
-                self.write(root / "checker", {"e2e/tags-suggest.test.js": f"freshCall({literal});\n"})
+                self.write(root / "checker", {"e2e/tags-suggest.test.js":
+                    'test("suggests tags", () => { ' + f"freshCall({literal});" + ' });\n'})
                 (root / "solution.patch").write_text(f"+++ b/tool.js\n+freshCall({literal});\n")
+                calls, _ = scaffold.checker_facts(root, fixture)
+                self.assertIn("freshCall", calls)
                 self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
 
     def test_removed_solution_details_in_the_snapshot_do_not_reject(self):
@@ -1073,6 +1105,86 @@ class ScaffoldAnswerRulesTests(_Case):
             with self.subTest(source=source):
                 self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": source})
                 self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_runtime_skips_discard_calls_and_behavior(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        observation = 'novelCallable(); expect(page.locator("article")).toHaveCSS("color", "red");'
+        for modifier in ("skip", "fixme"):
+            for condition in ("", "true", "condition", "() => condition"):
+                skip = f"test.{modifier}({condition});"
+                for source in (
+                    'test("breaks an unbroken string", ({page}) => { ' + skip + observation + ' });',
+                    skip + 'test("breaks an unbroken string", ({page}) => { ' + observation + ' });',
+                    'test.describe("group", () => { ' + skip +
+                        'test("breaks an unbroken string", ({page}) => { ' + observation + ' }); });',
+                    'test.beforeEach(() => { ' + skip + ' }); '
+                        'test("breaks an unbroken string", ({page}) => { ' + observation + ' });',
+                    'test.beforeAll(() => { ' + skip + ' }); '
+                        'test("breaks an unbroken string", ({page}) => { ' + observation + ' });',
+                    'function stop() { ' + skip + ' } '
+                        'test("breaks an unbroken string", ({page}) => { ' + observation + ' stop(); });',
+                    'function stop() { ' + skip + ' } test.beforeEach(() => stop()); '
+                        'test("breaks an unbroken string", ({page}) => { ' + observation + ' });',
+                ):
+                    with self.subTest(modifier=modifier, condition=condition, source=source):
+                        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js": source})
+                        problems = self.rules(root, fixture)
+                        self.assertTrue(any("interface" in p for p in problems), problems)
+                        self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+
+    def test_literal_false_skips_allow_selected_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        for modifier in ("skip", "fixme"):
+            with self.subTest(modifier=modifier):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    f'test.{modifier}(false); test.beforeEach(() => test.{modifier}(false)); '
+                    'test("breaks an unbroken string", ({page}) => { '
+                    f'test.{modifier}(false); novelCallable(); '
+                    'expect(page.locator("article")).toHaveCSS("color", "red"); });'})
+                self.assertEqual(self.rules(root, fixture), [])
+
+    def test_imported_runtime_skip_helpers_discard_selected_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        for imported in ('import { stop } from "./stop.js";',
+                         'const { stop } = require("./stop.js");'):
+            for invocation in ("test", "beforeEach", "beforeAll"):
+                with self.subTest(imported=imported, invocation=invocation):
+                    setup = '' if invocation == "test" else f'test.{invocation}(() => stop());'
+                    body = 'stop();' if invocation == "test" else ''
+                    self.write(root / "checker", {
+                        "e2e/theme-overflow-wrap-css.test.js": imported + setup +
+                            'test("breaks an unbroken string", ({page}) => { ' + body +
+                            'novelCallable(); expect(page.locator("article")).toHaveCSS("color", "red"); });',
+                        "e2e/stop.js": 'export function stop() { test.skip(true); }'})
+                    problems = self.rules(root, fixture)
+                    self.assertTrue(any("interface" in p for p in problems), problems)
+                    self.assertTrue(any("behavioral checker" in p for p in problems), problems)
+
+    def test_skipped_scope_does_not_discard_unaffected_sibling_evidence(self):
+        root, fixture = self.real(759)
+        fixture["interface_strings"] = ["novelCallable"]
+        fixture["prompt"] = "Keep long strings within the viewport."
+        observation = 'novelCallable(); expect(page.locator("article")).toHaveCSS("color", "red");'
+        for skipped in (
+            'test("breaks an unbroken string skipped", ({page}) => { observe(page); test.skip(true); });',
+            'test.describe("skipped", () => { test.skip(true); '
+                'test("breaks an unbroken string", ({page}) => observe(page)); });',
+            'test.describe("skipped", () => { test.beforeEach(() => test.fixme(true)); '
+                'test("breaks an unbroken string", ({page}) => observe(page)); });',
+            'test.skip("breaks an unbroken string skipped", ({page}) => observe(page));',
+        ):
+            with self.subTest(skipped=skipped):
+                self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+                    'function observe(page) { ' + observation + ' } ' + skipped +
+                    'test.describe("running", () => { '
+                    'test("breaks an unbroken string", ({page}) => observe(page)); });'})
+                self.assertEqual(self.rules(root, fixture), [])
 
     def test_grep_matches_describe_prefix_and_respects_inversion(self):
         root, fixture = self.real(759)
@@ -1226,6 +1338,39 @@ class ScaffoldAnswerRulesTests(_Case):
             'diff --git a/theme/logo.png b/theme/logo.png\n'
             'Binary files a/theme/logo.png and b/theme/logo.png differ\n')
         self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_applicable_binary_image_and_font_patches_need_behavior(self):
+        for suffix in (".avif", ".otf"):
+            for mixed in (False, True):
+                with self.subTest(suffix=suffix, mixed=mixed):
+                    shutil.rmtree(self.tmp / "759", ignore_errors=True)
+                    root, fixture = self.real(759)
+                    seed = root / "seed"
+                    asset = seed / ("theme/asset" + suffix)
+                    asset.parent.mkdir(parents=True, exist_ok=True)
+                    before = bytes(range(256)) * 4
+                    after = bytes(reversed(range(256))) * 4
+                    asset.write_bytes(before)
+                    self.git(seed, "init", "-q")
+                    self.assertEqual(self.git(seed, "remote"), "")
+                    self.git(seed, "add", ".")
+                    asset.write_bytes(after)
+                    if mixed:
+                        code = seed / "tool.js"
+                        code.write_text("const changed = true;\n")
+                        self.git(seed, "add", "-N", "tool.js")
+                    patch = self.git(seed, "diff", "--binary") + "\n\n"
+                    self.assertIn("GIT binary patch", patch)
+                    (root / "solution.patch").write_text(patch)
+                    asset.write_bytes(before)
+                    if mixed:
+                        code.unlink()
+                    self.git(seed, "apply", "--check", str(root / "solution.patch"))
+                    self.git(seed, "apply", str(root / "solution.patch"))
+                    self.assertEqual(asset.read_bytes(), after)
+                    self.assertEqual(scaffold.styling_only(root), not mixed)
+                    problems = self.rules(root, fixture)
+                    self.assertEqual(any("behavioral checker" in p for p in problems), not mixed)
 
     def test_a_style_file_deletion_also_needs_behavior(self):
         root, fixture = self.real(759)

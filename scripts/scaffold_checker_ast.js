@@ -48,7 +48,8 @@ try {
   function moduleFor(file) {
     if (modules.has(file)) return modules.get(file);
     const tree = acorn.parse(sources[file], { ecmaVersion: "latest", sourceType: "module" });
-    const mod = { file, tree, definitions: new Map(), imports: new Map(), exports: new Map() };
+    const mod = { file, tree, definitions: new Map(), imports: new Map(),
+                  importDeclarations: new Set(), exports: new Map() };
     modules.set(file, mod);
     // Only module-scope declarations are available as helpers. A nested or
     // shadowed definition must not be mistaken for the callable being invoked.
@@ -59,6 +60,7 @@ try {
         if (item.id.type === "Identifier" && functions.has(item.init?.type)) mod.definitions.set(item.id.name, item.init);
         if (item.init?.type === "CallExpression" && name(item.init.callee) === "require" &&
             typeof item.init.arguments[0]?.value === "string" && item.id.type === "ObjectPattern") {
+          mod.importDeclarations.add(item);
           for (const property of item.id.properties) if (property.type === "Property" && property.value.type === "Identifier") {
             mod.imports.set(property.value.name, [item.init.arguments[0].value, property.key.name]);
           }
@@ -89,7 +91,6 @@ try {
     }
     return mod;
   }
-  const visited = new Set();
   function helper(mod, called) {
     if (mod.definitions.has(called)) return [mod, mod.definitions.get(called)];
     const imported = mod.imports.get(called);
@@ -121,7 +122,7 @@ try {
     });
     return observed;
   }
-  function analyze(node, mod, inherited = new Set()) {
+  function analyze(node, mod, evidence, inherited = new Set(), hooks = false) {
     const shadowed = new Set(inherited);
     function bind(pattern) {
       if (!pattern) return;
@@ -134,10 +135,13 @@ try {
     const body = functions.has(node.type) ? node.body : node;
     if (functions.has(node.type)) for (const parameter of node.params) bind(parameter);
     walk.recursive(body, null, {
-      FunctionDeclaration(declaration) { bind(declaration.id); },
+      FunctionDeclaration(declaration) {
+        if (mod.definitions.get(declaration.id?.name) !== declaration) bind(declaration.id);
+      },
       FunctionExpression() {}, ArrowFunctionExpression() {},
       VariableDeclarator(declaration, state, recurse) {
-        bind(declaration.id);
+        if (!mod.importDeclarations.has(declaration) &&
+            mod.definitions.get(declaration.id.name) !== declaration.init) bind(declaration.id);
         if (declaration.init) recurse(declaration.init, state);
       }
     });
@@ -145,21 +149,36 @@ try {
       FunctionDeclaration() {}, FunctionExpression() {}, ArrowFunctionExpression() {},
       CallExpression(call, state, recurse) {
         const called = name(call.callee);
-        calls.add(called);
-        calls.add(called.split(".").pop());
-        if (!shadowed.has("expect") && assertion(call)) behavior = true;
+        // A titled callback registers one skipped test. Runtime modifiers
+        // suppress the whole candidate's evidence, even after an assertion.
+        // Only a literal false condition proves that a modifier cannot skip.
+        if (["test.skip", "test.fixme", "it.skip", "it.fixme"].includes(called) &&
+            !(typeof call.arguments[0]?.value === "string" &&
+              call.arguments.some(arg => functions.has(arg.type))) &&
+            !(call.arguments[0]?.type === "Literal" && call.arguments[0].value === false)) {
+          evidence.skipped = true;
+        }
+        evidence.calls.add(called);
+        evidence.calls.add(called.split(".").pop());
+        if (!shadowed.has("expect") && assertion(call)) evidence.behavior = true;
         walk.base.CallExpression(call, state, recurse);
         const definition = shadowed.has(called) ? null : helper(mod, called);
-        if (definition && !visited.has(definition[1])) {
-          visited.add(definition[1]);
-          analyze(definition[1], definition[0]);
+        if (definition && !evidence.visited.has(definition[1])) {
+          evidence.visited.add(definition[1]);
+          analyze(definition[1], definition[0], evidence);
         }
-        if (["forEach", "map", "flatMap", "filter", "reduce", "some", "every", "find"].includes(called.split(".").pop())) {
-          for (const argument of call.arguments) if (functions.has(argument.type)) analyze(argument, mod, shadowed);
+        if (["forEach", "map", "flatMap", "filter", "reduce", "some", "every", "find"].includes(called.split(".").pop()) ||
+            hooks && ["test.beforeEach", "test.beforeAll"].includes(called)) {
+          for (const argument of call.arguments) if (functions.has(argument.type)) analyze(argument, mod, evidence, shadowed);
         }
       }
     };
     walk.recursive(body, null, visitors);
+  }
+  function evidenceFor(node, mod, hooks = false) {
+    const evidence = { calls: new Set(), behavior: false, skipped: false, visited: new Set() };
+    analyze(node, mod, evidence, new Set(), hooks);
+    return evidence;
   }
   for (const file of Object.keys(sources)) {
     const choices = selected.filter(s => s.files.some(f => file === f || file.endsWith("/" + f)));
@@ -173,6 +192,9 @@ try {
     }});
     if (focused) continue;
     function collect(node, titles) {
+      // Module/suite modifiers and setup hooks apply to every nested test.
+      // Analyze their reachable helpers, excluding test registration callbacks.
+      if (evidenceFor(node, mod, true).skipped) return;
       walk.recursive(node, titles, {
         FunctionDeclaration() {}, FunctionExpression() {}, ArrowFunctionExpression() {},
         CallExpression(call, parents, recurse) {
@@ -184,7 +206,13 @@ try {
             const full = [...parents, title.value];
             if (["test.describe", "describe"].includes(called)) collect(callback.body, full);
             else if (choices.some(s => (!s.grep || s.grep.test(full.join(" "))) &&
-                                        (!s.invert || !s.invert.test(full.join(" "))))) analyze(callback, mod);
+                                        (!s.invert || !s.invert.test(full.join(" "))))) {
+              const evidence = evidenceFor(callback, mod);
+              if (!evidence.skipped) {
+                for (const called of evidence.calls) calls.add(called);
+                behavior ||= evidence.behavior;
+              }
+            }
             return;
           }
           // Skipped tests/suites and arbitrary callback registrars have no roots.

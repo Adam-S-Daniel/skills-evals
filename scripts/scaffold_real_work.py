@@ -712,7 +712,7 @@ def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
                        if p not in excluded and not p.startswith(prefixes)]
         if not patch_paths:
             raise ScaffoldError("the pull request changes nothing outside its tests")
-        patch = _git(clone, "diff", "--no-color", "--no-ext-diff", "--no-textconv",
+        patch = _git(clone, "diff", "--binary", "--no-color", "--no-ext-diff", "--no-textconv",
                      "--no-renames", base, merge, "--", *patch_paths)
         (work / PATCH_FILE).write_bytes(patch)
 
@@ -946,7 +946,7 @@ def styling_only(fixture_dir: Path) -> bool:
     # 759 fix includes playwright.config.js beside its one CSS rule.
     asset_suffixes = {
         ".css", ".scss", ".sass", ".less", ".svg", ".png", ".jpg", ".jpeg",
-        ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf"}
+        ".gif", ".webp", ".avif", ".ico", ".woff", ".woff2", ".ttf", ".otf"}
     # Assets remain production changes even under documentation/test paths.
     production = [p for p in paths if Path(p).suffix.lower() in asset_suffixes or not (
         p.startswith(("e2e/", "test/", "tests/", "docs/", ".github/")) or "/spec/" in p)]

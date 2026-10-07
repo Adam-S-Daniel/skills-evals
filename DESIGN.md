@@ -299,6 +299,8 @@ admission checks; the historical four-word lint still applies afterward.
    observation inside an invoked asserting matcher (geometry, computed CSS or
    a screenshot). A bare `expect(observation)` is not an assertion. Styling
    and assets remain production changes under `docs/` and `docs/assets/`.
+   Binary AVIF images and OpenType fonts count as assets, and generated
+   solution diffs carry Git binary payloads so those patches can apply.
 4. The prompt must not carry local filesystem paths starting with `~/`,
    `/home/` or `/tmp/`; omit local evidence references.
 
@@ -323,7 +325,11 @@ using each objective check's `argv` plus its `fail_to_pass` and `pass_to_pass`
 entries. JavaScript supports explicit Playwright CLI file selections and
 `--grep`/`-g`/`--grep-invert` title filters, including literal `describe` titles.
 Skipped suites/tests, focused tests, unresolved titles and unsupported command
-forms grant no evidence. Unselected files are not parsed unless a selected test
+forms grant no evidence. Runtime `skip`/`fixme` modifiers also discard a test's
+calls and assertions, including modifiers reached through helpers or inherited
+`beforeEach`/`beforeAll` hooks; only literal `false` conditions are safe to
+retain. Each suite is checked separately so unaffected siblings still count.
+Unselected files are not parsed unless a selected test
 calls an explicitly imported helper; only that helper's body is traversed.
 Direct module helpers and known collection callbacks are followed, while
 uncalled functions and arbitrary callbacks do not count. Locally shadowed
