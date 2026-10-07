@@ -932,6 +932,29 @@ class ScaffoldAnswerRulesTests(_Case):
                     "// unusedCallable()\nconst unusedCallable = () => true;\n"})
         self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
 
+    def test_interface_strings_cannot_span_two_seed_files(self):
+        root = self.tmp / "boundary"
+        self.write(root, {"solution.patch": "--- a/tool.js\n+++ b/tool.js\n+changed();\n"})
+        self.write(root / "seed", {"a.txt": "alphaBoundary", "b.txt": "betaBoundary"})
+        (root / "checker").mkdir()
+        fixture = {"prompt": "Repair the operation.",
+                   "objective_checks": [{"argv": ["node", "checker.js"]}]}
+        # Check both orders without depending on filesystem enumeration order.
+        for value in ("alphaBoundary\nbetaBoundary", "betaBoundary\nalphaBoundary"):
+            with self.subTest(value=value):
+                fixture["interface_strings"] = [value]
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_a_complete_multiline_interface_in_one_seed_file_is_allowed(self):
+        root = self.tmp / "boundary"
+        self.write(root, {"solution.patch": "--- a/tool.js\n+++ b/tool.js\n+changed();\n"})
+        value = "alphaBoundary\nbetaBoundary"
+        self.write(root / "seed", {"a.txt": value, "b.txt": "unrelated"})
+        (root / "checker").mkdir()
+        fixture = {"prompt": "Repair the operation.", "interface_strings": [value],
+                   "objective_checks": [{"argv": ["node", "checker.js"]}]}
+        self.assertEqual(self.rules(root, fixture), [])
+
     def test_a_callable_signature_cannot_name_an_added_argument_literal(self):
         root, fixture = self.real(761)
         for literal in ("44", "true", "false", "null"):

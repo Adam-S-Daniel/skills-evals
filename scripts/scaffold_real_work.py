@@ -907,13 +907,14 @@ def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
         problems.append(f"the issue part of the task shares {len(overlap)} substantive code tokens "
                         f"with solution additions (limit {CODE_OVERLAP_LIMIT})")
     interfaces = fixture.get("interface_strings", ())
-    seed_text = "\n".join(p.read_text(encoding="utf-8", errors="replace")
-                          for p in _walk(fixture_dir / SEED_DIR)
-                          if p.is_file() and not p.is_symlink())
+    seed_texts = [p.read_text(encoding="utf-8", errors="replace")
+                  for p in _walk(fixture_dir / SEED_DIR)
+                  if p.is_file() and not p.is_symlink()]
     seed_paths = {p.relative_to(fixture_dir / SEED_DIR).as_posix()
                   for p in _walk(fixture_dir / SEED_DIR) if p.is_file() and not p.is_symlink()}
-    absent = [value for value in interfaces if value not in seed_paths and not re.search(
-              r"(?<![\w$])" + re.escape(value) + r"(?![\w$])", seed_text)]
+    absent = [value for value in interfaces if value not in seed_paths and not any(
+              re.search(r"(?<![\w$])" + re.escape(value) + r"(?![\w$])", text)
+              for text in seed_texts)]
     style = styling_only(fixture_dir)
     if absent or style:
         try:
