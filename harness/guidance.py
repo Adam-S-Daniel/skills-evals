@@ -149,6 +149,25 @@ def check_permission_mode(mode) -> str:
             f"{', '.join(PERMISSION_MODES)}")
     return mode
 
+
+# The agent arms' CLI effort level: the values `claude --help` lists for
+# `--effort <level>` (Claude Code 2.1.292). No arm set one before this, so
+# every arm ran at the CLI's own default, which a release can change. None
+# (no `--effort` flag, no fixture `effort:` key) keeps exactly that: no flag
+# is passed and the summary records `effort: null`, read as "CLI default".
+# Agent arms only: the judge and the guard probe are launched without it.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def check_effort(effort) -> str | None:
+    """`effort` if it is None or one of EFFORT_LEVELS; else GuidanceError.
+    Checked at fixture load and again at the sink (the argv builder)."""
+    if effort is not None and effort not in EFFORT_LEVELS:
+        raise GuidanceError(
+            f"effort {effort!r} is not one of {', '.join(EFFORT_LEVELS)} "
+            "(or absent, for the CLI's default)")
+    return effort
+
 MANIFEST_REL = Path("agents-md") / "eval-coverage.yml"
 BASE_REL = Path("agents-md") / "base.md"
 STUB_REL = Path("agents-md") / "stub.md"

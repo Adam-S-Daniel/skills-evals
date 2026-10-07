@@ -53,6 +53,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 
 import yaml
@@ -247,6 +248,17 @@ def validate_followups(fixture: dict, fixture_path: Path) -> None:
             f"non-blank strings (or absent), got {type(value).__name__} "
             f"{value!r}. Each entry is one further user turn sent with "
             "`--resume` after the prompt, identically in both arms.")
+
+
+def validate_effort(fixture: dict, fixture_path: Path) -> None:
+    """`effort:` is absent, null, or one of guidance.EFFORT_LEVELS, checked
+    once at load. Anything else would reach `claude --effort` and fail as the
+    agent's error, so it is a named configuration error (rc 2) instead."""
+    value = fixture.get("effort") if isinstance(fixture, dict) else None
+    try:
+        guidance.check_effort(value)
+    except guidance.GuidanceError as exc:
+        raise guidance.GuidanceError(f"{fixture_path}: `effort:` {exc}") from None
 
 
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
@@ -1989,7 +2001,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     optional env (the fixture's `env:` mapping, see agent_env), optional
     followups (the fixture's `followups:` list, see ADR 0009), optional
     permission_mode (guidance.PERMISSION_MODES; default
-    guidance.DEFAULT_PERMISSION_MODE, `auto`).
+    guidance.DEFAULT_PERMISSION_MODE, `auto`), optional effort
+    (guidance.EFFORT_LEVELS; None passes no `--effort`, the CLI's default).
 
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
@@ -2021,6 +2034,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # the agent's.
     permission_mode = guidance.check_permission_mode(
         arm.get("permission_mode", guidance.DEFAULT_PERMISSION_MODE))
+    effort = guidance.check_effort(arm.get("effort"))
     # The arm must be able to read its own workspace: one under a denied path
     # (TMPDIR inside HOME, say) is refused, never silently re-opened.
     checkouts = tuple(arm.get("read_denied") or ())
@@ -2146,6 +2160,10 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         cmd.append("--no-session-persistence")
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
+    # After the prompt like every flag, so a follow-up turn, which reuses
+    # this command with only the prompt replaced, keeps it.
+    if effort is not None:
+        cmd += ["--effort", effort]
 
     # `followups:` (ADR 0009): each entry is one more user turn in the SAME
     # session and workspace — the first call's flags plus `--resume
@@ -2653,6 +2671,14 @@ def _permission_mode(args: argparse.Namespace) -> str:
     launch with, so the summary records what actually ran."""
     return getattr(args, "permission_mode", None) or guidance.DEFAULT_PERMISSION_MODE
 
+
+def _effort(args: argparse.Namespace, fixture: dict) -> str | None:
+    """The agent arms' `--effort`: the run's `--effort` > the fixture's
+    `effort:` > None, the CLI's own default (no flag passed). The same
+    precedence as `--model` over `model:`."""
+    return getattr(args, "effort", None) or (
+        fixture.get("effort") if isinstance(fixture, dict) else None)
+
 # The bound on the `--version` probe. Named rather than inlined so the sink
 # check and the `timeout=` argument are provably the same value.
 VERSION_TIMEOUT_S = 30
@@ -2728,6 +2754,181 @@ def models_used(*results) -> list[str]:
     return sorted(found)[:MODELS_USED_MAX]
 
 
+#: The per-model counts `model_tokens` keeps from the CLI's `modelUsage`, as
+#: (summary name, `modelUsage` key). The names are `usage`'s own, so a
+#: per-model figure reads like the arm's total. Its other keys (thinking
+#: tokens, web searches, cost, context window) are not kept; its
+#: `canonicalModel` is, as `canonical_model`.
+MODEL_TOKEN_FIELDS = (
+    ("input_tokens", "inputTokens"),
+    ("output_tokens", "outputTokens"),
+    ("cache_read_input_tokens", "cacheReadInputTokens"),
+    ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+)
+#: The largest token count kept, per count and per total. A larger figure
+#: is junk, not a measurement (a trial's whole budget is far below it), and
+#: a sum of figures near the float range would overflow to Infinity, which
+#: is not JSON. Past it a count or total is null.
+MAX_TOKEN_COUNT = 10 ** 12
+#: `cross_model.flagged` is set when more than this fraction of a trial's
+#: tokens (the four MODEL_TOKEN_FIELDS, summed over every model) were spent
+#: on models other than the arm's own `--model`: the trial's work was done
+#: MOSTLY by another model (a subagent's), so its scores describe that model
+#: at least as much as the arm's. A half leaves room for the CLI's own small
+#: calls on other models (compaction, helpers) without flagging. A flag
+#: only: no score, gate or threshold reads it.
+CROSS_MODEL_SHARE_THRESHOLD = 0.5
+#: A canonical model id, after `canonical_model_id` has removed the
+#: spellings around it.
+_CANONICAL_ID = re.compile(r"claude-[a-z0-9]+(?:[.-][a-z0-9]+)*")
+#: The spellings `canonical_model_id` removes, in this order: a bracketed
+#: variant suffix (`[1m]`), a Bedrock `<region>.anthropic.` prefix and
+#: `-v<n>:<n>` suffix, a Vertex `@<date>` suffix, and a `-YYYYMMDD` date
+#: suffix (a dated snapshot is the same model).
+_ID_SUFFIX_VARIANT = re.compile(r"\[[^\]]*\]$")
+_ID_PREFIX_BEDROCK = re.compile(r"^(?:[a-z]{2,4}\.)?anthropic\.")
+_ID_SUFFIX_BEDROCK = re.compile(r"-v\d+(?::\d+)?$")
+_ID_SUFFIX_DATE = re.compile(r"(?:-|@)\d{8}$")
+
+
+def canonical_model_id(model) -> str | None:
+    """The canonical id `model` names, or None when it is not a full model
+    id: an alias such as `sonnet` cannot be resolved here, because the
+    alias table lives in the CLI and the harness keeps no copy of it (the
+    roster's probe, scripts/probe_model_defaults.py, resolves aliases per
+    CI run and commits none). Unknown, never a guess."""
+    if not isinstance(model, str):
+        return None
+    text = _ID_SUFFIX_VARIANT.sub("", model.strip())
+    text = _ID_PREFIX_BEDROCK.sub("", text)
+    text = _ID_SUFFIX_BEDROCK.sub("", text)
+    text = _ID_SUFFIX_DATE.sub("", text)
+    return text if _CANONICAL_ID.fullmatch(text) else None
+
+
+def _token_count(value):
+    return value if (_is_number(value) and 0 <= value <= MAX_TOKEN_COUNT) else None
+
+
+def model_usage(result) -> dict:
+    """The per-model token accounting of one CLI result, from `modelUsage`:
+    `{"tokens", "dropped", "complete"}`.
+
+    `tokens` is `{model id: {name: count, ..., "canonical_model": id}}` for
+    every MODEL_TOKEN_FIELDS name, model ids sorted and validated as
+    `models_used()` validates them, at most MODELS_USED_MAX. A count the CLI
+    did not report, or reported as anything but a finite number from 0 to
+    MAX_TOKEN_COUNT, is null: missing, never zero. `canonical_model` is the
+    entry's own `canonicalModel` when it is a model id, else null.
+
+    `dropped` counts the entries left out: an invalid model id, an entry
+    that is not an object, or one past MODELS_USED_MAX. `complete` is true
+    only for a `modelUsage` object with at least one entry and none dropped;
+    an incomplete accounting is never read as a whole.
+
+    The CLI's `modelUsage` covers "every model call made through the query
+    pipeline ... main loop, Task subagents, sidechains, and internal calls
+    such as compaction" (the SDK schema text bundled in Claude Code 2.1.292),
+    so a subagent on another model appears under its own key. It is
+    cumulative per session, so a multi-turn arm's last result already holds
+    every turn (`_combine_turns`).
+    """
+    usage = result.get("modelUsage") if isinstance(result, dict) else None
+    if not isinstance(usage, dict):
+        return {"tokens": {}, "dropped": 0, "complete": False}
+    out, dropped = {}, 0
+    for key in sorted(usage, key=str):
+        entry = usage[key]
+        if not _is_model_id(key) or not isinstance(entry, dict) \
+                or len(out) == MODELS_USED_MAX:
+            dropped += 1
+            continue
+        out[key] = {name: _token_count(entry.get(source))
+                    for name, source in MODEL_TOKEN_FIELDS}
+        canonical = entry.get("canonicalModel")
+        out[key]["canonical_model"] = canonical if _is_model_id(canonical) else None
+    return {"tokens": out, "dropped": dropped,
+            "complete": bool(out) and dropped == 0}
+
+
+def model_tokens(result) -> dict:
+    """`model_usage(result)["tokens"]`."""
+    return model_usage(result)["tokens"]
+
+
+def _entry_total(counts) -> float | None:
+    """The four counts of one `model_tokens` entry summed, or None when any
+    is missing or invalid or the sum is past MAX_TOKEN_COUNT."""
+    if not isinstance(counts, dict):
+        return None
+    values = [_token_count(counts.get(name)) for name, _ in MODEL_TOKEN_FIELDS]
+    if any(v is None for v in values):
+        return None
+    return _token_count(sum(values))
+
+
+def model_usage_total(tokens: dict, complete: bool) -> float | None:
+    """Every model's four counts summed: the improvement loop's tokens
+    (ADR 0005, 2026-10-07 addendum). None when the accounting is incomplete,
+    empty, any count is missing, or the total is past MAX_TOKEN_COUNT."""
+    if not complete or not isinstance(tokens, dict) or not tokens:
+        return None
+    totals = [_entry_total(counts) for counts in tokens.values()]
+    if any(t is None for t in totals):
+        return None
+    return _token_count(sum(totals))
+
+
+def _cross_model_parts(tokens: dict, own: str | None,
+                       complete: bool = True) -> tuple | None:
+    """(tokens on other models, all tokens) of one `model_tokens` block, or
+    None when it cannot be told: an incomplete accounting, an own model that
+    is not a full model id, an entry whose model cannot be resolved, no
+    tokens, or any count missing (a partial sum would misstate the share).
+    Models are compared by `canonical_model_id`, an entry's
+    `canonical_model` first."""
+    own_id = canonical_model_id(own)
+    if not complete or own_id is None or not isinstance(tokens, dict) \
+            or not tokens:
+        return None
+    other = total = 0
+    for model, counts in tokens.items():
+        entry_total = _entry_total(counts)
+        entry_id = canonical_model_id(counts.get("canonical_model") or model) \
+            if isinstance(counts, dict) else None
+        if entry_total is None or entry_id is None:
+            return None
+        total += entry_total
+        if entry_id != own_id:
+            other += entry_total
+    if _token_count(total) is None or total <= 0:
+        return None
+    return other, total
+
+
+def cross_model(tokens: dict, own: str | None, *, complete: bool = True,
+                dropped: int = 0) -> dict:
+    """A trial summary's `cross_model` block: the arm's own `model` (null when
+    the arm passed no `--model`) and its `canonical_model`
+    (`canonical_model_id`, null when it cannot be resolved), whether the
+    accounting is `complete` and how many entries were `dropped`,
+    `other_share` (the fraction of the tokens spent on other models), the
+    `threshold`, and `flagged` (`other_share` above it). `other_share` and
+    `flagged` are null, unknown, whenever the share cannot be told."""
+    parts = _cross_model_parts(tokens, own, complete)
+    share = parts[0] / parts[1] if parts else None
+    return {"model": own, "canonical_model": canonical_model_id(own),
+            "complete": bool(complete), "dropped": dropped,
+            "other_share": share, "threshold": CROSS_MODEL_SHARE_THRESHOLD,
+            "flagged": None if parts is None else _over_threshold(*parts)}
+
+
+def _over_threshold(other, total) -> bool:
+    """`other / total` above CROSS_MODEL_SHARE_THRESHOLD, compared exactly
+    (rationals, not floats): a float share can round onto the threshold."""
+    return Fraction(other) > Fraction(CROSS_MODEL_SHARE_THRESHOLD) * Fraction(total)
+
+
 def _is_model_id(key) -> bool:
     return (isinstance(key, str) and 0 < len(key) <= MODEL_ID_MAX_CHARS
             and key.isprintable() and not any(c.isspace() for c in key)
@@ -2753,7 +2954,10 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    models: list | None = None,
                    tool_trace: dict | None = None,
                    judge_models: list | None = None,
-                   arm_dir: Path | None = None) -> None:
+                   arm_dir: Path | None = None,
+                   effort: str | None = None,
+                   agent_usage: dict | None = None,
+                   agent_model: str | None = None) -> None:
     """One arm's summary.json (+ raw transcript).
 
     `key` is the results-tree path for this subject — a skill's own name, or
@@ -2766,7 +2970,15 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     and judge call of the run was launched with) and `models_used` /
     `judge_models_used`
     (`models_used()` of the agent's and the judge's results; empty when that
-    call never ran) — #202.
+    call never ran) — #202. The `harness` block also records `effort`, the
+    `--effort` level every agent call of the arm was launched with, or null
+    when none was passed (the CLI's default).
+
+    `model_tokens` (`model_usage()` of the agent's result, passed as
+    `agent_usage`; `{}` when that call never produced one) and `cross_model`
+    (`cross_model()` of it and `agent_model`, the arm's own `--model`) are in
+    every summary too. An aggregate summary passes `sum_model_usage()` of
+    its trials.
 
     `arm_dir` (#66) names the directory to write into when it is not the
     default `<results>/<key or skill>/<timestamp>/<arm>/`: a nested fixture's
@@ -2776,6 +2988,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     if arm_dir is None:
         arm_dir = results_dir / (key or skill) / timestamp / arm_name
     arm_dir.mkdir(parents=True, exist_ok=True)
+    usage = agent_usage or {"tokens": {}, "dropped": 0, "complete": False}
     summary = {}
     if skill is not None:
         summary["skill"] = skill
@@ -2787,9 +3000,13 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         "objective_checks": objective_checks,
         "judge": judge_result,
         "harness": {"name": HARNESS_NAME, "version": harness_version,
-                    "permission_mode": permission_mode},
+                    "permission_mode": permission_mode, "effort": effort},
         "models_used": list(models or []),
         "judge_models_used": list(judge_models or []),
+        "model_tokens": dict(usage["tokens"]),
+        "cross_model": cross_model(usage["tokens"], agent_model,
+                                   complete=usage["complete"],
+                                   dropped=usage["dropped"]),
     })
     if extra:
         summary.update(extra)
@@ -3047,6 +3264,123 @@ def efficiency_delta(with_stats: dict, without_stats: dict) -> dict:
     return out
 
 
+def _trial_usage(trial: dict) -> tuple:
+    """(model_tokens, complete) of one trial summary: (None, False) when it
+    has none (its agent call produced no result, or the summary predates the
+    field). `complete` is its `cross_model.complete`, false when absent."""
+    tokens = trial.get("model_tokens") if isinstance(trial, dict) else None
+    if not isinstance(tokens, dict) or not tokens:
+        return None, False
+    block = trial.get("cross_model")
+    return tokens, isinstance(block, dict) and block.get("complete") is True
+
+
+def _trial_count(tokens: dict, complete: bool, model: str, name: str):
+    """One trial's `name` count for `model`: the recorded value; zero for a
+    model a COMPLETE trial did not use; None (missing) for a model an
+    incomplete trial does not show, since it may be the one dropped."""
+    if model in tokens:
+        counts = tokens[model]
+        return _token_count(counts.get(name)) if isinstance(counts, dict) else None
+    return 0 if complete else None
+
+
+def _arm_model(trials: list[dict]) -> str | None:
+    """The arm's own model as its trial summaries recorded it."""
+    for trial in trials:
+        block = trial.get("cross_model") if isinstance(trial, dict) else None
+        if isinstance(block, dict) and isinstance(block.get("model"), str):
+            return block["model"]
+    return None
+
+
+def _token_models(trials: list[dict]) -> tuple:
+    """(the sorted model ids across the trials, at most MODELS_USED_MAX, and
+    how many past that cap were left out)."""
+    found = sorted({model for trial in trials
+                    for model in (_trial_usage(trial)[0] or {})})
+    return found[:MODELS_USED_MAX], max(0, len(found) - MODELS_USED_MAX)
+
+
+def sum_model_usage(trials: list[dict]) -> dict:
+    """`model_usage()`'s shape for an arm: per model and count, the sum over
+    the trials that recorded `model_tokens`. A model a complete trial did not
+    use adds zero; one an incomplete trial does not show makes that sum null,
+    as does any missing count. `complete` only when EVERY trial recorded a
+    complete accounting (one whose entries were all dropped, or that produced
+    no result, did not) and no model was left out. An aggregate summary's
+    `model_tokens` and `cross_model`."""
+    measured = [(tokens, complete) for tokens, complete in map(_trial_usage, trials)
+                if tokens is not None]
+    models, cut = _token_models(trials)
+    out = {}
+    for model in models:
+        out[model] = {}
+        for name, _ in MODEL_TOKEN_FIELDS:
+            values = [_trial_count(t, c, model, name) for t, c in measured]
+            out[model][name] = (_token_count(sum(values))
+                                if all(v is not None for v in values) else None)
+        names = {t[model].get("canonical_model") for t, _ in measured
+                 if isinstance(t.get(model), dict)}
+        out[model]["canonical_model"] = names.pop() if len(names) == 1 else None
+    dropped = cut + sum(
+        trial["cross_model"]["dropped"] for trial in trials
+        if isinstance(trial, dict) and isinstance(trial.get("cross_model"), dict)
+        and isinstance(trial["cross_model"].get("dropped"), int)
+        and not isinstance(trial["cross_model"]["dropped"], bool))
+    # Every trial, not only those with tokens: a trial whose entries were all
+    # dropped, or that produced no result, leaves the arm's total unknown.
+    return {"tokens": out, "dropped": dropped,
+            "complete": bool(trials) and not cut
+            and all(_trial_usage(trial)[1] for trial in trials)}
+
+
+def model_token_stats(trials: list[dict]) -> dict:
+    """`_metric_stats` per model and per MODEL_TOKEN_FIELDS count, over every
+    trial: a trial with no `model_tokens` is missing; one that recorded other
+    models but not this one used zero of it when it was complete, and is
+    missing when it was not."""
+    out = {}
+    for model in _token_models(trials)[0]:
+        out[model] = {}
+        for name, _ in MODEL_TOKEN_FIELDS:
+            values = []
+            for trial in trials:
+                tokens, complete = _trial_usage(trial)
+                if tokens is None:
+                    continue
+                value = _trial_count(tokens, complete, model, name)
+                if value is not None:
+                    values.append(value)
+            out[model][name] = _metric_stats(values, len(trials))
+    return out
+
+
+def cross_model_stats(trials: list[dict]) -> dict:
+    """An arm's `cross_model` aggregate: its own `model`, the `threshold`,
+    `n` (trials whose share could be told), `n_unknown` (every other trial:
+    an incomplete accounting, entries all dropped, no result, an unresolved
+    model), `flagged_trials`, and `other_share` and `flagged` pooled over the
+    `n` trials' tokens. Those two are null, unknown, when `n` is 0 or
+    `n_unknown` is not."""
+    own = _arm_model(trials)
+    other = total = n = n_unknown = flagged = 0
+    for trial in trials:
+        tokens, complete = _trial_usage(trial)
+        parts = _cross_model_parts(tokens or {}, own, complete)
+        if parts is None:
+            n_unknown += 1
+            continue
+        n += 1
+        other, total = other + parts[0], total + parts[1]
+        flagged += _over_threshold(*parts)
+    known = n and not n_unknown
+    return {"model": own, "threshold": CROSS_MODEL_SHARE_THRESHOLD, "n": n,
+            "n_unknown": n_unknown, "flagged_trials": flagged,
+            "other_share": other / total if known else None,
+            "flagged": _over_threshold(other, total) if known else None}
+
+
 def aggregate_trials(trials: list[dict],
                      tool_errors: list | None = None) -> dict:
     """One arm's trial summaries, reduced to the fields an aggregate carries.
@@ -3086,6 +3420,11 @@ def aggregate_trials(trials: list[dict],
         per `EFFICIENCY_METRICS` name, each with `n`, `n_missing`, `mean`,
         `median`, `min`, `max` and `sum`. Added alongside the figures above,
         which are unchanged.
+      * `model_tokens` — `model_token_stats`: the same block per model id and
+        per `MODEL_TOKEN_FIELDS` count, from each trial's `model_tokens`.
+      * `cross_model` — `cross_model_stats`: how many trials spent more than
+        `CROSS_MODEL_SHARE_THRESHOLD` of their tokens on models other than
+        the arm's own, and that share pooled over the arm.
     """
     scored = [t for t in trials if not t.get("error")]
     trial_errors = [
@@ -3147,6 +3486,8 @@ def aggregate_trials(trials: list[dict],
                           "cost_usd": _stats(costs),
                           "cost_unknown_trials": len(trials) - len(costs),
                           "efficiency": efficiency_stats(trials, tool_errors),
+                          "model_tokens": model_token_stats(trials),
+                          "cross_model": cross_model_stats(trials),
                           **({"guidance_violations": violations} if violations is not None else {})}}
 
 
@@ -3352,6 +3693,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     # Namespace without it records null rather than probing the CLI here.
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    effort = _effort(args, fixture)
     extra = dict(extra or {})
     if fixture.get("_real_work"):
         extra["guidance_violations"] = guidance_violations.measure(None, None, None)
@@ -3366,7 +3708,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, None, None, None, None, extra=extra,
                        harness_version=harness_version,
-                       permission_mode=permission_mode, arm_dir=out_dir)
+                       permission_mode=permission_mode, arm_dir=out_dir,
+                       effort=effort, agent_model=agent_model)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": [], **extra}
 
@@ -3387,7 +3730,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, None, None, None, None, extra=extra,
                        harness_version=harness_version,
-                       permission_mode=permission_mode, arm_dir=out_dir)
+                       permission_mode=permission_mode, arm_dir=out_dir,
+                       effort=effort, agent_model=agent_model)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": [], **extra}
@@ -3404,6 +3748,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "permission_mode": permission_mode,
             "read_denied": run_checkouts(args, registries=registries),
             "read_denied_outputs": run_outputs(args),
+            "effort": effort,
         }
         # A bad `registry:` (missing field, wrong type, unknown URL, or a
         # resolved path that doesn't exist) becomes an error dict here — the
@@ -3471,6 +3816,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         # errored agent call records none (an `agent_error` result's raw
         # object is not trusted to be a complete one).
         agent_models = [] if "error" in result else models_used(raw)
+        agent_usage = None if "error" in result else model_usage(raw)
         judge_models: list = []
 
         if "error" in result:
@@ -3504,7 +3850,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                extra=extra, harness_version=harness_version,
                                permission_mode=permission_mode,
                                models=agent_models, arm_dir=out_dir,
-                               tool_trace=tool_trace)
+                               tool_trace=tool_trace, effort=effort,
+                               agent_usage=agent_usage,
+                               agent_model=agent_model)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
                         "judge": None, "models_used": agent_models, **extra}
@@ -3515,7 +3863,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                                extra=extra, harness_version=harness_version,
                                permission_mode=permission_mode,
                                models=agent_models, arm_dir=out_dir,
-                               tool_trace=tool_trace)
+                               tool_trace=tool_trace, effort=effort,
+                               agent_usage=agent_usage,
+                               agent_model=agent_model)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
                         "judge": None, "models_used": agent_models, **extra}
@@ -3551,7 +3901,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        extra=extra, harness_version=harness_version,
                        permission_mode=permission_mode,
                        models=agent_models, judge_models=judge_models,
-                       arm_dir=out_dir, tool_trace=tool_trace)
+                       arm_dir=out_dir, tool_trace=tool_trace, effort=effort,
+                       agent_usage=agent_usage, agent_model=agent_model)
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
@@ -3624,7 +3975,9 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                        permission_mode=_permission_mode(args),
                        models=_union(written, "models_used"),
                        judge_models=_union(written, "judge_models_used"),
-                       arm_dir=arm_dir)
+                       arm_dir=arm_dir, effort=_effort(args, fixture),
+                       agent_usage=sum_model_usage(written),
+                       agent_model=_arm_model(written))
     return {"arm": arm_name, "models_used": _union(written, "models_used"),
             "stats": stats, "results": results}
 
@@ -3913,9 +4266,12 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
+    effort = _effort(args, fixture)
+    agent_model = getattr(args, "model", None) or fixture.get("model")
     extra = {}
     agent_summary = raw = tool_trace = None
     agent_models = []
+    agent_usage = None
     scratch = Path(tempfile.mkdtemp(
         prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
@@ -3981,7 +4337,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            error, None, None, None, None,
                            key=ctx["key"], extra=extra,
                            harness_version=harness_version,
-                           permission_mode=permission_mode)
+                           permission_mode=permission_mode, effort=effort,
+                           agent_model=agent_model)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
                     "guard": None, "inconclusive": True, "models_used": [],
@@ -4011,7 +4368,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            error, None, None, None, None,
                            key=ctx["key"], extra=extra,
                            harness_version=harness_version,
-                           permission_mode=permission_mode)
+                           permission_mode=permission_mode, effort=effort,
+                           agent_model=agent_model)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
                     "guard": guard, "inconclusive": True, "models_used": [],
@@ -4020,12 +4378,13 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
 
         arm_config = {
             "name": arm["name"],
-            "model": args.model or fixture.get("model"),
+            "model": agent_model,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "setting_sources": setting_sources,
             "env_override": env,
             "followups": fixture.get("followups"),
             "permission_mode": permission_mode,
+            "effort": effort,
             # A multi-turn arm's transcript lands under `config`, inside this
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
@@ -4045,6 +4404,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         raw = result.get("raw")
         tool_trace = result.get("tool_trace")
         agent_models = [] if "error" in result else models_used(raw)
+        agent_usage = None if "error" in result else model_usage(raw)
         judge_models: list = []
 
         if "error" in result:
@@ -4108,7 +4468,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                        key=ctx["key"], extra=extra,
                        harness_version=harness_version,
                        permission_mode=permission_mode, models=agent_models,
-                       judge_models=judge_models, tool_trace=tool_trace)
+                       judge_models=judge_models, tool_trace=tool_trace,
+                       effort=effort, agent_usage=agent_usage,
+                       agent_model=agent_model)
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,
@@ -4126,7 +4488,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                               "mode": arm["mode"], "bytes": None,
                               "guidance_violations": counts},
                        harness_version=harness_version, permission_mode=permission_mode,
-                       models=agent_models, tool_trace=tool_trace)
+                       models=agent_models, tool_trace=tool_trace,
+                       effort=effort, agent_usage=agent_usage,
+                       agent_model=agent_model)
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": None, "judge": None,
                 "guard": None, "inconclusive": True, "models_used": [],
@@ -4625,6 +4989,14 @@ def main() -> int:
                              "`bypassPermissions` reproduces runs recorded "
                              "before this option existed, and is refused by "
                              "the CLI when it runs as root")
+    parser.add_argument("--effort", default=None,
+                        choices=list(guidance.EFFORT_LEVELS),
+                        help="the CLI effort level every agent arm is "
+                             "launched with, first turn and follow-ups alike; "
+                             "overrides the fixture's `effort:`. Without "
+                             "either, no `--effort` is passed (the CLI's "
+                             "default). Recorded in every summary.json's "
+                             "`harness` block; the judge does not take it")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds); "
@@ -4748,6 +5120,7 @@ def main() -> int:
             validate_mapping_keys(fixture, eval_dir / FIXTURE_FILE)
             validate_timeouts(fixture, eval_dir / FIXTURE_FILE)
             validate_followups(fixture, eval_dir / FIXTURE_FILE)
+            validate_effort(fixture, eval_dir / FIXTURE_FILE)
             seed_prep.validate_fixture(fixture, eval_dir)
         except MappingFixtureKeyError as exc:
             # A malformed `judge:` is #81's `invalid_judge_block` — named in

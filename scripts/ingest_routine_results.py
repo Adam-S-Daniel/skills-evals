@@ -47,6 +47,7 @@ import math
 import os
 import re
 import subprocess
+from fractions import Fraction
 import sys
 from pathlib import Path
 
@@ -280,9 +281,147 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "skill", "fixture", "n", "trial",
     "errors", "scored", "trial_errors", "aggregate",
     "subject", "section", "mode", "bytes", "delivery", "hook_verdict",
-    "installed", "decoy", "hook_returncode", "guard")
+    "installed", "decoy", "hook_returncode", "guard",
+    "model_tokens", "cross_model")
 AGENT_KEYS = ("usage", "cost_usd", "num_turns", "duration_ms")
+#: `harness` keys every summary has carried since #71; `effort` came later
+#: and is optional, so an older summary still ingests.
 HARNESS_KEYS = ("name", "version", "permission_mode")
+HARNESS_ALLOWED = HARNESS_KEYS + ("effort",)
+#: run_eval's agent effort levels (guidance.EFFORT_LEVELS; a test pins the
+#: two together). Null is the CLI's default.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+#: run_eval's per-model counts (MODEL_TOKEN_FIELDS), its cap on one
+#: (MAX_TOKEN_COUNT) and on the models kept (MODELS_USED_MAX).
+MODEL_TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+                    "cache_creation_input_tokens")
+MAX_TOKEN_COUNT = 10 ** 12
+MAX_MODELS = 16
+CROSS_MODEL_KEYS = ("model", "canonical_model", "complete", "dropped",
+                    "other_share", "threshold", "flagged")
+#: run_eval.CROSS_MODEL_SHARE_THRESHOLD: a summary may not move it.
+CROSS_MODEL_SHARE_THRESHOLD = 0.5
+#: How far a recorded share may sit from the one its counts give.
+SHARE_TOLERANCE = 1e-9
+#: run_eval.canonical_model_id's rules, repeated here because this script
+#: imports nothing from the harness; a test runs both over the same cases.
+_CANONICAL_ID = re.compile(r"claude-[a-z0-9]+(?:[.-][a-z0-9]+)*")
+_ID_SUFFIX_VARIANT = re.compile(r"\[[^\]]*\]$")
+_ID_PREFIX_BEDROCK = re.compile(r"^(?:[a-z]{2,4}\.)?anthropic\.")
+_ID_SUFFIX_BEDROCK = re.compile(r"-v\d+(?::\d+)?$")
+_ID_SUFFIX_DATE = re.compile(r"(?:-|@)\d{8}$")
+
+
+def canonical_model_id(model) -> str | None:
+    """run_eval.canonical_model_id: the canonical id a model string names,
+    or None when it is not a full model id."""
+    if not isinstance(model, str):
+        return None
+    text = _ID_SUFFIX_VARIANT.sub("", model.strip())
+    text = _ID_PREFIX_BEDROCK.sub("", text)
+    text = _ID_SUFFIX_BEDROCK.sub("", text)
+    text = _ID_SUFFIX_DATE.sub("", text)
+    return text if _CANONICAL_ID.fullmatch(text) else None
+
+
+def expected_parts(tokens: dict, own_id: str) -> tuple | None:
+    """(tokens on other models, all tokens) that `tokens` gives for the arm
+    model `own_id`, as run_eval computes them; None when it cannot be
+    told."""
+    other = total = 0
+    for model, counts in tokens.items():
+        values = [counts[name] for name in MODEL_TOKEN_KEYS]
+        entry_id = canonical_model_id(counts["canonical_model"] or model)
+        if any(v is None for v in values) or entry_id is None:
+            return None
+        entry_total = sum(values)
+        if entry_total > MAX_TOKEN_COUNT:
+            return None
+        total += entry_total
+        if entry_id != own_id:
+            other += entry_total
+    if not tokens or total <= 0 or total > MAX_TOKEN_COUNT:
+        return None
+    return other, total
+
+
+def over_threshold(other, total) -> bool:
+    """`other / total` above CROSS_MODEL_SHARE_THRESHOLD, compared exactly
+    (rationals, not floats), as run_eval flags it."""
+    return Fraction(other) > Fraction(CROSS_MODEL_SHARE_THRESHOLD) * Fraction(total)
+
+
+def check_model_tokens(value, where: str) -> None:
+    """`model_tokens`: at most MAX_MODELS model ids, each with exactly the
+    four counts (null, or a finite number in 0..MAX_TOKEN_COUNT) and its
+    `canonical_model` (null or a model id)."""
+    if not isinstance(value, dict) or len(value) > MAX_MODELS:
+        raise Rejected(f"{where}: model_tokens must be an object of at most "
+                       f"{MAX_MODELS} models")
+    for model, counts in value.items():
+        if not MODEL_ID_RE.fullmatch(model):
+            raise Rejected(f"{where}: model_tokens key is not a model id")
+        keys = MODEL_TOKEN_KEYS + ("canonical_model",)
+        _object(counts, f"{where}: model_tokens entry", keys, keys)
+        for name in MODEL_TOKEN_KEYS:
+            _number(counts[name], f"{where}: model_tokens count", 0,
+                    MAX_TOKEN_COUNT, null=True)
+        canonical = counts["canonical_model"]
+        if canonical is not None and not (isinstance(canonical, str)
+                                          and MODEL_ID_RE.fullmatch(canonical)):
+            raise Rejected(f"{where}: model_tokens canonical_model is not a "
+                           "model id")
+
+
+def check_cross_model(value, where: str, tokens) -> None:
+    """`cross_model`: exactly CROSS_MODEL_KEYS, each its own type, and
+    consistent with itself and with `tokens`, the summary's (already
+    checked) `model_tokens`: completeness agrees with `dropped`, an
+    incomplete accounting has no share or flag, the threshold is the fixed
+    one, the flag is the share against it, and the share is the one the
+    counts give."""
+    _object(value, f"{where}: cross_model", CROSS_MODEL_KEYS, CROSS_MODEL_KEYS)
+    for name in ("model", "canonical_model"):
+        model = value[name]
+        if model is not None and not (isinstance(model, str)
+                                      and MODEL_ID_RE.fullmatch(model)):
+            raise Rejected(f"{where}: cross_model.{name} is not a model id")
+    if not isinstance(value["complete"], bool):
+        raise Rejected(f"{where}: cross_model.complete is not a bool")
+    _integer(value["dropped"], f"{where}: cross_model.dropped", 0, MAX_ITEMS)
+    _number(value["other_share"], f"{where}: cross_model.other_share", 0, 1,
+            null=True)
+    _number(value["threshold"], f"{where}: cross_model.threshold", 0, 1)
+    if value["flagged"] is not None and not isinstance(value["flagged"], bool):
+        raise Rejected(f"{where}: cross_model.flagged is not a bool or null")
+
+    complete, share = value["complete"], value["other_share"]
+    if complete and (value["dropped"] or not tokens):
+        raise Rejected(f"{where}: cross_model is complete with entries dropped "
+                       "or none recorded")
+    if not complete and (share is not None or value["flagged"] is not None):
+        raise Rejected(f"{where}: cross_model has a share or flag for an "
+                       "incomplete accounting")
+    if value["threshold"] != CROSS_MODEL_SHARE_THRESHOLD:
+        raise Rejected(f"{where}: cross_model.threshold is not "
+                       f"{CROSS_MODEL_SHARE_THRESHOLD}")
+    own_id = canonical_model_id(value["model"])
+    if value["canonical_model"] != own_id:
+        raise Rejected(f"{where}: cross_model.canonical_model does not match "
+                       "its model")
+    # Both the share and the flag are checked against the COUNTS, never the
+    # flag against the supplied share: a share within the float tolerance of
+    # the true one can sit on the other side of the threshold.
+    parts = expected_parts(tokens, own_id) if complete and own_id else None
+    if (share is None) != (parts is None) or (
+            share is not None
+            and abs(share - parts[0] / parts[1]) > SHARE_TOLERANCE):
+        raise Rejected(f"{where}: cross_model.other_share does not match the "
+                       "model_tokens counts")
+    expected_flag = None if parts is None else over_threshold(*parts)
+    if value["flagged"] != expected_flag:
+        raise Rejected(f"{where}: cross_model.flagged does not match the "
+                       "model_tokens counts")
 
 
 def check_summary(doc, where: str, parts: dict) -> None:
@@ -354,11 +493,19 @@ def check_summary(doc, where: str, parts: dict) -> None:
                     _number(dim["score"], f"{where}: judge score", 0, 10)
 
     harness = doc["harness"]
-    _object(harness, f"{where}: harness", HARNESS_KEYS, HARNESS_KEYS)
+    _object(harness, f"{where}: harness", HARNESS_ALLOWED, HARNESS_KEYS)
     _string(harness["name"], f"{where}: harness.name", 64)
     _string(harness["version"], f"{where}: harness.version", 64, null=True)
     _string(harness["permission_mode"], f"{where}: harness.permission_mode",
             32, null=True)
+    if harness.get("effort") is not None \
+            and harness["effort"] not in EFFORT_LEVELS:
+        raise Rejected(f"{where}: harness.effort is not a known level")
+    if ("model_tokens" in doc) != ("cross_model" in doc):
+        raise Rejected(f"{where}: model_tokens and cross_model come together")
+    if "model_tokens" in doc:
+        check_model_tokens(doc["model_tokens"], where)
+        check_cross_model(doc["cross_model"], where, doc["model_tokens"])
 
     for field in ("models_used", "judge_models_used"):
         models = doc[field]

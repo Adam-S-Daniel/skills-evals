@@ -86,11 +86,51 @@ def summary(arm="with_skill", **changes) -> dict:
                                   "rationale": "made no unrelated edits"}],
                   "overall": 9.1},
         "harness": {"name": "claude-code", "version": "2.1.292 (Claude Code)",
-                    "permission_mode": "auto"},
-        "models_used": ["model-a"], "judge_models_used": ["model-b"],
+                    "permission_mode": "auto", "effort": None},
+        "models_used": ["model-a", "model-c"], "judge_models_used": ["model-b"],
+        # A parent and a subagent on another model, as run_eval writes them.
+        "model_tokens": {
+            "model-a": {"input_tokens": 26, "output_tokens": 5542,
+                        "cache_read_input_tokens": 1000,
+                        "cache_creation_input_tokens": 200,
+                        "canonical_model": None},
+            "model-c": {"input_tokens": 10, "output_tokens": 20,
+                        "cache_read_input_tokens": None,
+                        "cache_creation_input_tokens": 0,
+                        "canonical_model": "model-c"}},
+        "cross_model": {"model": "model-a", "canonical_model": None,
+                        "complete": True, "dropped": 0, "other_share": None,
+                        "threshold": 0.5, "flagged": None},
         "fixture": "bootstrap", "n": 1,
     }
     doc.update(changes)
+    return doc
+
+
+def counts(inp, out, read, write, canonical=None) -> dict:
+    return {"input_tokens": inp, "output_tokens": out,
+            "cache_read_input_tokens": read,
+            "cache_creation_input_tokens": write, "canonical_model": canonical}
+
+
+def flagged_summary(**cross) -> dict:
+    """A summary whose subagent did 900 of 1000 tokens, consistently: the
+    share and flag are the ones its counts give."""
+    doc = summary(models_used=["claude-opus-4-8", "claude-sonnet-5"])
+    doc["model_tokens"] = {
+        "claude-opus-4-8": counts(100, 200, 500, 100, "claude-opus-4-8"),
+        "claude-sonnet-5[1m]": counts(10, 20, 50, 20)}
+    doc["cross_model"] = {"model": "claude-sonnet-5",
+                          "canonical_model": "claude-sonnet-5",
+                          "complete": True, "dropped": 0, "other_share": 0.9,
+                          "threshold": 0.5, "flagged": True, **cross}
+    return doc
+
+
+def old_summary(arm="with_skill") -> dict:
+    """The shape every summary had before per-model tokens and effort."""
+    doc = summary(arm)
+    del doc["harness"]["effort"], doc["model_tokens"], doc["cross_model"]
     return doc
 
 
@@ -211,6 +251,119 @@ class AcceptTests(GitCase):
         self.assertEqual(result["run_id"], legacy)
         self.assertTrue((self.tmp / "staged" / "routine-results" / legacy)
                         .is_dir())
+
+    def test_old_and_new_summary_shapes_are_accepted(self):
+        base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
+        flagged = flagged_summary()
+        flagged["harness"]["effort"] = "xhigh"
+        for name, doc in (("old", old_summary()), ("new", summary()),
+                          ("flagged", flagged)):
+            with self.subTest(shape=name):
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({f"{base}/with_skill/summary.json":
+                             json.dumps(doc).encode()})
+                self.assertEqual(self.validate(out=self.tmp / name)["files"], "1")
+
+    def test_rejects_contradictory_token_accounting(self):
+        base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
+        incomplete = {"complete": False, "dropped": 1, "other_share": None,
+                      "flagged": None}
+        cases = [
+            ("complete with entries dropped", flagged_summary(dropped=1)),
+            ("complete with entries dropped",
+             summary(model_tokens={}, cross_model=dict(
+                 summary()["cross_model"]))),
+            ("share or flag for an incomplete",
+             flagged_summary(complete=False, dropped=1)),
+            ("share or flag for an incomplete",
+             flagged_summary(**dict(incomplete, flagged=False))),
+            ("threshold is not 0.5", flagged_summary(threshold=1)),
+            ("threshold is not 0.5", flagged_summary(threshold=0.95)),
+            ("flagged does not match", flagged_summary(flagged=False)),
+            ("flagged does not match", flagged_summary(flagged=None)),
+            # A share that would justify its flag, but not the counts'.
+            ("other_share does not match",
+             flagged_summary(other_share=0.4, flagged=False)),
+            ("other_share does not match", flagged_summary(other_share=0.1,
+                                                           flagged=False)),
+            ("other_share does not match", flagged_summary(other_share=None,
+                                                           flagged=None)),
+            ("other_share does not match",
+             summary(cross_model=dict(summary()["cross_model"],
+                                      other_share=0.9, flagged=True))),
+            ("canonical_model does not match",
+             flagged_summary(canonical_model="claude-opus-4-8")),
+            ("canonical_model does not match",
+             flagged_summary(model="sonnet")),
+            ("come together", summary(cross_model="DELETE")),
+            ("come together", summary(model_tokens="DELETE")),
+        ]
+        for pattern, doc in cases:
+            with self.subTest(pattern=pattern, cross=str(doc.get("cross_model"))[:80]):
+                for key, value in list(doc.items()):
+                    if value == "DELETE":
+                        del doc[key]
+                # Each case on its own: one wrongly accepted must not leave
+                # staged files that fail the cases after it.
+                shutil.rmtree(self.tmp / "staged", ignore_errors=True)
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({f"{base}/with_skill/summary.json":
+                             json.dumps(doc).encode()})
+                self.assertRejected(pattern)
+
+    def near_half(self, own, other, share, flagged) -> dict:
+        doc = flagged_summary(other_share=share, flagged=flagged)
+        doc["model_tokens"] = {"claude-opus-4-8": counts(other, 0, 0, 0),
+                               "claude-sonnet-5": counts(own, 0, 0, 0)}
+        return doc
+
+    def test_the_flag_follows_the_counts_not_the_supplied_share(self):
+        # Both shares sit within the float tolerance of the true one, but
+        # the flag must be the counts' own: other tokens over half of all.
+        base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
+        rejected = {
+            "just over half, flag withheld": self.near_half(
+                499999999999, 500000000001, 0.5, False),
+            "exactly half, flag raised": self.near_half(
+                500000000000, 500000000000, 0.5000000005, True),
+        }
+        for name, doc in rejected.items():
+            with self.subTest(case=name):
+                shutil.rmtree(self.tmp / "staged", ignore_errors=True)
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({f"{base}/with_skill/summary.json":
+                             json.dumps(doc).encode()})
+                self.assertRejected("flagged does not match the model_tokens")
+        accepted = {
+            "just over half": self.near_half(499999999999, 500000000001,
+                                             0.500000000001, True),
+            "exactly half": self.near_half(500000000000, 500000000000, 0.5,
+                                           False),
+        }
+        for name, doc in accepted.items():
+            with self.subTest(case=name):
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({f"{base}/with_skill/summary.json":
+                             json.dumps(doc).encode()})
+                out = self.tmp / name.replace(" ", "-")
+                self.assertEqual(self.validate(out=out)["files"], "1")
+
+    def test_an_incomplete_or_unresolved_accounting_without_a_share_is_accepted(self):
+        base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
+        cases = {
+            "dropped": flagged_summary(complete=False, dropped=2,
+                                       other_share=None, flagged=None),
+            "alias": flagged_summary(model="sonnet", canonical_model=None,
+                                     other_share=None, flagged=None),
+            "no result": summary(model_tokens={}, cross_model=dict(
+                summary()["cross_model"], complete=False)),
+        }
+        for name, doc in cases.items():
+            with self.subTest(case=name):
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({f"{base}/with_skill/summary.json":
+                             json.dumps(doc).encode()})
+                self.assertEqual(self.validate(out=self.tmp / name)["files"], "1")
 
     def test_trials_and_guidance_keys_are_accepted(self):
         base = f"eval-results/{RUN_ID}"
@@ -466,6 +619,59 @@ class RejectContentTests(GitCase):
             ("nested too deep", {"agent": {"usage": json.loads(
                 "[" * 12 + "]" * 12)}}),
             ("error.type", {"error": {"type": 3}}),
+            ("harness: unexpected", {"harness": {
+                "name": "claude-code", "version": None, "permission_mode": "auto",
+                "effort": None, "exec": "x"}}),
+            ("harness.effort", {"harness": {
+                "name": "claude-code", "version": None, "permission_mode": "auto",
+                "effort": "ultra"}}),
+            ("model_tokens must be", {"model_tokens": ["model-a"]}),
+            ("model_tokens must be", {"model_tokens": {
+                f"m-{i}": {} for i in range(17)}}),
+            ("not a model id", {"model_tokens": {"has space": {}}}),
+            ("model_tokens entry: unexpected", {"model_tokens": {"model-a": {
+                "input_tokens": 1, "output_tokens": 1,
+                "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1,
+                "canonical_model": None, "costUSD": 1}}}),
+            ("model_tokens entry: missing", {"model_tokens": {"model-a": {
+                "input_tokens": 1}}}),
+            ("model_tokens count", {"model_tokens": {"model-a": {
+                "input_tokens": 10 ** 13, "output_tokens": 1,
+                "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1,
+                "canonical_model": None}}}),
+            ("model_tokens count", {"model_tokens": {"model-a": {
+                "input_tokens": -1, "output_tokens": 1,
+                "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1,
+                "canonical_model": None}}}),
+            ("model_tokens count", {"model_tokens": {"model-a": {
+                "input_tokens": "1", "output_tokens": 1,
+                "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1,
+                "canonical_model": None}}}),
+            ("canonical_model is not", {"model_tokens": {"model-a": {
+                "input_tokens": 1, "output_tokens": 1,
+                "cache_read_input_tokens": 1, "cache_creation_input_tokens": 1,
+                "canonical_model": 3}}}),
+            ("cross_model: missing", {"cross_model": {"model": "model-a"}}),
+            ("cross_model.complete", {"cross_model": {
+                "model": "model-a", "canonical_model": None, "complete": "yes",
+                "dropped": 0, "other_share": None, "threshold": 0.5,
+                "flagged": None}}),
+            ("cross_model.other_share", {"cross_model": {
+                "model": "model-a", "canonical_model": None, "complete": True,
+                "dropped": 0, "other_share": 1.5, "threshold": 0.5,
+                "flagged": True}}),
+            ("cross_model.dropped", {"cross_model": {
+                "model": "model-a", "canonical_model": None, "complete": False,
+                "dropped": -1, "other_share": None, "threshold": 0.5,
+                "flagged": None}}),
+            ("cross_model.flagged", {"cross_model": {
+                "model": "model-a", "canonical_model": None, "complete": True,
+                "dropped": 0, "other_share": 0.9, "threshold": 0.5,
+                "flagged": "yes"}}),
+            ("cross_model.model", {"cross_model": {
+                "model": "has space", "canonical_model": None, "complete": True,
+                "dropped": 0, "other_share": None, "threshold": 0.5,
+                "flagged": None}}),
         ]
         for pattern, changes in cases:
             with self.subTest(pattern=pattern, changes=str(changes)[:60]):

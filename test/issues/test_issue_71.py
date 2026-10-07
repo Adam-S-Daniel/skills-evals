@@ -106,11 +106,30 @@ def usage_block(tokens: int) -> dict:
             "cache_read_input_tokens": tokens - 3 * tenth}
 
 
+def model_usage_block(tokens: int, model: str = "model-a") -> dict:
+    """A summary's `model_tokens` and `cross_model` for one complete model
+    whose four counts sum to `tokens`."""
+    counts = usage_block(tokens)
+    return {"model_tokens": {model: {
+                "input_tokens": counts["input_tokens"],
+                "output_tokens": counts["output_tokens"],
+                "cache_read_input_tokens": counts["cache_read_input_tokens"],
+                "cache_creation_input_tokens": counts["cache_creation_input_tokens"],
+                "canonical_model": None}},
+            "cross_model": {"model": model, "canonical_model": None,
+                            "complete": True, "dropped": 0, "other_share": None,
+                            "threshold": 0.5, "flagged": None}}
+
+
 def write_arm(run_dir: Path, ts: str, fixture: str,
               passed: int, total: int, judge: float | None,
-              trials: int = 3, tokens: int | None = 1000) -> None:
+              trials: int = 3, tokens: int | None = 1000,
+              main_loop: int | None = None) -> None:
     """The per-trial layout written by local_eval's run_eval children. Every
-    trial reports `tokens` in total (None: an agent block with no usage)."""
+    trial reports `tokens` in total across every model (None: an agent block
+    with no usage and no `model_tokens`), and `main_loop` (default: `tokens`)
+    in its main-loop `usage`."""
+    main_loop = tokens if main_loop is None else main_loop
     for k in range(1, trials + 1):
         trial = run_dir / f"t{k}" / SKILL / ts / fixture / "with_skill"
         (trial / "transcripts").mkdir(parents=True)
@@ -119,8 +138,9 @@ def write_arm(run_dir: Path, ts: str, fixture: str,
         (trial / "summary.json").write_text(json.dumps(
             {"error": None, "objective_checks": checks, "trial": k,
              "agent": {"cost_usd": 0.1,
-                       **({"usage": usage_block(tokens)} if tokens is not None else {})},
-             "judge": {"overall": judge} if judge is not None else None}),
+                       **({"usage": usage_block(main_loop)} if tokens is not None else {})},
+             "judge": {"overall": judge} if judge is not None else None,
+             **(model_usage_block(tokens) if tokens is not None else {})}),
             encoding="utf-8")
         (trial / "transcripts" / "raw.json").write_text(
             json.dumps({"result": f"reply of trial {k}"}), encoding="utf-8")
@@ -134,6 +154,8 @@ class FakeRunner:
         self.numbers = {"baseline": baseline, "candidate": candidate}
         #: Tokens every trial reports, per phase; a test overrides these.
         self.tokens = {"baseline": 1000, "candidate": 1000}
+        #: Main-loop `usage` tokens per phase; None: the same as `tokens`.
+        self.main_loop = {"baseline": None, "candidate": None}
         self.proposal = proposal
         self.best_description = best_description
         self.calls: list[tuple] = []
@@ -151,7 +173,8 @@ class FakeRunner:
         for fixture, (passed, total, judge) in self.numbers[label].items():
             write_arm(run_dir, flag(argv, "--timestamp"), fixture,
                       passed, total, judge,
-                      int(flag(argv, "--trials")), self.tokens[label])
+                      int(flag(argv, "--trials")), self.tokens[label],
+                      self.main_loop[label])
         return 1
 
     def run_description_loop(self, argv, *, cwd, skill_creator):
@@ -314,6 +337,7 @@ class RefusalTests(PipelineCase):
                 record = self.record()
                 self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                                  ("refused", "preflight", 2))
+                self.assertEqual(record["decision"], "refused")
                 self.assertIn(next(iter(env)), err)
                 shutil.rmtree(self.results)
 
@@ -356,6 +380,7 @@ class RefusalTests(PipelineCase):
                 record = self.record()
                 self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                                  ("refused", phase, 2))
+                self.assertEqual(record["decision"], "refused")
                 self.assertIn("apiKeyHelper", record["reasons"][0])
                 self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
                                  ["baseline"])
@@ -369,6 +394,7 @@ class RefusalTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("refused", "baseline", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertEqual(runner.calls, [("refused", "baseline")])
 
     def test_candidate_local_eval_refusal_is_recorded_without_retry(self):
@@ -379,6 +405,7 @@ class RefusalTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("refused", "candidate", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertIn("candidate", record["runs"])
         self.assertEqual([c[0] for c in runner.calls].count("refused"), 1)
 
@@ -680,6 +707,7 @@ class RejectTests(PipelineCase):
         self.assertEqual(rc, 1)
         self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
         self.assertEqual(self.record()["status"], "invalid-proposal")
+        self.assertEqual(self.record()["decision"], "rejected")
         self.assertIn("README.md", self.record()["reasons"][0])
 
     def test_diff_touching_the_frontmatter_is_rejected_before_measurement(self):
@@ -703,7 +731,56 @@ class RejectTests(PipelineCase):
         rc, _, _ = self.run_main(runner)
         self.assertEqual(rc, 1)
         self.assertEqual(self.record()["status"], "no-candidate")
+        self.assertEqual(self.record()["decision"], "no-candidate")
         self.assertEqual(len([c for c in runner.calls if c[0] == "run_eval"]), 1)
+
+    def test_no_candidate_records_tokens_for_train_validation_and_fixed_holdout(self):
+        passes = {name: (4, 4, 7.0) for name in FIXTURES}
+        runner = FakeRunner(passes, {}, None)
+        rc, _, _ = self.run_main(runner, "--rotation", "0", "--holdout", "supersede")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "no-candidate")
+        self.assertEqual(record["decision"], "no-candidate")
+        self.assertEqual(record["split"], {"rotation": 0,
+                                           "train": ["existing-convention"],
+                                           "validation": "bootstrap",
+                                           "holdout": "supersede"})
+        self.assertEqual(set(record["baseline"]), set(FIXTURES))
+        self.assertTrue(all(metric["tokens"] == 1000
+                            for metric in record["baseline"].values()))
+        self.assertFalse(any(call[0] == "propose" for call in runner.calls))
+
+    def test_no_candidate_records_unknown_tokens_as_null(self):
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        runner.tokens["baseline"] = None
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["decision"], "no-candidate")
+        self.assertEqual(set(record["baseline"]), set(FIXTURES))
+        self.assertTrue(all(metric["tokens"] is None
+                            for metric in record["baseline"].values()))
+
+    def test_refused_baseline_keeps_any_fixture_metrics_already_written(self):
+        class PartialBaselineRunner(FakeRunner):
+            def run_eval(self, argv):
+                super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                missing = run_dir / "t1" / SKILL / TS / "existing-convention" / "with_skill"
+                shutil.rmtree(missing)
+                return 2
+
+        runner = PartialBaselineRunner(GOOD, {}, proposal(""))
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        record = self.record()
+        self.assertEqual(record["status"], "refused")
+        self.assertEqual(record["decision"], "refused")
+        self.assertEqual(record["phase"], "baseline")
+        self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
+        self.assertIsNone(record["baseline"]["existing-convention"]["tokens"])
+        self.assertEqual(record["baseline"]["supersede"]["tokens"], 1000)
 
 
 def trial_split(n: int, holdout: float = 0.4) -> tuple[int, int]:
@@ -728,6 +805,7 @@ class TriggerSetGuardTests(PipelineCase):
         record = self.record()
         self.assertEqual((record["status"], record["phase"], record["exit_code"]),
                          ("trigger-set-unusable", "trigger-set", 2))
+        self.assertEqual(record["decision"], "refused")
         self.assertIn("train split has no should-trigger query", record["reasons"][0])
         self.assertIn("--trigger-eval-set", record["reasons"][0])
         trigger_set = record["trigger_set"]
@@ -1165,7 +1243,9 @@ class TokenDecisionTests(unittest.TestCase):
 
 
 class FixtureTokenMetricTests(unittest.TestCase):
-    """`fixture_metrics` reduces the four usage counts to one tokens figure."""
+    """`fixture_metrics` reduces the four main-loop usage counts to
+    `main_loop_tokens`, recorded beside the `tokens` decide reads (those are
+    pinned in test_issue_model_tokens_effort)."""
 
     def metrics(self, usages, trials=None):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1183,21 +1263,21 @@ class FixtureTokenMetricTests(unittest.TestCase):
 
     def test_tokens_is_the_mean_per_trial_of_all_four_counts(self):
         out = self.metrics([usage_block(1000), usage_block(2000), usage_block(3000)])
-        self.assertEqual(out["tokens"], 2000)
+        self.assertEqual(out["main_loop_tokens"], 2000)
 
     def test_one_trial_without_usage_leaves_tokens_unknown(self):
         out = self.metrics([usage_block(1000), None, usage_block(1000)])
-        self.assertIsNone(out["tokens"])
+        self.assertIsNone(out["main_loop_tokens"])
 
     def test_a_usage_block_missing_one_count_leaves_tokens_unknown(self):
         partial = usage_block(1000)
         del partial["cache_read_input_tokens"]
-        self.assertIsNone(self.metrics([usage_block(1000), partial])["tokens"])
+        self.assertIsNone(self.metrics([usage_block(1000), partial])["main_loop_tokens"])
 
     def test_a_negative_count_leaves_tokens_unknown(self):
         bad = usage_block(1000)
         bad["output_tokens"] = -5
-        self.assertIsNone(self.metrics([bad, bad])["tokens"])
+        self.assertIsNone(self.metrics([bad, bad])["main_loop_tokens"])
 
     def test_a_missing_trial_leaves_tokens_unknown(self):
         self.assertIsNone(self.metrics([usage_block(1000)], trials=2)["tokens"])
@@ -1214,9 +1294,63 @@ class TokenPipelineTests(PipelineCase):
         rc, _, err = self.run_main(runner, "--rotation", "2")
         self.assertEqual(rc, 0, err)
         record = self.record()
+        self.assertEqual(record["decision"], "accepted")
         self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
         self.assertEqual(record["candidate"]["bootstrap"]["tokens"], 800)
         self.assertIn("tokens 3000 -> 2400", " ".join(record["reasons"]))
+
+    def test_records_carry_per_model_tokens_without_changing_the_decision(self):
+        # Every trial's summary also carries the per-model fields run_eval
+        # now writes: a subagent model did most of each trial's work.
+        usage = {"claude-sonnet-5": {"inputTokens": 10, "outputTokens": 20,
+                                     "cacheReadInputTokens": 50,
+                                     "cacheCreationInputTokens": 20},
+                 "claude-opus-4-8": {"inputTokens": 100, "outputTokens": 200,
+                                     "cacheReadInputTokens": 500,
+                                     "cacheCreationInputTokens": 100}}
+
+        class PerModelRunner(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                for path in Path(flag(argv, "--results-dir")).rglob("summary.json"):
+                    summary = json.loads(path.read_text(encoding="utf-8"))
+                    tokens = pse.run_eval.model_tokens({"modelUsage": usage})
+                    summary.update(model_tokens=tokens, cross_model=pse.run_eval.cross_model(
+                        tokens, "claude-sonnet-5"))
+                    path.write_text(json.dumps(summary), encoding="utf-8")
+                return rc
+
+        runner = PerModelRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 0, err)
+        record = self.record()
+        self.assertEqual(record["decision"], "accepted")
+        self.assertEqual(record["tokens_basis"], "model_usage_total")
+        # 100 + 900 tokens per trial, the subagent's included.
+        self.assertIn("tokens 3000 -> 3000", " ".join(record["reasons"]))
+        for side in ("baseline", "candidate"):
+            metrics = record[side]["bootstrap"]
+            self.assertEqual(metrics["model_tokens"]["claude-opus-4-8"]["input_tokens"], 100)
+            self.assertEqual(metrics["cross_model"]["flagged_trials"], 3)
+            self.assertTrue(metrics["cross_model"]["flagged"])
+
+    def test_a_subagent_heavy_candidate_is_judged_on_its_total(self):
+        # Cheaper on the main loop (600 against 1000 per trial), dearer in
+        # total once its subagent's tokens count (1500 against 1000), and no
+        # quality gain: rejected on cost. On main-loop tokens it would have
+        # looked cheaper and passed the cost veto.
+        runner = FakeRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        runner.tokens["candidate"] = 1500
+        runner.main_loop["candidate"] = 600
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["decision"], "rejected")
+        self.assertEqual(record["candidate"]["bootstrap"]["tokens"], 1500)
+        self.assertEqual(record["candidate"]["bootstrap"]["main_loop_tokens"], 600)
+        reasons = " ".join(record["reasons"])
+        self.assertIn("tokens 3000 -> 4500", reasons)
+        self.assertIn("candidate costs more tokens without a quality gain", reasons)
 
     def test_gain_at_higher_cost_is_accepted_and_recorded(self):
         runner = FakeRunner(GOOD, self.ACCEPTED, proposal(), NEW_DESCRIPTION)
@@ -1232,6 +1366,7 @@ class TokenPipelineTests(PipelineCase):
         self.assertEqual(rc, 1)
         record = self.record()
         self.assertEqual(record["status"], "rejected")
+        self.assertEqual(record["decision"], "rejected")
         self.assertIsNone(record["candidate"]["bootstrap"]["tokens"])
         self.assertIn("inconclusive: missing token data", " ".join(record["reasons"]))
 

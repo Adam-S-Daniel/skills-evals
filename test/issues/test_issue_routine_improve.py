@@ -227,36 +227,88 @@ class AcceptTests(GitCase):
         self.commit(good_files(report_md=body.encode()))
         self.assertEqual(self.validate()["skill"], SKILL)
 
+    def test_accepts_explicit_accepted_decision(self):
+        self.commit(good_files(summary_json=json.dumps(
+            record(decision="accepted"), indent=2).encode()))
+        self.assertEqual(self.validate()["skill"], SKILL)
+
+    def test_accepts_metrics_with_and_without_per_model_tokens(self):
+        # The fields the loop writes since per-model token reporting, beside
+        # `tokens` in every fixture's metrics, and the older shape without.
+        per_model = {
+            "model_tokens": {"claude-opus-4-8": {
+                "input_tokens": 100.0, "output_tokens": 200.0,
+                "cache_read_input_tokens": None,
+                "cache_creation_input_tokens": 100.0}},
+            "cross_model": {"model": "model-a", "threshold": 0.5, "n": 1,
+                            "flagged_trials": 1, "other_share": 0.9,
+                            "flagged": True}}
+        for extra in ({}, per_model):
+            with self.subTest(new_fields=bool(extra)):
+                rec = record(baseline={"bootstrap": {**metrics(1), **extra}},
+                             candidate={"bootstrap": {**metrics(2), **extra}})
+                self.commit(good_files(summary_json=json.dumps(
+                    rec, indent=2).encode()))
+                out = self.tmp / f"staged-{bool(extra)}"
+                self.assertEqual(self.validate(out=out)["skill"], SKILL)
+
     def test_every_key_the_loop_writes_is_allowed(self):
-        """AST-read the keys improve() puts in its record, so a new record
-        field fails here instead of rejecting a real branch."""
+        """AST-read improve() keys and the common writer's added field."""
         tree = ast.parse((REPO_ROOT / "scripts" /
                           "propose_skill_edit.py").read_text(encoding="utf-8"))
-        func = next(n for n in ast.walk(tree)
-                    if isinstance(n, ast.FunctionDef) and n.name == "improve")
         keys = set()
-        for node in ast.walk(func):
-            if isinstance(node, ast.Assign) and any(
-                    isinstance(t, ast.Name) and t.id == "record"
-                    for t in node.targets) and isinstance(node.value, ast.Dict):
-                keys |= {k.value for k in node.value.keys
-                         if isinstance(k, ast.Constant)}
-            if isinstance(node, ast.Subscript) and isinstance(
-                    node.value, ast.Name) and node.value.id == "record" \
-                    and isinstance(node.ctx, ast.Store) \
-                    and isinstance(node.slice, ast.Constant):
-                keys.add(node.slice.value)
-            if isinstance(node, ast.Call) and isinstance(
-                    node.func, ast.Attribute) and node.func.attr == "update" \
-                    and isinstance(node.func.value, ast.Name) \
-                    and node.func.value.id == "record":
-                keys |= {kw.arg for kw in node.keywords if kw.arg}
+        for func in (node for node in ast.walk(tree)
+                     if isinstance(node, ast.FunctionDef)
+                     and node.name in {"improve", "write_record"}):
+            for node in ast.walk(func):
+                if isinstance(node, ast.Assign) and any(
+                        isinstance(t, ast.Name) and t.id == "record"
+                        for t in node.targets) and isinstance(node.value, ast.Dict):
+                    keys |= {k.value for k in node.value.keys
+                             if isinstance(k, ast.Constant)}
+                if isinstance(node, ast.Subscript) and isinstance(
+                        node.value, ast.Name) and node.value.id == "record" \
+                        and isinstance(node.ctx, ast.Store) \
+                        and isinstance(node.slice, ast.Constant):
+                    keys.add(node.slice.value)
+                if isinstance(node, ast.Call) and isinstance(
+                        node.func, ast.Attribute) and node.func.attr == "update" \
+                        and isinstance(node.func.value, ast.Name) \
+                        and node.func.value.id == "record":
+                    keys |= {kw.arg for kw in node.keywords if kw.arg}
         self.assertIn("status", keys)
         self.assertLessEqual(keys, set(gate.RECORD_ALLOWED))
         self.assertLessEqual(set(gate.RECORD_REQUIRED), keys)
 
 
+
 class RejectPathTests(GitCase):
+
+    def test_rejects_a_non_accepted_decision(self):
+        for value in (None, "rejected", "refused", 7, []):
+            with self.subTest(value=value):
+                self.commit(good_files(summary_json=json.dumps(
+                    record(decision=value), indent=2).encode()))
+                self.assertRejected(r"decision")
+                self.git("reset", "--hard", "main")
+                self.git("checkout", "-q", BRANCH)
+
+    def test_accepts_either_tokens_basis_or_none(self):
+        for value in ("model_usage_total", "usage_main_loop", "absent"):
+            with self.subTest(value=value):
+                rec = record() if value == "absent" else record(tokens_basis=value)
+                self.commit(good_files(summary_json=json.dumps(
+                    rec, indent=2).encode()))
+                self.assertEqual(self.validate(out=self.tmp / value)["skill"], SKILL)
+
+    def test_rejects_an_unknown_tokens_basis(self):
+        for value in (None, "tokens", 7, []):
+            with self.subTest(value=value):
+                self.commit(good_files(summary_json=json.dumps(
+                    record(tokens_basis=value), indent=2).encode()))
+                self.assertRejected(r"tokens_basis")
+                self.git("reset", "--hard", "main")
+                self.git("checkout", "-q", BRANCH)
 
     def test_rejects_a_modified_main_file(self):
         self.commit({**good_files(), "README.md": b"changed\n"})
