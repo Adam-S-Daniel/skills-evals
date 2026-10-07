@@ -988,8 +988,8 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   the routine's path, because REST has no body revisions
   (`userContentEdits`); where GraphQL is refused (a Claude Code cloud
   session) `build` stops and names the gap rather than use the issue's
-  current body. Where the routine gets the snapshot from is an open
-  owner question on [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65). The fixture is `draft: true` and
+  current body. The routine gets it from the fire payload instead
+  (**snapshot** below). The fixture is `draft: true` and
   `subject: any`, and its header says the prompt was written by a model.
   It reads the clone with `git archive`, `git cat-file` and `git diff` and
   never writes it.
@@ -1015,6 +1015,33 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   repo-settings (Recommended)"), and the routine is fired in scaffold mode
   by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
   fire-workflow input (Recommended)"); both land in their own PRs.
+- **snapshot** is the issue snapshot read on its own. A Claude Code cloud
+  session, where the routine runs, refuses GitHub GraphQL, and body
+  revisions have no REST read, so `routine-eval-fire.yml` computes the
+  snapshot on Actions with its read-only token before the fire (the pull
+  request and its closing issue through REST, as the miner reads them; the
+  revisions through GraphQL) and sends it
+  as the payload's `issue_snapshot` (null for no closing issue), and the
+  routine passes it to `build --issue-snapshot`, which validates it
+  strictly instead of reading GitHub (Adam, 2026-10-06: "Fire workflow
+  precomputes (Recommended)"). The gate recomputes it with the same code,
+  for the pull request the fixture's header names (which must be its id's),
+  and rejects the branch unless `issue-before-fix.txt` is the same bytes and
+  the three times are equal, so the routine cannot alter the issue text.
+  Both the fire and the gate pin the repository to the fleet before any
+  read: its owner in `SYNC_OWNERS` and its name in `cron_coverage.fleet`,
+  from `_agent-guidance`'s default branch as the miner reads them, and its
+  GitHub `full_name` equal to the name given, so a renamed repository's
+  redirect is refused too (Adam, 2026-10-06: "Pin to fleet owners
+  (Recommended)"). A pull request that closes several issues is refused at
+  the fire (Adam, 2026-10-06: "Keep refusing (Recommended)"). If the chosen
+  revision is deleted, or the issue passes the 100 revisions one query
+  reads, between the fire and the gate, the gate rejects the branch: fail
+  closed (Adam, 2026-10-06: "Yes, fail closed (Recommended)"). A payload
+  over the fire API's 65,536-character `text` cap is refused, never
+  truncated; the snapshot is JSON-encoded twice inside it, so an issue
+  whose body is at or near GitHub's own 65,536-character limit cannot be
+  scaffolded this way.
 
 What a reviewer adds before the fixture can leave draft: the fixture's
 entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`

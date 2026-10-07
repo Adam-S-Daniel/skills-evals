@@ -13,6 +13,11 @@ runs the gate from the default branch on the `workflow_run` of
     the rest of the diff as solution.patch; the issue snapshot and its three
     times; `draft: true`; and it reads GitHub only through `gh api graphql`;
   * the snapshot picks the revision and title from before the first commit;
+  * `snapshot --candidate` (run by routine-eval-fire.yml, where GraphQL
+    works) writes it as JSON, the closing issue read through REST as the
+    miner reads it; `build --issue-snapshot` takes that JSON, validated
+    strictly, and reads no GitHub; the gate recomputes it and rejects a
+    branch whose `issue-before-fix.txt` or times differ;
   * the spec is validated, and an answer-leak hit refuses the build
     (LEAK_POLICY) unless an interface string or the issue's own earlier text
     exempts it;
@@ -70,23 +75,44 @@ GIT_ENV = {
     "GIT_CONFIG_KEY_1": "maintenance.auto", "GIT_CONFIG_VALUE_1": "false",
 }
 
-#: A fake `gh` that answers only `api graphql`, from `$FAKE_GH_DATA`, and logs
-#: every call to `$FAKE_GH_LOG`; any other verb exits 3. With
-#: `$FAKE_GH_GRAPHQL_403` set it answers as a Claude Code cloud session does.
+#: A fake `gh` that logs every call to `$FAKE_GH_LOG` and answers, from the
+#: JSON object in `$FAKE_GH_DATA`, only these reads: `api graphql` (the
+#: snapshot query, "graphql"), and the REST reads `api repos/<o>/<n>/pulls/<n>`
+#: ("pull"), `api repos/<o>/<n>/issues/<n>` ("issues", by number; a missing
+#: one is a 404) and `api repos/<o>/<n>` ("repo"). A key holding an integer
+#: exits with it, as a refused read does; any other verb exits 3. With
+#: `$FAKE_GH_GRAPHQL_403` set it answers GraphQL as a Claude Code cloud
+#: session does.
 FAKE_GH = r'''
-import json, os, sys
+import json, os, re, sys
 args = sys.argv[1:]
 with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as handle:
     handle.write(json.dumps(args) + "\n")
-if args[:2] != ["api", "graphql"]:
+with open(os.environ["FAKE_GH_DATA"], encoding="utf-8") as handle:
+    data = json.load(handle)
+rest = args[1] if len(args) == 2 and args[0] == "api" else ""
+if args[:2] == ["api", "graphql"]:
+    if os.environ.get("FAKE_GH_GRAPHQL_403"):
+        sys.stderr.write("HTTP 403: GitHub GraphQL is not available from Claude Code sessions; "
+                         "use the REST API (gh api repos/{owner}/{repo}/...)\n")
+        raise SystemExit(1)
+    answer = data["graphql"]
+elif re.fullmatch(r"repos/[^/]+/[^/]+/pulls/[0-9]+", rest):
+    answer = data["pull"]
+elif re.fullmatch(r"repos/[^/]+/[^/]+/issues/[0-9]+", rest):
+    answer = data["issues"].get(rest.rsplit("/", 1)[1])
+    if answer is None:
+        sys.stderr.write("gh: Not Found (HTTP 404)\n")
+        raise SystemExit(1)
+elif re.fullmatch(r"repos/[^/]+/[^/]+", rest):
+    answer = data["repo"]
+else:
     sys.stderr.write("fake gh: refused\n")
     raise SystemExit(3)
-if os.environ.get("FAKE_GH_GRAPHQL_403"):
-    sys.stderr.write("HTTP 403: GitHub GraphQL is not available from Claude Code sessions; "
-                     "use the REST API (gh api repos/{owner}/{repo}/...)\n")
-    raise SystemExit(1)
-with open(os.environ["FAKE_GH_DATA"], encoding="utf-8") as handle:
-    print(handle.read())
+if isinstance(answer, int):
+    sys.stderr.write("fake gh: HTTP 502\n")
+    raise SystemExit(answer)
+print(json.dumps(answer))
 '''
 
 MANAGED_AGENTS = ("<!-- BEGIN MANAGED SECTION -->\n> **Managed by [`_agent-guidance`].**\n"
@@ -122,6 +148,46 @@ def graphql(**issue_changes) -> dict:
     issue.update(issue_changes)
     return {"data": {"repository": {"issue": issue, "pullRequest": {"commits": {"nodes": [
         {"commit": {"committedDate": "2026-09-01T10:00:00Z"}}]}}}}}
+
+
+def closing(*numbers, repo="example/toy") -> dict:
+    """The REST answers for a pull request whose body closes `numbers`: each
+    number reads back as an issue of `repo` (another repository's issue does
+    not count, as GitHub's own linking does not)."""
+    return {"issues": {str(n): {"html_url": f"https://github.com/{repo}/issues/{n}"}
+                       for n in numbers},
+            "body": " ".join(f"Fixes #{n}." for n in numbers) or "No issue."}
+
+
+def pull(number=7, merged_at="2026-09-02T00:00:00Z", body="Fixes #3.", base="main") -> dict:
+    return {"number": number, "merged_at": merged_at, "body": body, "base": {"ref": base}}
+
+
+def rest(*numbers, number=7, issue_repo="example/toy", full_name="example/toy",
+         **pull_changes) -> dict:
+    """The fake gh's REST answers: the pull request closing `numbers`, and the
+    repository as GitHub names it (`full_name`, which a rename redirects)."""
+    found = closing(*numbers, repo=issue_repo)
+    return {"pull": pull(number, body=found["body"], **pull_changes), "issues": found["issues"],
+            "repo": {"default_branch": "main", "full_name": full_name}}
+
+
+#: The fleet the tests pin to, as `_agent-guidance` writes it: names in
+#: repos.yml's cron_coverage.fleet, owners in sync.yml's SYNC_OWNERS.
+FLEET_NAMES = ["toy", "_agent-guidance"]
+FLEET_OWNERS = ["example", "Adam-S-Daniel"]
+
+
+def write_fleet(root: Path, names=FLEET_NAMES, owners=FLEET_OWNERS) -> tuple[Path, Path]:
+    registry = root / "repos.yml"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(yaml.safe_dump({"cron_coverage": {"fleet": list(names)}}),
+                        encoding="utf-8")
+    sync = root / ".github" / "workflows" / "sync.yml"
+    sync.parent.mkdir(parents=True, exist_ok=True)
+    sync.write_text(yaml.safe_dump({"jobs": {"sync": {"env": {"SYNC_OWNERS": " ".join(owners)}}}}),
+                    encoding="utf-8")
+    return registry, sync
 
 
 def spec(**changes) -> dict:
@@ -200,9 +266,21 @@ class _BuildCase(_Case):
         env.start()
         self.addCleanup(env.stop)
         self.dest = self.tmp / "dest" / "evals" / "real-work"
+        self.registry, self.sync = write_fleet(self.tmp / "_agent-guidance")
+        self.fleet = (list(FLEET_NAMES), list(FLEET_OWNERS))
+
+    def fleet_args(self) -> list[str]:
+        return ["--registry", str(self.registry), "--sync-workflow", str(self.sync)]
 
     def set_graphql(self, doc: dict) -> None:
-        self.gh_data.write_text(json.dumps(doc), encoding="utf-8")
+        self.set_gh(graphql=doc)
+
+    def set_gh(self, **answers) -> None:
+        """Replace some of the fake gh's answers, keeping the others."""
+        data = (json.loads(self.gh_data.read_text(encoding="utf-8"))
+                if self.gh_data.exists() else rest(3))
+        data.update(answers)
+        self.gh_data.write_text(json.dumps(data), encoding="utf-8")
 
     def build(self, **spec_changes) -> Path:
         path = self.tmp / "spec.json"
@@ -445,6 +523,208 @@ class SnapshotTests(unittest.TestCase):
                     self.snap(**changes)
 
 
+def precomputed(**changes) -> dict:
+    """The fire workflow's `issue_snapshot` for the toy candidate's issue 3."""
+    doc = {"repo": "example/toy", "pr": 7, "issue": 3, "title": "add() subtracts",
+           "body": ISSUE_BODY, "issue_created_at": "2026-09-01T09:00:00Z",
+           "issue_last_edited_at": None, "first_commit_at": "2026-09-01T10:00:00Z"}
+    doc.update(changes)
+    return doc
+
+
+class PrecomputedSnapshotTests(_BuildCase):
+    """Routine sessions have no GraphQL (#322), so routine-eval-fire.yml
+    computes the snapshot with `snapshot --candidate` and the routine passes it
+    to `build --issue-snapshot` (Adam, 2026-10-06: "Fire workflow precomputes
+    (Recommended)")."""
+
+    def snapshot(self, key="example__toy__7"):
+        out = self.tmp / "snap" / "issue-snapshot.json"
+        out.parent.mkdir(exist_ok=True)
+        out.unlink(missing_ok=True)
+        with contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            code = scaffold.main(["snapshot", "--candidate", key, "--out", str(out),
+                                  *self.fleet_args()])
+        doc = json.loads(out.read_text(encoding="utf-8")) if out.exists() else "absent"
+        return code, doc, stdout.getvalue(), stderr.getvalue()
+
+    def build_with(self, doc, raw=None, **spec_changes) -> Path:
+        snap = self.tmp / "issue-snapshot.json"
+        snap.write_text(raw if raw is not None else json.dumps(doc), encoding="utf-8")
+        path = self.tmp / "spec.json"
+        path.write_text(json.dumps(spec(**spec_changes)), encoding="utf-8")
+        return scaffold.build(self.candidates, "example__toy__7", self.clone, path, self.dest,
+                              issue_snapshot=snap)
+
+    def refused_with(self, pattern, doc, raw=None, **spec_changes):
+        with self.assertRaisesRegex(scaffold.ScaffoldError, pattern):
+            self.build_with(doc, raw, **spec_changes)
+        self.assertFalse((self.dest / "toy-7").exists(), "a refused build writes nothing")
+
+    def test_snapshot_writes_the_payload_and_prints_no_content(self):
+        code, doc, out, err = self.snapshot()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(doc, precomputed())
+        self.assertEqual(list(doc), list(scaffold.SNAPSHOT_FIELDS))
+        self.assertEqual(out, "issue_snapshot=issue 3\n")
+        self.assertNotIn("subtracts", out + err)
+        # REST for the pull request and its closing issue, as the miner reads
+        # them (#322); GraphQL only for the snapshot itself.
+        calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
+        self.assertEqual(calls[:3], [["api", "repos/example/toy/pulls/7"],
+                                     ["api", "repos/example/toy"],
+                                     ["api", "repos/example/toy/issues/3"]])
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[3][:2], ["api", "graphql"])
+        self.assertIn("pr=7", calls[3])
+        self.assertIn("issue=3", calls[3])
+
+    def test_snapshot_key_with_an_underscore_repository(self):
+        self.set_gh(**rest(number=136, full_name="Adam-S-Daniel/_agent-guidance"))
+        code, doc, out, err = self.snapshot("Adam-S-Daniel___agent-guidance__136")
+        self.assertEqual((code, doc, out), (0, None, "issue_snapshot=none\n"), err)
+        calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
+        self.assertEqual(calls[0], ["api", "repos/Adam-S-Daniel/_agent-guidance/pulls/136"])
+
+    def test_no_closing_issue_is_null(self):
+        self.set_gh(**rest())
+        code, doc, out, _ = self.snapshot()
+        self.assertEqual((code, doc, out), (0, None, "issue_snapshot=none\n"))
+        self.assertEqual(len(self.gh_log.read_text().splitlines()), 2, "no snapshot read")
+
+    def test_snapshot_refusals_write_nothing(self):
+        cases = {
+            "several issues": rest(3, 4),
+            "closing issues read failed": {**rest(3), "issues": {"3": 4}},
+            "not a merged pull request": rest(3, merged_at=None),
+            "pull request read failed": {"pull": 4},
+            "snapshot read failed": {"graphql": 4},
+            "created after": {"graphql": graphql(createdAt="2026-09-01T11:00:00Z")},
+        }
+        for pattern, answers in cases.items():
+            with self.subTest(pattern=pattern):
+                self.gh_data.unlink()
+                self.set_gh(**{"graphql": graphql(), **rest(3), **answers})
+                code, doc, out, err = self.snapshot()
+                self.assertEqual((code, doc, out), (2, "absent", ""))
+                self.assertRegex(err, pattern)
+
+    def test_only_this_repositorys_issue_into_the_default_branch_closes(self):
+        for answers in ({**rest(3), "pull": pull(body="Fixes example/other#3.")},
+                        rest(3, issue_repo="example/other"),
+                        rest(3, base="release")):
+            with self.subTest(answers=answers["pull"]):
+                self.set_gh(**answers)
+                self.assertEqual(self.snapshot()[1], None)
+
+    def test_a_repository_outside_the_fleet_reads_nothing(self):
+        # Adam, 2026-10-06: "Pin to fleet owners (Recommended)". The pin is
+        # _agent-guidance's own registry, as the miner reads it.
+        for key, pattern in (("attacker__toy__7", "not a fleet owner"),
+                             ("example__other__7", "not in the fleet registry")):
+            with self.subTest(key=key):
+                self.gh_log.unlink(missing_ok=True)
+                code, doc, out, err = self.snapshot(key)
+                self.assertEqual((code, doc, out), (2, "absent", ""))
+                self.assertIn(pattern, err)
+                self.assertFalse(self.gh_log.exists())
+
+    def test_an_unreadable_registry_refuses(self):
+        self.registry.write_text("cron_coverage: {}\n", encoding="utf-8")
+        code, doc, _, err = self.snapshot()
+        self.assertEqual((code, doc), (2, "absent"))
+        self.assertIn("fleet registry is unreadable", err)
+
+    def test_a_renamed_repository_is_refused(self):
+        # GitHub redirects an old name to the renamed repository; its
+        # full_name is then not the name the key or header carries.
+        self.set_gh(**rest(3, full_name="example/toy-renamed"))
+        code, doc, _, err = self.snapshot()
+        self.assertEqual((code, doc), (2, "absent"))
+        self.assertIn("full name", err)
+
+    def test_a_bad_key_reads_nothing(self):
+        for key in ("example/toy#7", "example__toy__0", "example__toy", "ex_ample__toy__7",
+                    "example__toy__7\n", "example__toy__12345678"):
+            with self.subTest(key=key):
+                code, doc, out, err = self.snapshot(key)
+                self.assertEqual((code, doc), (2, "absent"))
+                self.assertIn("not a miner key", err)
+        self.assertFalse(self.gh_log.exists())
+
+    def test_build_uses_the_payload_and_reads_no_github(self):
+        target = self.build_with(precomputed())
+        self.assertFalse(self.gh_log.exists(), "no gh call: GraphQL is refused in a routine")
+        reference = self.tmp / "reference"
+        self.dest, kept = reference, self.dest
+        self.build()
+        self.dest = kept
+        for name in ("fixture.yaml", "issue-before-fix.txt"):
+            with self.subTest(name=name):
+                self.assertEqual((target / name).read_bytes(),
+                                 (reference / "toy-7" / name).read_bytes(),
+                                 "the precomputed snapshot builds the same bytes")
+
+    def test_build_with_a_null_snapshot_and_no_issue(self):
+        target = self.build_with(None, issue=None)
+        self.assertFalse((target / "issue-before-fix.txt").exists())
+        self.assertFalse(self.gh_log.exists())
+
+    def test_build_refuses_a_payload_that_disagrees(self):
+        cases = [
+            ("names issue 4", precomputed(issue=4), {}),
+            ("pull request", precomputed(pr=8), {}),
+            ("repository", precomputed(repo="example/other"), {}),
+            ("no closing issue", None, {}),
+            ("spec names no issue", precomputed(), {"issue": None}),
+        ]
+        for pattern, doc, changes in cases:
+            with self.subTest(pattern=pattern):
+                self.refused_with(pattern, doc, **changes)
+
+    def test_build_refuses_a_malformed_payload(self):
+        cases = [
+            ("keys", precomputed(extra=1), None),
+            ("keys", {k: v for k, v in precomputed().items() if k != "body"}, None),
+            ("issue", precomputed(issue="3"), None),
+            ("issue", precomputed(issue=True), None),
+            ("pr", precomputed(pr=7.0), None),
+            ("title", precomputed(title="  "), None),
+            ("title", precomputed(title="x" * (scaffold.MAX_TITLE_CHARS + 1)), None),
+            ("body", precomputed(body=None), None),
+            ("body", precomputed(body="x" * (scaffold.MAX_BODY_CHARS + 1)), None),
+            ("NUL", precomputed(body="a\x00b"), None),
+            ("ISO-8601", precomputed(first_commit_at="2026-09-01 10:00:00"), None),
+            ("ISO-8601", precomputed(issue_last_edited_at=""), None),
+            ("created after", precomputed(issue_created_at="2026-09-01T11:00:00Z"), None),
+            ("between", precomputed(issue_last_edited_at="2026-09-01T10:30:00Z"), None),
+            ("JSON", None, "{not json"),
+            ("JSON", None, '{"repo": "a", "repo": "b"}'),
+            ("JSON", None, "NaN"),
+            ("object or null", None, "[]"),
+            ("object or null", None, '"text"'),
+            ("bytes", None, " " * (scaffold.MAX_SNAPSHOT_FILE_BYTES + 1)),
+        ]
+        for pattern, doc, raw in cases:
+            with self.subTest(pattern=pattern, raw=(raw or "")[:20]):
+                self.refused_with(pattern, doc, raw)
+        self.assertFalse(self.gh_log.exists())
+
+    def test_build_cli_takes_the_flag(self):
+        snap = self.tmp / "issue-snapshot.json"
+        snap.write_text(json.dumps(precomputed()), encoding="utf-8")
+        path = self.tmp / "spec.json"
+        path.write_text(json.dumps(spec()), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = scaffold.main(["build", "--candidates", str(self.candidates),
+                                  "--key", "example__toy__7", "--clone", str(self.clone),
+                                  "--spec", str(path), "--dest", str(self.dest),
+                                  "--issue-snapshot", str(snap)])
+        self.assertEqual(code, 0)
+        self.assertFalse(self.gh_log.exists())
+
+
 class RedGreenTests(_BuildCase):
 
     def test_a_patch_that_does_not_fix_is_caught(self):
@@ -526,7 +806,7 @@ class _GateCase(_BuildCase):
     def gate(self, branch=None, expect=None):
         branch = branch or self.BRANCH
         return scaffold.gate(str(self.repo), "main", self.BRANCH, branch, expect,
-                             self.tmp / "out")
+                             self.tmp / "out", fleet=self.fleet)
 
     def assertRejected(self, pattern, mutate=None, **kwargs):
         self.commit(mutate)
@@ -546,7 +826,7 @@ class GateTests(_GateCase):
         with contextlib.redirect_stdout(io.StringIO()) as out:
             code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
                                   "--source", self.BRANCH, "--branch", self.BRANCH,
-                                  "--out", str(self.tmp / "out-cli")])
+                                  "--out", str(self.tmp / "out-cli"), *self.fleet_args()])
         self.assertEqual(code, 0)
         self.assertEqual([line.split("=", 1)[0] for line in out.getvalue().splitlines()],
                          ["fixture_id", "sha", "files"])
@@ -579,7 +859,7 @@ class GateTests(_GateCase):
         self.commit()
         with self.assertRaisesRegex(ingest.Rejected, "not under 'evals/real-work/toy-8/'"):
             scaffold.gate(str(self.repo), "main", self.BRANCH, "claude/scaffold-toy-8", None,
-                          self.tmp / "out")
+                          self.tmp / "out", fleet=self.fleet)
 
     def test_rejects_a_symlink(self):
         self.assertRejected("mode 120000", lambda w: (w / "seed" / "ln").symlink_to("tool.py"))
@@ -646,11 +926,139 @@ class GateTests(_GateCase):
                 contextlib.redirect_stdout(io.StringIO()) as out:
             code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
                                   "--source", self.BRANCH, "--branch", self.BRANCH,
-                                  "--out", str(self.tmp / "out")])
+                                  "--out", str(self.tmp / "out"), *self.fleet_args()])
         self.assertEqual(code, 1)
         self.assertEqual(out.getvalue(), "")
         self.assertNotIn(MARKER, err.getvalue())
         self.assertNotIn("operands", err.getvalue())
+
+
+class GateSnapshotTests(_GateCase):
+    """The real guarantee: the gate recomputes the snapshot on Actions, where
+    GraphQL works, and rejects a branch whose snapshot or its times differ, so
+    the routine cannot alter the issue text it was handed."""
+
+    def edit(self, name, old, new):
+        def mutate(where):
+            path = where / name
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(old, text)
+            path.write_text(text.replace(old, new), encoding="utf-8")
+        return mutate
+
+    def test_an_unaltered_snapshot_passes_and_the_gate_reads_github(self):
+        self.gh_log.unlink()
+        self.commit()
+        self.gate()
+        calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
+        self.assertEqual(calls[0], ["api", "repos/example/toy/pulls/7"])
+        self.assertEqual(len(calls), 4)
+
+    def test_an_altered_snapshot_is_rejected(self):
+        self.assertRejected("issue-before-fix.txt differs",
+                            self.edit("issue-before-fix.txt", "It should add.",
+                                      "It should add. " + MARKER))
+
+    def test_an_appended_byte_is_rejected(self):
+        self.assertRejected("issue-before-fix.txt differs",
+                            self.edit("issue-before-fix.txt", "It should add.\n",
+                                      "It should add.\n\n"))
+
+    def test_an_issue_edited_on_github_is_caught(self):
+        # Same branch bytes, different GitHub truth: the comparison is what
+        # rejects, not the branch's shape.
+        self.commit()
+        self.set_graphql(graphql(body="A different body " + MARKER))
+        with self.assertRaisesRegex(ingest.Rejected, "issue-before-fix.txt differs") as caught:
+            self.gate()
+        self.assertNotIn(MARKER, str(caught.exception))
+
+    def test_an_altered_time_is_rejected(self):
+        self.assertRejected("issue_created_at",
+                            self.edit("fixture.yaml", "2026-09-01T09:00:00Z",
+                                      "2026-09-01T08:00:00Z"))
+
+    def test_a_dropped_snapshot_is_rejected(self):
+        def drop(where):
+            (where / "issue-before-fix.txt").unlink()
+            path = where / "fixture.yaml"
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for key in ("issue_before_fix", *answer_leak.PROVENANCE_KEYS):
+                doc.pop(key)
+            head = [line for line in path.read_text(encoding="utf-8").splitlines()
+                    if line.startswith("#")]
+            path.write_text("\n".join(head) + "\n\n" + yaml.safe_dump(doc, sort_keys=False),
+                            encoding="utf-8")
+        self.assertRejected("no issue snapshot", drop)
+
+    def test_a_snapshot_pointed_elsewhere_is_rejected(self):
+        def elsewhere(where):
+            shutil.copy(where / "issue-before-fix.txt", where / "checker" / "notes.txt")
+            path = where / "fixture.yaml"
+            path.write_text(path.read_text(encoding="utf-8").replace(
+                "issue_before_fix: issue-before-fix.txt",
+                "issue_before_fix: checker/notes.txt"), encoding="utf-8")
+        self.assertRejected("issue_before_fix", elsewhere)
+
+    def test_a_snapshot_where_github_has_no_closing_issue_is_rejected(self):
+        self.commit()
+        self.set_gh(**rest())
+        with self.assertRaisesRegex(ingest.Rejected, "no closing issue"):
+            self.gate()
+
+    def test_a_header_naming_another_pull_request_is_rejected(self):
+        self.assertRejected("header",
+                            self.edit("fixture.yaml", "https://github.com/example/toy/pull/7,",
+                                      "https://github.com/example/toy/pull/8,"))
+
+    def test_a_header_naming_another_issue_is_rejected(self):
+        self.assertRejected("issue",
+                            self.edit("fixture.yaml", "example/toy/issues/3.",
+                                      "example/toy/issues/4."))
+
+    def test_a_missing_header_is_rejected(self):
+        self.assertRejected("header",
+                            self.edit("fixture.yaml", "# https://github.com/example/toy/pull/7,",
+                                      "# see"))
+
+    def test_poc_owner_spoof(self):
+        # Reviewer PoC (round 1, NOT CLEAN at 66cb94d4): the header names an
+        # attacker's same-named repository, whose own pull request 7 and
+        # issue 3 the fake gh serves as readily as GitHub would. The owner
+        # pin rejects it before anything is read.
+        def spoof(where):
+            path = where / "fixture.yaml"
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("https://github.com/example/toy/"), 2)
+            path.write_text(text.replace("https://github.com/example/toy/",
+                                         "https://github.com/attacker/toy/"), encoding="utf-8")
+        self.set_gh(**rest(3, issue_repo="attacker/toy", full_name="attacker/toy"))
+        self.gh_log.unlink()
+        self.assertRejected("not a fleet owner", spoof)
+        self.assertFalse(self.gh_log.exists(), "nothing is read for a non-fleet repository")
+
+    def test_a_renamed_repository_is_rejected(self):
+        self.commit()
+        self.set_gh(**rest(3, full_name="example/toy-renamed"))
+        with self.assertRaisesRegex(ingest.Rejected, "full name"):
+            self.gate()
+
+    def test_the_cli_reads_the_fleet_registry(self):
+        self.commit()
+        write_fleet(self.registry.parent, owners=["someone-else"])
+        with contextlib.redirect_stderr(io.StringIO()) as err, \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
+                                  "--source", self.BRANCH, "--branch", self.BRANCH,
+                                  "--out", str(self.tmp / "out-cli"), *self.fleet_args()])
+        self.assertEqual(code, 1)
+        self.assertIn("not a fleet owner", err.getvalue())
+
+    def test_a_failed_recompute_rejects(self):
+        self.commit()
+        self.set_gh(graphql=4)
+        with self.assertRaisesRegex(ingest.Rejected, "could not be recomputed"):
+            self.gate()
 
 
 class ResolveTests(unittest.TestCase):
@@ -788,7 +1196,7 @@ class WorkflowShapeTests(unittest.TestCase):
         text = GATE.read_text(encoding="utf-8")
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
-        self.assertEqual(len(found), 2)
+        self.assertEqual(len(found), 3)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertRegex(node.value, PIN)
@@ -871,9 +1279,35 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("scripts/scaffold_real_work.py resolve", steps["resolve"]["run"])
         self.assertIn("scripts/scaffold_real_work.py gate", steps["gate"]["run"])
         [checkout] = [s for s in self.gate["jobs"]["validate"]["steps"]
-                      if str(s.get("uses", "")).startswith("actions/checkout@")]
+                      if str(s.get("uses", "")).startswith("actions/checkout@")
+                      and "repository" not in s["with"]]
         self.assertEqual(checkout["with"]["ref"], "${{ github.event.repository.default_branch }}")
         self.assertIs(checkout["with"]["persist-credentials"], False)
+
+    def test_the_gate_reads_the_fleet_from_agent_guidance_default_branch(self):
+        steps = self.gate["jobs"]["validate"]["steps"]
+        [ag] = [s for s in steps if (s.get("with") or {}).get("repository")
+                == "Adam-S-Daniel/_agent-guidance"]
+        self.assertTrue(ag["uses"].startswith("actions/checkout@"))
+        self.assertEqual(ag["with"], {"repository": "Adam-S-Daniel/_agent-guidance",
+                                      "path": "_agent-guidance",
+                                      "persist-credentials": False},
+                         "its default branch: no ref")
+        gate_step = next(s for s in steps if s.get("id") == "gate")
+        self.assertLess(steps.index(ag), steps.index(gate_step))
+        self.assertIn("--registry ../_agent-guidance/repos.yml", gate_step["run"])
+        self.assertIn("--sync-workflow ../_agent-guidance/.github/workflows/sync.yml",
+                      gate_step["run"])
+
+    def test_the_gate_step_reads_github_with_the_read_only_token(self):
+        # The recompute needs the REST and GraphQL reads; the job's token is
+        # `contents: read`, and no other step holds it.
+        steps = self.gate["jobs"]["validate"]["steps"]
+        gate_step = next(s for s in steps if s.get("id") == "gate")
+        self.assertEqual(gate_step["env"]["GH_TOKEN"], "${{ github.token }}")
+        for step in steps:
+            if step is not gate_step:
+                self.assertNotIn("GH_TOKEN", step.get("env") or {}, step.get("name"))
 
     def test_the_guards_can_fail(self):
         # Negative controls on the helpers the shape tests lean on.
