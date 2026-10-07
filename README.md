@@ -198,14 +198,23 @@ aggregate is malformed. Trial-only runs use the mean of each metric when all
 trials report it. Token totals add input, output, and cache creation/read when
 present; aggregate token means require compatible observation counts.
 
-Unknown or malformed measurements remain `null`. Inventory counts valid skill
-fixtures on main, excluding `seed/` and `references/`; guidance counts distinct
-section metadata. `triggerSet` counts labeled queries across valid checked-in
-trigger sets. A malformed inventory input makes the affected aggregate counts
-unknown. Guidance's external coverage gap remains unknown. Notes expose only
-non-identifying error types; error details and free-form notes are omitted.
-The trend preserves each flat workflow-path-audit run separately, including
-missing arms, rather than joining measurements from different runs.
+Unknown or malformed measurements remain `null`. Inventory `total` counts
+named-skill fixtures plus `subject: any` real-work fixtures on main, excluding
+`seed/`, `references/`, and guidance fixtures. `dirs` counts distinct named
+skills plus distinct fixture directories containing `subject: any` fixtures.
+`minFixtures` is the literal proposal policy from
+[`scripts/propose_skill_edit.py`](scripts/propose_skill_edit.py). `triggerSet`
+links to the validated
+[`evals/writing-adrs/trigger-eval-set.json`](evals/writing-adrs/trigger-eval-set.json).
+Guidance coverage comes from the immutable
+[`_agent-guidance` manifest](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml)
+supplied with `--guidance-repo` and `--guidance-ref`: `sections` counts its
+validated rows, and `gap` counts sections without a linked fixture on main,
+including sections marked skipped. Missing or malformed inputs make their
+affected values unknown. Notes expose only non-identifying error types; error
+details and free-form notes are omitted. The trend preserves each flat
+workflow-path-audit run separately, including missing arms, rather than joining
+measurements from different runs.
 
 ## Running
 
