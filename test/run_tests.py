@@ -4217,14 +4217,14 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "#", line, f"line {lineno} has a trailing comment "
                         "on a uses: line")
 
-    def test_triggers_are_exactly_schedule_and_dispatch(self):
+    def test_triggers_are_exactly_manual_dispatch(self):
         doc = self._doc()
         triggers = doc.get("on", doc.get(True))
         self.assertEqual(
-            set(triggers), {"schedule", "workflow_dispatch"},
+            set(triggers), {"workflow_dispatch"},
             "eval.yml holds a live API key and runs the agent under "
-            "bypassPermissions — pull_request/pull_request_target must never "
-            "be added, per the header's first rule")
+            "bypassPermissions — scheduled runs use the weekly routine, and "
+            "pull_request/pull_request_target must never be added")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
         # B1 (round 3 on #209, blocker; extended round 4, blocker),
@@ -4646,7 +4646,9 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
-               "DESIGN.md"]
+               "DESIGN.md",
+               "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
+               "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]
 
     def _triggers(self) -> dict:
         # A real parser, never a line scan: a bare `on:` key is the YAML 1.1
@@ -5248,6 +5250,26 @@ class CiSalientDetectionTests(unittest.TestCase):
     def test_exact_root_file_readme_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._repo_with_merge(Path(tmp), {"README.md": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_adr_0008_only_change_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(
+                Path(tmp),
+                {"docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md": "x"},
+            )
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_adr_0010_only_change_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(
+                Path(tmp),
+                {"docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md": "x"},
+            )
             result, outputs = self._run(repo, "pull_request")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "true")
@@ -6327,9 +6349,10 @@ class TestIssue67(unittest.TestCase):
     def test_eval_workflow_keeps_its_security_posture(self):
         raw, doc = self._eval_workflow()
         triggers = doc.get("on", doc.get(True))
-        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
+        self.assertEqual(sorted(triggers), ["workflow_dispatch"],
                          "eval.yml holds a credential and runs the agent under "
-                         "bypassPermissions — no pull_request trigger, ever")
+                         "bypassPermissions — the weekly routine owns the "
+                         "schedule; no pull_request trigger, ever")
         # `issues: write` is #147's one addition, for the roster-proposal
         # tracking issue. Asserted for EQUALITY here too, so a fourth
         # scope reds this row as well as its sibling in
