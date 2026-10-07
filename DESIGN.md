@@ -765,11 +765,14 @@ is objectively decidable from the resulting files alone.
   ref counts as an omission. A branch push followed by a candidate check
   has unknown status because this trace cannot bind the branch to its SHA.
   Failed pushes do not count. Success requires a uniquely paired subsequent
-  tool result with `is_error: false`; shell compound commands, wrappers,
+  tool result with `is_error: false`; shell compound commands, variable
+  assignments (including assignment-only calls), background execution, wrappers,
   global git options, dynamic arguments, default pushes, subagent scope,
   or missing results are unknown. Comments and heredoc data are not executed
   commands. Missing, capped, clipped, or redacted evidence is unknown, never
-  a clean zero. The trace marks changed input/output text with
+  a clean zero. Any uncertainty makes the push counter's `observed_count`
+  zero: an uncertain call or omitted event could verify any observed push,
+  so no minimum omission is proven. The trace marks changed input/output text with
   `input_incomplete`/`output_incomplete`. YAML parse failures, aliases,
   duplicate keys, symlinks, unreadable files, and bounds (1 MiB per file,
   2,000 matching files, 20,000 traversal entries or YAML nodes) likewise

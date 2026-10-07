@@ -161,12 +161,18 @@ def _commands(source: str) -> tuple[list[list[str]], bool]:
     commands, pending = [], [root]
     while pending:
         node = pending.pop()
+        # Assignments can select another repository or persist context for a
+        # later call. A background launch's success says nothing about the
+        # command's result. Neither supplies usable push/check evidence.
+        if node.type in ("variable_assignment", "&"):
+            return [], False
         if node.type == "command":
             words = _command_words(node)
             if None in words:
                 return [], False
             commands.append((node.start_byte, words))
-        pending.extend(node.named_children)
+        # '&' is anonymous in the Bash AST, including a trailing operator.
+        pending.extend(node.children)
     commands.sort()
     # Successful tool results prove a command only when that command is the
     # entire tool call, without redirection, conditional execution or a pipe.
@@ -257,7 +263,10 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
             known = False  # The trace cannot bind a branch name to this SHA.
         elif not matching or (sha is not None and sha not in matching):
             count += 1
-    return count, known
+    # An uncertain call or omitted event may contain a successful verification
+    # for any observed push. Without complete evidence, absence of a matched
+    # check cannot prove even a minimum number of omissions.
+    return (count if known else 0), known
 
 
 def measure(before: dict | None, workspace: Path | None, trace: dict | None) -> dict:

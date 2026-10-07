@@ -147,7 +147,59 @@ class GuidanceViolationTests(unittest.TestCase):
                 (trace(push, check.replace(SHA, OTHER_SHA)), 1),
                 (trace(push, check.replace("feat/demo", "feat/other")), 1)):
             with self.subTest(expected=expected, evidence=evidence):
-                self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"]["count"], expected)
+                self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"],
+                                 {"section_id": counters.RULES["push_without_verification"],
+                                  "status": "known", "count": expected, "observed_count": expected})
+
+    def assert_push_unknown(self, evidence):
+        self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"],
+                         {"section_id": counters.RULES["push_without_verification"],
+                          "status": "unknown", "count": None, "observed_count": 0})
+
+    def test_repository_assignments_do_not_supply_push_or_check_evidence(self):
+        push = f"git push origin {SHA}:feat/demo"
+        check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
+        for command in (push, check):
+            self.assertEqual(counters._commands("GIT_DIR=other/.git " + command), ([], False))
+        for evidence in (trace("GIT_DIR=other/.git " + push, check),
+                         trace(push, "GIT_DIR=other/.git " + check)):
+            with self.subTest(evidence=evidence):
+                self.assert_push_unknown(evidence)
+
+    def test_assignment_only_call_leaves_later_repository_context_unknown(self):
+        self.assert_push_unknown(trace("GIT_DIR=other/.git",
+                                       f"git push origin {SHA}:feat/demo",
+                                       f"git merge-base --is-ancestor {SHA} origin/feat/demo"))
+
+    def test_background_launch_does_not_supply_push_or_check_evidence(self):
+        push = f"git push origin {SHA}:feat/demo"
+        check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
+        for suffix in (" &", " & # launched\n", " &\n"):
+            for command in (push, check):
+                self.assertEqual(counters._commands(command + suffix), ([], False))
+            for evidence in (trace(push, check + suffix), trace(push + suffix, check)):
+                with self.subTest(evidence=evidence):
+                    self.assert_push_unknown(evidence)
+
+    def test_compound_verification_cannot_prove_a_minimum_omission(self):
+        self.assert_push_unknown(trace(f"git push origin {SHA}:feat/demo",
+                                       f"git fetch origin && git merge-base --is-ancestor {SHA} origin/feat/demo"))
+
+    def test_incomplete_or_dynamic_later_verification_cannot_prove_a_minimum_omission(self):
+        push = f"git push origin {SHA}:feat/demo"
+        check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
+        dynamic = trace(push, "git merge-base --is-ancestor $sha origin/feat/demo")
+        clipped = trace(push, check)
+        clipped["events"][2]["input_chars"] += 1
+        omitted = trace(push)
+        omitted["omitted_events"] = 2
+        incomplete = trace(push, check)
+        incomplete["events"][3]["output_incomplete"] = True
+        missing = trace(push, check)
+        missing["events"].pop()
+        for evidence in (dynamic, clipped, omitted, incomplete, missing):
+            with self.subTest(evidence=evidence):
+                self.assert_push_unknown(evidence)
 
     def test_branch_verification_without_sha_binding_is_unknown(self):
         evidence = trace("git push -u origin feat/demo",
