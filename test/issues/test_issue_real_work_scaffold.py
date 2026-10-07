@@ -510,8 +510,9 @@ class AnswerLeakTests(_BuildCase):
     def test_a_task_text_quoting_the_new_test_is_refused(self):
         self.assertRefused(r"four-word run", task_text="Check that self.assertEqual(add(2, 3), 5) holds.")
 
-    def test_an_interface_string_exempts_it(self):
-        self.build(task_text=self.LEAKY, interface_strings=["sum the two operands"])
+    def test_prose_cannot_be_declared_as_an_interface_exemption(self):
+        self.assertRefused("interface string", task_text=self.LEAKY,
+                           interface_strings=["sum the two operands"])
 
     def test_the_issues_earlier_text_exempts_it(self):
         self.set_graphql(graphql(body="Please sum the two operands."))
@@ -848,18 +849,195 @@ class RedGreenTests(_BuildCase):
 
 class CommittedFixturesTests(unittest.TestCase):
 
-    def test_the_committed_fixtures_pass_the_static_check(self):
-        # The #311 fixtures were written by hand; the scaffold's static check
-        # must accept them, so its rules are the fixtures' own.
-        names = sorted(p.name for p in REAL_WORK.iterdir() if (p / "fixture.yaml").is_file())
-        self.assertGreaterEqual(len(names), 3)
-        for name in names:
+    def test_historical_drafts_obey_the_tightened_admission_policy(self):
+        # Earlier drafts stay as evidence; tightening admission can disqualify
+        # them without silently rewriting the task's historical issue text.
+        expected = {"_agent-guidance-196": {"substantive code tokens", "interface string"},
+                    "cms-platform-221": {"local filesystem", "substantive code tokens"},
+                    "cms-platform-693": set()}
+        names = {p.name for p in REAL_WORK.iterdir() if (p / "fixture.yaml").is_file()}
+        self.assertEqual(names, set(expected))
+        for name, reasons in expected.items():
             with self.subTest(fixture=name):
-                self.assertEqual(scaffold.static_problems(REAL_WORK / name, detail=True), ([], []))
+                fixture = yaml.safe_load((REAL_WORK / name / "fixture.yaml").read_text())
+                self.assertTrue(fixture["draft"])
+                problems, warnings = scaffold.static_problems(REAL_WORK / name, detail=True)
+                self.assertEqual(warnings, [])
+                self.assertEqual({reason for reason in reasons
+                                  if any(reason in problem for problem in problems)}, reasons)
+                self.assertTrue(all(any(reason in problem for reason in reasons)
+                                    for problem in problems), problems)
+                if not reasons:
+                    self.assertEqual(problems, [])
 
     def test_the_miner_never_mines_a_scaffold_branch(self):
         self.assertTrue(mine_real_work.is_bot({"head": {"ref": "claude/scaffold-toy-7"}}))
         self.assertFalse(mine_real_work.is_bot({"head": {"ref": "claude/fix-toy"}}))
+
+
+class ScaffoldAnswerRulesTests(_Case):
+    """Offline inputs from scaffold branches 759/764 and controls 761/760.
+
+    Retain the actual prompt, snapshot, patch, checker and relevant seed files;
+    do not run the checkers or fetch their dependencies. CI's test job discovers
+    this module through test/run_tests.py.
+    """
+
+    def real(self, number):
+        records = json.loads((TEST_DIR / "fixtures" / "scaffold-answer-leaks.json").read_text())
+        record = records[str(number)]
+        root = self.tmp / str(number)
+        self.write(root, {"fixture.yaml": yaml.safe_dump(record["fixture"]),
+                          "solution.patch": record["patch"],
+                          "issue-before-fix.txt": record["snapshot"]})
+        self.write(root / "seed", record["seed"])
+        self.write(root / "checker", record["checker"])
+        return root, record["fixture"]
+
+    def rules(self, root, fixture):
+        return scaffold.answer_rules(fixture, root)
+
+    def test_real_759_interface_values_are_not_a_contract(self):
+        root, fixture = self.real(759)
+        self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_real_759_css_checker_must_observe_behavior(self):
+        root, fixture = self.real(759)
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_real_759_local_evidence_path_is_rejected(self):
+        root, fixture = self.real(759)
+        self.assertTrue(any("local filesystem" in p for p in self.rules(root, fixture)))
+
+    def test_real_764_followup_snapshot_discloses_the_fix(self):
+        root, fixture = self.real(764)
+        self.assertTrue(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_real_api_signature_controls_pass(self):
+        for number in (761, 760):
+            with self.subTest(number=number):
+                root, fixture = self.real(number)
+                self.assertEqual(self.rules(root, fixture), [])
+
+    def test_a_new_interface_literal_cannot_exempt_the_answer(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["novel-value"]
+        (root / "solution.patch").write_text("+++ b/tool.js\n+value = 'novel-value';\n")
+        self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_a_declared_callable_must_really_be_invoked(self):
+        root, fixture = self.real(761)
+        fixture["interface_strings"] = ["unusedCallable"]
+        self.write(root / "checker", {"e2e/tags-suggest.test.js":
+                    "// unusedCallable()\nconst unusedCallable = () => true;\n"})
+        self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_a_callable_signature_cannot_name_an_added_argument_literal(self):
+        root, fixture = self.real(761)
+        for literal in ("44", "true", "false", "null"):
+            with self.subTest(literal=literal):
+                fixture["interface_strings"] = [f"freshCall({literal})"]
+                self.write(root / "checker", {"e2e/tags-suggest.test.js": f"freshCall({literal});\n"})
+                (root / "solution.patch").write_text(f"+++ b/tool.js\n+freshCall({literal});\n")
+                self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_removed_solution_details_in_the_snapshot_do_not_reject(self):
+        root, fixture = self.real(764)
+        fixture["prompt"] = "Keep the trailing space while later listeners receive input."
+        self.assertFalse(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_each_local_path_prefix_is_rejected(self):
+        root, fixture = self.real(761)
+        for prefix in ("~/", "/home/", "/tmp/", "file:///tmp/"):
+            with self.subTest(prefix=prefix):
+                fixture["prompt"] = "Evidence at " + prefix + "example/shots."
+                self.assertTrue(any("local filesystem" in p for p in self.rules(root, fixture)))
+
+    def test_style_checker_ast_handles_a_template_literal_variable(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'const filename = `theme/assets/css/${"main"}.css`;\n'
+            'const css = fs.readFileSync(filename, "utf8");\n'
+            'expect(postcss.parse(css).nodes.length).toBe(1);\n'})
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_style_behavioral_checker_is_accepted(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'test("wraps", async ({ page }) => {\n'
+            '  await page.goto("https://example.com");\n'
+            '  expect(await page.locator("article").boundingBox()).toEqual({width: 300});\n'
+            '});\n'})
+        self.assertFalse(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_unformatted_followup_is_still_rejected(self):
+        root, fixture = self.real(764)
+        fixture["prompt"] = fixture["prompt"].replace("`", "")
+        (root / "issue-before-fix.txt").write_text(
+            (root / "issue-before-fix.txt").read_text().replace("`", ""))
+        self.assertTrue(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_an_uninvoked_function_is_not_behavior(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'function unused() { expect(page.boundingBox()).toEqual({width: 300}); }\n'
+            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1);\n'})
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_an_ignored_callback_is_not_behavior(self):
+        root, fixture = self.real(759)
+        self.write(root / "checker", {"e2e/theme-overflow-wrap-css.test.js":
+            'function ignore(callback) {}\n'
+            'ignore(() => expect(page.boundingBox()).toEqual({width: 300}));\n'
+            'expect(postcss.parse(fs.readFileSync("main.css")).nodes.length).toBe(1);\n'})
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_cli_signature_must_match_the_invoked_argv(self):
+        root, fixture = self.real(761)
+        self.write(root / "seed", {"tool.js": ""})
+        fixture["interface_strings"] = ["node tool.js --fresh-option"]
+        fixture["objective_checks"][0]["argv"] = ["node", "tool.js", "--fresh-option"]
+        self.assertEqual(self.rules(root, fixture), [])
+        fixture["objective_checks"][0]["argv"] = ["node", "tool.js"]
+        self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_cli_exemption_cannot_carry_an_added_literal(self):
+        root, fixture = self.real(761)
+        self.write(root / "seed", {"tool.js": ""})
+        fixture["interface_strings"] = ["node tool.js --css novel-value"]
+        fixture["objective_checks"][0]["argv"] = ["node", "tool.js", "--css", "novel-value"]
+        (root / "solution.patch").write_text("+++ b/tool.js\n+const value = 'novel-value';\n")
+        self.assertTrue(any("interface" in p for p in self.rules(root, fixture)))
+
+    def test_a_binary_asset_patch_needs_behavior(self):
+        root, fixture = self.real(759)
+        (root / "solution.patch").write_text(
+            'diff --git a/theme/logo.png b/theme/logo.png\n'
+            'Binary files a/theme/logo.png and b/theme/logo.png differ\n')
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_a_style_file_deletion_also_needs_behavior(self):
+        root, fixture = self.real(759)
+        (root / "solution.patch").write_text(
+            '--- a/theme/assets/css/main.css\n+++ /dev/null\n-old rule\n')
+        self.assertTrue(any("behavioral checker" in p for p in self.rules(root, fixture)))
+
+    def test_substantive_overlap_boundary_is_two_distinct_tokens(self):
+        root, fixture = self.real(761)
+        (root / "solution.patch").write_text(
+            "+++ b/tool.js\n+ firstCall(); secondCall(); thirdCall();\n")
+        (root / "issue-before-fix.txt").write_text("firstCall secondCall thirdCall")
+        fixture["prompt"] = "firstCall secondCall"
+        self.assertFalse(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+        fixture["prompt"] += " thirdCall"
+        self.assertTrue(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_static_check_uses_the_admission_rules(self):
+        root, fixture = self.real(759)
+        problems, warnings = scaffold.static_problems(root)
+        self.assertFalse(warnings)
+        for expected in ("interface", "behavioral checker", "local filesystem"):
+            self.assertTrue(any(expected in p for p in problems), problems)
 
 
 class _GateCase(_BuildCase):
@@ -979,6 +1157,14 @@ class GateTests(_GateCase):
             path.write_text(path.read_text().replace(
                 "Make it return the sum.", f"Make it sum the two operands {MARKER}."))
         self.assertRejected(r"shares 1 four-word run\(s\)", leak)
+
+    def test_rejects_local_paths_through_the_common_admission_rules(self):
+        def local_path(where):
+            path = where / "fixture.yaml"
+            data = yaml.safe_load(path.read_text())
+            data["prompt"] += " Evidence at ~/example/shots."
+            path.write_text(yaml.safe_dump(data))
+        self.assertRejected("local filesystem path", local_path)
 
     def test_rejects_an_oversized_seed_file(self):
         self.assertRejected("over the seed's size cap",
@@ -1302,7 +1488,7 @@ class WorkflowShapeTests(unittest.TestCase):
         text = GATE.read_text(encoding="utf-8")
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
-        self.assertEqual(len(found), 3)
+        self.assertEqual(len(found), 4)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertRegex(node.value, PIN)
@@ -1331,6 +1517,16 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn('--label "$LABEL"', tail)
         self.assertEqual(self.gate["jobs"]["draft-pr"]["steps"][0]["env"]["LABEL"],
                          scaffold.DRAFT_LABEL)
+
+    def test_checker_parser_dependencies_come_from_the_trusted_checkout(self):
+        steps = self.gate["jobs"]["validate"]["steps"]
+        installs = [step for step in steps if "npm ci" in step.get("run", "")]
+        self.assertEqual(len(installs), 1)
+        self.assertEqual(installs[0]["working-directory"],
+                         "skills-evals/evals/browser-testing/seed")
+        self.assertEqual(installs[0]["run"], "npm ci --ignore-scripts --no-audit --no-fund")
+        self.assertLess(steps.index(installs[0]),
+                        next(i for i, step in enumerate(steps) if step.get("id") == "gate"))
 
     def test_the_pr_job_reads_only_the_validated_outputs(self):
         # The gate's outputs are the only values that cross from the job that

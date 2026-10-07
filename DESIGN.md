@@ -248,7 +248,7 @@ design, recorded verbatim:
   acceptance addendum (2026-10-06)"); nothing else does.
 - **Answer leak, the exemption list:** "Exempt interface strings
   (Recommended)". Each fixture declares, in `interface_strings:`, the
-  identifiers and messages its hidden tests check verbatim, and its task text
+  seed-existing identifiers and invoked callable/CLI signatures, and its task text
   drops issue sections that describe the solution.
 - **Answer leak, issue text:** "Exempt pre-existing issue text
   (Recommended)". Text the issue already held before the pull request's first
@@ -271,6 +271,68 @@ through `fixture_added_lines`. The scaffolder rejects a hit (Adam,
 2026-10-06: "Reject (Recommended)"; `LEAK_POLICY` in
 `scripts/scaffold_real_work.py`, "The scaffolder and its gate" below). The
 miner, earlier in the pipeline, records a hit as a warning (Q3 below).
+
+**Scaffold admission after the leaked drafts.** The common static validator in
+[`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py) runs four
+additional rules in `build`, `check` and the routine scaffold gate. These are
+admission checks; the historical four-word lint still applies afterward.
+
+1. Every `interface_strings:` entry must occur as a complete string in seed
+   content or name an existing seed file, or be a callable/CLI signature the
+   checker invokes. New selectors, property values, argument values and return
+   literals cannot be declared as exemptions. Callable parameters describe
+   names, not literal answers; CLI signatures contain invoked option names
+   and existing file paths, never argument values. Parser errors fail closed.
+2. The issue portion still carried in the prompt may share at most **two
+   distinct substantive code tokens** with `solution.patch` added lines,
+   including comments. Tokens are case-sensitive identifier/path/file runs
+   with camel case, underscores, dollar signs, dots, slashes or colons;
+   hyphen-only tokens count when the issue marks them as code, so ordinary
+   prose such as "near-duplicate" does not count. Markdown formatting is not
+   needed for the other token shapes. The earlier-issue exemption does not
+   waive this rule: a review follow-up can prescribe the answer before its own
+   fix begins. Tokens in omitted snapshot sections do not count.
+3. A fix limited to styling/assets needs a behavioral checker. Test-lane,
+   documentation and workflow bookkeeping do not turn a CSS fix into an
+   application-code fix. A checker that only reads and parses source is
+   insufficient. The supported JavaScript check requires a rendered
+   observation inside an assertion (geometry, computed CSS or a screenshot).
+4. The prompt must not carry local filesystem paths starting with `~/`,
+   `/home/` or `/tmp/`; omit local evidence references.
+
+Calibration uses the actual scaffold branches from
+[the rejected CSS draft](https://github.com/Adam-S-Daniel/skills-evals/pull/325)
+and [the rejected review-follow-up draft](https://github.com/Adam-S-Daniel/skills-evals/pull/326),
+plus [the tags-input API control](https://github.com/Adam-S-Daniel/cms-platform/pull/761)
+and [the tag aggregation API control](https://github.com/Adam-S-Daniel/cms-platform/pull/760).
+The distinct-token counts are respectively 3, 3, 2 and 1. The limit of two
+allows the controls' symptom/API overlap while rejecting the follow-up's
+`stopImmediatePropagation`, `live-url-banner.js` and `autosave-on-hide.js`.
+The CSS draft also fails its interface, behavioral-checker and local-path
+rules. Offline regression inputs preserve the actual prompt, snapshot, patch,
+checker and relevant seed files in
+[`test/fixtures/scaffold-answer-leaks.json`](test/fixtures/scaffold-answer-leaks.json).
+
+The checker is parsed as data, never executed: Python uses `ast`, Ruby uses
+`Ripper`, and JavaScript uses the trusted browser-testing seed's exact Acorn
+lockfile through [`scripts/scaffold_checker_ast.js`](scripts/scaffold_checker_ast.js).
+JavaScript excludes uncalled function declarations and follows direct helper
+calls and known test/collection callback bodies; arbitrary callbacks do not
+count as invoked. Python follows direct helpers and test methods;
+Ruby recognizes calls in top-level test blocks and test methods. Callable
+matching uses invoked method names, so aliases and dynamic dispatch are not a
+semantic proof. The behavioral test is conservative and supports JavaScript
+assertion expressions; an unsupported style checker needs review and a
+supported behavioral test. The overlap heuristic also misses unmarked plain
+word or numeric literals, so these checks supplement human review.
+
+Tightening also makes two earlier committed drafts ineligible for new
+admission: [the dependency-config fixture](evals/real-work/_agent-guidance-196/fixture.yaml)
+has eight shared tokens and unsupported interface exemptions, and
+[the platform-pin fixture](evals/real-work/cms-platform-221/fixture.yaml)
+has eleven shared tokens and a local path. Their historical evidence stays
+intact for owner review; [the inline-template fixture](evals/real-work/cms-platform-693/fixture.yaml)
+continues to pass.
 
 **What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
 file in the fixture directory (outside `seed/`) holding the issue's title and

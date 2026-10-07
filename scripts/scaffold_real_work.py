@@ -91,10 +91,12 @@ Messages never quote file content.
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -765,6 +767,187 @@ def _walk(root: Path):
             yield Path(directory) / name
 
 
+# Lexical policy: at most two distinct code-shaped tokens in the issue part
+# may also occur in solution additions. Ordinary words and symptom prose are
+# not code tokens. See DESIGN.md for calibration and limitations.
+CODE_OVERLAP_LIMIT = 2
+CODE_TOKEN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(?:[./:-][A-Za-z0-9_$-]+)*")
+LOCAL_PATH = re.compile(r"(?<![A-Za-z0-9:])(?:~/|/home/|/tmp/)")
+
+
+def substantive_tokens(text: str) -> set[str]:
+    """Code-shaped lexical tokens; Markdown formatting does not affect them."""
+    marked = {token for span in re.findall(r"`+([^`]+)`+", text)
+              for token in CODE_TOKEN.findall(span)}
+    return {token for token in CODE_TOKEN.findall(text)
+            if re.search(r"[./:_$]|[a-z][A-Z]", token) or "-" in token and token in marked}
+
+
+def shared_code_tokens(fixture: dict, fixture_dir: Path) -> set[str]:
+    snapshot = answer_leak.preexisting_text(fixture, fixture_dir)
+    # Only snapshot code still carried in the prompt counts: authors may omit
+    # a follow-up's solution instructions rather than discard its whole issue.
+    issue_tokens = substantive_tokens(snapshot) & substantive_tokens(fixture["prompt"])
+    additions = "\n".join(answer_leak.added_lines(
+        (fixture_dir / PATCH_FILE).read_text(encoding="utf-8")))
+    return issue_tokens & set(CODE_TOKEN.findall(additions))
+
+
+def checker_facts(fixture_dir: Path) -> tuple[set[str], bool]:
+    """Callable names and evidence of asserted rendered behavior, from ASTs."""
+    calls: set[str] = set()
+    behavior = False
+    sources = []
+    for path in _walk(fixture_dir / CHECKER_DIR):
+        if not path.is_file() or path.is_symlink():
+            continue
+        source = path.read_text(encoding="utf-8")
+        if path.suffix in {".js", ".mjs", ".cjs"}:
+            sources.append(source)
+        elif path.suffix == ".py":
+            tree = ast.parse(source)
+            definitions = {n.name: n for n in ast.walk(tree)
+                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+            visited = set()
+            def python_calls(node):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if not node.name.startswith("test_"):
+                        return
+                if isinstance(node, ast.Lambda):
+                    return
+                if isinstance(node, ast.Call):
+                    called = None
+                    if isinstance(node.func, ast.Name):
+                        called = node.func.id
+                    elif isinstance(node.func, ast.Attribute):
+                        called = node.func.attr
+                    if called:
+                        calls.add(called)
+                        if called in definitions and called not in visited:
+                            visited.add(called)
+                            for statement in definitions[called].body:
+                                python_calls(statement)
+                for child in ast.iter_child_nodes(node):
+                    python_calls(child)
+            python_calls(tree)
+        elif path.suffix == ".rb":
+            # Ripper only parses stdin; it never loads the fixture or Ruby's
+            # test framework. Missing parsers and malformed source fail closed.
+            result = subprocess.run(["ruby", "-rripper", "-rjson", "-e",
+                "tree = Ripper.sexp(STDIN.read); exit 1 unless tree; print JSON.generate(tree)"],
+                input=source, text=True, capture_output=True, timeout=10, check=True)
+            def ruby_calls(node):
+                if not isinstance(node, list):
+                    return
+                if node and isinstance(node[0], str) and node[0] in {"def", "defs"}:
+                    identifiers = [child for child in node[1:]
+                                   if isinstance(child, list) and child and child[0] == "@ident"]
+                    if not any(child[1].startswith("test_") for child in identifiers):
+                        return
+                if node and isinstance(node[0], str) and node[0] in {
+                        "call", "fcall", "vcall", "command", "command_call"}:
+                    for child in node[1:]:
+                        if isinstance(child, list) and child and child[0] == "@ident":
+                            calls.add(child[1])
+                for child in node:
+                    ruby_calls(child)
+            ruby_calls(json.loads(result.stdout))
+    if sources:
+        result = subprocess.run(["node", str(REPO_ROOT / "scripts/scaffold_checker_ast.js")],
+                                input=json.dumps(sources), text=True, capture_output=True,
+                                timeout=10, check=True)
+        facts = json.loads(result.stdout)
+        calls.update(facts["calls"])
+        behavior = facts["behavior"]
+    return calls, behavior
+
+
+def styling_only(fixture_dir: Path) -> bool:
+    patch = (fixture_dir / PATCH_FILE).read_text(encoding="utf-8")
+    paths = set()
+    for line in patch.splitlines():
+        if line.startswith("diff --git "):
+            try:
+                headers = shlex.split(line[11:])
+            except ValueError:
+                raise guidance.GuidanceError("solution.patch has an invalid quoted path") from None
+            paths.update(value[2:] for value in headers if value.startswith(("a/", "b/")))
+        if not line.startswith(("+++ ", "--- ")):
+            continue
+        value = line[4:].split("\t", 1)[0]
+        if value.startswith('"'):
+            # Git's C quoting for unusual names. Undecodable headers fail
+            # closed rather than silently making a style-only patch mixed.
+            try:
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                raise guidance.GuidanceError("solution.patch has an invalid quoted path") from None
+        if value.startswith(("a/", "b/")):
+            paths.add(value[2:])
+    # A test-lane registration is bookkeeping, not application behavior; the
+    # 759 fix includes playwright.config.js beside its one CSS rule.
+    production = [p for p in paths if not (p.startswith(("e2e/", "test/", "tests/"))
+                  or "/spec/" in p or p.startswith(("docs/", ".github/")))]
+    return bool(production) and all(Path(p).suffix.lower() in {
+        ".css", ".scss", ".sass", ".less", ".svg", ".png", ".jpg", ".jpeg",
+        ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf"} for p in production)
+
+
+def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
+    """Additional admission rules, shared by build, check and the static gate.
+
+    Messages are fixed/count-only because the gate reads an untrusted branch.
+    These conservative checks establish eligibility, not semantic correctness.
+    """
+    problems = []
+    if LOCAL_PATH.search(fixture["prompt"]):
+        problems.append("the prompt contains a local filesystem path")
+    overlap = shared_code_tokens(fixture, fixture_dir)
+    if len(overlap) > CODE_OVERLAP_LIMIT:
+        problems.append(f"the issue part of the task shares {len(overlap)} substantive code tokens "
+                        f"with solution additions (limit {CODE_OVERLAP_LIMIT})")
+    interfaces = fixture.get("interface_strings", ())
+    seed_text = "\n".join(p.read_text(encoding="utf-8", errors="replace")
+                          for p in _walk(fixture_dir / SEED_DIR)
+                          if p.is_file() and not p.is_symlink())
+    seed_paths = {p.relative_to(fixture_dir / SEED_DIR).as_posix()
+                  for p in _walk(fixture_dir / SEED_DIR) if p.is_file() and not p.is_symlink()}
+    absent = [value for value in interfaces if value not in seed_paths and not re.search(
+              r"(?<![\w$])" + re.escape(value) + r"(?![\w$])", seed_text)]
+    style = styling_only(fixture_dir)
+    if absent or style:
+        try:
+            calls, behavior = checker_facts(fixture_dir)
+        except (OSError, ValueError, SyntaxError, subprocess.SubprocessError):
+            return problems + ["the checker AST could not be parsed for answer-leak admission"]
+        # A signature may introduce a new callable, never an argument value,
+        # selector or return literal. Bare callable names are also accepted.
+        for value in absent:
+            pieces = value.split()
+            flags = [piece for piece in pieces if piece.startswith("--")]
+            syntax_only = all(re.fullmatch(r"--[a-z][a-z0-9-]*", piece)
+                              or index == 0 and piece in {check["argv"][0]
+                                  for check in fixture["objective_checks"] if check.get("argv")}
+                              or piece in seed_paths for index, piece in enumerate(pieces))
+            cli = bool(flags and syntax_only and any(
+                isinstance(check.get("argv"), list) and any(
+                    check["argv"][start:start + len(pieces)] == pieces
+                    for start in range(len(check["argv"])))
+                for check in fixture["objective_checks"]))
+            match = re.fullmatch(r"(?:[A-Za-z_$][\w$]*(?:\.|::))*"
+                                 r"([A-Za-z_$][\w$]*)(?:\((?:(?!true\b|false\b|null\b|undefined\b|None\b)"
+                                 r"[A-Za-z_$][\w$]*:?"
+                                 r"(?:,\s*(?!true\b|false\b|null\b|undefined\b|None\b)"
+                                 r"[A-Za-z_$][\w$]*:?)*\s*)?\))?", value)
+            if not cli and (not match or match[1] not in calls):
+                problems.append("an interface string is absent from the seed and is not a "
+                                "callable signature invoked by the checker")
+        if style and not behavior:
+            problems.append("a styling/assets fix requires a behavioral checker; source parsing "
+                            "alone is not admissible")
+    return problems
+
+
 def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str], list[str]]:
     """(problems, warnings) for one fixture directory, executing nothing.
 
@@ -836,10 +1019,11 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
     problems += [f"seed carries the evaluated path {rel}" for rel in EVALUATED_PATHS
                  if os.path.lexists(seed / rel)]
     try:
+        problems += answer_rules(fixture, fixture_dir)
         hits = answer_leak.leaked_runs(
             fixture["prompt"], "\n".join(answer_leak.fixture_added_lines(fixture_dir)),
             fixture.get("interface_strings", ()), answer_leak.preexisting_text(fixture, fixture_dir))
-    except (UnicodeDecodeError, OSError) as error:
+    except (guidance.GuidanceError, UnicodeDecodeError, OSError) as error:
         return problems + [f"the answer-leak lint could not read the fixture: "
                            f"{type(error).__name__}"], []
     warnings = []

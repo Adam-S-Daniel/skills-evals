@@ -111,8 +111,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install the validator's one dependency
+      - name: Install the validator's Python dependency
         run: python3 -m pip install pyyaml==6.0.3
+
+      # Parse checker source as data using the trusted default branch's
+      # existing exact parser lockfile, never the scaffold's dependencies.
+      - name: Set up Node for checker AST admission
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+
+      - name: Install checker parser dependencies
+        working-directory: skills-evals/evals/browser-testing/seed
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Resolve the branch to gate
         id: resolve
@@ -202,7 +213,7 @@ jobs:
             echo
             echo "Before removing \`draft: true\`, a person:"
             echo
-            echo "- confirms the prompt is the real ask, with the issue sections that describe the solution dropped, and that \`interface_strings:\` name only what the hidden tests check verbatim;"
+            echo "- confirms the prompt is the real ask, with the issue sections that describe the solution dropped, and that \`interface_strings:\` already occur in the seed or name callable/CLI signatures the checker invokes, never added selectors, property values or implementation literals;"
             echo "- runs \`scripts/scaffold_real_work.py check --fixture evals/real-work/${FIXTURE_ID} --run\` (red on the seed, green with the fix);"
             echo "- adds the fixture to \`CHECKER_BLOBS\` in \`test/issues/test_issue_real_work_fixtures.py\`, and any \`deps:\` directory to ci.yml's real-work install step."
             echo
