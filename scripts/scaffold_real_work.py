@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scaffold one real-work fixture from one miner candidate, and gate it.
+"""Scaffold real-work and guidance fixtures, and gate real-work branches.
 
 Part of https://github.com/Adam-S-Daniel/skills-evals/issues/65 and
 https://github.com/Adam-S-Daniel/skills-evals/issues/98 (DESIGN.md "The
@@ -18,6 +18,9 @@ selection), and everything else is read from git and GitHub.
         [--issue-snapshot FILE] --dest evals/real-work
 
     python3 scripts/scaffold_real_work.py check --fixture DIR [--run]
+
+    python3 scripts/scaffold_real_work.py guidance [SECTION_ID] \
+        --guidance PATH [--dest evals/guidance]
 
     python3 scripts/scaffold_real_work.py resolve --event-name NAME \\
         --event-path PATH
@@ -175,6 +178,7 @@ CHECK_ID = "hidden-tests"
 CHECK_DESCRIPTION = "The pull request's own tests, hidden from the agent"
 
 REAL_WORK_ROOT = "evals/real-work"
+GUIDANCE_ROOT = "evals/guidance"
 #: A fixture id is also part of a branch name, a REST query string, and a PR
 #: title and body, so it is the only barrier there: no `&=?#%` or `/`, and at
 #: most 72 characters (64 for the repository name, `-`, seven digits).
@@ -1005,6 +1009,191 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
 
 
 # ---------------------------------------------------------------------------
+# Offline guidance gap scaffolds (#98's first slice).
+
+GUIDANCE_ID_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+IMPACT_HEADING_RE = re.compile(
+    r"(?P<date>\d{4}-\d{2}-\d{2}) — (?P<section>[a-z0-9-]+) — (?P<operation>.+)\Z")
+INCIDENT_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+GUIDANCE_SOURCE_ISSUE = "https://github.com/Adam-S-Daniel/skills-evals/issues/98"
+GUIDANCE_PARENT_ISSUE = "https://github.com/Adam-S-Daniel/skills-evals/issues/96"
+
+
+def _safe_guidance_error() -> ScaffoldError:
+    """Keep upstream parser diagnostics from echoing source file content."""
+    return ScaffoldError("could not safely read or parse _agent-guidance inputs")
+
+
+def _manifest_rows(guidance_dir: Path) -> tuple[Path, list[dict]]:
+    try:
+        manifest_path = guidance.inside_checkout(guidance_dir, guidance.MANIFEST_REL)
+        rows = guidance.load_manifest(guidance_dir)
+    except (guidance.GuidanceError, OSError, RuntimeError, UnicodeError, yaml.YAMLError):
+        raise _safe_guidance_error() from None
+    ids: set[str] = set()
+    for row in rows:
+        section_id, heading, status = row.get("id"), row.get("heading"), row.get("status")
+        if (not isinstance(section_id, str) or len(section_id) > 72
+                or not GUIDANCE_ID_RE.fullmatch(section_id)):
+            raise ScaffoldError("section manifest contains an invalid section id")
+        if section_id in ids:
+            raise ScaffoldError("section manifest contains duplicate section ids")
+        ids.add(section_id)
+        if not isinstance(heading, str) or not heading.strip():
+            raise ScaffoldError("section manifest contains a blank or invalid heading")
+        if not isinstance(status, str) or status not in {"gap", "covered", "skipped"}:
+            raise ScaffoldError("section manifest contains an invalid status")
+    return manifest_path, rows
+
+
+def _read_guidance_context(guidance_dir: Path, manifest_path: Path,
+                           row: dict) -> dict:
+    try:
+        source = guidance.inside_checkout(guidance_dir, row["file"])
+        source_text = source.read_text(encoding="utf-8")
+        spans = [span for span in guidance.h2_extents(source_text)
+                 if span["heading"] == row["heading"]]
+        if len(spans) != 1:
+            raise ScaffoldError("manifest heading does not identify one section extent")
+        section_text = source_text[spans[0]["start"]:spans[0]["end"]]
+        impact_path = guidance.inside_checkout(guidance_dir, "docs/guidance-impact.md")
+        impact_text = impact_path.read_text(encoding="utf-8") if impact_path.is_file() else ""
+        impact_entries = []
+        for span in guidance.h2_extents(impact_text) if impact_text else []:
+            match = IMPACT_HEADING_RE.fullmatch(span["heading"].strip())
+            if match and match.group("section") == row["id"]:
+                impact_entries.append(impact_text[span["start"]:span["end"]])
+    except ScaffoldError:
+        raise
+    except (guidance.GuidanceError, OSError, RuntimeError, UnicodeError, yaml.YAMLError):
+        raise _safe_guidance_error() from None
+    return {
+        "id": row["id"], "heading": row["heading"],
+        "section_text": section_text, "impact_entries": impact_entries,
+        "incident_dates": list(dict.fromkeys(INCIDENT_DATE_RE.findall(section_text))),
+        "source_file": row["file"],
+        "manifest_path": manifest_path.relative_to(guidance_dir.resolve()).as_posix(),
+    }
+
+
+def _has_symlink_component(path: Path) -> bool:
+    absolute = Path(os.path.abspath(path))
+    return any(part.is_symlink() for part in (absolute, *absolute.parents))
+
+
+def _guidance_fixture(context: dict) -> dict:
+    return {
+        "subject": "guidance", "section": context["id"], "draft": True,
+        "prompt": "TODO: reconstruct the operator request without naming the rule",
+        "unprompted_rationale": "TODO: explain why the prompt does not name the rule",
+        "arms": {
+            "with_guidance": {"mode": "section", "objective_checks": []},
+            "without_guidance": {"mode": "none", "objective_checks": []},
+        },
+    }
+
+
+def _guidance_tracking(context: dict) -> dict:
+    section_id = context["id"]
+    return {
+        "schema_version": 1, "subject": "guidance", "section": section_id,
+        "draft": True, "status": "needs-authoring",
+        "title": f"Guidance eval: {context['heading']}",
+        "branch": f"scaffold/guidance-{section_id}",
+        "marker": f"<!-- skills-evals:guidance-scaffold:{section_id} -->",
+        "parent_issue": GUIDANCE_PARENT_ISSUE,
+        "source_issue": GUIDANCE_SOURCE_ISSUE,
+        "fixture": f"evals/guidance/{section_id}/",
+        "source": {"file": context["source_file"], "heading": context["heading"],
+                   "manifest": context["manifest_path"]},
+        "incident_dates": context["incident_dates"],
+        "reviewer_instructions": [
+            "Author checks that encode the section's actual claims.",
+            "Confirm the prompt does not name the rule.",
+        ],
+    }
+
+
+def scaffold_guidance(guidance_dir: Path, section_id: str | None,
+                      dest: Path) -> tuple[int, int]:
+    """Write offline TODO skeletons for GAPs; all upstream access is read-only."""
+    try:
+        guidance_dir = guidance.require_guidance_dir(guidance_dir.expanduser().resolve())
+    except (guidance.GuidanceError, OSError, RuntimeError):
+        raise _safe_guidance_error() from None
+    output = Path(os.path.abspath(dest.expanduser()))
+    if _has_symlink_component(output):
+        raise ScaffoldError("destination path contains a symlink")
+    upstream = guidance_dir.resolve()
+    try:
+        resolved_output = output.resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise ScaffoldError("could not safely resolve destination path") from None
+    if (resolved_output == upstream or resolved_output.is_relative_to(upstream)
+            or upstream.is_relative_to(resolved_output)):
+        raise ScaffoldError("destination overlaps the _agent-guidance checkout")
+    if os.path.lexists(output) and not output.is_dir():
+        raise ScaffoldError("destination exists and is not a directory")
+
+    manifest_path, rows = _manifest_rows(guidance_dir)
+    by_id = {row["id"]: row for row in rows}
+    if section_id is not None:
+        if section_id not in by_id:
+            raise ScaffoldError("requested section id is absent from the section manifest")
+        if by_id[section_id]["status"] != "gap":
+            raise ScaffoldError("requested section is not a GAP")
+        selected = [by_id[section_id]]
+    else:
+        selected = [row for row in rows if row["status"] == "gap"]
+
+    # Preflight every selected context before creating any output directory.
+    contexts = [_read_guidance_context(guidance_dir, manifest_path, row)
+                for row in selected]
+    for context in contexts:
+        target = output / context["id"]
+        if _has_symlink_component(target):
+            raise ScaffoldError("a target path contains a symlink")
+        if os.path.lexists(target) and not target.is_dir():
+            raise ScaffoldError("a target path exists and is not a directory")
+
+    created = skipped = 0
+    for context in contexts:
+        target = output / context["id"]
+        if target.is_dir():
+            skipped += 1
+            continue
+        target_created = False
+        try:
+            target.mkdir(parents=True, exist_ok=False)
+            target_created = True
+            (target / "section.md").write_text(context["section_text"], encoding="utf-8")
+            impacts = context["impact_entries"]
+            impact_body = "\n\n".join(entry.rstrip() for entry in impacts)
+            (target / "guidance-impact.md").write_text(
+                impact_body + "\n" if impact_body else "No matching guidance-impact history.\n",
+                encoding="utf-8")
+            (target / "fixture.yaml").write_text(
+                "# TODO: choose the instrument, reconstruct the seed, and author nonempty objective checks.\n"
+                + yaml.safe_dump(_guidance_fixture(context), sort_keys=False, allow_unicode=True),
+                encoding="utf-8")
+            seed = target / "seed"
+            seed.mkdir()
+            (seed / "README.md").write_text(
+                "# TODO: reconstruct and sanitize the minimal incident workspace\n\n"
+                "Use only example.com or example.net in fixture data.\n",
+                encoding="utf-8")
+            (target / "tracking.json").write_text(
+                json.dumps(_guidance_tracking(context), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+        except OSError:
+            if target_created and target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target, ignore_errors=True)
+            raise ScaffoldError("could not write guidance scaffold output") from None
+        created += 1
+    return created, skipped
+
+
+# ---------------------------------------------------------------------------
 # CLI.
 
 def main(argv: list[str] | None = None) -> int:
@@ -1025,6 +1214,10 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("check")
     c.add_argument("--fixture", type=Path, required=True)
     c.add_argument("--run", action="store_true")
+    gd = sub.add_parser("guidance", help="write offline draft skeletons for guidance GAPs")
+    gd.add_argument("section_id", nargs="?")
+    gd.add_argument("--guidance", type=Path, required=True)
+    gd.add_argument("--dest", type=Path, default=REPO_ROOT / GUIDANCE_ROOT)
     r = sub.add_parser("resolve")
     r.add_argument("--event-name", required=True)
     r.add_argument("--event-path", required=True)
@@ -1058,6 +1251,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{key}={value}")
         return 0
     try:
+        if args.command == "guidance":
+            created, skipped = scaffold_guidance(args.guidance, args.section_id, args.dest)
+            print(json.dumps({"created": created, "skipped": skipped}))
+            return 0
         if args.command == "build":
             target = build(args.candidates, args.key, args.clone, args.spec, args.dest,
                            args.issue_snapshot)
