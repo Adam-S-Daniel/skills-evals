@@ -125,6 +125,81 @@ class BoardFeedTests(unittest.TestCase):
         self.assertEqual(arm["tokens"], 20)
         self.assertIsNone(rows["overflow"]["arms"][0]["cost"])
 
+    def test_cli_token_summation_overflow_preserves_export(self):
+        huge = 10 ** 308
+        self.summary(doc=single(agent={"usage": {
+            "input_tokens": huge, "output_tokens": huge,
+            "cache_creation_input_tokens": 1.0}, "cost_usd": 0.5, "num_turns": 4}))
+        self.summary(arm="without_skill", doc=single())
+
+        aggregate_doc = aggregate()
+        aggregate_doc["aggregate"]["efficiency"].update({
+            "input_tokens": {"mean": huge}, "output_tokens": {"mean": huge},
+            "cache_creation_input_tokens": {"mean": 1.0}})
+        self.summary(key="aggregate-token-overflow", doc=aggregate_doc)
+        self.commit()
+
+        process = subprocess.run([sys.executable, "board_feed.py",
+            "--repo", str(self.repo), "--main-ref", self.main,
+            "--results-ref", "results-ref", "--out", str(self.out)],
+            cwd=ROOT / "scripts", capture_output=True, text=True)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertEqual(process.stderr, "")
+        self.assertTrue(self.out.is_file())
+        dash = json.loads(self.out.read_text(encoding="utf-8"),
+                          parse_constant=lambda value: self.fail(f"invalid JSON number: {value}"))["dash"]
+        rows = {row["fixture"]: row for row in dash["results"]["rows"]}
+        measured = {arm["arm"]: arm for arm in rows["workflow-path-audit"]["arms"]}
+        self.assertIsNone(measured["with_skill"]["tokens"])
+        self.assertEqual({key: measured["with_skill"][key]
+                          for key in ("obj", "total", "judge", "turns", "cost", "n")},
+                         {"obj": 1, "total": 2, "judge": 8, "turns": 4,
+                          "cost": 0.5, "n": 1})
+        self.assertEqual(measured["without_skill"]["tokens"], 20)
+        point = dash["trend"]["points"][0]
+        self.assertIsNone(point["with_skill"]["tokens"])
+        self.assertEqual(point["without_skill"]["tokens"], 20)
+        aggregate_arm = rows["aggregate-token-overflow"]["arms"][0]
+        self.assertIsNone(aggregate_arm["tokens"])
+        self.assertEqual((aggregate_arm["obj"], aggregate_arm["judge"], aggregate_arm["cost"],
+                          aggregate_arm["n"]), (1.5, 7.5, 0.4, 3))
+
+    def test_cli_trial_averaging_overflow_preserves_export(self):
+        huge = 10 ** 308
+        baseline = single()["agent"]
+        for trial, cost, judge in ((1, huge, 8), (2, huge, 6), (3, 1.0, 10)):
+            self.summary(arm=f"with_skill/trial-{trial}",
+                         doc=single(agent={**baseline, "cost_usd": cost},
+                                    judge={"overall": judge}))
+        self.summary(arm="without_skill", doc=single())
+        for trial in (1, 2):
+            self.summary(key="finite-mean", arm=f"with_skill/trial-{trial}",
+                         doc=single(agent={**baseline, "cost_usd": huge}))
+        self.commit()
+
+        process = subprocess.run([sys.executable, "board_feed.py",
+            "--repo", str(self.repo), "--main-ref", self.main,
+            "--results-ref", "results-ref", "--out", str(self.out)],
+            cwd=ROOT / "scripts", capture_output=True, text=True)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertEqual(process.stderr, "")
+        self.assertTrue(self.out.is_file())
+        dash = json.loads(self.out.read_text(encoding="utf-8"),
+                          parse_constant=lambda value: self.fail(f"invalid JSON number: {value}"))["dash"]
+        rows = {row["fixture"]: row for row in dash["results"]["rows"]}
+        measured = {arm["arm"]: arm for arm in rows["workflow-path-audit"]["arms"]}
+        self.assertIsNone(measured["with_skill"]["cost"])
+        self.assertEqual({key: measured["with_skill"][key]
+                          for key in ("obj", "total", "judge", "tokens", "turns", "n")},
+                         {"obj": 1, "total": 2, "judge": 8, "tokens": 20,
+                          "turns": 4, "n": 3})
+        self.assertEqual(measured["without_skill"]["cost"], 0.25)
+        point = dash["trend"]["points"][0]
+        self.assertIsNone(point["with_skill"]["cost"])
+        self.assertEqual(point["with_skill"]["judge"], 8)
+        self.assertEqual(point["without_skill"]["cost"], 0.25)
+        self.assertEqual(rows["finite-mean"]["arms"][0]["cost"], 1e308)
+
     def test_all_roots_newest_selection_and_stable_run_tiebreak(self):
         prefixes = ("results", "eval-results", "eval-results/20261001T130000Z-abcdef",
                     "routine-results/20261002T130000Z-abcdef", "results/20261002T140000Z-abcdef")

@@ -181,7 +181,12 @@ def token_total(usage, aggregated=False):
                 or any(number(count) is None for count in counts) \
                 or len(set(counts)) > 1:
             return None
-    return number(sum(values)) if all(value is not None for value in values) else None
+    if not all(value is not None for value in values):
+        return None
+    try:
+        return number(sum(values))
+    except OverflowError:
+        return None
 
 
 def metrics(summary):
@@ -277,9 +282,15 @@ def results(tree):
                 if len(measured) == 1:
                     values = measured[0]
                 else:
-                    values = {metric: (number(sum(item[metric] for item in measured) / len(measured))
-                              if all(item[metric] is not None for item in measured) else None)
-                              for metric in METRICS}
+                    values = dict.fromkeys(METRICS)
+                    for metric in METRICS:
+                        samples = [item[metric] for item in measured]
+                        if not all(sample is not None for sample in samples):
+                            continue
+                        try:
+                            values[metric] = number(sum(samples) / len(samples))
+                        except OverflowError:
+                            continue
                     values["n"] = len(measured) if all(item["n"] is not None for item in measured) else None
                 rendered.append({"arm": arm, **values})
             names = sorted({name for doc in summaries for name in model_names(doc)})
