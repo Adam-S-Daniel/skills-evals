@@ -202,9 +202,14 @@ trials report it. Token totals add input, output, and cache creation/read when
 present; aggregate token means require compatible observation counts.
 
 Unknown or malformed measurements remain `null`. Inventory `total` counts
-named-skill fixtures plus `subject: any` real-work fixtures on main, excluding
-`seed/`, `references/`, and guidance fixtures. `dirs` counts distinct named
-skills plus distinct fixture directories containing `subject: any` fixtures.
+named-skill fixtures plus `subject: any` fixtures on main, excluding
+`seed/`, `references/`, guidance fixtures, and the separately run
+[propagation probe](evals/propagation/fixture.yaml) and
+[guidance-bridge canary](evals/guidance-bridge-canary/fixture.yaml).
+Probe exclusion requires their exact paths and names without a conflicting
+subject, skill, or section; invalid inventory identities keep counts unknown.
+`dirs` counts distinct named skills plus distinct fixture directories containing
+`subject: any` fixtures.
 `minFixtures` is the literal proposal policy from
 [`scripts/propose_skill_edit.py`](scripts/propose_skill_edit.py). `triggerSet`
 links to the validated

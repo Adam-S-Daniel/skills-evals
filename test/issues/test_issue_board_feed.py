@@ -437,6 +437,61 @@ class BoardFeedTests(unittest.TestCase):
         self.assertEqual(inventory["minFixtures"], 3)
         self.assertEqual(len(inventory["skills"]), 1)
 
+    def test_propagation_probe_is_separate_from_fixture_inventory(self):
+        self.git("checkout", "-q", "main")
+        path = "evals/propagation/fixture.yaml"
+        self.write(path, (ROOT / path).read_text(encoding="utf-8"))
+        self.main = self.commit()
+        inventory = self.build()["inventory"]
+        self.assertEqual((inventory["total"], inventory["dirs"]), (1, 1))
+        self.assertEqual([row["name"] for row in inventory["skills"]], ["workflow-path-audit"])
+
+    def test_guidance_bridge_canary_is_separate_from_fixture_inventory(self):
+        self.git("checkout", "-q", "main")
+        path = "evals/guidance-bridge-canary/fixture.yaml"
+        self.write(path, (ROOT / path).read_text(encoding="utf-8"))
+        self.main = self.commit()
+        inventory = self.build()["inventory"]
+        self.assertEqual((inventory["total"], inventory["dirs"]), (1, 1))
+        self.assertEqual([row["name"] for row in inventory["skills"]], ["workflow-path-audit"])
+
+    def test_probe_exclusion_requires_known_path_name_and_no_inventory_identity(self):
+        self.git("checkout", "-q", "main")
+        cases = [("evals/broken/fixture.yaml", {"name": "propagation"})]
+        for name in ("propagation", "guidance-bridge-canary"):
+            path = f"evals/{name}/fixture.yaml"
+            cases += [(path, fixture) for fixture in (
+                {}, [], "name: [\n", f"name: {name}\nname: different\n",
+                {"name": "different"}, {"name": None}, {"name": []},
+                {"name": name, "subject": None}, {"name": name, "subject": "skill"},
+                {"name": name, "skill": None}, {"name": name, "section": "security"})]
+        for path, fixture in cases:
+            with self.subTest(path=path, fixture=fixture):
+                self.write(path, fixture)
+                self.main = self.commit()
+                inventory = self.build()["inventory"]
+                self.assertIsNone(inventory["total"])
+                self.assertIsNone(inventory["dirs"])
+                self.assertEqual(len(inventory["skills"]), 1)
+                (self.repo / path).unlink()
+
+    def test_checked_in_orchestrator_drafts_and_guidance_keep_their_classification(self):
+        self.git("checkout", "-q", "main")
+        cases = [(path, 2) for directory in ("orchestrator-scenarios", "real-work")
+                 for path in sorted((ROOT / "evals" / directory).glob("*/fixture.yaml"))]
+        cases.append((ROOT / "evals/guidance/_delivery/fixture.yaml", 1))
+        self.assertEqual(len(cases), 9)
+        for source, count in cases:
+            path = source.relative_to(ROOT).as_posix()
+            with self.subTest(path=path):
+                self.write(path, source.read_text(encoding="utf-8"))
+                self.main = self.commit()
+                inventory = self.build()["inventory"]
+                self.assertEqual((inventory["total"], inventory["dirs"]), (count, count))
+                self.assertEqual([row["name"] for row in inventory["skills"]],
+                                 ["workflow-path-audit"])
+                (self.repo / path).unlink()
+
     def test_invalid_skill_names_and_unknown_subjects_make_counts_unknown(self):
         self.git("checkout", "-q", "main")
         cases = [{"skill": value} for value in

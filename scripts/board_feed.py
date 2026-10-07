@@ -5,10 +5,11 @@ Results are untrusted data: never check them out, import them, or execute them.
 Unknown measurements remain null. Only --out is written.
 Inventory total counts named skill and subject:any fixtures; dirs counts named
 skills plus distinct repository-relative directories containing any fixtures.
-Guidance fixtures are separate. An invalid inventory fixture makes total and
-dirs unknown while retaining valid skill rows. minFixtures is the proposal
-policy, not the smallest observed fixture count. Guidance coverage comes from
-an optional immutable manifest tree, counting sections without a linked fixture.
+Guidance fixtures and the propagation/delivery probes are separate. An invalid
+inventory fixture makes total and dirs unknown while retaining valid skill rows.
+minFixtures is the proposal policy, not the smallest observed fixture count.
+Guidance coverage comes from an optional immutable manifest tree, counting
+sections without a linked fixture.
 """
 
 from __future__ import annotations
@@ -43,6 +44,10 @@ METRICS = ("obj", "total", "judge", "tokens", "turns", "cost")
 TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_creation_input_tokens",
               "cache_read_input_tokens")
 RUN_ID = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}")
+PROBE_FIXTURES = {
+    "evals/propagation/fixture.yaml": "propagation",
+    "evals/guidance-bridge-canary/fixture.yaml": "guidance-bridge-canary",
+}
 
 
 class FeedError(Exception):
@@ -406,6 +411,11 @@ def inventory(tree, rows, results_sha, guidance_repo=None, guidance_ref="origin/
         fixture = document(tree.text(path, 1024 * 1024), True)
         if not isinstance(fixture, dict):
             uncertain = True
+            continue
+        # These named probes have dedicated runners, not a skill/any subject.
+        # Match both identities so a name-only or conflicting fixture stays invalid.
+        if path in PROBE_FIXTURES and fixture.get("name") == PROBE_FIXTURES[path] \
+                and not any(key in fixture for key in ("subject", "skill", "section")):
             continue
         subject = fixture.get("subject", "skill")
         if subject == "guidance":
