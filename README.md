@@ -148,6 +148,7 @@ evals/
     fixture.yaml           # three path citations, source restraint, pairwise rubric
     seed/                  # small export service, test, and architecture decision
     references/            # hand-written strong and shallow replies, outside seed
+  orchestrator-scenarios/ # five synthetic, offline orchestration decision fixtures
 scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
