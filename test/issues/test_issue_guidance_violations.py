@@ -364,6 +364,95 @@ class GuidanceViolationTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_push_unknown(trace(push, command))
 
+    def test_delegation_without_parent_push_is_unknown(self):
+        for name in ("Task", "Agent"):
+            evidence = trace()
+            evidence["events"] = [
+                {"call": 0, "kind": "tool_use", "name": name, "id": "child-1",
+                 "input": "check the branch", "input_chars": 16, "subagent": False},
+                {"call": 0, "kind": "tool_result", "id": "child-1", "is_error": False,
+                 "output": "verified", "output_chars": 8, "subagent": False}]
+            with self.subTest(name=name):
+                self.assert_push_unknown(evidence)
+
+    def test_delegated_verification_cannot_prove_parent_push_omission(self):
+        for name in ("Task", "Agent"):
+            evidence = trace(f"git push origin {SHA}:feat/demo")
+            evidence["events"].extend([
+                {"call": 0, "kind": "tool_use", "name": name, "id": "child-1",
+                 "input": "verify the push", "input_chars": 15, "subagent": False},
+                {"call": 0, "kind": "tool_result", "id": "child-1", "is_error": False,
+                 "output": "verified", "output_chars": 8, "subagent": False}])
+            with self.subTest(name=name):
+                self.assert_push_unknown(evidence)
+
+    def test_verbose_delegation_remains_unknown_with_partial_child_evidence(self):
+        for name in ("Task", "Agent"):
+            for parent_push in (False, True):
+                for child_evidence in (False, True):
+                    payload = verbose(*([f"git push origin {SHA}:feat/demo"]
+                                        if parent_push else []))
+                    payload.insert(-1, {"type": "assistant", "message": {"content": [
+                        {"type": "tool_use", "id": "child-1", "name": name,
+                         "input": {"prompt": "verify the push"}}]}})
+                    if child_evidence:
+                        for message in verbose(
+                                f"git merge-base --is-ancestor {SHA} origin/feat/demo")[:-1]:
+                            payload.insert(-1, {**message, "parent_tool_use_id": "child-1"})
+                    payload.insert(-1, {"type": "user", "message": {"content": [
+                        {"type": "tool_result", "tool_use_id": "child-1",
+                         "content": "Every command succeeded; verification complete.",
+                         "is_error": False}]}})
+                    with self.subTest(name=name, parent_push=parent_push,
+                                      child_evidence=child_evidence):
+                        answer, calls = self.run_replies(payload)
+                        self.assertEqual(calls, 1)
+                        self.assertIs(answer["tool_trace"]["complete"], True)
+                        self.assert_push_unknown(answer["tool_trace"])
+
+    def test_unquoted_expansion_in_push_arguments_is_unknown(self):
+        check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"
+        for argument in ("feat/*", "feat/?", "feat/[ab]", "feat/{a,b}",
+                         "feat/{1..3}", "~example/feat/demo", 'feat/*"demo"'):
+            with self.subTest(argument=argument):
+                self.assert_push_unknown(trace(f"git push origin {argument}", check))
+        self.assert_push_unknown(trace(f"git push ~example {SHA}:feat/demo", check))
+
+    def test_unquoted_expansion_in_verification_arguments_is_unknown(self):
+        push = f"git push origin {SHA}:feat/demo"
+        for ref in ("origin/feat/*", "origin/feat/?", "origin/feat/[ab]",
+                    "origin/feat/{a,b}", "origin/feat/{1..3}", "~example/feat/demo"):
+            with self.subTest(ref=ref):
+                self.assert_push_unknown(trace(push, f"git merge-base --is-ancestor {SHA} {ref}"))
+
+    def test_quoted_and_escaped_expansion_characters_remain_literal(self):
+        for argument, literal in (("'feat/*'", "feat/*"), ('"feat/?"', "feat/?"),
+                                  ('feat/"[ab]"', "feat/[ab]"),
+                                  (r"feat/\*", "feat/*"), (r"feat/\?", "feat/?"),
+                                  (r"feat/\[ab\]", "feat/[ab]"),
+                                  ("'feat/{a,b}'", "feat/{a,b}"),
+                                  (r"feat/\{a,b\}", "feat/{a,b}"),
+                                  ('"~example/demo"', "~example/demo"),
+                                  (r"\~example/demo", "~example/demo")):
+            with self.subTest(argument=argument):
+                self.assertEqual(counters._commands(f"git push origin {argument}"),
+                                 ([["git", "push", "origin", literal]], True))
+        evidence = trace(f"git push origin '{SHA}:feat/demo'",
+                         f'git merge-base --is-ancestor "{SHA}" origin/feat/"demo"')
+        self.assertEqual(self.measure(evidence=evidence)["rules"]["push_without_verification"]
+                         ["count"], 0)
+
+    def test_same_length_input_incomplete_flag_without_markers_is_unknown(self):
+        for commands in ((f"git push origin {SHA}:feat/demo",),
+                         (f"git push origin {SHA}:feat/demo",
+                          f"git merge-base --is-ancestor {SHA} origin/feat/demo")):
+            evidence = trace(*commands)
+            evidence["events"][0]["input_incomplete"] = True
+            self.assertEqual(evidence["events"][0]["input_chars"],
+                             len(evidence["events"][0]["input"]))
+            with self.subTest(verified=len(commands) == 2):
+                self.assert_push_unknown(evidence)
+
     def test_repository_assignments_do_not_supply_push_or_check_evidence(self):
         push = f"git push origin {SHA}:feat/demo"
         check = f"git merge-base --is-ancestor {SHA} origin/feat/demo"

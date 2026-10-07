@@ -773,7 +773,13 @@ is objectively decidable from the resulting files alone.
   tool result with `is_error: false`; shell compound commands, variable
   assignments (including assignment-only calls), background execution, wrappers,
   global git options, dynamic arguments, default pushes, subagent scope,
-  or missing results are unknown. Comments and heredoc data are not executed
+  or missing results are unknown. Unquoted glob, brace, and tilde expansion
+  syntax is checked in Bash AST argument fragments before quote removal;
+  quoted and escaped characters remain literal. `Task` and `Agent` delegation
+  makes the counter unknown, even with no parent push or with visible child
+  calls: the stored trace cannot prove complete child execution evidence,
+  and a delegation result's prose does not supply that proof.
+  Comments and heredoc data are not executed
   commands. Missing, capped, clipped, or redacted evidence is unknown, never
   a clean zero. Any uncertainty makes the push counter's `observed_count`
   zero: an uncertain call or omitted event could verify any observed push,

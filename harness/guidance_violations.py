@@ -155,6 +155,33 @@ def _entry(name: str, count: int, known: bool) -> dict:
             "count": count if known else None, "observed_count": count}
 
 
+def _unresolved_expansion(argument) -> bool:
+    """Reject potential expansions in unquoted AST word fragments.
+
+    Tree-sitter leaves glob characters and some brace/tilde syntax in word
+    nodes. Quote removal alone loses whether Bash could expand them. Inspect
+    those leaves before decoding; quoted nodes and escaped characters stay
+    literal. The shared literal decoder already rejects brace-sequence nodes.
+    """
+    pending = [argument]
+    while pending:
+        node = pending.pop()
+        if node.type == "word":
+            text = node.text.decode("utf-8")
+            index = 0
+            while index < len(text):
+                if text[index] == "\\":
+                    index += 2
+                    continue
+                if text[index] in "*?[{" or (text[index] == "~"
+                        and index == 0 and node.start_byte == argument.start_byte):
+                    return True
+                index += 1
+        elif node.type in ("command_name", "concatenation"):
+            pending.extend(node.named_children)
+    return False
+
+
 def _commands(source: str) -> tuple[list[list[str]], bool]:
     """Literal git commands from the Bash AST; compound calls are uncertain."""
     root = parse_bash(source)
@@ -167,6 +194,11 @@ def _commands(source: str) -> tuple[list[list[str]], bool]:
         if node.type in ("variable_assignment", "&"):
             return [], False
         if node.type == "command":
+            arguments = [node.child_by_field_name("name"),
+                         *node.children_by_field_name("argument")]
+            if any(_unresolved_expansion(argument) for argument in arguments
+                   if argument is not None):
+                return [], False
             words = _command_words(node)
             if None in words:
                 return [], False
@@ -197,7 +229,15 @@ def _push_count(trace: dict | None) -> tuple[int, bool]:
         if not isinstance(event, dict):
             known = False
             continue
-        if event.get("kind") != "tool_use" or event.get("name") != "Bash":
+        if event.get("kind") != "tool_use":
+            continue
+        # The stored parent trace has no proof that every child command was
+        # captured. A delegation result's prose cannot establish execution
+        # completeness, even when some child tool calls are visible.
+        if event.get("name") in ("Task", "Agent"):
+            known = False
+            continue
+        if event.get("name") != "Bash":
             continue
         if event.get("subagent"):
             known = False
