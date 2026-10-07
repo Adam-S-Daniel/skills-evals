@@ -814,6 +814,59 @@ _ALLOWED_ENV_PREFIXES = (
 _BLANKED_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
 _WORKSPACE_GH_CONFIG = ".gh/config"
 
+# The agent arm's network boundary (ADR 0011). A real-work seed is a public
+# fleet repository's pre-fix tree, so the merged fix is one `git clone`, `curl`
+# or WebFetch away, and an empty token (above) stops nothing a public
+# repository serves; the deployed sites serve the built fix too. Claude Code's
+# own sandbox (https://code.claude.com/docs/en/sandboxing) runs every Bash
+# command and its children with no route out except a proxy that refuses
+# these hosts in every permission mode, and with `strictAllowlist` and no
+# allowed domains it refuses every other host as well. It covers shell
+# commands only, so the two built-in web tools are removed outright.
+# Delivered with `--settings`: `allowUnsandboxedCommands: false` there makes
+# the sandbox admin-required, so a `.claude/settings.json` the agent writes
+# into its workspace cannot loosen it, and nothing lands in the workspace for
+# a scoring check to see. The CLI's own API traffic does not go through the
+# sandbox proxy (measured on CLI 2.1.292).
+ARM_DENIED_DOMAINS = (
+    "github.com", "*.github.com", "codeload.github.com",
+    "githubusercontent.com", "*.githubusercontent.com",
+    "adamdaniel.ai", "*.adamdaniel.ai", "jodidaniel.com", "*.jodidaniel.com",
+    "cdn.jsdelivr.net",
+)
+ARM_DISALLOWED_TOOLS = ("WebFetch", "WebSearch")
+# What the CLI prints, then exits 1, when `failIfUnavailable` refuses to start
+# without a working sandbox (CLI 2.1.292 with `socat` missing).
+SANDBOX_UNAVAILABLE_MARKER = "sandbox required but unavailable"
+
+
+def arm_sandbox_settings() -> dict:
+    """The sandbox settings every agent arm runs under, as one JSON object."""
+    return {"sandbox": {
+        "enabled": True,
+        # Refuse to start rather than run commands unsandboxed.
+        "failIfUnavailable": True,
+        # No `dangerouslyDisableSandbox` retry.
+        "allowUnsandboxedCommands": False,
+        "network": {"strictAllowlist": True, "allowedDomains": [],
+                    "deniedDomains": list(ARM_DENIED_DOMAINS)},
+    }}
+
+
+def arm_isolation_flags() -> list[str]:
+    """The CLI flags that put an agent arm behind `arm_sandbox_settings`."""
+    return ["--settings", json.dumps(arm_sandbox_settings(), sort_keys=True,
+                                     separators=(",", ":")),
+            "--disallowedTools", ",".join(ARM_DISALLOWED_TOOLS)]
+
+
+def _sandbox_unavailable_detail(stderr: str) -> str | None:
+    """The CLI's own refusal line when the sandbox could not start, else None."""
+    for line in (stderr or "").splitlines():
+        if SANDBOX_UNAVAILABLE_MARKER in line:
+            return line.strip()[:400]
+    return None
+
 
 def agent_env(workspace: Path, env_spec: dict | None,
               source: dict | None = None) -> dict:
@@ -968,7 +1021,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
     duration_ms/raw. Error dicts always have an "error" key — one of
     "invalid_skill_name", "skill_not_found", "skill_install_failed", "timeout",
-    "nonzero_exit", "invalid_json", "agent_error" — plus a "detail". Callers
+    "sandbox_unavailable", "nonzero_exit", "invalid_json", "agent_error" — plus
+    a "detail". Every call runs behind `arm_isolation_flags()` (ADR 0011). Callers
     MUST check `"error" in result` rather than relying on exceptions; only
     skill installation and process invocation failures are turned into error
     dicts here, nothing is raised.
@@ -1059,6 +1113,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
            # `--dangerously-skip-permissions` (guidance.PERMISSION_MODES).
            "--permission-mode", permission_mode,
            "--setting-sources", arm.get("setting_sources", "project"),
+           # The network sandbox and no web tools, for every arm and every
+           # follow-up turn (`turn_cmd` keeps everything after the prompt).
+           *arm_isolation_flags(),
            # The account's claude.ai MCP connectors (mail, drive, GitHub)
            # load even under `--setting-sources project` (CLI 2.1.289,
            # measured); strict means only `--mcp-config` servers, of which
@@ -1124,6 +1181,14 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                "detail": f"{label}agent timed out after {timeout}s"})
 
             if result.returncode != 0:
+                unavailable = _sandbox_unavailable_detail(result.stderr)
+                if unavailable is not None:
+                    # Fail closed and say why: the arm never ran, with or
+                    # without a network.
+                    trace_complete = False
+                    return traced({"error": "sandbox_unavailable",
+                                   "detail": label + unavailable,
+                                   "returncode": result.returncode})
                 try:
                     decoded = json.loads(result.stdout)
                     calls[-1] = tool_events(decoded, secrets)
