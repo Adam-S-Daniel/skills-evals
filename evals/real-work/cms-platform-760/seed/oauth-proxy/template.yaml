@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Decap CMS OAuth Proxy for a platform site.
+
+  Implements the GitHub OAuth handshake required by any Netlify CMS-compatible
+  headless CMS.  Runs on AWS Lambda + API Gateway HTTP API — the cheapest
+  possible serverless stack (free tier covers typical personal-blog traffic).
+
+  Monthly cost estimate (low traffic, outside free tier):
+    Lambda:       ~$0.000002 per request
+    API Gateway:  ~$0.000001 per request
+    Total:        < $0.01 / month for a personal blog
+
+Parameters:
+
+  GitHubClientId:
+    Type: String
+    Description: "GitHub OAuth App client ID"
+
+  GitHubClientSecret:
+    Type: String
+    Description: "GitHub OAuth App client secret"
+    NoEcho: true
+
+  AllowedOrigins:
+    Type: String
+    Default: "https://example.com"
+    Description: >
+      Comma-separated list of https:// origins whose CMS window may receive
+      the token via postMessage, e.g. https://example.com. A '*' may stand in
+      for part of a host label beneath SiteApex only, so per-PR preview hosts
+      need one entry: https://example.com,https://preview-*.example.com.
+      With no valid entry the proxy refuses every login.
+
+  SiteApex:
+    Type: String
+    Default: ""
+    AllowedPattern: '^([a-z0-9-]+(\.[a-z0-9-]+)+)?$'
+    Description: >
+      The site's own registered domain (APEX_DOMAIN in site-params.env), e.g.
+      example.com. A '*' entry in AllowedOrigins is honored only at or beneath
+      it, so a wildcard can never span a public suffix such as co.uk or
+      github.io. Empty: no '*' entry is honored.
+
+  GitHubScope:
+    Type: String
+    Default: "repo,read:user,workflow"
+    Description: >
+      GitHub OAuth scopes requested by the CMS. `read:user` (not `user`):
+      the admin reads the profile and never writes it. `workflow` stays
+      until the GitHub App spike in docs/ADMIN-AUTH-SECURITY.md shows
+      nothing needs it. Ignored when the client id is a GitHub App's.
+
+  StageName:
+    Type: String
+    Default: "prod"
+    Description: "API Gateway stage name"
+
+  FunctionName:
+    Type: String
+    Default: "cms-oauth-proxy"
+    Description: "Lambda function name; keep unique per site, e.g. example-com-oauth-proxy"
+
+  PlatformRelease:
+    Type: String
+    Default: "unknown"
+    AllowedPattern: "^[A-Za-z0-9._/+-]{1,100}$"
+    Description: >
+      The cms-platform tag (or commit) this proxy was deployed from. deploy.sh
+      sets it and /health reports it, so a person can name the live build.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 128   # 128 MB is plenty for pure I/O work; keeps costs minimal
+    Environment:
+      Variables:
+        GITHUB_CLIENT_ID:     !Ref GitHubClientId
+        GITHUB_CLIENT_SECRET: !Ref GitHubClientSecret
+        ALLOWED_ORIGINS:      !Ref AllowedOrigins
+        SITE_APEX:            !Ref SiteApex
+        GITHUB_SCOPE:         !Ref GitHubScope
+        PLATFORM_RELEASE:     !Ref PlatformRelease
+
+Resources:
+
+  # ── Lambda function ──────────────────────────────────────────────────────
+  OAuthProxyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Handler: lambda.handler
+      Description: "GitHub OAuth proxy for Decap CMS"
+      # API Gateway HTTP API (v2) — cheaper and lower latency than REST API
+      Events:
+        AuthEvent:
+          Type: HttpApi
+          Properties:
+            Path: /auth
+            Method: GET
+            ApiId: !Ref OAuthHttpApi
+        CallbackEvent:
+          Type: HttpApi
+          Properties:
+            Path: /callback
+            Method: GET
+            ApiId: !Ref OAuthHttpApi
+        HealthEvent:
+          Type: HttpApi
+          Properties:
+            Path: /health
+            Method: GET
+            ApiId: !Ref OAuthHttpApi
+        OptionsAuth:
+          Type: HttpApi
+          Properties:
+            Path: /auth
+            Method: OPTIONS
+            ApiId: !Ref OAuthHttpApi
+        OptionsCallback:
+          Type: HttpApi
+          Properties:
+            Path: /callback
+            Method: OPTIONS
+            ApiId: !Ref OAuthHttpApi
+
+  # ── API Gateway HTTP API ─────────────────────────────────────────────────
+  OAuthHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      Description: "Sveltia CMS OAuth Proxy API"
+      # No CorsConfiguration: nothing fetches this API cross-origin (/auth and
+      # /callback are popup navigations), a multi-entry or wildcard
+      # AllowedOrigins is not a valid single CORS origin, and the Lambda is the
+      # one place that enforces the allowlist.
+
+  # ── CloudWatch Log Group (30 day retention to keep costs near zero) ──────
+  OAuthProxyLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${OAuthProxyFunction}"
+      RetentionInDays: 30
+
+Outputs:
+
+  ApiUrl:
+    Description: >
+      Base URL for the OAuth proxy.  Set this as `base_url` in your
+      Sveltia CMS admin/config.yml, and set `auth_endpoint` to
+      `prod/auth`.
+    Value: !Sub "https://${OAuthHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  AuthEndpoint:
+    Description: "Full /auth URL"
+    Value: !Sub "https://${OAuthHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/auth"
+
+  CallbackEndpoint:
+    Description: "Full /callback URL — register this as the callback URL in your GitHub OAuth App"
+    Value: !Sub "https://${OAuthHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/callback"
+
+  FunctionArn:
+    Description: "Lambda function ARN"
+    Value: !GetAtt OAuthProxyFunction.Arn

@@ -1,0 +1,56 @@
+# Real-work fixture: cms-platform#760, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/cms-platform/pull/760, the fix for https://github.com/Adam-S-Daniel/cms-platform/issues/754.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  22023bce0f1d1b70672d456341b927a77cc0035e (merge-first-parent)
+#   merge dd22fe4a89e0085b2793155c57ff8289f3b9c1e6
+# Checker overlay: the merge commit's theme/spec/auto_tag_pages_test.rb, theme/spec/tag_feeds_test.rb.
+# Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
+# Also every e2e spec but the checker's own (292 trimmed).
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#754 as it stood before the pull request's first commit (read with gh api graphql).
+
+subject: any
+draft: true
+strip_agent_context: true
+prompt: |-
+  Tags that differ only by case (quotes / Quotes) show as two identical cards and one tag page drops the other's posts
+
+  Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai visitor pass, local build at platform v0.1.148).
+
+  **Severity:** minor (no live post has a case-variant tag today, but when one appears, a post silently drops off its own tag page).
+
+  ## Steps
+
+  1. Have one post tagged `quotes` and another tagged `Quotes`.
+  2. Open `/tags/`, the home Tags row, and `/tags/quotes/`.
+
+  Viewport: 1440×900 Chromium (also seen in Firefox home).
+
+  ## Seen
+
+  - Two identical cards, both "QUOTES 1", both linking to `/tags/quotes/`.
+  - `/tags/quotes/` lists only the `Quotes` post; the `quotes` post is gone from its own tag page.
+
+  ## Expected
+
+  Tags that slugify the same are one tag: one card with the combined count, and one archive (and tag feed) listing every post.
+
+  ## Task
+
+  Make case-variant tags behave consistently across the tag cards, archive pages, and feeds, with every matching post represented.
+
+  Interface the reviewer's tests use: `Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)` returns `[missing, all]`, where `missing` is a list of names and `all` is a list of rows with `name`, `slug`, `url`, `description`, and `count`; `Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)` returns a mapping from slugs to lists of distinct post objects; `Jekyll::TagFeeds::Generator.new.generate(site)` generates feeds and honors feed exclusions.
+interface_strings: ['Jekyll::AutoTagPages.summarise(curated:, post_tag_lists:, slugify:)', 'Jekyll::AutoTagPages.posts_by_slug(posts, slugify:)', 'Jekyll::TagFeeds::Generator.new.generate(site)']
+issue_before_fix: issue-before-fix.txt
+issue_created_at: '2026-10-06T04:42:18Z'
+issue_last_edited_at: null
+first_commit_at: '2026-10-06T04:47:44Z'
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [bash, -c, exec ruby "$1", ruby]
+  fail_to_pass:
+  - [theme/spec/auto_tag_pages_test.rb]
+  - [theme/spec/tag_feeds_test.rb]

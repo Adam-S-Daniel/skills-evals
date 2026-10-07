@@ -1,0 +1,473 @@
+# Cross-posting to Mastodon, LinkedIn + Substack
+
+What this is: the reusable `cross-post.yml` workflow + its thin-caller
+template, `scripts/cross_post/cross_post.py`, and the shape they enforce.
+Read this before wiring cross-posting into a site, before changing
+`cross_post.py`'s detect/render/verify/post logic, or before debugging a
+cross-post run. Ported from adamdaniel.ai's site-local prototype
+(cms-platform#442) — see `docs/VERSION-HISTORY.md`'s v0.1.109 entry for the
+port's full rationale.
+
+## What it does
+
+On a push to `main` that touches `_posts/**` (or on a manual dispatch naming
+one post), `cross-post.yml`:
+
+1. Detects newly-published posts — on a push, diffs
+   `github.event.before..github.sha` for `_posts/*.md` that went from
+   unpublished (or absent) to `published: true`; on dispatch, takes the
+   single `post_path` input (a backfill of an older post, or a re-run of one
+   that failed to post the first time). Writes `cross-post-out/posts.json`
+   and sets `changed`/`count` outputs.
+2. When no leg is configured (`mastodon_instance: ""`, `linkedin: false`
+   and `substack: false`, the caller template's defaults), prints
+   `::notice::cross-posting is not configured for this site` and stops —
+   every step after this one is gated on at least one leg being configured,
+   so a site that hasn't wired any leg gets a harmless no-op run.
+3. Awaits the production deploy (push only) via the platform's
+   `await-prod-deploy` composite, so the run never verifies or cross-posts
+   against a stale pre-merge site.
+4. Verifies each detected post's public URL serves a 200 before posting
+   anywhere.
+5. Renders (when `substack: true`) a Mastodon status, a Substack-ready
+   Markdown body, and a job-summary section per post, and uploads them as
+   the `cross-post-<run_id>` artifact (30-day retention).
+6. Posts to Mastodon (when `mastodon_instance` is non-empty) — idempotently:
+   see "Dedupe / idempotency" below.
+7. Shares the post to the token owner's LinkedIn profile (when
+   `linkedin: true`) as an article card — one-shot, never retried: see
+   "LinkedIn leg" below.
+
+`targets` (default `all`) limits a run to one leg — `mastodon`, `linkedin`
+or `substack` — so a manual re-run of the leg that failed cannot double-post
+another. Detect, the deploy wait and the live check run whatever the value.
+
+**On a `schedule`** (the thin caller's weekly Monday cron) the job does none
+of the above: detect is skipped, so every step gated on
+`steps.detect.outputs.changed == 'true'` stays off, and the only step that
+runs is `check-linkedin-token` (when `linkedin: true`) — see "Rotating the
+LinkedIn token". With `linkedin: false` a scheduled run is a no-op.
+
+## Inputs
+
+| Input | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `prod_url` | string | *(required)* | Deployed production URL (scheme included, no trailing slash), e.g. `https://example.com`. Fed to `await-prod-deploy`'s `prod-url` on a push |
+| `mastodon_instance` | string | `""` | Mastodon instance base URL, e.g. `https://hachyderm.io`. Empty skips the Mastodon leg entirely |
+| `linkedin` | boolean | `false` | Share each new post to the token owner's LinkedIn profile as an article card. Also turns on the scheduled token-age check |
+| `linkedin_token_minted` | string | `""` | The date the LinkedIn token was minted, `YYYY-MM-DD` — the caller passes `vars.LINKEDIN_TOKEN_MINTED`. Drives the expiry warnings |
+| `substack` | boolean | `false` | Render + upload the Substack-ready Markdown draft. Substack has no publish API — this only controls whether the draft is produced; posting it is always paste-by-hand |
+| `targets` | string | `all` | `all` / `mastodon` / `linkedin` / `substack`: run only that leg (a re-run of the one that failed) |
+| `post_path` | string | `""` | One `_posts/*.md` to cross-post on a `workflow_dispatch`-shaped caller (backfill or re-run). Ignored on a push |
+| `dry_run` | boolean | `false` | Log what would be posted to Mastodon and LinkedIn; post nothing |
+| `visibility` | string | `public` | Mastodon post visibility (`public` / `unlisted` / `direct`) |
+| `platform_repo` | string | `Adam-S-Daniel/cms-platform` | Where `cross_post.py` lives |
+| `platform_ref` | string | `main` | Pin to the same ref as the caller's `uses:@ref` |
+
+**Secret:** `MASTODON_ACCESS_TOKEN` (optional — when unset, `post-mastodon`
+prints `::warning::Mastodon leg skipped: MASTODON_ACCESS_TOKEN is not set`
+and exits 0, so the render/artifact/summary steps still complete).
+
+**Secret:** `LINKEDIN_ACCESS_TOKEN` (optional — a 60-day member access token
+with scopes `openid profile w_member_social`; when unset, `post-linkedin`
+prints `::warning::LinkedIn leg skipped: LINKEDIN_ACCESS_TOKEN is not set`
+and exits 0).
+
+**Variable:** `LINKEDIN_TOKEN_MINTED` (a repo Actions *variable*, not a
+secret — the date is not sensitive) — the `YYYY-MM-DD` the current LinkedIn
+token was minted. The caller forwards it as `linkedin_token_minted`.
+
+## The thin caller's trigger shape
+
+`examples/site/.github/workflows/cross-post.yml` owns the trigger the
+reusable does not:
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_posts/**'
+      - '!_posts/2099-*'   # prod-loop canaries (test_fixture)
+      - '!_posts/*-e2e-*'  # e2e specs
+  schedule:
+    - cron: '23 6 * * 1'   # weekly LinkedIn token-age check only
+  workflow_dispatch:
+    inputs:
+      post_path: { type: string, required: true }
+      dry_run:   { type: boolean, default: true }
+      visibility: { type: choice, options: [public, unlisted, direct], default: public }
+      targets:   { type: choice, options: [all, mastodon, linkedin, substack], default: all }
+```
+
+The run-name carries a third branch for the cron (`scheduled — 23 6 * * 1`)
+beside the `push — …` and `manual — …` forms.
+
+**Fixture exclusion is belt-and-suspenders.** `cross_post.py`'s own `detect`
+subcommand skips a post whose front matter carries `test_fixture: true` or
+whose slug starts with `e2e-` — the same discriminator the rest of the
+platform uses — so excluding those paths in the caller's trigger isn't
+required for correctness; it just saves the run entirely rather than paying
+for a detect-and-skip.
+
+## Dedupe / idempotency
+
+Before posting, `post-mastodon` resolves the account (`verify_credentials`)
+and scans its 40 most recent original statuses for a link to the post's URL;
+a match is reported as `already-posted` and nothing is sent, so a manual
+re-run or a `main` push that re-detects a post cannot double-post. Each POST
+also carries an `Idempotency-Key` derived from a SHA-256 of the post URL —
+but Mastodon only honors that header for about an hour, so it is not a
+substitute for the duplicate-post lookup on a re-run outside that window. If
+the lookup itself is refused with HTTP 401 or 403 — meaning the token lacks
+`read:statuses` — the run now prints an `::error::` and exits without posting
+that post, or any later post in the same run: see "Creating the Mastodon app
+token" below. Before v0.1.111, a `write:statuses`-only token made every
+lookup come back 403, and that 403 was silently swallowed as a warning
+followed by posting anyway, so the duplicate check never actually ran. Any
+other lookup failure (5xx, a `0` from a network error, 404, and so on) still
+only warns and posts anyway.
+
+## Text formats by target — none of them renders Markdown
+
+A post is Markdown; no target accepts it. Checked 2026-09-29:
+
+| Target | Field | Format | Source |
+|---|---|---|---|
+| Mastodon | `status` | Plain text. Links count as 23 characters; `#word` becomes a hashtag and `@word` a mention | [statuses API](https://docs.joinmastodon.org/methods/statuses/), [posting](https://docs.joinmastodon.org/user/posting/) |
+| LinkedIn | `commentary` | "little text": plain text, reserved characters `\|{}@[]()<>#*_~` backslash-escaped | [little text format](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format) |
+| LinkedIn | article `description` | Plain text | [Posts API](https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api) |
+| Substack | subtitle | Plain text | Substack editor |
+| Substack | body | Rich text. Pasted Markdown is **not** converted | [DownStack guide](https://downstack.app/blog/markdown-to-substack-complete-guide/) |
+| Substack | Note | Rich text from pasted rendered HTML (copied out of a browser) or the editor's formatting controls. Pasted Markdown or HTML source shows literally | Substack editor, checked by the owner 2026-09-29 |
+
+So the excerpt that feeds the first four is rendered from a real Markdown
+parse (`markdown-it-py`) to plain text: inline markup dropped (a link keeps
+its text), soft breaks joined, images and raw HTML dropped, a list as `•`
+lines, and a blockquote as its paragraphs wrapped in straight double quotes.
+Before v0.1.115 the first paragraph went out as raw Markdown, and the
+2026-09-28 LinkedIn post read `> The more time … > > We can do …`.
+
+**A new target lands only with its row in this table, its own renderer if
+the plain excerpt does not fit, and a test on a Markdown-heavy post.**
+
+## `<link rel="me">` for each profile (v0.1.116)
+
+List the profiles the site cross-posts to in `_config.yml`:
+
+```yaml
+cross_post:
+  profiles:
+    mastodon: https://hachyderm.io/@you
+    linkedin: https://www.linkedin.com/in/you
+    substack: https://you.substack.com
+```
+
+The theme's `default.html` renders one `<link rel="me" href="...">` per
+non-blank entry in `<head>`, ordered by target name, through
+`_includes/rel-me.html` and the `rel_me_urls` filter
+(`theme/lib/cms-platform-theme/rel_me_filter.rb`). Nothing renders when the
+key is absent. A value that is not an absolute `https://` URL fails the
+build, naming the key. A site with its own `<head>` (jodidaniel.com's home
+layout) adds `{% include rel-me.html %}` itself.
+
+`rel="me"` is how Mastodon verifies a profile link: add the site's URL as a
+profile metadata field on the Mastodon account, and once the page links back
+with `rel="me"` the field shows as verified. The profiles map is separate
+from the workflow's `mastodon_instance` / `linkedin` inputs, because Jekyll
+cannot read a workflow's inputs.
+
+## Substack is paste-by-hand — there's no publish API
+
+After a run with `substack: true`, download the `cross-post-<run_id>`
+artifact from the run's page, open `<slug>.substack.html` in a browser,
+select all, copy, and paste into a new Substack draft: Substack keeps the
+formatting of pasted rich text but shows pasted Markdown literally. The
+`<slug>.substack.md` source (also in the job summary) is kept for reference.
+The render step also writes `<slug>.status.txt` (the Mastodon status) and
+`<slug>.meta.json` (title/subtitle/url/slug/date/tags/featured_image)
+alongside it. The HTML is rendered as CommonMark, so kramdown-only syntax
+(attribute lists, footnotes) may differ from the site.
+
+A **quotation post** (its first block, after any heading, is a blockquote)
+renders `<slug>.substack.html` in the layout of a Substack Note instead of
+the full article (v0.1.117): the title in bold, the quote, and the post URL,
+which Substack turns into a link card. The attribution line after the quote
+and the "Originally published at" header are left out, since the card
+carries both. This matches the Note posted by hand for the 2026-09-28 Simon
+Willison post. Any other post still renders as the full article.
+
+## Creating the Mastodon app token
+
+On your Mastodon instance (e.g. `hachyderm.io`): **Preferences → Development
+→ New application**. Grant it **`profile`, `read:statuses`, and
+`write:statuses`** — `profile` lets the dedupe step read the account's own id
+via `verify_credentials` (a token missing it gets a 403 there; measured
+2026-09-22), `read:statuses` lets that same step list the account's recent
+statuses to check for a duplicate post, and `write:statuses` lets it actually
+post. No other scope is needed, and the workflow never reads or writes
+anything else on the account. Before v0.1.111 only `profile` and
+`write:statuses` were required, but the dedupe lookup needs `read:statuses`
+too (see "Dedupe / idempotency" above) — a `write:statuses`-only token made
+that lookup 403 and the run silently posted anyway, without ever checking for
+a duplicate.
+
+Copy the generated access token into the site repo's **`MASTODON_ACCESS_TOKEN`**
+Actions secret. Until the secret exists, `cross-post.yml` still runs to
+completion (detect/verify/render/upload all happen when `substack: true`) —
+only the Mastodon-posting step is skipped, with a `::warning::` in the run
+log.
+
+## LinkedIn leg
+
+`post-linkedin` shares each detected post to the token owner's personal
+profile through LinkedIn's versioned REST API:
+
+- **Author.** `GET /v2/userinfo` (OpenID Connect, hence the `openid profile`
+  scopes) resolves the member id; the post's author is
+  `urn:li:person:<sub>`. A 401 there means the token expired or was revoked.
+- **Article card + uploaded thumbnail.** The post is a `POST /rest/posts`
+  with `content.article` — `source` (the post URL), `title` (≤ 400 chars),
+  `description` (the excerpt, ≤ 4000 chars). LinkedIn does not scrape the
+  URL for an image, so when the post has a `featured_image` the leg fetches
+  it, calls `POST /rest/images?action=initializeUpload`, `PUT`s the bytes to
+  the returned `uploadUrl` and sets `article.thumbnail` to the image URN. Any
+  failure on that path is a `::warning::` and the post goes out without a
+  thumbnail; the `PUT` carries the bearer token, so an `uploadUrl` outside
+  `https://*.linkedin.com` is refused rather than followed.
+- **Little-text escaping.** The `commentary` field is LinkedIn "little
+  text", where `\ | { } @ [ ] ( ) < > # * _ ~` are reserved; the title and
+  excerpt are backslash-escaped (`little_text_escape`) and each tag becomes a
+  `{hashtag|\#|Word}` template. The commentary carries no URL — the article
+  card does — and is capped at 2900 characters (excerpt truncated at a word
+  boundary, then hashtags dropped).
+- **`LinkedIn-Version`.** Every `/rest` call sends
+  `LinkedIn-Version: <LINKEDIN_API_VERSION>` (a `YYYYMM` constant in
+  `cross_post.py`) plus `X-Restli-Protocol-Version: 2.0.0`. LinkedIn sunsets
+  versions after about a year and answers a sunset one with **HTTP 426**; the
+  error names the constant to bump.
+- **No dedupe, so one-shot by construction.** LinkedIn's posts API has no
+  idempotency key and no cheap "have I shared this URL" lookup, so the leg
+  cannot dedupe the way Mastodon does. Instead it only fires when detect sees
+  a post newly published (or on a dispatch naming one), and it never retries.
+  A dispatch's `targets` input limits a re-run to one leg, so re-running a
+  failed Mastodon post cannot double-post to LinkedIn and vice versa.
+- **A failed Mastodon leg does not skip LinkedIn.** Before v0.1.114 a red
+  Mastodon step (adamdaniel.ai run 36430252461, a revoked token's HTTP 401)
+  skipped LinkedIn through GitHub's implicit `success()`, and the post never
+  reached either network. The Mastodon step now carries `continue-on-error`,
+  LinkedIn still waits on every earlier gate (deploy landed, URL live), and a
+  final `Fail if the Mastodon leg failed` step turns the run red afterward.
+- **No retry on 5xx.** A 5xx or a dropped connection (`HTTP 0`) MAY have
+  created the post; the error says so and asks you to check the profile
+  before re-dispatching with `targets=linkedin`. The leg carries on with the
+  remaining posts and exits 1 at the end if any failed.
+- On `201` the post's URN (the `x-restli-id` response header) becomes
+  `https://www.linkedin.com/feed/update/<urn>/`, printed as `Posted: <url>`
+  and written to `cross-post-out/<slug>.linkedin.json` as `{"urn", "url"}`.
+
+Like the Mastodon leg, it never prints the token, an `Authorization` header
+or a response body — an error is `HTTP <status>` only.
+
+## Activating LinkedIn for a site
+
+These are the steps adamdaniel.ai was activated with on 2026-09-22 (tracking
+issue https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3776). Only the
+profile owner can do them. The token goes straight from the LinkedIn page
+into a GitHub secret. It is never pasted into chat, a log or a file.
+
+1. **Create a LinkedIn Company Page** if the owner has none. A developer app
+   cannot exist without one: LinkedIn says "API products available to
+   individual developers must have a default page associated with them". On
+   linkedin.com, open **For Business**, then **Create a Company Page**, then
+   **Company**. Set the site URL as the website. The page is only the app's
+   anchor, and posts still go to the member's own profile.
+2. **Create the developer app** at
+   https://www.linkedin.com/developers/apps/new. Pick the page from step 1
+   and upload any square logo.
+3. **Verify the app against the page.** On the app's **Settings** tab, choose
+   **Verify**, then **Generate URL**. Open that URL as the page's super admin
+   and confirm.
+4. **Add the two self-serve products** on the **Products** tab: **Share on
+   LinkedIn** grants `w_member_social`, and **Sign In with LinkedIn using
+   OpenID Connect** grants `openid profile`. Neither needs a review. The
+   **Auth** tab should then list all three scopes.
+5. **Mint the token** with the portal's generator,
+   https://www.linkedin.com/developers/tools/oauth/token-generator. Pick the
+   app, tick `openid`, `profile` and `w_member_social`, and approve. The
+   token lives 60 days. The workflow needs neither the app's client secret
+   nor a refresh token; a plain app is never issued one.
+6. **Store the token and its mint date** from the owner's terminal. The first
+   command prompts for the value:
+
+   ```bash
+   gh secret set LINKEDIN_ACCESS_TOKEN -R <owner>/<site>
+   gh variable set LINKEDIN_TOKEN_MINTED -R <owner>/<site> --body YYYY-MM-DD
+   ```
+
+7. **Turn the leg on** in the site's thin caller: set `linkedin: true`. The
+   `linkedin_token_minted`, `targets` and `LINKEDIN_ACCESS_TOKEN` lines are
+   already in the template.
+8. **Dry-run it.** Dispatch the caller with `dry_run: true` and
+   `targets: linkedin`. A green run proves the token works, because the
+   member id is resolved from `/v2/userinfo`. It also prints the commentary
+   and card the leg would post, and it posts nothing. The first real post is
+   the next newly published one; LinkedIn has no private or unlisted
+   visibility to smoke-test against.
+
+## Rotating the LinkedIn token
+
+A member access token lives **60 days** and cannot be refreshed without the
+member re-consenting, so it is rotated by hand. The token-age check reads the
+`LINKEDIN_TOKEN_MINTED` variable: the posting leg warns from day 50 and
+refuses to post from day 60 (no request is made); the weekly scheduled run
+goes red from day 50, on purpose, so the fleet's scheduled-run-health audit
+files an issue while there is still time.
+
+To rotate:
+
+1. Mint a new token with the generator, as in step 5 above. Use the same app
+   and the same three scopes.
+2. Overwrite both values:
+
+   ```bash
+   gh secret set LINKEDIN_ACCESS_TOKEN -R <owner>/<site>
+   gh variable set LINKEDIN_TOKEN_MINTED -R <owner>/<site> --body YYYY-MM-DD
+   ```
+
+3. Dispatch the caller with `dry_run: true` and `targets: linkedin` to prove
+   the new token. A green run confirms it.
+
+The weekly run goes green again on its next schedule, and scheduled-run-health
+closes its issue after a clean window. If a post was refused while the token
+was dead, re-post it with a dispatch naming that `post_path`, plus
+`targets: linkedin` and `dry_run: false`. Check the profile first: a refused
+post made no request, but a 5xx one may have landed.
+
+## The default is a no-op, on purpose
+
+A site that copies the thin-caller template and changes nothing gets
+`prod_url: https://example.com`, `mastodon_instance: ""`, `linkedin: false`
+and `substack: false`. Every push to `_posts/**` on `main` still runs the
+workflow, detects the newly-published post, and then prints
+`::notice::cross-posting is not configured for this site` and stops — no
+Mastodon or LinkedIn posting attempt, no Substack render, no artifact; the
+weekly scheduled run does nothing at all. Turning on any leg is a one-line
+edit to the caller's `with:` block plus (for Mastodon or LinkedIn) a repo
+secret.
+
+## `await-prod-deploy` by local path, not a remote pin
+
+The reusable's "Checkout platform scripts" step checks this repo out into
+`.cms-platform/` at `platform_ref`, and the "Await production deploy" step
+then references the composite by the LOCAL path that checkout produces —
+`uses: ./.cms-platform/.github/actions/await-prod-deploy` — never
+`Adam-S-Daniel/cms-platform/.github/actions/await-prod-deploy@<ref>`. A
+consumer repo that enforces `sha_pinning_required` in its actions-permissions
+policy rejects a cross-repository composite action referenced by tag or SHA
+outright at job setup ("all actions must be pinned to a full-length commit
+SHA" — GitHub applies this to a composite from ANOTHER repository too, not
+just first-party `uses:` lines), and a platform composite is deliberately
+never SHA-pinned-with-a-trailing-comment fleet-wide any more (see
+`docs/PIN-CONSISTENCY.md`). The platform's own prod-mutating loop reusables
+(`cms-publish-loop-prod.yml`, `cms-publish-loop-host.yml`,
+`cms-media-roundtrip.yml`, `cms-scheduled-publish-loop.yml`) already call
+`await-prod-deploy` the same way — `cross-post.yml` follows their shape
+rather than reinventing one. `scripts/cross_post/tests/test_workflow_shape.py`
+lint-locks this: it asserts the reusable's text never contains
+`Adam-S-Daniel/cms-platform/.github/actions/` and that the local path is
+actually used.
+
+## Cross-post watcher (Claude routine)
+
+The reusable's last step, "Fire the cross-post watcher", fires a Claude Code
+routine: an agent that audits the cross-posts, backfills what is missing and
+notifies. The routine id is `trig_013iDZwBZ5mY5zcAayas6ASW`; its page is
+https://claude.ai/code/routines/trig_013iDZwBZ5mY5zcAayas6ASW.
+
+**When it fires**
+
+- Every `push` run of a site with at least one leg configured, whether or not
+  detect found a post. Detect missing a post is the bug class the watcher
+  exists to catch, so the fire cannot depend on `detect`'s output.
+- A scheduled run whose weekly LinkedIn token-age check failed.
+- **Never on `workflow_dispatch`.** The watcher backfills by dispatching this
+  workflow; firing on a dispatch would loop.
+
+The step uses `!cancelled()`, so it also runs after a failed leg, and it is
+last, so it never masks the step that turns a swallowed Mastodon failure red.
+
+**What it does with Substack.** Substack has no publish API, so the owner
+still pastes the draft by hand. The watcher verifies the paste itself: it
+reads the owner's public profile feed,
+`https://substack.com/api/v1/reader/feed/profile/311451833`. A Note whose
+first line equals the post's title (after quote and whitespace
+normalization), or an item that contains the post's URL, dated on or after the
+post's commit, ticks the ledger issue's Substack box with that item's link.
+The watcher closes the ledger once every configured leg is ticked. It also
+sweeps every open ledger, whatever its age, so a late paste closes on the
+next fire. The routine's Claude environment allows `substack.com` for this
+(`_agent-guidance`'s `docs/reference/network-allowlist-claude-environments.txt`).
+
+**Wiring (per site)**
+
+- Secret `CLAUDE_ROUTINE_CROSSPOSTWATCHER`: the routine's bearer token.
+- Repository variable `CROSS_POST_WATCHER_ROUTINE_ID`: the routine id. The
+  The reusable reads it directly (`vars` in a reusable workflow resolves to
+  the caller repo's variables), so the thin caller has no `with:` key for it.
+
+**Fail-open.** With the variable unset nothing fires. With the id set but the
+secret empty, the step prints a `::warning::` and exits 0. A non-2xx response
+fails the step with the HTTP status code only; the response body is never
+logged. The message sent carries the repository, event, run URL, head sha and
+detect's `changed`/`count` outputs, with no secrets or personal data. The API
+allows 30 fires per hour per routine.
+
+## Testing
+
+`scripts/cross_post/cross_post.py` is stdlib + PyYAML only, and every
+function that talks HTTP takes an injectable transport so the suite needs no
+real network. `python3 -m pytest scripts/cross_post -q` runs:
+
+- `test_detect.py` — front-matter parsing, slugging, site settings,
+  `newly_published`/`is_fixture` detection, `detect_from_git` (both a fake
+  `git` and a real throwaway repo).
+- `test_render.py` — `describe_post`'s excerpt fallback chain, hashtag
+  derivation, the exact Mastodon status format (including the length-cap
+  word-boundary truncation), and `substack_markdown`'s embed-marker /
+  relative-link rewriting.
+- `test_mastodon.py` — `verify_live`'s polling/backoff, `post_mastodon`'s
+  auth header, idempotency key, dedupe skip, dry-run, no-token skip, and
+  that an error response body is NEVER printed (it may carry secrets).
+- `test_linkedin.py` — little-text escaping, the `{hashtag|\#|Word}`
+  format, the commentary format and its truncation, token-age edges
+  (49/50/59/60, missing, garbage), the no-token and expired-by-date paths
+  making zero requests, author resolution, the exact `/rest/posts` URL,
+  headers and body, the `x-restli-id` → URL + `<slug>.linkedin.json`, dry
+  run, the thumbnail upload and its failure at each step, the 401/426/5xx/0
+  messages, continue-then-exit-1, and that an error body is never printed.
+- `test_cli.py` — the `detect`/`render`/`post-mastodon`/`post-linkedin`/
+  `check-linkedin-token` subcommands end to end against a `tmp_path` fixture
+  site.
+- `test_workflow_shape.py` — the reusable + template shape lints described
+  above.
+
+`self-ci.yml`'s `python-unit-tests` job runs the full suite on every PR that
+touches this repo, and since #525 it is one of the seven required status
+contexts (`repo-settings.yml`'s `platform-main` ruleset), so a red run blocks
+the merge. Adding a required context is a `repo-settings.yml` decision, not
+something a new lane should make by merely existing.
+
+## Related
+
+- `.github/workflows/cross-post.yml` — the reusable.
+- `examples/site/.github/workflows/cross-post.yml` — the thin-caller
+  template.
+- `scripts/cross_post/cross_post.py` — the module.
+- `.github/actions/await-prod-deploy/action.yml` — the composite that gates
+  the run on the merge actually being live.
+- `docs/PIN-CONSISTENCY.md` — why a composite is pinned by tag (or, crossing
+  a repository boundary, invoked by local checked-out path) and never
+  SHA-pinned-with-a-comment.
+- `docs/VERSION-HISTORY.md` — the v0.1.109 entry for the port's full
+  rationale, and v0.1.110 for the LinkedIn leg.
