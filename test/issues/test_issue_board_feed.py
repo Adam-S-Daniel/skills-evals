@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -53,6 +54,7 @@ class BoardFeedTests(unittest.TestCase):
         self.git("config", "user.name", "Example")
         self.git("config", "user.email", "example@example.com")
         self.write("evals/workflow-path-audit/fixture.yaml", "skill: workflow-path-audit\n")
+        self.write("scripts/propose_skill_edit.py", "MIN_FIXTURES = 3\n")
         self.main = self.commit("Fixture inventory")
         self.git("branch", "results-ref")
         self.git("checkout", "-q", "results-ref")
@@ -83,8 +85,8 @@ class BoardFeedTests(unittest.TestCase):
         self.write(path, single() if doc is None else doc)
         return path
 
-    def build(self):
-        return feed.build_feed(self.repo, self.main, "results-ref")["dash"]
+    def build(self, **kwargs):
+        return feed.build_feed(self.repo, self.main, "results-ref", **kwargs)["dash"]
 
     def test_single_metrics_and_report_are_derived_without_model_pins(self):
         self.summary()
@@ -240,9 +242,9 @@ class BoardFeedTests(unittest.TestCase):
         self.write("evals/another-skill/fixture.yaml", "skill: fake-results-inventory\n")
         self.commit()
         inventory = self.build()["inventory"]
-        self.assertEqual((inventory["total"], inventory["dirs"], inventory["minFixtures"]), (3, 2, 1))
-        self.assertEqual(inventory["triggerSet"], 3)
-        self.assertEqual(inventory["guidance"]["sections"], 1)
+        self.assertEqual((inventory["total"], inventory["dirs"], inventory["minFixtures"]), (3, 2, 3))
+        self.assertIsNone(inventory["triggerSet"])
+        self.assertIsNone(inventory["guidance"]["sections"])
         self.assertIsNone(inventory["guidance"]["gap"])
         skills = {skill["name"]: skill for skill in inventory["skills"]}
         self.assertIsNone(skills["another-skill"]["results"])
@@ -258,8 +260,9 @@ class BoardFeedTests(unittest.TestCase):
         self.write("evals/broken/trigger-eval-set.json", [{"query": "example.net"}])
         self.main = self.commit()
         inventory = self.build()["inventory"]
-        self.assertTrue(all(inventory[key] is None for key in ("total", "dirs", "minFixtures", "triggerSet")))
+        self.assertTrue(all(inventory[key] is None for key in ("total", "dirs", "triggerSet")))
         self.assertIsNone(inventory["guidance"]["sections"])
+        self.assertEqual(inventory["minFixtures"], 3)
         self.assertIsNone(inventory["skills"][0]["trigger"])
 
     def test_invalid_fixture_fields_and_query_shapes_are_unknown(self):
@@ -277,6 +280,141 @@ class BoardFeedTests(unittest.TestCase):
         self.assertIsNone(skills["workflow-path-audit"]["trigger"])
         self.assertEqual(skills["root-fixture"]["url"], feed.link("tree", self.main, "evals"))
         self.assertIsNone(feed.query_count([{"query": " ", "should_trigger": True}]))
+
+    def test_explicit_skill_subject_requires_skill_name(self):
+        self.git("checkout", "-q", "main")
+        self.write("evals/broken/fixture.yaml", "subject: skill\n")
+        self.main = self.commit()
+        inventory = self.build()["inventory"]
+        self.assertIsNone(inventory["total"])
+        self.assertIsNone(inventory["dirs"])
+        self.assertEqual(inventory["minFixtures"], 3)
+        self.assertEqual([(row["name"], row["count"]) for row in inventory["skills"]],
+                         [("workflow-path-audit", 1)])
+
+    def test_default_skill_subject_requires_skill_name(self):
+        self.git("checkout", "-q", "main")
+        self.write("evals/broken/fixture.yaml", "description: example fixture\n")
+        self.main = self.commit()
+        inventory = self.build()["inventory"]
+        self.assertIsNone(inventory["total"])
+        self.assertIsNone(inventory["dirs"])
+        self.assertEqual(inventory["minFixtures"], 3)
+        self.assertEqual(len(inventory["skills"]), 1)
+
+    def test_invalid_skill_names_and_unknown_subjects_make_counts_unknown(self):
+        self.git("checkout", "-q", "main")
+        cases = [{"skill": value} for value in
+                 (None, "", " ", "../escape", "bad/name", ".", "..", "*", 4, [], {})]
+        cases += [{"subject": value, "skill": "valid"} for value in (None, "unknown", [], 7)]
+        cases += [{"subject": "any", "skill": "valid"}, {"subject": "any", "section": "valid"}]
+        for index, fixture in enumerate(cases):
+            with self.subTest(fixture=fixture):
+                self.write("evals/broken/fixture.yaml", fixture)
+                self.main = self.commit(f"Invalid fixture {index}")
+                inventory = self.build()["inventory"]
+                self.assertIsNone(inventory["total"])
+                self.assertIsNone(inventory["dirs"])
+                self.assertEqual(len(inventory["skills"]), 1)
+
+    def test_any_subject_counts_real_work_directories_and_excludes_guidance(self):
+        self.git("checkout", "-q", "main")
+        for name in ("first", "second", "third"):
+            self.write(f"evals/real-work/{name}/fixture.yaml", "subject: any\n")
+        self.write("evals/guidance/one/fixture.yaml", "subject: guidance\nsection: one\n")
+        self.main = self.commit()
+        inventory = self.build()["inventory"]
+        self.assertEqual((inventory["total"], inventory["dirs"]), (4, 4))
+        self.assertEqual([row["name"] for row in inventory["skills"]], ["workflow-path-audit"])
+
+    def test_minimum_fixture_policy_reads_literal_ast_without_executing_input(self):
+        marker = Path(self.temp.name) / "executed"
+        source = f"MIN_FIXTURES = 3\nfrom pathlib import Path\nPath({str(marker)!r}).touch()\n"
+        self.assertEqual(feed.minimum_fixtures(SimpleNamespace(text=lambda *args: source)), 3)
+        self.assertFalse(marker.exists())
+        self.assertEqual(feed.minimum_fixtures(SimpleNamespace(text=lambda *args: "MIN_FIXTURES: int = 4\n")), 4)
+
+    def test_minimum_fixture_policy_rejects_missing_ambiguous_and_unsafe_assignments(self):
+        cases = (None, "", "MIN_FIXTURES =", "MIN_FIXTURES = True", "MIN_FIXTURES = 0",
+                 "MIN_FIXTURES = -1", "MIN_FIXTURES = 1.5", "MIN_FIXTURES = '3'",
+                 "MIN_FIXTURES = int('3')", "MIN_FIXTURES = 1 + 2",
+                 "MIN_FIXTURES = 3\nMIN_FIXTURES = 4", "MIN_FIXTURES = 3\nMIN_FIXTURES += 1",
+                 "if True:\n    MIN_FIXTURES = 3", "MIN_FIXTURES = OTHER = 3",
+                 "MIN_FIXTURES = 3\ndef nested():\n    MIN_FIXTURES = 4",
+                 "MIN_FIXTURES = 3\nimport example as MIN_FIXTURES",
+                 "MIN_FIXTURES = 3\ndef MIN_FIXTURES():\n    pass",
+                 "MIN_FIXTURES = 3\ndel MIN_FIXTURES")
+        for source in cases:
+            with self.subTest(source=source):
+                self.assertIsNone(feed.minimum_fixtures(SimpleNamespace(text=lambda *args: source)))
+
+    def test_trigger_set_is_writing_adrs_blob_url_or_unknown(self):
+        self.git("checkout", "-q", "main")
+        path = "evals/writing-adrs/trigger-eval-set.json"
+        self.write(path, [{"query": "Does example.com need a decision?", "should_trigger": False}])
+        self.main = self.commit()
+        self.assertEqual(self.build()["inventory"]["triggerSet"], feed.link("blob", self.main, path))
+        self.write(path, [{"query": "example.net", "should_trigger": "yes"}])
+        self.main = self.commit()
+        self.assertIsNone(self.build()["inventory"]["triggerSet"])
+
+    def test_guidance_manifest_uses_git_ref_and_counts_missing_linked_fixtures(self):
+        entries = [{"id": "linked", "status": "covered", "fixture": "evals/workflow-path-audit/"},
+                   {"id": "missing", "status": "covered", "fixture": "evals/guidance/missing/"},
+                   {"id": "skipped", "status": "skipped"},
+                   {"id": "gap-with-fixture", "status": "gap", "fixture": "evals/workflow-path-audit/fixture.yaml"},
+                   {"id": "gap", "status": "gap"}]
+        self.write(feed.GUIDANCE_MANIFEST, entries)
+        sha = self.commit()
+        self.write(feed.GUIDANCE_MANIFEST, [])
+        guidance = self.build(guidance_repo=self.repo, guidance_ref=sha)["inventory"]["guidance"]
+        self.assertEqual((guidance["sections"], guidance["gap"]), (5, 3))
+        self.assertEqual(guidance["url"], f"{feed.GUIDANCE_REPOSITORY}/blob/{sha}/{feed.GUIDANCE_MANIFEST}")
+        self.assertIn("skipped", guidance["note"])
+
+    def test_guidance_missing_repository_ref_and_manifest_remain_unknown(self):
+        cases = ({}, {"guidance_repo": Path(self.temp.name) / "missing"},
+                 {"guidance_repo": self.repo, "guidance_ref": "missing-ref"},
+                 {"guidance_repo": self.repo, "guidance_ref": self.main})
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                guidance = self.build(**kwargs)["inventory"]["guidance"]
+                self.assertIsNone(guidance["sections"])
+                self.assertIsNone(guidance["gap"])
+                self.assertTrue(guidance["note"])
+                expected_ref = self.main if kwargs.get("guidance_ref") == self.main else "main"
+                self.assertEqual(guidance["url"], f"{feed.GUIDANCE_REPOSITORY}/blob/{expected_ref}/{feed.GUIDANCE_MANIFEST}")
+
+    def test_malformed_guidance_ids_statuses_and_paths_make_counts_unknown(self):
+        cases = ({}, [], [{"id": "same", "status": "gap"}] * 2,
+                 [{"id": " ", "status": "gap"}], [{"id": "id", "status": "unknown"}],
+                 [{"id": "id", "status": []}], [{"id": "id", "status": "covered", "fixture": 4}],
+                 [{"id": "id", "status": "covered", "fixture": "evals/../escape"}],
+                 [{"id": "id", "status": "covered", "fixture": "/evals/path"}],
+                 [{"id": "id", "status": "covered", "fixture": "evals//path"}])
+        for index, entries in enumerate(cases):
+            with self.subTest(entries=entries):
+                self.write(feed.GUIDANCE_MANIFEST, entries)
+                sha = self.commit(f"Malformed guidance {index}")
+                guidance = self.build(guidance_repo=self.repo, guidance_ref=sha)["inventory"]["guidance"]
+                self.assertIsNone(guidance["sections"])
+                self.assertIsNone(guidance["gap"])
+                self.assertIn("malformed", guidance["note"])
+
+    def test_optional_guidance_cli_and_metadata_link_all_four_sources(self):
+        self.write(feed.GUIDANCE_MANIFEST, [{"id": "gap", "status": "gap"}])
+        sha = self.commit()
+        args = ["--repo", str(self.repo), "--main-ref", self.main, "--results-ref", "results-ref",
+                "--guidance-repo", str(self.repo), "--guidance-ref", sha, "--out", str(self.out)]
+        self.assertEqual(feed.main(args), 0)
+        dash = json.loads(self.out.read_text())["dash"]
+        self.assertEqual(dash["inventory"]["guidance"]["sections"], 1)
+        self.assertEqual(dash["inventory"]["guidance"]["gap"], 1)
+        self.assertEqual(dash["meta"]["sources"], [
+            {"label": "Evaluation results", "url": feed.link("tree", sha)},
+            {"label": "Main tree", "url": feed.link("tree", self.main)},
+            {"label": "Guidance coverage", "url": f"{feed.GUIDANCE_REPOSITORY}/blob/{sha}/{feed.GUIDANCE_MANIFEST}"},
+            {"label": "Board script implementation", "url": f"{feed.REPOSITORY}/blob/main/scripts/board_feed.py"}])
 
     def test_symlinks_bad_timestamps_and_nonresult_paths_are_ignored(self):
         path = self.repo / f"results/linked/{STAMP}/with_skill/summary.json"

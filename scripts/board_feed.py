@@ -3,6 +3,12 @@
 
 Results are untrusted data: never check them out, import them, or execute them.
 Unknown measurements remain null. Only --out is written.
+Inventory total counts named skill and subject:any fixtures; dirs counts named
+skills plus distinct repository-relative directories containing any fixtures.
+Guidance fixtures are separate. An invalid inventory fixture makes total and
+dirs unknown while retaining valid skill rows. minFixtures is the proposal
+policy, not the smallest observed fixture count. Guidance coverage comes from
+an optional immutable manifest tree, counting sections without a linked fixture.
 """
 
 from __future__ import annotations
@@ -13,6 +19,7 @@ import sys
 sys.dont_write_bytecode = True
 
 import argparse
+import ast
 from collections import defaultdict
 from datetime import datetime, timezone
 import json
@@ -30,6 +37,8 @@ except ImportError:
     from ingest_routine_results import Rejected, parse_result_path
 
 REPOSITORY = "https://github.com/Adam-S-Daniel/skills-evals"
+GUIDANCE_REPOSITORY = "https://github.com/Adam-S-Daniel/_agent-guidance"
+GUIDANCE_MANIFEST = "agents-md/eval-coverage.yml"
 METRICS = ("obj", "total", "judge", "tokens", "turns", "cost")
 TOKEN_KEYS = ("input_tokens", "output_tokens", "cache_creation_input_tokens",
               "cache_read_input_tokens")
@@ -299,32 +308,109 @@ def results(tree):
     return newest, points
 
 
-def inventory(tree, rows, results_sha):
-    skills, sections, queries = defaultdict(list), set(), []
+def minimum_fixtures(tree):
+    """Read the single literal policy assignment without executing input code."""
+    source = tree.text("scripts/propose_skill_edit.py", 1024 * 1024)
+    if source is None:
+        return None
+    try:
+        parsed = ast.parse(source)
+    except (SyntaxError, ValueError, RecursionError):
+        return None
+    writes = [node for node in ast.walk(parsed) if isinstance(node, ast.Name)
+              and node.id == "MIN_FIXTURES" and isinstance(node.ctx, (ast.Store, ast.Del))]
+    assignments = [node for node in parsed.body if
+                   isinstance(node, ast.Assign) and len(node.targets) == 1
+                   and isinstance(node.targets[0], ast.Name)
+                   and node.targets[0].id == "MIN_FIXTURES" or
+                   isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+                   and node.target.id == "MIN_FIXTURES"]
+    other_bindings = [node for node in ast.walk(parsed) if
+                      isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                      and node.name == "MIN_FIXTURES" or isinstance(node, ast.alias)
+                      and (node.asname or node.name.split(".")[0]) == "MIN_FIXTURES"
+                      or isinstance(node, ast.ExceptHandler) and node.name == "MIN_FIXTURES"]
+    if len(writes) != 1 or len(assignments) != 1 or other_bindings:
+        return None
+    value = assignments[0].value
+    return value.value if isinstance(value, ast.Constant) and type(value.value) is int \
+        and value.value > 0 else None
+
+
+def guidance_inventory(main, repo, ref):
+    url = f"{GUIDANCE_REPOSITORY}/blob/main/{GUIDANCE_MANIFEST}"
+    result = {"sections": None, "gap": None, "url": url,
+              "note": "Guidance manifest repository was not supplied."}
+    if repo is None:
+        return result
+    try:
+        tree = Tree(repo, ref)
+        result["url"] = f"{GUIDANCE_REPOSITORY}/blob/{tree.sha}/{GUIDANCE_MANIFEST}"
+        entries = document(tree.text(GUIDANCE_MANIFEST, 1024 * 1024), True)
+    except (FeedError, OSError, ValueError, UnicodeError):
+        result["note"] = "Guidance manifest repository or ref is unavailable."
+        return result
+    result["note"] = "Guidance manifest is missing or malformed."
+    if not isinstance(entries, list) or not entries:
+        return result
+    ids, gap = set(), 0
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return result
+        section = entry.get("id")
+        if not isinstance(section, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", section) \
+                or section in ids or entry.get("status") not in ("gap", "covered", "skipped"):
+            return result
+        ids.add(section)
+        fixture = entry.get("fixture")
+        if fixture is None:
+            gap += 1
+            continue
+        if not isinstance(fixture, str):
+            return result
+        parts = fixture.rstrip("/").split("/")
+        if len(parts) < 2 or parts[0] != "evals" or any(
+                not part or part in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]+", part)
+                for part in parts):
+            return result
+        path = "/".join(parts)
+        if parts[-1] != "fixture.yaml":
+            path += "/fixture.yaml"
+        if path not in main.files:
+            gap += 1
+    result.update(sections=len(entries), gap=gap,
+                  note="Gap counts manifest sections without a fixture linked in the main tree, including skipped sections.")
+    return result
+
+
+def inventory(tree, rows, results_sha, guidance_repo=None, guidance_ref="origin/main"):
+    skills, any_dirs = defaultdict(list), defaultdict(list)
     uncertain = False
     for path in sorted(tree.files):
         parts = path.split("/")
         if parts[0] != "evals" or any(part in ("seed", "references") for part in parts):
             continue
-        if parts[-1] == "fixture.yaml":
-            fixture = document(tree.text(path, 1024 * 1024), True)
-            if not isinstance(fixture, dict):
+        if parts[-1] != "fixture.yaml":
+            continue
+        fixture = document(tree.text(path, 1024 * 1024), True)
+        if not isinstance(fixture, dict):
+            uncertain = True
+            continue
+        subject = fixture.get("subject", "skill")
+        if subject == "guidance":
+            continue
+        if subject == "any":
+            if "skill" in fixture or "section" in fixture:
                 uncertain = True
                 continue
-            skill = fixture.get("skill")
-            if isinstance(skill, str) and skill.strip():
-                skills[skill].append(path)
-            elif "skill" in fixture:
-                uncertain = True
-            if fixture.get("subject") == "guidance":
-                section = fixture.get("section")
-                if isinstance(section, str) and section.strip():
-                    sections.add(section)
-                else:
-                    uncertain = True
-        elif parts[-1] == "trigger-eval-set.json":
-            query_set = document(tree.text(path, 1024 * 1024))
-            queries.append(query_count(query_set))
+            any_dirs["/".join(parts[1:-1])].append(path)
+            continue
+        skill = fixture.get("skill")
+        if subject != "skill" or not isinstance(skill, str) or not re.fullmatch(
+                r"[A-Za-z0-9._-]+", skill) or skill in (".", ".."):
+            uncertain = True
+            continue
+        skills[skill].append(path)
     rendered = []
     for name, paths in sorted(skills.items()):
         parents = [path.split("/")[:-1] for path in paths]
@@ -341,13 +427,13 @@ def inventory(tree, rows, results_sha):
         rendered.append({"name": name, "count": len(paths), "url": link("tree", tree.sha, subject),
                          "results": link("tree", results_sha) if measured else None,
                          "trigger": link("blob", tree.sha, trigger) if query_count(trigger_doc) is not None else None})
-    return {"total": None if uncertain else sum(map(len, skills.values())),
-            "dirs": None if uncertain else len(skills),
-            "minFixtures": None if uncertain or not skills else min(map(len, skills.values())),
-            "skills": rendered, "guidance": {"sections": None if uncertain else len(sections),
-                "gap": None, "url": link("tree", tree.sha, "evals/guidance") if any(
-                    path.startswith("evals/guidance/") for path in tree.files) else None, "note": None},
-            "triggerSet": sum(queries) if queries and all(q is not None for q in queries) else None}
+    trigger = "evals/writing-adrs/trigger-eval-set.json"
+    return {"total": None if uncertain else sum(map(len, skills.values())) + sum(map(len, any_dirs.values())),
+            "dirs": None if uncertain else len(skills) + len(any_dirs),
+            "minFixtures": minimum_fixtures(tree), "skills": rendered,
+            "guidance": guidance_inventory(tree, guidance_repo, guidance_ref),
+            "triggerSet": link("blob", tree.sha, trigger) if query_count(
+                document(tree.text(trigger, 1024 * 1024))) is not None else None}
 
 
 def query_count(entries):
@@ -359,16 +445,19 @@ def query_count(entries):
     return len(entries)
 
 
-def build_feed(repo, main_ref, results_ref):
+def build_feed(repo, main_ref, results_ref, guidance_repo=None, guidance_ref="origin/main"):
     main, result = Tree(repo, main_ref), Tree(repo, results_ref)
     rows, points = results(result)
+    counts = inventory(main, rows, result.sha, guidance_repo, guidance_ref)
     timestamps = [int(git(repo, "show", "-s", "--format=%ct", tree.sha)) for tree in (main, result)]
     as_of = datetime.fromtimestamp(max(timestamps), timezone.utc).isoformat().replace("+00:00", "Z")
     return {"dash": {"results": {"rows": rows}, "trend": {"points": points},
-        "inventory": inventory(main, rows, result.sha), "meta": {"asOf": as_of,
+        "inventory": counts, "meta": {"asOf": as_of,
             "mainSha": main.sha, "resultsSha": result.sha,
-            "sources": [{"label": "Fixture inventory", "url": link("tree", main.sha, "evals")},
-                        {"label": "Evaluation results", "url": link("tree", result.sha)}]}}}
+            "sources": [{"label": "Evaluation results", "url": link("tree", result.sha)},
+                        {"label": "Main tree", "url": link("tree", main.sha)},
+                        {"label": "Guidance coverage", "url": counts["guidance"]["url"]},
+                        {"label": "Board script implementation", "url": f"{REPOSITORY}/blob/main/scripts/board_feed.py"}]}}}
 
 
 def main(argv=None):
@@ -376,10 +465,12 @@ def main(argv=None):
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--main-ref", default="origin/main")
     parser.add_argument("--results-ref", default="origin/persistent/eval-results")
+    parser.add_argument("--guidance-repo", type=Path)
+    parser.add_argument("--guidance-ref", default="origin/main")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        feed = build_feed(args.repo, args.main_ref, args.results_ref)
+        feed = build_feed(args.repo, args.main_ref, args.results_ref, args.guidance_repo, args.guidance_ref)
         args.out.write_text(json.dumps(feed, indent=2, ensure_ascii=True, allow_nan=False) + "\n", encoding="utf-8")
         return 0
     except (FeedError, OSError, ValueError, UnicodeError):
