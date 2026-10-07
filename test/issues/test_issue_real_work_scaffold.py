@@ -163,11 +163,31 @@ def pull(number=7, merged_at="2026-09-02T00:00:00Z", body="Fixes #3.", base="mai
     return {"number": number, "merged_at": merged_at, "body": body, "base": {"ref": base}}
 
 
-def rest(*numbers, number=7, repo="example/toy", **pull_changes) -> dict:
-    """The fake gh's REST answers: the pull request closing `numbers`."""
-    found = closing(*numbers, repo=repo)
+def rest(*numbers, number=7, issue_repo="example/toy", full_name="example/toy",
+         **pull_changes) -> dict:
+    """The fake gh's REST answers: the pull request closing `numbers`, and the
+    repository as GitHub names it (`full_name`, which a rename redirects)."""
+    found = closing(*numbers, repo=issue_repo)
     return {"pull": pull(number, body=found["body"], **pull_changes), "issues": found["issues"],
-            "repo": {"default_branch": "main"}}
+            "repo": {"default_branch": "main", "full_name": full_name}}
+
+
+#: The fleet the tests pin to, as `_agent-guidance` writes it: names in
+#: repos.yml's cron_coverage.fleet, owners in sync.yml's SYNC_OWNERS.
+FLEET_NAMES = ["toy", "_agent-guidance"]
+FLEET_OWNERS = ["example", "Adam-S-Daniel"]
+
+
+def write_fleet(root: Path, names=FLEET_NAMES, owners=FLEET_OWNERS) -> tuple[Path, Path]:
+    registry = root / "repos.yml"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(yaml.safe_dump({"cron_coverage": {"fleet": list(names)}}),
+                        encoding="utf-8")
+    sync = root / ".github" / "workflows" / "sync.yml"
+    sync.parent.mkdir(parents=True, exist_ok=True)
+    sync.write_text(yaml.safe_dump({"jobs": {"sync": {"env": {"SYNC_OWNERS": " ".join(owners)}}}}),
+                    encoding="utf-8")
+    return registry, sync
 
 
 def spec(**changes) -> dict:
@@ -246,6 +266,11 @@ class _BuildCase(_Case):
         env.start()
         self.addCleanup(env.stop)
         self.dest = self.tmp / "dest" / "evals" / "real-work"
+        self.registry, self.sync = write_fleet(self.tmp / "_agent-guidance")
+        self.fleet = (list(FLEET_NAMES), list(FLEET_OWNERS))
+
+    def fleet_args(self) -> list[str]:
+        return ["--registry", str(self.registry), "--sync-workflow", str(self.sync)]
 
     def set_graphql(self, doc: dict) -> None:
         self.set_gh(graphql=doc)
@@ -519,7 +544,8 @@ class PrecomputedSnapshotTests(_BuildCase):
         out.unlink(missing_ok=True)
         with contextlib.redirect_stdout(io.StringIO()) as stdout, \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
-            code = scaffold.main(["snapshot", "--candidate", key, "--out", str(out)])
+            code = scaffold.main(["snapshot", "--candidate", key, "--out", str(out),
+                                  *self.fleet_args()])
         doc = json.loads(out.read_text(encoding="utf-8")) if out.exists() else "absent"
         return code, doc, stdout.getvalue(), stderr.getvalue()
 
@@ -555,7 +581,7 @@ class PrecomputedSnapshotTests(_BuildCase):
         self.assertIn("issue=3", calls[3])
 
     def test_snapshot_key_with_an_underscore_repository(self):
-        self.set_gh(**rest(number=136))
+        self.set_gh(**rest(number=136, full_name="Adam-S-Daniel/_agent-guidance"))
         code, doc, out, err = self.snapshot("Adam-S-Daniel___agent-guidance__136")
         self.assertEqual((code, doc, out), (0, None, "issue_snapshot=none\n"), err)
         calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
@@ -586,11 +612,37 @@ class PrecomputedSnapshotTests(_BuildCase):
 
     def test_only_this_repositorys_issue_into_the_default_branch_closes(self):
         for answers in ({**rest(3), "pull": pull(body="Fixes example/other#3.")},
-                        rest(3, repo="example/other"),
+                        rest(3, issue_repo="example/other"),
                         rest(3, base="release")):
             with self.subTest(answers=answers["pull"]):
                 self.set_gh(**answers)
                 self.assertEqual(self.snapshot()[1], None)
+
+    def test_a_repository_outside_the_fleet_reads_nothing(self):
+        # Adam, 2026-10-06: "Pin to fleet owners (Recommended)". The pin is
+        # _agent-guidance's own registry, as the miner reads it.
+        for key, pattern in (("attacker__toy__7", "not a fleet owner"),
+                             ("example__other__7", "not in the fleet registry")):
+            with self.subTest(key=key):
+                self.gh_log.unlink(missing_ok=True)
+                code, doc, out, err = self.snapshot(key)
+                self.assertEqual((code, doc, out), (2, "absent", ""))
+                self.assertIn(pattern, err)
+                self.assertFalse(self.gh_log.exists())
+
+    def test_an_unreadable_registry_refuses(self):
+        self.registry.write_text("cron_coverage: {}\n", encoding="utf-8")
+        code, doc, _, err = self.snapshot()
+        self.assertEqual((code, doc), (2, "absent"))
+        self.assertIn("fleet registry is unreadable", err)
+
+    def test_a_renamed_repository_is_refused(self):
+        # GitHub redirects an old name to the renamed repository; its
+        # full_name is then not the name the key or header carries.
+        self.set_gh(**rest(3, full_name="example/toy-renamed"))
+        code, doc, _, err = self.snapshot()
+        self.assertEqual((code, doc), (2, "absent"))
+        self.assertIn("full name", err)
 
     def test_a_bad_key_reads_nothing(self):
         for key in ("example/toy#7", "example__toy__0", "example__toy", "ex_ample__toy__7",
@@ -754,7 +806,7 @@ class _GateCase(_BuildCase):
     def gate(self, branch=None, expect=None):
         branch = branch or self.BRANCH
         return scaffold.gate(str(self.repo), "main", self.BRANCH, branch, expect,
-                             self.tmp / "out")
+                             self.tmp / "out", fleet=self.fleet)
 
     def assertRejected(self, pattern, mutate=None, **kwargs):
         self.commit(mutate)
@@ -774,7 +826,7 @@ class GateTests(_GateCase):
         with contextlib.redirect_stdout(io.StringIO()) as out:
             code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
                                   "--source", self.BRANCH, "--branch", self.BRANCH,
-                                  "--out", str(self.tmp / "out-cli")])
+                                  "--out", str(self.tmp / "out-cli"), *self.fleet_args()])
         self.assertEqual(code, 0)
         self.assertEqual([line.split("=", 1)[0] for line in out.getvalue().splitlines()],
                          ["fixture_id", "sha", "files"])
@@ -807,7 +859,7 @@ class GateTests(_GateCase):
         self.commit()
         with self.assertRaisesRegex(ingest.Rejected, "not under 'evals/real-work/toy-8/'"):
             scaffold.gate(str(self.repo), "main", self.BRANCH, "claude/scaffold-toy-8", None,
-                          self.tmp / "out")
+                          self.tmp / "out", fleet=self.fleet)
 
     def test_rejects_a_symlink(self):
         self.assertRejected("mode 120000", lambda w: (w / "seed" / "ln").symlink_to("tool.py"))
@@ -874,7 +926,7 @@ class GateTests(_GateCase):
                 contextlib.redirect_stdout(io.StringIO()) as out:
             code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
                                   "--source", self.BRANCH, "--branch", self.BRANCH,
-                                  "--out", str(self.tmp / "out")])
+                                  "--out", str(self.tmp / "out"), *self.fleet_args()])
         self.assertEqual(code, 1)
         self.assertEqual(out.getvalue(), "")
         self.assertNotIn(MARKER, err.getvalue())
@@ -968,6 +1020,39 @@ class GateSnapshotTests(_GateCase):
         self.assertRejected("header",
                             self.edit("fixture.yaml", "# https://github.com/example/toy/pull/7,",
                                       "# see"))
+
+    def test_poc_owner_spoof(self):
+        # Reviewer PoC (round 1, NOT CLEAN at 66cb94d4): the header names an
+        # attacker's same-named repository, whose own pull request 7 and
+        # issue 3 the fake gh serves as readily as GitHub would. The owner
+        # pin rejects it before anything is read.
+        def spoof(where):
+            path = where / "fixture.yaml"
+            text = path.read_text(encoding="utf-8")
+            self.assertEqual(text.count("https://github.com/example/toy/"), 2)
+            path.write_text(text.replace("https://github.com/example/toy/",
+                                         "https://github.com/attacker/toy/"), encoding="utf-8")
+        self.set_gh(**rest(3, issue_repo="attacker/toy", full_name="attacker/toy"))
+        self.gh_log.unlink()
+        self.assertRejected("not a fleet owner", spoof)
+        self.assertFalse(self.gh_log.exists(), "nothing is read for a non-fleet repository")
+
+    def test_a_renamed_repository_is_rejected(self):
+        self.commit()
+        self.set_gh(**rest(3, full_name="example/toy-renamed"))
+        with self.assertRaisesRegex(ingest.Rejected, "full name"):
+            self.gate()
+
+    def test_the_cli_reads_the_fleet_registry(self):
+        self.commit()
+        write_fleet(self.registry.parent, owners=["someone-else"])
+        with contextlib.redirect_stderr(io.StringIO()) as err, \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = scaffold.main(["gate", "--repo", str(self.repo), "--base", "main",
+                                  "--source", self.BRANCH, "--branch", self.BRANCH,
+                                  "--out", str(self.tmp / "out-cli"), *self.fleet_args()])
+        self.assertEqual(code, 1)
+        self.assertIn("not a fleet owner", err.getvalue())
 
     def test_a_failed_recompute_rejects(self):
         self.commit()
@@ -1111,7 +1196,7 @@ class WorkflowShapeTests(unittest.TestCase):
         text = GATE.read_text(encoding="utf-8")
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
-        self.assertEqual(len(found), 2)
+        self.assertEqual(len(found), 3)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertRegex(node.value, PIN)
@@ -1194,9 +1279,25 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("scripts/scaffold_real_work.py resolve", steps["resolve"]["run"])
         self.assertIn("scripts/scaffold_real_work.py gate", steps["gate"]["run"])
         [checkout] = [s for s in self.gate["jobs"]["validate"]["steps"]
-                      if str(s.get("uses", "")).startswith("actions/checkout@")]
+                      if str(s.get("uses", "")).startswith("actions/checkout@")
+                      and "repository" not in s["with"]]
         self.assertEqual(checkout["with"]["ref"], "${{ github.event.repository.default_branch }}")
         self.assertIs(checkout["with"]["persist-credentials"], False)
+
+    def test_the_gate_reads_the_fleet_from_agent_guidance_default_branch(self):
+        steps = self.gate["jobs"]["validate"]["steps"]
+        [ag] = [s for s in steps if (s.get("with") or {}).get("repository")
+                == "Adam-S-Daniel/_agent-guidance"]
+        self.assertTrue(ag["uses"].startswith("actions/checkout@"))
+        self.assertEqual(ag["with"], {"repository": "Adam-S-Daniel/_agent-guidance",
+                                      "path": "_agent-guidance",
+                                      "persist-credentials": False},
+                         "its default branch: no ref")
+        gate_step = next(s for s in steps if s.get("id") == "gate")
+        self.assertLess(steps.index(ag), steps.index(gate_step))
+        self.assertIn("--registry ../_agent-guidance/repos.yml", gate_step["run"])
+        self.assertIn("--sync-workflow ../_agent-guidance/.github/workflows/sync.yml",
+                      gate_step["run"])
 
     def test_the_gate_step_reads_github_with_the_read_only_token(self):
         # The recompute needs the REST and GraphQL reads; the job's token is

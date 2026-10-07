@@ -38,7 +38,11 @@ name: Fire eval routine
 #   `scripts/scaffold_real_work.py snapshot` with the job's read-only token:
 #   the closing issue's title and body as they stood before the pull
 #   request's first commit, with the three provenance times, or null when
-#   it closes no issue. Several closing issues, or any failed read, stop the
+#   it closes no issue. The candidate must be a fleet repository (owner in
+#   SYNC_OWNERS, name in cron_coverage.fleet, from _agent-guidance's default
+#   branch; Adam, 2026-10-06: "Pin to fleet owners (Recommended)") whose
+#   GitHub full_name is the key's. Several closing issues (Adam,
+#   2026-10-06: "Keep refusing (Recommended)"), or any failed read, stop the
 #   run before the fire. routine-scaffold-gate.yml recomputes the same
 #   snapshot and rejects a branch whose copy differs.
 # * The fire API caps `text` at 65,536 characters
@@ -305,8 +309,21 @@ jobs:
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
           fi
 
+      # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners (Recommended)"):
+      # the candidate's owner must be in SYNC_OWNERS and its name in
+      # cron_coverage.fleet, read from _agent-guidance's default branch as the
+      # miner reads them. A public repository; no credentials are kept.
+      - name: Check out _agent-guidance (the fleet registry)
+        if: steps.validate.outputs.mode == 'scaffold'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: _agent-guidance
+          persist-credentials: false
+
       # Scaffold mode only. The job's read-only token, never the bearer: the
-      # snapshot reads GitHub (REST for the pull request, GraphQL for its
+      # snapshot refuses a candidate outside the fleet, or whose repository
+      # GitHub names differently (a rename redirect), before it reads GitHub (REST for the pull request, GraphQL for its
       # closing issue and the issue's revisions), and its log line is a
       # status, never the issue's text.
       - name: Compute the issue snapshot
@@ -315,10 +332,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
+          FLEET_REGISTRY: _agent-guidance/repos.yml
+          FLEET_SYNC_WORKFLOW: _agent-guidance/.github/workflows/sync.yml
         run: |
           set -euo pipefail
           out="${RUNNER_TEMP:?}/issue-snapshot.json"
-          python3 scripts/scaffold_real_work.py snapshot --candidate "$CANDIDATE" --out "$out"
+          python3 scripts/scaffold_real_work.py snapshot --candidate "$CANDIDATE" --out "$out" \
+            --registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
       - name: Fire the eval routine

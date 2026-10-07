@@ -22,7 +22,13 @@ name: Gate routine fixture scaffold
 #   snapshot in the payload), with the code the fire workflow ran, and
 #   rejects the branch unless `issue-before-fix.txt` is the same bytes and
 #   its three times are equal: the routine passes the snapshot on and cannot
-#   alter the task's issue text. The validate step holds the job's read-only
+#   alter the task's issue text. The repository the fixture header names
+#   must be a fleet repository (owner in SYNC_OWNERS, name in
+#   cron_coverage.fleet, from _agent-guidance's default branch) whose GitHub
+#   full_name is that name, or the branch is rejected before any read. A
+#   revision deleted, or past 100 revisions, between fire and gate rejects
+#   an honest branch: fail closed (Adam, 2026-10-06: "Yes, fail closed
+#   (Recommended)"). The validate step holds the job's read-only
 #   token (`contents: read`) for those reads, and no step runs branch code.
 # * The validator rejects the whole branch unless it only ADDS regular files
 #   (no symlink or submodule, an executable bit only under seed/ and
@@ -88,6 +94,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The fleet pin for the snapshot recompute (Adam, 2026-10-06: "Pin to
+      # fleet owners (Recommended)"): the repository the fixture header
+      # names must have its owner in SYNC_OWNERS and its name in
+      # cron_coverage.fleet, read from _agent-guidance's default branch as
+      # the miner reads them. A public repository; no credentials are kept.
+      - name: Check out _agent-guidance (the fleet registry)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: _agent-guidance
+          persist-credentials: false
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -130,6 +148,8 @@ jobs:
             --repo . --base "refs/remotes/origin/${DEFAULT_BRANCH}" \
             --source refs/scaffold/source --branch "$BRANCH" \
             --expect-sha "$SHA" --out "$RUNNER_TEMP/scaffold" \
+            --registry ../_agent-guidance/repos.yml \
+            --sync-workflow ../_agent-guidance/.github/workflows/sync.yml \
             > "$RUNNER_TEMP/gate.out"
           cat "$RUNNER_TEMP/gate.out" >> "$GITHUB_OUTPUT"
 

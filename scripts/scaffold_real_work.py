@@ -10,7 +10,8 @@ only the spec (the task text, `interface_strings:` and the checker
 selection), and everything else is read from git and GitHub.
 
     python3 scripts/scaffold_real_work.py snapshot --candidate OWNER__REPO__PR \\
-        --out FILE
+        --out FILE --registry AG/repos.yml \\
+        --sync-workflow AG/.github/workflows/sync.yml
 
     python3 scripts/scaffold_real_work.py build --candidates candidates.json \\
         --key OWNER__REPO__PR --clone PATH --spec spec.json \\
@@ -22,7 +23,8 @@ selection), and everything else is read from git and GitHub.
         --event-path PATH
     python3 scripts/scaffold_real_work.py gate --repo DIR --base REF \\
         --source REF --branch claude/scaffold-<id> [--expect-sha SHA] \\
-        --out DIR
+        --out DIR --registry AG/repos.yml \\
+        --sync-workflow AG/.github/workflows/sync.yml
 
 BUILD writes `<dest>/<repo name>-<pr>/` in the shape of the first three
 fixtures (#311): `seed/` is the base tree from `git archive`, with the fleet
@@ -48,7 +50,13 @@ issue through REST, as the miner does (mine_real_work.closing_issues), and
 the snapshot through GraphQL, and sends the result in the routine's
 payload as `issue_snapshot` (Adam, 2026-10-06: "Fire workflow precomputes
 (Recommended)"). It writes JSON: null when the pull request closes no issue,
-else SNAPSHOT_FIELDS. BUILD's `--issue-snapshot FILE` takes that JSON instead
+else SNAPSHOT_FIELDS. The repository must be in the fleet, read from
+`_agent-guidance`'s default branch as the miner reads it (owner in
+SYNC_OWNERS, name in cron_coverage.fleet; Adam, 2026-10-06: "Pin to fleet
+owners (Recommended)"), and its GitHub `full_name` must be the name given (a
+renamed repository's old name redirects). Several closing issues are refused
+(Adam, 2026-10-06: "Keep refusing (Recommended)"). BUILD's
+`--issue-snapshot FILE` takes that JSON instead
 of reading GitHub, and validates it strictly first; it is untrusted (the
 routine wrote the file), so the gate below recomputes it.
 
@@ -72,7 +80,10 @@ the issue snapshot from GitHub, for the pull request the fixture header
 names (which must be the fixture id's), with SNAPSHOT's own code, and rejects
 the branch unless `issue-before-fix.txt` is byte for byte the recomputed text
 and the three provenance times are equal (or, with no closing issue, the
-branch carries no snapshot): the routine cannot alter the task's issue text.
+branch carries no snapshot): the routine cannot alter the task's issue text. The recompute runs later
+than the fire, so if the chosen revision is deleted, or the issue passes the
+100 revisions one query reads, in between, an honest branch is rejected:
+fail closed (Adam, 2026-10-06: "Yes, fail closed (Recommended)").
 Messages never quote file content.
 """
 
@@ -351,29 +362,54 @@ def parse_key(key: str) -> tuple[str, int]:
     return repo, int(match["pr"])
 
 
-def closing_issues(repo: str, pull: dict) -> list[int]:
-    """The pull request's closing issues, read as the miner reads them (REST
-    only, #322), so the snapshot names the issue the routine's candidate
-    names."""
+def load_fleet(registry: Path, sync_workflow: Path) -> tuple[list[str], list[str]]:
+    """(names, owners) from `_agent-guidance`'s default branch, read as the
+    miner reads them: repos.yml's cron_coverage.fleet and sync.yml's
+    SYNC_OWNERS."""
     try:
-        view = miner.gh_json("api", f"repos/{repo}")
-        if not isinstance(view, dict):
-            raise ScaffoldError("the repository read returned no repository")
-        return miner.closing_issues(repo, pull, view.get("default_branch"))
-    except (miner.MineError, miner.GhNotFound) as error:
-        raise ScaffoldError(f"the closing issues read failed: {error}") from None
+        return miner.load_fleet(registry, sync_workflow)
+    except miner.MineError as error:
+        raise ScaffoldError(f"the fleet registry is unreadable: {error}") from None
 
 
-def issue_snapshot(repo: str, pr: int) -> dict | None:
+def check_fleet(repo: str, fleet: tuple[list[str], list[str]]) -> None:
+    """Refuse a repository outside the fleet, before anything is read (Adam,
+    2026-10-06: "Pin to fleet owners (Recommended)"). GitHub names are
+    case-insensitive, so the comparison is too."""
+    names, owners = fleet
+    owner, name = repo.split("/", 1)
+    if owner.casefold() not in {o.casefold() for o in owners}:
+        raise ScaffoldError("the repository's owner is not a fleet owner (SYNC_OWNERS)")
+    if name.casefold() not in {n.casefold() for n in names}:
+        raise ScaffoldError("the repository is not in the fleet registry (cron_coverage.fleet)")
+
+
+def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]]) -> dict | None:
     """SNAPSHOT_FIELDS for the merged pull request's one closing issue, or None
-    when it closes none. The fire workflow and the gate both call this."""
+    when it closes none. The fire workflow and the gate both call this; the
+    repository must be in the fleet and be what GitHub calls it (a renamed
+    repository's old name redirects, and its full_name then differs)."""
+    check_fleet(repo, fleet)
     try:
         pull = miner.gh_json("api", f"repos/{repo}/pulls/{pr}")
     except (miner.MineError, miner.GhNotFound) as error:
         raise ScaffoldError(f"the pull request read failed: {error}") from None
     if not isinstance(pull, dict) or pull.get("number") != pr or not pull.get("merged_at"):
         raise ScaffoldError("the candidate is not a merged pull request")
-    issues = closing_issues(repo, pull)
+    try:
+        view = miner.gh_json("api", f"repos/{repo}")
+    except (miner.MineError, miner.GhNotFound) as error:
+        raise ScaffoldError(f"the repository read failed: {error}") from None
+    if not isinstance(view, dict) or view.get("full_name") != repo:
+        raise ScaffoldError("the repository's full name on GitHub is not the one named "
+                            "(renamed or redirected)")
+    # The pull request's closing issues, read as the miner reads them (REST
+    # only, #322), so the snapshot names the issue the routine's candidate
+    # names.
+    try:
+        issues = miner.closing_issues(repo, pull, view.get("default_branch"))
+    except (miner.MineError, miner.GhNotFound) as error:
+        raise ScaffoldError(f"the closing issues read failed: {error}") from None
     if not issues:
         return None
     if len(issues) > 1:
@@ -857,7 +893,7 @@ def _safe_rel(rel: str) -> bool:
 
 
 def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
-         out: Path) -> dict:
+         out: Path, *, fleet: tuple[list[str], list[str]]) -> dict:
     """Validate an untrusted `claude/scaffold-<id>` branch and write the
     fixture it adds to `out/<id>/`, or raise ingest.Rejected."""
     match = BRANCH_RE.fullmatch(branch)
@@ -912,13 +948,14 @@ def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
     problems, _ = static_problems(root)
     if problems:
         raise ingest.Rejected("; ".join(problems[:5]))
-    gate_snapshot(root, fixture_id)
+    gate_snapshot(root, fixture_id, fleet)
     # Only pattern-checked values: no key may carry content read from the
     # branch (a title, the prompt) into the job that holds a write token.
     return {"fixture_id": fixture_id, "sha": tip, "files": str(len(files))}
 
 
-def gate_snapshot(fixture_dir: Path, fixture_id: str) -> None:
+def gate_snapshot(fixture_dir: Path, fixture_id: str,
+                  fleet: tuple[list[str], list[str]]) -> None:
     """Recompute the issue snapshot from GitHub and require the branch's to
     be the same bytes and times, or absent when there is no closing issue."""
     text = (fixture_dir / FIXTURE_FILE).read_text(encoding="utf-8")
@@ -932,7 +969,7 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str) -> None:
         raise ingest.Rejected("fixture.yaml's header names another pull request than the "
                               "fixture id")
     try:
-        expected = issue_snapshot(repo, pr)
+        expected = issue_snapshot(repo, pr, fleet)
     except ScaffoldError as error:
         raise ingest.Rejected(f"the issue snapshot could not be recomputed: {error}") from None
     fixture = yaml.safe_load(text)
@@ -974,6 +1011,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("snapshot")
     s.add_argument("--candidate", required=True)
     s.add_argument("--out", type=Path, required=True)
+    s.add_argument("--registry", type=Path, required=True)
+    s.add_argument("--sync-workflow", type=Path, required=True)
     c = sub.add_parser("check")
     c.add_argument("--fixture", type=Path, required=True)
     c.add_argument("--run", action="store_true")
@@ -987,6 +1026,8 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--branch", required=True)
     g.add_argument("--expect-sha", default="")
     g.add_argument("--out", required=True, type=Path)
+    g.add_argument("--registry", type=Path, required=True)
+    g.add_argument("--sync-workflow", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command in ("resolve", "gate"):
         try:
@@ -994,8 +1035,12 @@ def main(argv: list[str] | None = None) -> int:
                 result = ingest.resolve(args.event_name, args.event_path, BRANCH_RE,
                                         "claude/scaffold-<fixture id>")
             else:
+                try:
+                    fleet = load_fleet(args.registry, args.sync_workflow)
+                except ScaffoldError as error:
+                    raise ingest.Rejected(str(error)) from None
                 result = gate(args.repo, args.base, args.source, args.branch,
-                              args.expect_sha or None, args.out)
+                              args.expect_sha or None, args.out, fleet=fleet)
         except ingest.Rejected as exc:
             message = "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in str(exc))
             print(f"rejected: {message}", file=sys.stderr)
@@ -1013,7 +1058,7 @@ def main(argv: list[str] | None = None) -> int:
             repo, pr = parse_key(args.candidate)
             if os.path.lexists(args.out):
                 raise ScaffoldError("the snapshot output already exists")
-            doc = issue_snapshot(repo, pr)
+            doc = issue_snapshot(repo, pr, load_fleet(args.registry, args.sync_workflow))
             args.out.write_text(json.dumps(doc, ensure_ascii=False) + "\n", encoding="utf-8")
             # A status, never the issue's text.
             print("issue_snapshot=" + ("none" if doc is None else f"issue {doc['issue']}"))

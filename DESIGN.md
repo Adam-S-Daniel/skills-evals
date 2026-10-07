@@ -1027,8 +1027,21 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   precomputes (Recommended)"). The gate recomputes it with the same code,
   for the pull request the fixture's header names (which must be its id's),
   and rejects the branch unless `issue-before-fix.txt` is the same bytes and
-  the three times are equal, so the routine cannot alter the issue text. A
-  payload over the fire API's 65,536-character `text` cap is refused.
+  the three times are equal, so the routine cannot alter the issue text.
+  Both the fire and the gate pin the repository to the fleet before any
+  read: its owner in `SYNC_OWNERS` and its name in `cron_coverage.fleet`,
+  from `_agent-guidance`'s default branch as the miner reads them, and its
+  GitHub `full_name` equal to the name given, so a renamed repository's
+  redirect is refused too (Adam, 2026-10-06: "Pin to fleet owners
+  (Recommended)"). A pull request that closes several issues is refused at
+  the fire (Adam, 2026-10-06: "Keep refusing (Recommended)"). If the chosen
+  revision is deleted, or the issue passes the 100 revisions one query
+  reads, between the fire and the gate, the gate rejects the branch: fail
+  closed (Adam, 2026-10-06: "Yes, fail closed (Recommended)"). A payload
+  over the fire API's 65,536-character `text` cap is refused, never
+  truncated; the snapshot is JSON-encoded twice inside it, so an issue
+  whose body is at or near GitHub's own 65,536-character limit cannot be
+  scaffolded this way.
 
 What a reviewer adds before the fixture can leave draft: the fixture's
 entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`

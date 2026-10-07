@@ -250,9 +250,23 @@ class WorkflowShapeTests(unittest.TestCase):
         # candidate, and nothing else: never the bearer.
         self.assertEqual(step["env"], {
             "GH_TOKEN": "${{ github.token }}",
-            "CANDIDATE": "${{ steps.validate.outputs.candidate }}"})
+            "CANDIDATE": "${{ steps.validate.outputs.candidate }}",
+            "FLEET_REGISTRY": "_agent-guidance/repos.yml",
+            "FLEET_SYNC_WORKFLOW": "_agent-guidance/.github/workflows/sync.yml"})
         self.assertIn("python3 scripts/scaffold_real_work.py snapshot "
                       '--candidate "$CANDIDATE"', step["run"])
+        self.assertIn('--registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"',
+                      step["run"])
+        # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners
+        # (Recommended)") reads _agent-guidance's default branch, checked
+        # out before this step, credentials not kept.
+        [ag] = [i for i, s in enumerate(self.steps) if (s.get("with") or {}).get("repository")
+                == "Adam-S-Daniel/_agent-guidance"]
+        self.assertLess(ag, snap)
+        self.assertTrue(self.steps[ag]["uses"].startswith("actions/checkout@"))
+        self.assertEqual(self.steps[ag]["with"], {
+            "repository": "Adam-S-Daniel/_agent-guidance", "path": "_agent-guidance",
+            "persist-credentials": False})
         self.assertEqual(self.steps[fire]["env"]["ISSUE_SNAPSHOT_FILE"],
                          "${{ steps.snapshot.outputs.file }}")
         # The job token reaches the snapshot step only.
@@ -273,8 +287,9 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_checkout_does_not_persist_credentials(self):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
-        self.assertEqual(len(checkout), 1)
-        self.assertIs(checkout[0]["with"]["persist-credentials"], False)
+        self.assertEqual(len(checkout), 2)
+        for step in checkout:
+            self.assertIs(step["with"]["persist-credentials"], False)
 
 
 def step_script(name: str) -> str:
@@ -569,9 +584,10 @@ class SnapshotStepTests(unittest.TestCase):
         gh.write_text(f"#!{sys.executable}\n" + rw.FAKE_GH, encoding="utf-8")
         gh.chmod(0o755)
         self.data = self.tmp / "gh.json"
+        self.registry, self.sync = rw.write_fleet(self.tmp / "_agent-guidance")
         self.script = step_script("Compute the issue snapshot")
 
-    def run_step(self, **answers):
+    def run_step(self, candidate="example__toy__7", **answers):
         self.data.write_text(json.dumps(answers), encoding="utf-8")
         output = self.tmp / "output"
         output.write_text("", encoding="utf-8")
@@ -580,7 +596,9 @@ class SnapshotStepTests(unittest.TestCase):
         runner_temp.mkdir()
         env = {"PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
                "HOME": str(self.tmp), "LANG": "C.UTF-8",
-               "GH_TOKEN": "fake", "CANDIDATE": "example__toy__7",
+               "GH_TOKEN": "fake", "CANDIDATE": candidate,
+               "FLEET_REGISTRY": str(self.registry),
+               "FLEET_SYNC_WORKFLOW": str(self.sync),
                "RUNNER_TEMP": str(runner_temp), "GITHUB_OUTPUT": str(output),
                "FAKE_GH_LOG": str(self.tmp / "gh.log"),
                "FAKE_GH_DATA": str(self.data)}
@@ -603,6 +621,15 @@ class SnapshotStepTests(unittest.TestCase):
         proc, values = self.run_step(**rw.rest(), graphql=4)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIsNone(json.loads(Path(values["file"]).read_text(encoding="utf-8")))
+
+    def test_a_candidate_outside_the_fleet_is_refused_before_any_read(self):
+        rw = self.rw
+        proc, values = self.run_step(candidate="attacker__toy__7", **rw.rest(3),
+                                     graphql=rw.graphql())
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("not a fleet owner", proc.stderr)
+        self.assertNotIn("file", values)
+        self.assertFalse((self.tmp / "gh.log").exists())
 
     def test_a_refusal_fails_the_step_and_names_no_file(self):
         rw = self.rw
