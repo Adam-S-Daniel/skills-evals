@@ -319,7 +319,8 @@ class RunAgentTraceTests(unittest.TestCase):
         for key in ("transcript", "usage", "cost_usd", "num_turns",
                     "duration_ms", "raw"):
             self.assertEqual(traced[key], plain[key], key)
-        self.assertNotIn("tool_trace", plain)
+        self.assertEqual(plain["tool_trace"]["events"], [])
+        self.assertIs(plain["tool_trace"]["complete"], False)
         self.assertEqual(len(traced["tool_trace"]["events"]), 4)
 
     def test_the_child_envs_credential_is_redacted(self):

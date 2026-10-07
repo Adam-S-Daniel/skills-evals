@@ -5,10 +5,11 @@ statistics — and a default path that writes what it wrote before.
 Four things, each tested through the entry point an operator or the workflow
 uses (`python3 harness/run_eval.py ...`, `python3 scripts/make_badge.py ...`):
 
-  * THE DEFAULT IS UNCHANGED. With no `--trials` (or `--trials 1`) a flat
-    fixture's run leaves the files `main` left, byte for byte, with `n: 1`
-    appended to each arm's summary.json. Compared against a golden tree that
-    `main`'s own harness wrote (see `TestIssue66SingleTrialIsMainPlusN`).
+  * THE DEFAULT PRESERVES HISTORICAL OUTPUTS. With no `--trials` (or
+    `--trials 1`) a flat fixture's run leaves the historical files byte for
+    byte, with `n: 1` appended to each arm's summary.json, plus the additive
+    tool trace artifact. Compared against a golden tree that `main`'s own
+    harness wrote (see `TestIssue66SingleTrialIsMainPlusN`).
   * LAYOUT. A skill directory holds one flat fixture or nested ones, never
     both; every nested fixture runs, or the one `--fixture` selects; and a
     nested fixture's results go under its own directory however it was
@@ -271,7 +272,7 @@ class _HarnessCase(unittest.TestCase):
 
 class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     """The single-fixture, single-trial run of a flat fixture writes what
-    `main` wrote, plus `n: 1`.
+    `main` wrote, plus `n: 1` and a separate tool trace artifact.
 
     THE GOLDEN TREE under test/fixtures/issue_66/golden/ was written by
     `main`'s harness, not by this branch: `harness/run_eval.py` as of
@@ -309,8 +310,18 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     def test_the_run_leaves_mains_files_with_n_appended_to_each_summary(self):
         proc = self._run_golden(self.results)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        # The same files, and no others: no trial directory at n = 1.
-        self.assertEqual(_tree(self.results), _tree(GOLDEN_RESULTS))
+        # Historical files plus one trace per arm: no trial directory at n = 1.
+        traces = [f"fixture-primary-skill/{self.GOLDEN_TS}/{arm}/transcripts/tool_trace.json"
+                  for arm in ("with_skill", "without_skill")]
+        self.assertEqual(_tree(self.results), sorted(_tree(GOLDEN_RESULTS) + traces))
+        for rel in traces:
+            with self.subTest(trace=rel):
+                evidence = json.loads((self.results / rel).read_text(encoding="utf-8"))
+                self.assertEqual(evidence["schema_version"], 1)
+                self.assertIs(evidence["complete"], False)
+                self.assertEqual(evidence["calls"], 1)
+                self.assertEqual(evidence["events"], [])
+                self.assertEqual(evidence["omitted_events"], 0)
         summaries = 0
         for rel in _tree(GOLDEN_RESULTS):
             golden = (GOLDEN_RESULTS / rel).read_bytes()
@@ -421,6 +432,7 @@ class TestIssue66NestedFixtures(_HarnessCase):
         self.assertEqual(_tree(by_leaf), [
             f"{self.SKILL}/{TS}/alpha/without_skill/summary.json",
             f"{self.SKILL}/{TS}/alpha/without_skill/transcripts/raw.json",
+            f"{self.SKILL}/{TS}/alpha/without_skill/transcripts/tool_trace.json",
             f"{self.SKILL}/{TS}/report.md"])
         self.assertEqual(_tree(by_flag), _tree(by_leaf))
         for rel in _tree(by_leaf):
@@ -491,7 +503,7 @@ class TestIssue66NestedFixtures(_HarnessCase):
             [f"linked-skill/{TS}/report.md"]
             + [f"linked-skill/{TS}/{name}/without_skill/{leaf}"
                for name in ("one", "two")
-               for leaf in ("summary.json", "transcripts/raw.json")])
+               for leaf in ("summary.json", "transcripts/raw.json", "transcripts/tool_trace.json")])
         self.assertEqual(_tree(by_dir), expected)
         self.assertEqual(_tree(by_leaf), expected)
 
@@ -683,7 +695,8 @@ class TestIssue66Trials(_HarnessCase):
         self.assertEqual(_tree(self.arm_dir), sorted(
             ["summary.json"]
             + [f"{prefix}{k}/summary.json" for k in (1, 2, 3)]
-            + [f"{prefix}{k}/transcripts/raw.json" for k in (1, 2, 3)]))
+            + [f"{prefix}{k}/transcripts/{leaf}" for k in (1, 2, 3)
+               for leaf in ("raw.json", "tool_trace.json")]))
         # Each trial is a whole single-trial summary, labeled with its index.
         for k, overall, marker in ((1, 6.0, True), (2, 9.0, False),
                                    (3, 7.5, True)):
@@ -739,15 +752,16 @@ class TestIssue66Trials(_HarnessCase):
         self.assertAlmostEqual(cost["mean"], 0.04)
         self.assertAlmostEqual(cost["sum"], 0.12)
         # The efficiency figures ride beside the cost, from the same trials.
-        # The scripted CLI reports 3 turns and 1234 input tokens each time,
-        # and makes no tool call.
+        # The scripted CLI reports 3 turns and 1234 input tokens each time.
+        # Its nonverbose result objects do not establish tool-error counts.
         efficiency = block["efficiency"]
         self.assertEqual(efficiency["num_turns"],
                          {"n": 3, "n_missing": 0, "mean": 3.0, "median": 3,
                           "min": 3, "max": 3, "sum": 9})
         self.assertEqual(efficiency["input_tokens"]["median"], 1234)
-        self.assertEqual(efficiency["tool_errors"]["n"], 3)
-        self.assertEqual(efficiency["tool_errors"]["max"], 0)
+        self.assertEqual(efficiency["tool_errors"]["n"], 0)
+        self.assertEqual(efficiency["tool_errors"]["n_missing"], 3)
+        self.assertIsNone(efficiency["tool_errors"]["max"])
 
         report = self._report()
         self.assertIn(f"## Fixture: {self.SKILL} (n=3)", report)

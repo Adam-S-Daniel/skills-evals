@@ -280,33 +280,40 @@ def tool_events(decoded: object, secrets: list[str] = ()) -> list[dict]:
                 continue
             if block.get("type") == "tool_use":
                 summary = _input_summary(block.get("input"))
+                clipped_input = _clip(summary, TRACE_INPUT_CHARS, secrets)
                 name = block.get("name")
                 events.append({
                     "kind": "tool_use",
                     "id": _tool_use_id(block.get("id")),
                     "name": _clip(name if isinstance(name, str) else "",
                                   TRACE_NAME_CHARS, secrets),
-                    "input": _clip(summary, TRACE_INPUT_CHARS, secrets),
+                    "input": clipped_input,
                     "input_chars": len(summary),
+                    **({"input_incomplete": True} if clipped_input != summary else {}),
                     "subagent": subagent})
             elif block.get("type") == "tool_result":
                 text = _result_text(block.get("content"))
+                clipped_output = _clip(text, TRACE_OUTPUT_CHARS, secrets)
                 events.append({
                     "kind": "tool_result",
                     "id": _tool_use_id(block.get("tool_use_id")),
                     "is_error": block.get("is_error") is True,
-                    "output": _clip(text, TRACE_OUTPUT_CHARS, secrets),
+                    "output": clipped_output,
                     "output_chars": len(text),
+                    **({"output_incomplete": True} if clipped_output != text else {}),
                     "subagent": subagent})
     return events
 
 
 def bounded_tool_trace(calls: list[list[dict]],
-                       max_bytes: int = TRACE_MAX_BYTES) -> dict:
+                       max_bytes: int = TRACE_MAX_BYTES, *,
+                       complete: bool = True) -> dict:
     """The `tool_trace.json` document for one trial: each CLI call's events
     (`tool_events`), tagged with the call's index (0 is the prompt, then each
     follow-up), kept in order until their serialized size would pass
-    `max_bytes`; the rest are only counted."""
+    `max_bytes`; the rest are only counted. `complete` records whether every
+    attempted CLI call supplied its full verbose message array. The cap also
+    makes the stored evidence incomplete, even when every call was decoded."""
     events, size, omitted = [], 0, 0
     for index, call in enumerate(calls):
         for event in call:
@@ -325,4 +332,5 @@ def bounded_tool_trace(calls: list[list[dict]],
         "calls": len(calls),
         "events": events,
         "omitted_events": omitted,
+        "complete": complete is True and omitted == 0,
     }
