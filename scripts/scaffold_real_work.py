@@ -553,6 +553,10 @@ def load_spec(path: Path, candidate: dict) -> dict:
             raise ScaffoldError(f"checker.files entry {rel!r} is not one of the candidate's test files")
     if len(set(files)) != len(files):
         raise ScaffoldError("checker.files repeats a file")
+    try:
+        seed_prep._deps_entries(spec.get("deps"))
+    except guidance.GuidanceError as error:
+        raise ScaffoldError(str(error)) from None
     trim = spec.get("trim") or []
     if not isinstance(trim, list) or len(trim) > MAX_TRIM:
         raise ScaffoldError(f"trim must be a list of at most {MAX_TRIM} paths")

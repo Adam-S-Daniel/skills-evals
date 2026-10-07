@@ -202,10 +202,31 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   refuses a lockfile out of step with `package.json`. This step has network;
   scoring does not. A missing lockfile, a missing `npm` on the arm's `PATH`, a
   timeout or a nonzero exit fails the arm with a named `deps_failed` error and
-  the agent is never invoked. Each entry is bounded by `setup_timeout_s`.
-  `npm` is the only manager so far; any other value is refused at load. The
-  installed tree is part of the workspace the agent can edit; ADR 0006's
-  threat model (the agent may modify the code a check runs) applies to it.
+  the agent is never invoked. Each install subprocess is bounded by
+  `setup_timeout_s` (Python uses one for venv creation and one for pip).
+  Python entries use `{manager: pip, requirements: [pytest==9.0.3, ...]}`:
+  1 to 64 plain `package==version` strings, including every transitive
+  dependency. URLs, paths, options, extras, markers, ranges, wildcard pins
+  and repeated normalized package names are refused. At most one pip entry
+  is allowed; it accepts no `dir:`. Setup creates the reserved
+  `.fixture-python/` venv using the trusted system Python, then runs its
+  interpreter with `-I -m pip --isolated install --no-deps
+  --only-binary=:all: --disable-pip-version-check --no-input --requirement`
+  on a generated requirements file. Each subprocess has the setup timeout,
+  a fresh constant environment and suppressed failure output. A preexisting
+  reserved path (including a symlink) fails closed; seeds and checker
+  overlays may not carry it. Wheels only and `--no-deps` prevent source
+  build hooks and implicit dependency resolution; these pins provide
+  version reproducibility, without the integrity hashes npm lockfiles use.
+  The `repo_tests` scorer selects the scratch copy's venv interpreter for
+  bare `argv: [python3, -m, pytest, ...]`, preserving its symlink location
+  for venv discovery,
+  and places its bin directory after the Claude refusal stub on the clean
+  per-test PATH. Missing venv files fail closed. Other fixtures retain the
+  trusted system interpreter. Scoring performs no dependency installation;
+  optional network isolation remains best-effort as described in ADR 0006.
+  Installed dependencies are part of the workspace the agent can edit;
+  ADR 0006's threat model (the agent may modify code a check runs) applies.
 
 ### Real-work fixture decisions (Adam, 2026-10-06)
 

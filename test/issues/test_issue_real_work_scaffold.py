@@ -759,6 +759,28 @@ class RedGreenTests(_BuildCase):
             self.assertEqual(scaffold.main(["check", "--fixture", str(target), "--run"]), 1)
         self.assertIn("solution.patch does not apply", out.getvalue())
 
+    def test_python_pins_load_in_gate_and_bad_pins_never_spawn(self):
+        target = self.build(deps=[{"manager": "pip", "requirements": ["pytest==9.0.3"]}])
+        self.assertEqual(scaffold.static_problems(target), ([], []))
+        fixture_path = target / "fixture.yaml"
+        fixture = yaml.safe_load(fixture_path.read_text())
+        fixture["deps"][0]["requirements"] = ["https://example.com/pkg.whl"]
+        fixture_path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        with mock.patch.object(scaffold.seed_prep.commands, "_run_command") as spawn:
+            problems, _ = scaffold.static_problems(target)
+        self.assertTrue(any("does not load" in problem for problem in problems), problems)
+        spawn.assert_not_called()
+
+    def test_build_refuses_invalid_python_pins_before_writing(self):
+        self.assertRefused("plain package==version", deps=[{"manager": "pip", "requirements": ["pytest>=9"]}])
+        self.assertFalse(self.dest.exists(), "invalid pins are refused before writing the destination")
+
+    def test_gate_refuses_preinstalled_python_environment(self):
+        target = self.build()
+        (target / "seed" / ".fixture-python").mkdir()
+        problems, _ = scaffold.static_problems(target)
+        self.assertTrue(any("does not load" in problem for problem in problems), problems)
+
 
 class CommittedFixturesTests(unittest.TestCase):
 
