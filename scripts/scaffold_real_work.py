@@ -15,7 +15,7 @@ selection), and everything else is read from git and GitHub.
 
     python3 scripts/scaffold_real_work.py build --candidates candidates.json \\
         --key OWNER__REPO__PR --clone PATH --spec spec.json \\
-        [--issue-snapshot FILE] --dest evals/real-work
+        [--issue-snapshot FILE] [--context-repo OWNER/REPO=PATH] --dest evals/real-work
 
     python3 scripts/scaffold_real_work.py check --fixture DIR [--run]
 
@@ -103,6 +103,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -112,6 +113,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import yaml  # noqa: E402
 
 import answer_leak  # noqa: E402
+import context  # noqa: E402
 import guidance  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import mine_real_work as miner  # noqa: E402
@@ -173,7 +175,7 @@ EXECUTABLE_OK = frozenset({SEED_DIR, CHECKER_DIR})
 ALLOWED_KEYS = frozenset({
     "subject", "draft", "strip_agent_context", "deps", "prompt",
     "interface_strings", answer_leak.SNAPSHOT_KEY, *answer_leak.PROVENANCE_KEYS,
-    "objective_checks"})
+    "objective_checks", "context"})
 CHECK_ID = "hidden-tests"
 CHECK_DESCRIPTION = "The pull request's own tests, hidden from the agent"
 
@@ -390,7 +392,8 @@ def check_fleet(repo: str, fleet: tuple[list[str], list[str]]) -> None:
         raise ScaffoldError("the repository is not in the fleet registry (cron_coverage.fleet)")
 
 
-def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]]) -> dict | None:
+def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]],
+                   deployed_context: dict | None = None) -> dict | None:
     """SNAPSHOT_FIELDS for the merged pull request's one closing issue, or None
     when it closes none. The fire workflow and the gate both call this; the
     repository must be in the fleet and be what GitHub calls it (a renamed
@@ -409,6 +412,17 @@ def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]]) -> di
     if not isinstance(view, dict) or view.get("full_name") != repo:
         raise ScaffoldError("the repository's full name on GitHub is not the one named "
                             "(renamed or redirected)")
+    if deployed_context is not None:
+        merge = pull.get("merge_commit_sha")
+        if not isinstance(merge, str) or not SHA_RE.fullmatch(merge):
+            raise ScaffoldError("the trusted candidate has no full merge revision")
+        try:
+            commit = miner.gh_json("api", f"repos/{repo}/commits/{merge}")
+        except (miner.MineError, miner.GhNotFound) as error:
+            raise ScaffoldError(f"the candidate commit read failed: {error}") from None
+        if not isinstance(commit, dict) or commit.get("sha") != merge:
+            raise ScaffoldError("the candidate commit response does not prove its merge revision")
+        gate_context(deployed_context, repo, pull, commit)
     # The pull request's closing issues, read as the miner reads them (REST
     # only, #322), so the snapshot names the issue the routine's candidate
     # names.
@@ -666,8 +680,38 @@ def render_fixture(data: dict, header: list[str]) -> str:
     return text
 
 
+def _build_context(repo: str, revision: str, clone: Path,
+                   repositories: dict[str, Path] | None) -> tuple[dict, str | None]:
+    """Freeze provenance and measure it before stripping the candidate seed."""
+    mappings = {**(repositories or {}), repo: clone}
+    keys = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
+    metadata = {"repository": repo, "revision": revision, "guidance_revision": None,
+                "budget": dict.fromkeys(keys, 1)}
+    try:
+        metadata["guidance_revision"] = context.find_guidance_revision(repo, revision, mappings)
+    except context.ContextError as error:
+        if error.code != "guidance_unproven":
+            raise ScaffoldError(f"context resolution failed: {error.code}") from None
+        # These positive placeholders are not measured limits. The null pin
+        # blocks resolution until guidance is proven and measured limits reviewed.
+        return metadata, ("BLOCKED: guidance_unproven; context measurements unavailable. "
+                          "Pin proven guidance and review measured limits before evaluation.")
+    measurement_context = {**metadata, "budget": dict.fromkeys(keys, 2**63 - 1)}
+    try:
+        frozen = context.resolve_context(measurement_context, mappings)
+    except context.ContextError as error:
+        raise ScaffoldError(f"context resolution failed: {error.code}") from None
+    measured = frozen.manifest["measurements"]
+    if (not isinstance(measured, Mapping) or set(measured) != set(keys)
+            or any(type(measured[key]) is not int or measured[key] < 0 for key in keys)):
+        raise ScaffoldError("context measurements are not nonnegative byte counts")
+    metadata["budget"] = {key: max(1, (measured[key] * 5 + 3) // 4) for key in keys}
+    return metadata, None
+
+
 def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
-          issue_snapshot: Path | None = None) -> Path:
+          issue_snapshot: Path | None = None, *,
+          repositories: dict[str, Path] | None = None) -> Path:
     cand = load_candidate(candidates, key)
     spec = load_spec(spec_path, cand)
     repo, pr, base, merge = cand["repo"], cand["pr"], cand["base_sha"], cand["merge_sha"]
@@ -691,6 +735,7 @@ def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
         snapshot = read_snapshot(repo, spec["issue"], pr)
     else:
         snapshot = None
+    deployed_context, context_problem = _build_context(repo, base, clone, repositories)
 
     dest.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".scaffold-", dir=dest) as tmp:
@@ -723,6 +768,7 @@ def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
         if spec.get("deps"):
             data["deps"] = spec["deps"]
         data["prompt"] = spec["task_text"].replace("\r\n", "\n")
+        data["context"] = deployed_context
         if spec.get("interface_strings") is not None:
             data["interface_strings"] = spec["interface_strings"]
         specs = [p for p in trimmed if p.startswith("e2e/") and p.count("/") == 1
@@ -738,6 +784,8 @@ def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
                   f"  merge {merge}",
                   f"Checker overlay: the merge commit's {', '.join(checker_files)}.",
                   f"Trimmed from the seed: {', '.join(others) if others else 'nothing'}."]
+        if context_problem:
+            header.append(context_problem)
         if specs:
             header.append(f"Also every e2e spec but the checker's own ({len(specs)} trimmed).")
         if snapshot is not None:
@@ -820,6 +868,8 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
             problems.append("fixture.yaml is not `subject: any`")
         if fixture.get("strip_agent_context") is not True:
             problems.append("fixture.yaml is not `strip_agent_context: true`")
+        if "context" not in fixture:
+            problems.append("fixture.yaml has no structured `context:`")
         if not isinstance(fixture.get("prompt"), str) or not fixture["prompt"].strip():
             problems.append("fixture.yaml has no prompt")
         checks = fixture.get("objective_checks")
@@ -967,6 +1017,26 @@ def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
     return {"fixture_id": fixture_id, "sha": tip, "files": str(len(files))}
 
 
+def gate_context(metadata: dict, repository: str, pull: dict, commit: dict) -> None:
+    """Compare metadata with the miner's trusted merged-candidate provenance."""
+    if not isinstance(metadata, dict) or metadata.get("repository") != repository:
+        raise ingest.Rejected("the context repository differs from the trusted candidate")
+    parents = commit.get("parents") if isinstance(commit, dict) else None
+    if (not isinstance(parents, list) or not parents
+            or any(not isinstance(parent, dict) or not isinstance(parent.get("sha"), str)
+                   or not SHA_RE.fullmatch(parent["sha"]) for parent in parents)):
+        raise ingest.Rejected("the trusted candidate has no valid base revision")
+    # Match mine_real_work.mine(): a merge's first parent predates the fix;
+    # a single-parent/rebase candidate uses the pull request's base SHA.
+    base_row = pull.get("base") if isinstance(pull, dict) else None
+    base = parents[0]["sha"] if len(parents) >= 2 else (
+        base_row.get("sha") if isinstance(base_row, dict) else None)
+    if not isinstance(base, str) or not SHA_RE.fullmatch(base):
+        raise ingest.Rejected("the trusted candidate has no valid base revision")
+    if metadata.get("revision") != base:
+        raise ingest.Rejected("the context revision differs from the trusted candidate base")
+
+
 def gate_snapshot(fixture_dir: Path, fixture_id: str,
                   fleet: tuple[list[str], list[str]]) -> None:
     """Recompute the issue snapshot from GitHub and require the branch's to
@@ -982,10 +1052,15 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
         raise ingest.Rejected("fixture.yaml's header names another pull request than the "
                               "fixture id")
     try:
-        expected = issue_snapshot(repo, pr, fleet)
+        fixture = run_eval.load_fixture(fixture_dir)
+    except (guidance.GuidanceError, yaml.YAMLError, UnicodeDecodeError, OSError):
+        raise ingest.Rejected("fixture.yaml's context metadata does not load") from None
+    if not isinstance(fixture.get("context"), dict):
+        raise ingest.Rejected("fixture.yaml has no structured context metadata")
+    try:
+        expected = issue_snapshot(repo, pr, fleet, fixture["context"])
     except ScaffoldError as error:
         raise ingest.Rejected(f"the issue snapshot could not be recomputed: {error}") from None
-    fixture = yaml.safe_load(text)
     path = fixture_dir / SNAPSHOT_FILE
     if expected is None:
         if named is not None or os.path.lexists(path) or answer_leak.SNAPSHOT_KEY in fixture:
@@ -1206,6 +1281,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--spec", type=Path, required=True)
     b.add_argument("--dest", type=Path, default=REPO_ROOT / REAL_WORK_ROOT)
     b.add_argument("--issue-snapshot", type=Path, default=None)
+    b.add_argument("--context-repo", action="append", default=[], metavar="OWNER/REPO=PATH")
     s = sub.add_parser("snapshot")
     s.add_argument("--candidate", required=True)
     s.add_argument("--out", type=Path, required=True)
@@ -1256,8 +1332,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"created": created, "skipped": skipped}))
             return 0
         if args.command == "build":
+            try:
+                repositories = context.parse_context_repos(args.context_repo)
+            except context.ContextError as error:
+                raise ScaffoldError(f"context configuration failed: {error.code}") from None
             target = build(args.candidates, args.key, args.clone, args.spec, args.dest,
-                           args.issue_snapshot)
+                           args.issue_snapshot, repositories=repositories)
             print(f"fixture={target}")
             return 0
         if args.command == "snapshot":

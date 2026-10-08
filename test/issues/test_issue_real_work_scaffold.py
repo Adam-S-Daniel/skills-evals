@@ -99,6 +99,8 @@ if args[:2] == ["api", "graphql"]:
     answer = data["graphql"]
 elif re.fullmatch(r"repos/[^/]+/[^/]+/pulls/[0-9]+", rest):
     answer = data["pull"]
+elif re.fullmatch(r"repos/[^/]+/[^/]+/commits/[0-9a-f]{40}", rest):
+    answer = data["commit"]
 elif re.fullmatch(r"repos/[^/]+/[^/]+/issues/[0-9]+", rest):
     answer = data["issues"].get(rest.rsplit("/", 1)[1])
     if answer is None:
@@ -280,6 +282,11 @@ class _BuildCase(_Case):
         data = (json.loads(self.gh_data.read_text(encoding="utf-8"))
                 if self.gh_data.exists() else rest(3))
         data.update(answers)
+        if isinstance(data["pull"], dict):
+            if isinstance(data["pull"].get("base"), dict):
+                data["pull"]["base"].setdefault("sha", self.base)
+            data["pull"].setdefault("merge_commit_sha", self.merge)
+        data.setdefault("commit", {"sha": self.merge, "parents": [{"sha": self.base}]})
         self.gh_data.write_text(json.dumps(data), encoding="utf-8")
 
     def build(self, **spec_changes) -> Path:
@@ -1048,7 +1055,8 @@ class GateSnapshotTests(_GateCase):
         self.gate()
         calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
         self.assertEqual(calls[0], ["api", "repos/example/toy/pulls/7"])
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[2], ["api", f"repos/example/toy/commits/{self.merge}"])
+        self.assertEqual(len(calls), 5)
 
     def test_an_altered_snapshot_is_rejected(self):
         self.assertRejected("issue-before-fix.txt differs",

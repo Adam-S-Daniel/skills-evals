@@ -59,6 +59,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
+import context  # noqa: E402
 import guidance_violations  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
@@ -85,14 +86,7 @@ def load_fixture(eval_dir: Path) -> dict:
     predicate added to keep shapes out of the harness.
     """
     path = eval_dir / FIXTURE_FILE
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f)
-    if not isinstance(doc, dict):
-        raise guidance.GuidanceError(
-            f"{path} must be a YAML mapping of fixture keys, got "
-            f"{type(doc).__name__}"
-            + (" (the file is empty)" if doc is None else f": {doc!r}"))
-    return doc
+    return context.load_fixture_yaml(path.read_bytes(), path)
 
 
 # Every timeout knob a fixture can set, as (key, path-to-its-mapping). Each is
@@ -3935,6 +3929,10 @@ def main() -> int:
                              "unchanged) for adam-agentskills specifically, then a "
                              "sibling checkout ../<name> next to this repo for any "
                              "name still unresolved")
+    parser.add_argument("--context-repo", action="append", default=None,
+                        metavar="OWNER/REPO=PATH",
+                        help="explicit context checkout mapping, repeatable; "
+                             "ADR 0012 part 1 parses metadata only, without delivery")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--roster", type=Path, default=None,
@@ -3990,6 +3988,11 @@ def main() -> int:
                              "when that run directory already holds one of "
                              "the arms this invocation would write")
     args = parser.parse_args()
+    try:
+        args.context_repos = context.parse_context_repos(args.context_repo)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return 2
 
     # S1-a. The FLAG is checked before anything else — before the fixture is
     # loaded, before either subject branch, before any CLI call — because it
