@@ -246,6 +246,104 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   Installed dependencies are part of the workspace the agent can edit;
   ADR 0006's threat model (the agent may modify code a check runs) applies.
 
+### Deployed context (ADR 0012)
+
+**part 1 of 4: resolution only, nothing delivered yet.** A fixture may name
+the deployed context it will eventually evaluate in, using `context:`:
+
+```yaml
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 5e66f6e3ced3e619e0fac869cff11c37c3877e2d
+  guidance_revision: 98a00535adb7fc8ebf03d4d5d4cadbfaf7321f10
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
+```
+
+The repository is explicit; there is no fleet default. Both revisions are
+full commit SHAs. The three budget limits are positive integers, computed
+as measured bytes times 1.25, rounded up, with a minimum of 1. Guidance and
+catalog limits cannot exceed 1 MiB each; payload cannot exceed 64 MiB.
+These generous ceilings exceed deployed fixture sizes and bound accidental
+or untrusted expansion while allowing binary skill resources. Measurement
+itself uses these ceilings, and headroom must fit within them. The example uses the measured limits from
+[`cms-platform-693`](evals/real-work/cms-platform-693/fixture.yaml); authors
+must resolve and measure each context before setting its limits.
+Unknown or duplicate keys, malformed repository names or SHAs, control
+characters and booleans used as integers are configuration errors at
+fixture load (exit 2). Objective-only scoring validates this metadata
+without resolving it. A fixture with no `context:` retains the existing
+isolation behavior. `guidance_revision: null` explicitly blocks resolution
+with `guidance_unproven`; scaffolded blocked contexts use limits of 1 and
+say that these are unmeasured placeholders.
+
+[`harness/context.py`](harness/context.py) provides
+`resolve_context(context, repositories) -> FrozenContext`, where
+`repositories` maps `OWNER/REPO` names to local checkout paths. The
+repeatable `--context-repo OWNER/REPO=PATH` option parses that mapping;
+part 1 does not call the resolver from an arm. The resolver reads Git
+objects at the specified commits, without fetching, checking out or
+resetting any source. An absent `skills.lock` means no lock-adopted skills.
+A present lock supplies the primary registry and federated `sources[]`,
+including their refs and layouts. Every ref resolves to a full commit;
+every adopted skill tree must match its recorded digest, and adopted
+bundle inventories must be complete.
+
+Guidance comprises the pinned `agents-md/base.md` and every recorded
+opt-in section. The resolver corroborates the managed section list,
+consumer opt-in configuration and pinned registry defaults, then proves
+those raw bytes against the context commit's managed `AGENTS.md` section
+or `.claude/hooks/fleet-guidance.md`. A timestamp is insufficient.
+`find_guidance_revision(repository, revision, repositories)` returns an
+immutable result with `revision` and `matching_revisions`. It searches every
+ancestor of the guidance repository's `origin/main`, including commits that
+did not touch guidance, whose committer timestamp is at or before the
+context commit's committer timestamp. Exact bytes establish each match;
+timestamps only constrain eligibility. It counts all matches and chooses
+the greatest committer timestamp, then the lexicographically smallest full
+SHA for a tie. A missing `origin/main` fails closed. Scaffolds record the
+count and selection rule in a comment. Existing valid committed pins are
+preserved even when this deterministic selection finds another match.
+Historical base-only guidance may predate the section
+manifest or delivery hook: their absence is recorded, while the deployed
+base still requires exact proof. Missing evidence for an adopted section
+blocks resolution.
+
+The scaffold gate corroborates the consumer base through GitHub, then
+re-proves the declared guidance pin's ancestry, timestamp eligibility and
+exact bytes and recomputes each budget from trusted Git objects. It acquires
+public objects in isolated temporary bare repositories from validated
+`github.com` identities, with no checkout, hooks, credentials or configured
+remotes. Fetch operations and duration are bounded. A null pin is accepted
+only when readable trusted guidance history offers no eligible proof and
+all three limits are the unmeasured placeholder 1; unavailable sources fail
+closed. Model-authored task text, checker choices, dependencies and trim
+choices receive schema and lint checks; the gate does not claim to derive
+those fields independently from git.
+
+The frozen result holds immutable skill files and guidance bytes plus a
+read-only manifest. It records source commits, SHA-256 digests of the
+lock, skill trees, guidance files and assembled context, proof evidence,
+and the three measured byte counts. Missing Git objects or checkout
+mappings, malformed locks or paths, incomplete bundles, digest mismatch,
+unproven guidance and exceeded budgets fail with named configuration
+errors before any model call. This part adds no context delivery, arm
+changes or default switch; local in-place runs remain outside its scope.
+
+`guidance_bytes` is the assembled raw guidance length;
+`skill_catalog_bytes` sums the UTF-8 canonical YAML for each qualified
+`bundle:skill` name and description; `skill_payload_bytes` sums every
+complete adopted skill file's bytes. The catalog measurement describes
+the resolver's frozen representation.
+
+The named refusals are `invalid_context`, `duplicate_key`,
+`invalid_context_repo`, `repository_unavailable`, `missing_object`,
+`invalid_lock`, `invalid_layout`, `inventory_mismatch`, `digest_mismatch`,
+`unsafe_path`, `unsafe_git_mode`, `invalid_guidance_manifest`,
+`guidance_unproven` and `budget_exceeded`.
+
 ### Real-work fixture decisions (Adam, 2026-10-06)
 
 From the owner's answers to the open questions in the real-work fixture
