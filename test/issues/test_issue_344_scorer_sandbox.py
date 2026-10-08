@@ -463,5 +463,24 @@ class LiveSandboxTests(unittest.TestCase):
         self.assertNotIn(str(self.root), detail)
 
 
+class CiProvisioningTests(unittest.TestCase):
+    """The runner image ships no bwrap; without it every command check fails closed."""
+
+    def test_test_job_provisions_and_probes_bubblewrap_before_the_suite(self):
+        import yaml
+        workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+        steps = workflow["jobs"]["test"]["steps"]
+        names = [step.get("name") for step in steps]
+        suite = names.index("Run tests")
+        provision = names.index("Provide bubblewrap for the scorer sandbox")
+        self.assertLess(provision, suite)
+        step = steps[provision]
+        self.assertEqual(step.get("if"), steps[suite].get("if"))
+        script = step["run"].split()
+        for token in ("bubblewrap", "apparmor_parser", "--unshare-net", "--unshare-pid"):
+            self.assertIn(token, script)
+        self.assertNotIn("${{", step["run"])
+
+
 if __name__ == "__main__":
     unittest.main()

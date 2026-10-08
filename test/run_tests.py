@@ -38967,8 +38967,17 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         return ws
 
     def _score(self, ws):
-        rows = objective.run_checks(run_eval.load_fixture(self.FIXTURE),
-                                    str(ws), str(self.SEED))
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        rows = objective.run_checks(fixture, str(ws), str(self.SEED))
+        commands = {check["id"] for check in fixture["objective_checks"]
+                    if check["type"] == "command_succeeds"}
+        for row in rows:
+            # A checker that never ran (e.g. scorer_sandbox_unavailable) must
+            # not count as a mutation's expected failure.
+            if row["id"] in commands:
+                status = row["detail"].split(" ", 1)[0]
+                self.assertIn(status, ("command_success", "command_nonzero"),
+                              f"{row['id']} did not run its command: {status}")
         return {row["id"]: row["passed"] for row in rows}
 
     def _failed(self, ws, expected):

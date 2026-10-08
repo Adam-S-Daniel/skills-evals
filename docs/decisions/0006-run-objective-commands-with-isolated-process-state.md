@@ -160,7 +160,12 @@ scoring copy; the original checker and solution patch remain hidden. Dependencie
 must exist in that copy: an external dependency symlink does not authorize
 an additional host bind.
 
-This introduces a mandatory Linux bubblewrap dependency. Disk and CPU
+This introduces a mandatory Linux bubblewrap dependency. GitHub's
+`ubuntu-latest` image ships no bwrap and Ubuntu's AppArmor denies it
+unprivileged user namespaces, so CI's `test` job installs bubblewrap, grants
+only `/usr/bin/bwrap` the `userns` permission, and probes it before the
+suite; a runner toolchain under `/opt/hostedtoolcache` needs no wider bind
+than the rule above. Disk and CPU
 consumption remain uncapped. Broader agent-arm read isolation belongs to
 [PR #345](https://github.com/Adam-S-Daniel/skills-evals/pull/345); the
 `scorer_read_denied` seam will directly consume its trusted
