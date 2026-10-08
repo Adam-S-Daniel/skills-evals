@@ -86,7 +86,9 @@ def append_comment(ws, rel):
 
 
 def scores(ws):
-    with mock.patch.object(commands, "_network_prefix", return_value=[]):
+    with mock.patch.object(commands, "_sandbox_prefix", return_value=([], "unavailable")), \
+            mock.patch.object(commands, "_run_sandboxed",
+                              side_effect=lambda prefix, *args: commands._run_command(*args)):
         return {row["id"]: row["passed"]
                 for row in objective.run_checks(fixture(), str(ws), str(SEED))}
 

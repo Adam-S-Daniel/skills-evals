@@ -4700,6 +4700,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-eval-results-pushed.yml",
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
+               ".github/workflows/skill-coverage.yml",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
@@ -39031,6 +39032,30 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
     }
     RESTRAINT = {"verifier-pinned", "harness-unchanged"}
 
+    def test_context_pins_the_historical_platform_and_measured_budgets(self):
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        self.assertEqual(fixture["context"], {
+            "repository": "Adam-S-Daniel/cms-platform",
+            "revision": "381824060a448677eb78dc7cda5bf2889271d60f",
+            "guidance_revision": "aafdc10dec68b21e6612fc5b455225e1e7acde32",
+            "budget": {
+                "guidance_bytes": 31588,
+                "skill_catalog_bytes": 7634,
+                "skill_payload_bytes": 840930,
+            },
+        })
+
+    def test_objective_scoring_validates_context_without_resolving_repositories(self):
+        # ADR 0012 part 1 is metadata validation and resolution only. Loading
+        # and scoring this fixture must remain independent of source checkouts.
+        with mock.patch.object(run_eval.context, "resolve_context",
+                               side_effect=AssertionError("Context resolution during scoring")), \
+                mock.patch.object(run_eval.context, "_Git",
+                                  side_effect=AssertionError("Source checkout access during scoring")):
+            fixture = run_eval.load_fixture(self.FIXTURE)
+            self.assertIn("context", fixture)
+            self._failed(self._workspace(), set())
+
     def _workspace(self, spec=GOOD):
         self.assertTrue((self.SEED / "node_modules" / "acorn").is_dir(),
                         "Install seed dependencies with npm ci before running the suite")
@@ -39038,14 +39063,25 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         self.addCleanup(owned.cleanup)
         ws = Path(owned.name) / "workspace"
         shutil.copytree(self.SEED, ws, ignore=shutil.ignore_patterns("node_modules"))
-        (ws / "node_modules").symlink_to(self.SEED / "node_modules", target_is_directory=True)
+        # Scoring hides the original fixture; installed dependencies belong in
+        # the workspace, as run_setup installs them, rather than a host alias.
+        shutil.copytree(self.SEED / "node_modules", ws / "node_modules", symlinks=True)
         if spec is not None:
             (ws / self.NEW).write_text(spec, encoding="utf-8")
         return ws
 
     def _score(self, ws):
-        rows = objective.run_checks(run_eval.load_fixture(self.FIXTURE),
-                                    str(ws), str(self.SEED))
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        rows = objective.run_checks(fixture, str(ws), str(self.SEED))
+        commands = {check["id"] for check in fixture["objective_checks"]
+                    if check["type"] == "command_succeeds"}
+        for row in rows:
+            # A checker that never ran (e.g. scorer_sandbox_unavailable) must
+            # not count as a mutation's expected failure.
+            if row["id"] in commands:
+                status = row["detail"].split(" ", 1)[0]
+                self.assertIn(status, ("command_success", "command_nonzero"),
+                              f"{row['id']} did not run its command: {status}")
         return {row["id"]: row["passed"] for row in rows}
 
     def _failed(self, ws, expected):
@@ -39205,8 +39241,6 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
 
     def test_parser_dependency_tamper_cannot_change_command_verdicts(self):
         ws = self._workspace()
-        (ws / "node_modules").unlink()
-        shutil.copytree(self.SEED / "node_modules", ws / "node_modules")
         parser = ws / "node_modules" / "acorn" / "dist" / "acorn.js"
         parser.write_text(parser.read_text(encoding="utf-8") + "\n// changed\n",
                           encoding="utf-8")

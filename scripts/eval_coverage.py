@@ -17,7 +17,7 @@ WHAT A ROW IS. Every `SKILL.md` matched by a registry's `layout` glob in
 and the layouts are the ones `run_eval.py` uses, not a second copy). Its
 status is mechanical:
 
-  covered  at least one `fixture.yaml` anywhere under `evals/` (the set
+  covered  at least one non-draft `fixture.yaml` anywhere under `evals/` (the set
            `eval.yml` discovers with `find evals -mindepth 1 -name
            fixture.yaml`, at any depth) names this skill in its `skill:` field
            and this registry in its `registry:` field. `fixtures` counts them,
@@ -218,7 +218,13 @@ def count_fixtures(evals_dir: Path, resolved: dict[str, dict]) -> dict:
             name = run_eval.registry_for_url(resolved, url)["name"]
         except ValueError as exc:
             raise CensusRefusal(f"fixture {label}: {exc}") from exc
-        counts[(name, skill)] = counts.get((name, skill), 0) + 1
+        # Generated TODO fixtures are review requests, not eval coverage.
+        # Refuse malformed values so a quoted "false" cannot silently count.
+        draft = doc.get("draft", False)
+        if type(draft) is not bool:
+            raise CensusRefusal(f"fixture {label}: 'draft:' must be a boolean")
+        if not draft:
+            counts[(name, skill)] = counts.get((name, skill), 0) + 1
     return counts
 
 

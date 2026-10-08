@@ -63,3 +63,47 @@ The exact dependency pins are `acorn@8.18.0` (2026-07-28),
 committed lockfile. `npm ci --ignore-scripts --no-audit --no-fund` provisions
 them before the agent and the local suite. No Playwright browser is installed
 or launched by this fixture.
+
+## Historical deployed context
+
+The fixture's `context.repository` names
+[`Adam-S-Daniel/cms-platform`](https://github.com/Adam-S-Daniel/cms-platform),
+the operational platform repository itself, rather than a representative
+consumer. Its revision is the seed's historical
+[`v0.1.130` commit](https://github.com/Adam-S-Daniel/cms-platform/commit/381824060a448677eb78dc7cda5bf2889271d60f),
+not today's deployed context. The read-only ADR 0012 resolver used explicit
+local mappings for that repository,
+[`_agent-guidance`](https://github.com/Adam-S-Daniel/_agent-guidance), and
+[`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills);
+it neither fetched nor checked out those sources.
+
+`find_guidance_revision` found two eligible exact-byte matches among the
+locally available guidance `origin/main` ancestors no newer than the platform
+revision. It selected
+[`aafdc10dec68b21e6612fc5b455225e1e7acde32`](https://github.com/Adam-S-Daniel/_agent-guidance/commit/aafdc10dec68b21e6612fc5b455225e1e7acde32)
+by greatest commit timestamp, then lexicographically smallest full SHA for
+ties. `resolve_context` verified that pin and the platform's locked skill
+trees with the resolver's maximum budgets before measuring these limits:
+
+| Context component | Measured bytes | Budget bytes |
+|---|---:|---:|
+| Guidance | 25,270 | 31,588 |
+| Skill catalog | 6,107 | 7,634 |
+| Skill payload | 672,744 | 840,930 |
+
+Each limit is `max(1, ceil(measured bytes * 1.25))`. Resolution also passed
+with the committed limits, producing frozen context digest
+`d9e47ef3c26fd6baf583408bb3fe41e089d15ba5703f4f262502aba395b696e5`.
+The historical
+[`skills.lock`](https://github.com/Adam-S-Daniel/cms-platform/blob/381824060a448677eb78dc7cda5bf2889271d60f/skills.lock)
+does not adopt the browser-testing target skill; a future delivery arm would
+need to add that target separately. ADR 0012 currently provides part 1,
+resolution only: declaring and verifying this context does not deliver it
+to either arm. Objective-only loading and scoring validate the metadata
+without consulting source checkouts.
+
+This offline reconciliation leaves
+[issue #92](https://github.com/Adam-S-Daniel/skills-evals/issues/92)'s real N=3
+runs and registry impact evidence deferred under
+[`HANDOFF.md` decision 8](https://github.com/Adam-S-Daniel/skills-evals/blob/main/HANDOFF.md#stopped-by-decision-8-2026-09-08-0120-utc-stop-adding-and-completing-evals-for-specific-skills).
+It does not reopen the stopped fixture lane or authorize a paid evaluation.
