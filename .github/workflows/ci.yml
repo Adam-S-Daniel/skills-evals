@@ -277,6 +277,27 @@ jobs:
           for dir in _agent-guidance-196/seed cms-platform-221/seed/e2e cms-platform-693/seed/e2e; do
             (cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund)
           done
+      # Workspace-executing scorers run only inside bubblewrap and fail
+      # closed without it (ADR 0006's 2026-10-07 addendum, #344). The runner
+      # image ships no bwrap, and Ubuntu's AppArmor denies unprivileged user
+      # namespaces by default, so grant that permission to /usr/bin/bwrap
+      # alone (the profile Ubuntu itself ships from 24.10) rather than lifting
+      # the restriction host-wide. The probe uses the scorer's own namespace
+      # flags, so a sandbox the suite cannot start fails here, by name.
+      - name: Provide bubblewrap for the scorer sandbox
+        if: steps.salient.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends bubblewrap
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '}' \
+              | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          /usr/bin/bwrap --ro-bind / / --unshare-pid --unshare-net --unshare-ipc \
+            --unshare-uts --proc /proc --dev /dev --die-with-parent -- /usr/bin/true
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals

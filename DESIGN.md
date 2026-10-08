@@ -242,7 +242,7 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   and places its bin directory after the Claude refusal stub on the clean
   per-test PATH. Missing venv files fail closed. Other fixtures retain the
   trusted system interpreter. Scoring performs no dependency installation;
-  optional network isolation remains best-effort as described in ADR 0006.
+  network isolation is mandatory as described in ADR 0006's addendum.
   Installed dependencies are part of the workspace the agent can edit;
   ADR 0006's threat model (the agent may modify code a check runs) applies.
 
@@ -560,8 +560,10 @@ must resolve inside the final workspace, including symlink resolution. Direct
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
 `claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
-is a directory containing just a symlink to the harness's own `node` (never
-one inside the workspace) appended, so PATH lookups of `node` work on hosts
+is a private directory containing just a symlink to the harness's own `node`
+appended. Python and Ruby get equivalent single-executable aliases when
+missing from fixed system locations. HOME, workspace and trusted denied
+roots cannot supply these runtimes. PATH lookups of `node` work on hosts
 such as GitHub runners that install it in `/usr/local/bin`. It inherits no
 credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
@@ -569,20 +571,43 @@ spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
 with a bounded wait.
 
-Linux network namespaces are attempted using fixed `unshare --net` after a
-bounded harmless probe. The detail says `network=isolated` or
-`network=unavailable`; the latter means network access is not blocked.
-Diagnostics suppress arbitrary program/exception text and expose only status,
-exit code, and capped stdout/stderr byte counts (4096 each, with a truncation
-marker), so published details cannot contain program-supplied home paths or
-environment values. Capture uses temporary files rather than unbounded RAM.
+Both executing checks use a trusted fixed `bubblewrap` executable (system
+paths, or the harness's precomputed `~/.local/bin/bwrap` fallback), never a
+workspace or PATH-provided runner. A bounded harmless `/usr/bin/true` probe
+must establish the same mandatory filesystem and PID sandbox before code
+runs. An empty root contains read-only system program/library binds (`/usr`,
+`/bin`, `/sbin`, `/lib`, `/lib64`, `/lib32` when present), the dynamic loader's
+`/etc/ld.so.cache`, and narrowly resolved external Python/node/Ruby
+executables and language libraries. Denied descendants of an allowed bind
+are masked, including paths reached through system bind aliases. The host's
+`/run`, `/var/run`, `/mnt`, `/media`, `/srv`, HOME and root's home are not
+mounted broadly, excluding host sockets and WSL filesystem/interop aliases.
+Only the execution workspace and its fresh environment scratch directory
+are writable host binds, installed after fresh temporary `/tmp`. A writable
+root equal to or containing a denied root is refused. The child receives
+separate PID, network, IPC and UTS namespaces, fresh `/proc` and minimal
+`/dev`, `--die-with-parent` and `--new-session`; actual startup is confirmed
+by an isolated
+system Python bootstrap (`-I -S`) that writes a fixed readiness marker, closes
+the descriptor, and then executes the scoring command. Missing or unstartable bubblewrap fails closed
+as `scorer_sandbox_unavailable` with a sanitized exit code.
 
-[ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md)
-records the threat model: the agent may have modified the code this check
-runs. This isolation does not prevent reading host files, absolute binary
-invocation, deliberate PATH evasion (including an absolute CLI invocation),
-new-session descendants, or disk/CPU exhaustion. It is not a full sandbox.
-No fixture is added; existing fixture scoring is unchanged.
+Network isolation uses mandatory `--unshare-net`. A failure names
+`scorer_sandbox_unavailable` without retrying with host networking. Diagnostics suppress arbitrary
+program/exception text and expose only status, exit code, and capped
+stdout/stderr byte counts (4096 each, with a truncation marker). Capture uses
+temporary files rather than unbounded RAM.
+
+The trusted harness injects read-denied roots separately from fixture YAML:
+the harness checkout, its original clone's parent (derived from Git's common
+directory for worktrees), registry/guidance checkout overrides, real HOME,
+Claude profiles, results, wrapper read-deny outputs, session archives and
+the fixture directory. Direct scorer calls protect the harness and HOME by
+default. An execution workspace beneath a denied ancestor gets only its own
+narrow carve-out. The
+[2026-10-07 addendum to ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md#2026-10-07-addendum-mandatory-scorer-filesystem-and-pid-isolation)
+supersedes the earlier process-state-only boundary. Disk and CPU consumption
+remain uncapped.
 
 ### Hidden repository tests objective check
 
@@ -604,11 +629,15 @@ strings, appended to `argv`, for example
 `fail_to_pass` and `pass_to_pass` test must exit 0. One process per test is
 what keeps each one under the 60 s cap (decision Q1 above) and decides each
 test by its own exit code, never by parsing a runner's output. The agent's
-own workspace is never written.
+own workspace is never written. The original fixture directory (including
+its checker and solution patch) and original final workspace are hidden from
+every selected test; only the scoring copy contains the installed overlay,
+`node_modules`, and `.fixture-python`.
 
 Each process gets `command_succeeds`' isolation: fixed interpreters or a
 workspace entrypoint (resolved inside the scratch copy), no shell, a fresh
-constant environment per test, best-effort `unshare --net`, and a detail
+constant environment per test, the mandatory bubblewrap filesystem/PID
+sandbox and mandatory network isolation described above, and a detail
 that names the counts, the network state and each failed test with its exit
 status (`exit=<n>`, `timeout`, `spawn_failed`), never program output.
 
