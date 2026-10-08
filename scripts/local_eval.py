@@ -333,6 +333,8 @@ def _git_env() -> dict:
 
 
 def _git(path: Path, *args: str) -> subprocess.CompletedProcess:
+    # Raw git is fine here (#343): operator checkouts and the results directory, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     return subprocess.run(["git", "-C", str(path), *args], capture_output=True,
                           text=True, env=_git_env(), timeout=60)
 

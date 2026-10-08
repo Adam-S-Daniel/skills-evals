@@ -2445,24 +2445,16 @@ class TestIssue97(unittest.TestCase):
         # is the whole of S1-a: round 2 validated the second and not the first.
         ("harness/run_eval.py", "run_agent", "subprocess.run", "timeout"):
             (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
-        ("harness/run_eval.py", "_nested_repo_diff", "subprocess.run",
-         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         # The sink moved out of `score()` when main's #81 work extracted the
         # CLI call into `_run_judge_cli` — one function now hands a timeout
         # to subprocess for BOTH judge modes, absolute and pairwise, and it
         # is where the predicate sits. Same knob, same ceiling, one site.
         ("harness/scorers/judge.py", "_run_judge_cli", "subprocess.run",
          "timeout"): (1, (("knob", "judge.timeout_s"),)),
-        ("harness/scorers/objective.py", "git_ref_unchanged", "subprocess.run",
-         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
-        ("harness/scorers/objective.py", "git_remote_url_is", "subprocess.run",
-         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
-        ("harness/scorers/objective.py", "reaper_ran_in_standalone_repo",
-         "subprocess.run", "GIT_TIMEOUT_S"):
-            (2, (("constant", "GIT_TIMEOUT_S"),)),
-        ("harness/scorers/objective.py", "git_worktree_list_matches",
-         "subprocess.run", "GIT_TIMEOUT_S"):
-            (1, (("constant", "GIT_TIMEOUT_S"),)),
+        # #343: all workspace Git commands and config parsing share this
+        # process sink. Its parameter is checked here before any Git spawn.
+        ("harness/workspace_git.py", "_invoke", "subprocess.run", "timeout"):
+            (1, (("sink", "timeout"),)),
     }
 
     @staticmethod
@@ -2987,8 +2979,15 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
-        ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
+        ("harness/workspace_git.py", "_invoke"): ("param", "timeout"),
+    }
+
+    # These former process sinks now call the trusted Git boundary. Keep
+    # driving their public timeout checks so moving the spawn does not erase
+    # coverage of an invalid module constant at the original caller.
+    GIT_TIMEOUT_CALLER_DRIVERS = {
+        ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
         ("harness/scorers/objective.py", "git_ref_unchanged"):
             ("const", "GIT_TIMEOUT_S"),
         ("harness/scorers/objective.py", "git_remote_url_is"):
@@ -3016,7 +3015,8 @@ class TestIssue97(unittest.TestCase):
         """
         rel, name = key
         module = self._harness_module(rel)
-        kind, knob = self.SINK_DRIVERS[key]
+        drivers = self.SINK_DRIVERS | self.GIT_TIMEOUT_CALLER_DRIVERS
+        kind, knob = drivers[key]
         fn = getattr(module, name)
         tmp = Path(tempfile.mkdtemp(prefix="sink-driver-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
@@ -3070,6 +3070,8 @@ class TestIssue97(unittest.TestCase):
             return fn(tmp, kwargs["fixture"])
         if name == "run_agent":
             return fn(tmp, "p", kwargs["arm"])
+        if rel == "harness/workspace_git.py" and name == "_invoke":
+            return fn(["version"], cwd=tmp, home=tmp, **kwargs)
         if name == "_nested_repo_diff":
             return fn(tmp, [])
         if name == "_run_judge_cli":
@@ -3155,6 +3157,59 @@ class TestIssue97(unittest.TestCase):
                         "positive number of seconds", str(exc),
                         f"{key} refused an ordinary "
                         f"{self.GOOD_SINK_TIMEOUT}s timeout: {exc}")
+
+    def test_workspace_git_callers_keep_their_timeout_checks(self):
+        """Moving Git spawns preserves the checks at the legacy callers.
+
+        Both the check's ordering and the expression passed to the helper
+        are parsed. The direct drivers below also prove an invalid constant
+        cannot reach Git through any of these existing APIs.
+        """
+        for (rel, name), (_, constant) in sorted(
+                self.GIT_TIMEOUT_CALLER_DRIVERS.items()):
+            tree = ast.parse((REPO_ROOT / rel).read_text(encoding="utf-8"))
+            functions = [node for node in ast.walk(tree)
+                         if isinstance(node, ast.FunctionDef) and node.name == name]
+            self.assertEqual(len(functions), 1, (rel, name))
+            checks, calls = [], []
+            for index, statement in enumerate(functions[0].body):
+                for node in ast.walk(statement):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    call_name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                                 else getattr(node.func, "id", None))
+                    if call_name == "check_timeout" and node.args:
+                        checks.append((index, ast.unparse(node.args[0])))
+                    if (isinstance(node.func, ast.Attribute)
+                            and isinstance(node.func.value, ast.Name)
+                            and node.func.value.id == "workspace_git"
+                            and node.func.attr == "run"):
+                        timeout_values = [ast.unparse(keyword.value)
+                                          for keyword in node.keywords
+                                          if keyword.arg == "timeout"]
+                        self.assertEqual(timeout_values, [constant], (rel, name))
+                        calls.append(index)
+            self.assertTrue(calls, (rel, name))
+            self.assertTrue(any(expression == constant and index < min(calls)
+                                for index, expression in checks), (rel, name))
+
+        def refused_spawn(*args, **kwargs):
+            raise AssertionError("a refused caller timeout reached a spawn")
+
+        for key in sorted(self.GIT_TIMEOUT_CALLER_DRIVERS):
+            for value in self.BAD_SINK_TIMEOUTS:
+                with self.subTest(caller=f"{key[0]}::{key[1]}", value=value):
+                    with self.assertRaises(guidance.GuidanceError) as caught:
+                        self._drive_sink(key, value, refused_spawn)
+                    message = str(caught.exception)
+                    self.assertIn("positive number of seconds", message)
+                    self.assertIn(key[1], message)
+                    self.assertIn(str(guidance.MAX_TIMEOUT_S), message)
+            with self.subTest(caller=f"{key[0]}::{key[1]}", value=self.GOOD_SINK_TIMEOUT):
+                try:
+                    self._drive_sink(key, self.GOOD_SINK_TIMEOUT, mock.MagicMock())
+                except Exception as exc:  # dummy workspace may be refused
+                    self.assertNotIn("positive number of seconds", str(exc))
 
     def test_a_sink_still_spawns_with_an_ordinary_timeout(self):
         """Two real spawns, unmocked, so "refuses" above is never "refuses

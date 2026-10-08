@@ -588,6 +588,8 @@ def check_report(text: str, where: str, parts: dict) -> None:
 # Git, read-only.
 
 def git(repo: str, *args: str) -> bytes:
+    # Raw git is fine here (#343): the harness's own results checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     result = subprocess.run(["git", "-C", repo, *args], capture_output=True,
                             check=False)
     if result.returncode != 0:

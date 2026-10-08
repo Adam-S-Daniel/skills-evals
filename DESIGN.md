@@ -10,6 +10,11 @@ Answer, per skill: **does installing this skill actually improve agent
 behavior?** The core method is an A/B: run the same task **with** the skill
 installed vs. **without**, score both arms, and report the delta.
 
+[ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md)
+(accepted 2026-10-07, not built yet) makes the default pair in place: both arms
+carry the context the subject deploys into, and only the subject differs. The
+isolation pair described here becomes an opt-in diagnostic.
+
 This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
 **not** used as the harness.
 
@@ -240,6 +245,104 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   network isolation is mandatory as described in ADR 0006's addendum.
   Installed dependencies are part of the workspace the agent can edit;
   ADR 0006's threat model (the agent may modify code a check runs) applies.
+
+### Deployed context (ADR 0012)
+
+**part 1 of 4: resolution only, nothing delivered yet.** A fixture may name
+the deployed context it will eventually evaluate in, using `context:`:
+
+```yaml
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 5e66f6e3ced3e619e0fac869cff11c37c3877e2d
+  guidance_revision: 98a00535adb7fc8ebf03d4d5d4cadbfaf7321f10
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
+```
+
+The repository is explicit; there is no fleet default. Both revisions are
+full commit SHAs. The three budget limits are positive integers, computed
+as measured bytes times 1.25, rounded up, with a minimum of 1. Guidance and
+catalog limits cannot exceed 1 MiB each; payload cannot exceed 64 MiB.
+These generous ceilings exceed deployed fixture sizes and bound accidental
+or untrusted expansion while allowing binary skill resources. Measurement
+itself uses these ceilings, and headroom must fit within them. The example uses the measured limits from
+[`cms-platform-693`](evals/real-work/cms-platform-693/fixture.yaml); authors
+must resolve and measure each context before setting its limits.
+Unknown or duplicate keys, malformed repository names or SHAs, control
+characters and booleans used as integers are configuration errors at
+fixture load (exit 2). Objective-only scoring validates this metadata
+without resolving it. A fixture with no `context:` retains the existing
+isolation behavior. `guidance_revision: null` explicitly blocks resolution
+with `guidance_unproven`; scaffolded blocked contexts use limits of 1 and
+say that these are unmeasured placeholders.
+
+[`harness/context.py`](harness/context.py) provides
+`resolve_context(context, repositories) -> FrozenContext`, where
+`repositories` maps `OWNER/REPO` names to local checkout paths. The
+repeatable `--context-repo OWNER/REPO=PATH` option parses that mapping;
+part 1 does not call the resolver from an arm. The resolver reads Git
+objects at the specified commits, without fetching, checking out or
+resetting any source. An absent `skills.lock` means no lock-adopted skills.
+A present lock supplies the primary registry and federated `sources[]`,
+including their refs and layouts. Every ref resolves to a full commit;
+every adopted skill tree must match its recorded digest, and adopted
+bundle inventories must be complete.
+
+Guidance comprises the pinned `agents-md/base.md` and every recorded
+opt-in section. The resolver corroborates the managed section list,
+consumer opt-in configuration and pinned registry defaults, then proves
+those raw bytes against the context commit's managed `AGENTS.md` section
+or `.claude/hooks/fleet-guidance.md`. A timestamp is insufficient.
+`find_guidance_revision(repository, revision, repositories)` returns an
+immutable result with `revision` and `matching_revisions`. It searches every
+ancestor of the guidance repository's `origin/main`, including commits that
+did not touch guidance, whose committer timestamp is at or before the
+context commit's committer timestamp. Exact bytes establish each match;
+timestamps only constrain eligibility. It counts all matches and chooses
+the greatest committer timestamp, then the lexicographically smallest full
+SHA for a tie. A missing `origin/main` fails closed. Scaffolds record the
+count and selection rule in a comment. Existing valid committed pins are
+preserved even when this deterministic selection finds another match.
+Historical base-only guidance may predate the section
+manifest or delivery hook: their absence is recorded, while the deployed
+base still requires exact proof. Missing evidence for an adopted section
+blocks resolution.
+
+The scaffold gate corroborates the consumer base through GitHub, then
+re-proves the declared guidance pin's ancestry, timestamp eligibility and
+exact bytes and recomputes each budget from trusted Git objects. It acquires
+public objects in isolated temporary bare repositories from validated
+`github.com` identities, with no checkout, hooks, credentials or configured
+remotes. Fetch operations and duration are bounded. A null pin is accepted
+only when readable trusted guidance history offers no eligible proof and
+all three limits are the unmeasured placeholder 1; unavailable sources fail
+closed. Model-authored task text, checker choices, dependencies and trim
+choices receive schema and lint checks; the gate does not claim to derive
+those fields independently from git.
+
+The frozen result holds immutable skill files and guidance bytes plus a
+read-only manifest. It records source commits, SHA-256 digests of the
+lock, skill trees, guidance files and assembled context, proof evidence,
+and the three measured byte counts. Missing Git objects or checkout
+mappings, malformed locks or paths, incomplete bundles, digest mismatch,
+unproven guidance and exceeded budgets fail with named configuration
+errors before any model call. This part adds no context delivery, arm
+changes or default switch; local in-place runs remain outside its scope.
+
+`guidance_bytes` is the assembled raw guidance length;
+`skill_catalog_bytes` sums the UTF-8 canonical YAML for each qualified
+`bundle:skill` name and description; `skill_payload_bytes` sums every
+complete adopted skill file's bytes. The catalog measurement describes
+the resolver's frozen representation.
+
+The named refusals are `invalid_context`, `duplicate_key`,
+`invalid_context_repo`, `repository_unavailable`, `missing_object`,
+`invalid_lock`, `invalid_layout`, `inventory_mismatch`, `digest_mismatch`,
+`unsafe_path`, `unsafe_git_mode`, `invalid_guidance_manifest`,
+`guidance_unproven` and `budget_exceeded`.
 
 ### Real-work fixture decisions (Adam, 2026-10-06)
 
@@ -770,6 +873,40 @@ is objectively decidable from the resulting files alone.
   Code CLI has no flag to set sampling temperature, so the judge runs at
   whatever the CLI's default is — not the temperature-0 originally proposed
   here. Flagging this rather than silently dropping the requirement.
+- **Workspace Git boundary:** [issue #343](https://github.com/Adam-S-Daniel/skills-evals/issues/343)
+  routes initialization, staging, judge diffs, nested commit logs, and objective
+  ref/remote/reaper/worktree queries through [one helper](harness/workspace_git.py).
+  It runs fixed `/usr/bin/git` with a constants-only environment, disabled
+  system/global configuration and attributes, disabled executable options,
+  forbidden transports, and `--no-ext-diff --no-textconv` for patch commands.
+  Tests plant each executable key in repository-local config and prove the
+  `-c` override wins even when Git reads that config directly.
+  Git parses repository configuration only from a private regular copy with
+  `--no-includes`; commands use generated allowlisted configuration and private
+  metadata, never the workspace's configuration, hooks, or attribute drivers.
+  At the baseline commit the harness records `.git` identity and framed digests
+  of configuration, `info/`, and `hooks/` in memory, alongside baseline metadata and the
+  staging index. No private metadata remains on disk while the arm runs.
+  Changes to those baseline facts, executable configuration, redirects,
+  copied metadata symlinks, and alternate object stores refuse with
+  `workspace_git_tampered`; both arm paths record a trial error and skip scoring.
+  Attributes are not refused: with no driver defined and the private
+  `info/attributes` unsetting `filter` and `diff`, `diff=python` or
+  `filter=lfs` is inert. Staging copies what `git add -A` could track (regular
+  files, symlinks, directories) into a private tree, skipping FIFOs, sockets,
+  devices, ignored paths and nested Git directories, then installs gitlinks
+  from independently validated standalone HEAD refs, so `git add` never
+  discovers nested agent configuration. An unreadable file or a timeout is the
+  recorded trial error `workspace_git_collection_failed`, not a crash.
+  Bookkeeping Git uses the sink ceiling (`guidance.MAX_TIMEOUT_S`) as its
+  timeout: its cost grows with the workspace, so it is a hang guard only.
+  Nested linked worktrees receive a structural report with their patch marked
+  unavailable; the harness never follows their `.git` redirect. A standalone
+  repository's worktree inventory remains inspectable as metadata, and bare
+  fixture repositories support read-only inspection. Ephemeral copies add disk
+  I/O, and retaining metadata in memory increases harness memory use.
+  [ADR 0006's addendum](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md#workspace-git-addendum-2026-10-07)
+  records this boundary separately from intentional fixture-program execution.
 - **Cost capture:** CHOSEN and implemented — from the CLI's `--output-format
   json` payload: `total_cost_usd`, `usage`, `num_turns`, `duration_ms`.
 - **Efficiency aggregates:** with `--trials N`, N > 1, each arm's
@@ -1803,7 +1940,8 @@ the section's own file when it is an opt-in `sections/*.md`), and
 `full-minus-section` (that corpus with the extent removed). The default pair
 `section`/`none` asks whether the section teaches; the declared
 `ablation: [full, full-minus-section]` pair asks what it is worth in situ,
-including any lost-in-the-middle effect of a 56 KB file. Extents are located
+including any lost-in-the-middle effect of a 56 KB file. [ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md)
+(not built yet) makes the in-place pair the default. Extents are located
 with a real markdown parse (`markdown-it-py`, pinned exact) using the same
 arithmetic as `_agent-guidance`'s own `scripts/check-guidance-coverage.js`, so
 the manifest's `bytes` column and the delivered payload can never disagree; a

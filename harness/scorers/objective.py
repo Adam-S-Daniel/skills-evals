@@ -33,6 +33,8 @@ if _HARNESS_DIR not in sys.path:
 # value: the pin compares the two expressions, not two beliefs about them.
 GIT_TIMEOUT_S = 10
 
+import workspace_git
+
 from . import invisibles, wrapping
 from .bash_ast import ScorerUnavailableError  # noqa: F401  (re-exported)
 from .shell_capture import shell_capture_safe
@@ -2388,23 +2390,6 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
 # never decided by regex over file content)
 # --------------------------------------------------------------------------
 
-def _git_ceiling_env(repo: str) -> dict:
-    """Environment for a `git -C <repo>` call that must fail closed rather
-    than discover a DIFFERENT repository by walking upward past `repo`.
-
-    `run_eval.py`'s own harness git-inits the workspace ROOT before scoring
-    (see `_run_arm`), so if `repo` exists as a plain directory with its own
-    `.git` missing or deleted, `git -C repo rev-parse ...` does not error —
-    it keeps walking up parent directories, finds the workspace's own `.git`,
-    and silently resolves `ref` THERE instead. That reads as a coincidental
-    pass or a confusing wrong-SHA failure rather than the "not a git
-    repository" this should report. GIT_CEILING_DIRECTORIES blocks git from
-    walking past `repo`'s own parent, so discovery has nowhere to go but
-    `repo` itself.
-    """
-    env = dict(os.environ)
-    env["GIT_CEILING_DIRECTORIES"] = os.path.dirname(os.path.abspath(repo))
-    return env
 
 
 def git_ref_unchanged(workspace: str, patterns: list[str], *,
@@ -2455,11 +2440,9 @@ def git_ref_unchanged(workspace: str, patterns: list[str], *,
 
     repo = os.path.join(workspace, path)
     try:
-        result = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", ref],
-                                capture_output=True, text=True,
-                                timeout=GIT_TIMEOUT_S,
-                                env=_git_ceiling_env(repo))
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        result = workspace_git.run("rev-parse", "--verify", ref, cwd=Path(repo),
+                                   timeout=GIT_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not resolve {ref!r} in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not resolve {ref!r} in {path}: "
@@ -2490,11 +2473,9 @@ def git_remote_url_is(workspace: str, patterns: list[str], *,
                            guidance.SINK_TIMEOUT_REMEDY)
     repo = os.path.join(workspace, path)
     try:
-        result = subprocess.run(["git", "-C", repo, "remote", "get-url", remote],
-                                capture_output=True, text=True,
-                                timeout=GIT_TIMEOUT_S,
-                                env=_git_ceiling_env(repo))
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        result = workspace_git.run("remote", "get-url", remote, cwd=Path(repo),
+                                   timeout=GIT_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not resolve remote {remote!r} in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"{path} has no remote named {remote!r}: "
@@ -2660,13 +2641,10 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
                 problems.append(f"{d}: .git is not a standalone directory "
                                 "(a linked worktree, or missing)")
                 continue
-            env = _git_ceiling_env(d)
             try:
-                gd = subprocess.run(["git", "-C", d, "rev-parse",
-                                     "--path-format=absolute", "--git-dir"],
-                                    capture_output=True, text=True,
-                                    timeout=GIT_TIMEOUT_S, env=env)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                gd = workspace_git.run("rev-parse", "--path-format=absolute", "--git-dir",
+                                       cwd=Path(d), timeout=GIT_TIMEOUT_S)
+            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
                 problems.append(f"{d}: could not resolve --git-dir: {exc}")
                 continue
             if gd.returncode != 0:
@@ -2677,10 +2655,8 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
                                 f"not its own {git_entry}")
                 continue
             try:
-                remotes = subprocess.run(["git", "-C", d, "remote"],
-                                         capture_output=True, text=True,
-                                         timeout=GIT_TIMEOUT_S, env=env)
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                remotes = workspace_git.run("remote", cwd=Path(d), timeout=GIT_TIMEOUT_S)
+            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
                 problems.append(f"{d}: could not list remotes: {exc}")
                 continue
             if remotes.returncode != 0:
@@ -2768,11 +2744,9 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
                            guidance.SINK_TIMEOUT_REMEDY)
     repo = os.path.join(workspace, path)
     try:
-        result = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
-                                capture_output=True, text=True,
-                                timeout=GIT_TIMEOUT_S,
-                                env=_git_ceiling_env(repo))
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        result = workspace_git.run("worktree", "list", "--porcelain", cwd=Path(repo),
+                                   timeout=GIT_TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not list worktrees in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not list worktrees in {path}: {result.stderr.strip()}")
