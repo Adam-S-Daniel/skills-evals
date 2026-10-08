@@ -1881,6 +1881,38 @@ symlink there leading out to a system or PATH directory (a GitHub runner's
 also leads to a denied path fails the arm with `read_rules_unsafe`. A workspace under a denied path (TMPDIR inside
 HOME, say) fails the arm with `workspace_read_denied` before the CLI starts.
 
+On Linux the read fences also cover alternate mounts of the root or HOME
+filesystem, discovered from `/proc/self/mountinfo` by device number,
+filesystem type, mount root and the longest HOME mount prefix. WSL drive
+mounts and root/HOME aliases under `/mnt` deny `/mnt` whole, closing WSLg's
+second view of Linux and Windows-side sibling clones. Other aliases, including
+custom drive mountpoints, are denied at their mount roots. Canonical self-binds
+such as `/tmp` on `/tmp` and HOME on itself stay available; malformed or
+unreadable Linux mount metadata refuses the arm with `read_rules_unsafe`.
+Other platforms add no mount fences.
+
+An alias's safe PATH toolchain directories and existing sibling `lib` stay
+readable through documented `allowRead` exceptions and complementary Read
+rules; a broad Read deny would otherwise merge into the sandbox and override
+the exception. Both mount-canonical paths and resolved symlink targets must
+stay clear of HOME, checkouts, profiles, outputs and present or future harness
+scratch trees. Ordinary TMPDIR toolchains are allowed; TMPDIR itself is
+not. Alias patterns support spaces and compress character classes into
+equivalent ASCII ranges, retaining both cases, within the existing 64 KiB
+settings cap. Mount discovery is a settings-build snapshot; complement rules
+share HOME's finite-alphabet limitation for names created later. See the
+[reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
+and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
+
+A before/after live WSL probe with CLI 2.1.293 read an answer-key patch through
+WSLg using both Bash and Read before these fences; afterward Bash aliases
+were masked and Read refused them. A Windows PATH executable remained
+readable, and workspace, Python, Node and git operations still worked. Unix
+sockets were blocked in both runs by the existing
+`allowAllUnixSockets: false`, `allowUnixSockets: []` settings: Linux seccomp
+refused `AF_UNIX` socket creation with `EPERM` before connection, closing
+Docker and WSL interop. No additional `/run` fence was needed.
+
 **Nothing else outside the sandbox runs for an arm** (ADR 0011's hardening
 addendum). Hooks run unconfined, so the agent may not write its workspace's
 `.claude/` (settings, hooks, skills, agents, commands) or the profile it

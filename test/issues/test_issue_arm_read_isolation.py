@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import fnmatch
 import json
 import os
@@ -114,6 +115,18 @@ class _TempLayout(unittest.TestCase):
         self.workspace = self.tmp / "workspace-x"
         self.workspace.mkdir(parents=True)
         self.state = self.root / "state"
+        # All isolation tests use mount metadata fixtures, never host mounts.
+        self.mountinfo = "1 0 8:1 / / rw - ext4 /dev/example rw\n"
+        original_read = Path.read_text
+
+        def read_text(path, *args, **kwargs):
+            if path == Path("/proc/self/mountinfo"):
+                return self.mountinfo
+            return original_read(path, *args, **kwargs)
+
+        mount_reader = mock.patch.object(Path, "read_text", read_text)
+        mount_reader.start()
+        self.addCleanup(mount_reader.stop)
         patcher = mock.patch.dict(os.environ, {"XDG_STATE_HOME": str(self.state)})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -234,6 +247,214 @@ class WorktreeResolutionTests(_TempLayout):
         clone = run_eval.HARNESS_CLONE_ROOT
         self.assertTrue(run_eval._within(run_eval.HARNESS_ROOT, clone))
         self.assertNotIn("worktrees", clone.parts)
+
+
+
+class HostMountReadDenyTests(_TempLayout):
+    def test_wsl_root_alias_and_windows_drives_deny_all_of_mnt(self):
+        self.mountinfo += (
+            "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
+            "3 1 0:30 / /mnt/d rw - 9p D:\\134 rw,aname=drvfs\n")
+        settings = self.settings(workspace=self.workspace)
+        self.assertIn("/mnt", settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(read_rule_paths(settings),
+                               Path("/mnt/wslg/distro/home/answer.patch")))
+        self.assertTrue(covers(read_rule_paths(settings), Path("/mnt/d/repos/x")))
+        self.assertFalse(covers(read_rule_paths(settings), self.workspace / "f"))
+
+    def test_mountinfo_with_only_canonical_self_binds_adds_no_alias(self):
+        baseline = self.settings()
+        self.mountinfo += (
+            "2 1 8:1 /tmp /tmp rw - ext4 /dev/example rw\n"
+            "3 1 8:1 /snap /snap rw - ext4 /dev/example rw\n")
+        self.assertEqual(self.settings(), baseline)
+        self.assertNotIn("/mnt", baseline["sandbox"]["filesystem"]["denyRead"])
+
+    def test_home_self_bind_on_root_filesystem_adds_no_alias(self):
+        baseline = self.settings()
+        self.mountinfo += (
+            f"2 1 8:1 {self.home} {self.home} rw - ext4 /dev/example rw\n")
+        self.assertEqual(self.settings(), baseline)
+        self.assertNotIn("/", baseline["sandbox"]["filesystem"]["denyRead"])
+
+    def test_same_device_with_a_different_source_name_is_an_alias(self):
+        alias = self.root / "device-alias"
+        alias.mkdir()
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/root rw\n"
+        self.assertIn(str(alias), self.settings()["sandbox"]["filesystem"]["denyRead"])
+
+    def test_windows_drive_with_custom_automount_root_is_denied(self):
+        alias = self.root / "windows-drive"
+        alias.mkdir()
+        self.mountinfo += f"2 1 0:30 / {alias} rw - drvfs D: rw\n"
+        settings = self.settings()
+        self.assertIn(str(alias), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(read_rule_paths(settings), alias / "repos" / "answer"))
+
+    def test_root_filesystem_alias_outside_mnt_is_denied(self):
+        alias = self.root / "mirror"
+        alias.mkdir()
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        settings = self.settings()
+        self.assertIn(str(alias), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(read_rule_paths(settings), alias / "home" / "answer"))
+
+    def test_separate_home_filesystem_alias_uses_longest_mount_prefix(self):
+        alias = self.root / "home-mirror"
+        alias.mkdir()
+        self.mountinfo += (
+            f"2 1 8:2 / {self.home} rw - ext4 /dev/home-example rw\n"
+            f"3 1 8:2 / {alias} rw - ext4 /dev/home-example rw\n")
+        settings = self.settings()
+        self.assertIn(str(alias), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(read_rule_paths(settings), alias / "repos" / "answer"))
+        self.assertNotIn("/tmp", settings["sandbox"]["filesystem"]["denyRead"])
+
+    def test_mountinfo_escaped_mountpoint_is_decoded(self):
+        alias = self.root / "mirror space"
+        alias.mkdir()
+        escaped = str(alias).replace(" ", r"\040")
+        self.mountinfo += f"2 1 8:1 / {escaped} rw - ext4 /dev/example rw\n"
+        settings = self.settings()
+        self.assertIn(str(alias), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertIn(f"Read(/{alias}/**)", settings["permissions"]["deny"])
+
+    def test_non_linux_does_not_read_mountinfo_or_add_host_fences(self):
+        self.mountinfo = "invalid mountinfo that must not be read"
+        with mock.patch.object(run_eval.sys, "platform", "darwin"):
+            settings = self.settings()
+        self.assertNotIn("/mnt", settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertNotIn("/run", settings["sandbox"]["filesystem"]["denyRead"])
+
+    def test_malformed_mountinfo_refuses_an_unfenced_linux_arm(self):
+        self.mountinfo = "malformed\n"
+        with self.assertRaises(run_eval.ArmReadIsolationError):
+            self.settings()
+
+    def fake_mnt_dirs(self, dirs):
+        """Fake only /mnt directory traversal, leaving the temp layout real."""
+        stack = contextlib.ExitStack()
+        exists, is_dir = Path.exists, Path.is_dir
+        iterdir, listdir = Path.iterdir, os.listdir
+        stack.enter_context(mock.patch.object(
+            Path, "exists", lambda p: p in dirs if str(p).startswith("/mnt") else exists(p)))
+        stack.enter_context(mock.patch.object(
+            Path, "is_dir", lambda p: p in dirs if str(p).startswith("/mnt") else is_dir(p)))
+        stack.enter_context(mock.patch.object(
+            Path, "iterdir", lambda p: iter(()) if str(p).startswith("/mnt")
+            else iterdir(p)))
+        stack.enter_context(mock.patch.object(
+            os, "listdir", lambda p: [] if str(p).startswith("/mnt") else listdir(p)))
+        return stack
+
+    def test_mnt_path_toolchains_keep_only_bin_and_sibling_lib(self):
+        self.mountinfo += (
+            "2 1 0:30 / /mnt/d rw - 9p D:\\134 rw,aname=drvfs\n"
+            "3 1 0:31 / /mnt/c rw - 9p C:\\134 rw,aname=drvfs\n")
+        bins = [Path("/mnt/d/tools/bin"),
+                Path("/mnt/c/Program Files/Interpreter/bin")]
+        libs = [p.parent / "lib" for p in bins]
+        with self.fake_mnt_dirs(set(bins + libs)):
+            settings = self.settings(os.pathsep.join(map(str, bins)))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"],
+                         [str(p) for pair in zip(bins, libs) for p in pair])
+        rules = read_rule_paths(settings)
+        for path in bins + libs:
+            self.assertFalse(covers(rules, path / "tool"), path)
+            self.assertTrue(covers(rules, path.parent / "secret" / "f"), path)
+        self.assertTrue(covers(rules, Path("/mnt/d/repos/answer")))
+        self.assertTrue(covers(rules, Path("/mnt/wslg/distro/home/answer")))
+
+    def test_alias_path_symlink_keeps_its_safe_toolchain_branch(self):
+        alias = self.root / "tool-mirror"
+        alias.mkdir()
+        tools = alias / "tools"
+        tools.symlink_to("/usr/bin")
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        settings = self.settings(str(tools))
+        self.assertIn(str(tools), settings["sandbox"]["filesystem"]["allowRead"])
+        self.assertFalse(covers_name(read_rule_paths(settings), tools))
+        self.assertTrue(covers_name(read_rule_paths(settings), alias / "secret"))
+
+    def test_alias_path_symlink_into_home_is_never_carved(self):
+        alias = self.root / "unsafe-tool-mirror"
+        alias.mkdir()
+        tools = alias / "tools"
+        tools.symlink_to(self.home)
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        settings = self.settings(str(tools))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [])
+
+    def test_unreadable_alias_child_metadata_does_not_break_safe_path(self):
+        alias = self.root / "unreadable-tool-mirror"
+        (alias / "bin").mkdir(parents=True)
+        inaccessible = alias / "inaccessible"
+        inaccessible.write_text("not readable")
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        original = Path.is_symlink
+
+        def is_symlink(path):
+            if path == inaccessible:
+                raise PermissionError("fixture metadata inaccessible")
+            return original(path)
+
+        with mock.patch.object(Path, "is_symlink", is_symlink):
+            settings = self.settings(str(alias / "bin"))
+        self.assertIn(str(alias / "bin"),
+                      settings["sandbox"]["filesystem"]["allowRead"])
+        self.assertTrue(covers_name(read_rule_paths(settings), inaccessible))
+
+    def test_compact_alias_character_classes_match_the_original_alphabet(self):
+        alphabet = run_eval._CLASS_CHARS + " "
+        for excluded in ("", "a", "Az0", " ", "-", alphabet):
+            with self.subTest(excluded=excluded):
+                expected = run_eval._class_without_all(excluded, alphabet)
+                compact = run_eval._class_without_all(excluded, alphabet,
+                                                      compact_classes=True)
+                for char in alphabet:
+                    self.assertEqual(fnmatch.fnmatchcase(char, compact),
+                                     fnmatch.fnmatchcase(char, expected), char)
+                self.assertLessEqual(len(compact), len(expected))
+
+    def test_alias_path_to_ordinary_tmp_toolchain_is_preserved(self):
+        self.mountinfo += "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
+        source = self.tmp / "toolchain" / "bin"
+        source.mkdir(parents=True)
+        alias = Path("/mnt/wslg/distro" + str(source))
+        with self.fake_mnt_dirs({alias}):
+            settings = self.settings(str(alias))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [str(alias)])
+        self.assertFalse(covers(read_rule_paths(settings), alias / "tool"))
+        self.assertTrue(covers(read_rule_paths(settings),
+                               alias.parent.parent / "workspace-future" / "answer"))
+
+    def test_alias_path_to_future_harness_tmp_directory_is_never_carved(self):
+        self.mountinfo += "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
+        alias = Path("/mnt/wslg/distro" + str(self.tmp / "workspace-future" / "bin"))
+        with self.fake_mnt_dirs({alias}):
+            settings = self.settings(str(alias))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [])
+        self.assertTrue(covers(read_rule_paths(settings), alias / "answer"))
+
+    def test_path_into_harness_scratch_through_alias_is_never_carved(self):
+        self.mountinfo += "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
+        source = self.tmp / "workspace-other" / "bin"
+        source.mkdir(parents=True)
+        alias = Path("/mnt/wslg/distro" + str(source))
+        with self.fake_mnt_dirs({alias}):
+            settings = self.settings(str(alias))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [])
+        self.assertTrue(covers(read_rule_paths(settings), alias / "answer"))
+
+    def test_path_through_alias_into_home_or_checkout_is_never_carved(self):
+        self.mountinfo += "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
+        paths = [Path("/mnt/wslg/distro" + str(p))
+                 for p in (self.home, self.home / ".local" / "bin", self.repos,
+                           self.clone / "bin")]
+        with self.fake_mnt_dirs(set(paths)):
+            settings = self.settings(os.pathsep.join(map(str, paths)))
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [])
+        self.assertTrue(covers(read_rule_paths(settings), paths[-1] / "answer"))
 
 
 class ReadDenySettingsTests(_TempLayout):

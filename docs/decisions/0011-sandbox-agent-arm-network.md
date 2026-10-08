@@ -133,6 +133,13 @@ paths (a guidance arm's `~` is its scratch HOME), for:
   scratch), but the arm's own, by structural rules that also cover one made
   later (`<prefix>*`, or the complement of the arm's own directory's name
   within its prefix), plus the existing ones by path for commands;
+- on Linux, alternate mounts of the root or HOME filesystem discovered
+  through `/proc/self/mountinfo`, matched by device number and filesystem
+  type. WSL drive mounts (`drvfs` or `9p` with `aname=drvfs`) and root/HOME
+  aliases below `/mnt` deny `/mnt` whole, including WSLg and Windows clones;
+  a drive mounted elsewhere denies its actual mountpoint. Canonical
+  self-binds such as `/tmp` on `/tmp`, `/snap` on `/snap`, and HOME on
+  itself stay available;
 - the real HOME and the Claude Code profiles (`~/.claude` and any
   `CLAUDE_CONFIG_DIR` the harness inherited, whose `projects/` holds other
   sessions' transcripts). A deny root equal to HOME (a clone made straight
@@ -152,6 +159,29 @@ to commands git's global configuration files and PATH directories under HOME
 (with a `bin`'s sibling `lib`), never one at or around a checkout. A
 workspace under any denied path fails the arm with `workspace_read_denied`;
 the message names the kind of path, not the path.
+
+An alias fence also preserves needed PATH directories, including Windows
+interpreters under `/mnt`, and a `bin` directory's existing sibling `lib`.
+Each exception is checked both through its mount projection into canonical
+root/HOME and through its resolved symlink target: neither may enter or
+surround HOME, a checkout, a profile, an output directory or an existing or
+future harness scratch tree. An exception may reach an ordinary toolchain
+under TMPDIR, but cannot expose TMPDIR itself. Mount discovery uses the
+longest mount prefix for HOME, including a separate HOME filesystem, decodes
+mountinfo's escaped paths, and fails with `read_rules_unsafe` if Linux mount
+metadata cannot establish the fences. Other platforms add no mount fences.
+
+A broad `Read` deny is merged into the command sandbox and defeats an
+`allowRead` exception, so alias Read rules use the same complement strategy
+as HOME, recursively keeping only the accepted PATH branches. Spaces support
+Windows `Program Files` paths; only alias character classes use equivalent
+ASCII ranges, retaining both cases and literal punctuation. This keeps the
+measured settings at 55,772 bytes within the unchanged 64 KiB cap. Needed
+symlinks are spared with the same checks as HOME; inaccessible child metadata
+is left covered by the deny patterns. The deterministic
+[regression tests](../../test/issues/test_issue_arm_read_isolation.py) use
+mountinfo fixtures for aliases, no aliases, self-binds, separate HOME,
+escaped paths and accepted or refused toolchain exceptions.
 
 `blockReadsOutsideWorkingDirectories` was not used: it also refuses the Read
 tool `/usr`, the toolchains and the rest of the system, which an arm may
@@ -223,6 +253,36 @@ directories under `~/.claude/projects` after the settings were built (one
 unrelated, one differing from the arm's own in its last character, one
 extending it): the Read tool was refused on all three and on
 `~/.claude/settings.json`, and allowed on the arm's own saved output.
+
+Follow-up live probe, CLI 2.1.293 on WSL2, before and after the mount fix in
+[PR #345](https://github.com/Adam-S-Daniel/skills-evals/pull/345), following the
+alias finding in the [scorer review](https://github.com/Adam-S-Daniel/skills-evals/pull/347):
+a real headless arm using the branch's flags could initially list
+`/mnt/wslg/distro/home` and `/mnt/d/repos`, read 14,383 bytes of a committed
+answer-key patch through WSLg with Bash, and read its diff header with the
+Read tool. After the fix those Bash paths returned no bytes and `No such
+file or directory`; the Read tool refused the same alias with `File is in a
+directory that is denied by your permission settings.` A Windows executable's
+two-byte header remained readable through its PATH exception, and workspace
+reads/writes, Python, Node and git remained usable from `/tmp`.
+
+The same probes confirmed the existing Unix socket policy:
+`allowAllUnixSockets: false` and `allowUnixSockets: []`. Both
+`curl --unix-socket /run/docker.sock http://x/version` and the `/var/run`
+spelling failed with curl exit 7 before and after; `cmd.exe /c ver` failed
+with exit 1 and `UtilConnectUnix: socket failed 1`. Python failed to create
+an `AF_UNIX` socket with `EPERM`, before any connection; the arm reported
+`Seccomp: 2`, while an unsandboxed host control reported `Seccomp: 0` and
+successfully created and connected that socket. The existing Linux seccomp
+filter closes these routes, so no additional `/run` read fence is needed.
+All probes and test runs used `unshare --user --map-current-user --pid --fork
+--mount-proc --`; socat and libwrap were downloaded and unpacked without sudo
+for the live probes, then their scratch directories were deleted. No link —
+local probe evidence is at `/tmp/readdeny-alias-probe-after-compact`.
+
+Mount discovery is a snapshot taken while building the arm's settings; it
+does not discover host mounts added afterward. Alias complement rules share
+the existing finite-alphabet limitation below for names created later.
 
 Not covered: a HOME or profile entry created later whose name leaves the
 kept one at a character outside the class above is readable by the Read
