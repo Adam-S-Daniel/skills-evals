@@ -136,10 +136,34 @@ def enumerate_skills(entry: dict) -> list[dict]:
         raise CensusRefusal(f"registry {entry['name']!r}: {exc}") from exc
     # Wildcards before the skill-name segment are the bundle/plugin name.
     bundle_idx = [i for i, part in enumerate(parts[:-2]) if "*" in part]
+    # Check each segment before traversing it: globbing the whole layout can
+    # read another registry through a directory symlink, or silently omit a
+    # broken/cyclic link while still reporting a complete denominator.
+    try:
+        registry_root = entry["path"].resolve(strict=True)
+        candidates = [entry["path"]]
+        for index, part in enumerate(parts):
+            matches = []
+            for parent in candidates:
+                if any(char in part for char in "*?["):
+                    children = parent.glob(part)
+                else:
+                    child = parent / part
+                    children = [child] if child.exists() or child.is_symlink() else []
+                for match in children:
+                    canonical = match.resolve(strict=True)
+                    if not canonical.is_relative_to(registry_root):
+                        raise CensusRefusal(
+                            f"registry {entry['name']!r} has a path outside its root")
+                    if (canonical.is_file() if index == len(parts) - 1
+                            else canonical.is_dir()):
+                        matches.append(match)
+            candidates = matches
+    except (OSError, RuntimeError):
+        raise CensusRefusal(
+            f"registry {entry['name']!r} has an unresolvable layout path") from None
     rows = []
-    for skill_md in sorted(entry["path"].glob(layout)):
-        if not skill_md.is_file():
-            continue
+    for skill_md in sorted(candidates):
         rel = skill_md.relative_to(entry["path"]).parts
         rows.append({
             "registry": entry["name"],

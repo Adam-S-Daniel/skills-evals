@@ -80,6 +80,19 @@ class World:
         path.write_text(f"---\nname: {skill}\ndescription: stand-in.\n---\n",
                         encoding="utf-8")
 
+    def link_private_skill(self, level: str, relative: bool) -> Path:
+        public = self.registry_dirs["adam-agentskills"] / "plugins" / "plug-leak"
+        private = self.registry_dirs[PRIVATE] / "plugins" / "plug-p"
+        suffix = {"plugin": (), "skills": ("skills",),
+                  "skill": ("skills", PRIVATE_GAP),
+                  "file": ("skills", PRIVATE_GAP, "SKILL.md")}[level]
+        link = public.joinpath(*suffix)
+        target = private.joinpath(*suffix)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(os.path.relpath(target, link.parent) if relative else target,
+                        target_is_directory=level != "file")
+        return link
+
     def add_fixture(self, relpath: str, skill: str | None, registry: str | None,
                     extra: dict | None = None):
         doc = dict(extra or {})
@@ -682,6 +695,74 @@ class Publication(unittest.TestCase):
                         PUBLISH_TIME, "--include-private-names")
         self.assertEqual(refused.returncode, 2)
         self.assertNotIn(PRIVATE_GAP, refused.stdout + refused.stderr)
+
+    def test_registry_symlink_escapes_refuse_without_private_names_or_paths(self):
+        for level in ("plugin", "skills", "skill", "file"):
+            for relative in (False, True):
+                with self.subTest(level=level, relative=relative):
+                    w = World(self)
+                    w.link_private_skill(level, relative)
+                    local = w.run("--json")
+                    self.assertEqual(local.returncode, 2, local.stderr)
+                    self.assertEqual(local.stdout, "")
+                    self.assertIn("adam-agentskills", local.stderr)
+                    proc, report, directory = self.publish(w)
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertEqual(report["status"], "unresolved")
+                    self.assertEqual(report["unresolved"], ["adam-agentskills"])
+                    self.assertIsNone(report["totals"])
+                    self.assertFalse((directory / "badge.json").exists())
+                    content = local.stderr + proc.stdout + proc.stderr + "".join(
+                        p.read_text(encoding="utf-8") for p in directory.iterdir())
+                    for marker in (PRIVATE_COVERED, PRIVATE_GAP, "plug-p",
+                                   "plug-leak", str(w.root)):
+                        self.assertNotIn(marker, content)
+
+    def test_broken_or_cyclic_registry_symlinks_are_unresolved(self):
+        for level in ("plugin", "skills", "skill", "file"):
+            for cyclic in (False, True):
+                with self.subTest(level=level, cyclic=cyclic):
+                    w = World(self)
+                    link = w.link_private_skill(level, relative=True)
+                    link.unlink()
+                    link.symlink_to(link.name if cyclic else "zz-private-missing-marker",
+                                    target_is_directory=level != "file")
+                    local = w.run("--json")
+                    self.assertEqual(local.returncode, 2, local.stderr)
+                    self.assertEqual(local.stdout, "")
+                    proc, report, directory = self.publish(w)
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertEqual(report["status"], "unresolved")
+                    self.assertEqual(report["unresolved"], ["adam-agentskills"])
+                    self.assertIsNone(report["totals"])
+                    self.assertFalse((directory / "badge.json").exists())
+                    content = local.stderr + proc.stderr + "".join(
+                        p.read_text(encoding="utf-8") for p in directory.iterdir())
+                    for marker in (PRIVATE_GAP, "zz-private-missing-marker", str(w.root)):
+                        self.assertNotIn(marker, content)
+
+    def test_registry_symlinks_within_the_root_preserve_the_census(self):
+        suffixes = {"plugin": (), "skills": ("skills",),
+                    "skill": ("skills", "alpha"),
+                    "file": ("skills", "alpha", "SKILL.md")}
+        for level, suffix in suffixes.items():
+            with self.subTest(level=level):
+                w = World(self)
+                registry = w.registry_dirs["adam-agentskills"]
+                link = (registry / "plugins" / "plug-a").joinpath(*suffix)
+                target = registry / "linked-content"
+                link.rename(target)
+                link.symlink_to(os.path.relpath(target, link.parent),
+                                target_is_directory=level != "file")
+                local = w.run("--json")
+                self.assertEqual(local.returncode, 0, local.stderr)
+                proc, report, directory = self.publish(w)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(report["status"], "complete")
+                self.assertEqual(report["totals"], json.loads(local.stdout)["totals"])
+                self.assertEqual(rows(report, "adam-agentskills")["alpha"]["status"],
+                                 "covered")
+                self.assertTrue((directory / "badge.json").exists())
 
     def test_context_duplicate_or_invalid_draft_refuses_without_input_values(self):
         for raw in ("context:\n  repository: Adam-S-Daniel/skills-evals\n"
