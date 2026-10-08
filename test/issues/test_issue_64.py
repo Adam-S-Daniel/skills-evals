@@ -33,6 +33,9 @@ REPO_ROOT = TEST_DIR.parent
 SCRIPT = REPO_ROOT / "scripts" / "eval_coverage.py"
 REGISTRIES_YML = REPO_ROOT / "harness" / "registries.yml"
 COMMITTED_NON_COVERAGE = REPO_ROOT / "evals" / "non-coverage.yml"
+PROPAGATION_YML = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+PUBLISH_TIME = "2026-10-08T05:41:00Z"
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import eval_coverage  # noqa: E402
@@ -76,6 +79,19 @@ class World:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"---\nname: {skill}\ndescription: stand-in.\n---\n",
                         encoding="utf-8")
+
+    def link_private_skill(self, level: str, relative: bool) -> Path:
+        public = self.registry_dirs["adam-agentskills"] / "plugins" / "plug-leak"
+        private = self.registry_dirs[PRIVATE] / "plugins" / "plug-p"
+        suffix = {"plugin": (), "skills": ("skills",),
+                  "skill": ("skills", PRIVATE_GAP),
+                  "file": ("skills", PRIVATE_GAP, "SKILL.md")}[level]
+        link = public.joinpath(*suffix)
+        target = private.joinpath(*suffix)
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(os.path.relpath(target, link.parent) if relative else target,
+                        target_is_directory=level != "file")
+        return link
 
     def add_fixture(self, relpath: str, skill: str | None, registry: str | None,
                     extra: dict | None = None):
@@ -582,6 +598,488 @@ class RepoFiles(unittest.TestCase):
         tree = ast_imports(SCRIPT)
         self.assertFalse(tree & {"socket", "urllib", "http", "requests",
                                  "subprocess", "shutil"}, tree)
+
+
+class Publication(unittest.TestCase):
+    def publish(self, world: World, *extra: str, **kwargs):
+        directory = world.root / "publication"
+        proc = world.run("--publish-dir", str(directory), "--timestamp",
+                         PUBLISH_TIME, *extra, **kwargs)
+        report = json.loads((directory / "latest.json").read_text(encoding="utf-8"))
+        return proc, report, directory
+
+    def test_complete_report_badge_and_metadata_are_distinct_from_delivery(self):
+        w = World(self)
+        # A draft fixture is a generated review request (issue #60), so it is
+        # readiness metadata only: `delta` stays a gap, not covered.
+        w.raw_fixture("declared", "skill: delta\nregistry: https://github.com/"
+                      "Adam-S-Daniel/adam-agentskills\ndraft: true\ncontext:\n"
+                      "  repository: Adam-S-Daniel/skills-evals\n"
+                      "  revision: " + "a" * 40 + "\n"
+                      "  guidance_revision: null\n  budget:\n"
+                      "    guidance_bytes: 1\n    skill_catalog_bytes: 1\n"
+                      "    skill_payload_bytes: 1\n")
+        proc, report, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "")
+        self.assertEqual(report["status"], "complete")
+        self.assertEqual(report["totals"],
+                         {"total": 10, "covered": 4, "skipped": 1, "gap": 5})
+        self.assertEqual(report["fixture_readiness"],
+                         {"total": 7, "draft": 1, "context_declared": 1,
+                          "context_missing": 6, "guidance_unproven": 1,
+                          "paired_context_delivery_verified": False})
+        badge = json.loads((directory / "badge.json").read_text(encoding="utf-8"))
+        self.assertEqual(badge["schemaVersion"], 1)
+        self.assertEqual(badge["message"], "4 covered · 1 skipped · 5 gap · 2026-10-08")
+        self.assertEqual(badge["color"], "orange")
+        self.assertIn("Paired context delivery verified: no",
+                      (directory / "latest.md").read_text(encoding="utf-8"))
+
+    def test_missing_or_empty_registry_is_explicitly_unresolved_without_totals(self):
+        for empty in (False, True):
+            with self.subTest(empty=empty):
+                w = World(self)
+                if empty:
+                    shutil.rmtree(w.registry_dirs["cms-platform"])
+                    w.registry_dirs["cms-platform"].mkdir()
+                    kwargs = {}
+                else:
+                    kwargs = {"paths": {"cms-platform": w.root / "missing"}}
+                proc, report, directory = self.publish(w, **kwargs)
+                self.assertEqual(proc.returncode, 2)
+                self.assertEqual(report["status"], "unresolved")
+                self.assertIsNone(report["totals"])
+                self.assertIn("cms-platform", report["unresolved"])
+                self.assertEqual(next(r for r in report["registries"]
+                                      if r["name"] == "cms-platform")["status"],
+                                 "unresolved")
+                self.assertFalse((directory / "badge.json").exists())
+                self.assertNotIn("**Total**", (directory / "latest.md").read_text())
+
+    def test_unresolved_overwrites_an_old_complete_report_and_removes_badge(self):
+        w = World(self)
+        first, _, directory = self.publish(w)
+        self.assertEqual(first.returncode, 0)
+        self.assertTrue((directory / "badge.json").exists())
+        second, report, _ = self.publish(
+            w, paths={PRIVATE: w.root / "missing-private"})
+        self.assertEqual(second.returncode, 2)
+        self.assertEqual(report["status"], "unresolved")
+        self.assertIsNone(report["totals"])
+        self.assertFalse((directory / "badge.json").exists())
+
+    def test_gap_is_publishable_but_check_still_returns_one(self):
+        w = World(self)
+        default_proc, default_report, _ = self.publish(w)
+        self.assertEqual(default_proc.returncode, 0, default_proc.stderr)
+        self.assertEqual(default_report["status"], "complete")
+        proc, report, directory = self.publish(w, "--check")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(report["status"], "complete")
+        self.assertTrue((directory / "badge.json").is_file())
+        self.assertEqual(w.run("--check").returncode, 1)
+
+    def test_badge_green_requires_no_gap_and_no_problem(self):
+        w = World(self)
+        w.clear_all_gaps()
+        proc, report, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(report["totals"]["gap"], 0)
+        self.assertEqual(json.loads((directory / "badge.json").read_text())["color"],
+                         "green")
+        w.skip("cms-platform", "renamed-away")
+        proc, report, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(report["totals"]["gap"], 0)
+        self.assertEqual(report["problems"][0]["kind"], "stale_skip")
+        self.assertEqual(json.loads((directory / "badge.json").read_text())["color"],
+                         "orange")
+
+    def test_private_content_and_paths_never_enter_publication(self):
+        w = World(self)
+        w.skip(PRIVATE, PRIVATE_GAP, "zz-private-reason-marker", private=True)
+        w.add_fixture("zz-private-path-marker", "zz-private-vanished-marker", PRIVATE)
+        proc, _, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        output = "".join(p.read_text(encoding="utf-8") for p in directory.iterdir())
+        for marker in (PRIVATE_COVERED, PRIVATE_GAP, "plug-p", "zz-private-reason-marker",
+                       "zz-private-path-marker", "zz-private-vanished-marker",
+                       str(w.root)):
+            self.assertNotIn(marker, output + proc.stderr)
+        refused = w.run("--publish-dir", str(directory), "--timestamp",
+                        PUBLISH_TIME, "--include-private-names")
+        self.assertEqual(refused.returncode, 2)
+        self.assertNotIn(PRIVATE_GAP, refused.stdout + refused.stderr)
+
+    def test_registry_symlink_escapes_refuse_without_private_names_or_paths(self):
+        for level in ("plugin", "skills", "skill", "file"):
+            for relative in (False, True):
+                with self.subTest(level=level, relative=relative):
+                    w = World(self)
+                    w.link_private_skill(level, relative)
+                    local = w.run("--json")
+                    self.assertEqual(local.returncode, 2, local.stderr)
+                    self.assertEqual(local.stdout, "")
+                    self.assertIn("adam-agentskills", local.stderr)
+                    proc, report, directory = self.publish(w)
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertEqual(report["status"], "unresolved")
+                    self.assertEqual(report["unresolved"], ["adam-agentskills"])
+                    self.assertIsNone(report["totals"])
+                    self.assertFalse((directory / "badge.json").exists())
+                    content = local.stderr + proc.stdout + proc.stderr + "".join(
+                        p.read_text(encoding="utf-8") for p in directory.iterdir())
+                    for marker in (PRIVATE_COVERED, PRIVATE_GAP, "plug-p",
+                                   "plug-leak", str(w.root)):
+                        self.assertNotIn(marker, content)
+
+    def test_broken_or_cyclic_registry_symlinks_are_unresolved(self):
+        for level in ("plugin", "skills", "skill", "file"):
+            for cyclic in (False, True):
+                with self.subTest(level=level, cyclic=cyclic):
+                    w = World(self)
+                    link = w.link_private_skill(level, relative=True)
+                    link.unlink()
+                    link.symlink_to(link.name if cyclic else "zz-private-missing-marker",
+                                    target_is_directory=level != "file")
+                    local = w.run("--json")
+                    self.assertEqual(local.returncode, 2, local.stderr)
+                    self.assertEqual(local.stdout, "")
+                    proc, report, directory = self.publish(w)
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertEqual(report["status"], "unresolved")
+                    self.assertEqual(report["unresolved"], ["adam-agentskills"])
+                    self.assertIsNone(report["totals"])
+                    self.assertFalse((directory / "badge.json").exists())
+                    content = local.stderr + proc.stderr + "".join(
+                        p.read_text(encoding="utf-8") for p in directory.iterdir())
+                    for marker in (PRIVATE_GAP, "zz-private-missing-marker", str(w.root)):
+                        self.assertNotIn(marker, content)
+
+    def test_registry_symlinks_within_the_root_preserve_the_census(self):
+        suffixes = {"plugin": (), "skills": ("skills",),
+                    "skill": ("skills", "alpha"),
+                    "file": ("skills", "alpha", "SKILL.md")}
+        for level, suffix in suffixes.items():
+            with self.subTest(level=level):
+                w = World(self)
+                registry = w.registry_dirs["adam-agentskills"]
+                link = (registry / "plugins" / "plug-a").joinpath(*suffix)
+                target = registry / "linked-content"
+                link.rename(target)
+                link.symlink_to(os.path.relpath(target, link.parent),
+                                target_is_directory=level != "file")
+                local = w.run("--json")
+                self.assertEqual(local.returncode, 0, local.stderr)
+                proc, report, directory = self.publish(w)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(report["status"], "complete")
+                self.assertEqual(report["totals"], json.loads(local.stdout)["totals"])
+                self.assertEqual(rows(report, "adam-agentskills")["alpha"]["status"],
+                                 "covered")
+                self.assertTrue((directory / "badge.json").exists())
+
+    def test_context_duplicate_or_invalid_draft_refuses_without_input_values(self):
+        for raw in ("context:\n  repository: Adam-S-Daniel/skills-evals\n"
+                    "  repository: Example/zz-private-marker\n  revision: " + "a" * 40 + "\n"
+                    "  guidance_revision: " + "b" * 40 + "\n  budget:\n"
+                    "    guidance_bytes: 1\n    skill_catalog_bytes: 1\n"
+                    "    skill_payload_bytes: 1\n",
+                    "draft: perhaps\n"):
+            with self.subTest(raw=raw):
+                w = World(self)
+                w.raw_fixture("zz-private-path-marker", raw)
+                proc, report, directory = self.publish(w)
+                self.assertEqual(proc.returncode, 2)
+                self.assertEqual(report["status"], "unresolved")
+                self.assertIsNone(report["totals"])
+                self.assertFalse((directory / "badge.json").exists())
+                content = (directory / "latest.json").read_text() + proc.stderr
+                self.assertNotIn("zz-private", content)
+
+    def test_registry_markup_cannot_enter_the_summary_as_html_or_a_link(self):
+        w = World(self)
+        w.add_skill("adam-agentskills", "safe-name", "[bundle](example.com)")
+        w.skip("adam-agentskills", "safe-name", "<img src=x> [click](https://example.net)")
+        proc, report, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(rows(report, "adam-agentskills")["safe-name"]["status"], "skipped")
+        summary = (directory / "latest.md").read_text(encoding="utf-8")
+        self.assertIn("safe-name", summary)
+        self.assertNotIn("<img", summary)
+        self.assertNotIn("[click](https://example.net)", summary)
+        self.assertNotIn("[bundle](example.com)", summary)
+
+    def test_invalid_registry_skill_directory_is_refused(self):
+        w = World(self)
+        w.add_skill("adam-agentskills", "bad name")
+        proc, report, directory = self.publish(w)
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(report["status"], "unresolved")
+        self.assertIn("adam-agentskills", report["unresolved"])
+        self.assertFalse((directory / "badge.json").exists())
+        self.assertNotIn("bad name", (directory / "latest.md").read_text())
+
+    def test_publication_requires_canonical_utc_timestamp(self):
+        w = World(self)
+        directory = w.root / "publication"
+        for flags in ((), ("--timestamp", "2026-10-08T05:41:00+00:00"),
+                      ("--timestamp", "2026-02-30T05:41:00Z"),
+                      ("--timestamp", "2026-10-08T5:41:00Z")):
+            with self.subTest(flags=flags):
+                proc = w.run("--publish-dir", str(directory), *flags)
+                self.assertEqual(proc.returncode, 2)
+                self.assertEqual(proc.stdout, "")
+        self.assertFalse(directory.exists())
+        self.assertEqual(w.run("--timestamp", PUBLISH_TIME).returncode, 2)
+
+
+class PublicationWorkflow(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = yaml.load(PROPAGATION_YML.read_text(encoding="utf-8"),
+                                 Loader=yaml.BaseLoader)
+
+    def test_workflow_does_not_inherit_environment_credentials(self):
+        # An empty broad scope prevents credentials under alternative names,
+        # including secret references, from reaching checkout or census steps.
+        self.assertEqual(self.workflow.get("env", {}), {})
+
+    def test_coverage_jobs_do_not_inherit_environment_credentials(self):
+        for name in ("coverage", "coverage-publish"):
+            with self.subTest(job=name):
+                self.assertEqual(self.workflow["jobs"][name].get("env", {}), {})
+
+    def test_census_is_read_only_and_private_checkout_is_schedule_only(self):
+        jobs = self.workflow["jobs"]
+        self.assertEqual(self.workflow["permissions"], {"contents": "read"})
+        self.assertNotIn("permissions", jobs["coverage"])
+        steps = jobs["coverage"]["steps"]
+        checkouts = [s for s in steps if s.get("uses", "").startswith("actions/checkout@")]
+        self.assertEqual(len(checkouts), 5)
+        self.assertTrue(all(s["with"]["persist-credentials"] == "false"
+                            for s in checkouts))
+        private = next(s for s in checkouts if s["with"].get("repository", "").endswith("-private"))
+        self.assertEqual(private["if"], "github.event_name == 'schedule'")
+        self.assertEqual(private["with"]["token"],
+                         "${{ secrets.COVERAGE_REGISTRY_READ_TOKEN }}")
+        self.assertTrue(all("token" not in s.get("with", {}) for s in checkouts
+                            if s is not private))
+        self.assertTrue(all(s.get("continue-on-error") == "true"
+                            for s in checkouts if s is not checkouts[0]))
+        self.assertNotIn("GITHUB_TOKEN", str(jobs["coverage"]))
+
+    def test_publication_is_schedule_only_and_write_auth_is_step_local(self):
+        job = self.workflow["jobs"]["coverage-publish"]
+        self.assertEqual(job["if"],
+                         "github.event_name == 'schedule' && needs.coverage.result == 'success'")
+        self.assertEqual(job["needs"], "coverage")
+        self.assertEqual(job["permissions"], {"contents": "write"})
+        self.assertEqual(job["concurrency"]["group"], "real-eval")
+        steps = job["steps"]
+        self.assertEqual(steps[0]["with"],
+                         {"ref": "${{ github.sha }}", "persist-credentials": "false"})
+        self.assertEqual(steps[-1]["env"],
+                         {"GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}"})
+        self.assertEqual(steps[-1]["if"], "steps.prepare.outputs.changed == 'true'")
+        self.assertTrue(all("GITHUB_TOKEN" not in str(step) for step in steps[:-1]))
+
+    def test_publisher_execution_uses_only_complete_artifacts_and_fixed_branch(self):
+        steps = self.workflow["jobs"]["coverage-publish"]["steps"]
+        prepare = next(s for s in steps if s["name"] == "Prepare persistent results commit")
+        push = next(s for s in steps if s["name"] == "Push coverage commit")
+        with tempfile.TemporaryDirectory(prefix="issue64-publisher-") as tmp:
+            root = Path(tmp)
+            checkout = root / "checkout"
+            checkout.mkdir()
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            log = root / "git-log.jsonl"
+            output = root / "step-output"
+            artifact = root / "coverage"
+            artifact.mkdir()
+            (artifact / "latest.md").write_text("safe summary\n", encoding="utf-8")
+            (artifact / "badge.json").write_text("{}\n", encoding="utf-8")
+            prepare_file = root / "prepare.sh"
+            prepare_file.write_text(prepare["run"], encoding="utf-8")
+            push_file = root / "push.sh"
+            push_file.write_text(push["run"], encoding="utf-8")
+            git_stub = bin_dir / "git"
+            git_stub.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "from pathlib import Path\n"
+                "args = sys.argv[1:]\n"
+                "safe = ['<redacted>' if a.startswith('http.https://github.com/.extraheader=') else a for a in args]\n"
+                "with Path(os.environ['FAKE_GIT_LOG']).open('a') as f: f.write(json.dumps(safe) + '\\n')\n"
+                "cmd = args[0] if args[0] != '-c' else args[2]\n"
+                "if cmd == 'ls-remote':\n"
+                "    if os.environ.get('FAKE_LS_REMOTE') == 'fail': sys.exit(128)\n"
+                "    if os.environ.get('FAKE_LS_REMOTE') == 'present': print('a' * 40 + '\\trefs/heads/persistent/eval-results')\n"
+                "if cmd == 'fetch' and os.environ.get('FAKE_FETCH_FAIL') == '1': sys.exit(1)\n"
+                "if cmd == 'diff': sys.exit(1)\n"
+                "sys.exit(0)\n", encoding="utf-8")
+            git_stub.chmod(0o755)
+            self.assertIsNotNone(shutil.which("jq"), "the publisher requires jq")
+            env = {"PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                   "RUNNER_TEMP": str(root), "GITHUB_OUTPUT": str(output),
+                   "FAKE_GIT_LOG": str(log)}
+
+            def run(script: Path, **changes):
+                output.write_text("", encoding="utf-8")
+                log.write_text("", encoding="utf-8")
+                return subprocess.run(["bash", str(script)], cwd=checkout,
+                                      env={**env, **changes}, capture_output=True,
+                                      text=True, timeout=10)
+
+            def calls():
+                return [json.loads(line) for line in log.read_text().splitlines()]
+
+            for document in (
+                {"status": "unresolved", "unresolved": [],
+                 "totals": {"total": 2}, "generated_at": PUBLISH_TIME},
+                {"status": "complete", "unresolved": ["cms-platform"],
+                 "totals": {"total": 2}, "generated_at": PUBLISH_TIME},
+                {"status": "complete", "unresolved": [],
+                 "totals": {"total": "2"}, "generated_at": PUBLISH_TIME},
+            ):
+                with self.subTest(document=document):
+                    (artifact / "latest.json").write_text(
+                        json.dumps(document), encoding="utf-8")
+                    result = run(prepare_file)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(calls(), [])
+
+            (artifact / "latest.json").write_text(json.dumps({
+                "status": "complete", "unresolved": [],
+                "totals": {"total": 2}, "generated_at": PUBLISH_TIME}), encoding="utf-8")
+            for mode in ("fail", "present"):
+                result = run(prepare_file, FAKE_LS_REMOTE=mode,
+                             FAKE_FETCH_FAIL="1" if mode == "present" else "0")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any("checkout" in call or "push" in call
+                                     for call in calls()))
+
+            result = run(prepare_file, FAKE_LS_REMOTE="present")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("changed=true", output.read_text())
+            self.assertIn(["fetch", "origin",
+                           "refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results"],
+                          calls())
+            self.assertIn(["checkout", "-B", "persistent/eval-results",
+                           "origin/persistent/eval-results"], calls())
+            self.assertTrue((checkout / "coverage" / "2026-10-08T05-41-00Z.json").is_file())
+
+            result = run(push_file, GITHUB_TOKEN="example")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls(), [["-c", "<redacted>", "push", "origin",
+                                       "HEAD:refs/heads/persistent/eval-results"]])
+
+            result = run(prepare_file, FAKE_LS_REMOTE="absent")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(["checkout", "-B", "persistent/eval-results"], calls())
+            self.assertFalse(any(call[0] == "fetch" for call in calls()))
+
+    def test_publisher_rejects_unsafe_checkout_outputs_before_any_write(self):
+        prepare = next(s for s in self.workflow["jobs"]["coverage-publish"]["steps"]
+                       if s["name"] == "Prepare persistent results commit")
+        destinations = ("coverage/latest.json", "coverage/2026-10-08T05-41-00Z.json",
+                        "coverage/latest.md", "badges/coverage.json")
+        cases = [(path, kind) for path in ("coverage", "badges", *destinations)
+                 for kind in ("symlink", "dangling", "wrong-type")]
+        for unsafe_path, kind in cases:
+            with self.subTest(path=unsafe_path, kind=kind), \
+                    tempfile.TemporaryDirectory(prefix="issue64-unsafe-publisher-") as tmp:
+                root = Path(tmp)
+                checkout = root / "checkout"
+                checkout.mkdir()
+                artifact = root / "coverage"
+                artifact.mkdir()
+                (artifact / "latest.json").write_text(json.dumps({
+                    "status": "complete", "unresolved": [],
+                    "totals": {"total": 2}, "generated_at": PUBLISH_TIME}), encoding="utf-8")
+                (artifact / "latest.md").write_text("safe summary\n", encoding="utf-8")
+                (artifact / "badge.json").write_text("{}\n", encoding="utf-8")
+                # Existing regular outputs must also survive when a later path is unsafe.
+                for destination in destinations:
+                    path = checkout / destination
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("previous census\n", encoding="utf-8")
+                outside = root / "outside"
+                outside.mkdir()
+                for name in ("latest.json", "2026-10-08T05-41-00Z.json",
+                             "latest.md", "coverage.json", "sentinel"):
+                    (outside / name).write_text("outside sentinel\n", encoding="utf-8")
+                outside_before = {p.name: p.read_bytes() for p in outside.iterdir()}
+                missing = root / "missing-outside"
+                target = missing if kind == "dangling" else (
+                    outside if unsafe_path in ("coverage", "badges") else outside / "sentinel")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                log = root / "git-log.jsonl"
+                git_stub = bin_dir / "git"
+                git_stub.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import json, os, shutil, sys\n"
+                    "from pathlib import Path\n"
+                    "args = sys.argv[1:]\n"
+                    "with Path(os.environ['FAKE_GIT_LOG']).open('a') as f: f.write(json.dumps(args) + '\\n')\n"
+                    "if args[0] == 'ls-remote': print('a' * 40 + '\\trefs/heads/persistent/eval-results')\n"
+                    "if args[0] == 'checkout':\n"
+                    "    path = Path(os.environ['FAKE_UNSAFE_PATH'])\n"
+                    "    if path.is_dir(): shutil.rmtree(path)\n"
+                    "    else: path.unlink()\n"
+                    "    if os.environ['FAKE_UNSAFE_KIND'] == 'wrong-type':\n"
+                    "        if len(path.parts) == 1: path.write_text('unsafe directory replacement\\n')\n"
+                    "        else: path.mkdir()\n"
+                    "    else: path.symlink_to(os.environ['FAKE_UNSAFE_TARGET'])\n"
+                    "if args[0] == 'diff': sys.exit(1)\n", encoding="utf-8")
+                git_stub.chmod(0o755)
+                script = root / "prepare.sh"
+                script.write_text(prepare["run"], encoding="utf-8")
+                output = root / "step-output"
+                output.write_text("", encoding="utf-8")
+                result = subprocess.run(
+                    ["bash", str(script)], cwd=checkout, capture_output=True, text=True,
+                    env={"PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                         "RUNNER_TEMP": str(root), "GITHUB_OUTPUT": str(output),
+                         "FAKE_GIT_LOG": str(log), "FAKE_UNSAFE_PATH": unsafe_path,
+                         "FAKE_UNSAFE_KIND": kind, "FAKE_UNSAFE_TARGET": str(target)}, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "Unsafe coverage output path.\n")
+                self.assertEqual({p.name: p.read_bytes() for p in outside.iterdir()}, outside_before)
+                self.assertFalse(missing.exists())
+                self.assertEqual(output.read_text(), "")
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertIn(["checkout", "-B", "persistent/eval-results",
+                               "origin/persistent/eval-results"], calls)
+                self.assertFalse(any(call[0] in ("add", "commit", "push") for call in calls))
+                for destination in destinations:
+                    if destination != unsafe_path and not destination.startswith(unsafe_path + "/"):
+                        self.assertEqual((checkout / destination).read_text(), "previous census\n")
+
+    def test_unresolved_exit_is_informational_except_on_schedule(self):
+        gate = next(s for s in self.workflow["jobs"]["coverage"]["steps"]
+                    if s["name"] == "Fail an unresolved census")
+        self.assertEqual(gate["if"], "steps.census.outputs.result != '0'")
+        with tempfile.TemporaryDirectory(prefix="issue64-gate-") as tmp:
+            script = Path(tmp) / "gate.sh"
+            script.write_text(gate["run"], encoding="utf-8")
+            for event, result, expected in (("schedule", "2", 2),
+                                            ("pull_request", "2", 0),
+                                            ("push", "2", 0),
+                                            ("workflow_dispatch", "2", 0),
+                                            ("schedule", "1", 1)):
+                with self.subTest(event=event, result=result):
+                    proc = subprocess.run(["bash", str(script)],
+                                          env={"PATH": os.environ.get("PATH", ""),
+                                               "EVENT_NAME": event,
+                                               "CENSUS_RESULT": result},
+                                          capture_output=True, text=True, timeout=10)
+                    self.assertEqual(proc.returncode, expected, proc.stderr)
+        ci = yaml.load(CI_YML.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        self.assertIn(".github/workflows/propagation.yml", ci["on"]["push"]["paths"])
 
 
 def ast_imports(path: Path) -> set[str]:
