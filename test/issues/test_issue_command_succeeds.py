@@ -27,9 +27,13 @@ class CommandSucceedsTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.ws = self.root / "final"
         self.ws.mkdir()
-        self.network = mock.patch.object(commands, "_network_prefix", return_value=[])
+        self.network = mock.patch.object(commands, "_sandbox_prefix", return_value=([], "unavailable"))
         self.probe = self.network.start()
         self.addCleanup(self.network.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def check(self, argv=None, **kwargs):
         return commands.command_succeeds(str(self.ws), [], argv=argv, **kwargs)
@@ -330,28 +334,10 @@ class CommandSucceedsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             objective.run_checks(fixture, str(self.ws), str(self.root))
 
-    def test_network_probe_supported_and_unavailable(self):
-        self.network.stop()
-        with mock.patch.object(commands.sys, "platform", "linux"), \
-                mock.patch.object(commands.Path, "is_file", return_value=True), \
-                mock.patch.object(commands.subprocess, "run") as run:
-            run.return_value.returncode = 0
-            prefix = commands._network_prefix({"HOME": "isolated"})
-            self.assertEqual(prefix, ["/usr/bin/unshare", "--net", "--"])
-            self.assertEqual(run.call_args.args[0], prefix + ["/usr/bin/true"])
-            self.assertEqual(run.call_args.kwargs["timeout"], commands.PROBE_TIMEOUT_S)
-            self.assertEqual(run.call_args.kwargs["stdin"], subprocess.DEVNULL)
-            run.return_value.returncode = 1
-            self.assertEqual(commands._network_prefix({}), [])
-            run.side_effect = subprocess.TimeoutExpired("private", 2)
-            self.assertEqual(commands._network_prefix({}), [])
-        with mock.patch.object(commands.sys, "platform", "other"):
-            self.assertEqual(commands._network_prefix({}), [])
-        self.probe = self.network.start()
-        self.probe.return_value = ["/usr/bin/unshare", "--net", "--"]
-        with mock.patch.object(commands, "_run_command", return_value=0) as run:
+    def test_network_state_is_reported(self):
+        self.probe.return_value = (["trusted-bwrap", "--unshare-net", "--"], "isolated")
+        with mock.patch.object(commands, "_run_command", return_value=0):
             self.assertIn("network=isolated", self.python("pass")[1])
-            self.assertEqual(run.call_args.args[0][:3], self.probe.return_value)
 
     def test_local_guard_environment_is_not_a_cli_launch_path(self):
         # A mock guard names a program that must never run. The command child

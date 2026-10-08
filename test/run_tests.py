@@ -38982,14 +38982,25 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         self.addCleanup(owned.cleanup)
         ws = Path(owned.name) / "workspace"
         shutil.copytree(self.SEED, ws, ignore=shutil.ignore_patterns("node_modules"))
-        (ws / "node_modules").symlink_to(self.SEED / "node_modules", target_is_directory=True)
+        # Scoring hides the original fixture; installed dependencies belong in
+        # the workspace, as run_setup installs them, rather than a host alias.
+        shutil.copytree(self.SEED / "node_modules", ws / "node_modules", symlinks=True)
         if spec is not None:
             (ws / self.NEW).write_text(spec, encoding="utf-8")
         return ws
 
     def _score(self, ws):
-        rows = objective.run_checks(run_eval.load_fixture(self.FIXTURE),
-                                    str(ws), str(self.SEED))
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        rows = objective.run_checks(fixture, str(ws), str(self.SEED))
+        commands = {check["id"] for check in fixture["objective_checks"]
+                    if check["type"] == "command_succeeds"}
+        for row in rows:
+            # A checker that never ran (e.g. scorer_sandbox_unavailable) must
+            # not count as a mutation's expected failure.
+            if row["id"] in commands:
+                status = row["detail"].split(" ", 1)[0]
+                self.assertIn(status, ("command_success", "command_nonzero"),
+                              f"{row['id']} did not run its command: {status}")
         return {row["id"]: row["passed"] for row in rows}
 
     def _failed(self, ws, expected):
@@ -39149,8 +39160,6 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
 
     def test_parser_dependency_tamper_cannot_change_command_verdicts(self):
         ws = self._workspace()
-        (ws / "node_modules").unlink()
-        shutil.copytree(self.SEED / "node_modules", ws / "node_modules")
         parser = ws / "node_modules" / "acorn" / "dist" / "acorn.js"
         parser.write_text(parser.read_text(encoding="utf-8") + "\n// changed\n",
                           encoding="utf-8")
