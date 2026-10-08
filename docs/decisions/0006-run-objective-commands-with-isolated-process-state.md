@@ -94,6 +94,83 @@ verify this change.
 - [Command scorer](../../harness/scorers/commands.py): the execution boundary.
 - [Design contract](../../DESIGN.md): fixture-facing check contract.
 
+## 2026-10-07 addendum: Mandatory scorer filesystem and PID isolation
+
+[Issue #344](https://github.com/Adam-S-Daniel/skills-evals/issues/344) exposed
+that an agent-written helper invoked by a hidden repository test could read
+the original fixture's checker and `solution.patch`, or modify host files,
+despite the isolated environment. The accepted historical decision above is
+preserved; this addendum supersedes its filesystem and process limitations.
+
+Both `command_succeeds` and `repo_tests` now execute directly through a
+trusted fixed bubblewrap runner. Start with an empty mount namespace root:
+read-only binds allow `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, and `/lib32`
+when present, for system programs and language/runtime libraries. The only
+host `/etc` file is `/etc/ld.so.cache`, needed by the dynamic loader; account
+databases, resolver settings, machine identity and other configuration stay
+absent. Resolve Python, node and Ruby from the harness PATH and Python's
+`sys.executable`; outside the system binds, expose only the executable file
+and Python/Ruby language and shared-library paths under its installation's
+`lib`. Never expose a toolchain in HOME, an executing workspace or a denied
+checkout/output root. The child's PATH includes fixed system locations and
+private single-executable aliases, never inherited host directories.
+
+Mask denied descendants of every allowed bind, including resolved system
+aliases such as `/lib` and `/usr/lib`. Reject a writable root that contains
+or equals a denied root, and reject the filesystem root as an execution
+workspace. Mount fresh `/proc` and minimal `/dev`, a temporary `/tmp`, and
+then reopen only the executing workspace and fresh environment scratch
+writable. Nothing mounts `/run`, `/var/run`, `/mnt`, `/media`, `/srv`, HOME
+or root's home broadly: host Unix sockets, WSL filesystem/drive aliases and
+interop sockets are absent. Unshare PID, IPC, UTS and network state; use
+`--die-with-parent` to contain descendants and `--new-session` against
+terminal injection with TIOCSTI.
+
+Probe harmless `/usr/bin/true` with this complete configuration and a bounded
+timeout. Network isolation is now mandatory: if `--unshare-net` fails,
+return `scorer_sandbox_unavailable` without retrying with host networking.
+This supersedes the historical decision's optional network isolation.
+Confirm actual sandbox startup through an isolated fixed-system Python
+bootstrap (`-I -S`) running inside the completed sandbox. It writes a fixed
+readiness marker to an inherited descriptor, closes it, and uses `execv` for
+the scoring command. Bubblewrap's `info-fd` reports a fork before mount and
+loopback setup, so a child PID alone cannot prove that setup succeeded
+([upstream source](https://github.com/containers/bubblewrap/blob/v0.11.0/bubblewrap.c#L2965)).
+Marker absence names a sandbox failure; marker presence preserves program
+nonzero exit and timeout classification. Python's isolated mode and disabled
+site initialization keep workspace imports from running before the marker.
+Missing or unstartable bubblewrap returns a failed check named
+`scorer_sandbox_unavailable` and sanitized exit code (`-1` when no child exit
+code is available); workspace code is never
+run unconfined. Resolve bubblewrap at fixed system paths or the harness's
+precomputed HOME-local fallback before hiding HOME; never discover it from
+an agent-provided PATH. No output, exception text, or path is published in
+sandbox failures.
+
+The trusted caller supplies read denial independently of fixture constraints.
+Direct APIs protect the harness checkout and real HOME. `run_eval` adds the
+original clone's parent derived from Git's common directory, explicit and
+environment-selected registry/guidance checkouts, `--context-repo` checkouts, results, wrapper read-deny
+outputs, session archive and Claude profile roots; `run_checks` adds the original fixture directory for
+both executing types. `repo_tests` independently hides its original fixture
+and final workspace, after copying the workspace and installing the overlay.
+Each selected test gets its own fresh writable environment and sandbox
+configuration. Installed `node_modules` and `.fixture-python` remain in the
+scoring copy; the original checker and solution patch remain hidden. Dependencies
+must exist in that copy: an external dependency symlink does not authorize
+an additional host bind.
+
+This introduces a mandatory Linux bubblewrap dependency. GitHub's
+`ubuntu-latest` image ships no bwrap and Ubuntu's AppArmor denies it
+unprivileged user namespaces, so CI's `test` job installs bubblewrap, grants
+only `/usr/bin/bwrap` the `userns` permission, and probes it before the
+suite; a runner toolchain under `/opt/hostedtoolcache` needs no wider bind
+than the rule above. Disk and CPU
+consumption remain uncapped. Broader agent-arm read isolation belongs to
+[PR #345](https://github.com/Adam-S-Daniel/skills-evals/pull/345); the
+`scorer_read_denied` seam will directly consume its trusted
+`arm_read_denied(run_checkouts(args), outputs=run_outputs(args))` inputs after
+that PR merges; their checkout/output/profile coverage is collected here now.
 
 ## Workspace Git addendum (2026-10-07)
 
