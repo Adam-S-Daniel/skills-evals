@@ -22,14 +22,14 @@ DEFAULT_TIMEOUT_S = 10
 # otherwise be written out at full size (issue 350). Both caps are hang and
 # disk guards, not quality bounds: the largest seed is ~4 MB in under 500
 # files, and an unignored node_modules runs to tens of thousands of files and
-# hundreds of MB. Sizes are apparent (st_size), checked before any copy.
+# hundreds of MB. Apparent sizes are checked before copying; actual bytes are capped while streaming.
 MAX_STAGED_BYTES = 2 * 1024 ** 3
 MAX_STAGED_FILES = 200_000
-# Files Git opens by name in a work tree. A FIFO there blocks Git's open()
-# until the sink ceiling, so a non-regular one is refused before Git runs.
+# Git reads these only from a safely copied private work tree. Non-regular
+# controls are refused during the copy, before Git could block on an open().
 _SPECIAL_NAMES = frozenset({'.gitignore', '.gitattributes'})
 # Commands that never read work-tree ignore or attribute files.
-_NO_WORK_TREE_READS = frozenset({'init', 'rev-parse', 'remote', 'worktree'})
+_NO_WORK_TREE_READS = frozenset({'init', 'rev-parse', 'remote'})
 _OVERRIDES = (
     'core.fsmonitor=false', 'core.hooksPath=/dev/null', 'diff.external=',
     'core.pager=cat', 'core.sshCommand=', 'credential.helper=',
@@ -116,7 +116,7 @@ def _env(home: Path) -> dict[str, str]:
 
 
 def _invoke(args: list[str], *, cwd: Path, home: Path, timeout: float,
-            check: bool = False) -> subprocess.CompletedProcess:
+            check: bool = False, input: str | None = None) -> subprocess.CompletedProcess:
     import guidance
     guidance.check_timeout(timeout, 'workspace_git._invoke(timeout=)',
                            guidance.SINK_TIMEOUT_REMEDY)
@@ -125,7 +125,8 @@ def _invoke(args: list[str], *, cwd: Path, home: Path, timeout: float,
         options.append('--git-dir=/dev/null')
     return subprocess.run([GIT, '--no-pager', *options, *args], cwd=cwd,
                           env=_env(home), check=check, capture_output=True,
-                          text=True, errors='replace', stdin=subprocess.DEVNULL,
+                          text=True, errors='replace', input=input,
+                          stdin=subprocess.DEVNULL if input is None else None,
                           timeout=timeout)
 
 
@@ -352,6 +353,10 @@ def seal(workspace: Path) -> None:
         context.close()
         _CONTEXTS[str(logical)] = context
         _CONTEXTS[str(workspace)] = context
+    except subprocess.CalledProcessError as exc:
+        context.close()
+        raise WorkspaceGitCollectionError(
+            f'git config exited {exc.returncode}') from None
     except BaseException:
         context.close()
         raise
@@ -395,11 +400,7 @@ def _stage(context: _Context, command: list[str], timeout: float,
             nested[current] = sha
         else:
             nested[current] = None
-    stage = context.private / 'stage'
-    shutil.rmtree(stage, ignore_errors=True)
-    ignored = _ignored(context, timeout)
-    _copy_view(workspace, stage, skip=lambda path: path in nested,
-               ignored=ignored)
+    stage = _view(context, timeout, skip=lambda path: path in nested)
     result = _invoke(['--git-dir=' + str(context.gitdir), '--work-tree=' + str(stage),
                       *command], cwd=context.private, home=context.private,
                      timeout=timeout, check=check)
@@ -413,56 +414,82 @@ def _stage(context: _Context, command: list[str], timeout: float,
     return result
 
 
-def _refuse_special_files(workspace: Path) -> None:
-    """Refuse a `.gitignore` or `.gitattributes` that is a FIFO, socket or
-    device: Git's open() of one would block. Symlinks are left alone (Git
-    does not follow in-tree ignore/attribute symlinks) and a directory is an
-    ordinary Git warning. `.git/info/exclude` needs no check here: Git only
-    ever reads the private copy, made by a non-blocking `_read_regular`
-    that refuses a non-regular file as `workspace_git_tampered`."""
-    for root, dirs, files in os.walk(workspace, followlinks=False):
-        dirs[:] = [name for name in dirs if name != '.git']
-        for name in sorted(_SPECIAL_NAMES.intersection(dirs + files)):
-            path = Path(root) / name
-            mode = path.lstat().st_mode
-            if not (stat.S_ISREG(mode) or stat.S_ISLNK(mode) or stat.S_ISDIR(mode)):
-                raise WorkspaceGitCollectionError(
-                    f'{path.relative_to(workspace).as_posix()} is not a regular file')
+def _ignored(context: _Context, stage: Path, paths: list[str],
+             timeout: float, gitlinks: set[str]) -> set[str]:
+    """Find ignored candidates using only safely copied private controls.
 
-
-def _ignored(context: _Context, timeout: float) -> set[str]:
-    """Untracked paths Git would ignore, so staging never copies them.
-
-    Git reads only `.gitignore` data here, against private metadata and
-    config; ignored directories come back whole, ending in a slash.
+    The private index keeps tracked files eligible even when an ignore rule
+    matches. NUL-delimited stdin treats agent-selected names as data.
     """
-    result = _invoke(['--git-dir=' + str(context.gitdir),
-                      '--work-tree=' + str(context.workspace), 'ls-files', '-z',
-                      '--others', '--ignored', '--exclude-standard', '--directory'],
-                     cwd=context.private, home=context.private, timeout=timeout)
-    if result.returncode:
-        return set()  # copying more than needed is safe; add re-applies ignores
-    return {entry.rstrip('/') for entry in result.stdout.split('\0') if entry}
+    groups = {False: [], True: []}
+    for path in paths:
+        parts = path.split('/')
+        within_gitlink = any('/'.join(parts[:index]) in gitlinks
+                             for index in range(1, len(parts)))
+        groups[within_gitlink].append(path)
+    ignored = set()
+    for no_index, candidates in groups.items():
+        if not candidates:
+            continue
+        # check-ignore refuses descendants of indexed gitlinks. A former
+        # nested repo can lose its .git marker and be added as ordinary
+        # files, so evaluate only those paths without the old gitlink index.
+        options = ['--no-index'] if no_index else []
+        result = _invoke(['--git-dir=' + str(context.gitdir),
+                          '--work-tree=' + str(stage), 'check-ignore',
+                          *options, '-z', '--stdin'],
+                         cwd=stage, home=context.private, timeout=timeout,
+                         input='\0'.join(candidates) + '\0')
+        if result.returncode not in {0, 1}:
+            raise WorkspaceGitCollectionError(
+                f'git check-ignore exited {result.returncode}')
+        ignored.update(entry.rstrip('/') for entry in result.stdout.split('\0') if entry)
+    return ignored
 
 
-def _copy_regular(source: Path, target: Path, mode: int) -> None:
-    # O_NONBLOCK plus fstat: an entry swapped for a FIFO is never read.
+def _byte_limit() -> None:
+    raise WorkspaceGitCollectionError(
+        f'workspace has more than {MAX_STAGED_BYTES} bytes to stage')
+
+
+def _copy_regular(source: Path, target: Path, mode: int, remaining: int) -> int:
+    # O_NONBLOCK plus fstat closes a regular-to-FIFO race without blocking.
     fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    copied = 0
     with os.fdopen(fd, 'rb') as stream:
-        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-            return
+        identity = os.fstat(stream.fileno())
+        if not stat.S_ISREG(identity.st_mode):
+            if source.name in _SPECIAL_NAMES:
+                raise WorkspaceGitCollectionError(
+                    f'{source.name} is not a regular file')
+            return 0
+        if identity.st_size > remaining:
+            _byte_limit()
         with open(target, 'xb') as out:
-            shutil.copyfileobj(stream, out)
+            # At most remaining + 1 bytes are read, even if the source keeps
+            # growing. The one-byte overflow probe also accepts exact bounds.
+            while True:
+                chunk = stream.read(min(64 * 1024, remaining - copied + 1))
+                if not chunk:
+                    break
+                if len(chunk) > remaining - copied:
+                    _byte_limit()
+                out.write(chunk)
+                copied += len(chunk)
     os.chmod(target, stat.S_IMODE(mode) | stat.S_IRUSR | stat.S_IWUSR)
+    return copied
 
 
-def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str]) -> None:
-    """Copy what `git add -A` could track: directories, regular files and
-    symlinks (never followed). FIFOs, sockets and devices are skipped as Git
-    skips them; `.git` entries, nested repositories and ignored paths too.
-    Regular files and symlinks count against MAX_STAGED_FILES and, by
-    apparent size, MAX_STAGED_BYTES before each copy."""
+def _controls(workspace: Path, stage: Path, *, skip,
+              prune_nested: set[str] | None = None) -> tuple[list[str], int, int, set[str]]:
+    """Copy controls once before Git runs, without copying ignored payloads.
+
+    The view initially contains directories and special files only. Ordinary
+    path names are candidates for check-ignore, rather than file content.
+    """
     stage.mkdir()
+    paths = []
+    pruned = set()
     staged_bytes = staged_files = 0
     for root, dirs, files in os.walk(workspace, followlinks=False):
         current = Path(root)
@@ -470,28 +497,105 @@ def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str]) -> None
         keep = []
         for name in sorted(dirs) + sorted(files):
             path = current / name
-            relative = path.relative_to(workspace).as_posix()
-            if name == '.git' or skip(path) or relative in ignored:
+            if name == '.git' or skip(path):
                 continue
             info = path.lstat()
             mode = info.st_mode
             target = target_root / name
-            if stat.S_ISLNK(mode) or stat.S_ISREG(mode):
+            relative = path.relative_to(workspace).as_posix()
+            if stat.S_ISDIR(mode):
+                target.mkdir()
+                if (prune_nested is not None
+                        and (relative in prune_nested or os.path.lexists(path / '.git'))):
+                    # Keep directory presence for indexed gitlinks without
+                    # passing their descendants to check-ignore or Git. This
+                    # lstat-confirmed directory branch never prunes symlinks.
+                    pruned.add(relative)
+                    continue
+                keep.append(name)
+            paths.append(relative)
+            if name in _SPECIAL_NAMES and not stat.S_ISDIR(mode):
+                if not (stat.S_ISLNK(mode) or stat.S_ISREG(mode)):
+                    raise WorkspaceGitCollectionError(
+                        f'{path.relative_to(workspace).as_posix()} is not a regular file')
                 staged_files += 1
-                staged_bytes += info.st_size if stat.S_ISREG(mode) else 0
                 if staged_files > MAX_STAGED_FILES:
                     raise WorkspaceGitCollectionError(
                         f'workspace has more than {MAX_STAGED_FILES} files to stage')
-                if staged_bytes > MAX_STAGED_BYTES:
+                if stat.S_ISLNK(mode):
+                    os.symlink(os.readlink(path), target)
+                else:
+                    if info.st_size > MAX_STAGED_BYTES - staged_bytes:
+                        _byte_limit()
+                    staged_bytes += _copy_regular(path, target, mode,
+                                                   MAX_STAGED_BYTES - staged_bytes)
+        dirs[:] = [name for name in dirs if name in keep]
+    return paths, staged_bytes, staged_files, pruned
+
+
+def _view(context: _Context, timeout: float, *, skip,
+          prune_nested: bool = False) -> Path:
+    stage = context.private / 'stage'
+    # --stage reads only private index metadata, without ignore/attribute
+    # evaluation. Names become comparison strings, never filesystem targets.
+    result = _invoke(['--git-dir=' + str(context.gitdir), 'ls-files', '--stage', '-z'],
+                     cwd=context.private, home=context.private, timeout=timeout, check=True)
+    gitlinks = {entry.partition('\t')[2] for entry in result.stdout.split('\0')
+                if entry.startswith('160000 ')}
+    paths, staged_bytes, staged_files, pruned = _controls(
+        context.workspace, stage, skip=skip,
+        prune_nested=gitlinks if prune_nested else None)
+    ignored = _ignored(context, stage, paths, timeout, gitlinks)
+    _copy_view(context.workspace, stage, skip=skip, ignored=ignored,
+               prepared=(staged_bytes, staged_files), pruned=pruned)
+    return stage
+
+
+def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str],
+               prepared: tuple[int, int] | None = None,
+               pruned: set[str] | None = None) -> None:
+    """Copy eligible ordinary files into the stable private control view.
+
+    FIFOs, sockets and devices are skipped as Git skips them. Apparent size
+    rejects sparse oversized files before copying; streamed bytes enforce
+    the cumulative bound even when files grow between lstat and EOF.
+    """
+    stage.mkdir(exist_ok=prepared is not None)
+    staged_bytes, staged_files = prepared or (0, 0)
+    for root, dirs, files in os.walk(workspace, followlinks=False):
+        current = Path(root)
+        target_root = stage / current.relative_to(workspace)
+        keep = []
+        for name in sorted(dirs) + sorted(files):
+            path = current / name
+            relative = path.relative_to(workspace).as_posix()
+            if (name == '.git' or skip(path) or relative in ignored
+                    or (pruned is not None and relative in pruned)):
+                continue
+            target = target_root / name
+            if prepared is not None and name in _SPECIAL_NAMES:
+                # Never reopen the live controls after Git evaluated ignores.
+                # New controls appearing since the first scan are omitted.
+                if target.is_dir() and not target.is_symlink():
+                    keep.append(name)
+                continue
+            info = path.lstat()
+            mode = info.st_mode
+            if stat.S_ISLNK(mode) or stat.S_ISREG(mode):
+                staged_files += 1
+                if staged_files > MAX_STAGED_FILES:
                     raise WorkspaceGitCollectionError(
-                        f'workspace has more than {MAX_STAGED_BYTES} bytes to stage')
+                        f'workspace has more than {MAX_STAGED_FILES} files to stage')
+                if stat.S_ISREG(mode) and info.st_size > MAX_STAGED_BYTES - staged_bytes:
+                    _byte_limit()
             if stat.S_ISLNK(mode):
                 os.symlink(os.readlink(path), target)
             elif stat.S_ISDIR(mode):
-                target.mkdir()
+                target.mkdir(exist_ok=True)
                 keep.append(name)
             elif stat.S_ISREG(mode):
-                _copy_regular(path, target, mode)
+                staged_bytes += _copy_regular(path, target, mode,
+                                               MAX_STAGED_BYTES - staged_bytes)
         dirs[:] = [name for name in dirs if name in keep]
 
 
@@ -579,8 +683,8 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             shutil.copytree(context.gitdir, workspace / '.git', dirs_exist_ok=True,
                             copy_function=copy_missing)
             return result
-        if not args or args[0] not in _NO_WORK_TREE_READS:
-            _refuse_special_files(workspace)
+        reads_work_tree = (not args or (args[0] not in _NO_WORK_TREE_READS
+                           and args[:2] != ('worktree', 'list')))
         entries = _validate(workspace, context.private, timeout, context.baseline)
         if _metadata(workspace) == workspace and (not args or args[0] not in {'rev-parse', 'remote', 'log', 'show', 'worktree'}):
             _refuse('bare metadata supports read-only inspection')
@@ -592,8 +696,10 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
         if command and command[0] == 'add':
             result = _stage(context, command, timeout, check)
         else:
+            view = (_view(context, timeout, skip=lambda path: False, prune_nested=True)
+                    if reads_work_tree else workspace)
             result = _invoke(['--git-dir=' + str(context.gitdir),
-                              '--work-tree=' + str(workspace), *command],
+                              '--work-tree=' + str(view), *command],
                              cwd=context.private, home=context.private, timeout=timeout, check=check)
         if temporary and command and command[0] in {'add', 'commit'}:
             # Setup happens before the arm. Keep its observable metadata in
