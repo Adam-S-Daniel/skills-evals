@@ -3,12 +3,13 @@
 #
 # SECURITY / COST POSTURE — the whole point, read before changing anything:
 #
-# * NO credential, NO `id-token`, NO API call, NO spend. The probe reads the
+# * The gate and arms use NO credential, NO `id-token`, NO API call, NO spend. The probe reads the
 #   `system/init` event, which the Claude Code CLI computes locally before its
 #   first request, against `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; the child
-#   is killed the moment that event arrives. `permissions: contents: read` is
-#   the whole privilege set. If this workflow ever needs a secret, the design
-#   has broken — do not add one, work out what changed.
+#   is killed the moment that event arrives. Their privilege is contents: read.
+#   The separate coverage census reads checkouts only; its optional private
+#   registry checkout receives a read credential on the schedule event alone.
+#   Only the schedule-only coverage publisher can write the results branch.
 #
 # * That is exactly why this is NOT in eval.yml. eval.yml's OIDC subject is
 #   pinned to `refs/heads/main`, so a branch dispatch dies at token exchange
@@ -106,6 +107,173 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # This informational PR job is not a required check: an unavailable optional
+  # registry makes the public census incomplete, but does not test this PR.
+  # It reports unresolved on PR/push/dispatch without failing those checks;
+  # only the schedule fails, and publication requires its success.
+  # The required `test` check in ci.yml validates this workflow's structure.
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out adam-agentskills for census
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: true
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
+          persist-credentials: false
+
+      - name: Check out cms-platform for census
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: true
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: cms-platform
+          persist-credentials: false
+
+      - name: Check out adamdaniel.ai for census
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: true
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: adamdaniel.ai
+          persist-credentials: false
+
+      - name: Check out optional private registry for scheduled census
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        continue-on-error: true
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          path: adam-agentskills-private
+          persist-credentials: false
+          token: ${{ secrets.COVERAGE_REGISTRY_READ_TOKEN }}
+
+      - name: Set up Python for census
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install census dependency
+        run: pip install pyyaml==6.0.3
+
+      - name: Build public-safe census
+        id: census
+        working-directory: skills-evals
+        run: |
+          set +e
+          python3 scripts/eval_coverage.py \
+            --registry adam-agentskills=../adam-agentskills \
+            --registry cms-platform=../cms-platform \
+            --registry adamdaniel.ai=../adamdaniel.ai \
+            --registry adam-agentskills-private=../adam-agentskills-private \
+            --publish-dir "$RUNNER_TEMP/coverage" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          result=$?
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Add coverage summary
+        if: always()
+        run: cat "$RUNNER_TEMP/coverage/latest.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-census
+          path: ${{ runner.temp }}/coverage/
+          if-no-files-found: error
+
+      - name: Fail an unresolved census
+        if: steps.census.outputs.result != '0'
+        env:
+          CENSUS_RESULT: ${{ steps.census.outputs.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$CENSUS_RESULT" = 2 ] && [ "$EVENT_NAME" != schedule ]; then
+            echo "::warning::coverage census unresolved; see the safe summary"
+            exit 0
+          fi
+          exit "$CENSUS_RESULT"
+
+  # The shared real-eval lane serializes writes to persistent/eval-results.
+  # It is schedule-only and checks out trusted main again; no result-branch
+  # script is ever executed. Its write token exists in the final push step.
+  coverage-publish:
+    if: github.event_name == 'schedule' && needs.coverage.result == 'success'
+    needs: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: real-eval
+      cancel-in-progress: false
+    steps:
+      - name: Check out the scheduled main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download safe census artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coverage-census
+          path: ${{ runner.temp }}/coverage
+
+      - name: Prepare persistent results commit
+        id: prepare
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/coverage"
+          jq -e '.status == "complete" and .unresolved == [] and
+            (.totals.total | type == "number")' "$source/latest.json" >/dev/null
+          test -s "$source/latest.md"
+          test -s "$source/badge.json"
+          timestamp=$(jq -r '.generated_at' "$source/latest.json")
+          [[ "$timestamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+          stamp="${timestamp//:/-}"
+          remote_ref=$(git ls-remote --heads origin refs/heads/persistent/eval-results)
+          if [ -n "$remote_ref" ]; then
+            git fetch origin refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results
+            git checkout -B persistent/eval-results origin/persistent/eval-results
+          else
+            git checkout -B persistent/eval-results
+          fi
+          mkdir -p coverage badges
+          cp "$source/latest.json" coverage/latest.json
+          cp "$source/latest.json" "coverage/$stamp.json"
+          cp "$source/latest.md" coverage/latest.md
+          cp "$source/badge.json" badges/coverage.json
+          git add -f coverage/latest.json "coverage/$stamp.json" coverage/latest.md badges/coverage.json
+          if git diff --cached --quiet; then
+            echo "No coverage change to commit."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "skills-evals coverage bot"
+          git config user.email "skills-evals@users.noreply.github.com"
+          git commit -m "coverage: publish complete census [skip ci]"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push coverage commit
+        if: steps.prepare.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" push origin HEAD:refs/heads/persistent/eval-results
+
   # Hermetic: the mutation suite. Needs no Claude Code CLI at all, so it
   # still reports even when a CLI release breaks the arms.
   gate:

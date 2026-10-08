@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Coverage census: every skill in every registry, and whether it has an eval.
 
-Part of https://github.com/Adam-S-Daniel/skills-evals/issues/64. This is the
-LOCAL, read-only half: it reads registry checkouts and this repo's `evals/`
-tree, prints a table, and writes nothing. Publishing the table (a workflow
-job, an `eval-results` commit, a README badge) is a separate step.
+Part of https://github.com/Adam-S-Daniel/skills-evals/issues/64. Local mode
+reads registry checkouts and prints a table. Publication mode writes
+a public-safe report and badge for the workflow; it never runs an eval arm.
 
     python3 scripts/eval_coverage.py \\
         --registry adam-agentskills=PATH --registry cms-platform=PATH \\
         --registry adamdaniel.ai=PATH --registry adam-agentskills-private=PATH \\
         [--json] [--check] [--include-private-names]
+
+    python3 scripts/eval_coverage.py --registry NAME=PATH ... \\
+        --publish-dir OUTPUT --timestamp YYYY-MM-DDTHH:MM:SSZ
 
 WHAT A ROW IS. Every `SKILL.md` matched by a registry's `layout` glob in
 `harness/registries.yml` is one row, resolved by the harness's own
@@ -30,7 +32,7 @@ A fixture with no `skill:` key at all (the `guidance` and `propagation`
 subjects) is not a skill fixture and is ignored. A `skill:` key that is present
 but null or blank is a malformed skill fixture and is refused, never ignored.
 
-THE DENOMINATOR IS THE PART THAT LIES, so the script refuses (exit 2, nothing
+THE DENOMINATOR IS THE PART THAT LIES, so local mode refuses (exit 2, nothing
 printed to stdout) rather than report a partial census: a registry in
 `harness/registries.yml` with no `--registry` path, a path that is not a
 directory, a layout that matches no skill, one skill name in two bundles of one
@@ -40,7 +42,8 @@ blank or whose `registry:` is missing or unknown, a file that is not valid
 UTF-8 or YAML, a malformed or unknown-field `non-coverage.yml`. Nothing falls
 back to a sibling directory: the operator names every checkout. A refusal
 message never carries a skill name from a fixture or a non-coverage row, and
-never one from a private registry (see PRIVATE REGISTRY).
+never one from a private registry (see PRIVATE REGISTRY). Publication mode
+writes an unresolved report with no totals or badge and still exits 2.
 
 PROBLEMS, reported beside the rows and failing `--check`:
 
@@ -67,8 +70,11 @@ skill name; no clock, no absolute paths). Stdlib plus PyYAML.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
+import html
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -77,6 +83,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 import run_eval  # noqa: E402
+import context as fixture_context  # noqa: E402
 
 # An explicit allowlist, not a name-pattern guess. test_issue_64 asserts every
 # registries.yml entry whose name says "private" is listed here, so a new
@@ -142,6 +149,11 @@ def enumerate_skills(entry: dict) -> list[dict]:
     rows.sort(key=lambda r: (r["bundle"] or "", r["skill"]))
     seen: set[str] = set()
     for row in rows:
+        try:
+            run_eval._validate_skill_name(row["skill"])
+        except ValueError:
+            raise CensusRefusal(
+                f"registry {entry['name']!r} has an invalid skill directory name") from None
         if row["skill"] in seen:
             # (registry, skill) keys every fixture and skip lookup, so a name
             # in two bundles would double-count; a private name stays unsaid.
@@ -329,7 +341,8 @@ def redact(census: dict, include_private_names: bool) -> dict:
 # --- rendering ------------------------------------------------------------
 
 def _cell(text) -> str:
-    return " ".join(str(text).split()).replace("|", "\\|")
+    safe = html.escape(" ".join(str(text).split()), quote=True)
+    return re.sub(r"([\\`*_\[\]|])", r"\\\1", safe)
 
 
 def render_json(census: dict) -> str:
@@ -369,6 +382,112 @@ def render_markdown(census: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def fixture_readiness(evals_dir: Path) -> dict:
+    """Count validated fixture metadata, without claiming context delivery."""
+    counts = {"total": 0, "draft": 0, "context_declared": 0,
+              "context_missing": 0, "guidance_unproven": 0,
+              "paired_context_delivery_verified": False}
+    for path in sorted(evals_dir.rglob("fixture.yaml")):
+        try:
+            fixture = fixture_context.load_fixture_yaml(path.read_bytes(), "fixture")
+        except (OSError, fixture_context.ContextError) as exc:
+            raise CensusRefusal("fixture_metadata_invalid") from exc
+        draft = fixture.get("draft", False)
+        if type(draft) is not bool:
+            raise CensusRefusal("fixture_metadata_invalid")
+        counts["total"] += 1
+        counts["draft"] += int(draft)
+        if "context" in fixture:
+            counts["context_declared"] += 1
+            counts["guidance_unproven"] += int(
+                fixture["context"]["guidance_revision"] is None)
+        else:
+            counts["context_missing"] += 1
+    return counts
+
+
+def _publication_markdown(report: dict) -> str:
+    if report["status"] == "unresolved":
+        lines = ["# Skill eval coverage census", "", "Census unresolved; no fleet totals or badge published.",
+                 "", "| Registry | State |", "|---|---|"]
+        for registry in report["registries"]:
+            lines.append(f"| {_cell(registry['name'])} | {registry['status']} |")
+        lines += ["", "Fixture and paired-context readiness unverified."]
+        return "\n".join(lines) + "\n"
+    readiness = report["fixture_readiness"]
+    return (render_markdown(report) + "\n## Fixture metadata readiness\n\n"
+            f"- Fixtures: {readiness['total']}; draft: {readiness['draft']}.\n"
+            f"- Context declared: {readiness['context_declared']}; missing: "
+            f"{readiness['context_missing']}; guidance unproven: "
+            f"{readiness['guidance_unproven']}.\n"
+            "- Paired context delivery verified: no. These counts validate "
+            "metadata only; ADR 0012 currently resolves context without "
+            "delivering it to either arm.\n")
+
+
+def _unresolved_report(timestamp: str, names: list[str],
+                       unresolved: set[str]) -> dict:
+    return {"schema": 2, "status": "unresolved", "generated_at": timestamp,
+            "registries": [{"name": name,
+                            "status": "unresolved" if name in unresolved else "resolved"}
+                           for name in names],
+            "unresolved": sorted(unresolved), "totals": None,
+            "fixture_readiness": None}
+
+
+def build_publication(args: argparse.Namespace) -> tuple[int, dict]:
+    """Fail closed per registry, including when a checkout is missing or empty."""
+    try:
+        resolved = run_eval.resolve_registries(
+            args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT)
+    except ValueError as exc:
+        raise CensusRefusal("registry_configuration_invalid") from exc
+    names = list(resolved)
+    unresolved = set()
+    for name, entry in resolved.items():
+        if entry["source"] == "sibling default" or not entry["path"].is_dir():
+            unresolved.add(name)
+            continue
+        try:
+            enumerate_skills(entry)
+        except CensusRefusal:
+            unresolved.add(name)
+    if unresolved:
+        return 2, _unresolved_report(args.timestamp, names, unresolved)
+    try:
+        fixtures = count_fixtures(args.evals_dir, resolved)
+        skips: dict = {}
+        load_skips(args.non_coverage, resolved, private=False, into=skips)
+        if args.private_non_coverage:
+            load_skips(args.private_non_coverage, resolved, private=True, into=skips)
+        census = redact(build_census(resolved, fixtures, skips), False)
+        readiness = fixture_readiness(args.evals_dir)
+    except CensusRefusal:
+        return 2, _unresolved_report(args.timestamp, names, set(names))
+    report = {**census, "schema": 2, "status": "complete",
+              "generated_at": args.timestamp, "unresolved": [],
+              "fixture_readiness": readiness}
+    failed = report["totals"]["gap"] or report["problems"]
+    return (1 if args.check and failed else 0), report
+
+
+def write_publication(directory: Path, report: dict) -> None:
+    """Overwrite fixed outputs only; an unresolved run cannot retain a badge."""
+    directory.mkdir(parents=True, exist_ok=True)
+    badge = directory / "badge.json"
+    badge.unlink(missing_ok=True)
+    (directory / "latest.json").write_text(render_json(report), encoding="utf-8")
+    (directory / "latest.md").write_text(_publication_markdown(report), encoding="utf-8")
+    if report["status"] == "complete":
+        totals = report["totals"]
+        endpoint = {"schemaVersion": 1, "label": "Coverage",
+                    "message": (f"{totals['covered']} covered · {totals['skipped']} skipped · "
+                                f"{totals['gap']} gap · {report['generated_at'][:10]}"),
+                    "color": "green" if not totals["gap"] and not report["problems"]
+                    else "orange"}
+        badge.write_text(render_json(endpoint), encoding="utf-8")
+
+
 # --- entry point ----------------------------------------------------------
 
 def run(args: argparse.Namespace) -> tuple[int, str]:
@@ -402,7 +521,35 @@ def main(argv: list[str] | None = None) -> int:
                     help="exit 1 on a GAP or a problem")
     ap.add_argument("--include-private-names", action="store_true",
                     help="list private-registry skill names (never in CI)")
+    ap.add_argument("--publish-dir", type=Path,
+                    help="write public-safe JSON, markdown, and a complete-only badge")
+    ap.add_argument("--timestamp", help="explicit UTC time for publication, YYYY-MM-DDTHH:MM:SSZ")
     args = ap.parse_args(argv)
+    if args.publish_dir is not None:
+        if args.include_private_names:
+            print("eval_coverage: refusing: private names cannot be published", file=sys.stderr)
+            return 2
+        if not args.timestamp or not re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+                args.timestamp):
+            print("eval_coverage: refusing: publication needs a UTC timestamp", file=sys.stderr)
+            return 2
+        try:
+            parsed = datetime.strptime(args.timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != args.timestamp:
+                raise ValueError("noncanonical UTC time")
+            code, report = build_publication(args)
+            write_publication(args.publish_dir, report)
+        except (ValueError, CensusRefusal, OSError):
+            print("eval_coverage: refusing: publication input or output invalid",
+                  file=sys.stderr)
+            return 2
+        if code == 2:
+            print("eval_coverage: census unresolved; see the safe report", file=sys.stderr)
+        return code
+    if args.timestamp is not None:
+        print("eval_coverage: refusing: --timestamp requires --publish-dir", file=sys.stderr)
+        return 2
     try:
         code, text = run(args)
     except CensusRefusal as exc:

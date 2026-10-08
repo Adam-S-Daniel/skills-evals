@@ -105,7 +105,7 @@ session that lost the guidance must not also lose these.
   | Workflow | Triggers | Salient-path handling |
   |---|---|---|
   | `ci.yml` | `pull_request`, `push` to main, dispatch | `pull_request` unfiltered (required check); step `salient` gates the suite on `SALIENT_PATHS`, which must equal `on.push.paths` (`CiDispatchTests`) |
-  | `propagation.yml` | `pull_request`, `push` to main, schedule, dispatch | deliberately unfiltered: it probes an unpinned upstream registry (its header says why) |
+  | `propagation.yml` | `pull_request`, `push` to main, schedule, dispatch | deliberately unfiltered: it probes an unpinned upstream registry (its header says why). `coverage` is informational and not required: absent optional registry access makes its census unresolved without testing a PR, so PR/push/dispatch record a warning while schedule fails. Only `coverage-publish` on schedule writes `persistent/eval-results`; optional private checkout uses `COVERAGE_REGISTRY_READ_TOKEN` in that checkout step alone. |
   | `dependabot-auto-merge.yml` | `pull_request`, schedule, dispatch | acts only on Dependabot PRs whose changes stay inside the manifest-path allowlist |
   | `eval.yml` | dispatch only | no push or PR trigger; Adam's 2026-10-06 decision retired its Tuesday schedule because the [weekly routine](https://github.com/Adam-S-Daniel/skills-evals/pull/331) replaces it |
   | `scheduled-run-health.yml` | schedule, dispatch | no push or PR trigger, so no path filter |
