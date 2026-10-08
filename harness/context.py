@@ -193,6 +193,12 @@ class FrozenContext:
     skills: tuple[SkillTree, ...]
     guidance: bytes
     digest: str
+    # Part 2's delivery inputs: each guidance source file's raw bytes in
+    # assembly order (base first), the pinned hook, and the pinned section
+    # manifest's rows, so a subject is cut or added per source file.
+    guidance_files: tuple[tuple[str, bytes], ...] = ()
+    hook: bytes | None = None
+    guidance_rows: tuple[Mapping, ...] = ()
 
 
 class _Git:
@@ -209,6 +215,20 @@ class _Git:
         self.run("rev-parse", "--git-dir", code="repository_unavailable")
 
     def run(self, *args, code="missing_object") -> bytes:
+        # This object reader is separate from workspace Git. Only its audited
+        # object-query shapes may reach Git; filters, external diff drivers,
+        # network commands and writes are never part of frozen resolution.
+        read_only = all(isinstance(arg, str) for arg in args) and (
+            args == ("rev-parse", "--git-dir")
+            or (len(args) == 4 and args[:3] == ("rev-parse", "--verify", "--end-of-options")
+                and args[3].endswith("^{commit}") and _REF.fullmatch(args[3][:-9]))
+            or (len(args) == 3 and args[:2] == ("cat-file", "-e")
+                and args[2].endswith("^{commit}") and _SHA.fullmatch(args[2][:-9]))
+            or (len(args) == 3 and args[:2] in (("cat-file", "blob"), ("ls-tree", "-rz"),
+                                             ("log", "--format=%H %ct")) and _SHA.fullmatch(args[2]))
+            or (len(args) == 4 and args[:3] == ("show", "-s", "--format=%ct") and _SHA.fullmatch(args[3])))
+        if not read_only:
+            raise ContextError("unsupported_git_read", "frozen context permits only audited Git object reads")
         try:
             result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(self.path), *args],
                                     env=self.env, stdin=subprocess.DEVNULL,
@@ -479,7 +499,7 @@ def _managed(raw: bytes | None) -> tuple[list[str], str, bytes] | None:
     return sections, mode, b"".join(lines[body_start:end])
 
 
-def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[str, Path]) -> tuple[bytes, dict]:
+def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[str, Path]) -> tuple[bytes, dict, dict]:
     consumer = _Git(repository, repositories)
     tree = consumer.tree(consumer.revision(revision))
     managed_raw = consumer.read(tree, "AGENTS.md", optional=True)
@@ -519,6 +539,7 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
                 or len({row["id"] for row in manifest}) != len(manifest)):
             raise ContextError("invalid_guidance_manifest", "guidance manifest must be a list of uniquely identified source rows")
     files = [{"path": "agents-md/base.md", "digest": _sha256(base), "bytes": len(base)}]
+    sources = [("agents-md/base.md", base)]
     suffix = b""
     for section in sections:
         path = f"agents-md/sections/{section}.md"
@@ -527,6 +548,7 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
             raise ContextError("invalid_guidance_manifest", f"{path}: adopted section is absent from the source manifest")
         suffix += b"\n" + raw
         files.append({"path": path, "digest": _sha256(raw), "bytes": len(raw)})
+        sources.append((path, raw))
     if metadata is not None:
         managed_source = base if mode == "full" else source.read(source_tree, "agents-md/stub.md")
         # Exactly the build script's one framing newline, never arbitrary trim.
@@ -551,24 +573,29 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
              "manifest_digest": _sha256(manifest_raw) if manifest_raw is not None else None,
              "hook_state": "present" if hook is not None else "absent",
              "hook_digest": _sha256(hook) if hook is not None else None}
-    return payload, proof
+    rows = tuple(_freeze(dict(row)) for row in manifest or ())
+    return payload, proof, {"files": tuple(sources), "hook": hook, "rows": rows}
 
 
 def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenContext:
     """Resolve one frozen context, verify deployed bytes, and enforce budgets.
 
     Callers receive a deeply immutable manifest, immutable skill payloads,
-    and assembled guidance bytes. Part 1 does not call this from agent arms.
+    and assembled guidance bytes. The pin must pass the same eligibility rule
+    and byte proof as validate_guidance_revision.
     """
     validate_context({"context": context}, "context")
     if context["guidance_revision"] is None:
         raise ContextError("guidance_unproven", "fixture is blocked pending a proven guidance_revision")
     git = _Git(context["repository"], repositories)
     revision = git.revision(context["revision"])
+    # The eligibility half of validate_guidance_revision: a default-branch
+    # ancestor no newer than the context commit. _guidance below is the bytes.
+    _require_eligible(context["repository"], revision, context["guidance_revision"], repositories)
     tree = git.tree(revision)
     lock = git.read(tree, "skills.lock", optional=True)
     skills, sources = _skills(lock, repositories)
-    guidance_bytes, proof = _guidance(context["repository"], revision, context["guidance_revision"], repositories)
+    guidance_bytes, proof, delivered = _guidance(context["repository"], revision, context["guidance_revision"], repositories)
     measurements = {"guidance_bytes": len(guidance_bytes),
                     "skill_catalog_bytes": sum(len(skill.catalog) for skill in skills),
                     "skill_payload_bytes": sum(len(raw) for skill in skills for raw in skill.files.values())}
@@ -591,7 +618,17 @@ def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenCo
                                                 for skill in skills],
                 "guidance": proof, "measurements": measurements, "budget": dict(context["budget"]),
                 "digest": digest}
-    return FrozenContext(_freeze(manifest), skills, guidance_bytes, digest)
+    return FrozenContext(_freeze(manifest), skills, guidance_bytes, digest,
+                         delivered["files"], delivered["hook"], delivered["rows"])
+
+
+def read_guidance_file(frozen: FrozenContext, path: str, repositories: Mapping[str, Path]) -> bytes:
+    """One file of the pinned guidance revision, by its manifest path: the
+    source of a section the context does not adopt, added to a `with` arm."""
+    _path(path)
+    source = _Git(GUIDANCE_REPOSITORY, repositories)
+    revision = frozen.manifest["guidance"]["revision"]
+    return source.read(source.tree(source.revision(revision)), path, code="missing_section")
 
 
 @dataclass(frozen=True)
@@ -616,15 +653,27 @@ def _guidance_candidates(repository: str, revision: str, repositories: Mapping[s
     return candidates
 
 
-def validate_guidance_revision(repository: str, revision: str, pin: str,
-                               repositories: Mapping[str, Path]) -> None:
-    """Prove a declared pin's default-branch ancestry, time, and exact bytes."""
+def _require_eligible(repository: str, revision: str, pin: str,
+                      repositories: Mapping[str, Path]) -> str:
+    """The pin, lowercased, when it is an origin/main ancestor no newer than
+    the context commit; else guidance_unproven. Bytes are not checked here."""
     if not isinstance(pin, str) or not _SHA.fullmatch(pin):
         raise ContextError("guidance_unproven", "guidance pin must be a full commit SHA")
     pin = pin.lower()
     try:
-        if pin not in {candidate for candidate, _ in _guidance_candidates(repository, revision, repositories)}:
-            raise ContextError("guidance_unproven", "guidance pin is not an eligible default-branch ancestor")
+        eligible = {candidate for candidate, _ in _guidance_candidates(repository, revision, repositories)}
+    except ContextError as exc:
+        raise ContextError("guidance_unproven", "guidance pin eligibility cannot be established") from exc
+    if pin not in eligible:
+        raise ContextError("guidance_unproven", "guidance pin is not an eligible default-branch ancestor")
+    return pin
+
+
+def validate_guidance_revision(repository: str, revision: str, pin: str,
+                               repositories: Mapping[str, Path]) -> None:
+    """Prove a declared pin's default-branch ancestry, time, and exact bytes."""
+    try:
+        pin = _require_eligible(repository, revision, pin, repositories)
         _guidance(repository, revision, pin, repositories)
     except ContextError as exc:
         raise ContextError("guidance_unproven", "guidance pin does not prove eligible deployed bytes") from exc
