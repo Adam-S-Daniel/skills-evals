@@ -419,7 +419,7 @@ def _ignored(context: _Context, stage: Path, paths: list[str],
     """Find ignored candidates using only safely copied private controls.
 
     The private index keeps tracked files eligible even when an ignore rule
-    matches. NUL-delimited stdin treats agent-selected names as data.
+    matches. The ./ prefix makes pathspec-looking names literal even on stdin.
     """
     groups = {False: [], True: []}
     for path in paths:
@@ -439,11 +439,12 @@ def _ignored(context: _Context, stage: Path, paths: list[str],
                           '--work-tree=' + str(stage), 'check-ignore',
                           *options, '-z', '--stdin'],
                          cwd=stage, home=context.private, timeout=timeout,
-                         input='\0'.join(candidates) + '\0')
+                         input='\0'.join('./' + path for path in candidates) + '\0')
         if result.returncode not in {0, 1}:
             raise WorkspaceGitCollectionError(
                 f'git check-ignore exited {result.returncode}')
-        ignored.update(entry.rstrip('/') for entry in result.stdout.split('\0') if entry)
+        ignored.update(entry.removeprefix('./').rstrip('/')
+                       for entry in result.stdout.split('\0') if entry)
     return ignored
 
 
@@ -480,57 +481,100 @@ def _copy_regular(source: Path, target: Path, mode: int, remaining: int) -> int:
     return copied
 
 
-def _controls(workspace: Path, stage: Path, *, skip,
-              prune_nested: set[str] | None = None) -> tuple[list[str], int, int, set[str]]:
-    """Copy controls once before Git runs, without copying ignored payloads.
+def _controls(context: _Context, stage: Path, timeout: float, *, skip,
+              gitlinks: set[str], indexed: set[str],
+              prune_nested: bool) -> tuple[set[str], int, int, set[str]]:
+    """Resolve directories parent-first using private ignore snapshots.
 
-    The view initially contains directories and special files only. Ordinary
-    path names are candidates for check-ignore, rather than file content.
+    Ignored subtrees contribute neither controls nor payloads to the budget.
+    Indexed descendants keep their directories eligible, including attributes
+    Git still reads for tracked files within an otherwise ignored directory.
     """
+    workspace = context.workspace
     stage.mkdir()
-    paths = []
+    indexed_dirs = {parent.as_posix() for relative in indexed
+                    for parent in Path(relative).parents if parent != Path('.')}
+    ignored = set()
+    ignored_dirs = set()
     pruned = set()
     staged_bytes = staged_files = 0
+
+    def copy_control(path: Path) -> None:
+        nonlocal staged_bytes, staged_files
+        info = path.lstat()
+        mode = info.st_mode
+        if not (stat.S_ISLNK(mode) or stat.S_ISREG(mode)):
+            raise WorkspaceGitCollectionError(
+                f'{path.relative_to(workspace).as_posix()} is not a regular file')
+        staged_files += 1
+        if staged_files > MAX_STAGED_FILES:
+            raise WorkspaceGitCollectionError(
+                f'workspace has more than {MAX_STAGED_FILES} files to stage')
+        target = stage / path.relative_to(workspace)
+        if stat.S_ISLNK(mode):
+            os.symlink(os.readlink(path), target)
+        else:
+            staged_bytes += _copy_regular(path, target, mode,
+                                           MAX_STAGED_BYTES - staged_bytes)
+
     for root, dirs, files in os.walk(workspace, followlinks=False):
         current = Path(root)
+        relative_root = current.relative_to(workspace).as_posix()
         target_root = stage / current.relative_to(workspace)
+        ignore = current / '.gitignore'
+        # Git never descends into excluded directories to load their ignore
+        # rules. A tracked control remains eligible as indexed file content.
+        if ('.gitignore' in dirs + files and not stat.S_ISDIR(ignore.lstat().st_mode)
+                and not skip(ignore)
+                and (relative_root not in ignored_dirs
+                     or ignore.relative_to(workspace).as_posix() in indexed)):
+            copy_control(ignore)
+        paths = []
         keep = []
         for name in sorted(dirs) + sorted(files):
             path = current / name
             if name == '.git' or skip(path):
                 continue
-            info = path.lstat()
-            mode = info.st_mode
-            target = target_root / name
             relative = path.relative_to(workspace).as_posix()
-            if stat.S_ISDIR(mode):
+            paths.append(relative)
+            if stat.S_ISDIR(path.lstat().st_mode):
+                target = target_root / name
                 target.mkdir()
-                if (prune_nested is not None
-                        and (relative in prune_nested or os.path.lexists(path / '.git'))):
-                    # Keep directory presence for indexed gitlinks without
-                    # passing their descendants to check-ignore or Git. This
-                    # lstat-confirmed directory branch never prunes symlinks.
+                if prune_nested and (relative in gitlinks or os.path.lexists(path / '.git')):
                     pruned.add(relative)
+                    if relative not in gitlinks and os.path.lexists(path / '.git'):
+                        # Constants-only metadata marks an untracked nested
+                        # repository for status, including -uall. No live
+                        # nested metadata or descendants enter the read view.
+                        marker = target / '.git'
+                        marker.mkdir()
+                        (marker / 'objects').mkdir()
+                        (marker / 'refs').mkdir()
+                        (marker / 'HEAD').write_text('ref: refs/heads/private\n')
                     continue
                 keep.append(name)
-            paths.append(relative)
-            if name in _SPECIAL_NAMES and not stat.S_ISDIR(mode):
-                if not (stat.S_ISLNK(mode) or stat.S_ISREG(mode)):
-                    raise WorkspaceGitCollectionError(
-                        f'{path.relative_to(workspace).as_posix()} is not a regular file')
-                staged_files += 1
-                if staged_files > MAX_STAGED_FILES:
-                    raise WorkspaceGitCollectionError(
-                        f'workspace has more than {MAX_STAGED_FILES} files to stage')
-                if stat.S_ISLNK(mode):
-                    os.symlink(os.readlink(path), target)
+        excluded = _ignored(context, stage, paths, timeout, gitlinks)
+        for name in list(keep):
+            relative = (current / name).relative_to(workspace).as_posix()
+            if relative in excluded:
+                ignored_dirs.add(relative)
+                if relative in indexed_dirs:
+                    excluded.remove(relative)
                 else:
-                    if info.st_size > MAX_STAGED_BYTES - staged_bytes:
-                        _byte_limit()
-                    staged_bytes += _copy_regular(path, target, mode,
-                                                   MAX_STAGED_BYTES - staged_bytes)
+                    keep.remove(name)
+        ignored.update(excluded)
+        # Attributes can affect tracked files even when the attributes file
+        # itself is ignored. Copy after eligibility, before any attribute read.
+        attributes = current / '.gitattributes'
+        if ('.gitattributes' in dirs + files and not stat.S_ISDIR(attributes.lstat().st_mode)
+                and not skip(attributes)):
+            copy_control(attributes)
+        for relative in excluded:
+            target = stage / relative
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
         dirs[:] = [name for name in dirs if name in keep]
-    return paths, staged_bytes, staged_files, pruned
+    return ignored, staged_bytes, staged_files, pruned
 
 
 def _view(context: _Context, timeout: float, *, skip,
@@ -540,12 +584,12 @@ def _view(context: _Context, timeout: float, *, skip,
     # evaluation. Names become comparison strings, never filesystem targets.
     result = _invoke(['--git-dir=' + str(context.gitdir), 'ls-files', '--stage', '-z'],
                      cwd=context.private, home=context.private, timeout=timeout, check=True)
+    indexed = {entry.partition('\t')[2] for entry in result.stdout.split('\0') if entry}
     gitlinks = {entry.partition('\t')[2] for entry in result.stdout.split('\0')
                 if entry.startswith('160000 ')}
-    paths, staged_bytes, staged_files, pruned = _controls(
-        context.workspace, stage, skip=skip,
-        prune_nested=gitlinks if prune_nested else None)
-    ignored = _ignored(context, stage, paths, timeout, gitlinks)
+    ignored, staged_bytes, staged_files, pruned = _controls(
+        context, stage, timeout, skip=skip, gitlinks=gitlinks, indexed=indexed,
+        prune_nested=prune_nested)
     _copy_view(context.workspace, stage, skip=skip, ignored=ignored,
                prepared=(staged_bytes, staged_files), pruned=pruned)
     return stage
@@ -693,6 +737,13 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
         command = list(args)
         if command and command[0] in {'diff', 'log', 'show'}:
             command[1:1] = ['--no-ext-diff', '--no-textconv']
+        if (command and command[0] == 'diff'
+                and any(option in {'--cached', '--staged'} for option in
+                        command[1:command.index('--') if '--' in command else len(command)])):
+            # Cached gitlink additions are part of the judge's patch. The
+            # global all override hides them; dirty still avoids inspecting
+            # nested working trees while showing indexed commit changes.
+            command.insert(1, '--ignore-submodules=dirty')
         if command and command[0] == 'add':
             result = _stage(context, command, timeout, check)
         else:

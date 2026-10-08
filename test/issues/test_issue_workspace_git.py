@@ -646,7 +646,15 @@ class WorkspaceGitHostileTreeTests(_WorkspaceGitFixture, unittest.TestCase):
         real = workspace_git._invoke
         def guard(args, **kwargs):
             if any(arg.startswith('--work-tree=') for arg in args):
-                raise AssertionError('Git ran over a tree holding a FIFO: ' + ' '.join(args))
+                if 'check-ignore' in args:
+                    # This operation reads only ignore snapshots; attributes
+                    # are copied after directory eligibility is resolved.
+                    self.assertNotEqual(kwargs['cwd'], self.repo)
+                    tree = Path(next(arg.split('=', 1)[1] for arg in args
+                                     if arg.startswith('--work-tree=')))
+                    self.assertTrue(tree.is_relative_to(kwargs['home']))
+                else:
+                    raise AssertionError('Git ran over a tree holding a FIFO: ' + ' '.join(args))
             return real(args, **kwargs)
         return mock.patch.object(workspace_git, '_invoke', guard)
 
@@ -880,6 +888,9 @@ class WorkspaceGitFollowupTests(_WorkspaceGitFixture, unittest.TestCase):
                         if trees:
                             tree = Path(trees[0])
                             self.assertNotEqual(tree, self.repo)
+                            if name == '.gitattributes' and 'check-ignore' in args:
+                                self.assertFalse((tree / name).exists())
+                                return real(args, **kwargs)
                             self.assertEqual((tree / name).read_text(), contents)
                             if not observed:
                                 special.unlink()
@@ -1046,3 +1057,109 @@ class WorkspaceGitNestedViewTests(_WorkspaceGitFixture, unittest.TestCase):
         self.assertEqual(diff, native)
         self.assertNotIn('ignored payload', diff)
         self.assertNotIn('repo-link', diff)
+
+
+class WorkspaceGitParityRegressions(_WorkspaceGitFixture, unittest.TestCase):
+    """Follow-up collection keeps the same paths and patches as plain Git."""
+
+    def assert_native_status_and_judge(self, *, nested=None):
+        from unittest import mock
+        import workspace_git
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        real_read = workspace_git._read_regular
+        def metadata_guard(path):
+            if nested is not None:
+                self.assertFalse(Path(path).is_relative_to(nested))
+            return real_read(path)
+        with mock.patch.object(workspace_git, '_read_regular', metadata_guard):
+            for flags in (('--porcelain',), ('--porcelain', '-uall')):
+                native = self.raw('status', *flags).stdout
+                result = workspace_git.run('status', *flags, cwd=self.repo, check=True)
+                self.assertEqual(result.stdout, native)
+        # The judge stages first, then reads the cached bookkeeping patch.
+        self.raw('add', '-A')
+        native = self.raw('diff', '--cached', '--', '.', ':!.claude').stdout
+        cached = native
+        if nested is not None:
+            log = self.raw('-C', str(nested), 'log', '--stat', '-p', '-1',
+                           '--format=%H %s').stdout
+            native += ('\n\n# Nested repository contents (collapsed to gitlinks above)\n'
+                       f'=== {nested.relative_to(self.repo)}: last commit ===\n{log}')
+        self.assertEqual(run_eval._build_judge_diff(self.repo), native)
+        self.assertEqual(workspace_git.run('diff', '--staged', '--', '.', ':!.claude',
+                                          cwd=self.repo, check=True).stdout, cached)
+
+    def test_literal_pathspec_names_match_plain_git(self):
+        names = ('ordinary', ':(glob)ordinary', ':!ordinary', ':(literal)ordinary',
+                 'ignored', ':(glob)ignored', ':!ignored', ':(literal)ignored')
+        (self.repo / '.gitignore').write_text('*ignored\n')
+        for name in names:
+            (self.repo / name).write_text(f'{name} payload\n')
+        self.assert_native_status_and_judge()
+
+    def test_ignored_directory_controls_do_not_use_the_staging_budget(self):
+        from unittest import mock
+        import workspace_git
+        (self.repo / '.gitignore').write_text('ignored/\n')
+        ignored = self.repo / 'ignored'
+        ignored.mkdir()
+        for name in ('.gitattributes', '.gitignore'):
+            with (ignored / name).open('wb') as stream:
+                stream.truncate(100_000)
+        copied = []
+        real = workspace_git._copy_regular
+        def spy(source, *args):
+            copied.append(Path(source).relative_to(self.repo).as_posix())
+            return real(source, *args)
+        with mock.patch.object(workspace_git, 'MAX_STAGED_BYTES', 2048), \
+                mock.patch.object(workspace_git, '_copy_regular', spy):
+            self.assert_native_status_and_judge()
+        self.assertFalse([path for path in copied if path.startswith('ignored/')], copied)
+
+    def test_untracked_nested_repository_matches_plain_git(self):
+        from unittest import mock
+        import workspace_git
+        nested = self.repo / 'nested'
+        nested.mkdir()
+        self.raw('-C', str(nested), 'init', '-q')
+        (nested / 'inside').write_text('nested content\n')
+        self.raw('-C', str(nested), 'add', '-A')
+        self.raw('-C', str(nested), '-c', 'user.name=ci', '-c', 'user.email=ci@example.com',
+                 'commit', '-qm', 'nested fixture commit')
+        native = self.raw('status', '--porcelain', '-uall').stdout
+        self.assertIn('?? nested/\n', native)
+        # No root staging before this read: the nested repository is untracked.
+        real = workspace_git._copy_regular
+        def guard(source, target, *args):
+            # The judge separately inspects the nested repo's own last commit;
+            # only its descendants entering the OUTER view are forbidden.
+            stage = next(parent for parent in Path(target).parents if parent.name == 'stage')
+            self.assertNotEqual(Path(target).relative_to(stage).parts[0], 'nested')
+            return real(source, target, *args)
+        with mock.patch.object(workspace_git, '_copy_regular', guard):
+            self.assert_native_status_and_judge(nested=nested)
+
+
+class WorkspaceGitIgnoredTrackedAttributesTests(_WorkspaceGitFixture, unittest.TestCase):
+    def test_ignored_directory_attributes_still_apply_to_tracked_descendants(self):
+        (self.repo / 'sub').mkdir()
+        (self.repo / 'sub' / 'tracked').write_text('tracked before\n')
+        self.raw('add', 'sub/tracked')
+        self.raw('commit', '-qm', 'tracked fixture')
+        (self.repo / '.gitignore').write_text('sub/\n')
+        (self.repo / 'sub' / '.gitattributes').write_text('tracked text eol=lf\n')
+        (self.repo / 'sub' / '.gitignore').write_text('tracked\n')
+        (self.repo / 'sub' / 'tracked').write_bytes(b'tracked after\r\n')
+        WorkspaceGitParityRegressions.assert_native_status_and_judge(self)
+        self.assertIn('+tracked after\n', self.raw('diff', '--cached').stdout)
+        self.assertEqual(self.raw('show', ':sub/tracked').stdout, 'tracked after\n')
+
+
+class WorkspaceGitControlSymlinkTests(_WorkspaceGitFixture, unittest.TestCase):
+    def test_control_symlinks_to_directories_match_plain_git(self):
+        target = self.root / 'control-target'
+        target.mkdir()
+        for name in ('.gitignore', '.gitattributes'):
+            (self.repo / name).symlink_to('../control-target', target_is_directory=True)
+        WorkspaceGitParityRegressions.assert_native_status_and_judge(self)
