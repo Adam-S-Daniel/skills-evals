@@ -130,7 +130,9 @@ paths (a guidance arm's `~` is its scratch HOME), for:
 - the harness's other directories under TMPDIR (`HARNESS_TEMP_PREFIXES`:
   other arms' workspaces and guidance scratch profiles, canary and
   propagation legs, scoring copies, `deps:` caches, objective-command
-  scratch), but the arm's own, by structural rules that also cover one made
+  scratch, and every workspace's `trusted-git-` metadata copy that
+  `workspace_git` (#349) keeps, the arm's own included), but the arm's own
+  workspace or scratch directory, by structural rules that also cover one made
   later (`<prefix>*`, or the complement of the arm's own directory's name
   within its prefix), plus the existing ones by path for commands;
 - on Linux, alternate mounts of the root or HOME filesystem discovered

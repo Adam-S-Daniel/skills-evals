@@ -12,6 +12,8 @@ DEFAULT_FIXTURE = "evals/workflow-path-audit"
 
 def committed_fixtures(root):
     """Use Git's index rather than accepting untracked fixture directories."""
+    # Raw git is fine here (#343): this repository's own checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     files = subprocess.check_output(
         ["git", "ls-files", "-z", "--", "evals"], cwd=root
     ).decode("utf-8").split("\0")

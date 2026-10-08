@@ -495,7 +495,8 @@ class ReadDenySettingsTests(_TempLayout):
         rules += [f"Read(/{self.tmp}/{prefix}*)" for prefix in (
             "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
             "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
-            "objective-command-", "local-eval-guard-", "sink-mutation-")]
+            "objective-command-", "local-eval-guard-", "sink-mutation-",
+            "trusted-git-")]
         self.assertEqual(settings["sandbox"]["filesystem"], {
             "denyRead": [str(self.worktree), str(self.clone), str(self.repos),
                          str(self.registry), str(self.guidance), str(results),
@@ -666,6 +667,22 @@ class ReadDenySettingsTests(_TempLayout):
         deny_read = settings["sandbox"]["filesystem"]["denyRead"]
         self.assertIn(str(self.tmp / "workspace-old00001"), deny_read)
         self.assertNotIn(str(own), deny_read)
+
+    def test_workspace_git_private_metadata_is_denied_now_and_later(self):
+        # workspace_git keeps each workspace's trusted Git metadata in a
+        # private directory under TMPDIR: another arm's (or this arm's own)
+        # must not be read through the sandbox, nor created later.
+        sys.path.insert(0, str(ROOT / "harness"))
+        import workspace_git
+        with mock.patch.object(tempfile, "tempdir", str(self.tmp)):
+            private = workspace_git._private_dir()
+        self.assertTrue(private.name.startswith(run_eval.HARNESS_TEMP_PREFIXES))
+        settings = self.settings(workspace=self.workspace)
+        rules = read_rule_paths(settings)
+        self.assertIn(str(private), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(rules, private / "objects" / "x"))
+        self.assertTrue(covers(rules, self.tmp / (private.name[:-1] + "z") / "HEAD"))
+        self.assertFalse(covers(rules, self.workspace / "f"))
 
     def test_a_guidance_arms_own_scratch_is_kept(self):
         scratch = self.tmp / "skills-evals-with_guidance-q1w2e3r4"

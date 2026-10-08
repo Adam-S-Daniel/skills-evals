@@ -198,7 +198,7 @@ jobs:
           {
             echo "Draft real-work fixture \`evals/real-work/${FIXTURE_ID}/\`, scaffolded by the eval routine from \`${BRANCH}\` at \`${SHA}\`."
             echo
-            echo "The gate (routine-scaffold-gate.yml) checked its shape, size caps, schema, stripped seed and answer-leak lint without running it. The task text and \`interface_strings:\` were written by a model; everything else was read from git and GitHub by \`scripts/scaffold_real_work.py\`."
+            echo "The gate (routine-scaffold-gate.yml) checked shape, size caps, schema, stripped seed and answer-leak lint without running the branch. It recomputed the issue snapshot and candidate base from GitHub, re-proved guidance provenance against trusted Git bytes, and recomputed context budgets. Task text, \`interface_strings:\`, checker selection, dependencies and trim choices were model-authored; other branch content received schema and lint checks, not an independent reconstruction from git."
             echo
             echo "Before removing \`draft: true\`, a person:"
             echo
