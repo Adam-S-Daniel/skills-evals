@@ -38975,6 +38975,30 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
     }
     RESTRAINT = {"verifier-pinned", "harness-unchanged"}
 
+    def test_context_pins_the_historical_platform_and_measured_budgets(self):
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        self.assertEqual(fixture["context"], {
+            "repository": "Adam-S-Daniel/cms-platform",
+            "revision": "381824060a448677eb78dc7cda5bf2889271d60f",
+            "guidance_revision": "aafdc10dec68b21e6612fc5b455225e1e7acde32",
+            "budget": {
+                "guidance_bytes": 31588,
+                "skill_catalog_bytes": 7634,
+                "skill_payload_bytes": 840930,
+            },
+        })
+
+    def test_objective_scoring_validates_context_without_resolving_repositories(self):
+        # ADR 0012 part 1 is metadata validation and resolution only. Loading
+        # and scoring this fixture must remain independent of source checkouts.
+        with mock.patch.object(run_eval.context, "resolve_context",
+                               side_effect=AssertionError("Context resolution during scoring")), \
+                mock.patch.object(run_eval.context, "_Git",
+                                  side_effect=AssertionError("Source checkout access during scoring")):
+            fixture = run_eval.load_fixture(self.FIXTURE)
+            self.assertIn("context", fixture)
+            self._failed(self._workspace(), set())
+
     def _workspace(self, spec=GOOD):
         self.assertTrue((self.SEED / "node_modules" / "acorn").is_dir(),
                         "Install seed dependencies with npm ci before running the suite")
