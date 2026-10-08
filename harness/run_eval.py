@@ -1256,11 +1256,15 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
     output directory, the archive, another profile, a harness directory
     under TMPDIR, or `tmp_root` itself, where later ones appear), since the
     Read tool would reach it through the spared name; and one whose name the
-    patterns cannot spell."""
+    patterns cannot spell. The matcher ignores case, so another existing
+    entry at the same level with the same name ignoring case is refused
+    too: sparing the link would spare that entry, and a literal deny for
+    the entry would follow the link into its needed target."""
     if not directory.is_dir():
         return []
     spare = []
-    for entry in sorted(directory.iterdir()):
+    entries = sorted(directory.iterdir())
+    for entry in entries:
         if entry.name == keep or not entry.is_symlink():
             continue
         target = entry.resolve()
@@ -1276,6 +1280,13 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
             raise ArmReadIsolationError(
                 f"a symlink in {PROFILE_LABEL} or HOME leads both to a path "
                 "the arm needs and to one it may not read",
+                code="read_rules_unsafe")
+        if any(other.name != entry.name
+               and other.name.lower() == entry.name.lower()
+               for other in entries):
+            raise ArmReadIsolationError(
+                f"a symlink in {PROFILE_LABEL} or HOME has another entry "
+                "with the same name ignoring case",
                 code="read_rules_unsafe")
         spare.append(entry.name)
     return spare

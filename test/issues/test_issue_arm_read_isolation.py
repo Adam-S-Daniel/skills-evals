@@ -493,6 +493,20 @@ class ReadDenySettingsTests(_TempLayout):
             self.assertTrue(covers(rules, path), path)
         self.assertIn(str(self.home), settings["sandbox"]["filesystem"]["denyRead"])
 
+    def test_an_existing_case_variant_of_a_spared_link_is_refused(self):
+        # The matcher ignores case, so sparing .ghcup also leaves the
+        # separate .GHCUP directory readable. Denying it literally would
+        # walk the spared link and deny the PATH directory too.
+        ghcup = self.root / "usr-local" / ".ghcup"
+        (ghcup / "bin").mkdir(parents=True)
+        (self.home / ".ghcup").symlink_to(ghcup)
+        (self.home / ".GHCUP").mkdir()
+        own = self.home / ".claude" / "projects" / "-tmp-workspace-abc"
+        own.mkdir(parents=True)
+        with self.assertRaises(run_eval.ArmReadIsolationError) as caught:
+            self.settings(path_env=str(ghcup / "bin"), session_dir=own)
+        self.assertEqual(caught.exception.code, "read_rules_unsafe")
+
     def test_a_link_both_needed_and_denied_is_refused(self):
         # Spared, the Read tool would reach a denied path through it: a
         # checkout's PATH directory, TMPDIR (other arms' workspaces), or a
