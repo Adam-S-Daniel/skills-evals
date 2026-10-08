@@ -4663,6 +4663,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-eval-results-pushed.yml",
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
+               ".github/workflows/skill-coverage.yml",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
