@@ -60,8 +60,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from arm_test_env import install_arm_test_environment  # noqa: E402
 
 
+@install_arm_test_environment
 def setUpModule() -> None:
-    install_arm_test_environment()
+    pass
 
 
 def tearDownModule() -> None:

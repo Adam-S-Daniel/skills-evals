@@ -7,6 +7,8 @@ import os
 import shutil
 import tempfile
 import unittest
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from unittest import mock
 
@@ -31,14 +33,26 @@ def arm_test_environment() -> dict[str, str]:
     return {"PATH": TEST_PATH, MOUNTINFO_ENV: str(_mountinfo)}
 
 
-def install_arm_test_environment() -> None:
-    """Patch the environment for a test module and restore it at teardown.
+def install_arm_test_environment(setup: Callable[[], None]) -> Callable[[], None]:
+    """Wrap module setup, restoring its environment if setup raises or skips.
 
     Tests measuring particular aliases or toolchains install their own
     mount metadata or PATH inside this scope. Callers must expose
     ``tearDownModule`` calling ``unittest.doModuleCleanups()``: pytest runs
     module teardown hooks but does not run unittest's module-cleanup queue.
+    Neither runner calls module teardown after failed setup; roll back
+    immediately in that case, including ``SkipTest`` and other BaseExceptions.
     """
-    patcher = mock.patch.dict(os.environ, arm_test_environment())
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
+    @wraps(setup)
+    def wrapped_setup() -> None:
+        patcher = mock.patch.dict(os.environ, arm_test_environment())
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)
+        try:
+            setup()
+        except BaseException:
+            # stop() is idempotent when unittest later drains module cleanups.
+            patcher.stop()
+            raise
+
+    return wrapped_setup
