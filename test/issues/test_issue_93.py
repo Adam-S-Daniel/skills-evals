@@ -62,6 +62,19 @@ class ConsumerBumpFixtureTests(unittest.TestCase):
         score = self.score()
         self.assertEqual({name for name, passed in score.items() if not passed}, set(ids), score)
 
+    def test_deployed_context_metadata_loads_exactly(self) -> None:
+        fixture = load_fixture(EVAL)
+        self.assertEqual(fixture["context"], {
+            "repository": "Adam-S-Daniel/adamdaniel.ai",
+            "revision": "ddf1c9929fb4e9087bc9c9920213a478f8cbdda4",
+            "guidance_revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
+            "budget": {
+                "guidance_bytes": 31374,
+                "skill_catalog_bytes": 17522,
+                "skill_payload_bytes": 1103484,
+            },
+        })
+
     def test_fixture_registration_and_tag_provenance(self) -> None:
         self.assertEqual(self.fixture["skill"], "platform-release-and-bump")
         self.assertEqual(self.fixture["registry"], "https://github.com/Adam-S-Daniel/cms-platform")
