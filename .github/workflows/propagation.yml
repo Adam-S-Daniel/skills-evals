@@ -249,6 +249,18 @@ jobs:
           else
             git checkout -B persistent/eval-results
           fi
+          for directory in coverage badges; do
+            if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
+              echo "Unsafe coverage output path." >&2
+              exit 1
+            fi
+          done
+          for destination in coverage/latest.json "coverage/$stamp.json" coverage/latest.md badges/coverage.json; do
+            if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
+              echo "Unsafe coverage output path." >&2
+              exit 1
+            fi
+          done
           mkdir -p coverage badges
           cp "$source/latest.json" coverage/latest.json
           cp "$source/latest.json" "coverage/$stamp.json"

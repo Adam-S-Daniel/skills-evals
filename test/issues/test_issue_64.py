@@ -965,6 +965,84 @@ class PublicationWorkflow(unittest.TestCase):
             self.assertIn(["checkout", "-B", "persistent/eval-results"], calls())
             self.assertFalse(any(call[0] == "fetch" for call in calls()))
 
+    def test_publisher_rejects_unsafe_checkout_outputs_before_any_write(self):
+        prepare = next(s for s in self.workflow["jobs"]["coverage-publish"]["steps"]
+                       if s["name"] == "Prepare persistent results commit")
+        destinations = ("coverage/latest.json", "coverage/2026-10-08T05-41-00Z.json",
+                        "coverage/latest.md", "badges/coverage.json")
+        cases = [(path, kind) for path in ("coverage", "badges", *destinations)
+                 for kind in ("symlink", "dangling", "wrong-type")]
+        for unsafe_path, kind in cases:
+            with self.subTest(path=unsafe_path, kind=kind), \
+                    tempfile.TemporaryDirectory(prefix="issue64-unsafe-publisher-") as tmp:
+                root = Path(tmp)
+                checkout = root / "checkout"
+                checkout.mkdir()
+                artifact = root / "coverage"
+                artifact.mkdir()
+                (artifact / "latest.json").write_text(json.dumps({
+                    "status": "complete", "unresolved": [],
+                    "totals": {"total": 2}, "generated_at": PUBLISH_TIME}), encoding="utf-8")
+                (artifact / "latest.md").write_text("safe summary\n", encoding="utf-8")
+                (artifact / "badge.json").write_text("{}\n", encoding="utf-8")
+                # Existing regular outputs must also survive when a later path is unsafe.
+                for destination in destinations:
+                    path = checkout / destination
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text("previous census\n", encoding="utf-8")
+                outside = root / "outside"
+                outside.mkdir()
+                for name in ("latest.json", "2026-10-08T05-41-00Z.json",
+                             "latest.md", "coverage.json", "sentinel"):
+                    (outside / name).write_text("outside sentinel\n", encoding="utf-8")
+                outside_before = {p.name: p.read_bytes() for p in outside.iterdir()}
+                missing = root / "missing-outside"
+                target = missing if kind == "dangling" else (
+                    outside if unsafe_path in ("coverage", "badges") else outside / "sentinel")
+                bin_dir = root / "bin"
+                bin_dir.mkdir()
+                log = root / "git-log.jsonl"
+                git_stub = bin_dir / "git"
+                git_stub.write_text(
+                    "#!/usr/bin/env python3\n"
+                    "import json, os, shutil, sys\n"
+                    "from pathlib import Path\n"
+                    "args = sys.argv[1:]\n"
+                    "with Path(os.environ['FAKE_GIT_LOG']).open('a') as f: f.write(json.dumps(args) + '\\n')\n"
+                    "if args[0] == 'ls-remote': print('a' * 40 + '\\trefs/heads/persistent/eval-results')\n"
+                    "if args[0] == 'checkout':\n"
+                    "    path = Path(os.environ['FAKE_UNSAFE_PATH'])\n"
+                    "    if path.is_dir(): shutil.rmtree(path)\n"
+                    "    else: path.unlink()\n"
+                    "    if os.environ['FAKE_UNSAFE_KIND'] == 'wrong-type':\n"
+                    "        if len(path.parts) == 1: path.write_text('unsafe directory replacement\\n')\n"
+                    "        else: path.mkdir()\n"
+                    "    else: path.symlink_to(os.environ['FAKE_UNSAFE_TARGET'])\n"
+                    "if args[0] == 'diff': sys.exit(1)\n", encoding="utf-8")
+                git_stub.chmod(0o755)
+                script = root / "prepare.sh"
+                script.write_text(prepare["run"], encoding="utf-8")
+                output = root / "step-output"
+                output.write_text("", encoding="utf-8")
+                result = subprocess.run(
+                    ["bash", str(script)], cwd=checkout, capture_output=True, text=True,
+                    env={"PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                         "RUNNER_TEMP": str(root), "GITHUB_OUTPUT": str(output),
+                         "FAKE_GIT_LOG": str(log), "FAKE_UNSAFE_PATH": unsafe_path,
+                         "FAKE_UNSAFE_KIND": kind, "FAKE_UNSAFE_TARGET": str(target)}, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "Unsafe coverage output path.\n")
+                self.assertEqual({p.name: p.read_bytes() for p in outside.iterdir()}, outside_before)
+                self.assertFalse(missing.exists())
+                self.assertEqual(output.read_text(), "")
+                calls = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertIn(["checkout", "-B", "persistent/eval-results",
+                               "origin/persistent/eval-results"], calls)
+                self.assertFalse(any(call[0] in ("add", "commit", "push") for call in calls))
+                for destination in destinations:
+                    if destination != unsafe_path and not destination.startswith(unsafe_path + "/"):
+                        self.assertEqual((checkout / destination).read_text(), "previous census\n")
+
     def test_unresolved_exit_is_informational_except_on_schedule(self):
         gate = next(s for s in self.workflow["jobs"]["coverage"]["steps"]
                     if s["name"] == "Fail an unresolved census")
