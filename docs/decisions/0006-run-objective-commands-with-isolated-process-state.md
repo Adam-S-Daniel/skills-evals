@@ -121,7 +121,9 @@ Staging copies only what `git add -A` could track (no FIFOs, sockets, devices
 or ignored paths) and adds validated nested HEAD gitlinks, so root `git add`
 cannot discover nested configuration indirectly. Collection failures and
 timeouts (the sink ceiling, since cost grows with the tree) are recorded as
-`workspace_git_collection_failed`. Attributes are not refused: no driver is
+`workspace_git_collection_failed`, as are ([issue #350](https://github.com/Adam-S-Daniel/skills-evals/issues/350)) a non-zero Git exit,
+a non-regular `.gitignore`/`.gitattributes` refused before Git can block on
+it, and a view over 2 GiB (apparent size) or 200,000 files. Attributes are not refused: no driver is
 defined in the private config, whose `info/attributes` unsets `filter` and
 `diff`, so built-ins such as `diff=python` and `filter=lfs` stay inert.
 

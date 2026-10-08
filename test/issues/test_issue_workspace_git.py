@@ -582,6 +582,137 @@ class WorkspaceGitCollectionTests(_WorkspaceGitFixture, unittest.TestCase):
         self.assertIn('+changed', judge.call_args.args[2])
 
 
+class WorkspaceGitHostileTreeTests(_WorkspaceGitFixture, unittest.TestCase):
+    """Issue 350: trees that crash, hang or flood collection are named errors."""
+
+    def run_arm(self, mutate, during=None, expected='workspace_git_collection_failed'):
+        """Drive `_run_arm` with `mutate(workspace)` as the agent's work and
+        `during` (a started-in-the-arm patch) armed only after the seed commit."""
+        import argparse
+        from unittest import mock
+        seed = self.root / 'seed'
+        seed.mkdir()
+        (seed / 'data').write_text('seed\n')
+        fixture = {'skill': 'test', 'prompt': 'test', 'model': 'test-model',
+                   'judge': {'model': 'test-judge'}, 'judge_rubric': 'test'}
+        args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                  results_dir=self.root / 'results')
+        started = []
+        def arm(workspace, prompt, config):
+            mutate(workspace)
+            if during is not None:
+                during.start()
+                started.append(during)
+            return {'transcript': 'done', 'raw': {}, 'usage': {}, 'cost_usd': 0,
+                    'num_turns': 1, 'duration_ms': 1}
+        try:
+            with mock.patch.object(run_eval, 'run_agent', arm), \
+                    mock.patch.object(run_eval.judge, 'score') as judge:
+                result = run_eval._run_arm('without_skill', fixture, seed, {}, args, 'test')
+        finally:
+            for patch in started:
+                patch.stop()
+        judge.assert_not_called()
+        self.assertIsNone(result['judge'])
+        self.assertTrue(list((self.root / 'results').rglob('*.json')),
+                        'no summary was written')
+        self.assertEqual(result['error']['type'], expected, result['error'])
+        return result
+
+    def test_bogus_working_tree_encoding_is_a_named_collection_error(self):
+        def mutate(workspace):
+            (workspace / '.gitattributes').write_text(
+                'data working-tree-encoding=BOGUS-CHARSET\n')
+            (workspace / 'data').write_text('changed\n')
+        result = self.run_arm(mutate)
+        self.assertIn('git add', result['error']['detail'])
+
+    def test_utf16_without_bom_is_a_named_collection_error(self):
+        def mutate(workspace):
+            (workspace / '.gitattributes').write_text('data working-tree-encoding=UTF-16\n')
+            (workspace / 'data').write_bytes(b'abc')
+        self.run_arm(mutate)
+
+    def _no_work_tree_git(self):
+        # A FIFO opened by Git blocks until the sink ceiling. Rather than
+        # wait on a clock, fail the moment Git is pointed at any work tree
+        # after the arm: refusal must come before Git runs at all.
+        from unittest import mock
+        import workspace_git
+        real = workspace_git._invoke
+        def guard(args, **kwargs):
+            if any(arg.startswith('--work-tree=') for arg in args):
+                raise AssertionError('Git ran over a tree holding a FIFO: ' + ' '.join(args))
+            return real(args, **kwargs)
+        return mock.patch.object(workspace_git, '_invoke', guard)
+
+    def test_fifo_special_files_are_refused_before_git_runs(self):
+        # `.git/info/exclude` is never opened by Git in the workspace: its
+        # non-blocking private copy refuses it as a baseline change.
+        for relative, expected in (('.gitignore', 'collection_failed'),
+                                   ('.gitattributes', 'collection_failed'),
+                                   ('sub/.gitignore', 'collection_failed'),
+                                   ('sub/.gitattributes', 'collection_failed'),
+                                   ('.git/info/exclude', 'tampered')):
+            with self.subTest(relative=relative):
+                shutil.rmtree(self.root / 'seed', ignore_errors=True)
+                shutil.rmtree(self.root / 'results', ignore_errors=True)
+                def mutate(workspace, relative=relative):
+                    target = workspace / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if os.path.lexists(target):
+                        target.unlink()
+                    os.mkfifo(target)
+                result = self.run_arm(mutate, during=self._no_work_tree_git(),
+                                      expected='workspace_git_' + expected)
+                self.assertRegex(result['error']['detail'],
+                                 'not a regular file|nonregular metadata')
+
+    def test_fifo_gitignore_is_refused_by_the_helper(self):
+        import workspace_git
+        os.mkfifo(self.repo / '.gitignore')
+        with self._no_work_tree_git():
+            for command in (('add', '-A'), ('status',), ('diff',), ('log', '-p')):
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(workspace_git.WorkspaceGitError,
+                                                'workspace_git_collection_failed'):
+                        workspace_git.run(*command, cwd=self.repo)
+
+    def test_sparse_file_over_the_byte_cap_is_a_named_collection_error(self):
+        import workspace_git
+        copied = []
+        from unittest import mock
+        real = workspace_git._copy_regular
+        def spy(source, target, mode):
+            copied.append(Path(source).name)
+            return real(source, target, mode)
+        def mutate(workspace):
+            with open(workspace / 'huge.bin', 'wb') as stream:
+                stream.truncate(workspace_git.MAX_STAGED_BYTES + 1)
+            # Sparse: the cap is checked on apparent size, never written out.
+            self.assertLess(os.stat(workspace / 'huge.bin').st_blocks * 512,
+                            1024 * 1024)
+        result = self.run_arm(mutate, during=mock.patch.object(
+            workspace_git, '_copy_regular', spy))
+        self.assertIn('bytes', result['error']['detail'])
+        self.assertNotIn('huge.bin', copied)
+
+    def test_file_count_over_the_cap_is_a_named_collection_error(self):
+        from unittest import mock
+        import workspace_git
+        def mutate(workspace):
+            for index in range(5):
+                (workspace / f'file{index}').write_text('x\n')
+        result = self.run_arm(mutate, during=mock.patch.object(
+            workspace_git, 'MAX_STAGED_FILES', 3))
+        self.assertIn('files', result['error']['detail'])
+
+    def test_caps_are_generous(self):
+        import workspace_git
+        self.assertGreaterEqual(workspace_git.MAX_STAGED_BYTES, 2 * 1024 ** 3)
+        self.assertGreaterEqual(workspace_git.MAX_STAGED_FILES, 200_000)
+
+
 class WorkspaceGitGeneratedConfigTests(_WorkspaceGitFixture, unittest.TestCase):
     """Only the generated private config runs, never the workspace's."""
 
