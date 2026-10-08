@@ -193,6 +193,12 @@ class FrozenContext:
     skills: tuple[SkillTree, ...]
     guidance: bytes
     digest: str
+    # Part 2's delivery inputs: each guidance source file's raw bytes in
+    # assembly order (base first), the pinned hook, and the pinned section
+    # manifest's rows, so a subject is cut or added per source file.
+    guidance_files: tuple[tuple[str, bytes], ...] = ()
+    hook: bytes | None = None
+    guidance_rows: tuple[Mapping, ...] = ()
 
 
 class _Git:
@@ -479,7 +485,7 @@ def _managed(raw: bytes | None) -> tuple[list[str], str, bytes] | None:
     return sections, mode, b"".join(lines[body_start:end])
 
 
-def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[str, Path]) -> tuple[bytes, dict]:
+def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[str, Path]) -> tuple[bytes, dict, dict]:
     consumer = _Git(repository, repositories)
     tree = consumer.tree(consumer.revision(revision))
     managed_raw = consumer.read(tree, "AGENTS.md", optional=True)
@@ -519,6 +525,7 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
                 or len({row["id"] for row in manifest}) != len(manifest)):
             raise ContextError("invalid_guidance_manifest", "guidance manifest must be a list of uniquely identified source rows")
     files = [{"path": "agents-md/base.md", "digest": _sha256(base), "bytes": len(base)}]
+    sources = [("agents-md/base.md", base)]
     suffix = b""
     for section in sections:
         path = f"agents-md/sections/{section}.md"
@@ -527,6 +534,7 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
             raise ContextError("invalid_guidance_manifest", f"{path}: adopted section is absent from the source manifest")
         suffix += b"\n" + raw
         files.append({"path": path, "digest": _sha256(raw), "bytes": len(raw)})
+        sources.append((path, raw))
     if metadata is not None:
         managed_source = base if mode == "full" else source.read(source_tree, "agents-md/stub.md")
         # Exactly the build script's one framing newline, never arbitrary trim.
@@ -551,7 +559,8 @@ def _guidance(repository: str, revision: str, pin: str, repositories: Mapping[st
              "manifest_digest": _sha256(manifest_raw) if manifest_raw is not None else None,
              "hook_state": "present" if hook is not None else "absent",
              "hook_digest": _sha256(hook) if hook is not None else None}
-    return payload, proof
+    rows = tuple(_freeze(dict(row)) for row in manifest or ())
+    return payload, proof, {"files": tuple(sources), "hook": hook, "rows": rows}
 
 
 def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenContext:
@@ -572,7 +581,7 @@ def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenCo
     tree = git.tree(revision)
     lock = git.read(tree, "skills.lock", optional=True)
     skills, sources = _skills(lock, repositories)
-    guidance_bytes, proof = _guidance(context["repository"], revision, context["guidance_revision"], repositories)
+    guidance_bytes, proof, delivered = _guidance(context["repository"], revision, context["guidance_revision"], repositories)
     measurements = {"guidance_bytes": len(guidance_bytes),
                     "skill_catalog_bytes": sum(len(skill.catalog) for skill in skills),
                     "skill_payload_bytes": sum(len(raw) for skill in skills for raw in skill.files.values())}
@@ -595,7 +604,17 @@ def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenCo
                                                 for skill in skills],
                 "guidance": proof, "measurements": measurements, "budget": dict(context["budget"]),
                 "digest": digest}
-    return FrozenContext(_freeze(manifest), skills, guidance_bytes, digest)
+    return FrozenContext(_freeze(manifest), skills, guidance_bytes, digest,
+                         delivered["files"], delivered["hook"], delivered["rows"])
+
+
+def read_guidance_file(frozen: FrozenContext, path: str, repositories: Mapping[str, Path]) -> bytes:
+    """One file of the pinned guidance revision, by its manifest path: the
+    source of a section the context does not adopt, added to a `with` arm."""
+    _path(path)
+    source = _Git(GUIDANCE_REPOSITORY, repositories)
+    revision = frozen.manifest["guidance"]["revision"]
+    return source.read(source.tree(source.revision(revision)), path, code="missing_section")
 
 
 @dataclass(frozen=True)

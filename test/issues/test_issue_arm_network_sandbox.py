@@ -211,8 +211,9 @@ class RunAgentSandboxTests(_StandInBase):
         self.assertTrue(result["passed"], result)
 
     def test_a_with_skill_workspace_holds_only_the_skill_under_claude(self):
-        run_eval.run_agent(self.ws, "do it", self.arm(
-            name="with_skill", skill="other-skill", registry=FAKE_REGISTRY))
+        arm = self.arm(name="with_skill", skill="other-skill", registry=FAKE_REGISTRY)
+        self.assertIsNone(run_eval.install_skill(self.ws, arm))
+        run_eval.run_agent(self.ws, "do it", arm)
         self.assertEqual(os.listdir(self.ws / ".claude"), ["skills"])
 
     def test_seed_guard_keeps_refusing_any_claude_settings(self):

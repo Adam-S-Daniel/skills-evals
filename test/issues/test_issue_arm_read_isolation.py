@@ -814,9 +814,10 @@ class RunAgentReadIsolationTests(_TempLayout):
                                run_eval.HARNESS_ROOT / "evals"))
 
     def test_a_with_skill_arm_gets_the_skill_copied_and_the_registry_denied(self):
-        out = run_eval.run_agent(self.workspace, "do it", self.arm(
-            name="with_skill", skill="other-skill", registry=FAKE_REGISTRY,
-            read_denied=[FAKE_REGISTRY]))
+        arm = self.arm(name="with_skill", skill="other-skill", registry=FAKE_REGISTRY,
+                       read_denied=[FAKE_REGISTRY])
+        self.assertIsNone(run_eval.install_skill(self.workspace, arm))
+        out = run_eval.run_agent(self.workspace, "do it", arm)
         self.assertNotIn("error", out, out)
         (argv,) = self.calls()
         settings = settings_of(argv)

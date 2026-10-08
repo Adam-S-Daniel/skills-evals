@@ -754,7 +754,8 @@ def _refuse_real_config_dir(dest_dir: Path, home: Path) -> None:
 
 
 def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
-            payload: str, timeout: int = 120) -> dict:
+            payload: str | bytes, timeout: int = 120,
+            payload_mtime: int | None = None) -> dict:
     """Deliver `payload` the way the fleet does: the REAL fleet-memory.sh from
     the checkout, `FLEET_GUIDANCE_PAYLOAD` pointing at the assembled file,
     `CLAUDE_CONFIG_DIR` pointing at this arm's scratch dir — so the marked
@@ -764,6 +765,11 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     the delivery path measures the imitation.
 
     An empty payload (`mode: none`) runs nothing at all.
+
+    `payload` may be raw bytes (an in-place arm's frozen context, ADR 0012),
+    written as they are. `payload_mtime` fixes the payload file's mtime, which
+    the hook reads for its delivery stamp when the file is not committed, so
+    two arms delivered the same bytes get the same block.
 
     S1-a-2. The timeout is checked HERE, on entry, before anything is
     spawned — not because of what the one caller passes today, but because
@@ -792,7 +798,12 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
             f"no fleet-memory hook at {hook} — the guidance subject delivers "
             "through the real hook, not a copy of it")
     payload_path = scratch / "payload.md"
-    payload_path.write_text(payload, encoding="utf-8")
+    if isinstance(payload, bytes):
+        payload_path.write_bytes(payload)
+    else:
+        payload_path.write_text(payload, encoding="utf-8")
+    if payload_mtime is not None:
+        os.utime(payload_path, (payload_mtime, payload_mtime))
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     env = {name: os.environ[name] for name in ("PATH",) if name in os.environ}
@@ -817,7 +828,8 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     # provably failed — a sabotaged hook that prints `fleet-guidance: current`
     # and writes nothing exits 0 and says the right words, and only these two
     # facts catch it.
-    return {"bytes": len(payload.encode("utf-8")), "verdict": verdict,
+    size = len(payload) if isinstance(payload, bytes) else len(payload.encode("utf-8"))
+    return {"bytes": size, "verdict": verdict,
             "installed": installed, "returncode": proc.returncode,
             "dest": str(dest)}
 

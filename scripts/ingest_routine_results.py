@@ -282,7 +282,8 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "errors", "scored", "trial_errors", "aggregate",
     "subject", "section", "mode", "bytes", "delivery", "hook_verdict",
     "installed", "decoy", "hook_returncode", "guard",
-    "model_tokens", "cross_model")
+    "model_tokens", "cross_model") + ("pairing", "role", "context",
+                                      "context_subject", "arm_context")
 AGENT_KEYS = ("usage", "cost_usd", "num_turns", "duration_ms")
 #: `harness` keys every summary has carried since #71; `effort` came later
 #: and is optional, so an older summary still ingests.
@@ -424,6 +425,140 @@ def check_cross_model(value, where: str, tokens) -> None:
                        "model_tokens counts")
 
 
+#: An in-place arm's record (ADR 0012, run_eval._in_place_record): all five
+#: keys or none. A summary without them is an isolation run.
+IN_PLACE_KEYS = ("pairing", "role", "context", "context_subject", "arm_context")
+SHA_RE = re.compile(r"[0-9a-f]{40}")
+DIGEST_RE = re.compile(r"[0-9a-f]{64}")
+REPOSITORY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}")
+CONTEXT_KEYS = ("repository", "revision", "digest", "lock_digest", "sources",
+                "guidance", "measurements")
+SOURCE_KEYS = ("registry", "revision", "digest", "bundles")
+CONTEXT_GUIDANCE_KEYS = ("revision", "digest", "bytes", "sections", "hook_digest")
+MEASUREMENT_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
+#: run_eval's hard budget ceiling (context.BUDGET_MAX), the largest a
+#: measurement can be.
+MAX_CONTEXT_BYTES = 64 * 1024 * 1024
+MAX_CONTEXT_ITEMS = 64
+SUBJECT_KEYS = {
+    "skill": ("kind", "registry", "bundle", "skill", "action", "deployed_digest",
+              "tested_digest", "bytes"),
+    "guidance": ("kind", "section", "file", "heading", "action", "start_char",
+                 "end_char", "start_byte", "end_byte", "bytes", "deployed_digest",
+                 "tested_digest"),
+}
+ARM_CONTEXT_KEYS = ("skills", "skills_digest", "guidance_bytes",
+                    "guidance_digest", "subject_present")
+
+
+def _pattern(value, where, pattern, *, null=False):
+    if value is None and null:
+        return
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise Rejected(f"{where}: malformed")
+
+
+def check_in_place(doc, where: str, parts: dict) -> None:
+    """An in-place arm's context record: bounded, well-formed, and
+    consistent with its arm, its key and itself."""
+    present = [key for key in IN_PLACE_KEYS if key in doc]
+    if not present:
+        return
+    if len(present) != len(IN_PLACE_KEYS):
+        raise Rejected(f"{where}: in-place keys come together")
+    if doc["pairing"] != "in_place":
+        raise Rejected(f"{where}: pairing must be in_place")
+    if doc["role"] not in ("with", "without") or \
+            doc["arm"].startswith("with_") != (doc["role"] == "with"):
+        raise Rejected(f"{where}: role does not match its arm")
+
+    context = doc["context"]
+    _object(context, f"{where}: context", CONTEXT_KEYS, CONTEXT_KEYS)
+    _pattern(context["repository"], f"{where}: context.repository", REPOSITORY_RE)
+    _pattern(context["revision"], f"{where}: context.revision", SHA_RE)
+    _pattern(context["digest"], f"{where}: context.digest", DIGEST_RE)
+    _pattern(context["lock_digest"], f"{where}: context.lock_digest", DIGEST_RE,
+             null=True)
+    sources = context["sources"]
+    if not isinstance(sources, list) or len(sources) > MAX_CONTEXT_ITEMS \
+            or (context["lock_digest"] is None) != (not sources):
+        raise Rejected(f"{where}: context.sources must be a short list, empty "
+                       "exactly when there is no lock")
+    for source in sources:
+        _object(source, f"{where}: context source", SOURCE_KEYS, SOURCE_KEYS)
+        _pattern(source["registry"], f"{where}: source registry", REPOSITORY_RE)
+        _pattern(source["revision"], f"{where}: source revision", SHA_RE)
+        _pattern(source["digest"], f"{where}: source digest", DIGEST_RE)
+        bundles = source["bundles"]
+        if not isinstance(bundles, list) or not bundles \
+                or len(bundles) > MAX_CONTEXT_ITEMS:
+            raise Rejected(f"{where}: source bundles must be a short list")
+        for bundle in bundles:
+            _object(bundle, f"{where}: bundle", ("name", "digest"), ("name", "digest"))
+            _pattern(bundle["name"], f"{where}: bundle name", NAME_RE)
+            _pattern(bundle["digest"], f"{where}: bundle digest", DIGEST_RE)
+    proof = context["guidance"]
+    _object(proof, f"{where}: context.guidance", CONTEXT_GUIDANCE_KEYS,
+            CONTEXT_GUIDANCE_KEYS)
+    _pattern(proof["revision"], f"{where}: guidance revision", SHA_RE)
+    _pattern(proof["digest"], f"{where}: guidance digest", DIGEST_RE)
+    _pattern(proof["hook_digest"], f"{where}: hook digest", DIGEST_RE, null=True)
+    _integer(proof["bytes"], f"{where}: guidance bytes", 1, MAX_CONTEXT_BYTES)
+    if not isinstance(proof["sections"], list) or \
+            len(proof["sections"]) > MAX_CONTEXT_ITEMS:
+        raise Rejected(f"{where}: guidance sections must be a short list")
+    for section in proof["sections"]:
+        _pattern(section, f"{where}: guidance section", NAME_RE)
+    measurements = context["measurements"]
+    _object(measurements, f"{where}: measurements", MEASUREMENT_KEYS,
+            MEASUREMENT_KEYS)
+    for key in MEASUREMENT_KEYS:
+        _integer(measurements[key], f"{where}: {key}", 0, MAX_CONTEXT_BYTES)
+    if measurements["guidance_bytes"] != proof["bytes"]:
+        raise Rejected(f"{where}: guidance bytes disagree")
+
+    subject = doc["context_subject"]
+    kind = "guidance" if parts["key"].startswith("guidance/") else "skill"
+    if not isinstance(subject, dict) or subject.get("kind") != kind:
+        raise Rejected(f"{where}: context_subject kind does not match its key")
+    _object(subject, f"{where}: context_subject", SUBJECT_KEYS[kind], SUBJECT_KEYS[kind])
+    if subject["action"] not in ("removed", "added"):
+        raise Rejected(f"{where}: context_subject.action is not removed or added")
+    _pattern(subject["tested_digest"], f"{where}: tested digest", DIGEST_RE)
+    _pattern(subject["deployed_digest"], f"{where}: deployed digest", DIGEST_RE,
+             null=True)
+    # Removed: the deployed version is what is tested. Added: nothing deployed.
+    if (subject["action"] == "removed") != (subject["deployed_digest"] is not None):
+        raise Rejected(f"{where}: context_subject digests do not match its action")
+    _integer(subject["bytes"], f"{where}: context_subject.bytes", 0, MAX_CONTEXT_BYTES)
+    if kind == "skill":
+        _pattern(subject["registry"], f"{where}: subject registry", REPOSITORY_RE)
+        _pattern(subject["bundle"], f"{where}: subject bundle", NAME_RE)
+        if subject["skill"] != doc.get("skill"):
+            raise Rejected(f"{where}: context_subject.skill does not match its key")
+    else:
+        if subject["section"] != doc.get("section"):
+            raise Rejected(f"{where}: context_subject.section does not match its key")
+        _string(subject["file"], f"{where}: subject file", 256)
+        _string(subject["heading"], f"{where}: subject heading", 256)
+        for key in ("start_char", "end_char", "start_byte", "end_byte"):
+            _integer(subject[key], f"{where}: subject {key}", 0, MAX_CONTEXT_BYTES)
+        if not (subject["start_byte"] <= subject["end_byte"]
+                and subject["start_char"] <= subject["end_char"]
+                and subject["bytes"] == subject["end_byte"] - subject["start_byte"]):
+            raise Rejected(f"{where}: context_subject extent is inconsistent")
+
+    arm = doc["arm_context"]
+    _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS, ARM_CONTEXT_KEYS)
+    _integer(arm["skills"], f"{where}: arm_context.skills", 0, 4096)
+    _pattern(arm["skills_digest"], f"{where}: skills digest", DIGEST_RE)
+    _pattern(arm["guidance_digest"], f"{where}: arm guidance digest", DIGEST_RE)
+    _integer(arm["guidance_bytes"], f"{where}: arm guidance bytes", 1,
+             MAX_CONTEXT_BYTES)
+    if arm["subject_present"] is not (doc["role"] == "with"):
+        raise Rejected(f"{where}: arm_context.subject_present does not match its role")
+
+
 def check_summary(doc, where: str, parts: dict) -> None:
     _object(doc, where, SUMMARY_ALLOWED, SUMMARY_REQUIRED)
     if doc["arm"] != parts["arm"]:
@@ -517,6 +652,7 @@ def check_summary(doc, where: str, parts: dict) -> None:
     for field in ("errors", "scored"):
         if field in doc:
             _integer(doc[field], f"{where}: {field}", 0, MAX_TRIALS)
+    check_in_place(doc, where, parts)
     for field in ("trial_errors", "aggregate", "section", "mode", "bytes",
                   "delivery", "hook_verdict", "installed", "decoy",
                   "hook_returncode", "guard", "subject"):
