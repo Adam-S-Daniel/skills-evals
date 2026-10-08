@@ -896,8 +896,20 @@ is objectively decidable from the resulting files alone.
   files, symlinks, directories) into a private tree, skipping FIFOs, sockets,
   devices, ignored paths and nested Git directories, then installs gitlinks
   from independently validated standalone HEAD refs, so `git add` never
-  discovers nested agent configuration. An unreadable file or a timeout is the
-  recorded trial error `workspace_git_collection_failed`, not a crash.
+  discovers nested agent configuration. Ignore and attribute controls are
+  copied safely once before ignore evaluation; Git reads only that private
+  view for every command that can read work-tree controls. Only `worktree list`
+  shares the exemption for commands that cannot read those controls.
+  An unreadable file or a timeout is the
+  recorded trial error `workspace_git_collection_failed`, not a crash; so
+  ([issue #350](https://github.com/Adam-S-Daniel/skills-evals/issues/350)) is
+  a Git command that exits non-zero (a bogus `working-tree-encoding`), a
+  `.gitignore` or `.gitattributes` that is a FIFO, socket or device (refused
+  before Git runs, since Git's open() would block), and a staging view over
+  `MAX_STAGED_BYTES` (2 GiB) or `MAX_STAGED_FILES` (200,000). Apparent size
+  rejects sparse oversized files before copying, and a cumulative streaming
+  budget stops growing files at the remaining byte bound. The separate
+  baseline snapshot in `seal()` also sanitizes a checked Git exit.
   Bookkeeping Git uses the sink ceiling (`guidance.MAX_TIMEOUT_S`) as its
   timeout: its cost grows with the workspace, so it is a hang guard only.
   Nested linked worktrees receive a structural report with their patch marked
