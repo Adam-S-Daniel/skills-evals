@@ -844,6 +844,40 @@ is objectively decidable from the resulting files alone.
   Code CLI has no flag to set sampling temperature, so the judge runs at
   whatever the CLI's default is — not the temperature-0 originally proposed
   here. Flagging this rather than silently dropping the requirement.
+- **Workspace Git boundary:** [issue #343](https://github.com/Adam-S-Daniel/skills-evals/issues/343)
+  routes initialization, staging, judge diffs, nested commit logs, and objective
+  ref/remote/reaper/worktree queries through [one helper](harness/workspace_git.py).
+  It runs fixed `/usr/bin/git` with a constants-only environment, disabled
+  system/global configuration and attributes, disabled executable options,
+  forbidden transports, and `--no-ext-diff --no-textconv` for patch commands.
+  Tests plant each executable key in repository-local config and prove the
+  `-c` override wins even when Git reads that config directly.
+  Git parses repository configuration only from a private regular copy with
+  `--no-includes`; commands use generated allowlisted configuration and private
+  metadata, never the workspace's configuration, hooks, or attribute drivers.
+  At the baseline commit the harness records `.git` identity and framed digests
+  of configuration, `info/`, and `hooks/` in memory, alongside baseline metadata and the
+  staging index. No private metadata remains on disk while the arm runs.
+  Changes to those baseline facts, executable configuration, redirects,
+  copied metadata symlinks, and alternate object stores refuse with
+  `workspace_git_tampered`; both arm paths record a trial error and skip scoring.
+  Attributes are not refused: with no driver defined and the private
+  `info/attributes` unsetting `filter` and `diff`, `diff=python` or
+  `filter=lfs` is inert. Staging copies what `git add -A` could track (regular
+  files, symlinks, directories) into a private tree, skipping FIFOs, sockets,
+  devices, ignored paths and nested Git directories, then installs gitlinks
+  from independently validated standalone HEAD refs, so `git add` never
+  discovers nested agent configuration. An unreadable file or a timeout is the
+  recorded trial error `workspace_git_collection_failed`, not a crash.
+  Bookkeeping Git uses the sink ceiling (`guidance.MAX_TIMEOUT_S`) as its
+  timeout: its cost grows with the workspace, so it is a hang guard only.
+  Nested linked worktrees receive a structural report with their patch marked
+  unavailable; the harness never follows their `.git` redirect. A standalone
+  repository's worktree inventory remains inspectable as metadata, and bare
+  fixture repositories support read-only inspection. Ephemeral copies add disk
+  I/O, and retaining metadata in memory increases harness memory use.
+  [ADR 0006's addendum](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md#workspace-git-addendum-2026-10-07)
+  records this boundary separately from intentional fixture-program execution.
 - **Cost capture:** CHOSEN and implemented — from the CLI's `--output-format
   json` payload: `total_cost_usd`, `usage`, `num_turns`, `duration_ms`.
 - **Efficiency aggregates:** with `--trials N`, N > 1, each arm's

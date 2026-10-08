@@ -335,6 +335,8 @@ def resolve_registry(url: str, flags: list[str] | None) -> dict:
 
 
 def resolve_ref(checkout: Path, ref: str) -> str:
+    # Raw git is fine here (#343): the operator's registry checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     proc = subprocess.run(["git", "-C", str(checkout), "rev-parse", "--verify",
                            "--quiet", f"{ref}^{{commit}}"],
                           capture_output=True, text=True, check=False)
@@ -346,6 +348,8 @@ def resolve_ref(checkout: Path, ref: str) -> str:
 def archive_registry(checkout: Path, sha: str, dest: Path) -> Path:
     """`git archive <sha>` of the checkout, extracted into `dest`. The copy
     carries no `.git`, so there is no remote and no push path in it."""
+    # Raw git is fine here (#343): the operator's registry checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     proc = subprocess.run(["git", "-C", str(checkout), "archive", "--format=tar", sha],
                           capture_output=True, check=False)
     if proc.returncode != 0:
@@ -718,6 +722,8 @@ def apply_body_diff(text: str, diff: str, scratch: Path) -> str:
     work.mkdir(parents=True)
     (work / "SKILL.md").write_text(text, encoding="utf-8")
     env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(scratch))
+    # Raw git is fine here (#343): a fresh scratch directory with no .git, behind a ceiling, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     proc = subprocess.run(["git", "apply", "-p1", "--whitespace=nowarn", "-"],
                           cwd=work, input=diff if diff.endswith("\n") else diff + "\n",
                           capture_output=True, text=True, env=env, check=False)

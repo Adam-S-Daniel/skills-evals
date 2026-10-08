@@ -254,6 +254,8 @@ class ScaffoldError(Exception):
 # Git, read-only.
 
 def _git(clone: Path, *args: str) -> bytes:
+    # Raw git is fine here (#343): an upstream clone the operator made, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     done = subprocess.run(["git", "-C", str(clone), *args], capture_output=True)
     if done.returncode:
         # Never echo git's stderr: it can quote repository content.
@@ -941,6 +943,8 @@ def red_green(fixture_dir: Path, clock=time.monotonic) -> list[str]:
                 problems.append(f"{name}: setup failed ({error['error']})")
                 continue
             if fixed:
+                # Raw git is fine here (#343): a seed copy before any agent runs in it, never an agent-touched
+                # workspace, so harness/workspace_git.py does not apply.
                 done = subprocess.run(["git", "apply", "--whitespace=nowarn",
                                        str(fixture_dir / PATCH_FILE)],
                                       cwd=workspace, capture_output=True, timeout=60)

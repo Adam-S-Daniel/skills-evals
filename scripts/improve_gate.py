@@ -371,6 +371,8 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     before = _frontmatter(target.read_text(encoding="utf-8"), skill_md)
     patch = str((staged / "skill.patch").resolve())
     for args in (("apply", "--check", patch), ("apply", patch)):
+        # Raw git is fine here (#343): the gate's own registry checkout at a recorded sha, never an agent-touched
+        # workspace, so harness/workspace_git.py does not apply.
         result = subprocess.run(["git", "-C", str(tree), *args],
                                 capture_output=True, check=False)
         if result.returncode != 0:
