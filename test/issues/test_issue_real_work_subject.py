@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO / "harness"))
 import answer_leak  # noqa: E402
 import guidance  # noqa: E402
 import run_eval  # noqa: E402
+from scorers import commands  # noqa: E402
 
 BUGGY = "def add(a, b):\n    return a - b\n"
 FIXED = "def add(a, b):\n    return a + b\n"
@@ -56,9 +57,13 @@ class _Fixture(unittest.TestCase):
         (self.fixture_dir / "checker" / "test_calc.py").write_text(
             HIDDEN_TEST, encoding="utf-8")
         # Every network-namespace probe off, so a run reads the same on any host.
-        patcher = mock.patch("scorers.commands._network_prefix", return_value=[])
+        patcher = mock.patch("scorers.commands._sandbox_prefix", return_value=([], "unavailable"))
         patcher.start()
         self.addCleanup(patcher.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def write_fixture(self, **changes):
         fixture = {"subject": "any", "draft": True, "prompt": "Fix add().",

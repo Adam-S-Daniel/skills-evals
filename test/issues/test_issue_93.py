@@ -56,6 +56,15 @@ class ConsumerBumpFixtureTests(unittest.TestCase):
 
     def score(self) -> dict[str, bool]:
         result = run_checks(self.fixture, str(self.workspace), str(SEED), "Consumer bumped; verifier exit 0.")
+        commands = {check["id"] for check in self.fixture["objective_checks"]
+                    if check["type"] == "command_succeeds"}
+        for row in result:
+            # A verifier that never ran (e.g. scorer_sandbox_unavailable) must
+            # not count as a negative control's expected failure.
+            if row["id"] in commands:
+                status = row["detail"].split(" ", 1)[0]
+                self.assertIn(status, ("command_success", "command_nonzero"),
+                              f"{row['id']} did not run its command: {status}")
         return {check["id"]: check["passed"] for check in result}
 
     def assert_failed(self, *ids: str) -> None:
