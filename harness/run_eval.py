@@ -63,6 +63,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
+from harness_repo import harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
 import guidance_violations  # noqa: E402
@@ -78,6 +79,71 @@ SEED_DIR = "seed"
 # The run directory's name: UTC, second resolution, sortable as text.
 TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 _TIMESTAMP_RE = re.compile(r"\d{8}T\d{6}Z")
+
+
+def _git_common_dir(root: Path) -> Path | None:
+    """The trusted harness checkout's common Git directory, read as data.
+
+    Not `_git`: the workspace Git helper refuses a linked worktree's `.git`
+    file (#343), and the harness checkout is not an agent workspace.
+    """
+    dot_git = root / ".git"
+    try:
+        if dot_git.is_dir():
+            return dot_git.resolve()
+        text = dot_git.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        git_dir = (root / text[len("gitdir:"):].strip()).resolve()
+        commondir = git_dir / "commondir"
+        if commondir.is_file():
+            return (git_dir / commondir.read_text(encoding="utf-8").strip()).resolve()
+        return git_dir
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = None,
+                       fixture: dict | None = None) -> list[Path]:
+    """Trusted scorer roots matching PR #345's checkout/output/profile coverage.
+
+    Merge seam: after #345 lands, replace this collection with paths from
+    arm_read_denied(run_checkouts(args), outputs=run_outputs(args)).
+
+    Git's common directory identifies the original clone even in a worktree.
+    Results and session archives hold earlier arms' evidence and stay hidden.
+    """
+    if fixture is not None and not any(
+            check.get("type") in ("command_succeeds", "repo_tests")
+            for check in fixture.get("objective_checks", [])):
+        # No workspace code will run; pure checks need no sandbox or Git probe.
+        return []
+    root = Path(harness_root if harness_root is not None else Path(__file__).resolve().parents[1]).resolve()
+    git_dir = _git_common_dir(root)
+    clone = git_dir.parent if git_dir is not None and git_dir.name == ".git" else root
+    roots = [root, clone.parent, Path.home(), session_archive_dir().parent]
+    if git_dir is not None:
+        roots.append(git_dir)
+    results = getattr(args, "results_dir", None)
+    if results is not None:
+        roots.append(Path(results))
+    roots.extend(Path(p) for p in getattr(args, "read_deny", None) or ())
+    # ADR 0012 context sources are explicit checkouts too (--context-repo).
+    roots.extend(Path(p) for p in (getattr(args, "context_repos", None) or {}).values())
+    roots.append(Path.home() / ".claude")
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        roots.append(Path(os.environ["CLAUDE_CONFIG_DIR"]).expanduser())
+    try:
+        registries = resolve_registries(
+            getattr(args, "registry", None), os.environ.get("SKILLS_EVALS_REGISTRIES"),
+            root, os.environ.get("AGENTSKILLS_DIR"))
+    except ValueError:
+        # Match run_checkouts: invalid overrides are rejected by main.
+        registries = {}
+    roots.extend(entry["path"] for entry in registries.values())
+    roots.append(guidance.resolve_guidance_dir(
+        getattr(args, "guidance", None), os.environ.get("AGENT_GUIDANCE_DIR"), root))
+    return list(dict.fromkeys(path.resolve() for path in roots))
 
 
 def load_fixture(eval_dir: Path) -> dict:
@@ -890,94 +956,12 @@ HARNESS_ROOT = Path(__file__).resolve().parent.parent
 
 class ArmReadIsolationError(ValueError):
     """The arm's read fence cannot be built safely; `code` is the arm's error
-    name (`workspace_read_denied`, `read_rules_unsafe`, `settings_too_large`)."""
+    name (`workspace_read_denied`, `read_rules_unsafe`, `settings_too_large`,
+    `toolchain_under_alias`)."""
 
     def __init__(self, message: str, code: str = "workspace_read_denied"):
         super().__init__(message)
         self.code = code
-
-
-def _git_out(*args: str, cwd: Path) -> str | None:
-    # Trusted harness identity only, never an arm workspace. Keep Git's
-    # include/core.worktree semantics while refusing every unaudited command.
-    if args not in (("rev-parse", "--path-format=absolute", "--git-common-dir"),
-                    ("config", "--local", "--includes", "--get", "core.worktree")):
-        raise ArmReadIsolationError("trusted harness identity permits only audited Git reads",
-                                    code="unsupported_git_read")
-    try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                              text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
-def harness_git_common_dir(start: Path = HARNESS_ROOT) -> Path | None:
-    """The clone's shared git directory (its whole history), or None."""
-    out = _git_out("rev-parse", "--path-format=absolute", "--git-common-dir",
-                   cwd=start)
-    return Path(out).resolve() if out else None
-
-
-def harness_clone_root(start: Path = HARNESS_ROOT) -> Path | None:
-    """The main checkout of the clone a checkout belongs to, or None when it
-    cannot be determined with certainty.
-
-    In order: `core.worktree` in the repository's own config, includes
-    followed, when set (it overrides every default, whatever the directory
-    is called; an include git cannot read makes it None); the
-    nearest ancestor of `start` whose `.git` (a directory, or a `gitdir:`
-    file as `--separate-git-dir` and linked worktrees write) is that shared
-    directory; the parent of a shared directory named `.git`, which is
-    git's own default work tree. Git records no other path back from a
-    `--separate-git-dir` directory to its checkout, so a linked worktree
-    outside the main checkout, with the metadata elsewhere and no
-    `core.worktree`, is None: the arm fails rather than guess. Not a git
-    checkout (or no git): `start` itself.
-    """
-    start = Path(start)
-    common = harness_git_common_dir(start)
-    if common is None:
-        return start.resolve()
-    # The repository's own config, `[include]` and `[includeIf]` followed as
-    # git follows them; an include git cannot read is a value we cannot see,
-    # so the checkout is unknown rather than guessed.
-    # `-z`: an `includeIf` condition may hold spaces (`gitdir:**/[ r]*`), so
-    # each entry is `<origin>\0<key>\n<value>\0`, never split on a space.
-    try:
-        listed = subprocess.run(
-            ["git", "config", "-z", "--local", "--includes", "--show-origin",
-             "--get-regexp", r"^include(if\..*)?\.path$"],
-            cwd=start, capture_output=True, text=True).stdout
-    except OSError:
-        return None
-    fields = listed.split("\0")
-    for origin, entry in zip(fields[0::2], fields[1::2]):
-        _, _, value = entry.partition("\n")
-        source = Path(origin.removeprefix("file:"))
-        if not source.is_absolute():
-            source = start / source
-        target = Path(value).expanduser()
-        if not target.is_absolute():
-            target = source.parent / target
-        if not value or not target.is_file() or not os.access(target, os.R_OK):
-            return None
-    configured = _git_out("config", "--local", "--includes", "--get",
-                          "core.worktree", cwd=start)
-    if configured:
-        return (common / configured).resolve()
-    for candidate in (start.resolve(), *start.resolve().parents):
-        dot_git = candidate / ".git"
-        if dot_git.is_dir() and dot_git.resolve() == common:
-            return candidate
-        if dot_git.is_file():
-            text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
-            if text.startswith("gitdir:"):
-                target = (candidate / text[len("gitdir:"):].strip()).resolve()
-                if target == common:
-                    return candidate
-    if common.name == ".git":
-        return common.parent
-    return None
 
 
 # Resolved once, at import: before any test stands in for `subprocess.run`,
@@ -1005,19 +989,44 @@ def profile_dirs(home: Path, environ=None) -> list[Path]:
 
 
 MOUNT_ALIAS_LABEL = "an alias of the host filesystem"
+# The test seam for the mount table: a file in mountinfo's format that stands
+# in for `/proc/self/mountinfo` (an empty one names no alias). Read once, at
+# the outermost call (`host_mountinfo`); everything below takes the text as a
+# parameter. Only the harness's own environment carries it: an arm never runs
+# the harness.
+MOUNTINFO_ENV = "SKILLS_EVALS_MOUNTINFO"
 
 
-def _linux_mounts() -> list[tuple[str, str, Path, Path, str, str]]:
-    """Linux mountinfo: device, source, filesystem root, mountpoint, type, options.
-
-    Mount paths escape spaces, tabs, newlines and backslashes as octal. Read
-    the current namespace, not a cached host snapshot. Without this metadata
-    a Linux arm cannot prove that its path-based read fences cover aliases.
-    """
+def host_mountinfo(environ=None) -> str:
+    """The mount table an arm's read fence is built from: the file
+    `MOUNTINFO_ENV` names, else this namespace's `/proc/self/mountinfo`.
+    Empty off Linux, which has no mountinfo to read. Raises
+    ArmReadIsolationError (`read_rules_unsafe`) when the table cannot be read,
+    or the real one is empty: without it a Linux arm cannot prove that its
+    path-based read fences cover the aliases."""
+    environ = os.environ if environ is None else environ
     if sys.platform != "linux":
+        return ""
+    fixture = environ.get(MOUNTINFO_ENV)
+    try:
+        text = Path(fixture or "/proc/self/mountinfo").read_text(encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        raise ArmReadIsolationError(
+            "the Linux mount metadata cannot be read", code="read_rules_unsafe") from exc
+    if not fixture and not text.strip():
+        raise ArmReadIsolationError(
+            "the Linux mount metadata is empty", code="read_rules_unsafe")
+    return text
+
+
+def _linux_mounts(text: str) -> list[tuple[str, str, Path, Path, str, str]]:
+    """Mountinfo text, parsed: device, source, filesystem root, mountpoint,
+    type, options per mount. Mount paths escape spaces, tabs, newlines and
+    backslashes as octal. Empty text is no mounts; any other text must name
+    the root mount."""
+    if not text.strip():
         return []
     try:
-        text = Path("/proc/self/mountinfo").read_text(encoding="utf-8")
         mounts = []
         for line in text.splitlines():
             before, separator, after = line.partition(" - ")
@@ -1034,7 +1043,7 @@ def _linux_mounts() -> list[tuple[str, str, Path, Path, str, str]]:
         if not any(m[3] == Path("/") for m in mounts):
             raise ValueError("missing root mount")
         return mounts
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         raise ArmReadIsolationError(
             "the Linux mount metadata cannot establish the host filesystem's "
             "read aliases", code="read_rules_unsafe") from exc
@@ -1078,67 +1087,56 @@ def _host_filesystem_aliases(home: Path, mounts) -> list[Path]:
     return list(dict.fromkeys(aliases))
 
 
-def _mount_source_path(path: Path, home: Path, mounts) -> Path | None:
-    """Translate an alias PATH entry into the canonical root/HOME view.
+def path_without_aliases(path_env: str, aliases) -> str:
+    """PATH without the entries an alias's whole deny would leave unreadable.
 
-    Windows drives have no Linux canonical view, so their path stays as-is.
-    A filesystem region absent from the canonical view cannot be carved out.
-    """
-    mount = _mount_at(path, mounts)
-    filesystem_path = mount[2] / path.relative_to(mount[3])
-    for origin in (_mount_at(Path("/"), mounts), _mount_at(home, mounts)):
-        if (mount[0], mount[4]) == (origin[0], origin[4]):
-            if _within(filesystem_path, origin[2]):
-                return origin[3] / filesystem_path.relative_to(origin[2])
-            return None
-    return path
+    Each alias is denied WHOLE (no carve-out: on WSL, one complement rule set
+    per Windows PATH directory came to some 49 KB of `--settings`), so an
+    entry under one, spelled there or reached through a symlink, holds
+    nothing the arm's commands could run. Dropped, in order; every other
+    entry (relative ones included) is kept as given. The arm needs no
+    Windows-side executable; `arm_path_or_error` refuses an arm whose
+    required tools live only under an alias."""
+    def under_alias(entry: str) -> bool:
+        if not os.path.isabs(entry):
+            return False
+        lexical = Path(os.path.normpath(entry))
+        if any(_within(lexical, a) for a in aliases):
+            return True
+        return any(_within(Path(entry).resolve(), a) for a in aliases)
+    if not aliases:
+        return path_env
+    return os.pathsep.join(e for e in path_env.split(os.pathsep)
+                           if not under_alias(e))
 
 
-def _alias_read_carve_outs(aliases, home, guarded, path_env, tmp_root) -> list[Path]:
-    """Preserve PATH toolchain directories and sibling lib inside aliases.
+# What every arm's sandboxed commands run: the shell the CLI's Bash tool
+# spawns, and git (the agent's own commits; the harness's diff of the
+# workspace). An arm whose PATH finds one of these only under a denied alias
+# fails with `toolchain_under_alias` rather than reopen the alias.
+ARM_REQUIRED_TOOLS = ("bash", "git")
 
-    These exceptions cannot lead into or around HOME, checkouts, profiles,
-    outputs or harness scratch trees through a root/HOME mount projection.
-    """
-    mounts = _linux_mounts()
-    out = []
-    for entry in path_env.split(os.pathsep):
-        if not entry or not os.path.isabs(entry):
-            continue
-        # Preserve the lexical PATH branch as well as its resolved target:
-        # masking the alias would otherwise hide a needed toolchain symlink.
-        directory = Path(os.path.normpath(entry))
-        candidates = [directory]
-        if directory.name == "bin":
-            candidates.append(directory.parent / "lib")
-        for path in candidates:
-            if (not path.is_dir() or path in out
-                    or not any(_within(path, a) and path != a for a in aliases)):
-                continue
-            # Check both projections: a symlink can leave an alias before
-            # reaching the canonical mount, or exist only in that alias.
-            targets = [_mount_source_path(path, home, mounts),
-                       _mount_source_path(path.resolve(), home, mounts)]
-            if any(t is None for t in targets):
-                continue
-            targets = [t.resolve() for t in targets]
-            if any(_within(t, g) or _within(g, t) for t in targets for g in guarded):
-                continue
-            # A PATH prefix cannot expose TMPDIR itself or present/future
-            # harness scratch trees, but ordinary /tmp toolchains are safe.
-            if any(_within(tmp_root, t)
-                   or (_within(t, tmp_root)
-                       and t.relative_to(tmp_root).parts[0].lower().startswith(
-                           tuple(p.lower() for p in HARNESS_TEMP_PREFIXES)))
-                   for t in targets):
-                continue
-            out.append(path)
-    return out
+
+def arm_path_or_error(path_env: str, aliases) -> str:
+    """`path_without_aliases`, or ArmReadIsolationError
+    (`toolchain_under_alias`) naming the first required tool (never its
+    path: the detail is published) that the full PATH finds and the
+    stripped one does not."""
+    stripped = path_without_aliases(path_env, aliases)
+    for tool in ARM_REQUIRED_TOOLS:
+        if (shutil.which(tool, path=stripped) is None
+                and shutil.which(tool, path=path_env) is not None):
+            raise ArmReadIsolationError(
+                f"the arm's `{tool}` is found only under {MOUNT_ALIAS_LABEL}, "
+                "which the arm's read sandbox denies whole; install it on the "
+                "Linux side", code="toolchain_under_alias")
+    return stripped
 
 
 def arm_read_denied(checkouts=(), *, home: Path | None = None,
                     harness_root: Path = HARNESS_ROOT,
-                    profiles=None, outputs=()) -> list[tuple[str, Path]]:
+                    profiles=None, outputs=(),
+                    mountinfo: str | None = None) -> list[tuple[str, Path]]:
     """Every path an agent arm may not read, each with a label for errors.
 
     The harness checkout, the clone it belongs to, the directory holding that
@@ -1149,7 +1147,8 @@ def arm_read_denied(checkouts=(), *, home: Path | None = None,
     sessions, wherever `XDG_STATE_HOME` puts it), the real HOME and the
     Claude Code profiles (`profile_dirs`). Resolved, in a fixed order, without
     duplicates; a path that does not exist holds nothing to read and is left
-    out.
+    out. Then every alias of the root or HOME filesystem the mount table
+    (`mountinfo`, default `host_mountinfo()`) names, WSL's /mnt among them.
     """
     if harness_root == HARNESS_ROOT:
         clone, common = HARNESS_CLONE_ROOT, HARNESS_GIT_COMMON_DIR
@@ -1191,15 +1190,29 @@ def arm_read_denied(checkouts=(), *, home: Path | None = None,
             out[index] = (label, path)
     # Mountinfo establishes that these paths exist. Keep the alias spelling:
     # resolving a filesystem bind does not recover its canonical source.
-    for path in _host_filesystem_aliases(home.resolve(), _linux_mounts()):
-        if path not in [p for _, p in out]:
+    if mountinfo is None:
+        mountinfo = host_mountinfo()
+    for path in _host_filesystem_aliases(home.resolve(), _linux_mounts(mountinfo)):
+        index = next((i for i, (_, seen) in enumerate(out) if seen == path), None)
+        if index is None:
             out.append((MOUNT_ALIAS_LABEL, path))
+        else:
+            # An alias stays denied whole even when HOME or an inherited
+            # profile names that exact mountpoint. Its classification must
+            # survive deduplication before profile exceptions are considered.
+            out[index] = (MOUNT_ALIAS_LABEL, path)
     return out
 
 
-def _arm_read_carve_outs(home: Path, hard_denied: list[Path],
+def _arm_read_carve_outs(home: Path, guarded: list[Path],
                          path_env: str) -> list[Path]:
-    """The `allowRead` entries inside HOME (see ARM_HOME_READ_CARVE_OUTS)."""
+    """The `allowRead` entries inside HOME (see ARM_HOME_READ_CARVE_OUTS).
+
+    `guarded` is every denied path but HOME itself: the checkouts and the
+    directory holding the clone, the results and the archive, every profile
+    and every host-filesystem alias. A candidate that is one of them, holds
+    one or lies inside one is never emitted, so a carve-out cannot reopen an
+    answer key, another session's transcripts or a deny root."""
     candidates = [home / rel for rel in ARM_HOME_READ_CARVE_OUTS]
     for entry in path_env.split(os.pathsep):
         if not entry or not os.path.isabs(entry):
@@ -1214,10 +1227,10 @@ def _arm_read_carve_outs(home: Path, hard_denied: list[Path],
         if not path.exists():
             continue
         path = path.resolve()
-        # Strictly inside HOME, and neither inside nor around a checkout.
+        # Strictly inside HOME, and neither inside nor around a guarded path.
         if path == home or home not in path.parents or path in out:
             continue
-        if any(_within(path, d) or _within(d, path) for d in hard_denied):
+        if any(_within(path, d) or _within(d, path) for d in guarded):
             continue
         out.append(path)
     return out
@@ -1323,8 +1336,8 @@ def _class_without_all(chars: str, alphabet: str = _CLASS_CHARS,
     left = {c.lower() for c in chars}
     kept = [c for c in alphabet if c.lower() not in left and c != "-"]
     if compact_classes:
-        # Equivalent ASCII ranges retain both cases for the sandbox's glob
-        # matcher while keeping large Windows PATH complements below 64 KiB.
+        # Equivalent ASCII ranges keep large scratch-profile rule sets below
+        # the single-argument size limit.
         runs, index = [], 0
         while index < len(kept):
             end = index
@@ -1398,8 +1411,7 @@ def _outside_class(directory: Path, keep: str, spare=(),
 
 def _check_symlinks(directory: Path, root: Path, keep: str,
                     protected: list[Path], needed: list[Path],
-                    guarded=(), tmp_root: Path | None = None,
-                    carve_outs=()) -> list[str]:
+                    guarded=(), tmp_root: Path | None = None) -> list[str]:
     """The symlinks in `directory` the wildcard rules must leave alone.
 
     A wildcard rule that matches a symlink out of `root` denies its target
@@ -1431,17 +1443,15 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
                 continue
             target = entry.resolve()
         except PermissionError:
-            # An entry whose metadata this user cannot read cannot provide
-            # a readable escape. Leave the deny patterns covering its name.
+            # An unreadable entry cannot provide a readable escape. Leave
+            # its name covered by the deny patterns.
             continue
         if _within(target, root):
             continue
         if not (any(_within(target, p) or _within(p, target) for p in protected)
                 or any(_within(n, target) for n in needed)):
             continue
-        if (any((_within(target, g) or _within(g, target))
-                and not any(_within(target, c) and _within(c, g)
-                            for c in carve_outs) for g in guarded)
+        if (any(_within(target, g) or _within(g, target) for g in guarded)
                 or (tmp_root is not None and _within(tmp_root, target))
                 or _within(root, target)
                 or not _COMPLEMENT_NAME.match(entry.name)):
@@ -1463,7 +1473,7 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
 def _profile_read_rules(root: Path, session_dir: Path | None,
                         protected: list[Path], needed: list[Path],
                         guarded=(), tmp_root: Path | None = None,
-                        carve_outs=(), compact_classes=False,
+                        compact_classes=False,
                         readable_plugins=()) -> list[str]:
     """The Read deny rules for HOME or a profile, which leave `session_dir`.
 
@@ -1483,8 +1493,8 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
         if session_dir is not None and root in session_dir.parents:
             kept.append(session_dir)
         if kept:
-            return _alias_read_rules(root, kept, protected, needed,
-                                     guarded, tmp_root)
+            return _profile_branch_read_rules(root, kept, protected, needed,
+                                              guarded, tmp_root)
     whole = _read_rules(_glob_escape(str(root)))
     if session_dir is None or root not in session_dir.parents:
         return whole
@@ -1494,7 +1504,7 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
     rules, current = [], root
     for part in parts:
         spare = _check_symlinks(current, root, part, protected, needed,
-                                guarded, tmp_root, carve_outs)
+                                guarded, tmp_root)
         base = _glob_escape(str(current))
         for pattern in _complement_patterns(part, spare, compact_classes=compact_classes):
             if "*" in pattern:
@@ -1507,32 +1517,29 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
     return rules
 
 
+def _profile_branch_read_rules(root: Path, kept, protected, needed,
+                               guarded, tmp_root) -> list[str]:
+    """Deny a scratch profile except its verified plugin trees and session.
 
-def _alias_read_rules(root: Path, carve_outs, protected, needed,
-                      guarded, tmp_root) -> list[str]:
-    """Deny an alias except safe PATH branches, to Bash and file tools alike.
-
-    Read denies merge into the command sandbox, so allowRead alone cannot
-    reopen a toolchain. Complement rules leave only its branch at each level.
-    Spaces are needed for Windows "Program Files" paths; HOME's alphabet and
-    symlink-name restrictions stay unchanged.
+    Each kept path gets a branch through the profile, so newly created
+    siblings remain denied. Host filesystem aliases never use this exception.
     """
-    kept = [p for p in carve_outs if _within(p, root)]
-    if not kept:
+    paths = [p for p in kept if _within(p, root)]
+    if not paths:
         return _read_rules(_glob_escape(str(root)))
     alphabet = _CLASS_CHARS + " "
     if any(any(c not in alphabet for part in p.relative_to(root).parts for c in part)
-           for p in kept):
+           for p in paths):
         raise ArmReadIsolationError(
-            "an alias PATH toolchain cannot be spared safely by the Read rules",
+            "a scratch profile branch cannot be spared safely by the Read rules",
             code="read_rules_unsafe")
 
-    def visit(directory, paths):
-        if directory in paths:
+    def visit(directory, branches):
+        if directory in branches:
             return []
-        names = list(dict.fromkeys(p.relative_to(directory).parts[0] for p in paths))
+        names = list(dict.fromkeys(p.relative_to(directory).parts[0] for p in branches))
         spare = _check_symlinks(directory, root, names[0], protected, needed,
-                                guarded, tmp_root, carve_outs)
+                                guarded, tmp_root)
         others = list(dict.fromkeys([*names[1:], *spare]))
         base = _glob_escape(str(directory))
         rules = []
@@ -1545,10 +1552,11 @@ def _alias_read_rules(root: Path, carve_outs, protected, needed,
             rules += _read_rules(f"{base}/{_glob_escape(name)}")
         for name in names:
             child = directory / name
-            rules += visit(child, [p for p in paths if _within(p, child)])
+            rules += visit(child, [p for p in branches if _within(p, child)])
         return rules
 
-    return visit(root, kept)
+    return visit(root, paths)
+
 
 def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[Path]:
     """The directories whose contents configure the arm: the workspace's
@@ -1577,14 +1585,21 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
     return out
 
 
-# The prefixes of every directory the harness makes under TMPDIR: other
+# The prefixes of every named temporary store the harness and scripts make
+# under TMPDIR (including explicit parents that may be TMPDIR): other
 # arms' workspaces and scratch profiles (transcripts), canary and
-# propagation legs, scoring copies, `deps:` caches and objective-command
-# scratch. Leftovers from a crashed run, or a concurrent one, are denied.
+# propagation legs, scoring copies, `deps:` caches, objective-command
+# scratch and `workspace_git`'s private metadata copies (`trusted-git-`,
+# every workspace's own included: the arm may neither read nor alter the
+# Git state the harness trusts). Leftovers from a crashed run, or a
+# concurrent one, are denied.
 HARNESS_TEMP_PREFIXES = (
     "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
     "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
-    "objective-command-", "local-eval-guard-", "sink-mutation-")
+    "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
+    "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
+    "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
+    ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-")
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
@@ -1651,6 +1666,7 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                          config_dir: Path | None = None,
                          profiles=None, outputs=(), additional_profiles=(),
                          tmp_root: Path | None = None,
+                         mountinfo: str | None = None,
                          readable_plugins=()) -> dict:
     """The settings every agent arm runs under, as one JSON object.
 
@@ -1658,7 +1674,10 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     is where the arm's CLI will save its session (see `_profile_read_rules`);
     `workspace` and `config_dir` are the arm's own, which the agent may not
     configure (see `_agent_config_dirs`). `home`, `path_env`, `harness_root`
-    and `profiles` (`profile_dirs`) default to this process's own.
+    and `profiles` (`profile_dirs`) default to this process's own, and
+    `mountinfo` to `host_mountinfo()`. A host-filesystem alias is denied
+    whole, and PATH entries under one are dropped (`path_without_aliases`)
+    before any carve-out is considered.
     Raises ArmReadIsolationError when the read rules cannot be built safely.
     """
     home = Path(home if home is not None else Path.home()).resolve()
@@ -1671,11 +1690,15 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
         raise ArmReadIsolationError("plugin reads must stay inside the scratch profile",
                                     code="read_rules_unsafe")
     profiles = [*profiles, *additional_profiles]
+    if mountinfo is None:
+        mountinfo = host_mountinfo()
     denied = arm_read_denied(checkouts, home=home, harness_root=harness_root,
-                             profiles=profiles, outputs=outputs)
+                             profiles=profiles, outputs=outputs,
+                             mountinfo=mountinfo)
     aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
     roots = [path for label, path in denied
-             if label in ("HOME", PROFILE_LABEL) or path == home]
+             if label != MOUNT_ALIAS_LABEL
+             and (label in ("HOME", PROFILE_LABEL) or path == home)]
     # HOME may also be the directory holding the clone (a cloud routine
     # clones into it): the carve-outs still keep clear of every checkout.
     hard = [path for _, path in denied if path not in roots]
@@ -1684,7 +1707,13 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                                     code="read_rules_unsafe")
     if path_env is None:
         path_env = os.environ.get("PATH", "")
-    carve = _arm_read_carve_outs(home, hard, path_env) if home.is_dir() else []
+    path_env = path_without_aliases(path_env, aliases)
+    # Carve-outs keep clear of every denied path but HOME itself, which may
+    # also be the directory holding the clone (a cloud routine clones into
+    # it): the checkouts, outputs, archive, profiles and aliases.
+    guarded_carve = [path for label, path in denied
+                     if path != home or label == MOUNT_ALIAS_LABEL]
+    carve = _arm_read_carve_outs(home, guarded_carve, path_env) if home.is_dir() else []
     keep = Path(session_dir).resolve() if session_dir else None
     config_dirs = (_agent_config_dirs(workspace, config_dir)
                    if workspace is not None else [])
@@ -1698,21 +1727,17 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     tmp_denied, tmp_rules = _harness_temp_rules(
         tmp_root, Path(workspace).resolve() if workspace is not None else None,
         protected, needed, compact_profiles)
-    alias_guarded = [p for _, p in denied if p not in aliases] + tmp_denied
-    alias_carve = (_alias_read_carve_outs(aliases, home, alias_guarded, path_env, tmp_root)
-                   if aliases else [])
-    carve += alias_carve
     read_rules = []
     for _, path in denied:
         # What a spared symlink in HOME or a profile must not lead to: every
         # other denied path and the harness's directories under TMPDIR.
         guarded = [p for _, p in denied if p != path] + tmp_denied
+        # An alias, like every other path but HOME and the profiles, is
+        # denied whole: no rule and no carve-out inside it.
         for rule in (_profile_read_rules(path, keep, protected, needed,
-                                         guarded, tmp_root, alias_carve,
+                                         guarded, tmp_root,
                                          compact_classes=path in compact_profiles,
                                          readable_plugins=readable_plugins) if path in roots
-                     else _alias_read_rules(path, alias_carve, protected, needed,
-                                            guarded, tmp_root) if path in aliases
                      else _read_rules(_glob_escape(str(path)))):
             if rule not in read_rules:
                 read_rules.append(rule)
@@ -1752,15 +1777,18 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
 def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
                         workspace: Path | None = None,
                         config_dir: Path | None = None, outputs=(), *,
+                        path_env: str | None = None,
+                        mountinfo: str | None = None,
                         additional_profiles=(), readable_plugins=()) -> list[str]:
-    """The CLI flags that put an agent arm behind `arm_sandbox_settings`.
+    """The CLI flags that put an agent arm behind `arm_sandbox_settings`
+    (`path_env`, the arm's own PATH, and `mountinfo` default as there).
     Raises ArmReadIsolationError (`settings_too_large`) past
     MAX_SETTINGS_BYTES rather than handing the OS an argument it refuses."""
     settings = json.dumps(arm_sandbox_settings(
         checkouts, session_dir=session_dir, workspace=workspace,
         config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles,
-        readable_plugins=readable_plugins),
-        sort_keys=True, separators=(",", ":"))
+        readable_plugins=readable_plugins, path_env=path_env,
+        mountinfo=mountinfo), sort_keys=True, separators=(",", ":"))
     if len(settings.encode()) > MAX_SETTINGS_BYTES:
         raise ArmReadIsolationError(
             f"the arm's --settings is {len(settings.encode())} bytes, over "
@@ -2348,7 +2376,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     duration_ms/raw. Error dicts always have an "error" key — one of
     "timeout",
     "sandbox_unavailable", "workspace_read_denied", "read_rules_unsafe",
-    "harness_clone_unknown",
+    "harness_clone_unknown", "toolchain_under_alias",
     "settings_too_large", "managed_sandbox_policy", "spawn_failed",
     "nonzero_exit", "invalid_json", "agent_error", "agent_wrote_agent_config"
     — plus a "detail". Every call runs behind
@@ -2380,8 +2408,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # (TMPDIR inside HOME, say) is refused, never silently re-opened.
     checkouts = tuple(arm.get("read_denied") or ())
     outputs = tuple(arm.get("read_denied_outputs") or ())
+    # The mount table is read once, here, and handed to everything below.
     try:
-        check_workspace_readable(workspace, arm_read_denied(checkouts, outputs=outputs))
+        mountinfo = host_mountinfo()
+        denied = arm_read_denied(checkouts, outputs=outputs, mountinfo=mountinfo)
+        check_workspace_readable(workspace, denied)
     except ArmReadIsolationError as exc:
         return {"error": exc.code, "detail": str(exc)}
     refusal = managed_sandbox_refusal()
@@ -2401,6 +2432,16 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                  or agent_env(workspace, arm.get("env")))
     for name in ARM_DROPPED_ENV:
         env.pop(name, None)
+    # Every host-filesystem alias is denied whole, so a PATH entry under one
+    # (WSL appends the Windows PATH under /mnt/c) is dropped from the arm's
+    # environment, a skill arm's and a guidance arm's `env_override` alike;
+    # a required tool found only there fails the arm (`arm_path_or_error`).
+    aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
+    if "PATH" in env:
+        try:
+            env["PATH"] = arm_path_or_error(env["PATH"], aliases)
+        except ArmReadIsolationError as exc:
+            return {"error": exc.code, "detail": str(exc)}
     # Where this arm's CLI saves its session, which the read rules leave open
     # when it lies under the real HOME or a profile (`_profile_read_rules`).
     projects = _session_projects_dir(env)
@@ -2459,7 +2500,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             readable_plugins.append(path)
         isolation = arm_isolation_flags(checkouts, session_dir, workspace, config_dir,
                                         outputs, additional_profiles=scratch_profiles,
-                                        readable_plugins=readable_plugins)
+                                        readable_plugins=readable_plugins,
+                                        path_env=env.get("PATH", ""), mountinfo=mountinfo)
     except (ArmReadIsolationError, delivery.DeliveryError, OSError, ValueError) as exc:
         if not isinstance(exc, ArmReadIsolationError):
             return {"error": "read_rules_unsafe", "detail": "plugin read boundary could not be verified"}
@@ -4541,7 +4583,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 workspace_git.validate(workspace)
                 objective_checks = objective.run_checks(
                     fixture, str(workspace), str(seed),
-                    transcript=result.get("transcript"))
+                    transcript=result.get("transcript"),
+                    read_denied=scorer_read_denied(args, fixture=fixture))
             except objective.ScorerUnavailableError as exc:
                 # A scoring dependency is missing on THIS machine: not the
                 # agent's failure, so the trial is an error (excluded from
@@ -5208,7 +5251,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 workspace_git.validate(workspace)
                 objective_checks = objective.run_checks(
                     scored, str(workspace), str(seed),
-                    transcript=result.get("transcript"))
+                    transcript=result.get("transcript"),
+                    read_denied=scorer_read_denied(args, fixture=scored))
             except objective.ScorerUnavailableError as exc:
                 # As in `_run_arm`: a missing scoring dependency on THIS
                 # machine is a trial error, not a failed check, and the
@@ -5398,7 +5442,7 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
                   "A guidance fixture's checks are per arm; run it with "
                   "`--arm both` (or a named arm) instead.")
             return 2
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(prefix="scoring-guidance-") as tmp:
             workspace = Path(tmp) / "ws"
             if seed.is_dir():
                 shutil.copytree(seed, workspace)
@@ -5412,7 +5456,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
                 print(f"setup failed: {seed_error['detail']}")
                 return 2
             try:
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+                results = objective.run_checks(fixture, str(workspace), str(seed),
+                                               read_denied=scorer_read_denied(args, fixture=fixture))
             except objective.ScorerUnavailableError as exc:
                 # As the skill path's objective-only: a missing scoring
                 # dependency is not a failed check (exit 1), so name it and
@@ -6224,9 +6269,9 @@ def main() -> int:
                 # workspace that never needed it).
                 workspace = args.workspace
                 results = objective.run_checks(fixture, str(workspace),
-                                               str(seed))
+                                               str(seed), read_denied=scorer_read_denied(args, fixture=fixture))
             else:
-                with tempfile.TemporaryDirectory() as tmp:
+                with tempfile.TemporaryDirectory(prefix="scoring-skill-") as tmp:
                     workspace = Path(tmp) / "ws"
                     shutil.copytree(seed, workspace)
                     seed_prep.prepare_seed(workspace, fixture)
@@ -6236,7 +6281,7 @@ def main() -> int:
                         print(f"setup failed: {setup_error['detail']}")
                         return 2
                     results = objective.run_checks(fixture, str(workspace),
-                                                   str(seed))
+                                                   str(seed), read_denied=scorer_read_denied(args, fixture=fixture))
         except guidance.GuidanceError as exc:
             # run_setup's and the objective git checks' sink checks land here.
             print(f"configuration error: {exc}")

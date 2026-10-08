@@ -113,9 +113,13 @@ evals/
   consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
     fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
     seed/                  # shared fake gh, startup-failure metadata, denied secret listing
-  github-actions-repo-settings/  # A/B eval, Class B: diagnose settings drift
-    fixture.yaml           # read-only two-repo diagnosis and objective checks
-    seed/                  # declared baseline, shared gh, and canned API responses
+  github-actions-repo-settings/  # A/B eval, Class A+B: onboard and diagnose settings
+    drift-diagnosis/
+      fixture.yaml         # read-only two-repo diagnosis and objective checks
+      seed/                # declared baseline, shared gh, and canned API responses
+    onboarding/
+      fixture.yaml         # draft: append a repo with inherited fleet defaults
+      seed/                # baseline, shared fake gh, canned API responses, README
   disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
     fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
     seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
@@ -172,6 +176,25 @@ test/
   fake-claude              # stand-in CLI used by the eval tests
   fake-claude-init         # stand-in CLI for the propagation probes (a simulator)
 ```
+
+## Skill coverage
+
+The [daily skill coverage workflow](.github/workflows/skill-coverage.yml) reads
+all four [registry layouts](harness/registries.yml) and publishes a redacted
+[latest census](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/coverage/latest.json)
+and [coverage badge data](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/badges/coverage.json)
+on `persistent/eval-results`. A missing private registry read credential fails
+the census before publication. Dispatch defaults to a dry run that uploads the
+redacted census artifact without writing to GitHub.
+
+Each scheduled run proposes up to three public GAPs as draft fixture PRs and
+tracking sub-issues under [the coverage backfill](https://github.com/Adam-S-Daniel/skills-evals/issues/62).
+These are TODO skeletons, not evaluated fixtures; drafts remain GAPs in the
+census until an incident, measured context limits, objective checks, and
+red/green evidence have been reviewed. A backlog above three gaps can take
+multiple daily runs. The [registry-side graduation and touch gate](https://github.com/Adam-S-Daniel/agentskills/issues/153)
+is a separate dependency before [automatic coverage](https://github.com/Adam-S-Daniel/skills-evals/issues/60)
+can be considered complete.
 
 ## Board snapshot
 

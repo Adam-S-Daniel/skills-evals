@@ -3982,16 +3982,16 @@ _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
 
 
 def run_checks(fixture: dict, workspace: str, seed: str,
-               transcript: str | None = None) -> list[dict]:
+               transcript: str | None = None, *, read_denied=None) -> list[dict]:
     """Run every objective check in the fixture; return result dicts.
 
     File and git checks are hermetic. The opt-in `command_succeeds` executes
-    final-workspace code with isolated process state and a bounded timeout;
-    network isolation is best-effort and reported in its detail (ADR 0006).
+    final-workspace code inside a mandatory filesystem/PID sandbox;
+    network isolation is mandatory and reported in its detail (ADR 0006).
     The one that was not, `pinned_shas_match_tags`, resolved a SHA to a tag
     over `git ls-remote`; it retired with the version-comment convention and
     took the network opt-in that existed only for it. No check intentionally
-    resolves remote evidence; command execution is not a complete sandbox.
+    resolves remote evidence; disk and CPU consumption remain uncapped.
 
     Every check's keys are validated against `_CHECK_ALLOWED_KEYS` before
     running, for every type — not just `workflow_step_uses` — so an
@@ -4004,11 +4004,12 @@ def run_checks(fixture: dict, workspace: str, seed: str,
     # Lazy: `seed_prep` imports this package's `repo_tests` and `commands`.
     import seed_prep
     with seed_prep.scoring_seed(seed, fixture) as compare_seed:
-        return _run_checks(fixture, workspace, seed, compare_seed, transcript)
+        return _run_checks(fixture, workspace, seed, compare_seed, transcript,
+                           read_denied=read_denied)
 
 
 def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
-                transcript: str | None) -> list[dict]:
+                transcript: str | None, *, read_denied=None) -> list[dict]:
     """`run_checks`' loop. `seed` is the fixture's own seed directory, whose
     parent holds `repo_tests`' overlay and the pristine files
     `dir_listing_matches` reads; `compare_seed` is what the workspace is
@@ -4026,6 +4027,8 @@ def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
             raise ValueError(f"unknown {check['type']!r} constraint key(s) in "
                             f"check {check.get('id')!r}: {sorted(extra)}")
         kwargs = {key: check[key] for key in allowed if key in check}
+        if check["type"] in ("command_succeeds", "repo_tests"):
+            kwargs["read_denied"] = [*(read_denied or ()), Path(seed).resolve().parent]
         if check["type"] in ("repo_tests", "dir_listing_matches"):
             # `dir_listing_matches` only reads `expected_file` from the seed,
             # which is pristine by contract (it may sit under a stripped path).

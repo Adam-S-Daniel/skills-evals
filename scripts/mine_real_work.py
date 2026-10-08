@@ -608,6 +608,7 @@ def _outside_repo(path: Path) -> Path:
 def _write(path: Path, doc: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False,
+                                     prefix="mine-real-work-",
                                      encoding="utf-8", suffix=".tmp") as handle:
         json.dump(doc, handle, indent=1)
         handle.write("\n")

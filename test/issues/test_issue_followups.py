@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,11 @@ import run_eval  # noqa: E402
 from cli_json import bounded_tool_trace  # noqa: E402
 
 RENAME_DIR = ROOT / "evals" / "rename-pdfs"
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
 
 
 def result(text: str, session: str | None = "sess-1", *, model="model-a",
@@ -86,8 +92,11 @@ class RunAgentFollowupTests(unittest.TestCase):
         # A HOME of its own: the arm's read rules list what is in HOME.
         self.home = Path(tempfile.mkdtemp(prefix="followups-home-"))
         self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        mountinfo = self.tmp / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
         patcher = mock.patch.dict(run_eval.os.environ, {
-            "HOME": str(self.home), "XDG_STATE_HOME": str(self.home / "state")})
+            "HOME": str(self.home), "XDG_STATE_HOME": str(self.home / "state"),
+            "PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo)})
         patcher.start()
         self.addCleanup(patcher.stop)
 

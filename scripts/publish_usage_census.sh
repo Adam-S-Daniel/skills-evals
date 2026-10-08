@@ -47,7 +47,7 @@ case "${1:-}" in
 esac
 [ "$#" -le 1 ] || { echo "usage: $0 [--dry-run]" >&2; exit 2; }
 
-tmp="$(mktemp -d)"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/usage-census-XXXXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
 # The machine's git identity when it has one; a noreply fallback when it does

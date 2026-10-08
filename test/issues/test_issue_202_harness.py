@@ -69,6 +69,19 @@ from propagation import arms, init_probe  # noqa: E402
 # 1. model cooling-off -> 0
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class TestShippedCoolingOff(unittest.TestCase):
 
     def test_the_shipped_policy_sets_zero_and_says_why(self):

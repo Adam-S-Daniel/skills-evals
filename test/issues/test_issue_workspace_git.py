@@ -375,8 +375,13 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
 
     def test_no_raw_git_process_outside_helper(self):
         harness = Path(run_eval.__file__).parent
+        # Modules whose git calls only ever read a trusted, harness-supplied
+        # checkout, never an agent workspace: context.py resolves an ADR 0012
+        # context from --context-repo clones through git cat-file/ls-tree;
+        # harness_repo.py finds the harness's own clone for ADR 0011's read fence.
+        trusted_repo_readers = {'workspace_git.py', 'context.py', 'harness_repo.py'}
         for path in harness.rglob('*.py'):
-            if path.name == 'workspace_git.py':
+            if path.name in trusted_repo_readers:
                 continue
             tree = ast.parse(path.read_text())
             allowed_reads = set()

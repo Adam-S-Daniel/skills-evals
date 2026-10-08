@@ -124,6 +124,19 @@ def _plant_skill(skills_dir: Path, name: str) -> None:
         encoding="utf-8")
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 @unittest.skipUnless(HAVE_GIT, "git is required")
 class TestLocalEval(unittest.TestCase):
 
@@ -179,7 +192,8 @@ class TestLocalEval(unittest.TestCase):
     def _env(self, dispatcher: Path, **extra) -> dict:
         path = [str(Path(sys.executable).parent),
                 str(Path(shutil.which("git")).parent), "/usr/bin", "/bin"]
-        env = {"PATH": os.pathsep.join(dict.fromkeys(path)),
+        env = {**arm_test_environment(),
+               "PATH": os.pathsep.join(dict.fromkeys(path)),
                "HOME": str(self.home), "TMPDIR": str(self.root / "tmp"),
                "LANG": "C.UTF-8", "CLAUDE_BIN": str(dispatcher)}
         env.update(extra)
