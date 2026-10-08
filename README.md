@@ -965,6 +965,32 @@ roster that is present and unreadable is a defect in this repository rather
 than a fact about an unprotected branch — the run exits 5 and publishes
 nothing.
 
+## Coverage census
+
+The [coverage job](https://github.com/Adam-S-Daniel/skills-evals/blob/main/.github/workflows/propagation.yml)
+reads each configured registry and the committed fixtures daily. Its badge
+shows `N covered · M skipped · K gap · date`. A skill is covered when a fixture
+names it; that count does not assert the fixture is runnable or that paired
+context was delivered. The report also counts draft fixtures, declarations of
+`context:`, missing context, and unproven guidance revisions. Context delivery
+is not yet verified by the harness.
+
+Scheduled runs publish a complete census to `persistent/eval-results` as
+[latest JSON](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json),
+[timestamped JSON](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/eval-results/coverage),
+and the [markdown summary](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.md),
+with the [Shields endpoint](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/badges/coverage.json).
+A GAP remains visible in
+those files and does not block publication. If any registry is missing or
+empty, the job uploads an unresolved report and fails the scheduled run;
+it publishes no fleet totals or numeric badge. Pull requests, pushes, and manual dispatches get
+the same safe report and a warning when a checkout is unavailable. The private
+registry is checked out only on schedule with the optional
+`COVERAGE_REGISTRY_READ_TOKEN` read credential; its skill names, bundle names,
+skip reasons, and paths never appear in the public report.
+
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fcoverage.json)](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json)
+
 ## Quality badge (real weekly run)
 
 `.github/workflows/eval.yml` runs the full `workflow-path-audit` A/B eval every
