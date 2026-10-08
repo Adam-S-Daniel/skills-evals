@@ -10,6 +10,11 @@ Answer, per skill: **does installing this skill actually improve agent
 behavior?** The core method is an A/B: run the same task **with** the skill
 installed vs. **without**, score both arms, and report the delta.
 
+[ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md)
+(accepted 2026-10-07, not built yet) makes the default pair in place: both arms
+carry the context the subject deploys into, and only the subject differs. The
+isolation pair described here becomes an opt-in diagnostic.
+
 This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
 **not** used as the harness.
 
@@ -1872,7 +1877,8 @@ the section's own file when it is an opt-in `sections/*.md`), and
 `full-minus-section` (that corpus with the extent removed). The default pair
 `section`/`none` asks whether the section teaches; the declared
 `ablation: [full, full-minus-section]` pair asks what it is worth in situ,
-including any lost-in-the-middle effect of a 56 KB file. Extents are located
+including any lost-in-the-middle effect of a 56 KB file. [ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md)
+(not built yet) makes the in-place pair the default. Extents are located
 with a real markdown parse (`markdown-it-py`, pinned exact) using the same
 arithmetic as `_agent-guidance`'s own `scripts/check-guidance-coverage.js`, so
 the manifest's `bytes` column and the delivered payload can never disagree; a
