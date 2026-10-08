@@ -1747,8 +1747,15 @@ class SubprocessRunnerContractTests(unittest.TestCase):
             fail=None, plant=None, fake=str(TEST_DIR / "fake-claude"),
             fake_init=str(TEST_DIR / "fake-claude-init")), encoding="utf-8")
         fake.chmod(0o755)
+        # PATH and the mount table explicit: the arm's read fence is built
+        # from both, so the result does not depend on the host's.
+        mountinfo = self.tmp / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
         env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
-               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "TMPDIR": str(self.tmp), "SKILLS_EVALS_MOUNTINFO": str(mountinfo),
+               "PATH": os.pathsep.join(dict.fromkeys(
+                   (str(Path(sys.executable).parent), "/usr/local/bin",
+                    "/usr/bin", "/bin"))),
                "LANG": "C.UTF-8", "UNRELATED_INHERITED_VALUE": "test"}
         with mock.patch.dict(os.environ, env, clear=True), \
                 contextlib.redirect_stdout(io.StringIO()):

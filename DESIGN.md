@@ -1891,24 +1891,35 @@ such as `/tmp` on `/tmp` and HOME on itself stay available; malformed or
 unreadable Linux mount metadata refuses the arm with `read_rules_unsafe`.
 Other platforms add no mount fences.
 
-An alias's safe PATH toolchain directories and existing sibling `lib` stay
-readable through documented `allowRead` exceptions and complementary Read
-rules; a broad Read deny would otherwise merge into the sandbox and override
-the exception. Both mount-canonical paths and resolved symlink targets must
-stay clear of HOME, checkouts, profiles, outputs and present or future harness
-scratch trees. Ordinary TMPDIR toolchains are allowed; TMPDIR itself is
-not. Alias patterns support spaces and compress character classes into
-equivalent ASCII ranges, retaining both cases, within the existing 64 KiB
-settings cap. Mount discovery is a settings-build snapshot; complement rules
-share HOME's finite-alphabet limitation for names created later. See the
+Every alias is denied **whole**: one `denyRead` entry and the
+`Read(//<alias>)`/`Read(//<alias>/**)` pair, with no rule and no `allowRead`
+carve-out inside it. A carve-out per Windows PATH directory made a skill
+arm's `--settings` 60,680 bytes on a WSL workstation, against the 64 KiB cap.
+Instead the arm never needs a Windows-side executable: `run_agent` drops
+every PATH entry under an alias (spelled there, or reached through a
+symlink) from the arm's environment, a skill arm's and a guidance arm's
+`env_override` alike (`path_without_aliases`), and builds the settings from
+that PATH. An arm whose `bash` or `git` is found only under an alias fails
+with `toolchain_under_alias` rather than reopen it. The Linux carve-outs
+under HOME refuse any directory that is, holds or lies inside a denied path
+other than HOME itself: a checkout or the directory holding the clone, the
+results, the archive, a profile, an alias. On this WSL workstation a skill
+arm's settings are now 12,695 bytes.
+
+The mount table and PATH are parameters (`mountinfo=`, `path_env=`),
+defaulting to `host_mountinfo()` and `os.environ` only at the outermost
+call. `SKILLS_EVALS_MOUNTINFO` names a mountinfo-format file that stands in
+for `/proc/self/mountinfo` (an empty one names no alias): every test that
+runs an arm sets it and an explicit PATH, so no result depends on the host's
+mounts or PATH. See the
 [reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
 and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
 
-A before/after live WSL probe with CLI 2.1.293 read an answer-key patch through
-WSLg using both Bash and Read before these fences; afterward Bash aliases
-were masked and Read refused them. A Windows PATH executable remained
-readable, and workspace, Python, Node and git operations still worked. Unix
-sockets were blocked in both runs by the existing
+A live WSL probe with CLI 2.1.293 read an answer-key patch through WSLg
+using both Bash and Read before these fences. With the whole-alias deny,
+Bash got `No such file or directory` and Read refused it; the arm's PATH
+held no `/mnt` entry, and workspace, Python, Node and git still worked.
+Unix sockets were blocked in both runs by the existing
 `allowAllUnixSockets: false`, `allowUnixSockets: []` settings: Linux seccomp
 refused `AF_UNIX` socket creation with `EPERM` before connection, closing
 Docker and WSL interop. No additional `/run` fence was needed.

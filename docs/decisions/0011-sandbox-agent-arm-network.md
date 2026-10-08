@@ -160,28 +160,33 @@ to commands git's global configuration files and PATH directories under HOME
 workspace under any denied path fails the arm with `workspace_read_denied`;
 the message names the kind of path, not the path.
 
-An alias fence also preserves needed PATH directories, including Windows
-interpreters under `/mnt`, and a `bin` directory's existing sibling `lib`.
-Each exception is checked both through its mount projection into canonical
-root/HOME and through its resolved symlink target: neither may enter or
-surround HOME, a checkout, a profile, an output directory or an existing or
-future harness scratch tree. An exception may reach an ordinary toolchain
-under TMPDIR, but cannot expose TMPDIR itself. Mount discovery uses the
-longest mount prefix for HOME, including a separate HOME filesystem, decodes
-mountinfo's escaped paths, and fails with `read_rules_unsafe` if Linux mount
-metadata cannot establish the fences. Other platforms add no mount fences.
+Each alias is denied whole: no `allowRead` exception and no Read rule
+inside it. An earlier revision of this addendum kept each Windows PATH
+directory under `/mnt` readable with complement Read rules; WSL appends some
+15 of them, so a real skill arm's `--settings` reached 60,680 bytes against
+the 64 KiB cap, and every arm on that workstation failed with
+`settings_too_large`. The arm needs no Windows-side executable, so
+`run_agent` drops every PATH entry under an alias (spelled there or reached
+through a symlink) from the arm's environment, skill and guidance arms
+alike, and builds the settings from that PATH; an arm whose `bash` or `git`
+is found only under an alias fails with `toolchain_under_alias` instead of
+reopening it. The carve-outs that remain, inside HOME, refuse a directory
+that is, holds or lies inside any denied path but HOME itself: a checkout,
+the directory holding the clone, the results, the archive, a profile or an
+alias. A skill arm's settings on that workstation are now 12,695 bytes.
+Mount discovery uses the longest mount prefix for HOME, including a
+separate HOME filesystem, decodes mountinfo's escaped paths, and fails with
+`read_rules_unsafe` if Linux mount metadata cannot establish the fences.
+Other platforms add no mount fences.
 
-A broad `Read` deny is merged into the command sandbox and defeats an
-`allowRead` exception, so alias Read rules use the same complement strategy
-as HOME, recursively keeping only the accepted PATH branches. Spaces support
-Windows `Program Files` paths; only alias character classes use equivalent
-ASCII ranges, retaining both cases and literal punctuation. This keeps the
-measured settings at 55,772 bytes within the unchanged 64 KiB cap. Needed
-symlinks are spared with the same checks as HOME; inaccessible child metadata
-is left covered by the deny patterns. The deterministic
+The mount table and PATH are parameters, read from `/proc/self/mountinfo`
+and `os.environ` only at the outermost call; `SKILLS_EVALS_MOUNTINFO` names
+a mountinfo-format file to read instead (empty: no alias), which every test
+that runs an arm sets, beside an explicit PATH. The deterministic
 [regression tests](../../test/issues/test_issue_arm_read_isolation.py) use
 mountinfo fixtures for aliases, no aliases, self-binds, separate HOME,
-escaped paths and accepted or refused toolchain exceptions.
+escaped paths, the size of a WSL-shaped table with a 30-entry Windows PATH,
+PATH stripping and refused carve-outs.
 
 `blockReadsOutsideWorkingDirectories` was not used: it also refuses the Read
 tool `/usr`, the toolchains and the rest of the system, which an arm may
@@ -263,8 +268,16 @@ answer-key patch through WSLg with Bash, and read its diff header with the
 Read tool. After the fix those Bash paths returned no bytes and `No such
 file or directory`; the Read tool refused the same alias with `File is in a
 directory that is denied by your permission settings.` A Windows executable's
-two-byte header remained readable through its PATH exception, and workspace
+two-byte header remained readable through its PATH exception (since
+removed, below), and workspace
 reads/writes, Python, Node and git remained usable from `/tmp`.
+
+After the redesign above (whole-alias deny, alias PATH entries stripped), a
+real `claude -p` arm (CLI 2.1.293) with the branch's flags got `No such file
+or directory` from Bash for the same patch under `/mnt/wslg/distro` and for
+`/mnt/c`, and `File is in a directory that is denied by your permission
+settings.` from the Read tool; its PATH held no `/mnt` entry, and git,
+Python, Node and workspace writes worked.
 
 The same probes confirmed the existing Unix socket policy:
 `allowAllUnixSockets: false` and `allowUnixSockets: []`. Both
@@ -281,8 +294,7 @@ for the live probes, then their scratch directories were deleted. No link —
 local probe evidence is at `/tmp/readdeny-alias-probe-after-compact`.
 
 Mount discovery is a snapshot taken while building the arm's settings; it
-does not discover host mounts added afterward. Alias complement rules share
-the existing finite-alphabet limitation below for names created later.
+does not discover host mounts added afterward.
 
 Not covered: a HOME or profile entry created later whose name leaves the
 kept one at a character outside the class above is readable by the Read
