@@ -135,6 +135,17 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   a resumed result already reports them for the whole session. Any other shape is a configuration error (rc 2) at
   load. See [ADR 0009](docs/decisions/0009-fixture-followup-turns.md).
 
+- **`effort:`** (optional) — one of `low`, `medium`, `high`, `xhigh`, `max`
+  (`guidance.EFFORT_LEVELS`, the levels `claude --help` lists for
+  `--effort`, Claude Code 2.1.292). Every agent arm is launched with
+  `--effort <level>`, on its first call and on every `followups:` call. The
+  run's own `--effort` overrides it, as `--model` overrides `model:`. Absent
+  or null, and with no `--effort` flag, no flag is passed and the arm runs at
+  the CLI's default, which a release can change. Every summary records the
+  effective level as `harness.effort`, `null` meaning the CLI default. The
+  judge and the guidance guard probe never take it. Any other value is a
+  configuration error (rc 2) at load.
+
 - **`strip_agent_context:`** (optional, `true` or `false`; default `false`)
   — for a real-work seed copied from a fleet repository. Before `deps:`
   and `setup:` run, and before the seed commit, the harness
@@ -161,7 +172,9 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   the same way. Checks that compare the workspace with the seed
   (`files_unchanged`, `non_remote_refs_unchanged`) read a stripped copy of the
   seed. Only the workspace root is touched: a nested
-  `AGENTS.md` can be a repository's own test data.
+  `AGENTS.md` can be a repository's own test data. The arm's network
+  sandbox arrives as a `--settings` flag, not a workspace file, so the guard
+  carries no exception for it (ADR 0011).
 - **`subject: any`** — a subject-agnostic real-work fixture (Q4, in
   "Real-work fixtures from merged pull requests" below). It names no `skill:` or `section:`; the run names one with
   `--skill NAME` (it then runs as a skill fixture) or `--section ID` (a
@@ -250,7 +263,24 @@ design, recorded verbatim:
   additions" section.
 - **Q7, the primary efficiency KPI:** "Tokens (Recommended)".
   `scripts/propose_skill_edit.py`'s `decide` reads it (ADR 0005, "Token-aware
-  acceptance addendum (2026-10-06)"); nothing else does.
+  acceptance addendum (2026-10-06)"); nothing else does. Since 2026-10-07
+  ("Switch to total (Recommended)", ADR 0005's "Total tokens addendum") a
+  fixture's `tokens` are the mean per trial of the four counts summed over
+  EVERY model in `modelUsage` (subagents, sidechains and compaction
+  included), `tokens_basis: "model_usage_total"`. The main loop's `usage`
+  alone excludes subagent and auxiliary calls; it is kept as
+  `main_loop_tokens`, and metrics without a `tokens_basis` measured it
+  (`usage_main_loop`). An incomplete per-model accounting makes `tokens`
+  null, which `decide` already treats as missing token data; baseline and
+  candidate on different bases are refused as inconclusive.
+  Each loop record saves an explicit outcome `decision` and the observed
+  mean tokens per trial in each fixture's baseline metrics, including
+  no-candidate and refused runs; unmeasured token usage stays `null`.
+  Beside `tokens`, each fixture's metrics also carry `model_tokens` (per
+  model, the mean per trial of each of the four counts, `null` when any
+  trial lacks it) and the arm's aggregate `cross_model` block. No acceptance
+  rule reads them, and `scripts/improve_gate.py` accepts records with or
+  without them, and with or without a record-level `tokens_basis`.
 - **Answer leak, the exemption list:** "Exempt interface strings
   (Recommended)". Each fixture declares, in `interface_strings:`, the
   identifiers and messages its hidden tests check verbatim, and its task text
@@ -699,7 +729,8 @@ is objectively decidable from the resulting files alone.
   `claude -p <prompt> --output-format json --verbose --permission-mode
   auto --setting-sources project` (`--verbose` makes the CLI print
   every turn's result, not only the last) (plus `--model <model>` if the fixture or CLI
-  flag sets one). The mode is run_eval.py's `--permission-mode` (`auto`, the
+  flag sets one, and `--effort <level>` if the fixture's `effort:` or the
+  `--effort` flag sets one). The mode is run_eval.py's `--permission-mode` (`auto`, the
   default, or `bypassPermissions`, which every run before #71 used and which
   the CLI refuses as root); it applies to the judge too, is recorded in every
   summary.json as `harness.permission_mode`, and the badge never averages runs
@@ -726,9 +757,59 @@ is objectively decidable from the resulting files alone.
   that metric's `n_missing`, never averaged as 0. `report.md` prints them per
   arm with the with-minus-without delta, and `scripts/local_eval.py`'s
   `aggregate.json` carries the same blocks. They are reported, not decided
-  on, except by `scripts/propose_skill_edit.py`, which sums the four token
-  means per fixture and reads that (ADR 0005, "Token-aware acceptance
-  addendum (2026-10-06)").
+  on, except by `scripts/propose_skill_edit.py`, which records the four
+  main-loop token means summed as `main_loop_tokens` and decides on the
+  total across every model instead (ADR 0005, "Total tokens addendum
+  (2026-10-07)").
+- **Per-model tokens:** an agent can start subagents on other models, so a
+  trial's work may be done mostly by a model other than the arm's own. The
+  CLI's `modelUsage` covers "every model call made through the query
+  pipeline ... main loop, Task subagents, sidechains, and internal calls such
+  as compaction" (the SDK schema text bundled in Claude Code 2.1.292; read
+  from the CLI, not measured with a live subagent call), keyed by the raw
+  model string, each entry carrying `inputTokens`, `outputTokens`,
+  `cacheReadInputTokens`, `cacheCreationInputTokens`, an optional
+  `canonicalModel` (the canonical id for a provider-specific id or an
+  alias), plus `webSearchRequests`, `costUSD` and others, not kept. The
+  result's `usage`, by contrast, is the main loop's alone.
+  Every trial `summary.json` carries `model_tokens: {<model id>:
+  {input_tokens, output_tokens, cache_read_input_tokens,
+  cache_creation_input_tokens, canonical_model}}` from it (`{}` when the
+  agent call produced no result; a count the CLI did not report, or one
+  outside 0..`run_eval.MAX_TOKEN_COUNT` (10^12), is `null`, never 0) and
+  `cross_model: {model, canonical_model, complete, dropped, other_share,
+  threshold, flagged}`. `dropped` counts the entries left out (an invalid
+  model id, an entry that is not an object, one past 16 models); `complete`
+  is true only when there was at least one entry and none was dropped.
+  `other_share` is the fraction of the trial's tokens (the four counts
+  summed over every model) spent on models other than the arm's own
+  `--model`, and `flagged` is set when it exceeds
+  `run_eval.CROSS_MODEL_SHARE_THRESHOLD`, 0.5: the work was done mostly by
+  another model. Models are compared by `run_eval.canonical_model_id`, an
+  entry's `canonicalModel` first: a `[1m]` variant, a Bedrock
+  `<region>.anthropic.` prefix and `-v<n>:<n>` suffix, a Vertex `@<date>`
+  suffix and a `-YYYYMMDD` dated snapshot are the same model. An alias such
+  as `sonnet` is not resolved: the CLI holds the alias table and this
+  repository commits no copy of it (`scripts/probe_model_defaults.py`
+  resolves aliases per CI run). `other_share` and `flagged` are `null`,
+  unknown, when the accounting is incomplete, the arm's model or an entry's
+  cannot be resolved, or any count is missing. An arm's `aggregate` carries
+  `model_tokens` (the efficiency block per model and per count; a complete
+  trial that did not use a model used zero of it, an incomplete one is
+  missing for it) and `cross_model: {model, threshold, n, n_unknown,
+  flagged_trials, other_share, flagged}`, the share pooled over the `n`
+  trials it could be told for, `null` when any trial could not (`n_unknown`
+  counts those: an incomplete accounting, every entry dropped, no result);
+  the aggregate `summary.json`'s own `model_tokens` and `cross_model` are
+  the per-model sums over its trials, `complete` only when every trial's
+  accounting was. The flag is reported, not decided on.
+  `scripts/ingest_routine_results.py` validates both fields, and
+  `harness.effort`, with the rest of a summary, including their
+  relationships: `complete` agrees with `dropped`, an incomplete
+  accounting has no share or flag, `threshold` is 0.5, `flagged` is the
+  share against it, `canonical_model` is the arm model's canonical id, and
+  the share is the one the counts give. Summaries without the fields still
+  ingest.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work
@@ -1746,7 +1827,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 
 | Spawn | Flags beyond its own |
 |---|---|
-| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox JSON>` and `--disallowedTools WebFetch,WebSearch` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
 | judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
@@ -1763,6 +1844,25 @@ fleet-memory SessionStart hook: that is the isolation, not a regression.
 What none of this stops: managed settings, the CLI's bundled skills, writes
 to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
 file under the real HOME.
+
+**Agent arms have no route to GitHub** ([ADR 0011](docs/decisions/0011-sandbox-agent-arm-network.md)).
+A real-work seed is a public repository's pre-fix tree, and the merged fix is
+one `git clone` away; the empty `GH_TOKEN`/`GITHUB_TOKEN` stop nothing a
+public repository serves. Every agent arm, skill or guidance, and every
+follow-up turn, runs with `--settings` carrying `run_eval.arm_sandbox_settings()`:
+Claude Code's sandbox on, `failIfUnavailable` (a CLI that cannot start it
+exits 1 and the arm fails with `sandbox_unavailable`, never runs with a
+network), `allowUnsandboxedCommands: false` (no `dangerouslyDisableSandbox`
+retry), `strictAllowlist` with no allowed domains, and `deniedDomains` naming
+`github.com`, `githubusercontent.com`, `codeload.github.com`, the fleet's
+deployed sites (`adamdaniel.ai`, `jodidaniel.com`, which serve built fixes)
+and `cdn.jsdelivr.net`. The sandbox covers Bash and its children only, so
+`--disallowedTools WebFetch,WebSearch` removes the two web tools. Nothing is
+written into the workspace: `seed_guard` still refuses any `.claude/`, and
+no scoring check sees a harness file. The judge, the guard and canary probes,
+`deps:`/`setup:` and objective commands are not sandboxed this way. Reads are
+not restricted: a sandboxed command and the Read tool can still read this
+checkout, `evals/real-work/*/checker/` and `solution.patch` included.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already

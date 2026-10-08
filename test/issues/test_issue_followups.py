@@ -89,8 +89,8 @@ class RunAgentFollowupTests(unittest.TestCase):
     # no conversation.
     BASE_CMD = ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
                 "json", "--verbose", "--permission-mode", "auto",
-                "--setting-sources", "project", "--strict-mcp-config",
-                "--model", "model-a"]
+                "--setting-sources", "project", *run_eval.arm_isolation_flags(),
+                "--strict-mcp-config", "--model", "model-a"]
     # A one-turn arm writes no transcript.
     ONE_TURN_CMD = [*BASE_CMD[:-2], "--no-session-persistence", *BASE_CMD[-2:]]
 

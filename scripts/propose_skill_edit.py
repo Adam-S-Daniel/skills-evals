@@ -55,8 +55,11 @@ WHAT IT DOES, in order:
     higher by at least ten times that gain). A fixed holdout must not regress
     on either score. This is a conservative heuristic, not a significance test.
     TOKENS (ADR 0005 amendment 2) sit beside that quality rule: each fixture's
-    tokens are the mean per trial of the four `usage` counts, summed over the
-    measured fixtures. A fixture without token data on either side makes the
+    tokens are the mean per trial of the four token counts summed over every
+    model in the CLI's `modelUsage` (subagents, sidechains and compaction
+    included; ADR 0005's 2026-10-07 addendum), summed over the measured
+    fixtures. Baseline and candidate must be measured on the same basis
+    (`tokens_basis`). A fixture without token data on either side makes the
     run inconclusive (rejected), never a pass. A candidate that costs more
     tokens than the baseline (`TOKEN_INCREASE_TOLERANCE`, 0: any rise)
     without a quality gain is not accepted; a gain at a higher cost is
@@ -117,8 +120,17 @@ JUDGE_TOLERANCE = 0.5
 #: quality first, tokens veto a candidate with no quality gain; any
 #: increase counts.
 TOKEN_INCREASE_TOLERANCE = 0.0
-#: The four `usage` counts that make up one trial's tokens (all of them,
+#: What a fixture's `tokens` measure, recorded as `tokens_basis` in every
+#: record and every fixture's metrics. Since ADR 0005's 2026-10-07 addendum
+#: ("Switch to total (Recommended)"): the four counts summed over every
+#: model in `modelUsage`, so subagent, sidechain and compaction tokens
+#: count. Metrics without a basis predate it and measured
+#: `TOKENS_BASIS_LEGACY`: the main loop's `usage` alone.
+TOKENS_BASIS = "model_usage_total"
+TOKENS_BASIS_LEGACY = "usage_main_loop"
+#: The four `usage` counts that make up the main loop's tokens (all of them,
 #: cache reads and writes included; a trial missing any one is unknown).
+#: Recorded as `main_loop_tokens`; no rule reads them.
 TOKEN_USAGE_METRICS = ("input_tokens", "output_tokens",
                        "cache_creation_input_tokens", "cache_read_input_tokens")
 #: skill-creator's own hard limit on a description (improve_description.py).
@@ -862,7 +874,51 @@ def fixture_metrics(run_dir: Path, skill: str, ts: str,
     return {"error": error,
             "passed": objective.get("passed"), "total": objective.get("total"),
             "judge_mean": judge.get("mean"), "n": stats.get("n"),
-            "tokens": mean_tokens(stats["aggregate"]["efficiency"])}
+            "tokens": mean_total_tokens(summaries),
+            "tokens_basis": TOKENS_BASIS,
+            "main_loop_tokens": mean_tokens(stats["aggregate"]["efficiency"]),
+            "model_tokens": model_mean_tokens(stats["aggregate"]["model_tokens"]),
+            "cross_model": stats["aggregate"]["cross_model"]}
+
+
+def model_mean_tokens(per_model: dict) -> dict:
+    """Per model id, the mean per trial of each of its four token counts
+    (`run_eval.MODEL_TOKEN_FIELDS`), from an `aggregate.model_tokens` block.
+    A count is None when any trial lacks it, as in `mean_tokens`. Recorded
+    beside `tokens`; no acceptance rule reads it."""
+    out = {}
+    for model, counts in per_model.items():
+        out[model] = {}
+        for name, _ in run_eval.MODEL_TOKEN_FIELDS:
+            block = counts.get(name) or {}
+            out[model][name] = (block["mean"] if block.get("n")
+                                and not block.get("n_missing")
+                                and valid_tokens(block.get("mean")) else None)
+    return out
+
+
+def mean_total_tokens(summaries: list[dict]) -> float | None:
+    """The mean per trial of `run_eval.model_usage_total`: every model's four
+    counts from the trial's `model_tokens`. None when any trial's accounting
+    is missing or incomplete (an entry dropped, the models truncated, a count
+    missing or invalid): the same "missing token data" `decide` already
+    treats as inconclusive, never a partial sum."""
+    totals = []
+    for summary in summaries:
+        block = summary.get("cross_model")
+        complete = isinstance(block, dict) and block.get("complete") is True
+        total = run_eval.model_usage_total(summary.get("model_tokens"), complete)
+        if total is None:
+            return None
+        totals.append(total)
+    return sum(totals) / len(totals) if totals else None
+
+
+def tokens_basis(metrics) -> str:
+    """One fixture's `tokens_basis`; metrics written before the field
+    measured the main loop's `usage` alone."""
+    basis = metrics.get("tokens_basis") if isinstance(metrics, dict) else None
+    return basis if isinstance(basis, str) else TOKENS_BASIS_LEGACY
 
 
 def valid_tokens(value) -> bool:
@@ -910,7 +966,8 @@ def decide(baseline: dict, candidate: dict, train: list[str],
     baseline (`TOKEN_INCREASE_TOLERANCE`) without a quality gain is not
     accepted; quality gain here is the train gain of `min_gain`, which
     acceptance has always required, so a rise in tokens is accepted only
-    alongside one and is recorded in the reasons."""
+    alongside one and is recorded in the reasons. Tokens measured on
+    different bases (`tokens_basis`) on the two sides are inconclusive."""
     reasons = []
     b_train, c_train = group_metrics(baseline, train), group_metrics(candidate, train)
     b_val, c_val = group_metrics(baseline, [validation]), group_metrics(candidate, [validation])
@@ -929,6 +986,11 @@ def decide(baseline: dict, candidate: dict, train: list[str],
     if missing_judge:
         return False, [f"inconclusive: missing expected judge scores {missing_judge}"]
 
+    bases = sorted({tokens_basis(metrics.get(n)) for metrics in (baseline, candidate)
+                    for n in measured})
+    if len(bases) > 1:
+        return False, [f"inconclusive: token bases differ {bases}; baseline "
+                       "and candidate must be measured the same way"]
     unknown = [f"{side} {n}" for side, metrics in (("baseline", baseline),
                                                    ("candidate", candidate))
                for n in measured
@@ -1197,7 +1259,7 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "trials": args.trials, "no_judge": args.no_judge,
             "min_gain": args.min_gain,
             "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
-            "baseline": None, "candidate": None,
+            "baseline": None, "candidate": None, "tokens_basis": TOKENS_BASIS,
             "runs": {"baseline": str(run_paths(results, "baseline", skill, ts))},
             "files": {},
         }
@@ -1226,6 +1288,9 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
                                            run_paths(results, "baseline", skill, ts),
                                            ts, args.trials, args.no_judge))
+        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
+                                       skill, ts, n, args.trials) for n in names}
+        record["baseline"] = baseline
         if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
             record.update(status="refused", phase="baseline", exit_code=rc,
                           reasons=[f"local_eval exited {rc} during baseline"])
@@ -1233,9 +1298,6 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             print(f"refused: local_eval baseline exited {rc}; record: "
                   f"{stem.with_suffix('.json')}", file=sys.stderr)
             return EXIT_REFUSED
-        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
-                                       skill, ts, n, args.trials) for n in names}
-        record["baseline"] = baseline
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
@@ -1373,6 +1435,9 @@ def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
 
 
 def write_record(stem: Path, record: dict) -> None:
+    record["decision"] = {"invalid-proposal": "rejected",
+                          "trigger-set-unusable": "refused"}.get(
+                              record["status"], record["status"])
     record["files"]["record"] = str(stem.with_suffix(".json"))
     stem.with_suffix(".json").write_text(json.dumps(record, indent=2) + "\n",
                                          encoding="utf-8")

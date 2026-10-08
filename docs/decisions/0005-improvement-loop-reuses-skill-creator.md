@@ -460,6 +460,38 @@ The trigger half still records `tokens` and `cost_usd` as null
 are not part of the decision. The second "Not yet implemented" bullet (the
 loop is not wired into the routine) still holds.
 
+## Total tokens addendum (2026-10-07)
+
+The token-aware addendum above is left as written; read its definition of
+`tokens` with this note. The CLI's own schema (Claude Code 2.1.292) defines a
+result's `usage` as the main loop's alone, excluding subagents and auxiliary
+calls, while `modelUsage` holds per-model totals for "every model call made
+through the query pipeline ... main loop, Task subagents, sidechains, and
+internal calls such as compaction". A skill that moves work into a subagent
+could therefore look cheaper while costing more. Adam answered the basis
+question as "Switch to total (Recommended)" (Adam, 2026-10-07).
+
+- **What `tokens` measures.** `fixture_metrics` sets a fixture's `tokens` to
+  the mean per trial of `run_eval.model_usage_total`: the same four counts
+  (input, output, cache read, cache creation) summed over every model in
+  the trial's `model_tokens`. The main loop's figure is still recorded, as
+  `main_loop_tokens`, and decided on by nothing.
+- **Thresholds and rules are unchanged.** `TOKEN_INCREASE_TOLERANCE` is
+  still 0 and the veto still applies only without a quality gain. Because
+  acceptance already requires that gain, the veto changes a rejected
+  candidate's reasons rather than its outcome.
+- **Incomplete is unknown.** A trial whose per-model accounting is
+  incomplete (an entry dropped, more than 16 models, a count missing,
+  invalid or past `run_eval.MAX_TOKEN_COUNT`) makes the fixture's `tokens`
+  null, which `decide` rejects as "inconclusive: missing token data", the
+  path the token-aware addendum defined. No new rule.
+- **The basis is recorded.** Every record and every fixture's metrics carry
+  `tokens_basis: "model_usage_total"`. Metrics and records without one
+  predate this addendum and measured `usage_main_loop`. `decide` refuses a
+  comparison whose baseline and candidate fixtures name different bases
+  ("inconclusive: token bases differ ..."). `scripts/improve_gate.py`
+  accepts records with either basis or none, and rejects any other value.
+
 ## Routine improve mode addendum (2026-10-06)
 
 The second "Not yet implemented" bullet (the loop is not wired into the
