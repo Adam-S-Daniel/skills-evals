@@ -825,6 +825,16 @@ class PublicationWorkflow(unittest.TestCase):
         cls.workflow = yaml.load(PROPAGATION_YML.read_text(encoding="utf-8"),
                                  Loader=yaml.BaseLoader)
 
+    def test_workflow_does_not_inherit_environment_credentials(self):
+        # An empty broad scope prevents credentials under alternative names,
+        # including secret references, from reaching checkout or census steps.
+        self.assertEqual(self.workflow.get("env", {}), {})
+
+    def test_coverage_jobs_do_not_inherit_environment_credentials(self):
+        for name in ("coverage", "coverage-publish"):
+            with self.subTest(job=name):
+                self.assertEqual(self.workflow["jobs"][name].get("env", {}), {})
+
     def test_census_is_read_only_and_private_checkout_is_schedule_only(self):
         jobs = self.workflow["jobs"]
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
