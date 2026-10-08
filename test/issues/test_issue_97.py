@@ -2455,6 +2455,8 @@ class TestIssue97(unittest.TestCase):
         # process sink. Its parameter is checked here before any Git spawn.
         ("harness/workspace_git.py", "_invoke", "subprocess.run", "timeout"):
             (1, (("sink", "timeout"),)),
+        ("harness/workspace_git.py", "_wait", "<popen>.wait", "timeout"):
+            (1, (("sink", "timeout"),)),
     }
 
     @staticmethod
@@ -2981,6 +2983,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
         ("harness/workspace_git.py", "_invoke"): ("param", "timeout"),
+        ("harness/workspace_git.py", "_wait"): ("param", "timeout"),
     }
 
     # These former process sinks now call the trusted Git boundary. Keep
@@ -3072,6 +3075,8 @@ class TestIssue97(unittest.TestCase):
             return fn(tmp, "p", kwargs["arm"])
         if rel == "harness/workspace_git.py" and name == "_invoke":
             return fn(["version"], cwd=tmp, home=tmp, **kwargs)
+        if rel == "harness/workspace_git.py" and name == "_wait":
+            return fn(mock.MagicMock(), **kwargs)
         if name == "_nested_repo_diff":
             return fn(tmp, [])
         if name == "_run_judge_cli":

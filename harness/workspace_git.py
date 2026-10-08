@@ -11,10 +11,12 @@ import os
 from pathlib import Path
 import re
 import secrets
+import select
 import shutil
 import stat
 import subprocess
 import tempfile
+import time
 
 GIT = '/usr/bin/git'
 DEFAULT_TIMEOUT_S = 10
@@ -43,6 +45,28 @@ _OVERRIDES = (
     'user.email=ci@example.com', 'user.name=ci',
 )
 _CONTEXTS: dict[str, '_Context'] = {}
+
+
+class _Deadline:
+    def __init__(self, seconds: float):
+        self.end = time.monotonic() + seconds
+
+    def remaining(self) -> float:
+        left = self.end - time.monotonic()
+        if left <= 0:
+            raise WorkspaceGitCollectionError('collection exceeded its time limit')
+        return left
+
+
+def _remaining(timeout: float | _Deadline) -> float:
+    return timeout.remaining() if isinstance(timeout, _Deadline) else timeout
+
+
+def _wait(proc: subprocess.Popen, timeout: float) -> int:
+    import guidance
+    guidance.check_timeout(timeout, 'workspace_git._wait(timeout=)',
+                           guidance.SINK_TIMEOUT_REMEDY)
+    return proc.wait(timeout=timeout)
 
 
 class WorkspaceGitError(RuntimeError):
@@ -118,6 +142,7 @@ def _env(home: Path) -> dict[str, str]:
 def _invoke(args: list[str], *, cwd: Path, home: Path, timeout: float,
             check: bool = False, input: str | None = None) -> subprocess.CompletedProcess:
     import guidance
+    timeout = _remaining(timeout)
     guidance.check_timeout(timeout, 'workspace_git._invoke(timeout=)',
                            guidance.SINK_TIMEOUT_REMEDY)
     options = [item for option in _OVERRIDES for item in ('-c', option)]
@@ -130,14 +155,15 @@ def _invoke(args: list[str], *, cwd: Path, home: Path, timeout: float,
                           timeout=timeout)
 
 
-def _config(gitdir: Path, private: Path, timeout: float) -> list[tuple[str, str]]:
+def _config(gitdir: Path, private: Path,
+            timeout: float | _Deadline) -> list[tuple[str, str]]:
     raw = _read_regular(gitdir / 'config')
     copy = private / 'untrusted-config'
     copy.write_bytes(raw)
     # Git's own parser handles quoted subsections, multiline values, casing,
     # and duplicate keys. --no-includes prevents even reading include targets.
     result = _invoke(['config', '--no-includes', '--file', str(copy), '-z', '--list'],
-                     cwd=private, home=private, timeout=timeout)
+                     cwd=private, home=private, timeout=_remaining(timeout))
     if result.returncode:
         _refuse('invalid repository configuration')
     entries = []
@@ -179,7 +205,7 @@ def _metadata(workspace: Path) -> Path:
     return entry
 
 
-def _validate(workspace: Path, private: Path, timeout: float,
+def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
               baseline: tuple | None = None) -> list[tuple[str, str]]:
     gitdir = workspace / '.git' if baseline is not None else _metadata(workspace)
     try:
@@ -210,10 +236,13 @@ def _validate(workspace: Path, private: Path, timeout: float,
     return entries
 
 
-def _copy_metadata(source: Path, destination: Path, *, top: bool = True) -> None:
+def _copy_metadata(source: Path, destination: Path, *, top: bool = True,
+                   deadline: _Deadline | None = None) -> None:
     # Only repository data is copied, with no hooks, configuration, includes,
     # alternates, or hard links. Reject symlinks before traversing directories.
     for entry in source.iterdir():
+        if deadline is not None:
+            deadline.remaining()
         if entry.name in {'config', 'config.worktree', 'hooks'} or (top and entry.name in {'info', 'commondir', 'gitdir'}):
             continue
         if entry.is_symlink():
@@ -221,7 +250,7 @@ def _copy_metadata(source: Path, destination: Path, *, top: bool = True) -> None
         target = destination / entry.name
         if entry.is_dir():
             target.mkdir()
-            _copy_metadata(entry, target, top=False)
+            _copy_metadata(entry, target, top=False, deadline=deadline)
         else:
             target.write_bytes(_read_regular(entry))
     # Root info/exclude is harmless fixture data and required by nested-repo
@@ -275,9 +304,11 @@ class _Context:
         for relative, data in source.saved_files.items():
             (self.gitdir / relative).write_bytes(data)
 
-    def snapshot(self, entries: list[tuple[str, str]], timeout: float) -> None:
+    def snapshot(self, entries: list[tuple[str, str]],
+                 timeout: float | _Deadline) -> None:
         self.gitdir.mkdir()
-        _copy_metadata(_metadata(self.workspace), self.gitdir)
+        _copy_metadata(_metadata(self.workspace), self.gitdir,
+                       deadline=timeout if isinstance(timeout, _Deadline) else None)
         bare = 'true' if _metadata(self.workspace) == self.workspace else 'false'
         (self.gitdir / 'config').write_text('[core]\n repositoryformatversion = 0\n bare = ' + bare + '\n')
         for key, value in entries:
@@ -287,7 +318,8 @@ class _Context:
             if ((lower.startswith('remote.') and lower.rsplit('.', 1)[-1] == 'url')
                     or lower == 'extensions.objectformat'):
                 _invoke(['config', '--file', str(self.gitdir / 'config'), key, value],
-                        cwd=self.private, home=self.private, timeout=timeout, check=True)
+                        cwd=self.private, home=self.private,
+                        timeout=_remaining(timeout), check=True)
         info = self.gitdir / 'info'
         info.mkdir(exist_ok=True)
         (info / 'attributes').write_text('* -filter !diff\n')
@@ -377,12 +409,13 @@ def _release_all() -> None:
 atexit.register(_release_all)
 
 
-def _stage(context: _Context, command: list[str], timeout: float,
+def _stage(context: _Context, command: list[str], timeout: _Deadline,
            check: bool) -> subprocess.CompletedProcess:
     """Stage only a private filesystem view, never discover nested config."""
     workspace = context.workspace
     nested: dict[Path, str | None] = {}
     for root, dirs, files in os.walk(workspace, followlinks=False):
+        _remaining(timeout)
         dirs[:] = [name for name in dirs if name != '.git']
         current = Path(root)
         if current == workspace or not os.path.lexists(current / '.git'):
@@ -394,7 +427,8 @@ def _stage(context: _Context, command: list[str], timeout: float,
             # neither staging nor reporting follows their redirect file.
             nested[current] = None
             continue
-        result = run('rev-parse', '--verify', 'HEAD', cwd=current, timeout=timeout)
+        result = run('rev-parse', '--verify', 'HEAD', cwd=current,
+                     timeout=_remaining(timeout))
         sha = result.stdout.strip()
         if result.returncode == 0 and re.fullmatch(r'[0-9a-fA-F]{40}|[0-9a-fA-F]{64}', sha):
             nested[current] = sha
@@ -403,49 +437,133 @@ def _stage(context: _Context, command: list[str], timeout: float,
     stage = _view(context, timeout, skip=lambda path: path in nested)
     result = _invoke(['--git-dir=' + str(context.gitdir), '--work-tree=' + str(stage),
                       *command], cwd=context.private, home=context.private,
-                     timeout=timeout, check=check)
+                     timeout=_remaining(timeout), check=check)
     if result.returncode == 0:
         for path, sha in nested.items():
             if sha is not None:
                 _invoke(['--git-dir=' + str(context.gitdir), '--work-tree=' + str(stage),
                          'update-index', '--add', '--cacheinfo', '160000', sha,
                          str(path.relative_to(workspace))], cwd=context.private,
-                        home=context.private, timeout=timeout, check=True)
+                        home=context.private, timeout=_remaining(timeout), check=True)
     return result
 
 
-def _ignored(context: _Context, stage: Path, paths: list[str],
-             timeout: float, gitlinks: set[str]) -> set[str]:
-    """Find ignored candidates using only safely copied private controls.
+class _IgnoreQueries:
+    """Two long-running Git readers of private controls, one without the index."""
 
-    The private index keeps tracked files eligible even when an ignore rule
-    matches. The ./ prefix makes pathspec-looking names literal even on stdin.
-    """
-    groups = {False: [], True: []}
-    for path in paths:
-        parts = path.split('/')
-        within_gitlink = any('/'.join(parts[:index]) in gitlinks
-                             for index in range(1, len(parts)))
-        groups[within_gitlink].append(path)
-    ignored = set()
-    for no_index, candidates in groups.items():
-        if not candidates:
-            continue
-        # check-ignore refuses descendants of indexed gitlinks. A former
-        # nested repo can lose its .git marker and be added as ordinary
-        # files, so evaluate only those paths without the old gitlink index.
-        options = ['--no-index'] if no_index else []
-        result = _invoke(['--git-dir=' + str(context.gitdir),
-                          '--work-tree=' + str(stage), 'check-ignore',
-                          *options, '-z', '--stdin'],
-                         cwd=stage, home=context.private, timeout=timeout,
-                         input='\0'.join('./' + path for path in candidates) + '\0')
-        if result.returncode not in {0, 1}:
-            raise WorkspaceGitCollectionError(
-                f'git check-ignore exited {result.returncode}')
-        ignored.update(entry.removeprefix('./').rstrip('/')
-                       for entry in result.stdout.split('\0') if entry)
-    return ignored
+    def __init__(self, context: _Context, stage: Path, deadline: _Deadline):
+        self.context, self.stage, self.deadline = context, stage, deadline
+        self.processes: dict[bool, subprocess.Popen] = {}
+
+    def _process(self, no_index: bool) -> subprocess.Popen:
+        if no_index not in self.processes:
+            options = [item for option in _OVERRIDES for item in ('-c', option)]
+            args = [GIT, '--no-pager', *options,
+                    '--git-dir=' + str(self.context.gitdir),
+                    '--work-tree=' + str(self.stage), 'check-ignore',
+                    *(['--no-index'] if no_index else []),
+                    '--verbose', '--non-matching', '--stdin', '-z']
+            env = _env(self.context.private)
+            env['GIT_FLUSH'] = '1'
+            self.deadline.remaining()
+            proc = subprocess.Popen(args, cwd=self.stage, env=env,
+                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL)
+            os.set_blocking(proc.stdin.fileno(), False)
+            os.set_blocking(proc.stdout.fileno(), False)
+            self.processes[no_index] = proc
+        return self.processes[no_index]
+
+    def query(self, paths: list[str], gitlinks: set[str]) -> set[str]:
+        groups: dict[bool, list[str]] = {False: [], True: []}
+        for path in paths:
+            parts = path.split('/')
+            inside = any('/'.join(parts[:index]) in gitlinks
+                         for index in range(1, len(parts)))
+            groups[inside].append(path)
+        ignored = set()
+        for no_index, candidates in groups.items():
+            if not candidates:
+                continue
+            proc = self._process(no_index)
+            payload = b''.join(b'./' + os.fsencode(path) + b'\0'
+                               for path in candidates)
+            sent = 0
+            output = bytearray()
+            expected = 4 * len(candidates)
+            fields_received = 0
+            while sent < len(payload) or fields_received < expected:
+                readable, writable, _ = select.select(
+                    [proc.stdout], [proc.stdin] if sent < len(payload) else [],
+                    [], self.deadline.remaining())
+                if writable:
+                    sent += os.write(proc.stdin.fileno(), payload[sent:sent + 65536])
+                if readable:
+                    chunk = os.read(proc.stdout.fileno(), 65536)
+                    if not chunk:
+                        raise WorkspaceGitCollectionError('git check-ignore ended early')
+                    output.extend(chunk)
+                    fields_received += chunk.count(0)
+                if not readable and not writable:
+                    self.deadline.remaining()
+            fields = bytes(output).split(b'\0')
+            if len(fields) != expected + 1 or fields[-1]:
+                raise WorkspaceGitCollectionError('invalid git check-ignore response')
+            for offset in range(0, expected, 4):
+                pattern, path = fields[offset + 2], fields[offset + 3]
+                if pattern and not pattern.startswith(b'!'):
+                    ignored.add(os.fsdecode(path).removeprefix('./').rstrip('/'))
+        return ignored
+
+    def close(self) -> None:
+        failure = None
+        for proc in self.processes.values():
+            try:
+                try:
+                    proc.stdin.close()
+                except OSError:
+                    # An exited check-ignore can have closed its input pipe.
+                    pass
+                try:
+                    code = _wait(proc, self.deadline.remaining())
+                except (subprocess.TimeoutExpired, WorkspaceGitCollectionError):
+                    if isinstance(proc.pid, int) and proc.pid > 1:
+                        try:
+                            proc.kill()
+                        except ProcessLookupError:
+                            pass
+                        _wait(proc, 1)
+                    raise WorkspaceGitCollectionError(
+                        'git check-ignore exceeded time limit') from None
+                if code not in (0, 1):
+                    raise WorkspaceGitCollectionError(
+                        f'git check-ignore exited {code}')
+            except (OSError, subprocess.TimeoutExpired,
+                    WorkspaceGitCollectionError) as exc:
+                if failure is None:
+                    failure = (exc if isinstance(exc, WorkspaceGitCollectionError)
+                               else WorkspaceGitCollectionError(
+                                   'git check-ignore could not be reaped'))
+            finally:
+                proc.stdout.close()
+        if failure is not None:
+            raise failure
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *unused):
+        self.close()
+
+
+def _valid_nested_marker(path: Path, context: _Context,
+                         deadline: _Deadline) -> bool:
+    # Git validates the .git directory or gitdir file before repository
+    # setup. It does not load the nested configuration or run nested hooks.
+    result = _invoke(['rev-parse', '--resolve-git-dir', str(path / '.git')],
+                     cwd=context.private, home=context.private,
+                     timeout=deadline.remaining())
+    return result.returncode == 0
 
 
 def _byte_limit() -> None:
@@ -453,7 +571,8 @@ def _byte_limit() -> None:
         f'workspace has more than {MAX_STAGED_BYTES} bytes to stage')
 
 
-def _copy_regular(source: Path, target: Path, mode: int, remaining: int) -> int:
+def _copy_regular(source: Path, target: Path, mode: int, remaining: int,
+                  deadline: _Deadline | None = None) -> int:
     # O_NONBLOCK plus fstat closes a regular-to-FIFO race without blocking.
     fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     copied = 0
@@ -470,6 +589,8 @@ def _copy_regular(source: Path, target: Path, mode: int, remaining: int) -> int:
             # At most remaining + 1 bytes are read, even if the source keeps
             # growing. The one-byte overflow probe also accepts exact bounds.
             while True:
+                if deadline is not None:
+                    deadline.remaining()
                 chunk = stream.read(min(64 * 1024, remaining - copied + 1))
                 if not chunk:
                     break
@@ -481,7 +602,7 @@ def _copy_regular(source: Path, target: Path, mode: int, remaining: int) -> int:
     return copied
 
 
-def _controls(context: _Context, stage: Path, timeout: float, *, skip,
+def _controls(context: _Context, stage: Path, timeout: _Deadline, *, skip,
               gitlinks: set[str], indexed: set[str],
               prune_nested: bool) -> tuple[set[str], int, int, set[str]]:
     """Resolve directories parent-first using private ignore snapshots.
@@ -501,6 +622,7 @@ def _controls(context: _Context, stage: Path, timeout: float, *, skip,
 
     def copy_control(path: Path) -> None:
         nonlocal staged_bytes, staged_files
+        timeout.remaining()
         info = path.lstat()
         mode = info.st_mode
         if not (stat.S_ISLNK(mode) or stat.S_ISREG(mode)):
@@ -515,75 +637,82 @@ def _controls(context: _Context, stage: Path, timeout: float, *, skip,
             os.symlink(os.readlink(path), target)
         else:
             staged_bytes += _copy_regular(path, target, mode,
-                                           MAX_STAGED_BYTES - staged_bytes)
+                                           MAX_STAGED_BYTES - staged_bytes, timeout)
 
-    for root, dirs, files in os.walk(workspace, followlinks=False):
-        current = Path(root)
-        relative_root = current.relative_to(workspace).as_posix()
-        target_root = stage / current.relative_to(workspace)
-        ignore = current / '.gitignore'
-        # Git never descends into excluded directories to load their ignore
-        # rules. A tracked control remains eligible as indexed file content.
-        if ('.gitignore' in dirs + files and not stat.S_ISDIR(ignore.lstat().st_mode)
-                and not skip(ignore)
-                and (relative_root not in ignored_dirs
-                     or ignore.relative_to(workspace).as_posix() in indexed)):
-            copy_control(ignore)
-        paths = []
-        keep = []
-        for name in sorted(dirs) + sorted(files):
-            path = current / name
-            if name == '.git' or skip(path):
-                continue
-            relative = path.relative_to(workspace).as_posix()
-            paths.append(relative)
-            if stat.S_ISDIR(path.lstat().st_mode):
-                target = target_root / name
-                target.mkdir()
-                if prune_nested and (relative in gitlinks or os.path.lexists(path / '.git')):
-                    pruned.add(relative)
-                    if relative not in gitlinks and os.path.lexists(path / '.git'):
-                        # Constants-only metadata marks an untracked nested
-                        # repository for status, including -uall. No live
-                        # nested metadata or descendants enter the read view.
-                        marker = target / '.git'
-                        marker.mkdir()
-                        (marker / 'objects').mkdir()
-                        (marker / 'refs').mkdir()
-                        (marker / 'HEAD').write_text('ref: refs/heads/private\n')
+    with _IgnoreQueries(context, stage, timeout) as queries:
+        for root, dirs, files in os.walk(workspace, followlinks=False):
+            timeout.remaining()
+            current = Path(root)
+            relative_root = current.relative_to(workspace).as_posix()
+            target_root = stage / current.relative_to(workspace)
+            ignore = current / '.gitignore'
+            # Git never descends into excluded directories to load their ignore
+            # rules. A tracked control remains eligible as indexed file content.
+            if ('.gitignore' in dirs + files and not stat.S_ISDIR(ignore.lstat().st_mode)
+                    and not skip(ignore)
+                    and (relative_root not in ignored_dirs
+                         or ignore.relative_to(workspace).as_posix() in indexed)):
+                copy_control(ignore)
+            paths = []
+            keep = []
+            for name in sorted(dirs) + sorted(files):
+                timeout.remaining()
+                path = current / name
+                if name == '.git' or skip(path):
                     continue
-                keep.append(name)
-        excluded = _ignored(context, stage, paths, timeout, gitlinks)
-        for name in list(keep):
-            relative = (current / name).relative_to(workspace).as_posix()
-            if relative in excluded:
-                ignored_dirs.add(relative)
-                if relative in indexed_dirs:
-                    excluded.remove(relative)
-                else:
-                    keep.remove(name)
-        ignored.update(excluded)
-        # Attributes can affect tracked files even when the attributes file
-        # itself is ignored. Copy after eligibility, before any attribute read.
-        attributes = current / '.gitattributes'
-        if ('.gitattributes' in dirs + files and not stat.S_ISDIR(attributes.lstat().st_mode)
-                and not skip(attributes)):
-            copy_control(attributes)
-        for relative in excluded:
-            target = stage / relative
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-        dirs[:] = [name for name in dirs if name in keep]
+                relative = path.relative_to(workspace).as_posix()
+                paths.append(relative)
+                if stat.S_ISDIR(path.lstat().st_mode):
+                    target = target_root / name
+                    target.mkdir()
+                    marker_exists = os.path.lexists(path / '.git')
+                    nested_repo = (marker_exists and prune_nested
+                                   and _valid_nested_marker(path, context, timeout))
+                    if prune_nested and (relative in gitlinks or nested_repo):
+                        pruned.add(relative)
+                        if relative not in gitlinks and nested_repo:
+                            # Constants-only metadata marks an untracked nested
+                            # repository for status, including -uall. No live
+                            # nested metadata or descendants enter the read view.
+                            marker = target / '.git'
+                            marker.mkdir()
+                            (marker / 'objects').mkdir()
+                            (marker / 'refs').mkdir()
+                            (marker / 'HEAD').write_text('ref: refs/heads/private\n')
+                        continue
+                    keep.append(name)
+            excluded = queries.query(paths, gitlinks)
+            for name in list(keep):
+                relative = (current / name).relative_to(workspace).as_posix()
+                if relative in excluded:
+                    ignored_dirs.add(relative)
+                    if relative in indexed_dirs:
+                        excluded.remove(relative)
+                    else:
+                        keep.remove(name)
+            ignored.update(excluded)
+            # Attributes can affect tracked files even when the attributes file
+            # itself is ignored. Copy after eligibility, before any attribute read.
+            attributes = current / '.gitattributes'
+            if ('.gitattributes' in dirs + files and not stat.S_ISDIR(attributes.lstat().st_mode)
+                    and not skip(attributes)):
+                copy_control(attributes)
+            for relative in excluded:
+                target = stage / relative
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+            dirs[:] = [name for name in dirs if name in keep]
     return ignored, staged_bytes, staged_files, pruned
 
 
-def _view(context: _Context, timeout: float, *, skip,
+def _view(context: _Context, timeout: _Deadline, *, skip,
           prune_nested: bool = False) -> Path:
     stage = context.private / 'stage'
     # --stage reads only private index metadata, without ignore/attribute
     # evaluation. Names become comparison strings, never filesystem targets.
     result = _invoke(['--git-dir=' + str(context.gitdir), 'ls-files', '--stage', '-z'],
-                     cwd=context.private, home=context.private, timeout=timeout, check=True)
+                     cwd=context.private, home=context.private,
+                     timeout=_remaining(timeout), check=True)
     indexed = {entry.partition('\t')[2] for entry in result.stdout.split('\0') if entry}
     gitlinks = {entry.partition('\t')[2] for entry in result.stdout.split('\0')
                 if entry.startswith('160000 ')}
@@ -591,13 +720,15 @@ def _view(context: _Context, timeout: float, *, skip,
         context, stage, timeout, skip=skip, gitlinks=gitlinks, indexed=indexed,
         prune_nested=prune_nested)
     _copy_view(context.workspace, stage, skip=skip, ignored=ignored,
-               prepared=(staged_bytes, staged_files), pruned=pruned)
+               prepared=(staged_bytes, staged_files), pruned=pruned,
+               deadline=timeout if isinstance(timeout, _Deadline) else None)
     return stage
 
 
 def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str],
                prepared: tuple[int, int] | None = None,
-               pruned: set[str] | None = None) -> None:
+               pruned: set[str] | None = None,
+               deadline: _Deadline | None = None) -> None:
     """Copy eligible ordinary files into the stable private control view.
 
     FIFOs, sockets and devices are skipped as Git skips them. Apparent size
@@ -607,10 +738,14 @@ def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str],
     stage.mkdir(exist_ok=prepared is not None)
     staged_bytes, staged_files = prepared or (0, 0)
     for root, dirs, files in os.walk(workspace, followlinks=False):
+        if deadline is not None:
+            deadline.remaining()
         current = Path(root)
         target_root = stage / current.relative_to(workspace)
         keep = []
         for name in sorted(dirs) + sorted(files):
+            if deadline is not None:
+                deadline.remaining()
             path = current / name
             relative = path.relative_to(workspace).as_posix()
             if (name == '.git' or skip(path) or relative in ignored
@@ -639,7 +774,8 @@ def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str],
                 keep.append(name)
             elif stat.S_ISREG(mode):
                 staged_bytes += _copy_regular(path, target, mode,
-                                               MAX_STAGED_BYTES - staged_bytes)
+                                               MAX_STAGED_BYTES - staged_bytes,
+                                               deadline)
         dirs[:] = [name for name in dirs if name in keep]
 
 
@@ -684,6 +820,7 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
     import guidance
     guidance.check_timeout(timeout, 'workspace_git.run(timeout=)',
                            guidance.SINK_TIMEOUT_REMEDY)
+    deadline = _Deadline(timeout)
     stored = _record(cwd)
     if stored is not None:
         _check_root(cwd, stored)
@@ -705,7 +842,7 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
                     if os.path.lexists(entry / name):
                         _refuse('redirected Git metadata')
                 if (entry / 'config').exists():
-                    _validate(workspace, context.private, timeout)
+                    _validate(workspace, context.private, deadline)
                 elif any(child.name != 'info' for child in entry.iterdir()):
                     _refuse('unexpected incomplete Git metadata')
                 else:
@@ -713,12 +850,13 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             context.gitdir.mkdir()
             result = _invoke(['--git-dir=' + str(context.gitdir),
                               '--work-tree=' + str(workspace), 'init', '-q'], cwd=context.private,
-                             home=context.private, timeout=timeout, check=check)
+                              home=context.private,
+                              timeout=deadline.remaining(), check=check)
             # init records the explicit work-tree path; remove that bootstrap
             # option before exporting ordinary standalone metadata to the arm.
             _invoke(['config', '--file', str(context.gitdir / 'config'),
                      '--unset-all', 'core.worktree'], cwd=context.private,
-                    home=context.private, timeout=timeout)
+                    home=context.private, timeout=deadline.remaining())
             # Like Git's own re-init, never overwrite existing metadata (a
             # fixture setup may have initialized the root with its own refs).
             def copy_missing(source: str, target: str) -> None:
@@ -729,11 +867,11 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             return result
         reads_work_tree = (not args or (args[0] not in _NO_WORK_TREE_READS
                            and args[:2] != ('worktree', 'list')))
-        entries = _validate(workspace, context.private, timeout, context.baseline)
+        entries = _validate(workspace, context.private, deadline, context.baseline)
         if _metadata(workspace) == workspace and (not args or args[0] not in {'rev-parse', 'remote', 'log', 'show', 'worktree'}):
             _refuse('bare metadata supports read-only inspection')
         if not use_baseline:
-            context.snapshot(entries, timeout)
+            context.snapshot(entries, deadline)
         command = list(args)
         if command and command[0] in {'diff', 'log', 'show'}:
             command[1:1] = ['--no-ext-diff', '--no-textconv']
@@ -745,13 +883,14 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             # nested working trees while showing indexed commit changes.
             command.insert(1, '--ignore-submodules=dirty')
         if command and command[0] == 'add':
-            result = _stage(context, command, timeout, check)
+            result = _stage(context, command, deadline, check)
         else:
-            view = (_view(context, timeout, skip=lambda path: False, prune_nested=True)
+            view = (_view(context, deadline, skip=lambda path: False, prune_nested=True)
                     if reads_work_tree else workspace)
             result = _invoke(['--git-dir=' + str(context.gitdir),
                               '--work-tree=' + str(view), *command],
-                             cwd=context.private, home=context.private, timeout=timeout, check=check)
+                             cwd=context.private, home=context.private,
+                             timeout=deadline.remaining(), check=check)
         if temporary and command and command[0] in {'add', 'commit'}:
             # Setup happens before the arm. Keep its observable metadata in
             # sync; after seal all writes stay exclusively in private metadata.

@@ -1140,6 +1140,110 @@ class WorkspaceGitParityRegressions(_WorkspaceGitFixture, unittest.TestCase):
         with mock.patch.object(workspace_git, '_copy_regular', guard):
             self.assert_native_status_and_judge(nested=nested)
 
+    def test_nested_marker_requires_a_valid_repository(self):
+        import workspace_git
+        empty = self.repo / 'empty'
+        (empty / '.git').mkdir(parents=True)
+        unborn = self.repo / 'unborn'
+        unborn.mkdir()
+        self.raw('-C', str(unborn), 'init', '-q')
+        linked = self.repo / 'linked'
+        linked.mkdir()
+        (linked / '.git').write_text('gitdir: ../unborn/.git\n')
+        invalid = self.repo / 'invalid'
+        invalid.mkdir()
+        (invalid / '.git').write_text('gitdir: ../missing\n')
+        (invalid / 'inside.txt').write_text('ordinary content\n')
+        for flags in (('--porcelain',), ('--porcelain', '-uall')):
+            with self.subTest(flags=flags):
+                self.assertEqual(workspace_git.run('status', *flags, cwd=self.repo,
+                                                   check=True).stdout,
+                                 self.raw('status', *flags).stdout)
+
+    def test_ignore_queries_have_constant_git_process_count(self):
+        from unittest import mock
+        import workspace_git
+        (self.repo / '.gitignore').write_text('ignored/\n')
+        ignored = self.repo / 'ignored'
+        ignored.mkdir()
+        (ignored / '.gitignore').write_text('*\n')
+        for index in range(256):
+            directory = self.repo / f'sibling{index:03}'
+            directory.mkdir()
+            (directory / '.gitignore').write_text('*\n!visible\n')
+            (directory / 'hidden').write_text('ignored\n')
+            (directory / 'visible').write_text('kept\n')
+        for flags in (('--porcelain',), ('--porcelain', '-uall')):
+            native = self.raw('status', *flags).stdout
+            # The patch wraps the real constructor, so every Git process
+            # launched through either Popen or subprocess.run is counted.
+            with mock.patch.object(subprocess, 'Popen', wraps=subprocess.Popen) as starts:
+                actual = workspace_git.run('status', *flags, cwd=self.repo,
+                                           check=True).stdout
+            self.assertEqual(actual, native)
+            self.assertTrue(all(call.args[0][0] == workspace_git.GIT
+                                for call in starts.call_args_list))
+            self.assertLessEqual(starts.call_count, 8,
+                                 f'{starts.call_count} Git processes')
+
+    def test_deep_ignore_controls_share_the_same_git_processes(self):
+        from unittest import mock
+        import workspace_git
+        parent = self.repo
+        for index in range(48):
+            parent = parent / f'd{index:02}'
+            parent.mkdir()
+            (parent / '.gitignore').write_text('*\n!visible\n!d*/\n')
+            (parent / 'hidden').write_text('ignored\n')
+        (parent / 'visible').write_text('kept\n')
+        native = self.raw('status', '--porcelain', '-uall').stdout
+        with mock.patch.object(subprocess, 'Popen', wraps=subprocess.Popen) as starts:
+            actual = workspace_git.run('status', '--porcelain', '-uall',
+                                       cwd=self.repo, check=True).stdout
+        self.assertEqual(actual, native)
+        self.assertTrue(all(call.args[0][0] == workspace_git.GIT
+                            for call in starts.call_args_list))
+        self.assertLessEqual(starts.call_count, 8, starts.call_count)
+
+    def test_collection_timeout_is_one_budget_across_operations(self):
+        from unittest import mock
+        import workspace_git
+        real = workspace_git._invoke
+        ticks = [0.0]
+        calls = []
+        def invoke(args, **kwargs):
+            calls.append((args, kwargs['timeout']))
+            ticks[0] += 0.6
+            return real(args, **kwargs)
+        with mock.patch.object(workspace_git.time, 'monotonic',
+                               side_effect=lambda: ticks[0]), \
+                mock.patch.object(workspace_git, '_invoke', invoke):
+            with self.assertRaisesRegex(workspace_git.WorkspaceGitCollectionError,
+                                        'workspace_git_collection_failed'):
+                workspace_git.run('status', '--porcelain', cwd=self.repo,
+                                  timeout=1)
+        self.assertLessEqual(len(calls), 2, calls)
+        self.assertTrue(all(0 < remaining <= 1 for _, remaining in calls))
+
+    def test_expired_ignore_queries_reap_both_workers(self):
+        from unittest import mock
+        import workspace_git
+        deadline = mock.Mock()
+        deadline.remaining.side_effect = workspace_git.WorkspaceGitCollectionError(
+            'collection exceeded its time limit')
+        queries = workspace_git._IgnoreQueries(mock.Mock(), self.repo, deadline)
+        workers = [mock.Mock(pid=2), mock.Mock(pid=3)]
+        for worker in workers:
+            worker.wait.return_value = -9
+        queries.processes = {False: workers[0], True: workers[1]}
+        with self.assertRaises(workspace_git.WorkspaceGitCollectionError):
+            queries.close()
+        for worker in workers:
+            worker.kill.assert_called_once_with()
+            worker.wait.assert_called_once_with(timeout=1)
+            worker.stdin.close.assert_called_once_with()
+            worker.stdout.close.assert_called_once_with()
+
 
 class WorkspaceGitIgnoredTrackedAttributesTests(_WorkspaceGitFixture, unittest.TestCase):
     def test_ignored_directory_attributes_still_apply_to_tracked_descendants(self):
