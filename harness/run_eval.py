@@ -897,6 +897,12 @@ class ArmReadIsolationError(ValueError):
 
 
 def _git_out(*args: str, cwd: Path) -> str | None:
+    # Trusted harness identity only, never an arm workspace. Keep Git's
+    # include/core.worktree semantics while refusing every unaudited command.
+    if args not in (("rev-parse", "--path-format=absolute", "--git-common-dir"),
+                    ("config", "--local", "--includes", "--get", "core.worktree")):
+        raise ArmReadIsolationError("trusted harness identity permits only audited Git reads",
+                                    code="unsupported_git_read")
     try:
         return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
                               text=True, check=True).stdout.strip()
@@ -1456,7 +1462,7 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
 def _profile_read_rules(root: Path, session_dir: Path | None,
                         protected: list[Path], needed: list[Path],
                         guarded=(), tmp_root: Path | None = None,
-                        carve_outs=()) -> list[str]:
+                        carve_outs=(), compact_classes=False) -> list[str]:
     """The Read deny rules for HOME or a profile, which leave `session_dir`.
 
     `session_dir` is the arm's own session directory when it lies under
@@ -1481,7 +1487,7 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
         spare = _check_symlinks(current, root, part, protected, needed,
                                 guarded, tmp_root, carve_outs)
         base = _glob_escape(str(current))
-        for pattern in _complement_patterns(part, spare):
+        for pattern in _complement_patterns(part, spare, compact_classes=compact_classes):
             if "*" in pattern:
                 rules.append(f"Read(/{base}/{pattern})")
             else:
@@ -1630,7 +1636,7 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                          session_dir: Path | None = None,
                          workspace: Path | None = None,
                          config_dir: Path | None = None,
-                         profiles=None, outputs=(),
+                         profiles=None, outputs=(), additional_profiles=(),
                          tmp_root: Path | None = None) -> dict:
     """The settings every agent arm runs under, as one JSON object.
 
@@ -1644,6 +1650,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     home = Path(home if home is not None else Path.home()).resolve()
     if profiles is None:
         profiles = profile_dirs(home)
+    compact_profiles = {Path(path).resolve() for path in additional_profiles}
+    profiles = [*profiles, *additional_profiles]
     denied = arm_read_denied(checkouts, home=home, harness_root=harness_root,
                              profiles=profiles, outputs=outputs)
     aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
@@ -1678,7 +1686,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
         # other denied path and the harness's directories under TMPDIR.
         guarded = [p for _, p in denied if p != path] + tmp_denied
         for rule in (_profile_read_rules(path, keep, protected, needed,
-                                         guarded, tmp_root, alias_carve) if path in roots
+                                         guarded, tmp_root, alias_carve,
+                                         compact_classes=path in compact_profiles) if path in roots
                      else _alias_read_rules(path, alias_carve, protected, needed,
                                             guarded, tmp_root) if path in aliases
                      else _read_rules(_glob_escape(str(path)))):
@@ -1714,13 +1723,15 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
 
 def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
                         workspace: Path | None = None,
-                        config_dir: Path | None = None, outputs=()) -> list[str]:
+                        config_dir: Path | None = None, outputs=(), *,
+                        additional_profiles=()) -> list[str]:
     """The CLI flags that put an agent arm behind `arm_sandbox_settings`.
     Raises ArmReadIsolationError (`settings_too_large`) past
     MAX_SETTINGS_BYTES rather than handing the OS an argument it refuses."""
     settings = json.dumps(arm_sandbox_settings(
         checkouts, session_dir=session_dir, workspace=workspace,
-        config_dir=config_dir, outputs=outputs), sort_keys=True, separators=(",", ":"))
+        config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles),
+        sort_keys=True, separators=(",", ":"))
     if len(settings.encode()) > MAX_SETTINGS_BYTES:
         raise ArmReadIsolationError(
             f"the arm's --settings is {len(settings.encode())} bytes, over "
@@ -2376,8 +2387,13 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     shared_profile = not (env.get("CLAUDE_CONFIG_DIR") and env.get("CLAUDE_CONFIG_DIR")
                           != os.environ.get("CLAUDE_CONFIG_DIR"))
     try:
+        # Capture ambient roots through the settings builder's defaults, and
+        # add the child scratch roots rather than replacing that protection.
+        scratch_profiles = ([Path(env["HOME"])] if env.get("HOME") else []) if arm.get("env_override") else []
+        if arm.get("env_override") and config_dir is not None:
+            scratch_profiles.append(config_dir)
         isolation = arm_isolation_flags(checkouts, session_dir, workspace, config_dir,
-                                        outputs)
+                                        outputs, additional_profiles=scratch_profiles)
     except ArmReadIsolationError as exc:
         return {"error": exc.code, "detail": str(exc)}
 
@@ -3272,6 +3288,10 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     })
     if extra:
         summary.update(extra)
+    if summary.get("subject") == "guidance" and summary.get("pairing") == "in_place":
+        summary.setdefault("n", 1)
+        if key and len(key.split("/")) == 3:
+            summary.setdefault("fixture", key.split("/")[2])
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     if raw is not None:
@@ -3981,11 +4001,17 @@ def _check_with_budget(frozen, subject, budget: dict) -> None:
     """A subject added to `with` makes that arm the larger one; it must fit
     the fixture's budget too, which `resolve_context` checked without it."""
     sizes = dict(frozen.manifest["measurements"])
-    if isinstance(subject, delivery.SkillSubject) and subject.action == "added":
+    if isinstance(subject, delivery.SkillSubject):
+        deployed = next((tree for tree in frozen.skills if (tree.registry, tree.bundle, tree.skill)
+                         == (subject.registry, subject.bundle, subject.skill)), None)
         sizes["skill_catalog_bytes"] += len(context._catalog(
             subject.bundle, subject.skill, subject.files["SKILL.md"]))
         sizes["skill_payload_bytes"] += sum(len(raw) for raw in subject.files.values())
-    if isinstance(subject, delivery.SectionSubject) and subject.action == "added":
+        if deployed is not None:
+            sizes["skill_catalog_bytes"] -= len(context._catalog(
+                deployed.bundle, deployed.skill, deployed.files["SKILL.md"]))
+            sizes["skill_payload_bytes"] -= sum(len(raw) for raw in deployed.files.values())
+    if isinstance(subject, delivery.SectionSubject):
         sizes["guidance_bytes"] = len(delivery.guidance_payload(frozen, subject, "with"))
     for key, measured in sizes.items():
         if measured > budget[key]:
@@ -4010,15 +4036,54 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
         raise delivery.DeliveryError(
             "missing_object", "the pinned guidance revision has no fleet-memory "
             "hook, and in-place guidance is delivered only through the real hook")
+    candidate = getattr(args, "subject_candidate", None)
     if kind == "skill":
         bundle = getattr(args, "skill_bundle", None)
+        registry = getattr(args, "skill_registry", None)
+        # A fixture registry qualifies absent subjects; adopted defaults remain
+        # the immutable deployed version unless the run explicitly qualifies it.
+        if registry is None and fixture.get("registry") and not any(
+                tree.skill == fixture["skill"] and (bundle is None or tree.bundle == bundle)
+                for tree in frozen.skills):
+            registry = delivery._identity({"url": fixture["registry"]})
         subject = delivery.resolve_skill_subject(
             frozen, f"{bundle}:{fixture['skill']}" if bundle else fixture["skill"],
-            registries)
+            registries, registry=registry, candidate=candidate)
     else:
-        subject = delivery.resolve_section_subject(frozen, fixture["section"], repositories)
+        subject = delivery.resolve_section_subject(
+            frozen, fixture["section"], repositories, candidate=candidate)
     _check_with_budget(frozen, subject, fixture["context"]["budget"])
-    return {"frozen": frozen, "subject": subject, "repositories": repositories}
+    plan = {"frozen": frozen, "subject": subject, "repositories": repositories,
+            "candidate_paths": ([Path(candidate).resolve() if kind == "skill" else
+                                 Path(candidate).resolve().parent] if candidate else [])}
+    _check_context_summary(plan)
+    return plan
+
+
+def _check_context_summary(plan: dict) -> None:
+    """Do not create evidence the trusted ingester cannot accept. Reserve half
+    the 64 KiB summary cap for scores, errors and aggregate measurements."""
+    record = _in_place_record(plan, "with")
+    sources = record["context"]["sources"]
+    subject = record["context_subject"]
+    names = [bundle["name"] for source in sources for bundle in source["bundles"]]
+    names += record["context"]["guidance"]["sections"]
+    repositories = [record["context"]["repository"], *(source["registry"] for source in sources)]
+    if subject["kind"] == "skill":
+        names += [subject["bundle"], subject["skill"]]
+        repositories.append(subject["registry"])
+        long_extent = False
+    else:
+        names.append(subject["section"])
+        long_extent = any(len(subject[key]) > 256 for key in ("file", "heading"))
+    if (any(len(name) > 64 for name in names)
+            or any(any(len(part) > 100 for part in repository.split("/")) for repository in repositories)
+            or long_extent or record["arm_context"]["skills"] > 4096
+            or len(sources) > 64 or any(len(source["bundles"]) > 64 for source in sources)
+            or len(record["context"]["guidance"]["sections"]) > 64
+            or len(json.dumps(record, indent=2).encode("utf-8")) > 32768):
+        raise delivery.DeliveryError("context_summary_too_large",
+                                     "frozen context exceeds bounded summary manifest limits")
 
 
 def _plan_subjects(plan: dict):
@@ -4084,15 +4149,23 @@ def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
     if skill_subject is not None:
         if skill_subject.action == "removed" and role == "without":
             delivery.remove_skill(config, skill_subject)
-        elif skill_subject.action == "added" and role == "with":
-            delivery.add_skill(config, skill_subject)
+        elif role == "with":
+            deployed = next((tree for tree in frozen.skills
+                             if (tree.registry, tree.bundle, tree.skill) ==
+                             (skill_subject.registry, skill_subject.bundle, skill_subject.skill)), None)
+            if deployed is not None and (skill_subject.files != deployed.files
+                                         or skill_subject.modes != deployed.modes):
+                delivery.remove_skill(config, skill_subject)
+                delivery.add_skill(config, skill_subject)
+            elif skill_subject.action == "added":
+                delivery.add_skill(config, skill_subject)
     payload = delivery.guidance_payload(frozen, section_subject, role)
     if payload != frozen.guidance:
         delivered = delivery.deliver_guidance(frozen.hook, payload, scratch=scratch,
                                               home=home, config=config)
     delivery.check_skills(config, workspace,
                           delivery.expected_skills(frozen, skill_subject, role),
-                          skill_subject, role)
+                          skill_subject, role, home=home)
     env = guidance.agent_env(workspace=workspace, home=home, tmpdir=tmpdir,
                              config_dir=config, env_spec=fixture.get("env"))
     assert_stand_ins_on_path(workspace, env, fixture.get("env"))
@@ -4216,7 +4289,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "env_override": env_override,
                 "session_scratch": str(scratch),
                 "read_denied": [*arm_config["read_denied"],
-                                *plan["repositories"].used_paths()]})
+                                *plan["repositories"].used_paths(),
+                                *plan.get("candidate_paths", [])]})
         # A bad `registry:` (missing field, wrong type, unknown URL, or a
         # resolved path that doesn't exist) becomes an error dict here — the
         # same shape run_agent returns for skill_not_found — rather than an
@@ -4793,8 +4867,10 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             try:
                 workspace, env, delivered = _prepare_in_place(
                     role, fixture, seed, plan, scratch)
-            except SetupFailedError as exc:
-                error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
+            except (SetupFailedError, delivery.DeliveryError, context.ContextError) as exc:
+                error = ({"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
+                         if isinstance(exc, SetupFailedError) else
+                         {"type": exc.code, "detail": str(exc)})
                 _write_summary(args.results_dir, None, arm["name"], timestamp,
                                error, None, None, None, None, key=ctx["key"],
                                extra=extra, harness_version=harness_version,
@@ -4929,7 +5005,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         }
         if plan is not None:
             arm_config["read_denied"] = [*arm_config["read_denied"],
-                                         *plan["repositories"].used_paths()]
+                                         *plan["repositories"].used_paths(),
+                                *plan.get("candidate_paths", [])]
         baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = run_agent(workspace, fixture["prompt"], arm_config)
         if fixture.get("_real_work"):
@@ -5189,6 +5266,9 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         print(f"{args.eval_dir / 'fixture.yaml'} is missing a string `prompt:`")
         return 2
 
+    if getattr(args, "skill_registry", None) is not None or getattr(args, "skill_bundle", None) is not None:
+        print("configuration error: skill registry/bundle qualifiers require a skill subject")
+        return 2
     pairing = getattr(args, "pairing", delivery.DEFAULT_PAIRING)
     plan = None
     try:
@@ -5199,9 +5279,10 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
                     "invalid_pairing", "an in-place pair delivers guidance as user "
                     "memory, as the fleet does; --delivery project is isolation-only")
             plan = _in_place_plan(fixture, args, {}, "guidance")
-        guidance_dir = guidance.require_guidance_dir(guidance.resolve_guidance_dir(
+        guidance_dir = (guidance.require_guidance_dir(guidance.resolve_guidance_dir(
             args.guidance, os.environ.get("AGENT_GUIDANCE_DIR"),
-            Path(__file__).resolve().parent.parent))
+            Path(__file__).resolve().parent.parent)) if plan is None else
+            plan["repositories"].get(context.GUIDANCE_REPOSITORY))
         row = (guidance.find_row(guidance.load_manifest(guidance_dir), section,
                                  guidance_dir) if plan is None else None)
     except guidance.GuidanceError as exc:
@@ -5222,7 +5303,10 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
            "decoys": {arm["name"]: guidance.new_decoy_token()
                       for arm in arms if arm["mode"] == "none"}}
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = getattr(args, "run_timestamp", None) or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    if getattr(args, "timestamp", None) is not None and (args.results_dir / key / timestamp).exists():
+        print("configuration error: --timestamp names existing guidance results; choose another timestamp")
+        return 2
     try:
         # Once per run, before any arm (#202), as the skill path does.
         args.harness_version = claude_version()
@@ -5551,6 +5635,10 @@ def main() -> int:
                              "context and only the subject differs (ADR 0012; "
                              "the hosted routine only); isolation (default): "
                              "the subject alone against nothing")
+    parser.add_argument("--skill-registry", default=None, metavar="OWNER/REPO",
+                        help="in_place only: qualify the skill's registry identity")
+    parser.add_argument("--subject-candidate", type=Path, default=None, metavar="PATH",
+                        help="in_place only: explicitly test this skill directory or guidance file")
     parser.add_argument("--skill-bundle", default=None, metavar="BUNDLE",
                         help="in_place only: qualify the skill subject as "
                              "BUNDLE:SKILL when its bare name is ambiguous")
@@ -5674,13 +5762,14 @@ def main() -> int:
         if refusal is not None:
             print(f"managed_sandbox_policy: {refusal}")
             return 2
-    if args.skill_bundle is not None and args.pairing != "in_place":
-        print("configuration error: --skill-bundle qualifies an in-place subject; "
+    if (args.skill_bundle is not None or args.skill_registry is not None or
+            args.subject_candidate is not None) and args.pairing != "in_place":
+        print("configuration error: subject qualifiers/candidates require an in-place pair; "
               "pass --pairing in_place")
         return 2
     # Cloud-only (ADR 0012, "Decisions on the build"): an in-place arm's
     # scratch profile holds no login, and no local credential adapter exists.
-    if args.pairing == "in_place" and args.arm != "objective-only":
+    if args.pairing == "in_place":
         try:
             delivery.require_hosted(os.environ)
         except delivery.DeliveryError as exc:
@@ -5758,10 +5847,10 @@ def main() -> int:
         subject = fixture.get("subject", "skill")
         if subject == "guidance":
             # #66 is the skill subject's: a guidance fixture is run by its own
-            # directory, one trial per arm, under the wall clock's timestamp,
-            # as before. Refused by name rather than run with a flag that
+            # directory, one trial per arm. In-place pairs accept a fixed
+            # timestamp for reproducible evidence; isolation keeps its contract. Refused by name rather than run with a flag that
             # asked for something else quietly ignored.
-            if discovered or args.trials > 1 or args.timestamp is not None:
+            if discovered or args.trials > 1 or (args.timestamp is not None and args.pairing != "in_place"):
                 print(f"configuration error: {eval_dir / FIXTURE_FILE} is a "
                       "guidance fixture. Nested-fixture discovery, --trials "
                       "above 1 and --timestamp apply to skill fixtures only; "

@@ -248,8 +248,19 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
 
 ### Deployed context (ADR 0012)
 
-**part 1 of 4: resolution only, nothing delivered yet.** A fixture may name
-the deployed context it will eventually evaluate in, using `context:`:
+**Part 2 of 4: frozen resolution and delivery.** `--pairing isolation`
+remains the default. `--pairing in_place` is cloud-only and delivers the
+frozen skills and guidance into both arms' scratch user profiles; a local
+run fails with `in_place_local_unsupported`. No credential adapter exists.
+The model-call catalog and marker guard remain part 3 of
+[ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md).
+
+A bare skill name must resolve uniquely; `--skill-registry OWNER/REPO` and
+`--skill-bundle BUNDLE` qualify its source and bundle. Keep-or-remove runs
+test the deployed bytes by default. `--subject-candidate PATH` explicitly
+supplies a skill directory or a guidance file; only that skill or the pinned
+section's exact extent replaces the subject in `with`. Summaries retain both
+deployed and tested digests. A fixture names its deployed context using `context:`:
 
 ```yaml
 context:

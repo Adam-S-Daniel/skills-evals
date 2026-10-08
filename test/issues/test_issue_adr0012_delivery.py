@@ -10,6 +10,7 @@ the repository runner, inside a PID namespace.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from dataclasses import replace
 
 import yaml
 
@@ -69,6 +71,7 @@ echo "fleet-guidance: installed (v$v)"
 SAMPLE = {"SKILL.md": b"---\nname: sample\ndescription: Sample skill.\n---\n\nUse it.\r\n",
           "scripts/run.sh": b"#!/bin/sh\necho run\n", "data.bin": b"\x00\xff"}
 OTHER = {"SKILL.md": b"---\nname: other\ndescription: Other skill.\n---\n\nOther.\n"}
+CANDIDATE = {"SKILL.md": SAMPLE["SKILL.md"] + b"Candidate body.\n"}
 FRESH = {"SKILL.md": b"---\nname: fresh\ndescription: Not adopted.\n---\n\nFresh.\n"}
 
 RECORDER = f"""#!{sys.executable}
@@ -76,6 +79,8 @@ import hashlib, json, os, sys
 from pathlib import Path
 argv = sys.argv[1:]
 if argv == ["--version"]:
+    with open(os.environ["VERSION_LOG"], "a") as fh:
+        fh.write("version\\n")
     print("2.1.293 (Claude Code)")
     sys.exit(0)
 cfg = os.environ.get("CLAUDE_CONFIG_DIR")
@@ -93,7 +98,10 @@ skills = Path(os.getcwd()) / ".claude" / "skills"
 rec["workspace_skills"] = sorted(x.name for x in skills.iterdir()) if skills.is_dir() else []
 with open(os.environ["REC_LOG"], "a") as fh:
     fh.write(json.dumps(rec) + "\\n")
-if os.environ.get("REC_MODE") == "write_profile" and cfg:
+mode = os.environ.get("REC_MODE")
+count = sum(json.loads(line)["env"]["CLAUDE_CONFIG_DIR"] == cfg
+            for line in Path(os.environ["REC_LOG"]).read_text().splitlines())
+if cfg and (mode == "write_profile" or (mode == "write_profile_second" and count == 2)):
     Path(cfg, "settings.json").write_text("{{}}")
 print(json.dumps({{"type": "result", "is_error": False, "result": "done",
                   "total_cost_usd": 0, "usage": {{}}, "num_turns": 1,
@@ -130,7 +138,12 @@ class Base(unittest.TestCase):
         self.log = self.root / "calls.jsonl"
         self.home = self.root / "home"
         self.home.mkdir()
-        self.env = {"PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
+        (self.home / ".claude").mkdir()
+        (self.home / ".claude/settings.json").write_bytes(b'{"fixture": true}')
+        (self.home / ".claude/.credentials.json").write_bytes(b'{"synthetic": true}')
+        self.source_profile = tree(self.home / ".claude")
+        self.version_log = self.root / "versions.log"
+        self.env = {"PATH": str(self.bin) + os.pathsep + os.defpath,
                     "HOME": str(self.home), "GIT_CONFIG_NOSYSTEM": "1",
                     "GIT_CONFIG_GLOBAL": "/dev/null",
                     "GIT_AUTHOR_NAME": "Fixture", "GIT_COMMITTER_NAME": "Fixture",
@@ -140,6 +153,7 @@ class Base(unittest.TestCase):
                     "GIT_COMMITTER_DATE": "2026-01-01T00:00:00+00:00",
                     "XDG_STATE_HOME": str(self.root / "state"),
                     "PYTHONDONTWRITEBYTECODE": "1", "CLAUDE_BIN": str(self.recorder),
+                    "VERSION_LOG": str(self.version_log),
                     "CLAUDE_CODE_ENTRYPOINT": "cli"}
         patcher = mock.patch.dict(os.environ, self.env, clear=True)
         patcher.start()
@@ -290,6 +304,109 @@ class SubjectTests(Base):
         self.assertEqual(delivery.resolve_skill_subject(
             self.frozen(), "zzz:twin", self.registries).bundle, "zzz")
 
+    def test_registry_qualification_selects_only_named_source(self):
+        subject = delivery.resolve_skill_subject(self.frozen(), "bundle:sample", self.registries,
+                                                 registry=PRIMARY)
+        self.assertEqual(subject.registry, PRIMARY)
+        self.refused("skill_not_found", lambda: delivery.resolve_skill_subject(
+            self.frozen(), "fresh", self.registries, registry=PRIMARY))
+
+    def test_candidate_replaces_adopted_skill_with_only(self):
+        candidate = self.root / "candidate"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(CANDIDATE["SKILL.md"])
+        plan = self.plan(subject_candidate=candidate)
+        subject = plan["subject"]
+        self.assertEqual(subject.action, "removed")
+        self.assertEqual(subject.deployed_digest, digest(SAMPLE))
+        self.assertEqual(subject.tested_digest, digest(CANDIDATE))
+        with_scratch, *_ = self.prepare("with", plan)
+        without_scratch, *_ = self.prepare("without", plan)
+        self.assertEqual((delivery.plugins_root(with_scratch / "config") /
+                          "bundle/skills/sample/SKILL.md").read_bytes(), CANDIDATE["SKILL.md"])
+        self.assertNotIn("bundle:sample", delivery.installed_skills(without_scratch / "config"))
+
+    def test_newer_registry_bytes_never_override_deployed_default(self):
+        (self.registry / "plugins/bundle/skills/sample/SKILL.md").write_bytes(FRESH["SKILL.md"])
+        self.assertEqual(self.plan()["subject"].tested_digest, digest(SAMPLE))
+
+    def test_candidate_growth_obeys_the_with_arm_budget(self):
+        frozen = self.frozen()
+        self.metadata["budget"]["skill_payload_bytes"] = frozen.manifest["measurements"]["skill_payload_bytes"]
+        candidate = self.root / "large-candidate"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(SAMPLE["SKILL.md"] + b"x" * 200)
+        self.refused("budget_exceeded", lambda: self.plan(subject_candidate=candidate))
+
+    def test_guidance_candidate_replaces_only_pinned_extent(self):
+        candidate = self.root / "candidate.md"
+        candidate.write_bytes(b"unrelated intro\n## Bravo rule\nNew \xc3\xa9 body.\n## Unrelated\nignore\n")
+        plan = self.plan(section="bravo", subject_candidate=candidate)
+        subject = plan["subject"]
+        self.assertNotEqual(subject.tested_digest, subject.deployed_digest)
+        expected = BASE[:subject.start_byte] + "## Bravo rule\nNew é body.\n".encode() + BASE[subject.end_byte:] + b"\n" + PYTHON
+        self.assertEqual(delivery.guidance_payload(plan["frozen"], subject, "with"), expected)
+        self.assertNotIn(b"unrelated", delivery.guidance_payload(plan["frozen"], subject, "with"))
+
+    def test_candidate_cannot_rename_qualified_catalog_identity(self):
+        candidate = self.root / "renamed-candidate"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(FRESH["SKILL.md"])
+        self.refused("candidate_identity_mismatch", lambda: self.plan(subject_candidate=candidate))
+
+    def test_duplicate_source_manifest_is_refused_by_ingester(self):
+        record = run_eval._in_place_record(self.plan(), "with")
+        record.update(skill="sample", arm="with_skill")
+        record["context"]["sources"] *= 2
+        with self.assertRaises(ingest.Rejected):
+            ingest.check_in_place(record, "summary.json", {"key": "sample"})
+
+    def test_context_summary_caps_block_before_agent(self):
+        frozen = self.frozen()
+        manifest = dict(frozen.manifest)
+        manifest["sources"] = manifest["sources"] * 65
+        with mock.patch.object(context, "resolve_context", return_value=replace(frozen, manifest=manifest)):
+            self.refused("context_summary_too_large", self.plan)
+        self.assertFalse(self.log.exists())
+
+    def test_executable_mode_only_candidate_is_delivered(self):
+        candidate = self.root / "mode-candidate"
+        for name, raw in SAMPLE.items():
+            path = candidate / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(raw)
+        # Deployed run.sh is executable; the candidate deliberately is not.
+        plan = self.plan(subject_candidate=candidate)
+        scratch, *_ = self.prepare("with", plan)
+        installed = delivery.plugins_root(scratch / "config") / "bundle/skills/sample/scripts/run.sh"
+        self.assertEqual(installed.read_bytes(), SAMPLE["scripts/run.sh"])
+        self.assertFalse(installed.stat().st_mode & 0o111)
+
+    def test_registry_lookup_rejects_escaping_ancestor_symlink(self):
+        outside = self.root / "outside-bundle/skills/escaping"
+        outside.mkdir(parents=True)
+        (outside / "SKILL.md").write_bytes(b"---\nname: escaping\ndescription: Escape.\n---\n")
+        (self.registry / "plugins/escape").symlink_to(self.root / "outside-bundle", target_is_directory=True)
+        self.refused("unsafe_path", lambda: delivery.resolve_skill_subject(self.frozen(), "escaping", self.registries))
+
+    def test_context_manifest_names_fit_ingester_caps(self):
+        frozen = self.frozen()
+        manifest = dict(frozen.manifest)
+        manifest["sources"] = [dict(source, bundles=[dict(bundle) for bundle in source["bundles"]])
+                               for source in frozen.manifest["sources"]]
+        manifest["sources"][0]["bundles"][0]["name"] = "x" * 65
+        with mock.patch.object(context, "resolve_context", return_value=replace(frozen, manifest=manifest)):
+            self.refused("context_summary_too_large", self.plan)
+
+    def test_empty_guidance_remainder_record_is_bounded_and_valid(self):
+        record = run_eval._in_place_record(self.plan(section="bravo"), "without")
+        record.update(subject="guidance", section="bravo", arm="without_guidance")
+        size = record["context"]["guidance"]["bytes"]
+        record["context_subject"].update(start_char=0, end_char=size, start_byte=0, end_byte=size,
+                                          bytes=size, tested_bytes=size)
+        record["arm_context"].update(guidance_bytes=0, guidance_digest=hashlib.sha256(b"").hexdigest())
+        ingest.check_in_place(record, "summary.json", {"key": "guidance/bravo"})
+
     def test_a_subject_nowhere_is_named(self):
         self.refused("skill_not_found", lambda: delivery.resolve_skill_subject(
             self.frozen(), "ghost", self.registries))
@@ -387,6 +504,53 @@ class ArmDeliveryTests(Base):
         seed = self.seed({"README.md": b"x\n", ".claude/skills/sample/SKILL.md": SAMPLE["SKILL.md"]})
         self.refused("subject_alias_present", lambda: self.prepare("without", plan, seed))
 
+    def test_project_plugin_alias_is_refused(self):
+        plan = self.plan()
+        seed = self.seed({"README.md": b"x\n", ".claude/plugins/alias/skills/sample/SKILL.md": SAMPLE["SKILL.md"]})
+        self.refused("subject_alias_present", lambda: self.prepare("without", plan, seed))
+
+    def test_scratch_home_alias_is_refused(self):
+        plan = self.plan()
+        scratch, workspace, *_ = self.prepare("without", plan)
+        alias = scratch / "home/.claude/skills/sample"
+        alias.mkdir(parents=True)
+        (alias / "SKILL.md").write_bytes(SAMPLE["SKILL.md"])
+        self.refused("subject_alias_present", lambda: delivery.check_skills(
+            scratch / "config", workspace, delivery.expected_skills(plan["frozen"], plan["subject"], "without"),
+            plan["subject"], "without", home=scratch / "home"))
+
+    def test_same_named_alternate_digest_invalidates_the_subject(self):
+        frozen = self.frozen()
+        subject = delivery.resolve_skill_subject(frozen, "sample", self.registries)
+        scratch, workspace, *_ = self.prepare("without", self.plan())
+        extra = delivery.plugins_root(scratch / "config") / "bundle/skills/alias"
+        extra.mkdir()
+        (extra / "SKILL.md").write_bytes(SAMPLE["SKILL.md"])
+        expected = delivery.expected_skills(frozen, subject, "without")
+        expected["bundle:alias"] = digest({"SKILL.md": SAMPLE["SKILL.md"]})
+        # A front-matter alias is still the subject even with different resources.
+        self.refused("subject_alias_present", lambda: delivery.check_skills(
+            scratch / "config", workspace, expected, subject, "without"))
+
+    def test_guidance_delivery_error_keeps_full_context_summary(self):
+        plan = self.plan(section="bravo")
+        plan["frozen"] = replace(plan["frozen"], hook=b"#!/bin/sh\necho fleet-guidance: current\n")
+        fixture = {"subject": "guidance", "section": "bravo", "prompt": "do it"}
+        ctx = {"plan": plan, "key": "guidance/bravo", "section": "bravo", "guidance_dir": self.guidance}
+        arm = run_eval.guidance_arms({}, "with_guidance", pairing="in_place")[0]
+        out = run_eval._run_guidance_arm(arm, fixture, self.seed(), ctx, self.args(), "20261007T000000Z")
+        self.assertEqual(out["error"]["type"], "delivery_failed")
+        path = self.root / "results/guidance/bravo/20261007T000000Z/with_guidance/summary.json"
+        doc = json.loads(path.read_bytes())
+        ingest.check_summary(doc, "summary.json", ingest.parse_result_path(path.relative_to(self.root / "results").as_posix()))
+        self.assertEqual(doc["context_subject"]["section"], "bravo")
+        self.assertFalse(self.log.exists())
+
+    def test_project_plugin_native_metadata_alias_is_refused(self):
+        seed = self.seed({"README.md": b"x\n", ".claude/plugins/alias/skills/different/SKILL.md":
+                          SAMPLE["SKILL.md"] + b"Different body and digest.\n"})
+        self.refused("subject_alias_present", lambda: self.prepare("without", self.plan(), seed))
+
     def test_installation_never_merges_into_an_existing_destination(self):
         config = self.root / "cfg"
         frozen = self.frozen()
@@ -482,13 +646,9 @@ class ArmDeliveryTests(Base):
         self.refused("in_place_local_unsupported", lambda: delivery.require_hosted({}))
 
 
-@unittest.skipUnless((run_eval.HARNESS_CLONE_ROOT is not None and (
-    run_eval.HARNESS_CLONE_ROOT.parent / "_agent-guidance/.claude/hooks/fleet-memory.sh").is_file()),
-    "needs a sibling _agent-guidance checkout for the real hook")
 class RealHookTests(Base):
     def test_the_real_hook_delivers_identical_blocks_to_both_arms(self):
-        hook = (run_eval.HARNESS_CLONE_ROOT.parent
-                / "_agent-guidance/.claude/hooks/fleet-memory.sh").read_bytes()
+        hook = (ROOT / ".claude/hooks/fleet-memory.sh").read_bytes()
         self.guidance_sha = self.commit(self.guidance, {".claude/hooks/fleet-memory.sh": hook})
         self.git(self.guidance, "update-ref", "refs/remotes/origin/main", self.guidance_sha)
         self.metadata["guidance_revision"] = self.guidance_sha
@@ -532,7 +692,7 @@ class EndToEndTests(Base):
         env.update(extra_env or {})
         repos = [f"--context-repo={k}={v}" for k, v in self.repositories.items()]
         return subprocess.run(
-            [sys.executable, str(ROOT / "harness" / "run_eval.py"), str(directory),
+            [sys.executable, "harness/run_eval.py", str(directory),
              "--registry", f"adam-agentskills={self.registry}", "--results-dir", str(self.results),
              "--timeout", "60", "--no-judge", *repos, *flags],
             capture_output=True, text=True, env=env, cwd=str(ROOT), timeout=600)
@@ -559,9 +719,23 @@ class EndToEndTests(Base):
         self.assertIs(sandbox["allowUnsandboxedCommands"], False)
         self.assertEqual(sandbox["network"], run_eval.arm_sandbox_settings()["sandbox"]["network"])
         denied = sandbox["filesystem"]["denyRead"]
-        for path in (self.home, self.consumer, self.registry, self.guidance):
+        scratch_home = Path(call["env"]["HOME"])
+        for path in (self.home, self.consumer, self.registry, self.guidance, scratch_home, config):
             self.assertIn(str(path.resolve()), denied)
         rules = settings["permissions"]["deny"]
+        patterns = [rule[len("Read(/"):-1].removesuffix("/**")
+                    for rule in rules if rule.startswith("Read(/")]
+        def covered(target):
+            return any(len(pattern.split("/")) == len(path.parts) and all(
+                fnmatch.fnmatchcase(part.lower(), glob.lower())
+                for part, glob in zip(path.parts[1:], pattern.split("/")[1:]))
+                       for pattern in patterns for path in (target, *target.parents))
+        for protected in (scratch_home / "private", config / "settings.json", config / "CLAUDE.md",
+                          config / "plugins/private", self.home / ".claude/.credentials.json"):
+            self.assertTrue(covered(protected), f"Read deny absent for {protected}")
+        own_session = config / "projects" / run_eval._munged_project_name(Path(call["cwd"]))
+        self.assertFalse(covered(own_session / "session.jsonl"), "own follow-up output must stay readable")
+        self.assertEqual(tree(self.home / ".claude"), self.source_profile)
         # Other arms' scratch profiles: the harness's TMPDIR prefixes.
         self.assertTrue(any(run_eval.ARM_WORKSPACE_PREFIX in rule for rule in rules), rules[:5])
         self.assertIn(str(config), sandbox["filesystem"]["denyWrite"])
@@ -577,12 +751,14 @@ class EndToEndTests(Base):
         self.assertNotEqual(Path(call["env"]["HOME"]), self.home)
 
     def test_a_local_in_place_run_fails_closed_before_any_cli(self):
-        proc = self.run_main(self.fixture_dir(), "--arm", "both", "--pairing", "in_place",
-                             "--timestamp", self.TS, hosted=False)
-        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        self.assertIn("in_place_local_unsupported", proc.stdout)
+        for arm in ("both", "objective-only"):
+            proc = self.run_main(self.fixture_dir(), "--arm", arm, "--pairing", "in_place",
+                                 "--timestamp", self.TS, hosted=False)
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("in_place_local_unsupported", proc.stdout)
         self.assertEqual(self.calls(), [])
         self.assertFalse(self.results.exists())
+        self.assertFalse(self.version_log.exists(), "local refusal must precede --version too")
 
     def test_hosted_in_place_skill_pair_end_to_end(self):
         proc = self.run_main(self.fixture_dir(followups=["and again"]), "--arm", "both",
@@ -618,10 +794,71 @@ class EndToEndTests(Base):
             f"{run_eval.ARM_WORKSPACE_PREFIX}with*_skill-*")), [])
 
     def test_the_agent_may_not_write_its_scratch_profile(self):
-        directory = self.fixture_dir(env={"REC_LOG": str(self.log), "REC_MODE": "write_profile"})
+        directory = self.fixture_dir(followups=["again"], env={"REC_LOG": str(self.log), "REC_MODE": "write_profile"})
         proc = self.run_main(directory, "--arm", "without_skill", "--pairing", "in_place",
                              "--timestamp", self.TS)
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(self.summary("without_skill")["error"]["type"], "agent_wrote_agent_config")
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_candidate_flags_replace_only_subject_and_deny_source(self):
+        candidate = self.root / "candidate-cli"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(CANDIDATE["SKILL.md"])
+        proc = self.run_main(self.fixture_dir(), "--arm", "both", "--pairing", "in_place",
+                             "--timestamp", self.TS, "--skill-registry", PRIMARY,
+                             "--skill-bundle", "bundle", "--subject-candidate", str(candidate))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assert_arm_isolation(call, Path(call["env"]["CLAUDE_CONFIG_DIR"]))
+            settings = json.loads(run_eval_flag(call["argv"], "--settings"))
+            self.assertIn(str(candidate), settings["sandbox"]["filesystem"]["denyRead"])
+        for arm in ("with_skill", "without_skill"):
+            doc = self.assert_ingests(self.results / "sample" / self.TS / arm / "summary.json")
+            self.assertEqual(doc["context_subject"]["tested_digest"], digest(CANDIDATE))
+            self.assertEqual(doc["context_subject"]["deployed_digest"], digest(SAMPLE))
+        self.assertEqual(calls[0]["plugins"]["bundle/skills/sample/SKILL.md"],
+                         hashlib.sha256(CANDIDATE["SKILL.md"]).hexdigest())
+        self.assertNotIn("bundle/skills/sample/SKILL.md", calls[1]["plugins"])
+
+    def test_real_work_subject_any_summaries_fully_ingest(self):
+        for selector, value in (("--skill", "sample"), ("--section", "bravo")):
+            directory = self.fixture_dir(subject="any")
+            body = yaml.safe_load((directory / "fixture.yaml").read_bytes())
+            body.pop("skill")
+            (directory / "fixture.yaml").write_text(yaml.safe_dump(body))
+            self.results = self.root / ("results-skill" if selector == "--skill" else "results-guidance")
+            proc = self.run_main(directory, "--arm", "both", "--pairing", "in_place",
+                                 "--timestamp", self.TS, selector, value)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            paths = list(self.results.rglob("summary.json"))
+            self.assertEqual(len(paths), 2)
+            for path in paths:
+                with self.subTest(selector=selector, path=path):
+                    doc = self.assert_ingests(path)
+                    self.assertEqual(doc["fixture"], "sample")
+                    self.assertEqual(doc["n"], 1)
+                    self.assertEqual(doc["guidance_violations"]["schema_version"], 1)
+
+    def test_alternate_guidance_fixture_path_is_strict(self):
+        prefix = f"guidance/bravo/sample/{self.TS}"
+        parts = ingest.parse_result_path(f"{prefix}/with_guidance/summary.json")
+        self.assertEqual((parts["key"], parts["fixture"]), ("guidance/bravo", "sample"))
+        for path in (f"{prefix}/second/with_guidance/summary.json",
+                     f"guidance/bravo/trial-1/{self.TS}/with_guidance/summary.json",
+                     f"guidance/bravo/../{self.TS}/with_guidance/summary.json"):
+            with self.subTest(path=path), self.assertRaises(ingest.Rejected):
+                ingest.parse_result_path(path)
+
+    def test_second_turn_profile_write_stops_a_third_turn(self):
+        directory = self.fixture_dir(followups=["again", "third"],
+                                     env={"REC_LOG": str(self.log), "REC_MODE": "write_profile_second"})
+        proc = self.run_main(directory, "--arm", "without_skill", "--pairing", "in_place",
+                             "--timestamp", self.TS)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(len(self.calls()), 2)
         self.assertEqual(self.summary("without_skill")["error"]["type"], "agent_wrote_agent_config")
 
     def test_unresolvable_context_is_exit_two_before_any_cli(self):
@@ -649,25 +886,24 @@ class EndToEndTests(Base):
         (directory / "seed").mkdir(parents=True)
         (directory / "seed" / "README.md").write_text("x\n", encoding="utf-8")
         (directory / "fixture.yaml").write_text(yaml.safe_dump({
-            "subject": "guidance", "section": "bravo", "prompt": "do it",
+            "subject": "guidance", "section": "bravo", "prompt": "do it", "followups": ["again"],
             "model": "claude-test-model", "env": {"REC_LOG": str(self.log)},
             "objective_checks": [], "context": self.metadata}), encoding="utf-8")
         proc = self.run_main(directory, "--arm", "both", "--pairing", "in_place",
-                             "--guidance", str(self.guidance))
+                             "--guidance", str(self.root / "missing-live-guidance"), "--timestamp", self.TS)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         calls = self.calls()
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 4)
         for call in calls:
             self.assert_arm_isolation(call, Path(call["env"]["CLAUDE_CONFIG_DIR"]))
-        self.assertEqual(calls[0]["plugins"], calls[1]["plugins"])
-        self.assertNotEqual(calls[0]["claude_md"], calls[1]["claude_md"])
-        (run_dir,) = (self.results / "guidance" / "bravo").iterdir()
+        self.assertEqual(calls[0]["plugins"], calls[2]["plugins"])
+        self.assertNotEqual(calls[0]["claude_md"], calls[2]["claude_md"])
+        run_dir = self.results / "guidance" / "bravo" / self.TS
+        self.assertTrue(run_dir.is_dir(), "guidance must honor the requested timestamp")
         for arm, role in (("with_guidance", "with"), ("without_guidance", "without")):
-            # A guidance summary carries no `n`, so check_summary refuses it
-            # whatever its pairing; the in-place record itself is checked.
             path = run_dir / arm / "summary.json"
             doc = json.loads(path.read_bytes())
-            ingest.check_in_place(doc, path.name, ingest.parse_result_path(
+            ingest.check_summary(doc, path.name, ingest.parse_result_path(
                 path.relative_to(self.results).as_posix()))
             self.assertEqual(doc["role"], role)
             self.assertEqual(doc["context_subject"]["kind"], "guidance")
@@ -686,7 +922,8 @@ class EndToEndTests(Base):
                      lambda d: d["context_subject"].update(deployed_digest=None),
                      lambda d: d["context_subject"].update(skill="other"),
                      lambda d: d["context"].update(digest="x" * 64),
-                     lambda d: d["context"]["guidance"].update(bytes=True)):
+                     lambda d: d["context"]["guidance"].update(bytes=True),
+                     lambda d: d["context"]["guidance"].update(sections=[{}])):
             doc = json.loads(json.dumps(good))
             edit(doc)
             with self.subTest(doc=str(doc)[:60]), self.assertRaises(ingest.Rejected):

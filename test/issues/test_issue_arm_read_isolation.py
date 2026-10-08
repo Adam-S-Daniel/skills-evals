@@ -851,7 +851,8 @@ class RunAgentReadIsolationTests(_TempLayout):
         settings = settings_of(argv)
         self.assertIn(str(self.home), settings["sandbox"]["filesystem"]["denyRead"])
         self.assertIn(str(self.home), read_rule_paths(settings))
-        self.assertNotIn(str(scratch_home), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertIn(str(scratch_home), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertTrue(covers(read_rule_paths(settings), scratch_home / "private"))
 
     def test_a_workspace_under_home_fails_before_the_cli_starts(self):
         workspace = self.home / "workspace-z"

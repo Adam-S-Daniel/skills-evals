@@ -383,6 +383,11 @@ class RenamePdfsFollowupRegressionTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         registry_dir = tmp / "registry"
         registry_dir.mkdir()
+        skill_dir = registry_dir / "plugins/test-bundle/skills" / fixture["skill"]
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {fixture['skill']}\ndescription: Offline follow-up fixture.\n---\n",
+            encoding="utf-8")
         registries = {"adam-agentskills": {
             "name": "adam-agentskills", "path": registry_dir,
             "url": fixture["registry"],

@@ -188,6 +188,27 @@ class WorkspaceGitOverrideTests(_WorkspaceGitFixture, unittest.TestCase):
 
 
 class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
+    def test_harness_metadata_git_refuses_write_and_unreviewed_read_shapes(self):
+        from unittest import mock
+        for args in (('config', 'core.worktree', '/tmp/other'),
+                     ('fetch', 'origin'), ('rev-parse', '--show-toplevel')):
+            with self.subTest(args=args), mock.patch.object(run_eval.subprocess, 'run') as spawn:
+                with self.assertRaisesRegex(run_eval.ArmReadIsolationError, 'audited'):
+                    run_eval._git_out(*args, cwd=self.repo)
+                spawn.assert_not_called()
+
+    def test_context_git_object_view_refuses_write_and_unreviewed_read_shapes(self):
+        from unittest import mock
+        import context
+        view = context._Git('example/repo', {'example/repo': self.repo})
+        for args in (('config', 'core.hooksPath', '/tmp/other'),
+                     ('fetch', 'origin'), ('show', '--textconv', 'HEAD'),
+                     ('log', '--ext-diff', 'HEAD'), ('cat-file', '--filters', 'HEAD')):
+            with self.subTest(args=args), mock.patch.object(context.subprocess, 'run') as spawn:
+                with self.assertRaisesRegex(context.ContextError, 'unsupported_git_read'):
+                    view.run(*args)
+                spawn.assert_not_called()
+
     def test_git_symlink(self):
         target = self.root / 'redirect'
         shutil.move(self.repo / '.git', target)
@@ -358,6 +379,44 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             if path.name == 'workspace_git.py':
                 continue
             tree = ast.parse(path.read_text())
+            allowed_reads = set()
+            if path == harness / 'context.py':
+                # Frozen objects have a distinct, read-only seam. Exempt its
+                # single audited sink, never the rest of context.py.
+                reader = next(node for node in tree.body
+                              if isinstance(node, ast.ClassDef) and node.name == '_Git')
+                method = next(node for node in reader.body
+                              if isinstance(node, ast.FunctionDef) and node.name == 'run')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", '
+                                     'str(self.path), *args], env=self.env, stdin=subprocess.DEVNULL, '
+                                     'stdout=subprocess.PIPE, stderr=subprocess.PIPE)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
+            if path == harness / 'run_eval.py':
+                # These existing ADR 0011 probes read the trusted harness's
+                # identity, including core.worktree and conditional includes.
+                # They must keep working without admitting arm workspace Git.
+                for name, expected in (
+                    ('_git_out', 'subprocess.run(["git", *args], cwd=cwd, capture_output=True, '
+                                 'text=True, check=True)'),
+                    ('harness_clone_root', 'subprocess.run(["git", "config", "-z", "--local", '
+                     '"--includes", "--show-origin", "--get-regexp", r"^include(if\\..*)?\\.path$"], '
+                     'cwd=start, capture_output=True, text=True)'),
+                ):
+                    method = next(node for node in tree.body
+                                  if isinstance(node, ast.FunctionDef) and node.name == name)
+                    sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                             and isinstance(node.func, ast.Attribute)
+                             and isinstance(node.func.value, ast.Name)
+                             and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                    self.assertEqual(len(sinks), 1)
+                    self.assertEqual(ast.dump(sinks[0]), ast.dump(ast.parse(expected, mode='eval').body))
+                    allowed_reads.add(id(sinks[0]))
             bindings = {}
             imported_sinks = set()
             for node in ast.walk(tree):
@@ -375,6 +434,8 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
+                if id(node) in allowed_reads:
+                    continue
                 sink = ((isinstance(node.func, ast.Attribute)
                          and node.func.attr in {'run', 'Popen', 'check_call', 'check_output'})
                         or (isinstance(node.func, ast.Name) and node.func.id in imported_sinks))
@@ -388,6 +449,35 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                     first = resolve(argv.elts[0])
                     self.assertFalse(isinstance(first, ast.Constant)
                                      and first.value in {'git', '/usr/bin/git'}, str(path))
+
+    def test_context_git_read_call_inventory_is_exact(self):
+        path = Path(run_eval.__file__).with_name('context.py')
+        tree = ast.parse(path.read_text())
+        calls = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'run' and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in {'self', 'consumer', 'source'}):
+                calls.append((tuple(arg.value if isinstance(arg, ast.Constant) else None
+                                    for arg in node.args), tuple(item.arg for item in node.keywords)))
+        self.assertCountEqual(calls, [
+            (('rev-parse', '--git-dir'), ('code',)),
+            (('rev-parse', '--verify', '--end-of-options', None), ()),
+            (('cat-file', '-e', None), ()), (('cat-file', 'blob', None), ()),
+            (('ls-tree', '-rz', None), ()), (('show', '-s', '--format=%ct', None), ()),
+            (('log', '--format=%H %ct', None), ()),
+        ])
+
+    def test_harness_metadata_git_read_call_inventory_is_exact(self):
+        tree = ast.parse(Path(run_eval.__file__).read_text())
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name) and node.func.id == '_git_out']
+        self.assertCountEqual(
+            [(tuple(ast.literal_eval(arg) for arg in node.args),
+              tuple(item.arg for item in node.keywords)) for node in calls], [
+                (('rev-parse', '--path-format=absolute', '--git-common-dir'), ('cwd',)),
+                (('config', '--local', '--includes', '--get', 'core.worktree'), ('cwd',)),
+            ])
 
     def test_skill_arm_records_named_error_and_skips_judge(self):
         import argparse

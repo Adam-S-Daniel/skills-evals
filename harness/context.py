@@ -215,6 +215,20 @@ class _Git:
         self.run("rev-parse", "--git-dir", code="repository_unavailable")
 
     def run(self, *args, code="missing_object") -> bytes:
+        # This object reader is separate from workspace Git. Only its audited
+        # object-query shapes may reach Git; filters, external diff drivers,
+        # network commands and writes are never part of frozen resolution.
+        read_only = all(isinstance(arg, str) for arg in args) and (
+            args == ("rev-parse", "--git-dir")
+            or (len(args) == 4 and args[:3] == ("rev-parse", "--verify", "--end-of-options")
+                and args[3].endswith("^{commit}") and _REF.fullmatch(args[3][:-9]))
+            or (len(args) == 3 and args[:2] == ("cat-file", "-e")
+                and args[2].endswith("^{commit}") and _SHA.fullmatch(args[2][:-9]))
+            or (len(args) == 3 and args[:2] in (("cat-file", "blob"), ("ls-tree", "-rz"),
+                                             ("log", "--format=%H %ct")) and _SHA.fullmatch(args[2]))
+            or (len(args) == 4 and args[:3] == ("show", "-s", "--format=%ct") and _SHA.fullmatch(args[3])))
+        if not read_only:
+            raise ContextError("unsupported_git_read", "frozen context permits only audited Git object reads")
         try:
             result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(self.path), *args],
                                     env=self.env, stdin=subprocess.DEVNULL,

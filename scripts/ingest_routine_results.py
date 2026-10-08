@@ -128,14 +128,20 @@ def parse_result_path(rel: str) -> dict:
         raise Rejected(f"{rel!r}: needs exactly one timestamp segment")
     at = stamps[0]
     key_parts, below = parts[:at], parts[at + 1:]
-    if key_parts and key_parts[0] == "guidance" and len(key_parts) == 2:
+    prefix_fixture = None
+    if key_parts and key_parts[0] == "guidance" and len(key_parts) in (2, 3):
         if not NAME_RE.fullmatch(key_parts[1]):
             raise Rejected(f"{rel!r}: bad guidance section name")
+        if len(key_parts) == 3:
+            prefix_fixture = key_parts.pop()
+            if (not NAME_RE.fullmatch(prefix_fixture) or prefix_fixture in RESERVED_NAMES
+                    or TRIAL_RE.fullmatch(prefix_fixture)):
+                raise Rejected(f"{rel!r}: bad guidance fixture name")
     elif len(key_parts) != 1 or not NAME_RE.fullmatch(key_parts[0]) \
             or key_parts[0] == "guidance":
         raise Rejected(f"{rel!r}: bad subject key")
     found = {"key": "/".join(key_parts), "timestamp": parts[at],
-             "fixture": None, "arm": None, "trial": None}
+             "fixture": prefix_fixture, "arm": None, "trial": None}
     if below == ["report.md"]:
         return {"kind": "report.md", **found}
     if below[-1:] == ["summary.json"]:
@@ -157,6 +163,8 @@ def parse_result_path(rel: str) -> dict:
                 or TRIAL_RE.fullmatch(name) or TIMESTAMP_RE.fullmatch(name):
             raise Rejected(f"{rel!r}: bad fixture or arm name")
     if len(arm_path) == 2:
+        if prefix_fixture is not None:
+            raise Rejected(f"{rel!r}: fixture occurs twice")
         found["fixture"] = arm_path[0]
     found["arm"] = arm_path[-1]
     return {"kind": kind, **found}
@@ -282,7 +290,7 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "errors", "scored", "trial_errors", "aggregate",
     "subject", "section", "mode", "bytes", "delivery", "hook_verdict",
     "installed", "decoy", "hook_returncode", "guard",
-    "model_tokens", "cross_model") + ("pairing", "role", "context",
+    "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
                                       "context_subject", "arm_context")
 AGENT_KEYS = ("usage", "cost_usd", "num_turns", "duration_ms")
 #: `harness` keys every summary has carried since #71; `effort` came later
@@ -445,7 +453,7 @@ SUBJECT_KEYS = {
               "tested_digest", "bytes"),
     "guidance": ("kind", "section", "file", "heading", "action", "start_char",
                  "end_char", "start_byte", "end_byte", "bytes", "deployed_digest",
-                 "tested_digest"),
+                 "tested_digest", "tested_bytes"),
 }
 ARM_CONTEXT_KEYS = ("skills", "skills_digest", "guidance_bytes",
                     "guidance_digest", "subject_present")
@@ -484,11 +492,16 @@ def check_in_place(doc, where: str, parts: dict) -> None:
             or (context["lock_digest"] is None) != (not sources):
         raise Rejected(f"{where}: context.sources must be a short list, empty "
                        "exactly when there is no lock")
+    seen_sources, seen_bundles = set(), set()
     for source in sources:
         _object(source, f"{where}: context source", SOURCE_KEYS, SOURCE_KEYS)
         _pattern(source["registry"], f"{where}: source registry", REPOSITORY_RE)
         _pattern(source["revision"], f"{where}: source revision", SHA_RE)
         _pattern(source["digest"], f"{where}: source digest", DIGEST_RE)
+        identity = (source["registry"], source["revision"], source["digest"])
+        if identity in seen_sources:
+            raise Rejected(f"{where}: duplicate context source")
+        seen_sources.add(identity)
         bundles = source["bundles"]
         if not isinstance(bundles, list) or not bundles \
                 or len(bundles) > MAX_CONTEXT_ITEMS:
@@ -496,6 +509,9 @@ def check_in_place(doc, where: str, parts: dict) -> None:
         for bundle in bundles:
             _object(bundle, f"{where}: bundle", ("name", "digest"), ("name", "digest"))
             _pattern(bundle["name"], f"{where}: bundle name", NAME_RE)
+            if bundle["name"] in seen_bundles:
+                raise Rejected(f"{where}: duplicate context bundle")
+            seen_bundles.add(bundle["name"])
             _pattern(bundle["digest"], f"{where}: bundle digest", DIGEST_RE)
     proof = context["guidance"]
     _object(proof, f"{where}: context.guidance", CONTEXT_GUIDANCE_KEYS,
@@ -509,6 +525,8 @@ def check_in_place(doc, where: str, parts: dict) -> None:
         raise Rejected(f"{where}: guidance sections must be a short list")
     for section in proof["sections"]:
         _pattern(section, f"{where}: guidance section", NAME_RE)
+    if len(proof["sections"]) != len(set(proof["sections"])):
+        raise Rejected(f"{where}: duplicate guidance section")
     measurements = context["measurements"]
     _object(measurements, f"{where}: measurements", MEASUREMENT_KEYS,
             MEASUREMENT_KEYS)
@@ -527,18 +545,25 @@ def check_in_place(doc, where: str, parts: dict) -> None:
     _pattern(subject["tested_digest"], f"{where}: tested digest", DIGEST_RE)
     _pattern(subject["deployed_digest"], f"{where}: deployed digest", DIGEST_RE,
              null=True)
-    # Removed: the deployed version is what is tested. Added: nothing deployed.
+    # Removed: a candidate may replace the deployed subject in with.
+    # Added: nothing deployed.
     if (subject["action"] == "removed") != (subject["deployed_digest"] is not None):
         raise Rejected(f"{where}: context_subject digests do not match its action")
     _integer(subject["bytes"], f"{where}: context_subject.bytes", 0, MAX_CONTEXT_BYTES)
     if kind == "skill":
         _pattern(subject["registry"], f"{where}: subject registry", REPOSITORY_RE)
         _pattern(subject["bundle"], f"{where}: subject bundle", NAME_RE)
+        if subject["action"] == "removed" and not any(
+                source["registry"] == subject["registry"] and any(
+                    bundle["name"] == subject["bundle"] for bundle in source["bundles"])
+                for source in sources):
+            raise Rejected(f"{where}: removed subject is not in a deployed source bundle")
         if subject["skill"] != doc.get("skill"):
             raise Rejected(f"{where}: context_subject.skill does not match its key")
     else:
         if subject["section"] != doc.get("section"):
             raise Rejected(f"{where}: context_subject.section does not match its key")
+        _integer(subject["tested_bytes"], f"{where}: tested extent bytes", 1, MAX_CONTEXT_BYTES)
         _string(subject["file"], f"{where}: subject file", 256)
         _string(subject["heading"], f"{where}: subject heading", 256)
         for key in ("start_char", "end_char", "start_byte", "end_byte"):
@@ -553,11 +578,48 @@ def check_in_place(doc, where: str, parts: dict) -> None:
     _integer(arm["skills"], f"{where}: arm_context.skills", 0, 4096)
     _pattern(arm["skills_digest"], f"{where}: skills digest", DIGEST_RE)
     _pattern(arm["guidance_digest"], f"{where}: arm guidance digest", DIGEST_RE)
-    _integer(arm["guidance_bytes"], f"{where}: arm guidance bytes", 1,
+    _integer(arm["guidance_bytes"], f"{where}: arm guidance bytes", 0,
              MAX_CONTEXT_BYTES)
+    if kind == "skill" and arm["guidance_digest"] != proof["digest"]:
+        raise Rejected(f"{where}: skill treatment changed guidance")
+    if kind == "skill" and arm["guidance_bytes"] != proof["bytes"]:
+        raise Rejected(f"{where}: skill treatment changed guidance size")
+    if kind == "guidance":
+        wanted_bytes = proof["bytes"]
+        if subject["action"] == "removed":
+            wanted_bytes += (subject["tested_bytes"] - subject["bytes"] if doc["role"] == "with"
+                             else -subject["bytes"])
+        elif doc["role"] == "with":
+            wanted_bytes += 1 + subject["tested_bytes"]
+        if arm["guidance_bytes"] != wanted_bytes:
+            raise Rejected(f"{where}: guidance size does not match its subject extent")
     if arm["subject_present"] is not (doc["role"] == "with"):
         raise Rejected(f"{where}: arm_context.subject_present does not match its role")
 
+
+
+GUIDANCE_RULE_IDS = {
+    "unpinned_actions": "pinning-github-actions",
+    "event_input_in_run": "data-exposure-in-ci",
+    "push_without_verification": "git-push-does-not-mean-commit-exists",
+}
+
+
+def check_guidance_violations(value, where: str) -> None:
+    _object(value, f"{where}: guidance_violations", ("schema_version", "rules"), ("schema_version", "rules"))
+    _integer(value["schema_version"], f"{where}: guidance violation version", 1, 1)
+    _object(value["rules"], f"{where}: guidance rules", GUIDANCE_RULE_IDS, GUIDANCE_RULE_IDS)
+    for name, section_id in GUIDANCE_RULE_IDS.items():
+        entry = value["rules"][name]
+        keys = ("section_id", "status", "count", "observed_count")
+        _object(entry, f"{where}: guidance rule {name}", keys, keys)
+        if entry["section_id"] != section_id or entry["status"] not in ("known", "unknown"):
+            raise Rejected(f"{where}: guidance rule identity or status is invalid")
+        _integer(entry["observed_count"], f"{where}: observed guidance violations", 0, 100_000_000)
+        _integer(entry["count"], f"{where}: guidance violations", 0, 100_000_000, null=True)
+        if (entry["status"] == "known" and entry["count"] != entry["observed_count"]) or (
+                entry["status"] == "unknown" and entry["count"] is not None):
+            raise Rejected(f"{where}: guidance violation count disagrees with its status")
 
 def check_summary(doc, where: str, parts: dict) -> None:
     _object(doc, where, SUMMARY_ALLOWED, SUMMARY_REQUIRED)
@@ -653,6 +715,8 @@ def check_summary(doc, where: str, parts: dict) -> None:
         if field in doc:
             _integer(doc[field], f"{where}: {field}", 0, MAX_TRIALS)
     check_in_place(doc, where, parts)
+    if "guidance_violations" in doc:
+        check_guidance_violations(doc["guidance_violations"], where)
     for field in ("trial_errors", "aggregate", "section", "mode", "bytes",
                   "delivery", "hook_verdict", "installed", "decoy",
                   "hook_returncode", "guard", "subject"):

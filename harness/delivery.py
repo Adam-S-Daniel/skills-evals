@@ -26,13 +26,15 @@ local run with `in_place_local_unsupported`, and no credential adapter exists.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import stat
+
+import yaml
 
 import context
 import guidance
@@ -137,6 +139,8 @@ def _split_name(name: str) -> tuple[str | None, str]:
 def _tree_files(root: Path) -> tuple[dict, dict]:
     """A registry checkout's skill directory as raw bytes and Git modes.
     Symlinks and special files fail closed: they are not skill content."""
+    if root.is_symlink() or not root.is_dir():
+        raise DeliveryError("unsafe_path", "a skill source must be a regular directory")
     files, modes = {}, {}
     for current, dirs, names in os.walk(root):
         for name in sorted(dirs + names):
@@ -158,7 +162,7 @@ def _identity(entry: dict) -> str:
     """A registries.yml entry's `OWNER/REPO`, from its GitHub URL."""
     url = str(entry.get("url", ""))
     prefix = "https://github.com/"
-    identity = url[len(prefix):].rstrip("/") if url.startswith(prefix) else ""
+    identity = url[len(prefix):].rstrip("/").removesuffix(".git") if url.startswith(prefix) else ""
     try:
         return context._repository(identity, "invalid_registry")
     except context.ContextError as exc:
@@ -175,6 +179,8 @@ def _registry_matches(registries: Mapping[str, dict], bundle: str | None, skill:
             continue
         pattern = "/".join([*parts[:-2], skill, "SKILL.md"])
         for match in sorted(path.glob(pattern)):
+            if not match.resolve().is_relative_to(path.resolve()):
+                raise DeliveryError("unsafe_path", "a registry skill escapes its checkout through a symlink")
             if not match.is_file():
                 continue
             rel = match.relative_to(path).parts
@@ -187,7 +193,8 @@ def _registry_matches(registries: Mapping[str, dict], bundle: str | None, skill:
 
 
 def resolve_skill_subject(frozen: context.FrozenContext, name: str,
-                          registries: Mapping[str, dict]) -> SkillSubject:
+                          registries: Mapping[str, dict], *, registry: str | None = None,
+                          candidate: Path | None = None) -> SkillSubject:
     """The one skill `name` (SKILL or BUNDLE:SKILL) names.
 
     Adopted by the context: the deployed copy, removed from `without` (the
@@ -196,17 +203,22 @@ def resolve_skill_subject(frozen: context.FrozenContext, name: str,
     are an error, never a sorted pick.
     """
     bundle, skill = _split_name(name)
+    if registry is not None:
+        context._repository(registry, "invalid_subject")
     adopted = [tree for tree in frozen.skills
-               if tree.skill == skill and (bundle is None or tree.bundle == bundle)]
+               if tree.skill == skill and (bundle is None or tree.bundle == bundle)
+               and (registry is None or tree.registry == registry)]
     if len(adopted) > 1:
         raise DeliveryError("ambiguous_skill", f"{skill} is adopted from "
                             f"{len(adopted)} bundles ({', '.join(t.bundle for t in adopted)}); "
                             "qualify it as BUNDLE:SKILL")
     if adopted:
         tree = adopted[0]
-        return SkillSubject(tree.registry, tree.bundle, tree.skill, "removed",
-                            tree.digest, tree.digest, tree.files, tree.modes)
-    matches = _registry_matches(registries, bundle, skill)
+        subject = SkillSubject(tree.registry, tree.bundle, tree.skill, "removed",
+                               tree.digest, tree.digest, tree.files, tree.modes)
+        return _skill_candidate(subject, candidate)
+    matches = [match for match in _registry_matches(registries, bundle, skill)
+               if registry is None or match[0] == registry]
     if not matches:
         raise DeliveryError("skill_not_found", f"{name} is neither adopted by the context "
                             "nor present in a registry checkout")
@@ -217,8 +229,37 @@ def resolve_skill_subject(frozen: context.FrozenContext, name: str,
     registry, found, path = matches[0]
     context._name(found, "subject bundle")
     files, modes = _tree_files(path)
-    return SkillSubject(registry, found, skill, "added", None,
-                        context._file_digest(files), files, modes)
+    if any(tree.bundle == found and tree.registry != registry for tree in frozen.skills):
+        raise DeliveryError("catalog_collision", "subject bundle is deployed from another registry")
+    subject = SkillSubject(registry, found, skill, "added", None,
+                           context._file_digest(files), files, modes)
+    return _skill_candidate(subject, candidate)
+
+
+def _skill_candidate(subject: SkillSubject, candidate: Path | None) -> SkillSubject:
+    if candidate is None:
+        return subject
+    try:
+        files, modes = _tree_files(Path(candidate))
+    except OSError as exc:
+        raise DeliveryError("candidate_unreadable", "skill candidate could not be read") from exc
+    # The CLI may use front matter's name for its catalog entry. A candidate
+    # cannot rename the identity while retaining its directory's old name.
+    context._catalog(subject.bundle, subject.skill, files["SKILL.md"])
+    if _catalog_name(files["SKILL.md"]) not in (None, subject.skill):
+        raise DeliveryError("candidate_identity_mismatch", "candidate catalog name differs from the subject")
+    return replace(subject, files=files, modes=modes, tested_digest=context._file_digest(files))
+
+
+def _catalog_name(raw: bytes) -> str | None:
+    context._catalog("catalog", "entry", raw)
+    lines = raw.decode("utf-8").splitlines()
+    end = next(i for i, line in enumerate(lines[1:], 1) if line == "---")
+    metadata = yaml.safe_load("\n".join(lines[1:end]))
+    name = metadata.get("name")
+    if name is not None and (not isinstance(name, str) or context._controls(name)):
+        raise DeliveryError("invalid_skill_metadata", "catalog name must be plain text")
+    return name
 
 
 @dataclass(frozen=True)
@@ -235,13 +276,14 @@ class SectionSubject:
     raw: bytes  # the source file's bytes
     deployed_digest: str | None
     tested_digest: str
+    tested_raw: bytes
 
     def record(self) -> dict:
         return {"kind": "guidance", "section": self.section, "file": self.file,
                 "heading": self.heading, "action": self.action,
                 "start_char": self.start_char, "end_char": self.end_char,
                 "start_byte": self.start_byte, "end_byte": self.end_byte,
-                "bytes": self.end_byte - self.start_byte,
+                "bytes": self.end_byte - self.start_byte, "tested_bytes": len(self.tested_raw),
                 "deployed_digest": self.deployed_digest,
                 "tested_digest": self.tested_digest}
 
@@ -263,7 +305,8 @@ def _extent(raw: bytes, heading: str, where: str) -> tuple[int, int, int, int]:
 
 
 def resolve_section_subject(frozen: context.FrozenContext, section: str,
-                            repositories: Mapping[str, Path]) -> SectionSubject:
+                            repositories: Mapping[str, Path], *,
+                            candidate: Path | None = None) -> SectionSubject:
     """The section's row in the pinned manifest, located in its source file.
     In a delivered file it is removed from `without`; in an opt-in file the
     repository did not adopt, it is added to `with`."""
@@ -282,8 +325,20 @@ def resolve_section_subject(frozen: context.FrozenContext, section: str,
         raw, action = context.read_guidance_file(frozen, path, repositories), "added"
     start_char, end_char, start, end = _extent(raw, heading, path)
     digest = _sha256(raw[start:end])
+    tested_raw = raw[start:end]
+    if candidate is not None:
+        candidate = Path(candidate)
+        if candidate.is_symlink() or not candidate.is_file():
+            raise DeliveryError("unsafe_path", "a guidance candidate must be a regular file")
+        try:
+            candidate_raw = candidate.read_bytes()
+        except OSError as exc:
+            raise DeliveryError("candidate_unreadable", "guidance candidate could not be read") from exc
+        _, _, candidate_start, candidate_end = _extent(candidate_raw, heading, "guidance candidate")
+        tested_raw = candidate_raw[candidate_start:candidate_end]
     return SectionSubject(section, path, heading, action, start_char, end_char, start,
-                          end, raw, digest if action == "removed" else None, digest)
+                          end, raw, digest if action == "removed" else None,
+                          _sha256(tested_raw), tested_raw)
 
 
 def guidance_payload(frozen: context.FrozenContext, subject: SectionSubject | None,
@@ -298,10 +353,15 @@ def guidance_payload(frozen: context.FrozenContext, subject: SectionSubject | No
         if subject.action == "removed" and role == "without":
             files = [(path, raw[:subject.start_byte] + raw[subject.end_byte:]
                       if path == subject.file else raw) for path, raw in files]
+        elif role == "with" and subject.action == "removed":
+            files = [(path, raw[:subject.start_byte] + subject.tested_raw + raw[subject.end_byte:]
+                      if path == subject.file else raw) for path, raw in files]
         elif subject.action == "added" and role == "with":
-            files.append((subject.file, subject.raw[subject.start_byte:subject.end_byte]))
+            files.append((subject.file, subject.tested_raw))
     payload = files[0][1] + b"".join(b"\n" + raw for _, raw in files[1:])
-    if subject is None or (subject.action == "removed") == (role == "with"):
+    if subject is None or (subject.action == "added" and role == "without") or (
+            subject.action == "removed" and role == "with"
+            and subject.tested_digest == subject.deployed_digest):
         if payload != frozen.guidance:
             raise DeliveryError("guidance_assembly_mismatch",
                                 "per-file assembly differs from the frozen guidance")
@@ -397,12 +457,8 @@ def installed_skills(config: Path) -> dict[str, str]:
     return out
 
 
-def _skill_dirs(root: Path) -> list[Path]:
-    return sorted(p.parent for p in Path(root).glob("*/SKILL.md")) if Path(root).is_dir() else []
-
-
 def check_skills(config: Path, workspace: Path, expected: Mapping[str, str],
-                 subject: SkillSubject | None, role: str) -> None:
+                 subject: SkillSubject | None, role: str, *, home: Path | None = None) -> None:
     """The filesystem proof: exactly the expected plugin skills, and the
     subject present once in `with`, nowhere in `without`, under any name."""
     found = installed_skills(config)
@@ -414,14 +470,32 @@ def check_skills(config: Path, workspace: Path, expected: Mapping[str, str],
     digests = {subject.tested_digest, subject.deployed_digest} - {None}
     copies = [name for name, digest in found.items() if digest in digests]
     aliases = []
-    for root in (Path(workspace) / ".claude" / "skills", Path(config) / "skills"):
-        for path in _skill_dirs(root):
-            try:
-                files, _ = _tree_files(path)
-            except DeliveryError:
+    roots = [Path(workspace) / ".claude", Path(config)]
+    if home is not None:
+        roots.append(Path(home) / ".claude")
+    canonical = plugins_root(config).resolve()
+    for root in roots:
+        for current, dirs, names in os.walk(root, followlinks=False):
+            directory = Path(current)
+            if directory.resolve() == canonical:
+                dirs[:] = []
                 continue
-            if path.name == subject.skill or context._file_digest(files) in digests:
-                aliases.append(path.name)
+            if any((directory / name).is_symlink() for name in dirs):
+                raise DeliveryError("subject_alias_present", "an unverified plugin or skill alias is present")
+            if "SKILL.md" not in names:
+                continue
+            files, _ = _tree_files(directory)
+            catalog_name = _catalog_name(files["SKILL.md"])
+            if (directory.name == subject.skill or context._file_digest(files) in digests
+                    or (catalog_name is not None and catalog_name.rsplit(":", 1)[-1] == subject.skill)):
+                aliases.append(directory.name)
+    for name in found:
+        bundle, skill = name.split(":", 1)
+        catalog_name = _catalog_name((plugins_root(config) / bundle / "skills" / skill / "SKILL.md").read_bytes())
+        if catalog_name is not None and catalog_name.rsplit(":", 1)[-1] == subject.skill and skill != subject.skill:
+            aliases.append(name)
+    copies += [name for name, digest in found.items()
+               if name.split(":", 1)[-1] == subject.skill and digest not in digests]
     if aliases:
         raise DeliveryError("subject_alias_present", f"{subject.skill} also reaches the "
                             "arm outside its plugin")
@@ -437,7 +511,7 @@ def expected_skills(frozen: context.FrozenContext, subject: SkillSubject | None,
         name = f"{subject.bundle}:{subject.skill}"
         if subject.action == "removed" and role == "without":
             del out[name]
-        elif subject.action == "added" and role == "with":
+        elif role == "with":
             out[name] = subject.tested_digest
     return out
 

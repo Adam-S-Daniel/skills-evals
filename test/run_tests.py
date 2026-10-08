@@ -7237,6 +7237,10 @@ class TestIssue67Review(unittest.TestCase):
             eval_dir = self._fixture_dir(tmp, pinned=False)
             path = self._roster_file(tmp)
             results = Path(tmp) / "results"
+            skill = Path(tmp) / "plugins/test-bundle/skills/a-skill/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: a-skill\ndescription: Offline roster fixture.\n---\n",
+                             encoding="utf-8")
             argv = ["run_eval.py", str(eval_dir), "--arm", "both",
                     "--roster", str(path), "--results-dir", str(results),
                     "--registry", f"adam-agentskills={tmp}"]
@@ -14980,12 +14984,13 @@ class TestIssue81(unittest.TestCase):
             fixture = copy.deepcopy(self._fixture("recruiter-reply"))
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             # recruiter-reply's registry is adam-agentskills-private, which CI
-            # has no token to clone, so `_run_arm` would stop at
-            # registry_not_found before the seed cap under test. run_agent is
-            # stubbed below, so any existing directory satisfies the checkout
-            # test.
+            # has no token to clone. Give the pre-agent install a minimal
+            # offline skill so the stubbed agent reaches the seed cap.
             private_stub = Path(tmp) / "adam-agentskills-private"
-            private_stub.mkdir()
+            skill = private_stub / "plugins/test-bundle/skills" / fixture["skill"] / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: adam-writing-style\ndescription: Offline seed cap fixture.\n---\n",
+                             encoding="utf-8")
             registries["adam-agentskills-private"] = dict(
                 registries["adam-agentskills-private"], path=private_stub)
             args = argparse.Namespace(model=None, timeout=30,
