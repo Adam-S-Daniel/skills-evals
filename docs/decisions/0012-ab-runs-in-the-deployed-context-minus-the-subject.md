@@ -120,6 +120,36 @@ The build must cover each of these:
   efficiency KPI) separately from total evaluation cost, guards included.
   The fixture schema needs a context-size budget.
 
+## Decisions on the build (Adam, 2026-10-07)
+
+An implementation plan (Codex, `gpt-6.1-sol`, 2026-10-07) raised five
+questions for the owner. Answers, recorded verbatim:
+
+- **Local runs:** "Cloud-only for now (Recommended)". In-place runs are
+  built for the routine path, where a nested `claude` authenticates with no
+  credential in reach (ADR 0010). A local in-place run fails closed with a
+  named error. A credential-file adapter for local runs is deferred to its
+  own review and a controlled live test.
+- **Context repository:** "Explicit per fixture (Recommended)". Every
+  fixture names its context repository: the operational repository the
+  skill is for, or a representative consumer. There is no fleet-wide
+  default. A fixture without one can run only the isolation diagnostic.
+  Real-work fixtures take theirs from the scaffolder's candidate
+  (repository and base commit).
+- **Guidance revision:** "Pin explicitly, else block (Recommended)". A
+  fixture's `guidance_revision` must be one whose bytes match the managed
+  guidance the repository shipped at that commit. If none can be proven,
+  the fixture is blocked from in-place runs. "The latest guidance at that
+  time" is never inferred.
+- **Subject version:** "Deployed by default (Recommended)". Keep-or-remove
+  evaluations test the version the context repository deployed. The
+  improvement loop explicitly supplies its candidate, which replaces only
+  that subject in the `with` arm. Both digests are recorded.
+- **Context budgets:** the plan's default stands. Measure the migrated
+  contexts, commit limits with about 25% headroom, and require review to
+  raise them. A context over budget blocks the run rather than being
+  truncated.
+
 ## Consequences
 
 - **Deltas mean what the keep-or-remove decision needs:** the subject's
