@@ -147,6 +147,18 @@ class WorktreeResolutionTests(_TempLayout):
         self.assertEqual(run_eval.harness_clone_root(self.worktree), self.clone)
         self.assertEqual(run_eval.harness_clone_root(self.clone), self.clone)
 
+    def test_ambient_git_variables_cannot_redirect_the_clone_lookup(self):
+        # harness_repo strips every GIT_* variable: an inherited GIT_DIR
+        # naming another repository must not move the deny roots.
+        other = self.root / "other"
+        other.mkdir()
+        git("init", "-q", cwd=other)
+        with mock.patch.dict(os.environ, {"GIT_DIR": str(other / ".git"),
+                                          "GIT_WORK_TREE": str(other)}):
+            self.assertEqual(run_eval.harness_clone_root(self.worktree), self.clone)
+            self.assertEqual(run_eval.harness_git_common_dir(self.worktree),
+                             self.clone / ".git")
+
     def test_a_directory_outside_git_is_its_own_root(self):
         self.assertEqual(run_eval.harness_clone_root(self.registry), self.registry)
 

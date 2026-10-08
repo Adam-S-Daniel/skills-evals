@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
+from harness_repo import harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import guidance_violations  # noqa: E402
 from scorers import judge, objective  # noqa: E402
@@ -894,83 +895,6 @@ class ArmReadIsolationError(ValueError):
     def __init__(self, message: str, code: str = "workspace_read_denied"):
         super().__init__(message)
         self.code = code
-
-
-def _git_out(*args: str, cwd: Path) -> str | None:
-    try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
-                              text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
-def harness_git_common_dir(start: Path = HARNESS_ROOT) -> Path | None:
-    """The clone's shared git directory (its whole history), or None."""
-    out = _git_out("rev-parse", "--path-format=absolute", "--git-common-dir",
-                   cwd=start)
-    return Path(out).resolve() if out else None
-
-
-def harness_clone_root(start: Path = HARNESS_ROOT) -> Path | None:
-    """The main checkout of the clone a checkout belongs to, or None when it
-    cannot be determined with certainty.
-
-    In order: `core.worktree` in the repository's own config, includes
-    followed, when set (it overrides every default, whatever the directory
-    is called; an include git cannot read makes it None); the
-    nearest ancestor of `start` whose `.git` (a directory, or a `gitdir:`
-    file as `--separate-git-dir` and linked worktrees write) is that shared
-    directory; the parent of a shared directory named `.git`, which is
-    git's own default work tree. Git records no other path back from a
-    `--separate-git-dir` directory to its checkout, so a linked worktree
-    outside the main checkout, with the metadata elsewhere and no
-    `core.worktree`, is None: the arm fails rather than guess. Not a git
-    checkout (or no git): `start` itself.
-    """
-    start = Path(start)
-    common = harness_git_common_dir(start)
-    if common is None:
-        return start.resolve()
-    # The repository's own config, `[include]` and `[includeIf]` followed as
-    # git follows them; an include git cannot read is a value we cannot see,
-    # so the checkout is unknown rather than guessed.
-    # `-z`: an `includeIf` condition may hold spaces (`gitdir:**/[ r]*`), so
-    # each entry is `<origin>\0<key>\n<value>\0`, never split on a space.
-    try:
-        listed = subprocess.run(
-            ["git", "config", "-z", "--local", "--includes", "--show-origin",
-             "--get-regexp", r"^include(if\..*)?\.path$"],
-            cwd=start, capture_output=True, text=True).stdout
-    except OSError:
-        return None
-    fields = listed.split("\0")
-    for origin, entry in zip(fields[0::2], fields[1::2]):
-        _, _, value = entry.partition("\n")
-        source = Path(origin.removeprefix("file:"))
-        if not source.is_absolute():
-            source = start / source
-        target = Path(value).expanduser()
-        if not target.is_absolute():
-            target = source.parent / target
-        if not value or not target.is_file() or not os.access(target, os.R_OK):
-            return None
-    configured = _git_out("config", "--local", "--includes", "--get",
-                          "core.worktree", cwd=start)
-    if configured:
-        return (common / configured).resolve()
-    for candidate in (start.resolve(), *start.resolve().parents):
-        dot_git = candidate / ".git"
-        if dot_git.is_dir() and dot_git.resolve() == common:
-            return candidate
-        if dot_git.is_file():
-            text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
-            if text.startswith("gitdir:"):
-                target = (candidate / text[len("gitdir:"):].strip()).resolve()
-                if target == common:
-                    return candidate
-    if common.name == ".git":
-        return common.parent
-    return None
 
 
 # Resolved once, at import: before any test stands in for `subprocess.run`,
