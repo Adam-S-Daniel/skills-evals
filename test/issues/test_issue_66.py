@@ -67,6 +67,11 @@ import run_eval  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 TS = "20260716T070000Z"
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
 DATE = "2026-07-16"
 
 # One check that passes on the untouched seed and one that passes only when
@@ -155,17 +160,21 @@ print(json.dumps(payload))
 def _child_env(tmp: Path, **extra: str) -> dict:
     """The WHOLE environment of a child process a test starts.
 
-    Built, not inherited: only `PATH` comes from the operator, so no
+    Built, not inherited: nothing comes from the operator, so no
     `$EVAL_ROSTER`, `$SKILLS_EVALS_REGISTRIES`, `$AGENTSKILLS_DIR` or
-    `$CLAUDE_BIN` of theirs can decide a result. `HOME` and `TMPDIR` are
-    inside `tmp`. Git's auto-maintenance is off: the harness commits in a
+    `$CLAUDE_BIN` of theirs can decide a result. `PATH` is `TEST_PATH` and
+    the mount table an empty fixture, so the arm's read fence does not
+    depend on the host's either. `HOME` and `TMPDIR` are inside `tmp`. Git's auto-maintenance is off: the harness commits in a
     workspace it then deletes, and a detached `git maintenance` would race
     that (test/run_tests.py, `without_git_auto_maintenance`).
     """
     home, scratch = tmp / "home", tmp / "scratch"
     home.mkdir(exist_ok=True)
     scratch.mkdir(exist_ok=True)
-    env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(home),
+    mountinfo = tmp / "mountinfo"
+    mountinfo.write_text("", encoding="utf-8")
+    env = {"PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo),
+           "HOME": str(home),
            "TMPDIR": str(scratch), "LANG": "C.UTF-8",
            "PYTHONDONTWRITEBYTECODE": "1",
            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto",

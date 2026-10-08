@@ -66,23 +66,54 @@ def flag_value(argv: list[str], flag: str) -> str:
     return argv[indexes[0] + 1]
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class ArmSandboxSettingsTests(unittest.TestCase):
     def test_the_settings_deny_github_and_fail_closed_with_no_escape(self):
+        # Spelled out, not rebuilt from the helper: a widening key or an
+        # allowed domain added to the settings must fail here. The filesystem
+        # block is the read fence (test_issue_arm_read_isolation pins it).
         flags = run_eval.arm_isolation_flags()
         settings = json.loads(flag_value(flags, "--settings"))
-        self.assertEqual(settings, run_eval.arm_sandbox_settings())
-        sandbox = settings["sandbox"]
-        self.assertIs(sandbox["enabled"], True)
-        self.assertIs(sandbox["failIfUnavailable"], True)
-        self.assertIs(sandbox["allowUnsandboxedCommands"], False)
-        self.assertIs(sandbox["network"]["strictAllowlist"], True)
-        self.assertEqual(sandbox["network"]["allowedDomains"], [])
+        self.assertEqual(set(settings), {"sandbox", "permissions"})
+        sandbox = dict(settings["sandbox"])
+        self.assertEqual(set(sandbox.pop("filesystem")),
+                         {"denyRead", "allowRead", "denyWrite"})
+        self.assertEqual(sandbox, {
+            "enabled": True,
+            "failIfUnavailable": True,
+            "allowUnsandboxedCommands": False,
+            "excludedCommands": [],
+            "network": {
+                "strictAllowlist": True,
+                "allowedDomains": [],
+                "deniedDomains": [
+                    "github.com", "*.github.com", "codeload.github.com",
+                    "githubusercontent.com", "*.githubusercontent.com",
+                    "adamdaniel.ai", "*.adamdaniel.ai", "jodidaniel.com",
+                    "*.jodidaniel.com", "cdn.jsdelivr.net"],
+                "allowAllUnixSockets": False,
+                "allowUnixSockets": [],
+                "allowLocalBinding": False,
+            },
+        })
         self.assertLessEqual(REQUIRED_DENIED, set(sandbox["network"]["deniedDomains"]))
-        # Nothing that widens it: no exclusions, no proxy of our own.
-        self.assertNotIn("excludedCommands", sandbox)
-        self.assertNotIn("filesystem", sandbox)
-        for key in ("httpProxyPort", "socksProxyPort", "allowAllUnixSockets"):
-            self.assertNotIn(key, sandbox["network"])
+        self.assertEqual(set(settings["permissions"]), {"deny"})
+        self.assertTrue(all(rule.startswith("Read(//")
+                            for rule in settings["permissions"]["deny"]))
+        self.assertEqual(flags[2:], ["--disallowedTools", "WebFetch,WebSearch",
+                                     "--no-chrome"])
 
     def test_the_web_tools_are_removed(self):
         tools = flag_value(run_eval.arm_isolation_flags(), "--disallowedTools")
@@ -115,8 +146,12 @@ class _StandInBase(unittest.TestCase):
                 "env": {"SBX_LOG": str(self.log), "SBX_MODE": mode}, **extra}
 
     def assert_sandboxed(self, argv: list[str]) -> None:
-        self.assertEqual(json.loads(flag_value(argv, "--settings")),
-                         run_eval.arm_sandbox_settings())
+        settings = json.loads(flag_value(argv, "--settings"))
+        self.assertEqual(settings["sandbox"]["network"],
+                         run_eval.arm_sandbox_settings()["sandbox"]["network"])
+        self.assertIs(settings["sandbox"]["failIfUnavailable"], True)
+        self.assertIn(str(self.home.resolve()),
+                      settings["sandbox"]["filesystem"]["denyRead"])
         self.assertEqual(flag_value(argv, "--disallowedTools"), "WebFetch,WebSearch")
 
 

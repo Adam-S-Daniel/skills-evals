@@ -59,6 +59,20 @@ def workflow(steps):
     return "jobs:\n  test:\n    steps:\n" + steps
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
+
 class GuidanceViolationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -182,7 +196,8 @@ class GuidanceViolationTests(unittest.TestCase):
                                                      stdout=json.dumps(reply), stderr="")
                     for reply in replies]
         with mock.patch.object(run_eval.subprocess, "run", side_effect=scripted) as run, \
-                mock.patch.object(run_eval, "agent_env", return_value={"HOME": str(self.workspace)}), \
+                mock.patch.object(run_eval, "agent_env", return_value={"PATH": arm_test_environment()["PATH"],
+                                                                     "HOME": str(self.workspace)}), \
                 mock.patch.dict(run_eval.os.environ, {"CLAUDE_BIN": "unused-cli"}):
             answer = run_eval.run_agent(self.workspace, "first", {
                 "name": "without_skill", "timeout": 5,

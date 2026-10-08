@@ -51,6 +51,13 @@ print(json.dumps({{"type": "result", "is_error": False, "result": "{{}}",
 """
 
 
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
+
+
 class AutoMemoryIsOffForEverySession(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="automem-"))
@@ -64,9 +71,12 @@ class AutoMemoryIsOffForEverySession(unittest.TestCase):
         stand_in.chmod(0o755)
         # The ambient environment tries to force auto-memory ON: the sinks
         # must override it, not merely forward whatever the parent had.
+        mountinfo = self.root / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
         patcher = mock.patch.dict(os.environ, {"HOME": str(self.home),
                                                "CLAUDE_BIN": str(stand_in),
-                                               FLAG: "0"})
+                                               FLAG: "0", "PATH": TEST_PATH,
+                                               run_eval.MOUNTINFO_ENV: str(mountinfo)})
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -91,7 +101,7 @@ class AutoMemoryIsOffForEverySession(unittest.TestCase):
         self.assertEqual(self.memory_files(), [])
 
     def test_guidance_arm_env_override(self):
-        override = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.home),
+        override = {"PATH": TEST_PATH, "HOME": str(self.home),
                     FLAG: "0"}
         result = run_eval.run_agent(self.ws, "do it", {
             "name": "guidance", "timeout": 60, "env_override": override})

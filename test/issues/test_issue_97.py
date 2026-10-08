@@ -72,6 +72,9 @@ DISCOVERY_ENV = "SKILLS_EVALS_DISCOVERY_DIR"
 
 _MEMORY_BEFORE: str | None = None
 
+sys.path.insert(0, str(TEST_DIR))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
 
 def _watched_user_memory() -> Path:
     override = os.environ.get(MEMORY_ENV)
@@ -92,6 +95,7 @@ def _memory_fingerprint(path: Path) -> str:
         return f"unreadable: {type(exc).__name__}"
 
 
+@install_arm_test_environment
 def setUpModule() -> None:
     """Second net under test/run_tests.py's run-wide guard.
 
@@ -107,13 +111,16 @@ def setUpModule() -> None:
 
 
 def tearDownModule() -> None:
-    path = _watched_user_memory()
-    after = _memory_fingerprint(path)
-    if after != _MEMORY_BEFORE:
-        raise AssertionError(
-            f"{path} changed while this module ran ({_MEMORY_BEFORE} -> "
-            f"{after}) — no test in this file may write the fleet's user "
-            "memory; every arm gets a scratch config dir")
+    try:
+        path = _watched_user_memory()
+        after = _memory_fingerprint(path)
+        if after != _MEMORY_BEFORE:
+            raise AssertionError(
+                f"{path} changed while this module ran ({_MEMORY_BEFORE} -> "
+                f"{after}) — no test in this file may write the fleet's user "
+                "memory; every arm gets a scratch config dir")
+    finally:
+        unittest.doModuleCleanups()
 
 
 # A guidance checkout the payload tests build from scratch: base.md with a

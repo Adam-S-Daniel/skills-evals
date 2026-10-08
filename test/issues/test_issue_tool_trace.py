@@ -73,6 +73,20 @@ def cli_reply(payload: object, returncode: int = 0) -> subprocess.CompletedProce
                                        stdout=json.dumps(payload), stderr="")
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
+
 class ToolEventTests(unittest.TestCase):
     def setUp(self):
         self.events = tool_events(verbose_array(), [ENV_SECRET])
@@ -301,7 +315,7 @@ class RunAgentTraceTests(unittest.TestCase):
         self.workspace = Path(self.temp.name)
         home = self.workspace / "home"
         home.mkdir()
-        self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
+        self.env = {**arm_test_environment(), "HOME": str(home),
                     "TMPDIR": str(self.workspace), "LANG": "C.UTF-8",
                     "ANTHROPIC_AUTH_TOKEN": ENV_SECRET,
                     "CLAUDE_BIN": str(self.workspace / "no-cli")}

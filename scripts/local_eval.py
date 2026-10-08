@@ -12,7 +12,7 @@ Usage:
 
     python3 scripts/local_eval.py evals/<skill> --results-dir ~/evals-local/<name>
         [--trials 3] [--arm both|with_skill|without_skill] [--no-judge]
-        [--fixture NAME] [--registry NAME=PATH ...]
+        [--fixture NAME] [--registry NAME=PATH ...] [--read-deny DIR ...]
 
 `evals/<skill>` is a flat fixture (`fixture.yaml` inside), a nested fixture
 named by its own directory (`evals/<skill>/<name>`), or a skill directory of
@@ -129,9 +129,11 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    copy would contaminate the without_skill arm. The visible skill list is
    recorded in the manifest either way.
 6. Runs `--trials` trials (default 3). Trial k is
-   `run_eval.py <fixture> --arm <arm> --results-dir <out>/t<k>` with every
-   `--registry` passed through (relative paths resolved from YOUR cwd) and
-   `--no-judge` when given; its output is kept in `<out>/t<k>/run_eval.log`.
+   `run_eval.py <fixture> --arm <arm> --results-dir <out>/t<k>
+   --read-deny <out>` with every `--registry` and `--read-deny` passed
+   through (relative paths resolved from YOUR cwd) and `--no-judge` when
+   given, so no trial's arms read an earlier trial's transcripts; its output
+   is kept in `<out>/t<k>/run_eval.log`.
    A trial that exits non-zero (2 is run_eval's runner error) is recorded in
    the manifest and counted in the aggregate's `errors`; it is never dropped.
    Right after each trial every `summary.json` under `<out>/t<k>/` is stamped
@@ -246,12 +248,10 @@ EXHIBIT_MARKER = "LOCAL_EXHIBIT"
 #: The guard launcher's refusal log, in its private directory.
 GUARD_RECORD = "refusals.jsonl"
 
-#: Where a managed policy lives (the CLI's documented locations).
-MANAGED_SETTINGS_FILES = (
-    Path("/etc/claude-code/managed-settings.json"),
-    Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
-    Path("C:/Program Files/ClaudeCode/managed-settings.json"))
-MANAGED_SETTINGS_DROPINS = (Path("/etc/claude-code/managed-settings.d"),)
+#: Where a managed policy lives (the CLI's documented locations), shared with
+#: run_eval's managed sandbox check.
+MANAGED_SETTINGS_FILES = run_eval.MANAGED_SETTINGS_FILES
+MANAGED_SETTINGS_DROPINS = run_eval.MANAGED_SETTINGS_DROPINS
 
 #: aggregate.json's name for a flat fixture.
 FLAT_NAME = "(flat)"
@@ -731,6 +731,11 @@ def parse_args(argv=None) -> argparse.Namespace:
                              "nested fixtures, run only this one")
     parser.add_argument("--registry", action="append", default=None,
                         help="passed to run_eval.py, repeatable: NAME=PATH")
+    parser.add_argument("--read-deny", type=Path, action="append", default=[],
+                        metavar="DIR",
+                        help="passed to run_eval.py, repeatable, beside "
+                             "--results-dir itself: another directory no "
+                             "agent arm may read")
     parser.add_argument("--timestamp", default=None,
                         help="validated timestamp passed to each run_eval.py trial")
     parser.add_argument("--permission-mode",
@@ -936,6 +941,10 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         cmd = [sys.executable, str(RUN_EVAL), str(eval_dir), "--arm", args.arm,
                "--results-dir", str(trial_dir),
                "--permission-mode", args.permission_mode]
+        # The whole results dir, not only this trial's: trial k's arms must
+        # not read trials 1..k-1 (ADR 0011's reads addendum).
+        for path in (out, *args.read_deny):
+            cmd += ["--read-deny", os.path.abspath(path.expanduser())]
         if args.fixture is not None:
             cmd += ["--fixture", args.fixture]
         for flag in registry_flags:
