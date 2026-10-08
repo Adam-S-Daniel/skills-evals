@@ -73,6 +73,31 @@ TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 _TIMESTAMP_RE = re.compile(r"\d{8}T\d{6}Z")
 
 
+def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = None,
+                       fixture: dict | None = None) -> list[Path]:
+    """Trusted scorer roots; later consume arm_read_denied and run_outputs.
+
+    Git's common directory identifies the original clone even in a worktree.
+    Results and session archives hold earlier arms' evidence and stay hidden.
+    """
+    if fixture is not None and not any(
+            check.get("type") in ("command_succeeds", "repo_tests")
+            for check in fixture.get("objective_checks", [])):
+        # No workspace code will run; pure checks need no sandbox or Git probe.
+        return []
+    root = Path(harness_root if harness_root is not None else Path(__file__).resolve().parents[1]).resolve()
+    common = _git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root).stdout.strip()
+    git_dir = Path(common).resolve() if common else None
+    clone = git_dir.parent if git_dir is not None and git_dir.name == ".git" else root
+    roots = [root, clone.parent, Path.home(), session_archive_dir().parent]
+    if git_dir is not None:
+        roots.append(git_dir)
+    results = getattr(args, "results_dir", None)
+    if results is not None:
+        roots.append(Path(results))
+    return list(dict.fromkeys(path.resolve() for path in roots))
+
+
 def load_fixture(eval_dir: Path) -> dict:
     """The fixture, or a named configuration error.
 
@@ -2800,7 +2825,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             try:
                 objective_checks = objective.run_checks(
                     fixture, str(workspace), str(seed),
-                    transcript=result.get("transcript"))
+                    transcript=result.get("transcript"),
+                    read_denied=scorer_read_denied(args, fixture=fixture))
             except objective.ScorerUnavailableError as exc:
                 # A scoring dependency is missing on THIS machine: not the
                 # agent's failure, so the trial is an error (excluded from
@@ -3383,7 +3409,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             try:
                 objective_checks = objective.run_checks(
                     scored, str(workspace), str(seed),
-                    transcript=result.get("transcript"))
+                    transcript=result.get("transcript"),
+                    read_denied=scorer_read_denied(args, fixture=scored))
             except objective.ScorerUnavailableError as exc:
                 # As in `_run_arm`: a missing scoring dependency on THIS
                 # machine is a trial error, not a failed check, and the
@@ -3569,7 +3596,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
                 print(f"setup failed: {seed_error['detail']}")
                 return 2
             try:
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+                results = objective.run_checks(fixture, str(workspace), str(seed),
+                                               read_denied=scorer_read_denied(args, fixture=fixture))
             except objective.ScorerUnavailableError as exc:
                 # As the skill path's objective-only: a missing scoring
                 # dependency is not a failed check (exit 1), so name it and
@@ -4316,7 +4344,7 @@ def main() -> int:
                 # workspace that never needed it).
                 workspace = args.workspace
                 results = objective.run_checks(fixture, str(workspace),
-                                               str(seed))
+                                               str(seed), read_denied=scorer_read_denied(args, fixture=fixture))
             else:
                 with tempfile.TemporaryDirectory() as tmp:
                     workspace = Path(tmp) / "ws"
@@ -4328,7 +4356,7 @@ def main() -> int:
                         print(f"setup failed: {setup_error['detail']}")
                         return 2
                     results = objective.run_checks(fixture, str(workspace),
-                                                   str(seed))
+                                                   str(seed), read_denied=scorer_read_denied(args, fixture=fixture))
         except guidance.GuidanceError as exc:
             # run_setup's and the objective git checks' sink checks land here.
             print(f"configuration error: {exc}")

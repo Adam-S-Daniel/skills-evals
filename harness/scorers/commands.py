@@ -1,4 +1,4 @@
-"""Opt-in command checks; process-state isolation, not a filesystem sandbox.
+"""Opt-in command checks inside a mandatory filesystem and PID sandbox.
 
 See ADR 0006 for the trust boundary and the limits of optional network isolation.
 No program output or exception text is included in published check details.
@@ -20,6 +20,15 @@ MAX_TIMEOUT_S = 60
 PROBE_TIMEOUT_S = 2
 CLEANUP_TIMEOUT_S = 2
 DIAGNOSTIC_BYTES = 4096
+BWRAP_PATHS = ("/usr/bin/bwrap", "/bin/bwrap", str(Path.home() / ".local/bin/bwrap"))
+SANDBOX_STARTUP_MARKER = b"scorer-sandbox-started\n"
+SANDBOX_BOOTSTRAP = (
+    "import os, sys\n"
+    "fd = int(sys.argv[1])\n"
+    "os.write(fd, b'scorer-sandbox-started\\n')\n"
+    "os.close(fd)\n"
+    "os.execv(sys.argv[2], sys.argv[2:])\n"
+)
 SYSTEM_PATH = ("/usr/bin", "/bin")
 INTERPRETERS = {name: (f"/usr/bin/{name}", f"/bin/{name}")
                 for name in ("bash", "sh", "python3", "node")}
@@ -94,22 +103,134 @@ def _environment(root: Path, workspace: Path | None = None) -> dict[str, str]:
     return env
 
 
-def _network_prefix(env: dict[str, str]) -> list[str]:
-    """Use a new network namespace only when the Linux platform permits it."""
+class ScorerSandboxUnavailable(RuntimeError):
+    """A sanitized failure to establish the mandatory scoring boundary."""
+
+    def __init__(self, exit_code=None):
+        code = str(exit_code) if type(exit_code) is int else "-1"
+        super().__init__(f"scorer_sandbox_unavailable exit={code}")
+
+
+def _bubblewrap(workspace: Path | None = None, read_denied=()) -> str | None:
+    """Resolve the harness's runner before hiding HOME, never agent code."""
+    if not sys.platform.startswith("linux"):
+        return None
+    # PATH may name an agent-planted bwrap in the original workspace.
+    # The HOME-local fallback is fixed when the harness module is imported.
+    blocked = [Path(p).resolve() for p in read_denied
+               if Path(p).resolve() != Path.home().resolve()]
+    for candidate in BWRAP_PATHS:
+        if not candidate or not os.path.isabs(candidate):
+            continue
+        try:
+            path = Path(candidate).resolve(strict=True)
+            if ((workspace is not None and path.is_relative_to(workspace.resolve()))
+                    or any(path.is_relative_to(root) for root in blocked)):
+                continue
+            if path.is_file() and os.access(path, os.X_OK):
+                return str(path)
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return None
+
+
+def _read_denied(read_denied) -> list[Path]:
+    """Trusted caller roots plus direct-call protection for harness and HOME."""
+    roots = [Path(__file__).resolve().parents[2], Path.home(), *(read_denied or ())]
+    out = []
+    for root in roots:
+        path = Path(root).resolve()
+        if not path.exists():
+            continue
+        if path == Path("/") or not path.is_dir():
+            raise ScorerSandboxUnavailable()
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _sandbox_mounts(workspace: Path, env_root: Path, denied) -> list[str]:
+    """Hide ancestors first, then reopen only execution and environment roots."""
+    writable = (workspace.resolve(), env_root.resolve())
+    denied = {Path(p).resolve() for p in denied}
+    if (Path("/") in writable
+            or any(path.is_relative_to(root) for path in denied for root in writable)):
+        # Reopening a writable parent must never reopen a denied child.
+        raise ScorerSandboxUnavailable()
+    collapsed = []
+    for path in sorted(denied, key=lambda p: (len(p.parts), str(p))):
+        if not any(path.is_relative_to(parent) for parent in collapsed):
+            collapsed.append(path)
+    mounts = ["--ro-bind", "/", "/"]
+    for path in collapsed:
+        mounts += ["--tmpfs", str(path)]
+    for path in writable:
+        mounts += ["--bind", str(path), str(path)]
+    # Destination directories must exist before their hidden ancestor is made
+    # read-only. Remounting only that mount leaves the two binds writable.
+    for path in collapsed:
+        mounts += ["--remount-ro", str(path)]
+    return mounts
+
+
+def _sandbox_prefix(workspace: Path, env_root: Path, env: dict[str, str],
+                    read_denied=None) -> tuple[list[str], str]:
+    """Probe the exact filesystem/PID boundary; only network may fall back."""
     import guidance
-    guidance.check_timeout(PROBE_TIMEOUT_S, "_network_prefix timeout",
+    guidance.check_timeout(PROBE_TIMEOUT_S, "_sandbox_prefix timeout",
                            guidance.SINK_TIMEOUT_REMEDY)
-    if not sys.platform.startswith("linux") or not Path("/usr/bin/unshare").is_file():
-        return []
-    prefix = ["/usr/bin/unshare", "--net", "--"]
-    try:
-        probe = subprocess.run(prefix + ["/usr/bin/true"], env=env,
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=PROBE_TIMEOUT_S,
-                               check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    return prefix if probe.returncode == 0 else []
+    denied = _read_denied(read_denied)
+    executable = _bubblewrap(workspace, denied)
+    if executable is None:
+        raise ScorerSandboxUnavailable()
+    mounts = _sandbox_mounts(workspace, env_root, denied)
+    base = [executable, *mounts, "--unshare-pid", "--proc", "/proc", "--dev", "/dev",
+            "--die-with-parent", "--chdir", str(workspace), "--"]
+    last_code = None
+    for network in ("isolated", "unavailable"):
+        prefix = [*base[:-1], *(("--unshare-net",) if network == "isolated" else ()), "--"]
+        try:
+            probe = subprocess.run(prefix + ["/usr/bin/true"], cwd=workspace, env=env,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=PROBE_TIMEOUT_S, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            last_code = None
+            continue
+        last_code = probe.returncode
+        if last_code == 0:
+            return prefix, network
+    raise ScorerSandboxUnavailable(last_code)
+
+
+def _sandbox_started(stream) -> bool:
+    stream.seek(0)
+    return stream.read(len(SANDBOX_STARTUP_MARKER) + 1) == SANDBOX_STARTUP_MARKER
+
+
+def _run_sandboxed(prefix, argv, workspace, env, stdout, stderr, timeout_s):
+    """Confirm actual sandbox startup, independently of the command's exit."""
+    with tempfile.TemporaryFile() as started:
+        fd = started.fileno()
+        python = _fixed_interpreter("python3")
+        if python is None:
+            raise ScorerSandboxUnavailable()
+        # bubblewrap's info-fd reports a fork before mount/loopback setup.
+        # Isolated system Python reaches this marker only after all setup;
+        # it closes the descriptor before replacing itself with agent code.
+        launch = [*prefix, python, "-I", "-S", "-c", SANDBOX_BOOTSTRAP,
+                  str(fd), *argv]
+        try:
+            code = _run_command(launch, workspace, env, stdout, stderr, timeout_s,
+                                pass_fds=(fd,))
+        except OSError:
+            raise ScorerSandboxUnavailable() from None
+        except subprocess.TimeoutExpired:
+            if not _sandbox_started(started):
+                raise ScorerSandboxUnavailable() from None
+            raise
+        if not _sandbox_started(started):
+            raise ScorerSandboxUnavailable(code)
+        return code
 
 
 def _stop_process(proc) -> None:
@@ -132,14 +253,15 @@ def _stop_process(proc) -> None:
     proc.wait(timeout=CLEANUP_TIMEOUT_S)
 
 
-def _run_command(argv, workspace, env, stdout, stderr, timeout_s):
+def _run_command(argv, workspace, env, stdout, stderr, timeout_s, *, pass_fds=()):
     """The guarded process sink, shared by every command-check entry path."""
     import guidance
     guidance.check_timeout(timeout_s, "_run_command timeout_s",
                            guidance.SINK_TIMEOUT_REMEDY)
     proc = subprocess.Popen(argv, cwd=workspace, env=env,
                             stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
-                            shell=False, start_new_session=os.name == "posix")
+                            shell=False, start_new_session=os.name == "posix",
+                            pass_fds=pass_fds)
     try:
         return proc.wait(timeout=timeout_s)
     finally:
@@ -155,7 +277,7 @@ def _output_metadata(stdout, stderr) -> str:
 
 
 def command_succeeds(workspace: str, paths: list[str], argv=None,
-                     timeout_s=DEFAULT_TIMEOUT_S) -> tuple[bool, str]:
+                     timeout_s=DEFAULT_TIMEOUT_S, *, read_denied=None) -> tuple[bool, str]:
     """Pass only on exit zero from argv in the FINAL workspace.
 
     `paths` is registry metadata and is unused. No shell, interpolation, parent
@@ -178,13 +300,14 @@ def command_succeeds(workspace: str, paths: list[str], argv=None,
     try:
         with tempfile.TemporaryDirectory(prefix="objective-command-") as temporary:
             env = _environment(Path(temporary), final_workspace)
-            prefix = _network_prefix(env)
-            network = "isolated" if prefix else "unavailable"
+            prefix, network = _sandbox_prefix(final_workspace, Path(temporary), env, read_denied)
+            if not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+                return False, f"command_spawn_failed network={network}"
             with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
                 try:
-                    returncode = _run_command(prefix + [executable, *argv[1:]],
-                                              final_workspace, env, stdout,
-                                              stderr, timeout_s)
+                    returncode = _run_sandboxed(prefix, [executable, *argv[1:]],
+                                                final_workspace, env, stdout,
+                                                stderr, timeout_s)
                 except OSError:
                     return False, f"command_spawn_failed network={network}"
                 except subprocess.TimeoutExpired:
@@ -193,5 +316,7 @@ def command_succeeds(workspace: str, paths: list[str], argv=None,
                 status = "command_success" if returncode == 0 else "command_nonzero"
                 return returncode == 0, (f"{status} exit={returncode} network={network} "
                                         + _output_metadata(stdout, stderr))
+    except ScorerSandboxUnavailable as exc:
+        return False, str(exc)
     except OSError:
         return False, "command_spawn_failed"

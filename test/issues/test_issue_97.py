@@ -2413,7 +2413,7 @@ class TestIssue97(unittest.TestCase):
     # Every source listed for a site must verify, so dropping any one of the
     # three predicates turns this test red and names the site.
     HARNESS_TIMEOUT_SINKS = {
-        ("harness/scorers/commands.py", "_network_prefix", "subprocess.run",
+        ("harness/scorers/commands.py", "_sandbox_prefix", "subprocess.run",
          "PROBE_TIMEOUT_S"): (1, (("constant", "PROBE_TIMEOUT_S"),)),
         ("harness/scorers/commands.py", "_stop_process", "<popen>.wait",
          "CLEANUP_TIMEOUT_S"): (1, (("constant", "CLEANUP_TIMEOUT_S"),)),
@@ -2969,7 +2969,7 @@ class TestIssue97(unittest.TestCase):
     # test refuses any sink the walk finds that has no driver, so a new sink
     # cannot arrive with no direct-call coverage.
     SINK_DRIVERS = {
-        ("harness/scorers/commands.py", "_network_prefix"):
+        ("harness/scorers/commands.py", "_sandbox_prefix"):
             ("const", "PROBE_TIMEOUT_S"),
         ("harness/scorers/commands.py", "_stop_process"):
             ("const", "CLEANUP_TIMEOUT_S"),
@@ -3043,8 +3043,8 @@ class TestIssue97(unittest.TestCase):
                 kwargs["fixture"] = {knob: value, "setup": "true"}
             elif kind == "arm":
                 kwargs["arm"] = {"name": "without_skill", knob: value}
-        if name == "_network_prefix":
-            return fn({})
+        if name == "_sandbox_prefix":
+            return fn(tmp, tmp, {})
         if name == "_stop_process":
             # Never signal a real process in this direct-call driver.
             with mock.patch("os.killpg"):

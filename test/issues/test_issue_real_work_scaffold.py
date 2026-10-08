@@ -61,6 +61,7 @@ import answer_leak  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import mine_real_work  # noqa: E402
 import scaffold_real_work as scaffold  # noqa: E402
+from scorers import commands  # noqa: E402
 
 PIN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@]+)?@[0-9a-f]{40}$")
 MARKER = "do-not-echo-this-marker"
@@ -208,9 +209,13 @@ class _Case(unittest.TestCase):
         env = mock.patch.dict(os.environ, GIT_ENV)
         env.start()
         self.addCleanup(env.stop)
-        net = mock.patch("scorers.commands._network_prefix", return_value=[])
+        net = mock.patch("scorers.commands._sandbox_prefix", return_value=([], "unavailable"))
         net.start()
         self.addCleanup(net.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def git(self, repo: Path, *args) -> str:
         return subprocess.run(["git", "-C", str(repo), *args], check=True,
