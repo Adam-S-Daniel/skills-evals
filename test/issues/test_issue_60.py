@@ -46,6 +46,28 @@ def world(public_gaps=5):
     return census, sources
 
 
+def canonical_pr(skill="public-0", *, number=121, state="open", labels=None):
+    return {"number": number, "state": state,
+            "body": gaps.marker("adam-agentskills", skill),
+            "html_url": f"https://github.com/{gaps.REPO}/pull/{number}",
+            "head": {"ref": gaps.branch_name("adam-agentskills", skill),
+                     "repo": {"full_name": gaps.REPO}},
+            "base": {"ref": "main", "repo": {"full_name": gaps.REPO}},
+            "labels": [{"name": name} for name in
+                       (labels if labels is not None else ["eval-scaffold"])]}
+
+
+def canonical_issue(pr, skill="public-0", *, issue_id=123, state="open", labels=None):
+    return {"id": issue_id, "number": issue_id, "state": state,
+            "html_url": f"https://github.com/{gaps.REPO}/issues/{issue_id}",
+            "title": f"Author eval for adam-agentskills/{skill}",
+            "user": {"login": "github-actions[bot]", "type": "Bot"},
+            "body": (f"{gaps.marker('adam-agentskills', skill)}\n"
+                     f"Tracking parent: https://github.com/{gaps.REPO}/issues/62\n"
+                     f"Draft PR: {pr['html_url']}\n"),
+            "labels": [{"name": name} for name in (labels or [])]}
+
+
 class FakeGitHub:
     def __init__(self, *, hold_parent=False, prs=None, issues=None, children=None):
         self.hold_parent = hold_parent
@@ -67,7 +89,7 @@ class FakeGitHub:
             return [item for item in rows if item.get("state", "open") == "open"]
         if "state=closed" in path:
             return [item for item in rows if item.get("state") == "closed"]
-        return rows
+        return list(rows)
 
     def request(self, method, path, payload=None, *, missing_ok=False):
         self.calls.append((method, path, payload))
@@ -87,12 +109,29 @@ class FakeGitHub:
             return {"sha": "1" * 40}
         if path.endswith("/pulls"):
             self.number += 1
-            return {"number": self.number, "body": payload["body"],
-                    "html_url": f"https://github.com/{gaps.REPO}/pull/{self.number}",
-                    "labels": []}
+            pr = {"number": self.number, "body": payload["body"], "state": "open",
+                  "html_url": f"https://github.com/{gaps.REPO}/pull/{self.number}",
+                  "head": {"ref": payload["head"], "repo": {"full_name": gaps.REPO}},
+                  "base": {"ref": payload["base"], "repo": {"full_name": gaps.REPO}},
+                  "labels": []}
+            self.prs.append(pr)
+            return pr
         if path.endswith("/issues"):
             self.number += 1
-            return {"id": self.number, "body": payload["body"], "labels": []}
+            issue = {"id": self.number, "number": self.number,
+                     "html_url": f"https://github.com/{gaps.REPO}/issues/{self.number}",
+                     "body": payload["body"], "title": payload["title"], "state": "open",
+                     "user": {"login": "github-actions[bot]", "type": "Bot"},
+                     "labels": []}
+            self.issues.append(issue)
+            return issue
+        if method == "POST" and path.endswith("/labels"):
+            number = int(path.split("/")[-2])
+            pr = next(item for item in self.prs if item.get("number") == number)
+            pr["labels"].extend({"name": name} for name in payload["labels"])
+            return pr["labels"]
+        if method == "POST" and path.endswith("/sub_issues"):
+            self.children.append({"id": payload["sub_issue_id"]})
         return {}
 
 
@@ -209,9 +248,8 @@ class AutomationTests(unittest.TestCase):
     def test_exact_marker_and_held_pr_prevent_duplicate_or_paused_work(self):
         census, sources = world()
         tag = gaps.marker("adam-agentskills", "public-0")
-        held_pr = {"body": tag, "labels": [{"name": "on-hold"}]}
-        other_pr = {"body": gaps.marker("adam-agentskills", "public-10"),
-                    "labels": []}
+        held_pr = canonical_pr(labels=["on-hold"])
+        other_pr = canonical_pr("public-10", number=122)
         api = FakeGitHub(prs=[held_pr, other_pr])
         tags = gaps.automate(api, census, sources, "42", "a" * 40, write=True,
                              as_of="2026-10-08T00:00:00Z")
@@ -221,38 +259,36 @@ class AutomationTests(unittest.TestCase):
     def test_completed_marker_pair_and_subissue_need_no_reproposal(self):
         census, sources = world(public_gaps=1)
         tag = gaps.marker("adam-agentskills", "public-0")
-        api = FakeGitHub(prs=[{"body": tag, "labels": []}],
-                         issues=[{"body": tag, "labels": [], "id": 123}],
+        pr = canonical_pr()
+        api = FakeGitHub(prs=[pr], issues=[canonical_issue(pr)],
                          children=[{"id": 123}])
         selected = gaps.automate(api, census, sources, "42", "a" * 40,
                                  write=True, as_of="2026-10-08T00:00:00Z")
         self.assertNotIn(tag, selected)
 
-    def test_pr_only_and_issue_only_resume_without_duplicate_counterpart(self):
+    def test_pr_only_resumes_and_unproven_issue_only_is_ignored(self):
         census, sources = world(public_gaps=2)
         pr_tag = gaps.marker("adam-agentskills", "public-0")
         issue_tag = gaps.marker("adam-agentskills", "public-1")
-        api = FakeGitHub(
-            prs=[{"body": pr_tag, "labels": [], "number": 121,
-                  "html_url": f"https://github.com/{gaps.REPO}/pull/121"}],
-            issues=[{"body": issue_tag, "labels": [], "id": 122}])
+        api = FakeGitHub(prs=[canonical_pr()],
+                         issues=[canonical_issue(canonical_pr("public-1"), "public-1")])
         tags = gaps.automate(api, census, sources, "42", "a" * 40,
                              write=True, as_of="2026-10-08T00:00:00Z")
         self.assertIn(pr_tag, tags)
         self.assertIn(issue_tag, tags)
         posts = [(path, payload) for method, path, payload in api.calls if method == "POST"]
         self.assertEqual(sum(path.endswith("/pulls") for path, _ in posts), 2)
-        self.assertEqual(sum(path.endswith("/issues") for path, _ in posts), 2)
+        self.assertEqual(sum(path.endswith("/issues") for path, _ in posts), 3)
         self.assertFalse(any(pr_tag in (payload or {}).get("body", "")
                              for path, payload in posts if path.endswith("/pulls")))
-        self.assertFalse(any(issue_tag in (payload or {}).get("body", "")
-                             for path, payload in posts if path.endswith("/issues")))
+        self.assertTrue(any(issue_tag in (payload or {}).get("body", "")
+                            for path, payload in posts if path.endswith("/issues")))
 
     def test_held_tracking_issue_is_not_modified(self):
         census, sources = world(public_gaps=1)
         tag = gaps.marker("adam-agentskills", "public-0")
-        api = FakeGitHub(issues=[{"body": tag, "labels": [{"name": "on-hold"}],
-                                  "id": 123}])
+        pr = canonical_pr()
+        api = FakeGitHub(prs=[pr], issues=[canonical_issue(pr, labels=["on-hold"])])
         selected = gaps.automate(api, census, sources, "42", "a" * 40,
                                  write=True, as_of="2026-10-08T00:00:00Z")
         self.assertNotIn(tag, selected)
@@ -261,15 +297,194 @@ class AutomationTests(unittest.TestCase):
         census, sources = world(public_gaps=2)
         pr_tag = gaps.marker("adam-agentskills", "public-0")
         issue_tag = gaps.marker("adam-agentskills", "public-1")
-        api = FakeGitHub(prs=[{"body": pr_tag, "state": "closed", "labels": []}],
-                         issues=[{"body": issue_tag, "state": "closed", "labels": [],
-                                  "id": 123}])
+        pr = canonical_pr("public-1", number=122)
+        api = FakeGitHub(prs=[canonical_pr(state="closed"), pr],
+                         issues=[canonical_issue(pr, "public-1", state="closed")])
         selected = gaps.automate(api, census, sources, "42", "a" * 40,
                                  write=True, as_of="2026-10-08T00:00:00Z")
         self.assertNotIn(pr_tag, selected)
         self.assertNotIn(issue_tag, selected)
         self.assertTrue(any("state=all" in path for method, path, _ in api.calls
                             if method == "PAGES"))
+
+    def assert_unrelated_pr_is_ignored(self, change):
+        census, sources = world(public_gaps=1)
+        tag = gaps.marker("adam-agentskills", "public-0")
+        for state, labels in (("open", []), ("closed", []), ("open", ["on-hold"])):
+            with self.subTest(state=state, labels=labels):
+                pr = canonical_pr(state=state, labels=labels)
+                change(pr)
+                api = FakeGitHub(prs=[pr])
+                selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                        write=True, as_of="2026-10-08T00:00:00Z")
+                self.assertIn(tag, selected)
+                proposed = [payload for method, path, payload in api.calls
+                            if method == "POST" and path.endswith("/pulls")]
+                self.assertTrue(any(tag in payload["body"].splitlines()
+                                    for payload in proposed))
+                self.assertFalse(any(path.endswith("/issues/121/labels")
+                                     for method, path, _ in api.calls if method == "POST"))
+
+    def test_fork_head_repository_cannot_reserve_a_gap(self):
+        self.assert_unrelated_pr_is_ignored(
+            lambda pr: pr["head"]["repo"].update(full_name="example/probe"))
+
+    def test_wrong_head_branch_cannot_reserve_a_gap(self):
+        self.assert_unrelated_pr_is_ignored(
+            lambda pr: pr["head"].update(ref="scaffold/unrelated"))
+
+    def test_wrong_base_branch_cannot_reserve_a_gap(self):
+        self.assert_unrelated_pr_is_ignored(lambda pr: pr["base"].update(ref="other"))
+
+    def test_wrong_base_repository_cannot_reserve_a_gap(self):
+        self.assert_unrelated_pr_is_ignored(
+            lambda pr: pr["base"]["repo"].update(full_name="example/probe"))
+
+    def test_pr_marker_must_be_an_exact_line(self):
+        self.assert_unrelated_pr_is_ignored(lambda pr: pr.update(body="prefix " + pr["body"]))
+
+    def test_pr_number_must_be_a_positive_integer(self):
+        for value in (True, "121", 0, -1):
+            with self.subTest(number=value):
+                self.assert_unrelated_pr_is_ignored(lambda pr: pr.update(
+                    number=value, html_url=f"https://github.com/{gaps.REPO}/pull/{value}"))
+
+    def test_pr_url_must_identify_the_canonical_same_repository_pr(self):
+        self.assert_unrelated_pr_is_ignored(
+            lambda pr: pr.update(html_url="https://github.com/example/probe/pull/121"))
+
+    def test_missing_pr_metadata_cannot_reserve_a_gap(self):
+        for field in ("head", "base", "number", "html_url", "state"):
+            with self.subTest(field=field):
+                self.assert_unrelated_pr_is_ignored(lambda pr: pr.pop(field))
+
+    def assert_unrelated_issue_is_ignored(self, change):
+        census, sources = world(public_gaps=1)
+        tag = gaps.marker("adam-agentskills", "public-0")
+        for state, labels in (("open", []), ("closed", []), ("open", ["on-hold"])):
+            with self.subTest(state=state, labels=labels):
+                pr = canonical_pr()
+                issue = canonical_issue(pr, state=state, labels=labels)
+                change(issue)
+                api = FakeGitHub(prs=[pr], issues=[issue], children=[{"id": 123}])
+                selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                        write=True, as_of="2026-10-08T00:00:00Z")
+                self.assertIn(tag, selected)
+                proposed = [payload for method, path, payload in api.calls
+                            if method == "POST" and path.endswith("/issues")]
+                self.assertTrue(any(tag in payload["body"].splitlines()
+                                    for payload in proposed))
+                self.assertFalse(any(payload.get("sub_issue_id") == 123
+                                     for method, path, payload in api.calls
+                                     if method == "POST" and path.endswith("/sub_issues")))
+
+    def test_tracking_issue_requires_the_workflow_bot_login(self):
+        self.assert_unrelated_issue_is_ignored(
+            lambda issue: issue["user"].update(login="example"))
+
+    def test_tracking_issue_requires_bot_type(self):
+        self.assert_unrelated_issue_is_ignored(lambda issue: issue["user"].update(type="User"))
+
+    def test_tracking_issue_requires_the_expected_title(self):
+        self.assert_unrelated_issue_is_ignored(lambda issue: issue.update(title="Unrelated"))
+
+    def test_tracking_issue_requires_the_expected_parent(self):
+        self.assert_unrelated_issue_is_ignored(
+            lambda issue: issue.update(body=issue["body"].replace("issues/62", "issues/63")))
+
+    def test_tracking_issue_requires_a_canonical_pr_link(self):
+        self.assert_unrelated_issue_is_ignored(
+            lambda issue: issue.update(body=issue["body"].replace("pull/121", "pull/122")))
+
+    def test_tracking_issue_marker_must_be_an_exact_line(self):
+        self.assert_unrelated_issue_is_ignored(
+            lambda issue: issue.update(body="prefix " + issue["body"]))
+
+    def test_tracking_issue_requires_complete_metadata(self):
+        for field in ("body", "user", "title", "id", "state"):
+            with self.subTest(field=field):
+                self.assert_unrelated_issue_is_ignored(lambda issue: issue.pop(field))
+        for value in (True, "123", 0, -1):
+            with self.subTest(issue_id=value):
+                self.assert_unrelated_issue_is_ignored(lambda issue: issue.update(id=value))
+
+    def test_tracking_issue_without_a_canonical_pr_does_not_reserve_a_gap(self):
+        census, sources = world(public_gaps=1)
+        pr = canonical_pr()
+        issue = canonical_issue(pr, state="closed", labels=["on-hold"])
+        api = FakeGitHub(issues=[issue], children=[{"id": 123}])
+        selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                write=True, as_of="2026-10-08T00:00:00Z")
+        self.assertIn(pr["body"], selected)
+
+    def test_complete_canonical_pair_recovers_a_missing_scaffold_label(self):
+        census, sources = world(public_gaps=1)
+        pr = canonical_pr(labels=[])
+        api = FakeGitHub(prs=[pr], issues=[canonical_issue(pr)], children=[{"id": 123}])
+        selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                write=True, as_of="2026-10-08T00:00:00Z")
+        self.assertIn(pr["body"], selected)
+        self.assertTrue(gaps.has_label(pr, "eval-scaffold"))
+        self.assertEqual([(path, payload) for method, path, payload in api.calls
+                          if method == "POST" and "/issues/121/" in path],
+                         [(f"/repos/{gaps.REPO}/issues/121/labels",
+                           {"labels": ["eval-scaffold"]})])
+
+    def test_label_failure_after_creation_is_retried_without_a_duplicate_pr(self):
+        census, sources = world(public_gaps=1)
+
+        class FailFirstLabel(FakeGitHub):
+            failed = False
+
+            def request(self, method, path, payload=None, *, missing_ok=False):
+                if method == "POST" and path.endswith("/labels") and not self.failed:
+                    self.failed = True
+                    self.calls.append((method, path, payload))
+                    raise gaps.GapError("label write failed")
+                return super().request(method, path, payload, missing_ok=missing_ok)
+
+        api = FailFirstLabel()
+        with self.assertRaises(gaps.GapError):
+            gaps.automate(api, census, sources, "42", "a" * 40,
+                          write=True, as_of="2026-10-08T00:00:00Z")
+        created = api.prs[0]
+        self.assertFalse(gaps.has_label(created, "eval-scaffold"))
+        api.calls.clear()
+        selected = gaps.automate(api, census, sources, "43", "a" * 40,
+                                write=True, as_of="2026-10-08T00:00:00Z")
+        self.assertIn(created["body"].splitlines()[0], selected)
+        self.assertTrue(gaps.has_label(created, "eval-scaffold"))
+        self.assertFalse(any(method == "POST" and path.endswith("/pulls")
+                             and payload["head"] == created["head"]["ref"]
+                             for method, path, payload in api.calls))
+        self.assertTrue(any(method == "POST" and path.endswith(
+            f"/issues/{created['number']}/labels") for method, path, _ in api.calls))
+
+    def test_existing_scaffold_label_is_not_rewritten(self):
+        census, sources = world(public_gaps=1)
+        pr = canonical_pr()
+        api = FakeGitHub(prs=[pr])
+        selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                write=True, as_of="2026-10-08T00:00:00Z")
+        self.assertIn(pr["body"], selected)
+        self.assertFalse(any(method == "POST" and path.endswith("/issues/121/labels")
+                             for method, path, _ in api.calls))
+
+    def test_canonical_holds_and_closures_prevent_label_reconciliation(self):
+        census, sources = world(public_gaps=1)
+        for subject in ("pr", "issue"):
+            for state, labels in (("closed", []), ("open", ["on-hold"])):
+                with self.subTest(subject=subject, state=state, labels=labels):
+                    pr = canonical_pr(labels=[])
+                    issue = canonical_issue(pr)
+                    record = pr if subject == "pr" else issue
+                    record.update(state=state, labels=[{"name": name} for name in labels])
+                    api = FakeGitHub(prs=[pr], issues=[issue], children=[{"id": 123}])
+                    selected = gaps.automate(api, census, sources, "42", "a" * 40,
+                                            write=True, as_of="2026-10-08T00:00:00Z")
+                    self.assertNotIn(pr["body"], selected)
+                    self.assertFalse(any(method == "POST" and path.endswith("/issues/121/labels")
+                                         for method, path, _ in api.calls))
 
     def test_unsafe_sources_or_census_make_zero_api_calls(self):
         census, sources = world()

@@ -209,8 +209,44 @@ def draft_files(reg: dict, row: dict, sources: dict) -> dict[str, str]:
     return {f"{base}/fixture.yaml": rendered, f"{base}/README.md": readme}
 
 
+def has_label(item: dict, name: str) -> bool:
+    return any(label.get("name") == name for label in item.get("labels", []))
+
+
 def held(item: dict) -> bool:
-    return any(label.get("name") == "on-hold" for label in item.get("labels", []))
+    return has_label(item, "on-hold")
+
+
+def _canonical_pr(item: dict, tag: str, branch: str) -> bool:
+    """Only the writer's same-repository branch can reserve a GAP."""
+    body = item.get("body")
+    number = item.get("number")
+    head, base = item.get("head"), item.get("base")
+    if (not isinstance(body, str) or tag not in body.splitlines()
+            or item.get("state") not in ("open", "closed")
+            or type(number) is not int or number <= 0
+            or item.get("html_url") != f"https://github.com/{REPO}/pull/{number}"
+            or not isinstance(head, dict) or not isinstance(base, dict)):
+        return False
+    head_repo, base_repo = head.get("repo"), base.get("repo")
+    return (head.get("ref") == branch and base.get("ref") == "main"
+            and isinstance(head_repo, dict) and head_repo.get("full_name") == REPO
+            and isinstance(base_repo, dict) and base_repo.get("full_name") == REPO)
+
+
+def _canonical_issue(item: dict, tag: str, name: str, pr_urls: set[str]) -> bool:
+    """Authenticate tracking records before honoring holds or review outcomes."""
+    body, user = item.get("body"), item.get("user")
+    if (not isinstance(body, str) or not isinstance(user, dict)
+            or item.get("state") not in ("open", "closed")
+            or user.get("login") != "github-actions[bot]" or user.get("type") != "Bot"
+            or item.get("title") != f"Author eval for {name}"
+            or type(item.get("id")) is not int or item["id"] <= 0):
+        return False
+    lines = body.splitlines()
+    return (tag in lines
+            and f"Tracking parent: https://github.com/{REPO}/issues/{PARENT}" in lines
+            and any(f"Draft PR: {url}" in lines for url in pr_urls))
 
 
 class GitHub:
@@ -392,17 +428,20 @@ def automate(api: GitHub, coverage: dict, sources: dict, run_id: str,
     selected = []
     for reg, row in gaps:
         tag = marker(reg["name"], row["skill"])
-        matching_prs = [item for item in prs if tag in (item.get("body") or "")]
-        matching_issues = [item for item in issues if tag in (item.get("body") or "")]
+        branch = branch_name(reg["name"], row["skill"])
+        matching_prs = [item for item in prs if _canonical_pr(item, tag, branch)]
+        pr_urls = {item["html_url"] for item in matching_prs}
+        matching_issues = [item for item in issues if _canonical_issue(
+            item, tag, f"{reg['name']}/{row['skill']}", pr_urls)]
         if any(held(item) for item in (*matching_prs, *matching_issues)):
             continue
-        # A closed marked record is an explicit review outcome. Prefer an
+        # A closed canonical record is an explicit review outcome. Prefer an
         # active record when one exists; otherwise leave the GAP for a person.
         pr = next((item for item in matching_prs if item.get("state", "open") == "open"), None)
         issue = next((item for item in matching_issues if item.get("state", "open") == "open"), None)
         if (pr is None and matching_prs) or (issue is None and matching_issues):
             continue
-        if pr and issue and issue["id"] in child_ids:
+        if pr and issue and issue["id"] in child_ids and has_label(pr, "eval-scaffold"):
             continue
         selected.append((reg, row, tag, pr, issue))
         if len(selected) == 3:
@@ -418,9 +457,10 @@ def automate(api: GitHub, coverage: dict, sources: dict, run_id: str,
                               "body": f"{tag}\nPart of https://github.com/{REPO}/issues/60\n"
                                       f"Public GAP from {source}. TODO: select a real incident, "
                                       "measure context limits, and write checks before review.\n"})
+            prs.append(pr)
+        if not has_label(pr, "eval-scaffold"):
             api.request("POST", f"/repos/{REPO}/issues/{pr['number']}/labels",
                         {"labels": ["eval-scaffold"]})
-            prs.append(pr)
         if issue is None:
             issue = api.request("POST", f"/repos/{REPO}/issues",
                                 {"title": f"Author eval for {reg['name']}/{row['skill']}",
