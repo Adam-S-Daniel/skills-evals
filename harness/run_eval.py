@@ -40,6 +40,7 @@ and DESIGN.md "Guidance subject".
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import fnmatch
 import hashlib
 import json
@@ -1462,7 +1463,8 @@ def _check_symlinks(directory: Path, root: Path, keep: str,
 def _profile_read_rules(root: Path, session_dir: Path | None,
                         protected: list[Path], needed: list[Path],
                         guarded=(), tmp_root: Path | None = None,
-                        carve_outs=(), compact_classes=False) -> list[str]:
+                        carve_outs=(), compact_classes=False,
+                        readable_plugins=()) -> list[str]:
     """The Read deny rules for HOME or a profile, which leave `session_dir`.
 
     `session_dir` is the arm's own session directory when it lies under
@@ -1476,6 +1478,13 @@ def _profile_read_rules(root: Path, session_dir: Path | None,
     still denies all of `root` to commands. A name the patterns cannot spell
     denies `root` whole.
     """
+    if readable_plugins:
+        kept = [p for p in readable_plugins if _within(p, root)]
+        if session_dir is not None and root in session_dir.parents:
+            kept.append(session_dir)
+        if kept:
+            return _alias_read_rules(root, kept, protected, needed,
+                                     guarded, tmp_root)
     whole = _read_rules(_glob_escape(str(root)))
     if session_dir is None or root not in session_dir.parents:
         return whole
@@ -1579,7 +1588,7 @@ HARNESS_TEMP_PREFIXES = (
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
-                        protected: list[Path], needed: list[Path]):
+                        protected: list[Path], needed: list[Path], profiles=()):
     """The sandbox `denyRead` paths and Read deny rules for the harness's
     directories under `tmp_root`, but the arm's own (the top directory its
     workspace sits in). Read rules are structural, so a directory created
@@ -1590,12 +1599,16 @@ def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
     refused, as in `_check_symlinks`."""
     own = (workspace.relative_to(tmp_root).parts[0]
            if workspace is not None and tmp_root in workspace.parents else None)
+    own_names = list(dict.fromkeys([
+        *([own] if own is not None else []),
+        *(path.relative_to(tmp_root).parts[0] for path in profiles
+          if tmp_root in path.parents)]))
     base = _glob_escape(str(tmp_root))
     rules = []
     for prefix in HARNESS_TEMP_PREFIXES:
-        if own is not None and own.lower().startswith(prefix.lower()) \
-                and _COMPLEMENT_NAME.match(own):
-            for index, pattern in enumerate(_complement_patterns(own)):
+        kept = [name for name in own_names if name.lower().startswith(prefix.lower())]
+        if kept and all(_COMPLEMENT_NAME.match(name) for name in kept):
+            for index, pattern in enumerate(_complement_patterns(kept[0], kept[1:])):
                 if pattern.lower().startswith(prefix.lower()):
                     if "*" in pattern:
                         rules.append(f"Read(/{base}/{pattern})")
@@ -1609,7 +1622,7 @@ def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
     except OSError:
         entries = []
     for name in entries:
-        if name == own or not name.lower().startswith(
+        if name in own_names or not name.lower().startswith(
                 tuple(p.lower() for p in HARNESS_TEMP_PREFIXES)):
             continue
         path = tmp_root / name
@@ -1637,7 +1650,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                          workspace: Path | None = None,
                          config_dir: Path | None = None,
                          profiles=None, outputs=(), additional_profiles=(),
-                         tmp_root: Path | None = None) -> dict:
+                         tmp_root: Path | None = None,
+                         readable_plugins=()) -> dict:
     """The settings every agent arm runs under, as one JSON object.
 
     `checkouts` are the run's registry and guidance checkouts; `session_dir`
@@ -1651,6 +1665,11 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     if profiles is None:
         profiles = profile_dirs(home)
     compact_profiles = {Path(path).resolve() for path in additional_profiles}
+    readable_plugins = [Path(path).resolve() for path in readable_plugins]
+    if any(not any(_within(path, root) and path != root for root in compact_profiles)
+           for path in readable_plugins):
+        raise ArmReadIsolationError("plugin reads must stay inside the scratch profile",
+                                    code="read_rules_unsafe")
     profiles = [*profiles, *additional_profiles]
     denied = arm_read_denied(checkouts, home=home, harness_root=harness_root,
                              profiles=profiles, outputs=outputs)
@@ -1660,6 +1679,9 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     # HOME may also be the directory holding the clone (a cloud routine
     # clones into it): the carve-outs still keep clear of every checkout.
     hard = [path for _, path in denied if path not in roots]
+    if any(_within(path, denied_root) for path in readable_plugins for denied_root in hard):
+        raise ArmReadIsolationError("plugin exception overlaps a denied source",
+                                    code="read_rules_unsafe")
     if path_env is None:
         path_env = os.environ.get("PATH", "")
     carve = _arm_read_carve_outs(home, hard, path_env) if home.is_dir() else []
@@ -1675,7 +1697,7 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     tmp_root = Path(tmp_root or tempfile.gettempdir()).resolve()
     tmp_denied, tmp_rules = _harness_temp_rules(
         tmp_root, Path(workspace).resolve() if workspace is not None else None,
-        protected, needed)
+        protected, needed, compact_profiles)
     alias_guarded = [p for _, p in denied if p not in aliases] + tmp_denied
     alias_carve = (_alias_read_carve_outs(aliases, home, alias_guarded, path_env, tmp_root)
                    if aliases else [])
@@ -1687,7 +1709,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
         guarded = [p for _, p in denied if p != path] + tmp_denied
         for rule in (_profile_read_rules(path, keep, protected, needed,
                                          guarded, tmp_root, alias_carve,
-                                         compact_classes=path in compact_profiles) if path in roots
+                                         compact_classes=path in compact_profiles,
+                                         readable_plugins=readable_plugins) if path in roots
                      else _alias_read_rules(path, alias_carve, protected, needed,
                                             guarded, tmp_root) if path in aliases
                      else _read_rules(_glob_escape(str(path)))):
@@ -1709,13 +1732,18 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                         "allowLocalBinding": False},
             "filesystem": {"denyRead": [*(str(p) for _, p in denied),
                                         *(str(p) for p in tmp_denied)],
-                           "allowRead": [str(p) for p in carve],
-                           "denyWrite": [str(p) for p in config_dirs]},
+                           "allowRead": [str(p) for p in [*carve, *readable_plugins]],
+                           "denyWrite": list(dict.fromkeys(str(p) for p in [
+                               *config_dirs, *compact_profiles,
+                               *(Path(p).resolve() for p in checkouts)]))},
         },
         "permissions": {"deny": [
             *read_rules,
             *tmp_rules,
             *(rule for path in config_dirs
+              for rule in (f"Edit(/{_glob_escape(str(path))})",
+                           f"Edit(/{_glob_escape(str(path))}/**)")),
+            *(rule for path in [*compact_profiles, *(Path(p).resolve() for p in checkouts)]
               for rule in (f"Edit(/{_glob_escape(str(path))})",
                            f"Edit(/{_glob_escape(str(path))}/**)"))]},
     }
@@ -1724,13 +1752,14 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
 def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
                         workspace: Path | None = None,
                         config_dir: Path | None = None, outputs=(), *,
-                        additional_profiles=()) -> list[str]:
+                        additional_profiles=(), readable_plugins=()) -> list[str]:
     """The CLI flags that put an agent arm behind `arm_sandbox_settings`.
     Raises ArmReadIsolationError (`settings_too_large`) past
     MAX_SETTINGS_BYTES rather than handing the OS an argument it refuses."""
     settings = json.dumps(arm_sandbox_settings(
         checkouts, session_dir=session_dir, workspace=workspace,
-        config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles),
+        config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles,
+        readable_plugins=readable_plugins),
         sort_keys=True, separators=(",", ":"))
     if len(settings.encode()) > MAX_SETTINGS_BYTES:
         raise ArmReadIsolationError(
@@ -2392,9 +2421,48 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         scratch_profiles = ([Path(env["HOME"])] if env.get("HOME") else []) if arm.get("env_override") else []
         if arm.get("env_override") and config_dir is not None:
             scratch_profiles.append(config_dir)
+        if arm.get("pair_parent"):
+            parent = Path(arm["pair_parent"]).resolve()
+            if (config_dir is None or not _within(config_dir.resolve(), parent)
+                    or _within(workspace.resolve(), parent)):
+                raise ArmReadIsolationError("pair profile reservation overlaps the workspace",
+                                            code="read_rules_unsafe")
+            scratch_profiles.append(parent)
+        readable_plugins = []
+        for supplied in arm.get("verified_plugin_roots", ()):
+            path = Path(supplied)
+            # Only the frozen skill trees and the two-field plugin manifest
+            # prepared by delivery are exposed, never profile registrations,
+            # credentials, settings, hooks or MCP configuration. Revalidate
+            # the directory boundary before emitting the read exception.
+            canonical = delivery.plugins_root(config_dir) if config_dir is not None else None
+            if (not arm.get("env_override") or canonical is None
+                    or path.parent != canonical or path.resolve() != path
+                    or not path.is_dir()):
+                raise ArmReadIsolationError("unverified plugin read exception",
+                                            code="read_rules_unsafe")
+            for current, dirs, names in os.walk(path, followlinks=False):
+                for name in dirs + names:
+                    mode = os.lstat(Path(current) / name).st_mode
+                    if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
+                        raise ArmReadIsolationError("plugin tree is not regular content",
+                                                    code="read_rules_unsafe")
+            manifest = path / ".claude-plugin" / "plugin.json"
+            if (json.loads(manifest.read_bytes()) != {"name": path.name,
+                                                      "version": delivery.PLUGIN_VERSION}
+                    or set(p.name for p in path.iterdir()) != {"skills", ".claude-plugin"}
+                    or set(p.name for p in manifest.parent.iterdir()) != {"plugin.json"}):
+                raise ArmReadIsolationError("unverified plugin configuration",
+                                            code="read_rules_unsafe")
+            for skill in (path / "skills").iterdir():
+                delivery._tree_files(skill)
+            readable_plugins.append(path)
         isolation = arm_isolation_flags(checkouts, session_dir, workspace, config_dir,
-                                        outputs, additional_profiles=scratch_profiles)
-    except ArmReadIsolationError as exc:
+                                        outputs, additional_profiles=scratch_profiles,
+                                        readable_plugins=readable_plugins)
+    except (ArmReadIsolationError, delivery.DeliveryError, OSError, ValueError) as exc:
+        if not isinstance(exc, ArmReadIsolationError):
+            return {"error": "read_rules_unsafe", "detail": "plugin read boundary could not be verified"}
         return {"error": exc.code, "detail": str(exc)}
 
     # `--verbose` makes `--output-format json` print the whole message array
@@ -3993,8 +4061,44 @@ class ContextRepositories(dict):
         return path
 
     def used_paths(self) -> list[Path]:
-        return [*(Path(p) for p in self.values()),
-                *(p for p in self.handed_out if p not in map(Path, self.values()))]
+        sources = list(dict.fromkeys([*(Path(p).resolve() for p in self.values()),
+                                      *(p.resolve() for p in self.handed_out)]))
+        paths = list(sources)
+        for source in sources:
+            # This is trusted source discovery, never workspace collection:
+            # linked and separate metadata must remain readable to the
+            # resolver, then be fenced from the arm. Keep workspace Git's
+            # rejection of those layouts intact. Reuse its scrubbed process
+            # sink and validated timeout rather than launching raw Git.
+            try:
+                metadata = source / ".git"
+                if metadata.is_file():
+                    pointer = workspace_git._read_regular(metadata).decode("utf-8").strip()
+                    if not pointer.startswith("gitdir: ") or len(pointer.splitlines()) != 1:
+                        raise ValueError("invalid Git directory pointer")
+                    metadata = source / pointer.removeprefix("gitdir: ")
+                elif not metadata.is_dir():
+                    if not (source / "HEAD").is_file() or not (source / "objects").is_dir():
+                        raise ValueError("missing Git directory")
+                    metadata = source
+                result = workspace_git._invoke(
+                    ["--git-dir=" + str(metadata.resolve()), "--work-tree=" + str(source),
+                     "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+                    cwd=source, home=Path("/nonexistent"),
+                    timeout=workspace_git.DEFAULT_TIMEOUT_S, check=True)
+                dirs = result.stdout.splitlines()
+                if len(dirs) != 2 or any(not Path(p).is_absolute() or not Path(p).is_dir() for p in dirs):
+                    raise ValueError("invalid Git directory discovery")
+                for directory in dirs:
+                    path = Path(directory).resolve()
+                    if path not in paths:
+                        paths.append(path)
+            except (OSError, ValueError, subprocess.SubprocessError,
+                    workspace_git.WorkspaceGitError) as exc:
+                raise ArmReadIsolationError(
+                    "a context checkout's Git metadata cannot be determined",
+                    code="context_git_metadata_unknown") from exc
+        return paths
 
 
 def _check_with_budget(frozen, subject, budget: dict) -> None:
@@ -4057,6 +4161,11 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
             "candidate_paths": ([Path(candidate).resolve() if kind == "skill" else
                                  Path(candidate).resolve().parent] if candidate else [])}
     _check_context_summary(plan)
+    # Prove every context metadata fence before any CLI/version call.
+    try:
+        repositories.used_paths()
+    except ArmReadIsolationError as exc:
+        raise delivery.DeliveryError("context_git_metadata_unknown", str(exc)) from exc
     return plan
 
 
@@ -4126,13 +4235,49 @@ def _in_place_record(plan: dict, role: str) -> dict:
     }
 
 
+@contextmanager
+def _in_place_pair(plan: dict | None):
+    """Reserve one absolute profile location for a serial pair.
+
+    Each arm gets a fresh workspace, HOME and temporary directory outside
+    this protected parent. Its profile is deleted before its sibling is
+    built, so equal registration paths never share delivered arm content.
+    """
+    if plan is None or "_pair_parent" in plan:
+        yield
+        return
+    parent = Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}pair-"))
+    plan["_pair_parent"] = parent
+    plan["_pair_config"] = parent / "config"
+    try:
+        yield
+    finally:
+        plan.pop("_pair_parent", None)
+        plan.pop("_pair_config", None)
+        shutil.rmtree(parent, ignore_errors=True)
+
+
+def _in_place_scratch(plan: dict) -> Path:
+    # The reserved profile parent is write-denied; keep writable workspaces
+    # and tool temporary files outside it.
+    if os.path.lexists(plan["_pair_config"]):
+        raise delivery.DeliveryError("install_collision", "a previous arm's profile was not cleaned")
+    return Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
+
+
+def _clean_in_place_config(plan: dict | None) -> None:
+    if plan is not None and "_pair_config" in plan:
+        shutil.rmtree(plan["_pair_config"], ignore_errors=True)
+
+
 def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
                       scratch: Path) -> tuple[Path, dict, dict]:
     """One in-place arm, in ADR 0012's order: copy, strip, deps/setup,
     seed_guard and the baseline commit (`materialize_workspace`), then the
     frozen context, then the subject added or removed, then the proofs.
     Returns the workspace, the arm's environment and the guidance delivery."""
-    home, config, tmpdir = scratch / "home", scratch / "config", scratch / "tmp"
+    home, tmpdir = scratch / "home", scratch / "tmp"
+    config = plan.get("_pair_config", scratch / "config")
     for path in (home, config, tmpdir):
         path.mkdir()
     workspace = materialize_workspace(seed, fixture, workspace=scratch / "ws")
@@ -4197,6 +4342,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     materialized (mkdtemp/copytree/git init) — a run this arm will never make
     is not worth building one only to shutil.rmtree it straight back out.
     """
+    if plan is not None and "_pair_parent" not in plan:
+        with _in_place_pair(plan):
+            return _run_arm(arm_name, fixture, seed, registries, args, timestamp,
+                            selection, out_dir=out_dir, extra=extra, plan=plan)
     agent_model, roster_judge_model, selection_error = (
         selection if selection is not None else select_models(fixture, args))
     # Read once per run by main() (#202); a caller that built its own
@@ -4240,7 +4389,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         if plan is None:
             workspace = materialize_workspace(seed, fixture)
         else:
-            scratch = Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}{arm_name}-"))
+            scratch = _in_place_scratch(plan)
             workspace, env_override, _ = _prepare_in_place(
                 _ROLES[arm_name], fixture, seed, plan, scratch)
     except BaseException as exc:
@@ -4253,6 +4402,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             if scratch is not None:
                 workspace_git.release(scratch / "ws")
                 shutil.rmtree(scratch, ignore_errors=True)
+                _clean_in_place_config(plan)
             raise
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, None, None, None, None, extra=extra,
@@ -4261,7 +4411,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        effort=effort, agent_model=agent_model)
         if scratch is not None:
             workspace_git.release(scratch / "ws")
-        shutil.rmtree(scratch if scratch is not None else exc.workspace, ignore_errors=True)
+            shutil.rmtree(scratch, ignore_errors=True)
+        elif isinstance(exc, SetupFailedError):
+            shutil.rmtree(exc.workspace, ignore_errors=True)
+        _clean_in_place_config(plan)
         return {"arm": arm_name, "error": error, "agent": None,
                 "objective_checks": None, "judge": None, "models_used": [], **extra}
     try:
@@ -4285,6 +4438,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             # settings loaded from that profile, and the context checkouts
             # denied to reads like every registry checkout.
             arm_config.update({
+                "pairing": "in_place",
+                "pair_parent": str(plan["_pair_parent"]),
+                "verified_plugin_roots": [str(p) for p in delivery.plugins_root(
+                    Path(env_override["CLAUDE_CONFIG_DIR"])).iterdir() if p.is_dir()],
                 "setting_sources": IN_PLACE_SETTING_SOURCES,
                 "env_override": env_override,
                 "session_scratch": str(scratch),
@@ -4466,6 +4623,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     finally:
         workspace_git.release(workspace)
         shutil.rmtree(scratch if scratch is not None else workspace, ignore_errors=True)
+        _clean_in_place_config(plan)
 
 
 def _unit_dir(results_dir: Path, skill: str, timestamp: str,
@@ -4505,6 +4663,9 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
     """
     fixture = item["fixture"]
     plan = item.get("in_place")
+    if plan is not None and "_pair_parent" not in plan:
+        with _in_place_pair(plan):
+            return _run_arm_trials(arm_name, item, registries, args, timestamp, selection)
     arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
                         item["name"]) / arm_name
     label = {"fixture": item["name"]} if item["name"] else {}
@@ -4836,6 +4997,10 @@ def _guard_error(guard: dict) -> dict:
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
+    plan = ctx.get("plan")
+    if plan is not None and "_pair_parent" not in plan:
+        with _in_place_pair(plan):
+            return _run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
     effort = _effort(args, fixture)
@@ -4844,8 +5009,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     agent_summary = raw = tool_trace = None
     agent_models = []
     agent_usage = None
-    scratch = Path(tempfile.mkdtemp(
-        prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
+    scratch = (_in_place_scratch(plan) if plan is not None else
+               Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-")))
     try:
         plan = ctx.get("plan")
         if plan is not None:
@@ -5004,6 +5169,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             "read_denied_outputs": run_outputs(args),
         }
         if plan is not None:
+            arm_config.update({"pairing": "in_place", "pair_parent": str(plan["_pair_parent"]),
+                               "verified_plugin_roots": [str(p) for p in delivery.plugins_root(
+                                   Path(env["CLAUDE_CONFIG_DIR"])).iterdir() if p.is_dir()]})
             arm_config["read_denied"] = [*arm_config["read_denied"],
                                          *plan["repositories"].used_paths(),
                                 *plan.get("candidate_paths", [])]
@@ -5129,6 +5297,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     finally:
         workspace_git.release(scratch / "ws")
         shutil.rmtree(scratch, ignore_errors=True)
+        _clean_in_place_config(plan)
 
 
 def _render_guidance_report(section: str, prompt: str, timestamp: str,
@@ -5310,8 +5479,9 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
     try:
         # Once per run, before any arm (#202), as the skill path does.
         args.harness_version = claude_version()
-        arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
-                         for arm in arms]
+        with _in_place_pair(plan):
+            arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
+                             for arm in arms]
     except guidance.GuidanceError as exc:
         # A checkout missing the hook, a heading that has drifted from its
         # manifest row, a payload that cannot be read: all configuration, all
@@ -6131,10 +6301,11 @@ def main() -> int:
             # Resolved once per fixture: one trusted-roster read, one model
             # choice, every arm and every trial of that fixture.
             selection = select_models(item["fixture"], args)
-            outcomes.append((item, [
-                _run_arm_trials(name, item, registries, args, timestamp,
-                                selection)
-                for name in arm_names]))
+            with _in_place_pair(item.get("in_place")):
+                outcomes.append((item, [
+                    _run_arm_trials(name, item, registries, args, timestamp,
+                                    selection)
+                    for name in arm_names]))
     except guidance.GuidanceError as exc:
         # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,
         # _nested_repo_diff, judge.score, the objective git checks — checks

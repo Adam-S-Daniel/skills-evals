@@ -140,6 +140,39 @@ class _TempLayout(unittest.TestCase):
 
 
 class WorktreeResolutionTests(_TempLayout):
+    def test_context_checkout_fences_external_git_metadata(self):
+        for linked in (False, True):
+            with self.subTest(linked=linked):
+                checkout = self.root / f"context-{linked}"
+                metadata = self.root / f"context-history-{linked}"
+                checkout.mkdir()
+                git("init", "-q", f"--separate-git-dir={metadata}", cwd=checkout)
+                git("commit", "-q", "-m", "init", "--allow-empty", cwd=checkout)
+                source = checkout
+                if linked:
+                    source = self.root / "external-linked"
+                    git("worktree", "add", "--detach", "-q", str(source), cwd=checkout)
+                repositories = run_eval.ContextRepositories({"example/context": source}, None)
+                settings = run_eval.arm_sandbox_settings(
+                    repositories.used_paths(), home=self.home, path_env="",
+                    harness_root=self.worktree, profiles=[], tmp_root=self.tmp)
+                fs = settings["sandbox"]["filesystem"]
+                for target in (metadata / "objects", metadata / "config"):
+                    self.assertTrue(any(run_eval._within(target, Path(p)) for p in fs["denyRead"]))
+                    self.assertTrue(any(run_eval._within(target, Path(p)) for p in fs["denyWrite"]))
+                    self.assertTrue(covers(read_rule_paths(settings), target))
+                    edits = [rule[len("Edit(/"):-1].removesuffix("/**")
+                             for rule in settings["permissions"]["deny"] if rule.startswith("Edit(/")]
+                    self.assertTrue(covers(edits, target))
+
+    def test_context_git_metadata_discovery_fails_closed(self):
+        checkout = self.root / "broken-context"
+        checkout.mkdir()
+        (checkout / ".git").write_text("gitdir: missing\n")
+        with self.assertRaises(run_eval.ArmReadIsolationError) as caught:
+            run_eval.ContextRepositories({"example/context": checkout}, None).used_paths()
+        self.assertEqual(caught.exception.code, "context_git_metadata_unknown")
+
     def test_a_worktree_resolves_to_the_main_clone(self):
         self.assertEqual(run_eval.harness_clone_root(self.worktree), self.clone)
         self.assertEqual(run_eval.harness_clone_root(self.clone), self.clone)
@@ -494,7 +527,10 @@ class ReadDenySettingsTests(_TempLayout):
                          str(self.registry), str(self.guidance), str(results),
                          str(archive), str(self.home), str(leftover),
                          str(self.workspace)],
-            "allowRead": [str(self.home / ".gitconfig")], "denyWrite": []})
+            "allowRead": [str(self.home / ".gitconfig")],
+            "denyWrite": [str(self.registry), str(self.guidance)]})
+        rules += [rule for path in (self.registry, self.guidance)
+                  for rule in (f"Edit(/{path})", f"Edit(/{path}/**)")]
         self.assertEqual(settings["permissions"], {"deny": rules})
 
     def test_the_workspace_is_not_denied(self):

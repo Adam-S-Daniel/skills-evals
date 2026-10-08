@@ -519,6 +519,8 @@ def check_in_place(doc, where: str, parts: dict) -> None:
     _pattern(proof["revision"], f"{where}: guidance revision", SHA_RE)
     _pattern(proof["digest"], f"{where}: guidance digest", DIGEST_RE)
     _pattern(proof["hook_digest"], f"{where}: hook digest", DIGEST_RE, null=True)
+    if proof["hook_digest"] is None:
+        raise Rejected(f"{where}: in-place context requires a hook digest")
     _integer(proof["bytes"], f"{where}: guidance bytes", 1, MAX_CONTEXT_BYTES)
     if not isinstance(proof["sections"], list) or \
             len(proof["sections"]) > MAX_CONTEXT_ITEMS:
@@ -576,6 +578,9 @@ def check_in_place(doc, where: str, parts: dict) -> None:
     arm = doc["arm_context"]
     _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS, ARM_CONTEXT_KEYS)
     _integer(arm["skills"], f"{where}: arm_context.skills", 0, 4096)
+    if doc["arm"] == "with_skill" and doc["role"] == "with" \
+            and arm["skills"] == 0:
+        raise Rejected(f"{where}: with_skill arm has no installed skill")
     _pattern(arm["skills_digest"], f"{where}: skills digest", DIGEST_RE)
     _pattern(arm["guidance_digest"], f"{where}: arm guidance digest", DIGEST_RE)
     _integer(arm["guidance_bytes"], f"{where}: arm guidance bytes", 0,
@@ -584,6 +589,9 @@ def check_in_place(doc, where: str, parts: dict) -> None:
         raise Rejected(f"{where}: skill treatment changed guidance")
     if kind == "skill" and arm["guidance_bytes"] != proof["bytes"]:
         raise Rejected(f"{where}: skill treatment changed guidance size")
+    if subject["action"] == "added" and doc["role"] == "without" \
+            and arm["guidance_digest"] != proof["digest"]:
+        raise Rejected(f"{where}: without arm changed guidance for an added subject")
     if kind == "guidance":
         wanted_bytes = proof["bytes"]
         if subject["action"] == "removed":

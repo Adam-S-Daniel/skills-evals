@@ -468,8 +468,11 @@ def check_skills(config: Path, workspace: Path, expected: Mapping[str, str],
     if subject is None:
         return
     digests = {subject.tested_digest, subject.deployed_digest} - {None}
-    copies = [name for name, digest in found.items() if digest in digests]
-    aliases = []
+    identity = f"{subject.bundle}:{subject.skill}"
+    # The frozen manifest binds this bundle to subject.registry; its catalog
+    # key and the verified digest identify the deployed or candidate copy.
+    copies = [name for name, digest in found.items() if name == identity and digest in digests]
+    aliases = [name for name, digest in found.items() if name != identity and digest in digests]
     roots = [Path(workspace) / ".claude", Path(config)]
     if home is not None:
         roots.append(Path(home) / ".claude")
@@ -492,10 +495,10 @@ def check_skills(config: Path, workspace: Path, expected: Mapping[str, str],
     for name in found:
         bundle, skill = name.split(":", 1)
         catalog_name = _catalog_name((plugins_root(config) / bundle / "skills" / skill / "SKILL.md").read_bytes())
-        if catalog_name is not None and catalog_name.rsplit(":", 1)[-1] == subject.skill and skill != subject.skill:
+        catalog_identity = (catalog_name if catalog_name is not None and ":" in catalog_name
+                            else f"{bundle}:{catalog_name}")
+        if catalog_identity == identity and name != identity:
             aliases.append(name)
-    copies += [name for name, digest in found.items()
-               if name.split(":", 1)[-1] == subject.skill and digest not in digests]
     if aliases:
         raise DeliveryError("subject_alias_present", f"{subject.skill} also reaches the "
                             "arm outside its plugin")
@@ -542,12 +545,16 @@ def deliver_guidance(hook: bytes | None, payload: bytes, *, scratch: Path,
     if info["returncode"] != 0 or not info["installed"]:
         raise DeliveryError("delivery_failed", f"the hook exited {info['returncode']} and "
                             f"the marked block is {'present' if info['installed'] else 'absent'}")
-    body = block_body(Path(config) / "CLAUDE.md")
-    wanted = {payload + _END_MARK + b"\n"}
+    raw = (Path(config) / "CLAUDE.md").read_bytes()
+    header = (guidance.BEGIN_MARK.encode("utf-8") + b"\n"
+              + f"<!-- fleet-guidance-version: {_sha256(payload)[:8]} -->\n".encode()
+              + f"<!-- fleet-guidance-delivered: {PAYLOAD_MTIME} -->\n".encode())
+    wanted = {header + payload + _END_MARK + b"\n"}
     if payload.startswith(_REPO_HEADER):
-        wanted.add(payload[len(_REPO_HEADER):] + _END_MARK + b"\n")
-    if body not in wanted:
-        raise DeliveryError("delivery_failed", "the delivered block differs from the payload")
+        wanted.add(header + payload[len(_REPO_HEADER):] + _END_MARK + b"\n")
+    if raw not in wanted:
+        raise DeliveryError("delivery_failed", "the complete delivered file or metadata differs from the payload")
+    body = raw[len(header):]
     return {"bytes": len(payload), "digest": _sha256(payload),
             "block_digest": _sha256(body), "hook_verdict": info["verdict"]}
 

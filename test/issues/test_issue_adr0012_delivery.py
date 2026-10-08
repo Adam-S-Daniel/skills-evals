@@ -75,7 +75,7 @@ CANDIDATE = {"SKILL.md": SAMPLE["SKILL.md"] + b"Candidate body.\n"}
 FRESH = {"SKILL.md": b"---\nname: fresh\ndescription: Not adopted.\n---\n\nFresh.\n"}
 
 RECORDER = f"""#!{sys.executable}
-import hashlib, json, os, sys
+import fnmatch, hashlib, json, os, sys
 from pathlib import Path
 argv = sys.argv[1:]
 if argv == ["--version"]:
@@ -94,8 +94,34 @@ if cfg:
     rec["plugins"] = {{f.relative_to(root).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest()
                       for f in sorted(root.rglob("*")) if f.is_file()}} if root.is_dir() else {{}}
     rec["settings"] = json.loads((p / "settings.json").read_text()) if (p / "settings.json").is_file() else None
+    rec["registrations"] = {{name: (p / "plugins" / name).read_bytes().hex()
+                             for name in ("known_marketplaces.json", "installed_plugins.json")}}
 skills = Path(os.getcwd()) / ".claude" / "skills"
 rec["workspace_skills"] = sorted(x.name for x in skills.iterdir()) if skills.is_dir() else []
+if cfg and os.environ.get("REC_MODE") == "read_resources":
+    policy = json.loads(argv[argv.index("--settings") + 1])
+    filesystem = policy["sandbox"]["filesystem"]
+    patterns = [r[len("Read(/"):-1].removesuffix("/**")
+                for r in policy["permissions"]["deny"] if r.startswith("Read(/")]
+    def within(path, root):
+        return path == root or root in path.parents
+    def denied_tool(path):
+        return any(len(pattern.split("/")) == len(candidate.parts) and all(
+            fnmatch.fnmatchcase(part.lower(), glob.lower())
+            for part, glob in zip(candidate.parts[1:], pattern.split("/")[1:]))
+            for pattern in patterns for candidate in (path, *path.parents))
+    rec["resource_reads"] = {{}}
+    probes = [root / "bundle/skills/sample/scripts/run.sh", p / "settings.json",
+              p / "CLAUDE.md", p / "plugins/private/future", p / "projects/other/session.jsonl",
+              Path(os.environ["HOME"]) / "private"]
+    for probe in probes:
+        probe = probe.resolve()
+        shell_denied = any(within(probe, Path(r)) for r in filesystem["denyRead"])
+        if any(within(probe, Path(r)) for r in filesystem.get("allowRead", [])):
+            shell_denied = False
+        allowed = not shell_denied and not denied_tool(probe)
+        rec["resource_reads"][str(probe)] = {{"allowed": allowed,
+            "bytes": probe.read_bytes().hex() if allowed else None}}
 with open(os.environ["REC_LOG"], "a") as fh:
     fh.write(json.dumps(rec) + "\\n")
 mode = os.environ.get("REC_MODE")
@@ -447,6 +473,122 @@ class SubjectTests(Base):
                          frozen.guidance + b"\n" + DOCKER)
 
 
+class DeliveryReviewTests(Base):
+    def test_finding3_qualified_subject_keeps_distinct_same_named_content(self):
+        plan = self.plan("bundle:sample")
+        frozen = plan["frozen"]
+        distinct = replace(frozen.skills[0], bundle="two", skill="sample",
+                           digest=digest(CANDIDATE), files=CANDIDATE,
+                           modes={"SKILL.md": "100644"})
+        plan["frozen"] = replace(frozen, skills=(*frozen.skills, distinct))
+        snapshots = []
+        with run_eval._in_place_pair(plan):
+            for role in ("with", "without"):
+                scratch = run_eval._in_place_scratch(plan)
+                workspace, env, _ = run_eval._prepare_in_place(role, {}, self.seed(), plan, scratch)
+                try:
+                    installed = delivery.installed_skills(Path(env["CLAUDE_CONFIG_DIR"]))
+                    self.assertEqual(installed["two:sample"], digest(CANDIDATE))
+                    self.assertEqual("bundle:sample" in installed, role == "with")
+                    snapshots.append(tree(delivery.plugins_root(Path(env["CLAUDE_CONFIG_DIR"])) / "two"))
+                finally:
+                    run_eval.workspace_git.release(workspace)
+                    shutil.rmtree(scratch)
+                    run_eval._clean_in_place_config(plan)
+        self.assertEqual(snapshots[0], snapshots[1])
+
+    def test_finding3_true_content_alias_has_its_own_error(self):
+        frozen = self.frozen()
+        subject = delivery.resolve_skill_subject(frozen, "sample", self.registries)
+        alias = replace(frozen.skills[0], bundle="two", skill="sample", digest=digest(SAMPLE),
+                        files=SAMPLE, modes=subject.modes)
+        frozen = replace(frozen, skills=(*frozen.skills, alias))
+        config = self.root / "cfg"
+        delivery.install_plugins(config, frozen.skills, {"bundle", "two"})
+        self.refused("subject_alias_present", lambda: delivery.check_skills(
+            config, self.root / "workspace", delivery.expected_skills(frozen, subject, "with"),
+            subject, "with"))
+
+    def test_finding4_complete_guidance_file_and_metadata_are_exact(self):
+        payload = self.frozen().guidance
+        begin = delivery.guidance.BEGIN_MARK.encode() + b"\n"
+        canonical = (begin + f"<!-- fleet-guidance-version: {hashlib.sha256(payload).hexdigest()[:8]} -->\n".encode()
+                     + b"<!-- fleet-guidance-delivered: 0 -->\n" + payload
+                     + b"<!-- END FLEET GUIDANCE -->\n")
+        contaminated = (
+            b"## Removed subject\n" + canonical,
+            canonical.replace(b"fleet-guidance-version: ", b"fleet-guidance-version: bad"),
+            canonical.replace(b"fleet-guidance-delivered: 0", b"fleet-guidance-delivered: 7"),
+            canonical.replace(payload, b"<!-- fleet-guidance-uncontrolled: text -->\n" + payload),
+            canonical + b"Extra subject\n")
+        for n, raw in enumerate(contaminated):
+            scratch = self.root / f"guidance-{n}"
+            config = scratch / "config"
+            config.mkdir(parents=True)
+            def fake_deliver(*args, **kwargs):
+                (config / "CLAUDE.md").write_bytes(raw)
+                return {"returncode": 0, "installed": True, "verdict": "installed"}
+            with self.subTest(case=n), mock.patch.object(delivery.guidance, "deliver", fake_deliver):
+                self.refused("delivery_failed", lambda: delivery.deliver_guidance(
+                    HOOK, payload, scratch=scratch, home=scratch / "home", config=config))
+
+    def test_finding5_registration_bytes_are_equal_and_paths_resolve(self):
+        plan = self.plan()
+        records = []
+        with run_eval._in_place_pair(plan):
+            parent = plan["_pair_parent"]
+            for role in ("with", "without"):
+                scratch = run_eval._in_place_scratch(plan)
+                workspace, env, _ = run_eval._prepare_in_place(role, {}, self.seed(), plan, scratch)
+                try:
+                    config = Path(env["CLAUDE_CONFIG_DIR"])
+                    record = {rel: (config / rel).read_bytes() for rel in (
+                        "plugins/known_marketplaces.json", "plugins/installed_plugins.json")}
+                    records.append(record)
+                    marketplace = json.loads(record["plugins/known_marketplaces.json"])[delivery.MARKETPLACE]
+                    self.assertEqual(marketplace["source"]["path"], marketplace["installLocation"])
+                    self.assertTrue((Path(marketplace["installLocation"]) / ".claude-plugin/marketplace.json").is_file())
+                    installed = json.loads(record["plugins/installed_plugins.json"])["plugins"]
+                    for entries in installed.values():
+                        self.assertTrue((Path(entries[0]["installPath"]) / ".claude-plugin/plugin.json").is_file())
+                finally:
+                    run_eval.workspace_git.release(workspace)
+                    shutil.rmtree(scratch)
+                    run_eval._clean_in_place_config(plan)
+            self.assertEqual(records[0], records[1])
+            self.assertTrue(parent.is_dir())
+        self.assertFalse(parent.exists())
+        self.assertNotIn("_pair_parent", plan)
+
+    def test_stale_pair_profile_fails_closed_before_agent(self):
+        plan = self.plan()
+        fixture = {"skill": "sample", "prompt": "do it", "context": self.metadata,
+                   "registry": REGISTRY_URL, "objective_checks": []}
+        with run_eval._in_place_pair(plan):
+            plan["_pair_config"].mkdir()
+            with mock.patch.object(run_eval, "run_agent") as agent:
+                result = run_eval._run_arm(
+                    "with_skill", fixture, self.seed(), self.registries, self.args(),
+                    "20261007T000000Z", ("claude-test-model", None, None), plan=plan)
+                self.assertEqual(result["error"]["type"], "install_collision")
+                agent.assert_not_called()
+        self.assertFalse(self.log.exists())
+
+    def test_finding6_raw_line_endings_remove_exact_extent(self):
+        for newline in ("\n", "\r\n", "\r"):
+            raw = newline.join(("Intro é.", "## Alpha rule", "Alpha ✓.",
+                                "## Bravo rule", "Bravo.", "")).encode()
+            frozen = replace(self.frozen(), guidance=raw,
+                             guidance_files=(("agents-md/base.md", raw),))
+            subject = delivery.resolve_section_subject(frozen, "alpha", self.repositories)
+            start, end = raw.index(b"## Alpha rule"), raw.index(b"## Bravo rule")
+            with self.subTest(newline=repr(newline)):
+                self.assertEqual((subject.start_byte, subject.end_byte), (start, end))
+                self.assertEqual(subject.tested_raw, raw[start:end])
+                self.assertEqual(delivery.guidance_payload(frozen, subject, "without"), raw[:start] + raw[end:])
+                self.assertEqual(delivery.guidance_payload(frozen, subject, "with"), raw)
+
+
 class ArmDeliveryTests(Base):
     def config_trees(self, scratch):
         return tree(scratch / "config" / "plugins" / "marketplaces" / delivery.MARKETPLACE / "plugins")
@@ -739,6 +881,10 @@ class EndToEndTests(Base):
         # Other arms' scratch profiles: the harness's TMPDIR prefixes.
         self.assertTrue(any(run_eval.ARM_WORKSPACE_PREFIX in rule for rule in rules), rules[:5])
         self.assertIn(str(config), sandbox["filesystem"]["denyWrite"])
+        self.assertIn(str(scratch_home), sandbox["filesystem"]["denyWrite"])
+        self.assertIn(str(config.parent), sandbox["filesystem"]["denyWrite"])
+        self.assertFalse(any(run_eval._within(Path(call["cwd"]), Path(path))
+                             for path in sandbox["filesystem"]["denyWrite"]))
         self.assertIn(f"Edit(/{config})", rules)
         self.assertIn(f"Edit(/{config}/**)", rules)
         self.assertEqual(run_eval_flag(argv, "--disallowedTools"), "WebFetch,WebSearch")
@@ -760,25 +906,64 @@ class EndToEndTests(Base):
         self.assertFalse(self.results.exists())
         self.assertFalse(self.version_log.exists(), "local refusal must precede --version too")
 
+    def test_agent_reads_delivered_resources_but_not_private_profile(self):
+        fixture = self.fixture_dir(env={"REC_LOG": str(self.log), "REC_MODE": "read_resources"})
+        proc = self.run_main(fixture, "--arm", "with_skill", "--pairing", "in_place",
+                             "--timestamp", self.TS)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        (call,) = self.calls()
+        reads = call["resource_reads"]
+        resource = next(value for path, value in reads.items() if path.endswith("scripts/run.sh"))
+        self.assertIs(resource["allowed"], True)
+        self.assertEqual(resource["bytes"], SAMPLE["scripts/run.sh"].hex())
+        self.assertTrue(all(not value["allowed"] for path, value in reads.items()
+                            if not path.endswith("scripts/run.sh")))
+        self.assert_arm_isolation(call, Path(call["env"]["CLAUDE_CONFIG_DIR"]))
+
+    def test_plugin_read_exceptions_refuse_unverified_content_before_spawn(self):
+        plan = self.plan()
+        for mutation in ("symlink", "fifo", "hooks"):
+            with self.subTest(mutation=mutation):
+                _, workspace, env, _ = self.prepare("with", plan)
+                bundle = delivery.plugins_root(Path(env["CLAUDE_CONFIG_DIR"])) / "bundle"
+                resource = bundle / "skills/sample/scripts/run.sh"
+                if mutation == "hooks":
+                    (bundle / ".claude-plugin/plugin.json").write_text(json.dumps({
+                        "name": "bundle", "version": delivery.PLUGIN_VERSION, "hooks": {}}))
+                else:
+                    resource.unlink()
+                    if mutation == "symlink":
+                        resource.symlink_to(self.home / ".claude/.credentials.json")
+                    else:
+                        os.mkfifo(resource)
+                result = run_eval.run_agent(workspace, "do it", {
+                    "name": "with_skill", "env_override": env,
+                    "verified_plugin_roots": [bundle]})
+                self.assertEqual(result["error"], "read_rules_unsafe")
+        self.assertEqual(self.calls(), [])
+
     def test_hosted_in_place_skill_pair_end_to_end(self):
         proc = self.run_main(self.fixture_dir(followups=["and again"]), "--arm", "both",
                              "--pairing", "in_place", "--timestamp", self.TS)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         calls = self.calls()
         self.assertEqual(len(calls), 4)
-        by_config = {}
+        by_subject = {}
         for call in calls:
-            by_config.setdefault(call["env"]["CLAUDE_CONFIG_DIR"], []).append(call)
-        self.assertEqual(len(by_config), 2)
-        for config, turns in by_config.items():
+            present = "bundle/skills/sample/SKILL.md" in call["plugins"]
+            by_subject.setdefault(present, []).append(call)
+        self.assertEqual(len(by_subject), 2)
+        self.assertEqual(len({call["env"]["CLAUDE_CONFIG_DIR"] for call in calls}), 1)
+        for turns in by_subject.values():
             self.assertEqual(len(turns), 2)
             self.assertIn("--resume", turns[1]["argv"])
             for call in turns:
-                self.assert_arm_isolation(call, Path(config))
+                self.assert_arm_isolation(call, Path(call["env"]["CLAUDE_CONFIG_DIR"]))
                 self.assertEqual(call["workspace_skills"], [])
-        with_call, without_call = sorted((t[0] for t in by_config.values()),
+        with_call, without_call = sorted((t[0] for t in by_subject.values()),
                                          key=lambda c: "bundle/skills/sample/SKILL.md" not in c["plugins"])
         self.assertEqual(with_call["claude_md"], without_call["claude_md"])
+        self.assertEqual(with_call["registrations"], without_call["registrations"])
         self.assertEqual({k: v for k, v in with_call["plugins"].items()
                           if not k.startswith("bundle/skills/sample/")}, without_call["plugins"])
         for arm, role in (("with_skill", "with"), ("without_skill", "without")):
@@ -897,6 +1082,7 @@ class EndToEndTests(Base):
         for call in calls:
             self.assert_arm_isolation(call, Path(call["env"]["CLAUDE_CONFIG_DIR"]))
         self.assertEqual(calls[0]["plugins"], calls[2]["plugins"])
+        self.assertEqual(calls[0]["registrations"], calls[2]["registrations"])
         self.assertNotEqual(calls[0]["claude_md"], calls[2]["claude_md"])
         run_dir = self.results / "guidance" / "bravo" / self.TS
         self.assertTrue(run_dir.is_dir(), "guidance must honor the requested timestamp")

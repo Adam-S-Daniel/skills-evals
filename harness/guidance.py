@@ -519,13 +519,22 @@ def h2_extents(text: str) -> list[dict]:
     before comparing, which is why it agrees; do not "fix" either side to
     match the other.
     """
-    lines = text.split("\n")
+    # CommonMark normalizes CRLF and lone CR before parsing. Keep offsets
+    # into the original text, including both characters of a CRLF delimiter.
     line_start = [0]
-    for i in range(len(lines) - 1):
-        line_start.append(line_start[-1] + len(lines[i]) + 1)
+    index = 0
+    while index < len(text):
+        if text[index] == "\r":
+            index += 2 if text[index:index + 2] == "\r\n" else 1
+            line_start.append(index)
+        elif text[index] == "\n":
+            index += 1
+            line_start.append(index)
+        else:
+            index += 1
 
     def offset_at(index: int) -> int:
-        return line_start[index] if index < len(lines) else len(text)
+        return line_start[index] if index < len(line_start) else len(text)
 
     tokens = _markdown_it().parse(text)
     raw = []
@@ -535,7 +544,7 @@ def h2_extents(text: str) -> list[dict]:
 
     out = []
     for i, (heading, start_line) in enumerate(raw):
-        end_line = raw[i + 1][1] if i + 1 < len(raw) else len(lines)
+        end_line = raw[i + 1][1] if i + 1 < len(raw) else len(line_start)
         out.append({"heading": heading, "start": offset_at(start_line),
                     "end": offset_at(end_line)})
     return out
