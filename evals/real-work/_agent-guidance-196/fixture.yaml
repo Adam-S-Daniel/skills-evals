@@ -27,6 +27,17 @@
 
 subject: any
 draft: true
+# Guidance pin proved byte for byte against the base commit's
+# .claude/hooks/fleet-guidance.md. Measured guidance/catalog/payload bytes:
+# 24477/5431/679753; each ceiling is ceil(measured * 1.25).
+context:
+  repository: Adam-S-Daniel/_agent-guidance
+  revision: 720469abbef4948e9b0ce41da9a6b3e486b3148c
+  guidance_revision: 720469abbef4948e9b0ce41da9a6b3e486b3148c
+  budget:
+    guidance_bytes: 30597
+    skill_catalog_bytes: 6789
+    skill_payload_bytes: 849692
 strip_agent_context: true
 deps:
   - manager: npm

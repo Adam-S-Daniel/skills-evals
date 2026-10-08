@@ -99,6 +99,8 @@ if args[:2] == ["api", "graphql"]:
     answer = data["graphql"]
 elif re.fullmatch(r"repos/[^/]+/[^/]+/pulls/[0-9]+", rest):
     answer = data["pull"]
+elif re.fullmatch(r"repos/[^/]+/[^/]+/commits/[0-9a-f]{40}", rest):
+    answer = data["commit"]
 elif re.fullmatch(r"repos/[^/]+/[^/]+/issues/[0-9]+", rest):
     answer = data["issues"].get(rest.rsplit("/", 1)[1])
     if answer is None:
@@ -280,6 +282,11 @@ class _BuildCase(_Case):
         data = (json.loads(self.gh_data.read_text(encoding="utf-8"))
                 if self.gh_data.exists() else rest(3))
         data.update(answers)
+        if isinstance(data["pull"], dict):
+            if isinstance(data["pull"].get("base"), dict):
+                data["pull"]["base"].setdefault("sha", self.base)
+            data["pull"].setdefault("merge_commit_sha", self.merge)
+        data.setdefault("commit", {"sha": self.merge, "parents": [{"sha": self.base}]})
         self.gh_data.write_text(json.dumps(data), encoding="utf-8")
 
     def build(self, **spec_changes) -> Path:
@@ -869,6 +876,25 @@ class _GateCase(_BuildCase):
 
     def setUp(self):
         super().setUp()
+        # The old build fixture carries deliberately unprovable guidance.
+        # Supply readable trusted Git history so its null pin stays blocked,
+        # and never make a network read in these gate tests.
+        trusted_guidance = self.tmp / "trusted-guidance"
+        trusted_guidance.mkdir()
+        self.git(trusted_guidance, "init", "-q", "-b", "main")
+        self.write(trusted_guidance, {"agents-md/base.md": "Trusted guidance.\n",
+                                    "repos.yml": "default_sections: []\n"})
+        self.git(trusted_guidance, "add", "-A")
+        with mock.patch.dict(os.environ, GIT_COMMITTER_DATE="2026-08-31T11:00:00Z"):
+            self.git(trusted_guidance, "commit", "-qm", "trusted guidance")
+        self.git(trusted_guidance, "update-ref", "refs/remotes/origin/main", "HEAD")
+        mappings = {"example/toy": self.clone, scaffold.context.GUIDANCE_REPOSITORY: trusted_guidance}
+        self.context_repositories = mappings
+        original = scaffold.trusted_context_repositories
+        injection = mock.patch.object(scaffold, "trusted_context_repositories",
+                                      side_effect=lambda metadata, supplied=None: original(metadata, supplied or mappings))
+        injection.start()
+        self.addCleanup(injection.stop)
         self.fixture = self.build()
         self.repo = self.tmp / "skills-evals"
         self.repo.mkdir()
@@ -1029,6 +1055,121 @@ class GateTests(_GateCase):
         self.assertNotIn("operands", err.getvalue())
 
 
+class GuidanceContextGateTests(_GateCase):
+    """Gate the actual branch against trusted byte proofs, without resolver mocks."""
+
+    def setUp(self):
+        super().setUp()
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        # Prove base-only historical copy: no managed block, lock or opt-ins.
+        base_bytes = b"Trusted guidance.\n"
+        self.git(self.clone, "rm", "AGENTS.md", "skills.lock")
+        self.write(self.clone, {".claude/hooks/fleet-guidance.md": base_bytes})
+        self.git(self.clone, "add", "-A")
+        self.git(self.clone, "commit", "-qm", "trusted context base")
+        self.base = self.git(self.clone, "rev-parse", "HEAD")
+        pull = json.loads(self.gh_data.read_text())["pull"]
+        pull["base"]["sha"] = self.base
+        self.set_gh(commit={"sha": self.merge, "parents": [{"sha": self.base}]}, pull=pull)
+        self.pin = self.git(source, "rev-parse", "HEAD")
+        self.metadata = {"repository": "example/toy", "revision": self.base,
+                         "guidance_revision": self.pin,
+                         "budget": {"guidance_bytes": (len(base_bytes) * 5 + 3) // 4,
+                                    "skill_catalog_bytes": 1, "skill_payload_bytes": 1}}
+        self.change_context(self.fixture, self.metadata)
+
+    @staticmethod
+    def change_context(root, metadata):
+        path = root / "fixture.yaml"
+        text = path.read_text()
+        data = yaml.safe_load(text)
+        data["context"] = metadata
+        comments = "\n".join(line for line in text.splitlines() if line.startswith("#"))
+        path.write_text(comments + "\n\n" + yaml.safe_dump(data))
+
+    def test_gate_accepts_proven_pin_and_exact_measured_budgets(self):
+        self.commit()
+        self.assertEqual(self.gate()["fixture_id"], "toy-7")
+
+    def reject_changed_budget(self, key):
+        metadata = json.loads(json.dumps(self.metadata))
+        metadata["budget"][key] += 1
+        self.assertRejected("budgets differ", lambda root: self.change_context(root, metadata))
+
+    def test_gate_refuses_guidance_budget_changed_by_one_byte(self):
+        self.reject_changed_budget("guidance_bytes")
+
+    def test_gate_refuses_catalog_budget_changed_by_one_byte(self):
+        self.reject_changed_budget("skill_catalog_bytes")
+
+    def test_gate_refuses_payload_budget_changed_by_one_byte(self):
+        self.reject_changed_budget("skill_payload_bytes")
+
+    def test_gate_refuses_a_valid_shaped_wrong_guidance_pin(self):
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        self.write(source, {"agents-md/base.md": b"Wrong guidance.\n"})
+        self.git(source, "add", "-A")
+        self.git(source, "commit", "-qm", "wrong bytes")
+        self.git(source, "update-ref", "refs/remotes/origin/main", "HEAD")
+        metadata = {**self.metadata, "guidance_revision": self.git(source, "rev-parse", "HEAD")}
+        self.assertRejected("byte proof failed", lambda root: self.change_context(root, metadata))
+
+    def test_gate_refuses_branch_chosen_null_when_proof_is_available(self):
+        metadata = {**self.metadata, "guidance_revision": None,
+                    "budget": dict.fromkeys(self.metadata["budget"], 1)}
+        self.assertRejected("null guidance pin bypasses", lambda root: self.change_context(root, metadata))
+
+    def test_gate_refuses_a_branch_only_byte_identical_guidance_pin(self):
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        self.write(source, {"branch-only.md": "Branch only.\n"})
+        self.git(source, "add", "-A")
+        self.git(source, "commit", "-qm", "branch only")
+        metadata = {**self.metadata, "guidance_revision": self.git(source, "rev-parse", "HEAD")}
+        self.assertRejected("byte proof failed", lambda root: self.change_context(root, metadata))
+
+    def test_gate_refuses_a_newer_default_branch_byte_identical_guidance_pin(self):
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        self.write(source, {"future.md": "Future guidance revision.\n"})
+        self.git(source, "add", "-A")
+        with mock.patch.dict(os.environ, GIT_COMMITTER_DATE="2027-01-01T00:00:00Z"):
+            self.git(source, "commit", "-qm", "future revision")
+        self.git(source, "update-ref", "refs/remotes/origin/main", "HEAD")
+        metadata = {**self.metadata, "guidance_revision": self.git(source, "rev-parse", "HEAD")}
+        self.assertRejected("byte proof failed", lambda root: self.change_context(root, metadata))
+
+    def test_gate_accepts_a_valid_historical_pin_even_when_finder_selects_another(self):
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        self.write(source, {"unrelated.md": "Unrelated.\n"})
+        self.git(source, "add", "-A")
+        self.git(source, "commit", "-qm", "unchanged guidance")
+        self.git(source, "update-ref", "refs/remotes/origin/main", "HEAD")
+        found = scaffold.context.find_guidance_revision("example/toy", self.base, self.context_repositories)
+        self.assertEqual(found.matching_revisions, 2)
+        self.assertNotEqual(found.revision, self.pin)
+        self.commit()
+        self.assertEqual(self.gate()["fixture_id"], "toy-7")
+
+    def test_blocked_null_refuses_budget_changes_and_missing_trusted_sources(self):
+        metadata = {**self.metadata, "guidance_revision": None,
+                    "budget": dict.fromkeys(self.metadata["budget"], 1)}
+        source = self.context_repositories[scaffold.context.GUIDANCE_REPOSITORY]
+        self.write(source, {"agents-md/base.md": b"No deployed match.\n"})
+        self.git(source, "add", "-A")
+        self.git(source, "commit", "-qm", "unprovable")
+        # Restrict trusted ancestry to this root commit; the older valid pin
+        # must not remain eligible for this blocked-context negative control.
+        tree = self.git(source, "rev-parse", "HEAD^{tree}")
+        root = subprocess.run(["git", "-C", str(source), "commit-tree", tree],
+                              input="Unrelated history\n", text=True, check=True,
+                              capture_output=True).stdout.strip()
+        self.git(source, "update-ref", "refs/remotes/origin/main", root)
+        scaffold.gate_context_bytes(metadata, self.context_repositories)
+        metadata["budget"]["guidance_bytes"] = 2
+        self.assertRejected("placeholders of 1", lambda root: self.change_context(root, metadata))
+        with self.assertRaisesRegex(ingest.Rejected, "byte proof failed"):
+            scaffold.gate_context_bytes(metadata, {"example/toy": self.clone})
+
+
 class GateSnapshotTests(_GateCase):
     """The real guarantee: the gate recomputes the snapshot on Actions, where
     GraphQL works, and rejects a branch whose snapshot or its times differ, so
@@ -1048,7 +1189,8 @@ class GateSnapshotTests(_GateCase):
         self.gate()
         calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
         self.assertEqual(calls[0], ["api", "repos/example/toy/pulls/7"])
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[2], ["api", f"repos/example/toy/commits/{self.merge}"])
+        self.assertEqual(len(calls), 5)
 
     def test_an_altered_snapshot_is_rejected(self):
         self.assertRejected("issue-before-fix.txt differs",
