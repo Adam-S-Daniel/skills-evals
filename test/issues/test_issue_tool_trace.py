@@ -81,6 +81,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 
 class ToolEventTests(unittest.TestCase):
     def setUp(self):

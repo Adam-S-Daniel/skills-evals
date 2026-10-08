@@ -73,6 +73,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class _StandIn(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="arm-hardening-")).resolve()

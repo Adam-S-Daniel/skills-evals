@@ -74,6 +74,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class ArmSandboxSettingsTests(unittest.TestCase):
     def test_the_settings_deny_github_and_fail_closed_with_no_escape(self):
         # Spelled out, not rebuilt from the helper: a widening key or an

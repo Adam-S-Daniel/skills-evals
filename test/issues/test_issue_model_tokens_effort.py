@@ -105,6 +105,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class Recorder:
     """Stands in for subprocess.run and records every argv."""
 

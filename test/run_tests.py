@@ -69,6 +69,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
 import run_eval  # noqa: E402

@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 
 import run_eval  # noqa: E402
+from scorers import bash_ast  # noqa: E402
 
 FAKE_REGISTRY = ROOT / "test" / "fixtures" / "fake_registry"
 
@@ -1113,6 +1114,8 @@ class ReviewedTempPrefixTests(_TempLayout):
                 self.assertTrue(any(text.startswith(p) for p in self.PREFIXES),
                                 (str(source), node.lineno, text))
 
+    @unittest.skipUnless(bash_ast.parser_importable(),
+                         "the pinned parser is not installed here")
     def test_shell_census_scratch_uses_a_denied_prefix(self):
         from scorers.bash_ast import parse_bash
         source = (ROOT / "scripts/publish_usage_census.sh").read_bytes()

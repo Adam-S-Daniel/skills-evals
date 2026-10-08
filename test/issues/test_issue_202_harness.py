@@ -77,6 +77,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class TestShippedCoolingOff(unittest.TestCase):
 
     def test_the_shipped_policy_sets_zero_and_says_why(self):

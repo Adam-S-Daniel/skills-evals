@@ -32,10 +32,12 @@ def arm_test_environment() -> dict[str, str]:
 
 
 def install_arm_test_environment() -> None:
-    """A unittest module fixture; restore the caller's environment afterward.
+    """Patch the environment for a test module and restore it at teardown.
 
     Tests measuring particular aliases or toolchains install their own
-    mount metadata or PATH inside this scope.
+    mount metadata or PATH inside this scope. Callers must expose
+    ``tearDownModule`` calling ``unittest.doModuleCleanups()``: pytest runs
+    module teardown hooks but does not run unittest's module-cleanup queue.
     """
     patcher = mock.patch.dict(os.environ, arm_test_environment())
     patcher.start()

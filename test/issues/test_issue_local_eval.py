@@ -132,6 +132,10 @@ def setUpModule() -> None:
     install_arm_test_environment()
 
 
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 @unittest.skipUnless(HAVE_GIT, "git is required")
 class TestLocalEval(unittest.TestCase):
 
