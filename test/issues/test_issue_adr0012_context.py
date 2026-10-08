@@ -84,6 +84,7 @@ class ContextTests(unittest.TestCase):
             "agents-md/eval-coverage.yml": b"- id: rule\n  file: agents-md/base.md\n  heading: A rule\n",
             "repos.yml": b"default_sections: []\n",
             ".claude/hooks/fleet-memory.sh": b"#!/bin/sh\nexit 0\n"})
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", self.guidance_sha)
         self.lock = {"registry": PRIMARY, "ref": self.source_sha,
                      "bundles": ["bundle"], "skills": {
                          "bundle/sample": "sha256:" + digest({"SKILL.md": SKILL,
@@ -190,7 +191,7 @@ class ContextTests(unittest.TestCase):
     def test_yaml_refuses_syntax_and_root_type(self):
         for raw in ("context: [", "[]", ""):
             with self.subTest(raw=raw):
-                self.error("invalid_context", lambda: self.ctx.load_fixture_yaml(raw, "fixture.yaml"))
+                self.error("invalid_fixture", lambda: self.ctx.load_fixture_yaml(raw, "fixture.yaml"))
 
     def test_context_checkout_flags_are_repeatable_and_explicit(self):
         parsed = self.ctx.parse_context_repos([
@@ -401,6 +402,34 @@ class ContextTests(unittest.TestCase):
         self.metadata["guidance_revision"] = self.commit(self.guidance, {"agents-md/base.md": b"new"})
         self.error("guidance_unproven", self.resolve)
 
+    def test_optin_section_mismatch_with_identical_base_is_unproven(self):
+        section = (("python", b"## Python\nShipped section.\n"),)
+        self.metadata["guidance_revision"] = self.commit(self.guidance, {
+            "agents-md/sections/python.md": b"## Python\nDifferent section.\n",
+            "agents-md/eval-coverage.yml": b"- id: python\n  file: agents-md/sections/python.md\n"})
+        self.metadata["revision"] = self.commit(self.consumer, {
+            "AGENTS.md": managed(BASE, section), ".agents-sync.yml": b"sections: [python]\n"})
+        self.error("guidance_unproven", self.resolve)
+
+    def test_managed_block_refuses_only_trailing_newline_or_whitespace_difference(self):
+        for mode in ("stub", "full"):
+            correct = managed(BASE, mode=mode)
+            for suffix in (b"", b"\n\n", b" \n", b"\t\n"):
+                with self.subTest(mode=mode, suffix=suffix):
+                    changed = correct.replace(b"\n<!-- END MANAGED SECTION -->", suffix + b"<!-- END MANAGED SECTION -->")
+                    self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": changed})
+                    self.error("guidance_unproven", self.resolve)
+            self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": correct})
+            self.assertEqual(self.resolve().guidance, BASE)
+
+    def test_payload_copy_refuses_only_trailing_newline_or_whitespace_difference(self):
+        for copied in (BASE.rstrip(b"\r\n"), BASE + b"\n", BASE + b" ", BASE + b"\t"):
+            with self.subTest(copied=copied):
+                self.metadata["revision"] = self.commit(self.consumer, {".claude/hooks/fleet-guidance.md": copied})
+                self.error("guidance_unproven", self.resolve)
+        self.metadata["revision"] = self.commit(self.consumer, {".claude/hooks/fleet-guidance.md": BASE})
+        self.assertEqual(self.resolve().guidance, BASE)
+
     def test_stub_alone_cannot_prove_full_guidance(self):
         self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
         self.metadata["revision"] = self.commit(self.consumer, {})
@@ -460,7 +489,96 @@ class ContextTests(unittest.TestCase):
     def test_find_guidance_revision_uses_exact_bytes_not_latest(self):
         self.commit(self.guidance, {"agents-md/base.md": b"new"})
         pin = self.ctx.find_guidance_revision(CONSUMER, self.revision, self.repositories)
-        self.assertEqual(pin, self.guidance_sha)
+        self.assertEqual(pin.revision, self.guidance_sha)
+        self.assertEqual(pin.matching_revisions, 1)
+
+    def test_find_guidance_revision_counts_unchanged_ancestor_commits_and_breaks_ties(self):
+        second = self.commit(self.guidance, {"unrelated.txt": b"unrelated"})
+        third = self.commit(self.guidance, {"unrelated.txt": b"another"})
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", third)
+        result = self.ctx.find_guidance_revision(CONSUMER, self.revision, self.repositories)
+        self.assertEqual(result.matching_revisions, 3)
+        self.assertEqual(result.revision, min(self.guidance_sha, second, third))
+
+    def test_find_guidance_revision_excludes_branch_only_and_newer_matches(self):
+        with mock.patch.dict(self.env, GIT_COMMITTER_DATE="2027-01-01T00:00:00+00:00"):
+            newer = self.commit(self.guidance, {"unrelated.txt": b"new"})
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", newer)
+        self.git(self.guidance, "checkout", "--detach", self.guidance_sha)
+        branch = self.commit(self.guidance, {"branch.txt": b"branch only"})
+        self.git(self.guidance, "branch", "branch-only", branch)
+        result = self.ctx.find_guidance_revision(CONSUMER, self.revision, self.repositories)
+        self.assertEqual(result.revision, self.guidance_sha)
+        self.assertEqual(result.matching_revisions, 1)
+
+    def test_find_guidance_revision_missing_default_branch_is_unproven(self):
+        self.git(self.guidance, "update-ref", "-d", "refs/remotes/origin/main")
+        self.error("guidance_unproven", lambda: self.ctx.find_guidance_revision(CONSUMER, self.revision, self.repositories))
+
+    def test_budget_hard_caps_accept_equal_and_refuse_one_byte_more(self):
+        caps = {"guidance_bytes": 1024 * 1024, "skill_catalog_bytes": 1024 * 1024,
+                "skill_payload_bytes": 64 * 1024 * 1024}
+        for key, cap in caps.items():
+            metadata = copy.deepcopy(self.metadata)
+            metadata["budget"][key] = cap
+            self.ctx.validate_context({"context": metadata}, "fixture.yaml")
+            metadata["budget"][key] += 1
+            self.error("invalid_context", lambda: self.ctx.validate_context({"context": metadata}, "fixture.yaml"))
+
+    def test_duplicate_top_level_fixture_keys_are_refused(self):
+        for raw in ("prompt: first\nprompt: second\n", "subject: any\nsubject: guidance\n"):
+            self.error("duplicate_key", lambda: self.ctx.load_fixture_yaml(raw, "fixture.yaml"))
+
+    def test_unrelated_malformed_fixture_uses_invalid_fixture(self):
+        for raw in ("prompt: [broken", "[]", "null", "? [unhashable]\n: value\n"):
+            self.error("invalid_fixture", lambda: self.ctx.load_fixture_yaml(raw, "fixture.yaml"))
+
+    def test_unrelated_malformed_fixture_exits_two_with_invalid_fixture_before_claude(self):
+        fixture = self.root / "malformed-fixture"
+        fixture.mkdir()
+        for raw in ("prompt: [broken", "[]", "? [unhashable]\n: value\n"):
+            (fixture / "fixture.yaml").write_text(raw)
+            result = subprocess.run([sys.executable, "harness/run_eval.py", str(fixture), "--arm", "both"],
+                                    cwd=ROOT, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn(b"invalid_fixture", result.stdout + result.stderr)
+            self.assertNotIn(b"invalid_context", result.stdout + result.stderr)
+
+    def test_production_trusted_fetch_preserves_symbolic_registry_refs_without_credentials(self):
+        self.git(self.guidance, "branch", "main", self.guidance_sha)
+        self.git(self.registry, "branch", "main", self.source_sha)
+        self.git(self.registry, "tag", "-a", "v1", "-m", "Annotated fixture", self.source_sha)
+        original_run = subprocess.run
+        fetch_calls = []
+
+        def local_transport(argv, **kwargs):
+            argv = list(argv)
+            self.assertEqual(argv[0], "git")
+            for index, value in enumerate(argv):
+                if isinstance(value, str) and value.startswith("https://github.com/"):
+                    identity = value[len("https://github.com/"):-len(".git")]
+                    fetch_calls.append((list(argv), dict(kwargs["env"])))
+                    argv[index] = str(self.repositories[identity])
+            return original_run(["git", *argv[1:]], **kwargs)
+
+        for ref in ("main", "v1", "HEAD"):
+            with self.subTest(ref=ref):
+                lock = copy.deepcopy(self.lock)
+                lock.pop("generated_from")
+                lock["ref"] = ref
+                self.update_lock(lock)
+                with mock.patch.object(_context_scaffold.subprocess, "run", side_effect=local_transport):
+                    with _context_scaffold.trusted_context_repositories(self.metadata) as mappings:
+                        resolved = self.resolve(repositories=mappings)
+                        self.assertEqual(resolved.skills[0].revision, self.source_sha)
+                        for path in mappings.values():
+                            self.assertEqual(self.git(path, "remote"), "")
+        self.assertTrue(fetch_calls)
+        for argv, environment in fetch_calls:
+            self.assertIn("credential.helper=", argv)
+            self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+            self.assertNotEqual(environment["HOME"], str(self.root))
+            self.assertNotIn("GH_TOKEN", environment)
 
     def test_find_guidance_revision_refuses_unmatched_bytes(self):
         self.metadata["revision"] = self.commit(self.consumer, {".claude/hooks/fleet-guidance.md": b"unmatched"})
@@ -540,7 +658,12 @@ class ScaffoldContextTests(_ContextBuildCase):
     def context_mock(self):
         mocked = mock.MagicMock()
         mocked.ContextError = _BlockedScaffoldContext
-        mocked.find_guidance_revision.return_value = "a" * 40
+        mocked.BUDGET_KEYS = frozenset(BUDGET)
+        mocked.BUDGET_MAX = {"guidance_bytes": 1024 * 1024,
+                             "skill_catalog_bytes": 1024 * 1024,
+                             "skill_payload_bytes": 64 * 1024 * 1024}
+        mocked.find_guidance_revision.return_value = _scaffold_types.SimpleNamespace(
+            revision="a" * 40, matching_revisions=3)
         mocked.resolve_context.return_value = _scaffold_types.SimpleNamespace(manifest={
             "measurements": {"guidance_bytes": 101, "skill_catalog_bytes": 4,
                              "skill_payload_bytes": 0}})
@@ -549,7 +672,8 @@ class ScaffoldContextTests(_ContextBuildCase):
     def test_build_records_candidate_context_and_measured_limits_before_trimming(self):
         mocked = self.context_mock()
         events = []
-        mocked.find_guidance_revision.side_effect = lambda *args: events.append("pin") or "a" * 40
+        mocked.find_guidance_revision.side_effect = lambda *args: events.append("pin") or _scaffold_types.SimpleNamespace(
+            revision="a" * 40, matching_revisions=3)
         mocked.resolve_context.side_effect = lambda *args: events.append("measure") or _scaffold_types.SimpleNamespace(
             manifest={"measurements": {"guidance_bytes": 101, "skill_catalog_bytes": 4,
                                        "skill_payload_bytes": 0}})
@@ -570,6 +694,7 @@ class ScaffoldContextTests(_ContextBuildCase):
         mocked.find_guidance_revision.assert_called_once_with(
             "example/toy", self.base, {"example/toy": self.clone})
         self.assertFalse(self.gh_log.exists())
+        self.assertIn("3 eligible byte-matching revisions", (target / "fixture.yaml").read_text())
 
     def test_build_marks_unproven_guidance_blocked_without_guessing_a_pin(self):
         mocked = self.context_mock()
@@ -617,6 +742,13 @@ class ScaffoldContextTests(_ContextBuildCase):
             target = self.build(issue=None)
         fixture = yaml.safe_load((target / "fixture.yaml").read_bytes())
         self.assertEqual(fixture["context"]["budget"]["guidance_bytes"], 127)
+
+    def test_build_refuses_headroom_that_exceeds_hard_budget_caps(self):
+        mocked = self.context_mock()
+        mocked.resolve_context.return_value.manifest["measurements"]["guidance_bytes"] = 1024 * 1024
+        with mock.patch.object(_context_scaffold, "context", mocked, create=True):
+            with self.assertRaisesRegex(_context_scaffold.ScaffoldError, "hard budget caps"):
+                self.build(issue=None)
 
     def test_snapshot_gate_refuses_missing_context_before_any_candidate_read(self):
         with mock.patch.object(_context_scaffold, "context", self.context_mock(), create=True):

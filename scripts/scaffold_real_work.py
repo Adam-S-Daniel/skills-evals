@@ -6,8 +6,10 @@ https://github.com/Adam-S-Daniel/skills-evals/issues/98 (DESIGN.md "The
 scaffolder and its gate"). Owner decision Q6, "Routine + own gate": the model
 call runs in the ADR 0010 routine, and the scaffold gets its own review gate.
 This script is every DETERMINISTIC part of that: the routine's model writes
-only the spec (the task text, `interface_strings:` and the checker
-selection), and everything else is read from git and GitHub.
+the spec (task text, interface strings, checker selection, dependencies and
+trim choices). BUILD derives other content from git and GitHub. GATE
+recomputes issue and context provenance, and checks the remaining branch
+content by schema and lint; it never executes the branch.
 
     python3 scripts/scaffold_real_work.py snapshot --candidate OWNER__REPO__PR \\
         --out FILE --registry AG/repos.yml \\
@@ -688,7 +690,8 @@ def _build_context(repo: str, revision: str, clone: Path,
     metadata = {"repository": repo, "revision": revision, "guidance_revision": None,
                 "budget": dict.fromkeys(keys, 1)}
     try:
-        metadata["guidance_revision"] = context.find_guidance_revision(repo, revision, mappings)
+        match = context.find_guidance_revision(repo, revision, mappings)
+        metadata["guidance_revision"] = match.revision
     except context.ContextError as error:
         if error.code != "guidance_unproven":
             raise ScaffoldError(f"context resolution failed: {error.code}") from None
@@ -696,17 +699,26 @@ def _build_context(repo: str, revision: str, clone: Path,
         # blocks resolution until guidance is proven and measured limits reviewed.
         return metadata, ("BLOCKED: guidance_unproven; context measurements unavailable. "
                           "Pin proven guidance and review measured limits before evaluation.")
-    measurement_context = {**metadata, "budget": dict.fromkeys(keys, 2**63 - 1)}
+    measurement_context = {**metadata, "budget": dict(context.BUDGET_MAX)}
     try:
         frozen = context.resolve_context(measurement_context, mappings)
     except context.ContextError as error:
         raise ScaffoldError(f"context resolution failed: {error.code}") from None
-    measured = frozen.manifest["measurements"]
+    metadata["budget"] = measured_budgets(frozen.manifest["measurements"])
+    return metadata, (f"Guidance provenance: {match.matching_revisions} eligible byte-matching revisions; "
+                      "selected greatest commit timestamp, then smallest full SHA.")
+
+
+def measured_budgets(measured: Mapping) -> dict:
+    """Exact integer ceiling of measured bytes times 1.25, minimum one."""
+    keys = context.BUDGET_KEYS
     if (not isinstance(measured, Mapping) or set(measured) != set(keys)
             or any(type(measured[key]) is not int or measured[key] < 0 for key in keys)):
         raise ScaffoldError("context measurements are not nonnegative byte counts")
-    metadata["budget"] = {key: max(1, (measured[key] * 5 + 3) // 4) for key in keys}
-    return metadata, None
+    limits = {key: max(1, (measured[key] * 5 + 3) // 4) for key in keys}
+    if any(limits[key] > context.BUDGET_MAX[key] for key in keys):
+        raise ScaffoldError("measured context with 25% headroom exceeds the hard budget caps")
+    return limits
 
 
 def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
@@ -956,7 +968,8 @@ def _safe_rel(rel: str) -> bool:
 
 
 def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
-         out: Path, *, fleet: tuple[list[str], list[str]]) -> dict:
+         out: Path, *, fleet: tuple[list[str], list[str]],
+         repositories: dict[str, Path] | None = None) -> dict:
     """Validate an untrusted `claude/scaffold-<id>` branch and write the
     fixture it adds to `out/<id>/`, or raise ingest.Rejected."""
     match = BRANCH_RE.fullmatch(branch)
@@ -1011,7 +1024,7 @@ def gate(repo: str, base: str, source: str, branch: str, expect_sha: str | None,
     problems, _ = static_problems(root)
     if problems:
         raise ingest.Rejected("; ".join(problems[:5]))
-    gate_snapshot(root, fixture_id, fleet)
+    gate_snapshot(root, fixture_id, fleet, repositories=repositories)
     # Only pattern-checked values: no key may carry content read from the
     # branch (a title, the prompt) into the job that holds a write token.
     return {"fixture_id": fixture_id, "sha": tip, "files": str(len(files))}
@@ -1038,7 +1051,8 @@ def gate_context(metadata: dict, repository: str, pull: dict, commit: dict) -> N
 
 
 def gate_snapshot(fixture_dir: Path, fixture_id: str,
-                  fleet: tuple[list[str], list[str]]) -> None:
+                  fleet: tuple[list[str], list[str]], *,
+                  repositories: dict[str, Path] | None = None) -> None:
     """Recompute the issue snapshot from GitHub and require the branch's to
     be the same bytes and times, or absent when there is no closing issue."""
     text = (fixture_dir / FIXTURE_FILE).read_text(encoding="utf-8")
@@ -1061,6 +1075,8 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
         expected = issue_snapshot(repo, pr, fleet, fixture["context"])
     except ScaffoldError as error:
         raise ingest.Rejected(f"the issue snapshot could not be recomputed: {error}") from None
+    with trusted_context_repositories(fixture["context"], repositories) as mappings:
+        gate_context_bytes(fixture["context"], mappings)
     path = fixture_dir / SNAPSHOT_FILE
     if expected is None:
         if named is not None or os.path.lexists(path) or answer_leak.SNAPSHOT_KEY in fixture:
@@ -1081,6 +1097,114 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
     for key in answer_leak.PROVENANCE_KEYS:
         if fixture.get(key) != expected[key]:
             raise ingest.Rejected(f"`{key}:` differs from the one recomputed from GitHub")
+
+
+@contextlib.contextmanager
+def trusted_context_repositories(metadata: dict, repositories: dict[str, Path] | None = None):
+    """Acquire public trusted objects without checkout, hooks, or credentials.
+
+    Injected local repositories support deterministic tests. Production reads
+    only fixed github.com URLs, validates lock identities before fetching, and
+    creates bare temporary stores with no remote or inherited push path.
+    """
+    if repositories is not None:
+        yield repositories
+        return
+    with tempfile.TemporaryDirectory(prefix="scaffold-context-") as temporary:
+        root = Path(temporary)
+        env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": temporary,
+               "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+               "GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1"}
+        mappings = {}
+        operations = 0
+
+        def run_git(command):
+            try:
+                result = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
+                                         "-c", "maintenance.auto=false", "-c", "gc.auto=0", *command],
+                                        env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE, timeout=30)
+            except (OSError, subprocess.TimeoutExpired):
+                raise ingest.Rejected("trusted context Git acquisition failed") from None
+            if result.returncode:
+                raise ingest.Rejected("trusted context Git acquisition failed")
+            return result.stdout
+
+        def fetch(identity, ref, target=None):
+            nonlocal operations
+            context._repository(identity)
+            if not isinstance(ref, str) or not context._REF.fullmatch(ref) or ".." in ref or "//" in ref or ref.endswith("/"):
+                raise ingest.Rejected("the trusted context source ref is malformed")
+            operations += 1
+            if operations > 12:
+                raise ingest.Rejected("the trusted context exceeds the source fetch count cap")
+            path = mappings.get(identity)
+            commands = []
+            if path is None:
+                path = root / str(len(mappings))
+                mappings[identity] = path
+                commands.append(["init", "--bare", str(path)])
+            fetched = target or f"refs/context/fetch-{operations}"
+            commands.append(["-C", str(path), "fetch", "--no-tags", "--no-write-fetch-head",
+                             f"https://github.com/{identity}.git", ref + ":" + fetched])
+            for command in commands:
+                run_git(command)
+            if target is None and not context._SHA.fullmatch(ref):
+                # Preserve the lock's symbolic spelling locally. The fetch
+                # may return an annotated tag; resolve its commit before
+                # installing the alias. These refs never configure a remote.
+                resolved = run_git(["-C", str(path), "rev-parse", "--verify", "--end-of-options",
+                                    fetched + "^{commit}"]).strip().decode("ascii")
+                if not SHA_RE.fullmatch(resolved):
+                    raise ingest.Rejected("trusted context source did not resolve to a commit")
+                alias = ref if ref == "HEAD" or ref.startswith("refs/") else "refs/heads/" + ref
+                run_git(["-C", str(path), "update-ref", alias, resolved])
+
+        try:
+            fetch(metadata["repository"], metadata["revision"])
+            fetch(context.GUIDANCE_REPOSITORY, "refs/heads/main", "refs/remotes/origin/main")
+            if metadata["guidance_revision"] is not None:
+                consumer = context._Git(metadata["repository"], mappings)
+                raw = consumer.read(consumer.tree(metadata["revision"]), "skills.lock", optional=True)
+                if raw is not None:
+                    _, sources = context._lock(raw)
+                    for source in sources:
+                        fetch(source["registry"], source["generated_from"] or source["ref"])
+        except context.ContextError as error:
+            raise ingest.Rejected(f"trusted context acquisition refused: {error.code}") from None
+        yield mappings
+
+
+def gate_context_bytes(metadata: dict, repositories: dict[str, Path]) -> None:
+    """Re-prove the branch pin and recompute budgets from trusted Git bytes."""
+    try:
+        context.validate_context({"context": metadata}, "fixture.yaml")
+        # Missing/unreadable sources cannot turn branch-chosen null into an
+        # approved blocked context: prove both trusted histories are readable.
+        consumer = context._Git(metadata["repository"], repositories)
+        consumer.revision(metadata["revision"])
+        source = context._Git(context.GUIDANCE_REPOSITORY, repositories)
+        source.revision("refs/remotes/origin/main")
+        if metadata["guidance_revision"] is None:
+            try:
+                context.find_guidance_revision(metadata["repository"], metadata["revision"], repositories)
+            except context.ContextError as error:
+                if error.code != "guidance_unproven":
+                    raise
+            else:
+                raise ingest.Rejected("the null guidance pin bypasses accessible trusted provenance")
+            if metadata["budget"] != dict.fromkeys(context.BUDGET_KEYS, 1):
+                raise ingest.Rejected("blocked context budgets must be unmeasured placeholders of 1")
+            return
+        context.validate_guidance_revision(metadata["repository"], metadata["revision"],
+                                           metadata["guidance_revision"], repositories)
+        frozen = context.resolve_context({**metadata, "budget": dict(context.BUDGET_MAX)}, repositories)
+        if metadata["budget"] != measured_budgets(frozen.manifest["measurements"]):
+            raise ingest.Rejected("context budgets differ from trusted measurements with 25% headroom")
+    except context.ContextError as error:
+        raise ingest.Rejected(f"the context byte proof failed: {error.code}") from None
+    except ScaffoldError as error:
+        raise ingest.Rejected(str(error)) from None
 
 
 # ---------------------------------------------------------------------------

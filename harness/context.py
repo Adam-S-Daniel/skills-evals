@@ -25,6 +25,11 @@ import guidance
 GUIDANCE_REPOSITORY = "Adam-S-Daniel/_agent-guidance"
 CONTEXT_KEYS = frozenset(("repository", "revision", "guidance_revision", "budget"))
 BUDGET_KEYS = frozenset(("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes"))
+# Generous ceilings above deployed fixture sizes, bounding accidental or
+# untrusted context expansion while keeping raw binary skill resources usable.
+BUDGET_MAX = MappingProxyType({"guidance_bytes": 1024 * 1024,
+                               "skill_catalog_bytes": 1024 * 1024,
+                               "skill_payload_bytes": 64 * 1024 * 1024})
 DEFAULT_LAYOUT = "plugins/{bundle}/skills"
 _SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
 _DIGEST = re.compile(r"(?:sha256:)?([0-9a-fA-F]{64})\Z")
@@ -80,12 +85,12 @@ def validate_context(fixture: dict, path) -> None:
             raise ContextError("invalid_context", f"{path}: context.{key} must be a full 40-character commit SHA")
     _keys(context["budget"], BUDGET_KEYS, f"{path}: context.budget")
     for key, value in context["budget"].items():
-        if type(value) is not int or value <= 0:
-            raise ContextError("invalid_context", f"{path}: context.budget.{key} must be a positive integer, got {value!r}")
+        if type(value) is not int or not 0 < value <= BUDGET_MAX[key]:
+            raise ContextError("invalid_context", f"{path}: context.budget.{key} must be an integer between 1 and {BUDGET_MAX[key]}, got {value!r}")
 
 
 class _FixtureLoader(yaml.SafeLoader):
-    """Reject duplicates in context, without changing other fixture contracts."""
+    """Reject top-level duplicates and every duplicate nested in context."""
 
     def __init__(self, stream):
         super().__init__(stream)
@@ -93,6 +98,7 @@ class _FixtureLoader(yaml.SafeLoader):
 
     def construct_mapping(self, node, deep=False):
         strict = id(node) in self.context_nodes
+        top = node is self.root_node
         for key, value in node.value:
             if key.value == "context" or strict:
                 pending = [value]
@@ -112,10 +118,14 @@ class _FixtureLoader(yaml.SafeLoader):
                 duplicate = name in seen
                 seen.add(name)
             except TypeError as exc:
-                raise ContextError("invalid_context", "fixture mapping key must be scalar") from exc
-            if duplicate and (strict or name == "context"):
+                raise ContextError("invalid_context" if strict else "invalid_fixture", "fixture mapping key must be scalar") from exc
+            if duplicate and (strict or top or name == "context"):
                 raise ContextError("duplicate_key", f"fixture repeats {name!r}")
         return super().construct_mapping(node, deep=deep)
+
+    def get_single_data(self):
+        self.root_node = self.get_single_node()
+        return self.construct_document(self.root_node) if self.root_node is not None else None
 
 
 def load_fixture_yaml(raw: str | bytes, path) -> dict:
@@ -125,9 +135,9 @@ def load_fixture_yaml(raw: str | bytes, path) -> dict:
     except ContextError:
         raise
     except (yaml.YAMLError, UnicodeError, ValueError) as exc:
-        raise ContextError("invalid_context", f"{path}: fixture YAML is malformed") from exc
+        raise ContextError("invalid_fixture", f"{path}: fixture YAML is malformed") from exc
     if not isinstance(fixture, dict):
-        raise ContextError("invalid_context", f"{path} must be a YAML mapping of fixture keys, got {type(fixture).__name__}"
+        raise ContextError("invalid_fixture", f"{path} must be a YAML mapping of fixture keys, got {type(fixture).__name__}"
                            + (" (the file is empty)" if fixture is None else f": {fixture!r}"))
     validate_context(fixture, path)
     return fixture
@@ -584,30 +594,66 @@ def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenCo
     return FrozenContext(_freeze(manifest), skills, guidance_bytes, digest)
 
 
-def find_guidance_revision(repository: str, revision: str, repositories: Mapping[str, Path]) -> str:
-    """Find locally reachable provenance by exact bytes, never by timestamps.
+@dataclass(frozen=True)
+class GuidanceRevisionMatch:
+    revision: str
+    matching_revisions: int
+
+
+def _guidance_candidates(repository: str, revision: str, repositories: Mapping[str, Path]) -> list[tuple[str, int]]:
+    consumer = _Git(repository, repositories)
+    commit = consumer.revision(revision)
+    cutoff = int(consumer.run("show", "-s", "--format=%ct", commit).strip())
+    source = _Git(GUIDANCE_REPOSITORY, repositories)
+    tip = source.revision("refs/remotes/origin/main")
+    candidates = []
+    # Walk every ancestor, including commits that did not touch guidance.
+    for row in source.run("log", "--format=%H %ct", tip).decode("ascii").splitlines():
+        pin, stamp = row.split()
+        timestamp = int(stamp)
+        if timestamp <= cutoff:
+            candidates.append((pin, timestamp))
+    return candidates
+
+
+def validate_guidance_revision(repository: str, revision: str, pin: str,
+                               repositories: Mapping[str, Path]) -> None:
+    """Prove a declared pin's default-branch ancestry, time, and exact bytes."""
+    if not isinstance(pin, str) or not _SHA.fullmatch(pin):
+        raise ContextError("guidance_unproven", "guidance pin must be a full commit SHA")
+    pin = pin.lower()
+    try:
+        if pin not in {candidate for candidate, _ in _guidance_candidates(repository, revision, repositories)}:
+            raise ContextError("guidance_unproven", "guidance pin is not an eligible default-branch ancestor")
+        _guidance(repository, revision, pin, repositories)
+    except ContextError as exc:
+        raise ContextError("guidance_unproven", "guidance pin does not prove eligible deployed bytes") from exc
+
+
+def find_guidance_revision(repository: str, revision: str, repositories: Mapping[str, Path]) -> GuidanceRevisionMatch:
+    """Find exact byte proofs among origin/main ancestors no newer than context.
 
     This is a scaffold/migration helper. Evaluation uses the resulting pin
-    directly. Any unresolved provenance returns guidance_unproven.
+    directly. Count every matching eligible revision. Choose greatest commit
+    timestamp, then lexicographically smallest full SHA to break ties.
+    Timestamps limit eligibility; only exact byte proofs establish a match.
     """
     _repository(repository)
     if not isinstance(revision, str) or not _SHA.fullmatch(revision):
         raise ContextError("invalid_context", "context revision must be a full commit SHA")
     try:
-        source = _Git(GUIDANCE_REPOSITORY, repositories)
-        candidates = source.run(
-            "log", "--all", "--full-history", "--format=%H", "--",
-            "agents-md/base.md", "agents-md/stub.md", "agents-md/sections",
-            "agents-md/eval-coverage.yml", "repos.yml",
-            ".claude/hooks/fleet-memory.sh").decode("ascii").splitlines()
-        for pin in dict.fromkeys(candidates):
+        matches = []
+        for pin, timestamp in _guidance_candidates(repository, revision, repositories):
             try:
                 _guidance(repository, revision, pin, repositories)
-                return pin
+                matches.append((pin, timestamp))
             except ContextError as exc:
                 if exc.code == "repository_unavailable":
                     raise
                 continue
+        if matches:
+            selected = min(matches, key=lambda item: (-item[1], item[0]))[0]
+            return GuidanceRevisionMatch(selected, len(matches))
     except ContextError as exc:
         raise ContextError("guidance_unproven", "no accessible local guidance revision proves the shipped bytes") from exc
     raise ContextError("guidance_unproven", "no locally reachable guidance revision matches the shipped bytes and opt-ins")

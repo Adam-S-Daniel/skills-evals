@@ -258,9 +258,12 @@ context:
 ```
 
 The repository is explicit; there is no fleet default. Both revisions are
-full commit SHAs. The three budget limits are positive integers, measured
-from the resolved bytes with about 25% headroom and reviewed before they
-are raised. The example uses the measured limits from
+full commit SHAs. The three budget limits are positive integers, computed
+as measured bytes times 1.25, rounded up, with a minimum of 1. Guidance and
+catalog limits cannot exceed 1 MiB each; payload cannot exceed 64 MiB.
+These generous ceilings exceed deployed fixture sizes and bound accidental
+or untrusted expansion while allowing binary skill resources. Measurement
+itself uses these ceilings, and headroom must fit within them. The example uses the measured limits from
 [`cms-platform-693`](evals/real-work/cms-platform-693/fixture.yaml); authors
 must resolve and measure each context before setting its limits.
 Unknown or duplicate keys, malformed repository names or SHAs, control
@@ -288,12 +291,32 @@ opt-in section. The resolver corroborates the managed section list,
 consumer opt-in configuration and pinned registry defaults, then proves
 those raw bytes against the context commit's managed `AGENTS.md` section
 or `.claude/hooks/fleet-guidance.md`. A timestamp is insufficient.
-`find_guidance_revision(repository, revision, repositories)` searches
-local history for this byte proof; it never selects the latest guidance
-at the time. Historical base-only guidance may predate the section
+`find_guidance_revision(repository, revision, repositories)` returns an
+immutable result with `revision` and `matching_revisions`. It searches every
+ancestor of the guidance repository's `origin/main`, including commits that
+did not touch guidance, whose committer timestamp is at or before the
+context commit's committer timestamp. Exact bytes establish each match;
+timestamps only constrain eligibility. It counts all matches and chooses
+the greatest committer timestamp, then the lexicographically smallest full
+SHA for a tie. A missing `origin/main` fails closed. Scaffolds record the
+count and selection rule in a comment. Existing valid committed pins are
+preserved even when this deterministic selection finds another match.
+Historical base-only guidance may predate the section
 manifest or delivery hook: their absence is recorded, while the deployed
 base still requires exact proof. Missing evidence for an adopted section
 blocks resolution.
+
+The scaffold gate corroborates the consumer base through GitHub, then
+re-proves the declared guidance pin's ancestry, timestamp eligibility and
+exact bytes and recomputes each budget from trusted Git objects. It acquires
+public objects in isolated temporary bare repositories from validated
+`github.com` identities, with no checkout, hooks, credentials or configured
+remotes. Fetch operations and duration are bounded. A null pin is accepted
+only when readable trusted guidance history offers no eligible proof and
+all three limits are the unmeasured placeholder 1; unavailable sources fail
+closed. Model-authored task text, checker choices, dependencies and trim
+choices receive schema and lint checks; the gate does not claim to derive
+those fields independently from git.
 
 The frozen result holds immutable skill files and guidance bytes plus a
 read-only manifest. It records source commits, SHA-256 digests of the
