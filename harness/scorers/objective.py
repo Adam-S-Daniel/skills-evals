@@ -2442,7 +2442,7 @@ def git_ref_unchanged(workspace: str, patterns: list[str], *,
     try:
         result = workspace_git.run("rev-parse", "--verify", ref, cwd=Path(repo),
                                    timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitTamperedError) as exc:
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not resolve {ref!r} in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not resolve {ref!r} in {path}: "
@@ -2475,7 +2475,7 @@ def git_remote_url_is(workspace: str, patterns: list[str], *,
     try:
         result = workspace_git.run("remote", "get-url", remote, cwd=Path(repo),
                                    timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitTamperedError) as exc:
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not resolve remote {remote!r} in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"{path} has no remote named {remote!r}: "
@@ -2644,7 +2644,7 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
             try:
                 gd = workspace_git.run("rev-parse", "--path-format=absolute", "--git-dir",
                                        cwd=Path(d), timeout=GIT_TIMEOUT_S)
-            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitTamperedError) as exc:
+            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
                 problems.append(f"{d}: could not resolve --git-dir: {exc}")
                 continue
             if gd.returncode != 0:
@@ -2656,7 +2656,7 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
                 continue
             try:
                 remotes = workspace_git.run("remote", cwd=Path(d), timeout=GIT_TIMEOUT_S)
-            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitTamperedError) as exc:
+            except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
                 problems.append(f"{d}: could not list remotes: {exc}")
                 continue
             if remotes.returncode != 0:
@@ -2746,7 +2746,7 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
     try:
         result = workspace_git.run("worktree", "list", "--porcelain", cwd=Path(repo),
                                    timeout=GIT_TIMEOUT_S)
-    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitTamperedError) as exc:
+    except (OSError, subprocess.TimeoutExpired, workspace_git.WorkspaceGitError) as exc:
         return (False, f"could not list worktrees in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not list worktrees in {path}: {result.stderr.strip()}")

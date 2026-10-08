@@ -117,8 +117,13 @@ in memory between calls. A changed baseline, executable key or driver, symlink,
 redirect, or alternate object store returns `workspace_git_tampered` and skips
 scoring. Independently inspect standalone nested repos and bare ref sources;
 linked worktrees get a structural report without a patch or followed redirect.
-Staging copies working files privately and adds validated nested HEAD gitlinks,
-so root `git add` cannot discover nested configuration indirectly.
+Staging copies only what `git add -A` could track (no FIFOs, sockets, devices
+or ignored paths) and adds validated nested HEAD gitlinks, so root `git add`
+cannot discover nested configuration indirectly. Collection failures and
+timeouts (the sink ceiling, since cost grows with the tree) are recorded as
+`workspace_git_collection_failed`. Attributes are not refused: no driver is
+defined in the private config, whose `info/attributes` unsets `filter` and
+`diff`, so built-ins such as `diff=python` and `filter=lfs` stay inert.
 
 The `-c` overrides (fsmonitor, hooks path, external diff, pager, editor,
 SSH, credential, askpass, proxy) are a second layer: tests prove each wins

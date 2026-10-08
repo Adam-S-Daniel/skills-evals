@@ -755,12 +755,19 @@ is objectively decidable from the resulting files alone.
   At the baseline commit the harness records `.git` identity and framed digests
   of configuration, `info/`, and `hooks/` in memory, alongside baseline metadata and the
   staging index. No private metadata remains on disk while the arm runs.
-  Changes to those baseline facts, executable configuration or attributes,
-  redirects, copied metadata symlinks, and alternate object stores refuse with
+  Changes to those baseline facts, executable configuration, redirects,
+  copied metadata symlinks, and alternate object stores refuse with
   `workspace_git_tampered`; both arm paths record a trial error and skip scoring.
-  Staging uses a private filesystem copy without nested Git directories, then
-  installs gitlinks from independently validated standalone HEAD refs. This
-  prevents `git add` from indirectly discovering nested agent configuration.
+  Attributes are not refused: with no driver defined and the private
+  `info/attributes` unsetting `filter` and `diff`, `diff=python` or
+  `filter=lfs` is inert. Staging copies what `git add -A` could track (regular
+  files, symlinks, directories) into a private tree, skipping FIFOs, sockets,
+  devices, ignored paths and nested Git directories, then installs gitlinks
+  from independently validated standalone HEAD refs, so `git add` never
+  discovers nested agent configuration. An unreadable file or a timeout is the
+  recorded trial error `workspace_git_collection_failed`, not a crash.
+  Bookkeeping Git uses the sink ceiling (`guidance.MAX_TIMEOUT_S`) as its
+  timeout: its cost grows with the workspace, so it is a hang guard only.
   Nested linked worktrees receive a structural report with their patch marked
   unavailable; the harness never follows their `.git` redirect. A standalone
   repository's worktree inventory remains inspectable as metadata, and bare

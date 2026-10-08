@@ -195,15 +195,24 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('status', cwd=self.repo)
 
-    def test_info_attributes(self):
+    def test_builtin_attributes_are_data_not_refusals(self):
+        # Nothing in the private config defines a driver, and the private
+        # info/attributes unsets filter and diff, so built-in or undefined
+        # drivers an agent might write are inert rather than a failed trial.
+        (self.repo / '.gitattributes').write_text(
+            '*.py diff=python\n*.bin filter=lfs diff=lfs merge=lfs -text\n'
+            '[attr]evil filter=marker\ndata evil diff=marker\n')
         (self.repo / '.git' / 'info' / 'attributes').write_text('data diff=driver\n')
-        with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
-            run_eval._git('diff', cwd=self.repo)
+        diff = run_eval._build_judge_diff(self.repo)
+        self.assertIn('+after', diff)
+        self.assertFalse(self.marker.exists())
 
-    def test_attribute_macro(self):
+    def test_attribute_driver_defined_in_config_still_refuses(self):
+        self.raw('config', 'filter.marker.clean', self.command)
         (self.repo / '.gitattributes').write_text('[attr]evil filter=marker\ndata evil\n')
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('add', '-A', cwd=self.repo)
+        self.assertFalse(self.marker.exists())
 
     def test_textconv(self):
         self.raw('config', 'diff.marker.textconv', self.command)
@@ -431,6 +440,165 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         self.assertIsNone(result['judge'])
         self.assertIsNone(result['objective_checks'])
         judge.assert_not_called()
+
+
+class WorkspaceGitCollectionTests(_WorkspaceGitFixture, unittest.TestCase):
+    """Collection failures are a recorded trial error, never a crash."""
+
+    def sealed(self):
+        import workspace_git
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+
+    def test_unix_socket_is_skipped_like_git_add(self):
+        import socket
+        self.sealed()
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(server.close)
+        server.bind(str(self.repo / 'app.sock'))
+        diff = run_eval._build_judge_diff(self.repo)
+        self.assertIn('+after', diff)
+        self.assertNotIn('app.sock', diff)
+
+    def test_fifo_is_skipped_like_git_add(self):
+        self.sealed()
+        os.mkfifo(self.repo / 'pipe')
+        diff = run_eval._build_judge_diff(self.repo)
+        self.assertIn('+after', diff)
+        self.assertNotIn('pipe', diff)
+
+    def test_symlink_and_executable_bit_survive_staging(self):
+        self.sealed()
+        (self.repo / 'link').symlink_to('data')
+        tool = self.repo / 'tool.sh'
+        tool.write_text('#!/bin/sh\n')
+        tool.chmod(0o755)
+        diff = run_eval._build_judge_diff(self.repo)
+        self.assertIn('new file mode 120000', diff)
+        self.assertIn('new file mode 100755', diff)
+
+    def test_ignored_trees_are_not_copied_or_staged(self):
+        from unittest import mock
+        import workspace_git
+        (self.repo / '.gitignore').write_text('node_modules/\n*.log\n')
+        self.sealed()
+        (self.repo / 'node_modules' / 'pkg').mkdir(parents=True)
+        (self.repo / 'node_modules' / 'pkg' / 'index.js').write_text('x\n')
+        (self.repo / 'debug.log').write_text('x\n')
+        copied = []
+        real = workspace_git._copy_regular
+        def spy(source, target, mode):
+            copied.append(Path(source).relative_to(self.repo).as_posix())
+            return real(source, target, mode)
+        with mock.patch.object(workspace_git, '_copy_regular', spy):
+            diff = run_eval._build_judge_diff(self.repo)
+        self.assertIn('+after', diff)
+        self.assertNotIn('node_modules/pkg', diff)
+        self.assertNotIn('debug.log', diff)
+        self.assertFalse([path for path in copied
+                          if path.startswith('node_modules/') or path == 'debug.log'],
+                         copied)
+
+    def test_unreadable_file_is_a_named_collection_error(self):
+        import workspace_git
+        self.sealed()
+        locked = self.repo / 'locked'
+        locked.write_text('x\n')
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o600)
+        if os.access(locked, os.R_OK):
+            self.skipTest('running as a user that bypasses file permissions')
+        with self.assertRaisesRegex(workspace_git.WorkspaceGitError,
+                                    'workspace_git_collection_failed'):
+            run_eval._build_judge_diff(self.repo)
+
+    def test_slow_add_is_a_named_collection_error(self):
+        from unittest import mock
+        import workspace_git
+        self.sealed()
+        slow = subprocess.TimeoutExpired(['git', 'add'], 1)
+        with mock.patch.object(workspace_git, '_stage', side_effect=slow):
+            with self.assertRaisesRegex(workspace_git.WorkspaceGitError,
+                                        'workspace_git_collection_failed'):
+                run_eval._build_judge_diff(self.repo)
+
+    def test_bookkeeping_timeout_is_the_sink_ceiling(self):
+        import guidance
+        from unittest import mock
+        import workspace_git
+        with mock.patch.object(workspace_git, 'run') as run:
+            run_eval._git('status', cwd=self.repo)
+        self.assertEqual(run.call_args.kwargs['timeout'], guidance.MAX_TIMEOUT_S)
+
+    def test_skill_arm_records_a_collection_failure(self):
+        import argparse
+        from unittest import mock
+        import workspace_git
+        seed = self.root / 'seed'
+        seed.mkdir()
+        (seed / 'data').write_text('seed\n')
+        fixture = {'skill': 'test', 'prompt': 'test', 'model': 'test-model',
+                   'judge': {'model': 'test-judge'}, 'judge_rubric': 'test'}
+        args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                  results_dir=self.root / 'results')
+        slow = mock.patch.object(workspace_git, '_stage',
+                                 side_effect=subprocess.TimeoutExpired(['git', 'add'], 1))
+        def arm(workspace, prompt, config):
+            # The seed commit is real; only the post-arm add is slow.
+            slow.start()
+            self.addCleanup(slow.stop)
+            return {'transcript': 'done', 'raw': {}, 'usage': {}, 'cost_usd': 0,
+                    'num_turns': 1, 'duration_ms': 1}
+        with mock.patch.object(run_eval, 'run_agent', arm), \
+                mock.patch.object(run_eval.judge, 'score') as judge:
+            result = run_eval._run_arm('without_skill', fixture, seed, {}, args, 'test')
+        self.assertEqual(result['error']['type'], 'workspace_git_collection_failed')
+        self.assertIsNone(result['judge'])
+        judge.assert_not_called()
+        summaries = list((self.root / 'results').rglob('*.json'))
+        self.assertTrue(summaries, 'no summary was written')
+
+    def test_skill_arm_with_a_fifo_is_scored(self):
+        import argparse
+        from unittest import mock
+        seed = self.root / 'seed'
+        seed.mkdir()
+        (seed / 'data').write_text('seed\n')
+        fixture = {'skill': 'test', 'prompt': 'test', 'model': 'test-model',
+                   'judge': {'model': 'test-judge'}, 'judge_rubric': 'test'}
+        args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                  results_dir=self.root / 'results')
+        def arm(workspace, prompt, config):
+            os.mkfifo(workspace / 'pipe')
+            (workspace / 'data').write_text('changed\n')
+            return {'transcript': 'done', 'raw': {}, 'usage': {}, 'cost_usd': 0,
+                    'num_turns': 1, 'duration_ms': 1}
+        with mock.patch.object(run_eval, 'run_agent', arm), \
+                mock.patch.object(run_eval.judge, 'score',
+                                  return_value={'overall': 5.0, 'dimensions': []}) as judge:
+            result = run_eval._run_arm('without_skill', fixture, seed, {}, args, 'test')
+        self.assertIsNone(result['error'])
+        judge.assert_called_once()
+        self.assertIn('+changed', judge.call_args.args[2])
+
+
+class WorkspaceGitGeneratedConfigTests(_WorkspaceGitFixture, unittest.TestCase):
+    """Only the generated private config runs, never the workspace's."""
+
+    def test_observable_workspace_keys_have_no_effect(self):
+        import workspace_git
+        excludes = self.root / 'excludes'
+        excludes.write_text('hidden.txt\n')
+        self.raw('config', 'core.excludesFile', str(excludes))
+        self.raw('config', 'status.showUntrackedFiles', 'no')
+        (self.repo / 'hidden.txt').write_text('x\n')
+        # Red: Git honoring the workspace config hides the file.
+        self.assertEqual(self.old_git('status', '--porcelain').stdout.strip(), 'M data')
+        status = workspace_git.run('status', '--porcelain', cwd=self.repo)
+        self.assertIn('?? hidden.txt', status.stdout)
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        self.assertIn('hidden.txt', run_eval._build_judge_diff(self.repo))
 
 
 class WorkspaceGitLayoutTests(unittest.TestCase):

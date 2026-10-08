@@ -31,15 +31,24 @@ _OVERRIDES = (
     'user.email=ci@example.com', 'user.name=ci',
 )
 _CONTEXTS: dict[str, '_Context'] = {}
-_ATTRIBUTE_DRIVER = re.compile(r'(?:^|\s)(?:filter|diff)=[^\s]+')
 
 
-class WorkspaceGitTamperedError(RuntimeError):
-    """No Git command may run over this workspace's metadata."""
-    name = 'workspace_git_tampered'
+class WorkspaceGitError(RuntimeError):
+    """A named, recordable failure of harness Git on a workspace."""
+    name = 'workspace_git_error'
 
     def __init__(self, reason: str):
         super().__init__(f'{self.name}: {reason}')
+
+
+class WorkspaceGitTamperedError(WorkspaceGitError):
+    """No Git command may run over this workspace's metadata."""
+    name = 'workspace_git_tampered'
+
+
+class WorkspaceGitCollectionError(WorkspaceGitError):
+    """Collection could not finish (an unreadable file, a timeout)."""
+    name = 'workspace_git_collection_failed'
 
 
 def _refuse(reason: str) -> None:
@@ -146,20 +155,6 @@ def _config(gitdir: Path, private: Path, timeout: float) -> list[tuple[str, str]
     return entries
 
 
-def _attributes(workspace: Path, gitdir: Path) -> None:
-    info = gitdir / 'info' / 'attributes'
-    files = [info] if info.exists() or info.is_symlink() else []
-    for root, dirs, names in os.walk(workspace, followlinks=False):
-        dirs[:] = [name for name in dirs if name != '.git']
-        if '.gitattributes' in names:
-            files.append(Path(root) / '.gitattributes')
-    for path in files:
-        text = _read_regular(path).decode('utf-8', errors='replace')
-        if any(_ATTRIBUTE_DRIVER.search(line) for line in text.splitlines()
-               if not line.lstrip().startswith('#')):
-            _refuse('attributes select a filter or diff driver')
-
-
 def _metadata(workspace: Path) -> Path:
     entry = workspace / '.git'
     if os.path.lexists(entry):
@@ -190,8 +185,10 @@ def _validate(workspace: Path, private: Path, timeout: float,
             _refuse('alternate object store')
     if (gitdir / 'info').is_symlink():
         _refuse('metadata info symlink')
+    # Attributes are not refused: the private config defines no filter or
+    # diff driver (executable driver keys are refused above) and the private
+    # info/attributes unsets both, so `diff=python` or `filter=lfs` is inert.
     entries = _config(gitdir, private, timeout)
-    _attributes(workspace, gitdir)
     if baseline is not None:
         current = (identity.st_dev, identity.st_ino, _digest(gitdir / 'config'),
                    _digest(gitdir / 'info'), _digest(gitdir / 'hooks'))
@@ -388,10 +385,9 @@ def _stage(context: _Context, command: list[str], timeout: float,
             nested[current] = None
     stage = context.private / 'stage'
     shutil.rmtree(stage, ignore_errors=True)
-    def ignore(directory: str, names: list[str]) -> list[str]:
-        return [name for name in names if name == '.git'
-                or Path(directory) / name in nested]
-    shutil.copytree(workspace, stage, symlinks=True, ignore=ignore)
+    ignored = _ignored(context, timeout)
+    _copy_view(workspace, stage, skip=lambda path: path in nested,
+               ignored=ignored)
     result = _invoke(['--git-dir=' + str(context.gitdir), '--work-tree=' + str(stage),
                       *command], cwd=context.private, home=context.private,
                      timeout=timeout, check=check)
@@ -403,6 +399,58 @@ def _stage(context: _Context, command: list[str], timeout: float,
                          str(path.relative_to(workspace))], cwd=context.private,
                         home=context.private, timeout=timeout, check=True)
     return result
+
+
+def _ignored(context: _Context, timeout: float) -> set[str]:
+    """Untracked paths Git would ignore, so staging never copies them.
+
+    Git reads only `.gitignore` data here, against private metadata and
+    config; ignored directories come back whole, ending in a slash.
+    """
+    result = _invoke(['--git-dir=' + str(context.gitdir),
+                      '--work-tree=' + str(context.workspace), 'ls-files', '-z',
+                      '--others', '--ignored', '--exclude-standard', '--directory'],
+                     cwd=context.private, home=context.private, timeout=timeout)
+    if result.returncode:
+        return set()  # copying more than needed is safe; add re-applies ignores
+    return {entry.rstrip('/') for entry in result.stdout.split('\0') if entry}
+
+
+def _copy_regular(source: Path, target: Path, mode: int) -> None:
+    # O_NONBLOCK plus fstat: an entry swapped for a FIFO is never read.
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            return
+        with open(target, 'xb') as out:
+            shutil.copyfileobj(stream, out)
+    os.chmod(target, stat.S_IMODE(mode) | stat.S_IRUSR | stat.S_IWUSR)
+
+
+def _copy_view(workspace: Path, stage: Path, *, skip, ignored: set[str]) -> None:
+    """Copy what `git add -A` could track: directories, regular files and
+    symlinks (never followed). FIFOs, sockets and devices are skipped as Git
+    skips them; `.git` entries, nested repositories and ignored paths too."""
+    stage.mkdir()
+    for root, dirs, files in os.walk(workspace, followlinks=False):
+        current = Path(root)
+        target_root = stage / current.relative_to(workspace)
+        keep = []
+        for name in sorted(dirs) + sorted(files):
+            path = current / name
+            relative = path.relative_to(workspace).as_posix()
+            if name == '.git' or skip(path) or relative in ignored:
+                continue
+            mode = path.lstat().st_mode
+            target = target_root / name
+            if stat.S_ISLNK(mode):
+                os.symlink(os.readlink(path), target)
+            elif stat.S_ISDIR(mode):
+                target.mkdir()
+                keep.append(name)
+            elif stat.S_ISREG(mode):
+                _copy_regular(path, target, mode)
+        dirs[:] = [name for name in dirs if name in keep]
 
 
 def _export_data(source: Path, destination: Path) -> None:
@@ -472,7 +520,6 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
                     _refuse('unexpected incomplete Git metadata')
                 else:
                     _digest(entry / 'info')
-                    _attributes(workspace, entry)
             context.gitdir.mkdir()
             result = _invoke(['--git-dir=' + str(context.gitdir),
                               '--work-tree=' + str(workspace), 'init', '-q'], cwd=context.private,
@@ -527,5 +574,11 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             stored.saved_files = context.saved_files
             stored.saved_dirs = context.saved_dirs
         return result
+    except subprocess.TimeoutExpired:
+        raise WorkspaceGitCollectionError(
+            f'git {args[0] if args else ""} exceeded {timeout}s') from None
+    except OSError as exc:
+        raise WorkspaceGitCollectionError(
+            f'{type(exc).__name__} ({exc.strerror or "error"}) while collecting') from None
     finally:
         context.close()

@@ -1421,8 +1421,15 @@ class SetupFailedError(RuntimeError):
 
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    """Harness Git always crosses the private-metadata boundary."""
-    return workspace_git.run(*args, cwd=cwd, check=True, timeout=GIT_TIMEOUT_S)
+    """Harness Git always crosses the private-metadata boundary.
+
+    Bookkeeping (seed commit, post-arm add/diff) had no timeout before #343
+    and its cost grows with the workspace, so a fixed small bound would fail
+    honest large trees. It gets the sink ceiling instead: a hang guard, not a
+    speed bound. Expiry is the named `workspace_git_collection_failed`.
+    """
+    return workspace_git.run(*args, cwd=cwd, check=True,
+                             timeout=guidance.MAX_TIMEOUT_S)
 
 
 def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
@@ -2864,7 +2871,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
                 "models_used": agent_models, **extra}
-    except workspace_git.WorkspaceGitTamperedError as exc:
+    except workspace_git.WorkspaceGitError as exc:
         error = {"type": exc.name, "detail": str(exc)}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, None, None, raw, extra=extra,
@@ -3445,7 +3452,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "models_used": agent_models,
                 **({"guidance_violations": extra["guidance_violations"]}
                    if "guidance_violations" in extra else {})}
-    except workspace_git.WorkspaceGitTamperedError as exc:
+    except workspace_git.WorkspaceGitError as exc:
         error = {"type": exc.name, "detail": str(exc)}
         _write_summary(args.results_dir, None, arm["name"], timestamp,
                        error, agent_summary, None, None, raw, key=ctx["key"],
