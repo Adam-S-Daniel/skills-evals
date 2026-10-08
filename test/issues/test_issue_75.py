@@ -18,7 +18,7 @@ import unittest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DIR = ROOT / "evals/github-actions-repo-settings"
+FIXTURE_DIR = ROOT / "evals/github-actions-repo-settings/drift-diagnosis"
 SEED = FIXTURE_DIR / "seed"
 sys.path.insert(0, str(ROOT / "harness"))
 import run_eval  # noqa: E402
@@ -202,7 +202,7 @@ class TestIssue75(unittest.TestCase):
                               "will not delete", "service-alpha drifts"):
                 assert forbidden not in text
         assert (SEED / "bin/gh").is_symlink()
-        assert os.readlink(SEED / "bin/gh") == "../../../../harness/fakes/gh"
+        assert os.readlink(SEED / "bin/gh") == "../../../../../harness/fakes/gh"
 
 
 
