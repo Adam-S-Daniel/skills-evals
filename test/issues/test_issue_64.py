@@ -180,6 +180,20 @@ def rows(doc: dict, registry: str) -> dict:
 
 
 class StatusesAndCounts(unittest.TestCase):
+    def test_draft_fixture_does_not_close_a_gap(self):
+        world = World(self)
+        world.add_fixture("pending/delta", "delta", "adam-agentskills",
+                          {"draft": True, "context": {
+                              "repository": "Adam-S-Daniel/skills-evals",
+                              "revision": "a" * 40,
+                              "guidance_revision": "b" * 40,
+                              "budget": {"guidance_bytes": 1,
+                                         "skill_catalog_bytes": 1,
+                                         "skill_payload_bytes": 1}}})
+        doc = world.json()
+        self.assertEqual(rows(doc, "adam-agentskills")["delta"]["status"], "gap")
+        self.assertEqual(rows(doc, "adam-agentskills")["delta"]["fixtures"], 0)
+
     def test_every_status_fixture_count_and_reason(self):
         doc = World(self).json()
         a = rows(doc, "adam-agentskills")
