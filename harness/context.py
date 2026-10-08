@@ -558,13 +558,17 @@ def resolve_context(context: dict, repositories: Mapping[str, Path]) -> FrozenCo
     """Resolve one frozen context, verify deployed bytes, and enforce budgets.
 
     Callers receive a deeply immutable manifest, immutable skill payloads,
-    and assembled guidance bytes. Part 1 does not call this from agent arms.
+    and assembled guidance bytes. The pin must pass the same eligibility rule
+    and byte proof as validate_guidance_revision.
     """
     validate_context({"context": context}, "context")
     if context["guidance_revision"] is None:
         raise ContextError("guidance_unproven", "fixture is blocked pending a proven guidance_revision")
     git = _Git(context["repository"], repositories)
     revision = git.revision(context["revision"])
+    # The eligibility half of validate_guidance_revision: a default-branch
+    # ancestor no newer than the context commit. _guidance below is the bytes.
+    _require_eligible(context["repository"], revision, context["guidance_revision"], repositories)
     tree = git.tree(revision)
     lock = git.read(tree, "skills.lock", optional=True)
     skills, sources = _skills(lock, repositories)
@@ -616,15 +620,27 @@ def _guidance_candidates(repository: str, revision: str, repositories: Mapping[s
     return candidates
 
 
-def validate_guidance_revision(repository: str, revision: str, pin: str,
-                               repositories: Mapping[str, Path]) -> None:
-    """Prove a declared pin's default-branch ancestry, time, and exact bytes."""
+def _require_eligible(repository: str, revision: str, pin: str,
+                      repositories: Mapping[str, Path]) -> str:
+    """The pin, lowercased, when it is an origin/main ancestor no newer than
+    the context commit; else guidance_unproven. Bytes are not checked here."""
     if not isinstance(pin, str) or not _SHA.fullmatch(pin):
         raise ContextError("guidance_unproven", "guidance pin must be a full commit SHA")
     pin = pin.lower()
     try:
-        if pin not in {candidate for candidate, _ in _guidance_candidates(repository, revision, repositories)}:
-            raise ContextError("guidance_unproven", "guidance pin is not an eligible default-branch ancestor")
+        eligible = {candidate for candidate, _ in _guidance_candidates(repository, revision, repositories)}
+    except ContextError as exc:
+        raise ContextError("guidance_unproven", "guidance pin eligibility cannot be established") from exc
+    if pin not in eligible:
+        raise ContextError("guidance_unproven", "guidance pin is not an eligible default-branch ancestor")
+    return pin
+
+
+def validate_guidance_revision(repository: str, revision: str, pin: str,
+                               repositories: Mapping[str, Path]) -> None:
+    """Prove a declared pin's default-branch ancestry, time, and exact bytes."""
+    try:
+        pin = _require_eligible(repository, revision, pin, repositories)
         _guidance(repository, revision, pin, repositories)
     except ContextError as exc:
         raise ContextError("guidance_unproven", "guidance pin does not prove eligible deployed bytes") from exc
