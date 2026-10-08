@@ -75,6 +75,28 @@ TIMESTAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 _TIMESTAMP_RE = re.compile(r"\d{8}T\d{6}Z")
 
 
+def _git_common_dir(root: Path) -> Path | None:
+    """The trusted harness checkout's common Git directory, read as data.
+
+    Not `_git`: the workspace Git helper refuses a linked worktree's `.git`
+    file (#343), and the harness checkout is not an agent workspace.
+    """
+    dot_git = root / ".git"
+    try:
+        if dot_git.is_dir():
+            return dot_git.resolve()
+        text = dot_git.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        git_dir = (root / text[len("gitdir:"):].strip()).resolve()
+        commondir = git_dir / "commondir"
+        if commondir.is_file():
+            return (git_dir / commondir.read_text(encoding="utf-8").strip()).resolve()
+        return git_dir
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+
+
 def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = None,
                        fixture: dict | None = None) -> list[Path]:
     """Trusted scorer roots matching PR #345's checkout/output/profile coverage.
@@ -91,8 +113,7 @@ def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = 
         # No workspace code will run; pure checks need no sandbox or Git probe.
         return []
     root = Path(harness_root if harness_root is not None else Path(__file__).resolve().parents[1]).resolve()
-    common = _git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root).stdout.strip()
-    git_dir = Path(common).resolve() if common else None
+    git_dir = _git_common_dir(root)
     clone = git_dir.parent if git_dir is not None and git_dir.name == ".git" else root
     roots = [root, clone.parent, Path.home(), session_archive_dir().parent]
     if git_dir is not None:
@@ -101,6 +122,8 @@ def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = 
     if results is not None:
         roots.append(Path(results))
     roots.extend(Path(p) for p in getattr(args, "read_deny", None) or ())
+    # ADR 0012 context sources are explicit checkouts too (--context-repo).
+    roots.extend(Path(p) for p in (getattr(args, "context_repos", None) or {}).values())
     roots.append(Path.home() / ".claude")
     if os.environ.get("CLAUDE_CONFIG_DIR"):
         roots.append(Path(os.environ["CLAUDE_CONFIG_DIR"]).expanduser())

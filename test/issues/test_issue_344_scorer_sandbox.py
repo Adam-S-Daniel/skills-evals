@@ -88,11 +88,11 @@ class SandboxTests(unittest.TestCase):
     def test_seam_includes_registry_guidance_outputs_and_external_profile(self):
         args = SimpleNamespace(registry=["adam-agentskills=" + str(self.root / "registry")],
                                guidance=str(self.root / "guidance"),
-                               results_dir=self.root / "results", read_deny=[self.root / "wrapper"])
-        with mock.patch.object(run_eval, "_git", return_value=SimpleNamespace(stdout="")), \
-                mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.root / "profile")}):
+                               results_dir=self.root / "results", read_deny=[self.root / "wrapper"],
+                               context_repos={"Adam-S-Daniel/cms-platform": self.root / "context"})
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.root / "profile")}):
             roots = run_eval.scorer_read_denied(args, harness_root=self.ws)
-        for name in ("registry", "guidance", "results", "wrapper", "profile"):
+        for name in ("registry", "guidance", "results", "wrapper", "profile", "context"):
             self.assertIn(self.root / name, roots)
 
     def test_empty_root_allowlist_precedes_workspace_carve_out(self):
@@ -232,17 +232,21 @@ class SandboxTests(unittest.TestCase):
 
     def test_seam_uses_common_git_directory_for_worktree_clone_parent(self):
         checkout = self.root / "repos" / "harness"
-        checkout.mkdir(parents=True)
-        (checkout / ".git").mkdir()
+        private = checkout / ".git" / "worktrees" / "worktree"
+        private.mkdir(parents=True)
+        (private / "commondir").write_text("../..\n", encoding="utf-8")
         worktree = self.root / "elsewhere" / "worktree"
         worktree.mkdir(parents=True)
+        # A linked worktree's `.git` is a file, which the workspace Git helper
+        # refuses; the trusted harness checkout is read as data instead.
+        (worktree / ".git").write_text(f"gitdir: {private}\n", encoding="utf-8")
         args = SimpleNamespace(results_dir=self.root / "outputs")
         for kind in (None, "command_succeeds", "repo_tests"):
             fixture = None if kind is None else {"objective_checks": [{"type": kind}]}
             with self.subTest(kind=kind), mock.patch.object(
-                    run_eval, "_git", return_value=SimpleNamespace(stdout=str(checkout / ".git") + "\n")) as git:
+                    run_eval, "_git", side_effect=AssertionError("no Git process")):
                 denied = run_eval.scorer_read_denied(args, harness_root=worktree, fixture=fixture)
-            git.assert_called_once()
+            self.assertIn(checkout / ".git", denied)
             self.assertIn(checkout.parent, denied)
             self.assertIn(worktree, denied)
             self.assertIn(args.results_dir.resolve(), denied)

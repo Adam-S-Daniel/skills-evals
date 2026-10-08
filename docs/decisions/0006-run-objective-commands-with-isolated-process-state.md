@@ -150,7 +150,7 @@ sandbox failures.
 The trusted caller supplies read denial independently of fixture constraints.
 Direct APIs protect the harness checkout and real HOME. `run_eval` adds the
 original clone's parent derived from Git's common directory, explicit and
-environment-selected registry/guidance checkouts, results, wrapper read-deny
+environment-selected registry/guidance checkouts, `--context-repo` checkouts, results, wrapper read-deny
 outputs, session archive and Claude profile roots; `run_checks` adds the original fixture directory for
 both executing types. `repo_tests` independently hides its original fixture
 and final workspace, after copying the workspace and installing the overlay.
