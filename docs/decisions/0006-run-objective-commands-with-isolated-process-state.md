@@ -93,3 +93,48 @@ verify this change.
   work that needs this prerequisite.
 - [Command scorer](../../harness/scorers/commands.py): the execution boundary.
 - [Design contract](../../DESIGN.md): fixture-facing check contract.
+
+
+## Workspace Git addendum (2026-10-07)
+
+[Issue #343](https://github.com/Adam-S-Daniel/skills-evals/issues/343) found
+that post-arm staging, diff collection, and Git-state scorers executed Git
+against agent-controlled metadata. Git configuration, hooks, filter/diff
+attributes, includes, or repository redirects can therefore execute workspace
+code in the harness process environment after the arm's sandbox has ended.
+The objective-command boundary above does not govern these bookkeeping calls.
+
+Route every bookkeeping Git call through [one helper](../../harness/workspace_git.py).
+Use a fixed executable and constants-only environment, forbid transports,
+disable executable configuration and external diff/textconv, and operate on
+private metadata with generated configuration. Parse a regular private copy
+of repository configuration with Git's parser and `--no-includes` solely to
+validate it; never let a bookkeeping command load workspace configuration.
+Record baseline `.git` identity plus framed configuration/`info/`/`hooks/` digests and
+metadata bytes in harness memory. Remove all private metadata before the arm,
+then restore it only during bounded post-arm calls; staged index updates stay
+in memory between calls. A changed baseline, executable key or driver, symlink,
+redirect, or alternate object store returns `workspace_git_tampered` and skips
+scoring. Independently inspect standalone nested repos and bare ref sources;
+linked worktrees get a structural report without a patch or followed redirect.
+Staging copies working files privately and adds validated nested HEAD gitlinks,
+so root `git add` cannot discover nested configuration indirectly.
+
+The `-c` overrides (fsmonitor, hooks path, external diff, pager, editor,
+SSH, credential, askpass, proxy) are a second layer: tests prove each wins
+over repository-local config when Git reads that config directly.
+
+Consequences: benign baseline config/`info/`/`hooks/` edits are also refused; linked
+worktree patches are unavailable; metadata copies consume memory and disk I/O.
+The arm has ended before ephemeral collection files exist. This addresses Git's
+implicit execution surfaces, not arbitrary concurrent host processes or the
+intentional execution of a fixture program by `command_succeeds`/`repo_tests`.
+
+Alternatives: `-c` overrides alone cannot enumerate every include, driver, or
+repository redirect and still let Git parse agent files. A persistent private
+metadata directory is writable/discoverable during an arm and cannot establish
+trust merely by its pathname. Refusing all nested repositories would discard
+valid fixture evidence; read-only snapshots preserve it without following
+linked layouts. [Real marker regressions](../../test/issues/test_issue_workspace_git.py)
+prove seven original execution vectors and lock in the refusals and legitimate
+ref/worktree behavior without network or live agent calls.

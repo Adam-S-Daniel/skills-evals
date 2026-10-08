@@ -55,6 +55,8 @@ class FeedError(Exception):
 
 
 def git(repo, *args):
+    # Raw git is fine here (#343): this repository's own checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     process = subprocess.run(["git", "-C", str(repo), *args],
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if process.returncode:

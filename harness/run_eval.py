@@ -63,6 +63,7 @@ import guidance_violations  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
+import workspace_git  # noqa: E402
 
 
 FIXTURE_FILE = "fixture.yaml"
@@ -1420,20 +1421,8 @@ class SetupFailedError(RuntimeError):
 
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    """Run git in `cwd` with a fixed local identity (don't rely on global
-    config, and don't name this repository or this harness — see
-    `SEED_COMMIT_IDENTITY`). `errors="replace"` — a workspace an agent has
-    been let loose in can carry non-UTF-8 bytes git itself doesn't treat as
-    binary (its own heuristic only looks for a NUL byte early in the
-    content), and a diff or log that embeds them raw must not crash the
-    whole run over it.
-    """
-    email, name = SEED_COMMIT_IDENTITY
-    return subprocess.run(
-        ["git", "-c", f"user.email={email}",
-         "-c", f"user.name={name}", *args],
-        cwd=cwd, check=True, capture_output=True, text=True, errors="replace",
-    )
+    """Harness Git always crosses the private-metadata boundary."""
+    return workspace_git.run(*args, cwd=cwd, check=True, timeout=GIT_TIMEOUT_S)
 
 
 def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
@@ -1477,6 +1466,7 @@ def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
         anchor = workspace / WORKSPACE_ANCHOR
         anchor.parent.mkdir(parents=True, exist_ok=True)
         anchor.write_text(f"{workspace}\n", encoding="utf-8")
+        workspace_git.seal(workspace)
     except SetupFailedError:
         # The caller still owns cleanup here (see the class docstring) --
         # `_run_arm`'s handler needs the half-built workspace to inspect.
@@ -1541,10 +1531,14 @@ def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
     sections = []
     for d in dirs:
         rel = d.relative_to(workspace)
-        log = subprocess.run(
-            ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
-            capture_output=True, text=True, errors="replace",
-            timeout=GIT_TIMEOUT_S)
+        # A linked worktree is reported structurally, never followed into its
+        # parent repository's metadata. Standalone nested repos use the same
+        # trusted Git boundary as the workspace root.
+        if (d / ".git").is_file() and not (d / ".git").is_symlink():
+            sections.append(f"=== {rel} (linked Git metadata; patch unavailable) ===")
+            continue
+        log = workspace_git.run("log", "--stat", "-p", "-1", "--format=%H %s",
+                                cwd=d, timeout=GIT_TIMEOUT_S)
         if log.returncode != 0 or not log.stdout.strip():
             sections.append(f"=== {rel} (no commits) ===")
         else:
@@ -2798,6 +2792,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             # arm error, in the shape `run_setup` already uses, which
             # `main` turns into exit 2.
             try:
+                workspace_git.validate(workspace)
                 objective_checks = objective.run_checks(
                     fixture, str(workspace), str(seed),
                     transcript=result.get("transcript"))
@@ -2869,7 +2864,18 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         return {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
                 "models_used": agent_models, **extra}
+    except workspace_git.WorkspaceGitTamperedError as exc:
+        error = {"type": exc.name, "detail": str(exc)}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, agent_summary, None, None, raw, extra=extra,
+                       harness_version=harness_version, permission_mode=permission_mode,
+                       models=agent_models, arm_dir=out_dir, tool_trace=tool_trace,
+                       effort=effort, agent_usage=agent_usage, agent_model=agent_model)
+        return {"arm": arm_name, "error": error, "agent": agent_summary,
+                "objective_checks": None, "judge": None,
+                "models_used": agent_models, **extra}
     finally:
+        workspace_git.release(workspace)
         shutil.rmtree(workspace, ignore_errors=True)
 
 
@@ -3250,6 +3256,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "--allow-empty", "-m", "seed", cwd=workspace)
+        workspace_git.seal(workspace)
 
         delivery = ctx["delivery"]
         # The token THIS arm is delivered. A treatment arm gets the run's
@@ -3381,6 +3388,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             scored["objective_checks"] = substitute_token(
                 checks, ctx["token"], decoy)
             try:
+                workspace_git.validate(workspace)
                 objective_checks = objective.run_checks(
                     scored, str(workspace), str(seed),
                     transcript=result.get("transcript"))
@@ -3437,6 +3445,19 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "models_used": agent_models,
                 **({"guidance_violations": extra["guidance_violations"]}
                    if "guidance_violations" in extra else {})}
+    except workspace_git.WorkspaceGitTamperedError as exc:
+        error = {"type": exc.name, "detail": str(exc)}
+        _write_summary(args.results_dir, None, arm["name"], timestamp,
+                       error, agent_summary, None, None, raw, key=ctx["key"],
+                       extra=extra, harness_version=harness_version,
+                       permission_mode=permission_mode, models=agent_models,
+                       tool_trace=tool_trace, effort=effort, agent_usage=agent_usage,
+                       agent_model=agent_model)
+        return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                "agent": agent_summary, "objective_checks": None, "judge": None,
+                "guard": None, "inconclusive": True, "models_used": agent_models,
+                **({"guidance_violations": extra["guidance_violations"]}
+                   if "guidance_violations" in extra else {})}
     except guidance.GuidanceError:
         if not fixture.get("_real_work"):
             raise
@@ -3456,6 +3477,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "guard": None, "inconclusive": True, "models_used": [],
                 "guidance_violations": counts}
     finally:
+        workspace_git.release(scratch / "ws")
         shutil.rmtree(scratch, ignore_errors=True)
 
 
