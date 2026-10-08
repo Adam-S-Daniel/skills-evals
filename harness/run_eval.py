@@ -75,7 +75,10 @@ _TIMESTAMP_RE = re.compile(r"\d{8}T\d{6}Z")
 
 def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = None,
                        fixture: dict | None = None) -> list[Path]:
-    """Trusted scorer roots; later consume arm_read_denied and run_outputs.
+    """Trusted scorer roots matching PR #345's checkout/output/profile coverage.
+
+    Merge seam: after #345 lands, replace this collection with paths from
+    arm_read_denied(run_checkouts(args), outputs=run_outputs(args)).
 
     Git's common directory identifies the original clone even in a worktree.
     Results and session archives hold earlier arms' evidence and stay hidden.
@@ -95,6 +98,20 @@ def scorer_read_denied(args: argparse.Namespace, *, harness_root: Path | None = 
     results = getattr(args, "results_dir", None)
     if results is not None:
         roots.append(Path(results))
+    roots.extend(Path(p) for p in getattr(args, "read_deny", None) or ())
+    roots.append(Path.home() / ".claude")
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        roots.append(Path(os.environ["CLAUDE_CONFIG_DIR"]).expanduser())
+    try:
+        registries = resolve_registries(
+            getattr(args, "registry", None), os.environ.get("SKILLS_EVALS_REGISTRIES"),
+            root, os.environ.get("AGENTSKILLS_DIR"))
+    except ValueError:
+        # Match run_checkouts: invalid overrides are rejected by main.
+        registries = {}
+    roots.extend(entry["path"] for entry in registries.values())
+    roots.append(guidance.resolve_guidance_dir(
+        getattr(args, "guidance", None), os.environ.get("AGENT_GUIDANCE_DIR"), root))
     return list(dict.fromkeys(path.resolve() for path in roots))
 
 

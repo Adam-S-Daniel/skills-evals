@@ -38959,7 +38959,9 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         self.addCleanup(owned.cleanup)
         ws = Path(owned.name) / "workspace"
         shutil.copytree(self.SEED, ws, ignore=shutil.ignore_patterns("node_modules"))
-        (ws / "node_modules").symlink_to(self.SEED / "node_modules", target_is_directory=True)
+        # Scoring hides the original fixture; installed dependencies belong in
+        # the workspace, as run_setup installs them, rather than a host alias.
+        shutil.copytree(self.SEED / "node_modules", ws / "node_modules", symlinks=True)
         if spec is not None:
             (ws / self.NEW).write_text(spec, encoding="utf-8")
         return ws
@@ -39126,8 +39128,6 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
 
     def test_parser_dependency_tamper_cannot_change_command_verdicts(self):
         ws = self._workspace()
-        (ws / "node_modules").unlink()
-        shutil.copytree(self.SEED / "node_modules", ws / "node_modules")
         parser = ws / "node_modules" / "acorn" / "dist" / "acorn.js"
         parser.write_text(parser.read_text(encoding="utf-8") + "\n// changed\n",
                           encoding="utf-8")

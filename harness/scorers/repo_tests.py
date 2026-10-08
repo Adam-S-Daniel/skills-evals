@@ -7,7 +7,7 @@ to a scratch directory, the overlay is laid over the copy (replacing whatever
 the agent left at those paths), and each selected test runs as its own
 process with `command_succeeds`' isolation (ADR 0006): argv only, no shell, a
 constant environment, a timeout no greater than 60 s, mandatory filesystem
-and PID isolation, optional network isolation, and no program output in the
+and PID isolation, mandatory network isolation, and no program output in the
 detail. The original fixture directory and final workspace stay hidden. The agent's own workspace is
 never written.
 
@@ -200,7 +200,7 @@ def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
     """One selected test in a mandatory sandbox and fresh environment."""
     env_root = root / f"env-{index}"
     env_root.mkdir(mode=0o700)
-    env = commands._environment(env_root, scratch)
+    env = commands._environment(env_root, scratch, read_denied)
     if python_deps:
         private_bin, rest = env["PATH"].split(os.pathsep, 1)
         env["PATH"] = os.pathsep.join((private_bin, str(scratch / ".fixture-python" / "bin"), rest))

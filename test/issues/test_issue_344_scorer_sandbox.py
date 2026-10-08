@@ -5,6 +5,7 @@ import ast
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -46,31 +47,75 @@ class SandboxTests(unittest.TestCase):
         self.assertIn("scorer_sandbox_unavailable exit=17", detail)
         run.assert_not_called()
 
-    def test_network_fallback_preserves_every_mandatory_mount(self):
-        denied = self.root / "private"
-        denied.mkdir()
+    def test_network_isolation_failure_is_closed_without_retry(self):
         with mock.patch.object(commands, "_bubblewrap", return_value="/usr/bin/bwrap"), \
                 mock.patch.object(commands.subprocess, "run", side_effect=[
                     SimpleNamespace(returncode=1), SimpleNamespace(returncode=0)]) as probe:
-            prefix, network = commands._sandbox_prefix(self.ws, self.env_root, self.env, [denied])
-        self.assertEqual(network, "unavailable")
-        first, second = [call.args[0] for call in probe.call_args_list]
-        self.assertIn("--unshare-net", first)
-        self.assertNotIn("--unshare-net", second)
-        first.remove("--unshare-net")
-        self.assertEqual(first, second)
-        self.assertEqual(second, prefix + ["/usr/bin/true"])
-        for flag in ("--unshare-pid", "--die-with-parent", "--proc", "--dev", "--ro-bind", "--tmpfs"):
-            self.assertIn(flag, prefix)
-        self.assertEqual(probe.call_args.kwargs["timeout"], commands.PROBE_TIMEOUT_S)
+            with self.assertRaisesRegex(commands.ScorerSandboxUnavailable,
+                                        "scorer_sandbox_unavailable exit=1"):
+                commands._sandbox_prefix(self.ws, self.env_root, self.env)
+        self.assertEqual(probe.call_count, 1)
+        self.assertIn("--unshare-net", probe.call_args.args[0])
 
-    def test_ancestor_denials_collapse_before_workspace_carve_out(self):
-        prefix = commands._sandbox_mounts(self.ws, self.env_root, [self.ws.parent, self.ws.parent / "private"])
-        self.assertEqual(prefix.count("--tmpfs"), 1)
-        hide = prefix.index("--tmpfs")
-        self.assertEqual(prefix[hide + 1], str(self.root))
-        self.assertLess(hide, prefix.index("--bind"))
-        self.assertIn(["--bind", str(self.ws), str(self.ws)], [prefix[i:i+3] for i in range(len(prefix))])
+    def test_external_python_mounts_only_binary_and_language_libraries(self):
+        prefix = self.root / "python-install"
+        binary = prefix / "bin" / "python3"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("runtime")
+        library = prefix / "lib" / "python3.12"
+        library.mkdir(parents=True)
+        shared = prefix / "lib" / "libpython3.12.so.1.0"
+        shared.write_text("runtime")
+        (prefix / "lib" / "unrelated").mkdir()
+        with mock.patch.object(commands.sys, "executable", str(binary)), \
+                mock.patch.object(commands, "_harness_runtime", return_value=None):
+            paths = commands._runtime_mounts(self.ws, [])
+        self.assertEqual(set(paths), {binary, library, shared})
+        self.assertNotIn(prefix, paths)
+        with mock.patch.object(commands.sys, "executable", str(binary)), \
+                mock.patch.object(commands, "_harness_runtime", return_value=None):
+            self.assertEqual(commands._runtime_mounts(self.ws, [prefix]), [])
+
+    def test_successful_prefix_contains_every_mandatory_namespace_flag(self):
+        with mock.patch.object(commands, "_bubblewrap", return_value="/usr/bin/bwrap"), \
+                mock.patch.object(commands.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
+            prefix, network = commands._sandbox_prefix(self.ws, self.env_root, self.env)
+        self.assertEqual(network, "isolated")
+        for flag in ("--unshare-net", "--unshare-pid", "--unshare-ipc", "--unshare-uts",
+                     "--die-with-parent", "--new-session", "--proc", "--dev"):
+            self.assertIn(flag, prefix)
+
+    def test_seam_includes_registry_guidance_outputs_and_external_profile(self):
+        args = SimpleNamespace(registry=["adam-agentskills=" + str(self.root / "registry")],
+                               guidance=str(self.root / "guidance"),
+                               results_dir=self.root / "results", read_deny=[self.root / "wrapper"])
+        with mock.patch.object(run_eval, "_git", return_value=SimpleNamespace(stdout="")), \
+                mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.root / "profile")}):
+            roots = run_eval.scorer_read_denied(args, harness_root=self.ws)
+        for name in ("registry", "guidance", "results", "wrapper", "profile"):
+            self.assertIn(self.root / name, roots)
+
+    def test_empty_root_allowlist_precedes_workspace_carve_out(self):
+        prefix = commands._sandbox_mounts(self.ws, self.env_root, [self.root])
+        self.assertNotIn(["--ro-bind", "/", "/"],
+                         [prefix[i:i+3] for i in range(len(prefix))])
+        self.assertLess(prefix.index("--tmpfs"), prefix.index("--bind"))
+        self.assertEqual(prefix[prefix.index("--tmpfs") + 1], "/tmp")
+        self.assertIn(["--bind", str(self.ws), str(self.ws)],
+                      [prefix[i:i+3] for i in range(len(prefix))])
+
+    def test_host_runtime_under_home_or_denied_root_is_not_exposed(self):
+        runtime = self.root / "host-bin" / "node"
+        runtime.parent.mkdir()
+        runtime.write_text("#!/bin/sh\nexit 0\n")
+        runtime.chmod(0o700)
+        for denied in ([self.root], [Path.home()]):
+            candidate = runtime if denied == [self.root] else Path.home() / ".local/bin/node"
+            with self.subTest(denied=denied), \
+                    mock.patch.object(commands, "_fixed_interpreter", return_value=None), \
+                    mock.patch.object(commands.shutil, "which", return_value=str(candidate)), \
+                    mock.patch.object(commands.os, "access", return_value=True):
+                self.assertIsNone(commands._harness_node(self.ws, denied))
 
     def test_conflicting_denials_and_broad_workspace_fail_closed(self):
         for workspace, environment, denied in (
@@ -240,8 +285,53 @@ class LiveSandboxTests(unittest.TestCase):
         self.assertEqual((self.ws / "local-result").read_text(), "ok")
         self.assertNotIn("private sentinel", detail)
 
+    def test_host_aliases_home_and_siblings_are_absent(self):
+        sibling = self.root / "sibling-clone"
+        sibling.mkdir()
+        (sibling / "private").write_text("private")
+        paths = ["/mnt/wslg", "/mnt/c", "/run", "/run/docker.sock",
+                 Path.home(), sibling, REPO / "evals/real-work/cms-platform-221/checker",
+                 REPO / "evals/real-work/cms-platform-221/solution.patch"]
+        for path in paths:
+            with self.subTest(path=str(path)):
+                passed, detail = self.command(
+                    "import pathlib,sys; assert not pathlib.Path(sys.argv[1]).exists()", path)
+                self.assertTrue(passed, detail)
+
+    def test_host_unix_socket_cannot_be_connected(self):
+        socket_path = self.root / "host.sock"
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(socket_path))
+            listener.listen(1)
+            code = ("import socket,sys; s=socket.socket(socket.AF_UNIX); "
+                    "\ntry: s.connect(sys.argv[1])\n"
+                    "except OSError: pass\nelse: raise AssertionError('host socket reachable')\n")
+            passed, detail = self.command(code, socket_path)
+        self.assertTrue(passed, detail)
+
+    def test_denied_directory_and_file_in_allowed_bind_are_masked(self):
+        allowed = self.root / "runtime"
+        denied = allowed / "checkout"
+        nested = denied / "outputs"
+        nested.mkdir(parents=True)
+        (nested / "secret").write_text("private")
+        output = allowed / "transcript"
+        output.write_text("private")
+        alias = self.root / "runtime-alias"
+        alias.symlink_to(allowed, target_is_directory=True)
+        with mock.patch.object(commands, "SYSTEM_MOUNTS",
+                               (*commands.SYSTEM_MOUNTS, str(allowed), str(alias))):
+            code = ("from pathlib import Path; import sys; "
+                    "assert all(not (Path(p)/'outputs/secret').exists() for p in sys.argv[1:3]); "
+                    "\nfor p in sys.argv[3:]:\n"
+                    " try: assert Path(p).read_bytes() == b''\n"
+                    " except OSError: pass\n")
+            passed, detail = self.command(code, denied, alias / "checkout", output,
+                                         alias / "transcript", denied=[denied, nested, output])
+        self.assertTrue(passed, detail)
+
     def test_absolute_outside_write_fails(self):
-        outside = self.root / "outside"
+        outside = self.root / "unmounted-directory" / "outside"
         passed, detail = self.command("import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('bad')", outside)
         self.assertFalse(passed)
         self.assertIn("command_nonzero", detail)
@@ -308,6 +398,28 @@ class LiveSandboxTests(unittest.TestCase):
         passed, detail = commands.command_succeeds(
             str(self.ws), [], ["node", "-e", "if (require('fixture-package') !== 42) process.exit(1)"],
             read_denied=[self.root])
+        self.assertTrue(passed, detail)
+
+    def test_copied_dependencies_work_but_original_dependency_symlink_is_hidden(self):
+        if commands._fixed_interpreter("node") is None:
+            self.skipTest("system node unavailable for live module import")
+        original = self.denied / "node_modules"
+        package = original / "fixture-package"
+        package.mkdir(parents=True)
+        (package / "index.js").write_text("module.exports = 42;\n")
+        dependencies = self.ws / "node_modules"
+        dependencies.symlink_to(original, target_is_directory=True)
+        argv = ["node", "-e", "if (require('fixture-package') !== 42) process.exit(1)"]
+        passed, detail = commands.command_succeeds(str(self.ws), [], argv,
+                                                  read_denied=[self.root])
+        self.assertFalse(passed)
+        self.assertIn("command_nonzero", detail)
+        dependencies.unlink()
+        shutil.copytree(original, dependencies, symlinks=True)
+        argv[2] += "; if (require('node:fs').existsSync(process.argv[1])) process.exit(1)"
+        argv.append(str(original))
+        passed, detail = commands.command_succeeds(str(self.ws), [], argv,
+                                                  read_denied=[self.root])
         self.assertTrue(passed, detail)
 
     def test_real_fixture_python_import_survives_original_workspace_denial(self):

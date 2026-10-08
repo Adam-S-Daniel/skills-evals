@@ -4013,7 +4013,7 @@ def run_checks(fixture: dict, workspace: str, seed: str,
 
     File and git checks are hermetic. The opt-in `command_succeeds` executes
     final-workspace code inside a mandatory filesystem/PID sandbox;
-    network isolation is best-effort and reported in its detail (ADR 0006).
+    network isolation is mandatory and reported in its detail (ADR 0006).
     The one that was not, `pinned_shas_match_tags`, resolved a SHA to a tag
     over `git ls-remote`; it retired with the version-comment convention and
     took the network opt-in that existed only for it. No check intentionally

@@ -103,20 +103,34 @@ despite the isolated environment. The accepted historical decision above is
 preserved; this addendum supersedes its filesystem and process limitations.
 
 Both `command_succeeds` and `repo_tests` now execute directly through a
-trusted fixed bubblewrap runner. Bind the host root read-only, hide trusted
-read-denied directory roots with temporary mounts (collapse descendants
-under denied ancestors), and reopen only the executing workspace and fresh
-environment scratch writable. Make the hidden temporary mounts read-only
-after creating the narrow bind destinations. Reject a writable root that
-contains or equals a denied root, and reject the filesystem root as an
-execution workspace. Unshare PID state, mount fresh `/proc` and `/dev`, and
-use `--die-with-parent` to contain descendants and prevent host process-root
-paths from bypassing read denial.
+trusted fixed bubblewrap runner. Start with an empty mount namespace root:
+read-only binds allow `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, and `/lib32`
+when present, for system programs and language/runtime libraries. The only
+host `/etc` file is `/etc/ld.so.cache`, needed by the dynamic loader; account
+databases, resolver settings, machine identity and other configuration stay
+absent. Resolve Python, node and Ruby from the harness PATH and Python's
+`sys.executable`; outside the system binds, expose only the executable file
+and Python/Ruby language and shared-library paths under its installation's
+`lib`. Never expose a toolchain in HOME, an executing workspace or a denied
+checkout/output root. The child's PATH includes fixed system locations and
+private single-executable aliases, never inherited host directories.
 
-Probe harmless `/usr/bin/true` with the same filesystem/PID configuration
-and a bounded timeout. Attempt `--unshare-net`; only that option may be
-omitted if the mandatory configuration succeeds without it, reporting
-`network=unavailable`. Confirm actual sandbox startup through an isolated fixed-system Python
+Mask denied descendants of every allowed bind, including resolved system
+aliases such as `/lib` and `/usr/lib`. Reject a writable root that contains
+or equals a denied root, and reject the filesystem root as an execution
+workspace. Mount fresh `/proc` and minimal `/dev`, a temporary `/tmp`, and
+then reopen only the executing workspace and fresh environment scratch
+writable. Nothing mounts `/run`, `/var/run`, `/mnt`, `/media`, `/srv`, HOME
+or root's home broadly: host Unix sockets, WSL filesystem/drive aliases and
+interop sockets are absent. Unshare PID, IPC, UTS and network state; use
+`--die-with-parent` to contain descendants and `--new-session` against
+terminal injection with TIOCSTI.
+
+Probe harmless `/usr/bin/true` with this complete configuration and a bounded
+timeout. Network isolation is now mandatory: if `--unshare-net` fails,
+return `scorer_sandbox_unavailable` without retrying with host networking.
+This supersedes the historical decision's optional network isolation.
+Confirm actual sandbox startup through an isolated fixed-system Python
 bootstrap (`-I -S`) running inside the completed sandbox. It writes a fixed
 readiness marker to an inherited descriptor, closes it, and uses `execv` for
 the scoring command. Bubblewrap's `info-fd` reports a fork before mount and
@@ -135,18 +149,20 @@ sandbox failures.
 
 The trusted caller supplies read denial independently of fixture constraints.
 Direct APIs protect the harness checkout and real HOME. `run_eval` adds the
-original clone's parent derived from Git's common directory, results and
-session archive roots; `run_checks` adds the original fixture directory for
+original clone's parent derived from Git's common directory, explicit and
+environment-selected registry/guidance checkouts, results, wrapper read-deny
+outputs, session archive and Claude profile roots; `run_checks` adds the original fixture directory for
 both executing types. `repo_tests` independently hides its original fixture
 and final workspace, after copying the workspace and installing the overlay.
 Each selected test gets its own fresh writable environment and sandbox
 configuration. Installed `node_modules` and `.fixture-python` remain in the
-scoring copy; the original checker and solution patch remain hidden.
+scoring copy; the original checker and solution patch remain hidden. Dependencies
+must exist in that copy: an external dependency symlink does not authorize
+an additional host bind.
 
 This introduces a mandatory Linux bubblewrap dependency. Disk and CPU
-consumption remain uncapped, and network isolation remains optional with an
-explicit status. Broader agent-arm read isolation and richer deny-root
-collection belong to
+consumption remain uncapped. Broader agent-arm read isolation belongs to
 [PR #345](https://github.com/Adam-S-Daniel/skills-evals/pull/345); the
-`scorer_read_denied` seam will consume its trusted `arm_read_denied` and
-`run_outputs` inputs after that PR merges.
+`scorer_read_denied` seam will directly consume its trusted
+`arm_read_denied(run_checkouts(args), outputs=run_outputs(args))` inputs after
+that PR merges; their checkout/output/profile coverage is collected here now.

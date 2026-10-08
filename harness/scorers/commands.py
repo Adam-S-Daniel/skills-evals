@@ -1,6 +1,6 @@
 """Opt-in command checks inside a mandatory filesystem and PID sandbox.
 
-See ADR 0006 for the trust boundary and the limits of optional network isolation.
+See ADR 0006 for the mandatory filesystem, process and network boundaries.
 No program output or exception text is included in published check details.
 """
 
@@ -31,7 +31,7 @@ SANDBOX_BOOTSTRAP = (
 )
 SYSTEM_PATH = ("/usr/bin", "/bin")
 INTERPRETERS = {name: (f"/usr/bin/{name}", f"/bin/{name}")
-                for name in ("bash", "sh", "python3", "node")}
+                for name in ("bash", "sh", "python3", "node", "ruby")}
 
 
 def _fixed_interpreter(name: str) -> str | None:
@@ -44,9 +44,11 @@ def _executable(workspace: Path, name: str) -> str | None:
         return None
     if name in INTERPRETERS:
         fixed = _fixed_interpreter(name)
-        # Runners keep node outside /usr/bin and /bin; use the same harness node
-        # the child's PATH gets, with the same refusals.
-        return fixed if fixed is not None or name != "node" else _harness_node(workspace)
+        # Runners may install language runtimes outside fixed system locations.
+        if fixed is not None or name not in ("node", "python3", "ruby"):
+            return fixed
+        return (_harness_node(workspace) if name == "node"
+                else _harness_runtime(name, workspace))
     path = Path(name)
     path = path if path.is_absolute() else workspace / path
     path = path.resolve()
@@ -56,26 +58,36 @@ def _executable(workspace: Path, name: str) -> str | None:
     return str(path)
 
 
-def _harness_node(workspace: Path | None) -> str | None:
-    """The harness's own node, for hosts that install it outside /usr/bin.
+def _runtime_allowed(path: Path, workspace: Path | None, denied=()) -> bool:
+    """Runtime discovery cannot reopen HOME, checkouts or evidence roots."""
+    blocked = [Path.home().resolve(), Path(__file__).resolve().parents[2],
+               *(Path(p).resolve() for p in denied or ())]
+    if workspace is not None:
+        blocked.append(workspace.resolve())
+    return not any(path.is_relative_to(root) for root in blocked)
 
-    GitHub's runner image puts node in /usr/local/bin and setup-node in its
-    tool cache, so neither a bare `node` argv nor a verifier's PATH lookup of
-    `node` finds it there. Only node is exposed, and never one resolved inside
-    the workspace the agent wrote.
-    """
-    if _fixed_interpreter("node") is not None:
-        return None
-    found = shutil.which("node")
+
+def _harness_runtime(name: str, workspace: Path | None, denied=()) -> str | None:
+    found = shutil.which(name)
     if found is None or not os.path.isabs(found):
         return None
-    resolved = Path(found).resolve()
-    if workspace is not None and resolved.is_relative_to(workspace.resolve()):
+    try:
+        resolved = Path(found).resolve()
+        if not _runtime_allowed(resolved, workspace, denied):
+            return None
+        return str(resolved) if os.access(resolved, os.X_OK) else None
+    except (OSError, RuntimeError, ValueError):
         return None
-    return str(resolved) if os.access(resolved, os.X_OK) else None
 
 
-def _environment(root: Path, workspace: Path | None = None) -> dict[str, str]:
+def _harness_node(workspace: Path | None, denied=()) -> str | None:
+    """Expose only a trusted runner node when no system node exists."""
+    if _fixed_interpreter("node") is not None:
+        return None
+    return _harness_runtime("node", workspace, denied)
+
+
+def _environment(root: Path, workspace: Path | None = None, read_denied=()) -> dict[str, str]:
     """A new environment, never a filtered copy of a credential-bearing one."""
     directories = {"HOME": "home", "XDG_CONFIG_HOME": "config",
                    "XDG_CACHE_HOME": "cache", "XDG_DATA_HOME": "data",
@@ -91,14 +103,17 @@ def _environment(root: Path, workspace: Path | None = None) -> dict[str, str]:
     refusal.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
     refusal.chmod(0o700)
     path = ":".join((str(private_bin), *SYSTEM_PATH))
-    node = _harness_node(workspace)
-    if node is not None:
-        # A directory holding only node, after the fixed ones, so stubs still win
-        # and no other host tool beside the harness's node becomes reachable.
-        node_bin = root / "node-bin"
-        node_bin.mkdir(mode=0o700)
-        (node_bin / "node").symlink_to(node)
-        path += f":{node_bin}"
+    for name in ("node", "python3", "ruby"):
+        if _fixed_interpreter(name) is not None:
+            continue
+        runtime = (_harness_node(workspace, read_denied) if name == "node"
+                   else _harness_runtime(name, workspace, read_denied))
+        if runtime is not None:
+            # Only the selected executable is added to PATH, never its host bin.
+            runtime_bin = root / f"{name}-bin"
+            runtime_bin.mkdir(mode=0o700)
+            (runtime_bin / name).symlink_to(runtime)
+            path += f":{runtime_bin}"
     env.update(PATH=path, LANG="C", LC_ALL="C")
     return env
 
@@ -142,40 +157,84 @@ def _read_denied(read_denied) -> list[Path]:
         path = Path(root).resolve()
         if not path.exists():
             continue
-        if path == Path("/") or not path.is_dir():
+        if path == Path("/"):
             raise ScorerSandboxUnavailable()
         if path not in out:
             out.append(path)
     return out
 
 
+SYSTEM_MOUNTS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/lib32")
+# The dynamic loader cache is the only host /etc state needed by these checks.
+# No account database, resolver, machine identity, or configuration directory.
+ETC_MOUNTS = ("/etc/ld.so.cache",)
+
+
+def _runtime_mounts(workspace: Path, denied) -> list[Path]:
+    """Executable files and language libraries, never an entire tool cache."""
+    candidates = [sys.executable]
+    candidates.extend(found for name in ("python3", "node", "ruby")
+                      if (found := _harness_runtime(name, workspace, denied)))
+    paths = []
+    for candidate in candidates:
+        binary = Path(candidate).resolve()
+        if not _runtime_allowed(binary, workspace, denied):
+            continue
+        # /usr and merged-/usr aliases are already in the system allowlist.
+        if any(binary.is_relative_to(Path(root).resolve()) for root in SYSTEM_MOUNTS
+               if Path(root).exists()):
+            continue
+        paths.append(binary)
+        if binary.parent.name == "bin":
+            lib = binary.parent.parent / "lib"
+            if binary.name.startswith("python") and lib.is_dir():
+                paths.extend(lib.glob("python[0-9]*"))
+                paths.extend(lib.glob("libpython*.so*"))
+            elif binary.name.startswith("ruby"):
+                paths.append(lib / "ruby")
+                paths.extend(lib.glob("libruby*.so*"))
+    return list(dict.fromkeys(path.resolve() for path in paths if path.exists()
+                             and _runtime_allowed(path.resolve(), workspace, denied)))
+
+
 def _sandbox_mounts(workspace: Path, env_root: Path, denied) -> list[str]:
-    """Hide ancestors first, then reopen only execution and environment roots."""
+    """Start with an empty root, and bind only execution inputs and runtimes."""
     writable = (workspace.resolve(), env_root.resolve())
     denied = {Path(p).resolve() for p in denied}
     if (Path("/") in writable
             or any(path.is_relative_to(root) for path in denied for root in writable)):
-        # Reopening a writable parent must never reopen a denied child.
         raise ScorerSandboxUnavailable()
-    collapsed = []
-    for path in sorted(denied, key=lambda p: (len(p.parts), str(p))):
-        if not any(path.is_relative_to(parent) for parent in collapsed):
-            collapsed.append(path)
-    mounts = ["--ro-bind", "/", "/"]
-    for path in collapsed:
-        mounts += ["--tmpfs", str(path)]
+    allowed = [Path(p) for p in (*SYSTEM_MOUNTS, *ETC_MOUNTS) if Path(p).exists()]
+    allowed.extend(_runtime_mounts(workspace, denied))
+    mounts = ["--tmpfs", "/tmp"]
+    masks = {}
+    for destination in allowed:
+        source = destination.resolve()
+        if any(source.is_relative_to(root) for root in denied):
+            # A poisoned system runtime cannot be replaced by workspace code.
+            raise ScorerSandboxUnavailable()
+        mounts += ["--ro-bind", str(source), str(destination)]
+        # A bind alias (e.g. /lib -> /usr/lib) needs the same descendant masks.
+        for root in denied:
+            if root.is_relative_to(source):
+                masks[destination / root.relative_to(source)] = root.is_dir()
+    covered = []
+    for path, directory in sorted(masks.items(), key=lambda item: len(item[0].parts)):
+        if any(path.is_relative_to(parent) for parent in covered):
+            continue
+        if directory:
+            covered.append(path)
+            mounts += ["--tmpfs", str(path), "--remount-ro", str(path)]
+        else:
+            mounts += ["--ro-bind", "/dev/null", str(path)]
     for path in writable:
         mounts += ["--bind", str(path), str(path)]
-    # Destination directories must exist before their hidden ancestor is made
-    # read-only. Remounting only that mount leaves the two binds writable.
-    for path in collapsed:
-        mounts += ["--remount-ro", str(path)]
     return mounts
 
 
 def _sandbox_prefix(workspace: Path, env_root: Path, env: dict[str, str],
                     read_denied=None) -> tuple[list[str], str]:
-    """Probe the exact filesystem/PID boundary; only network may fall back."""
+    """Probe the complete mandatory boundary once; any failure is closed."""
     import guidance
     guidance.check_timeout(PROBE_TIMEOUT_S, "_sandbox_prefix timeout",
                            guidance.SINK_TIMEOUT_REMEDY)
@@ -184,22 +243,18 @@ def _sandbox_prefix(workspace: Path, env_root: Path, env: dict[str, str],
     if executable is None:
         raise ScorerSandboxUnavailable()
     mounts = _sandbox_mounts(workspace, env_root, denied)
-    base = [executable, *mounts, "--unshare-pid", "--proc", "/proc", "--dev", "/dev",
-            "--die-with-parent", "--chdir", str(workspace), "--"]
-    last_code = None
-    for network in ("isolated", "unavailable"):
-        prefix = [*base[:-1], *(("--unshare-net",) if network == "isolated" else ()), "--"]
-        try:
-            probe = subprocess.run(prefix + ["/usr/bin/true"], cwd=workspace, env=env,
-                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, timeout=PROBE_TIMEOUT_S, check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            last_code = None
-            continue
-        last_code = probe.returncode
-        if last_code == 0:
-            return prefix, network
-    raise ScorerSandboxUnavailable(last_code)
+    prefix = [executable, *mounts, "--unshare-pid", "--unshare-net",
+              "--unshare-ipc", "--unshare-uts", "--proc", "/proc", "--dev", "/dev",
+              "--die-with-parent", "--new-session", "--chdir", str(workspace), "--"]
+    try:
+        probe = subprocess.run(prefix + ["/usr/bin/true"], cwd=workspace, env=env,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=PROBE_TIMEOUT_S, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        raise ScorerSandboxUnavailable() from None
+    if probe.returncode:
+        raise ScorerSandboxUnavailable(probe.returncode)
+    return prefix, "isolated"
 
 
 def _sandbox_started(stream) -> bool:
@@ -299,7 +354,7 @@ def command_succeeds(workspace: str, paths: list[str], argv=None,
         return False, "command_invalid_executable"
     try:
         with tempfile.TemporaryDirectory(prefix="objective-command-") as temporary:
-            env = _environment(Path(temporary), final_workspace)
+            env = _environment(Path(temporary), final_workspace, read_denied)
             prefix, network = _sandbox_prefix(final_workspace, Path(temporary), env, read_denied)
             if not os.path.isfile(executable) or not os.access(executable, os.X_OK):
                 return False, f"command_spawn_failed network={network}"
