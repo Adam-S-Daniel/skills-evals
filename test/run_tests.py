@@ -61,6 +61,14 @@ RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 PDF_OCR_DIR = REPO_ROOT / "evals" / "pdf-ocr-audit"
 VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
+sys.path.insert(0, str(TEST_DIR))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+
+
+def setUpModule() -> None:
+    install_arm_test_environment()
+
+
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
 import run_eval  # noqa: E402
@@ -140,7 +148,7 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": FAKE_REGISTRY, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
@@ -154,7 +162,7 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "fixture-solo-skill",
                   "registry": FAKE_REGISTRY_LEGACY, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
@@ -173,7 +181,7 @@ class WithSkillInstallTests(unittest.TestCase):
                 workspace.mkdir()
                 arm = {"name": "with_skill", "skill": skill,
                       "registry": FAKE_REGISTRY, "timeout": 30}
-                with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                                   "FAKE_CLAUDE_MODE": "agent"}):
                     result = run_eval.run_agent(workspace, "audit the workflows", arm)
                 self.assertNotIn("error", result)
@@ -196,7 +204,7 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "dup-skill",
                   "registry": registry, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
@@ -260,6 +268,31 @@ class WithSkillInstallTests(unittest.TestCase):
             self.assertNotIn(str(registry), result["detail"])
 
 
+class ReviewedArmTestEnvironmentTests(unittest.TestCase):
+    def poisoned_parent(self, root):
+        poison = root / "poison-mountinfo"
+        poison.write_text("malformed host mount table\n", encoding="utf-8")
+        return {"PATH": str(root / "missing-bin"),
+                run_eval.MOUNTINFO_ENV: str(poison)}
+
+    def test_skill_install_tests_ignore_poisoned_parent_path_and_mountinfo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, self.poisoned_parent(Path(tmp))):
+                WithSkillInstallTests().test_copies_skill_dir_bundle_layout()
+
+    def test_issue63_install_ignores_poisoned_parent_path_and_mountinfo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            case = TestIssue63()
+            registry = case._fake_registry(tmp, "skills/some-skill/SKILL.md")
+            workspace = root / "ws"
+            workspace.mkdir()
+            with mock.patch.dict(os.environ, self.poisoned_parent(root)):
+                result = case._install(registry, "some-skill",
+                                       "skills/*/SKILL.md", workspace)
+            self.assertNotIn("error", result, result)
+
+
 class RunAgentModesTests(unittest.TestCase):
     def _run(self, mode, timeout=30, sleep=None):
         # The mode reaches the stand-in CLI through the ARM's `env:` block,
@@ -274,7 +307,7 @@ class RunAgentModesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             arm = {"name": "without_skill", "timeout": timeout, "env": arm_env}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 return run_eval.run_agent(workspace, "audit the workflows", arm)
 
     def test_agent_success(self):
@@ -712,7 +745,7 @@ class AgentEnvTests(unittest.TestCase):
                    "env": {"PATH": "$WORKSPACE/bin:$PATH",
                            "SKILLS_EVALS_PROBE": "$WORKSPACE/marker",
                            "FAKE_CLAUDE_MODE": "agent_env"}}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 result = run_eval.run_agent(workspace, "probe", arm)
         self.assertNotIn("error", result)
         seen = json.loads(result["transcript"])
@@ -10172,7 +10205,7 @@ class TestIssue63(unittest.TestCase):
     def _install(self, registry: Path, skill: str, layout: str, workspace: Path) -> dict:
         arm = {"name": "with_skill", "skill": skill, "registry": registry,
               "layout": layout, "timeout": 30}
-        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+        with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                           "FAKE_CLAUDE_MODE": "agent"}):
             return run_eval.run_agent(workspace, "audit the workflows", arm)
 
@@ -27163,7 +27196,7 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         dump = root / "seen.json"
         cli = self._probe_cli(root / "cli", dump)
 
-        env = dict(self.BASE_ENVIRONMENT)
+        env = {**arm_test_environment(), **self.BASE_ENVIRONMENT}
         env.update(self.PLANTED_DROPPED)
         env.update(self.PLANTED_FORWARDED)
         env.update(self.PLANTED_TOKENS)
@@ -27181,6 +27214,25 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertTrue(dump.is_file(), proc.stdout + proc.stderr)
         return json.loads(dump.read_text(encoding="utf-8"))
+
+    def test_arm_environment_replacement_carries_only_harness_mount_fixture(self):
+        # Spy on the real child spawn, then let the harness and stand-in CLI
+        # run. A module fixture cannot survive a replacement env= mapping.
+        with mock.patch.object(subprocess, "run", wraps=subprocess.run) as launches:
+            arm_environment = self._arm_environment()
+        child_environments = [dict(call.kwargs["env"])
+                              for call in launches.call_args_list
+                              if call.args and len(call.args[0]) > 1
+                              and Path(call.args[0][1]) == HARNESS_DIR / "run_eval.py"]
+        self.assertEqual(len(child_environments), 1)
+        (child_environment,) = child_environments
+        self.assertEqual(child_environment["PATH"], self.BASE_ENVIRONMENT["PATH"])
+        self.assertTrue(run_eval.MOUNTINFO_ENV in child_environment,
+                        "the harness child needs an explicit mountinfo fixture")
+        mountinfo = Path(child_environment[run_eval.MOUNTINFO_ENV])
+        self.assertTrue(mountinfo.is_file())
+        self.assertEqual(mountinfo.read_bytes(), b"")
+        self.assertNotIn(run_eval.MOUNTINFO_ENV, arm_environment)
 
     def test_the_arm_receives_only_the_allowlisted_environment(self):
         """The whole environment, not the twelve variables a test planted.

@@ -2045,12 +2045,57 @@ other than HOME itself: a checkout or the directory holding the clone, the
 results, the archive, a profile, an alias. On this WSL workstation a skill
 arm's settings are now 12,695 bytes.
 
+The named temporary-store inventory under `TMPDIR` is explicit in
+[`HARNESS_TEMP_PREFIXES`](harness/run_eval.py). Both existing stores (`sandbox.filesystem.denyRead`)
+and later allocations (`Read` prefix rules) are denied, preserving only the
+arm's own workspace. The inventory includes explicit parent directories:
+`dest`, an output parent, or a fake CLI's `LOG_DIR` can itself be `TMPDIR`.
+
+| Denied prefix | Allocator |
+|---|---|
+| `workspace-` | [harness/run_eval.py](harness/run_eval.py) materialization and [scripts/local_eval.py](scripts/local_eval.py) |
+| `skills-evals-` | [harness/run_eval.py](harness/run_eval.py) guidance arms (`ARM_WORKSPACE_PREFIX`) |
+| `guidance-bridge-canary-` | [harness/run_canary.py](harness/run_canary.py) |
+| `propagation-` | [harness/run_propagation.py](harness/run_propagation.py), including `propagation-selftest-` |
+| `scoring-seed-`, `deps-python-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
+| `objective-repo-tests-` | [harness/scorers/repo_tests.py](harness/scorers/repo_tests.py) |
+| `objective-command-` | [harness/scorers/commands.py](harness/scorers/commands.py) |
+| `local-eval-guard-` | [scripts/local_eval.py](scripts/local_eval.py) |
+| `sink-mutation-` | Reserved existing sink-mutation scratch prefix |
+| `trusted-git-` | [harness/workspace_git.py](harness/workspace_git.py) private metadata, allocated with `mkdir` |
+| `scaffold-`, `scaffold-context-`, `.scaffold-` | [scripts/scaffold_real_work.py](scripts/scaffold_real_work.py) candidate, context Git stores, and destination staging |
+| `claude-probe-home-` | [scripts/probe_model_defaults.py](scripts/probe_model_defaults.py) isolated CLI profile |
+| `skill-edit-guard-`, `propose-skill-edit-` | [scripts/propose_skill_edit.py](scripts/propose_skill_edit.py) |
+| `scoring-guidance-`, `scoring-skill-` | [harness/run_eval.py](harness/run_eval.py) objective-only scoring copies |
+| `mine-real-work-` | [scripts/mine_real_work.py](scripts/mine_real_work.py) atomic output staging file |
+| `.gh-label-`, `.gh-timeline-` | [harness/fakes/gh](harness/fakes/gh) atomic local state files |
+| `usage-census-` | [scripts/publish_usage_census.sh](scripts/publish_usage_census.sh) scratch repositories |
+
+The only tempfile allocations without a prefix in this inventory are
+`TemporaryFile` handles, which have no named store an arm can open, and
+[`run_eval._archive_session_dir`](harness/run_eval.py)'s dynamic session-name prefix beneath the
+already-denied session archive. A Python AST regression inventories named
+allocations, including the extensionless fake CLI and explicit parents;
+a Bash AST regression checks the census allocation. The prefix coverage
+regression checks command denies for existing stores and file-tool denies
+for future names.
+
+Alias classification wins when deduplication finds that a profile or HOME
+also names an alias: that mountpoint remains denied whole, with no profile
+exception or HOME carve-out. PATH's physical alias check resolves each
+original spelling before interpreting `..` after a symlink. Mount-table
+read and decode errors refuse the arm as `read_rules_unsafe`.
+
 The mount table and PATH are parameters (`mountinfo=`, `path_env=`),
 defaulting to `host_mountinfo()` and `os.environ` only at the outermost
 call. `SKILLS_EVALS_MOUNTINFO` names a mountinfo-format file that stands in
 for `/proc/self/mountinfo` (an empty one names no alias): every test that
 runs an arm sets it and an explicit PATH, so no result depends on the host's
-mounts or PATH. See the
+mounts or PATH. The shared [test/arm_test_env.py](test/arm_test_env.py) module fixture covers the
+legacy runner and remaining arm-running issue modules; install helpers also
+set both locally, so a poisoned parent inside a test cannot override them.
+Tests measuring particular mounts keep their own mountinfo fixtures, and
+explicit child environment mappings carry the fixture too. See the
 [reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
 and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
 

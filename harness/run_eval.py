@@ -943,7 +943,7 @@ def host_mountinfo(environ=None) -> str:
     fixture = environ.get(MOUNTINFO_ENV)
     try:
         text = Path(fixture or "/proc/self/mountinfo").read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise ArmReadIsolationError(
             "the Linux mount metadata cannot be read", code="read_rules_unsafe") from exc
     if not fixture and not text.strip():
@@ -1036,7 +1036,7 @@ def path_without_aliases(path_env: str, aliases) -> str:
         lexical = Path(os.path.normpath(entry))
         if any(_within(lexical, a) for a in aliases):
             return True
-        return any(_within(lexical.resolve(), a) for a in aliases)
+        return any(_within(Path(entry).resolve(), a) for a in aliases)
     if not aliases:
         return path_env
     return os.pathsep.join(e for e in path_env.split(os.pathsep)
@@ -1126,8 +1126,14 @@ def arm_read_denied(checkouts=(), *, home: Path | None = None,
     if mountinfo is None:
         mountinfo = host_mountinfo()
     for path in _host_filesystem_aliases(home.resolve(), _linux_mounts(mountinfo)):
-        if path not in [p for _, p in out]:
+        index = next((i for i, (_, seen) in enumerate(out) if seen == path), None)
+        if index is None:
             out.append((MOUNT_ALIAS_LABEL, path))
+        else:
+            # An alias stays denied whole even when HOME or an inherited
+            # profile names that exact mountpoint. Its classification must
+            # survive deduplication before profile exceptions are considered.
+            out[index] = (MOUNT_ALIAS_LABEL, path)
     return out
 
 
@@ -1437,7 +1443,8 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
     return out
 
 
-# The prefixes of every directory the harness makes under TMPDIR: other
+# The prefixes of every named temporary store the harness and scripts make
+# under TMPDIR (including explicit parents that may be TMPDIR): other
 # arms' workspaces and scratch profiles (transcripts), canary and
 # propagation legs, scoring copies, `deps:` caches, objective-command
 # scratch and `workspace_git`'s private metadata copies (`trusted-git-`,
@@ -1447,7 +1454,10 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
 HARNESS_TEMP_PREFIXES = (
     "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
     "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
-    "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-")
+    "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
+    "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
+    "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
+    ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-")
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
@@ -1533,14 +1543,16 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                              mountinfo=mountinfo)
     aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
     roots = [path for label, path in denied
-             if label in ("HOME", PROFILE_LABEL) or path == home]
+             if label != MOUNT_ALIAS_LABEL
+             and (label in ("HOME", PROFILE_LABEL) or path == home)]
     if path_env is None:
         path_env = os.environ.get("PATH", "")
     path_env = path_without_aliases(path_env, aliases)
     # Carve-outs keep clear of every denied path but HOME itself, which may
     # also be the directory holding the clone (a cloud routine clones into
     # it): the checkouts, outputs, archive, profiles and aliases.
-    guarded_carve = [path for _, path in denied if path != home]
+    guarded_carve = [path for label, path in denied
+                     if path != home or label == MOUNT_ALIAS_LABEL]
     carve = _arm_read_carve_outs(home, guarded_carve, path_env) if home.is_dir() else []
     keep = Path(session_dir).resolve() if session_dir else None
     config_dirs = (_agent_config_dirs(workspace, config_dir)
@@ -4757,7 +4769,7 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
                   "A guidance fixture's checks are per arm; run it with "
                   "`--arm both` (or a named arm) instead.")
             return 2
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(prefix="scoring-guidance-") as tmp:
             workspace = Path(tmp) / "ws"
             if seed.is_dir():
                 shutil.copytree(seed, workspace)
@@ -5542,7 +5554,7 @@ def main() -> int:
                 results = objective.run_checks(fixture, str(workspace),
                                                str(seed))
             else:
-                with tempfile.TemporaryDirectory() as tmp:
+                with tempfile.TemporaryDirectory(prefix="scoring-skill-") as tmp:
                     workspace = Path(tmp) / "ws"
                     shutil.copytree(seed, workspace)
                     seed_prep.prepare_seed(workspace, fixture)

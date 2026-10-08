@@ -66,6 +66,14 @@ def flag_value(argv: list[str], flag: str) -> str:
     return argv[indexes[0] + 1]
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+def setUpModule() -> None:
+    install_arm_test_environment()
+
+
 class ArmSandboxSettingsTests(unittest.TestCase):
     def test_the_settings_deny_github_and_fail_closed_with_no_escape(self):
         # Spelled out, not rebuilt from the helper: a widening key or an

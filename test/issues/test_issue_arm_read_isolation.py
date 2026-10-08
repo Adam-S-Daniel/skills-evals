@@ -266,6 +266,63 @@ class WorktreeResolutionTests(_TempLayout):
 
 
 class HostMountReadDenyTests(_TempLayout):
+    def test_inherited_profile_alias_keeps_the_whole_alias_classification(self):
+        alias = self.root / "mirror"
+        (alias / "usr" / "bin").mkdir(parents=True)
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(alias)}):
+            denied = run_eval.arm_read_denied(
+                home=self.home, harness_root=self.worktree,
+                mountinfo=self.mountinfo)
+            self.assertEqual(dict((p, label) for label, p in denied)[alias],
+                             run_eval.MOUNT_ALIAS_LABEL)
+            settings = self.settings(path_env=f"{alias}/usr/bin:/usr/bin",
+                                     profiles=run_eval.profile_dirs(self.home))
+        rules = settings["permissions"]["deny"]
+        self.assertIn(f"Read(/{alias})", rules)
+        self.assertIn(f"Read(/{alias}/**)", rules)
+        self.assertEqual([r for r in rules if r.startswith(f"Read(/{alias}/")],
+                         [f"Read(/{alias}/**)"])
+        self.assertEqual(run_eval.path_without_aliases(
+            f"{alias}/usr/bin:/usr/bin",
+            [p for label, p in denied if label == run_eval.MOUNT_ALIAS_LABEL]),
+            "/usr/bin")
+
+    def test_a_home_mount_alias_gets_no_home_or_profile_exception(self):
+        (self.home / ".gitconfig").write_text("[user]\n", encoding="utf-8")
+        self.mountinfo += f"2 1 0:30 / {self.home} rw - drvfs C: rw\n"
+        settings = self.settings(workspace=self.workspace)
+        self.assertIn(f"Read(/{self.home})", settings["permissions"]["deny"])
+        self.assertIn(f"Read(/{self.home}/**)", settings["permissions"]["deny"])
+        self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [])
+
+    def test_alias_path_symlink_parent_is_resolved_before_dotdot(self):
+        alias = self.root / "mirror"
+        (alias / "child").mkdir(parents=True)
+        (alias / "bin").mkdir()
+        linux = self.root / "linux"
+        linux.mkdir()
+        (linux / "link").symlink_to(alias / "child")
+        entry = f"{linux}/link/../bin"
+        self.assertEqual(Path(entry).resolve(), alias / "bin")
+        self.assertEqual(run_eval.path_without_aliases(
+            f"{entry}:/usr/bin", [alias]), "/usr/bin")
+
+    def test_toolchain_preflight_resolves_original_symlink_parent_spelling(self):
+        alias = self.root / "mirror"
+        (alias / "child").mkdir(parents=True)
+        (alias / "bin").mkdir()
+        for name in run_eval.ARM_REQUIRED_TOOLS:
+            executable = alias / "bin" / name
+            executable.write_text("#!/bin/sh\n", encoding="utf-8")
+            executable.chmod(0o755)
+        linux = self.root / "linux"
+        linux.mkdir()
+        (linux / "link").symlink_to(alias / "child")
+        with self.assertRaises(run_eval.ArmReadIsolationError) as caught:
+            run_eval.arm_path_or_error(f"{linux}/link/../bin", [alias])
+        self.assertEqual(caught.exception.code, "toolchain_under_alias")
+
     def test_wsl_root_alias_and_windows_drives_deny_all_of_mnt(self):
         self.mountinfo += (
             "2 1 8:1 / /mnt/wslg/distro rw - ext4 /dev/example rw\n"
@@ -508,7 +565,10 @@ class ReadDenySettingsTests(_TempLayout):
             "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
             "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
             "objective-command-", "local-eval-guard-", "sink-mutation-",
-            "trusted-git-")]
+            "trusted-git-", "scaffold-", "scaffold-context-", "claude-probe-home-",
+            "skill-edit-guard-", "propose-skill-edit-", "scoring-guidance-",
+            "scoring-skill-", "mine-real-work-", ".scaffold-", ".gh-label-",
+            ".gh-timeline-", "usage-census-")]
         self.assertEqual(settings["sandbox"]["filesystem"], {
             "denyRead": [str(self.worktree), str(self.clone), str(self.repos),
                          str(self.registry), str(self.guidance), str(results),
@@ -851,6 +911,20 @@ class RunAgentReadIsolationTests(_TempLayout):
         self.assertTrue(covers(read_rule_paths(settings),
                                run_eval.HARNESS_ROOT / "evals"))
 
+    def test_mountinfo_decode_and_value_errors_are_named_arm_refusals(self):
+        for error in (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid"),
+                      ValueError("invalid path")):
+            with self.subTest(error=type(error).__name__):
+                original = Path.read_text
+                def read_text(path, *args, **kwargs):
+                    if path == Path("/proc/self/mountinfo"):
+                        raise error
+                    return original(path, *args, **kwargs)
+                with mock.patch.object(Path, "read_text", read_text):
+                    out = run_eval.run_agent(self.workspace, "do it", self.arm())
+                self.assertEqual(out["error"], "read_rules_unsafe")
+                self.assertEqual(self.calls(), [])
+
     def test_a_with_skill_arm_gets_the_skill_copied_and_the_registry_denied(self):
         out = run_eval.run_agent(self.workspace, "do it", self.arm(
             name="with_skill", skill="other-skill", registry=FAKE_REGISTRY,
@@ -900,6 +974,26 @@ class RunAgentReadIsolationTests(_TempLayout):
             (drive / "bin" / tool).chmod(0o755)
         self.mountinfo += f"2 1 0:30 / {drive} rw - drvfs C: rw\n"
         return drive
+
+    def test_inherited_profile_at_a_root_alias_strips_the_arms_path(self):
+        alias = self.root / "mirror"
+        (alias / "usr" / "bin").mkdir(parents=True)
+        self.mountinfo += f"2 1 8:1 / {alias} rw - ext4 /dev/example rw\n"
+        path_log = self.root / "path.log"
+        linux = "/usr/local/bin:/usr/bin:/bin"
+        with mock.patch.dict(os.environ, {
+                "CLAUDE_CONFIG_DIR": str(alias),
+                "PATH": f"{alias}/usr/bin:{linux}"}):
+            out = run_eval.run_agent(self.workspace, "do it", self.arm(
+                env={"RD_LOG": str(self.log), "RD_PATH_LOG": str(path_log)}))
+        self.assertNotIn("error", out, out)
+        self.assertEqual(path_log.read_text().splitlines(), [linux])
+        (argv,) = self.calls()
+        settings = settings_of(argv)
+        self.assertIn(str(alias), settings["sandbox"]["filesystem"]["denyRead"])
+        self.assertIn(f"Read(/{alias}/**)", settings["permissions"]["deny"])
+        self.assertEqual([p for p in settings["sandbox"]["filesystem"]["allowRead"]
+                          if run_eval._within(Path(p), alias)], [])
 
     def test_path_entries_under_an_alias_never_reach_the_arm(self):
         drive = self.alias_with_tools()
@@ -952,6 +1046,91 @@ class RunAgentReadIsolationTests(_TempLayout):
         self.assertEqual(out["error"], "workspace_read_denied")
         self.assertIn("HOME", out["detail"])
         self.assertEqual(self.calls(), [])
+
+
+class ReviewedTempPrefixTests(_TempLayout):
+    PREFIXES = (
+        "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
+        "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
+        "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
+        "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
+        "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
+        ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-")
+
+    def test_all_reviewed_tmpdir_prefixes_are_denied_to_commands_and_file_tools(self):
+        for prefix in self.PREFIXES:
+            (self.tmp / (prefix + "old")).mkdir()
+        settings = self.settings(workspace=self.workspace)
+        for prefix in self.PREFIXES:
+            with self.subTest(prefix=prefix):
+                self.assertIn(str(self.tmp / (prefix + "old")),
+                              settings["sandbox"]["filesystem"]["denyRead"])
+                self.assertTrue(covers(read_rule_paths(settings),
+                                       self.tmp / (prefix + "future") / "answer"))
+        self.assertFalse(covers(read_rule_paths(settings), self.workspace / "own"))
+
+    def test_tmpdir_allocations_have_reviewed_prefixes(self):
+        # Parse the allocation, including f-string prefixes and constants.
+        # An explicit parent may be TMPDIR; only the session archive's
+        # dynamic prefixes are exempt, because the archive is denied whole.
+        # TemporaryFile has no named store for an arm to open.
+        sources = [*(ROOT / "harness").rglob("*.py"),
+                   *(ROOT / "scripts").rglob("*.py"), ROOT / "harness/fakes/gh"]
+        for source in sources:
+            tree = ast.parse(source.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "tempfile"
+                        and node.func.attr in ("mkdtemp", "TemporaryDirectory",
+                                               "mkstemp", "NamedTemporaryFile")):
+                    continue
+                keywords = {k.arg: k.value for k in node.keywords}
+                if (source == ROOT / "harness/run_eval.py"
+                        and ast.unparse(keywords.get("dir", ast.Constant(None))) == "archive"):
+                    self.assertEqual(ast.unparse(keywords["prefix"]),
+                                     "f'{session_dir.name}.'")
+                    continue
+                prefix = keywords.get("prefix")
+                if isinstance(prefix, ast.Constant):
+                    text = prefix.value
+                elif isinstance(prefix, ast.JoinedStr) and isinstance(
+                        prefix.values[0], ast.Constant):
+                    text = prefix.values[0].value
+                elif isinstance(prefix, ast.JoinedStr) and isinstance(
+                        prefix.values[0], ast.FormattedValue):
+                    self.assertEqual(ast.unparse(prefix.values[0].value),
+                                     "ARM_WORKSPACE_PREFIX")
+                    text = run_eval.ARM_WORKSPACE_PREFIX
+                elif isinstance(prefix, ast.Name) and prefix.id == "WORKSPACE_PREFIX":
+                    text = run_eval.WORKSPACE_PREFIX
+                elif isinstance(prefix, ast.Attribute) and ast.unparse(prefix) == "run_eval.WORKSPACE_PREFIX":
+                    text = run_eval.WORKSPACE_PREFIX
+                else:
+                    self.fail(f"{source.relative_to(ROOT)}:{node.lineno}: "
+                              "unclassified TMPDIR allocation")
+                self.assertTrue(any(text.startswith(p) for p in self.PREFIXES),
+                                (str(source), node.lineno, text))
+
+    def test_shell_census_scratch_uses_a_denied_prefix(self):
+        from scorers.bash_ast import parse_bash
+        source = (ROOT / "scripts/publish_usage_census.sh").read_bytes()
+        root = parse_bash(source)
+        commands = []
+        def visit(node):
+            if node.type == "command":
+                name = node.child_by_field_name("name")
+                if name is not None and source[name.start_byte:name.end_byte] == b"mktemp":
+                    commands.append(node)
+            for child in node.children:
+                visit(child)
+        visit(root)
+        self.assertEqual(len(commands), 1)
+        arguments = commands[0].children_by_field_name("argument")
+        self.assertEqual([source[a.start_byte:a.end_byte] for a in arguments],
+                         [b"-d", b'"${TMPDIR:-/tmp}/usage-census-XXXXXXXX"'])
+        self.assertIn("usage-census-", run_eval.HARNESS_TEMP_PREFIXES)
 
 
 class RunCheckoutsWiringTests(unittest.TestCase):

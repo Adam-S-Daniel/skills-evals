@@ -102,6 +102,7 @@ def setUpModule() -> None:
     56 KB `~/.claude/CLAUDE.md` that a revert-the-guard mutation destroyed
     would have been noticed at the module boundary rather than never.
     """
+    install_arm_test_environment()
     global _MEMORY_BEFORE
     _MEMORY_BEFORE = _memory_fingerprint(_watched_user_memory())
 
@@ -244,6 +245,10 @@ def _signature_default(path: Path, function: str, argument: str) -> int:
                     and isinstance(default.value, int)), (function, argument)
             return default.value
     raise AssertionError(f"{function}() has no defaulted `{argument}` parameter")
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
 
 
 class TestIssue97(unittest.TestCase):

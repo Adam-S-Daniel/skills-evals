@@ -56,6 +56,14 @@ def cli_reply(payload: object) -> subprocess.CompletedProcess:
                                        stdout=json.dumps(payload), stderr="")
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+def setUpModule() -> None:
+    install_arm_test_environment()
+
+
 class CliJsonShapeTests(unittest.TestCase):
     def test_dict_is_the_same_object(self):
         legacy = {"result": "done", "is_error": False, "usage": {"input_tokens": 2}}
