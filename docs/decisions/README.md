@@ -22,3 +22,4 @@ with, so the next session can tell a deliberate constraint from an accident.
 | [0009](0009-fixture-followup-turns.md) | A fixture may send scripted follow-up turns, identically in both arms | proposed (2026-10-05) |
 | [0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) | Run the AI steps of skill and guidance evals in a routine fired by Actions, and measure agent effectiveness on real work | accepted (2026-10-06); supersedes 0002 (billing) decision 1 for routine runs only |
 | [0011](0011-sandbox-agent-arm-network.md) | Agent arms run behind Claude Code's network sandbox, delivered by `--settings` | accepted (2026-10-07) |
+| [0012](0012-ab-runs-in-the-deployed-context-minus-the-subject.md) | An A/B runs both arms in the context the subject deploys into, and removes only the subject | accepted (2026-10-07); not built |
