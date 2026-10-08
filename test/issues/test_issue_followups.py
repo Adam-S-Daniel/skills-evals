@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,11 @@ import run_eval  # noqa: E402
 from cli_json import bounded_tool_trace  # noqa: E402
 
 RENAME_DIR = ROOT / "evals" / "rename-pdfs"
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
 
 
 def result(text: str, session: str | None = "sess-1", *, model="model-a",
@@ -73,8 +79,26 @@ def failed(stderr: str) -> subprocess.CompletedProcess:
 
 class RunAgentFollowupTests(unittest.TestCase):
     def setUp(self):
+        # A TMPDIR of its own: the read rules list the harness directories
+        # under TMPDIR, and a concurrent test (a `--jobs` worker) making or
+        # removing one between two turns would change the flags compared.
+        self.tmp = Path(tempfile.mkdtemp(prefix="followups-tmp-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        patcher = mock.patch.object(tempfile, "tempdir", str(self.tmp))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.workspace = Path(tempfile.mkdtemp(prefix="workspace-"))
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        # A HOME of its own: the arm's read rules list what is in HOME.
+        self.home = Path(tempfile.mkdtemp(prefix="followups-home-"))
+        self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        mountinfo = self.tmp / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
+        patcher = mock.patch.dict(run_eval.os.environ, {
+            "HOME": str(self.home), "XDG_STATE_HOME": str(self.home / "state"),
+            "PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_agent(self, cli: ScriptedCli, followups=None, **arm):
         arm = {"name": "without_skill", "timeout": 30, "model": "model-a",
@@ -87,12 +111,22 @@ class RunAgentFollowupTests(unittest.TestCase):
 
     # A multi-turn arm's first call: it must persist, or `--resume` finds
     # no conversation.
-    BASE_CMD = ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
+    @property
+    def BASE_CMD(self):
+        flags = run_eval.arm_isolation_flags(
+            session_dir=self.home / ".claude" / "projects" /
+            run_eval._munged_project_name(self.workspace),
+            workspace=self.workspace, config_dir=self.home / ".claude")
+        return ["fake-claude", "-p", "Rename the PDFs.", "--output-format",
                 "json", "--verbose", "--permission-mode", "auto",
-                "--setting-sources", "project", *run_eval.arm_isolation_flags(),
+                "--setting-sources", "project", *flags,
                 "--strict-mcp-config", "--model", "model-a"]
+
     # A one-turn arm writes no transcript.
-    ONE_TURN_CMD = [*BASE_CMD[:-2], "--no-session-persistence", *BASE_CMD[-2:]]
+    @property
+    def ONE_TURN_CMD(self):
+        base = self.BASE_CMD
+        return [*base[:-2], "--no-session-persistence", *base[-2:]]
 
     # -- no followups: unchanged -----------------------------------------
 

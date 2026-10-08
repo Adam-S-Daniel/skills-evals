@@ -532,6 +532,14 @@ class AcceptTests(PipelineCase):
             self.assertEqual(Path(argv[0]), pse.EVALS_DIR / SKILL)
             self.assertFalse(Path(flag(argv, "--results-dir")).is_relative_to(REPO_ROOT))
 
+    def test_both_measurements_deny_their_arms_the_whole_results_root(self):
+        # The candidate's arms must not read the baseline run or the proposed
+        # patch, both under the results root beside the candidate's own run.
+        evals = [c for c in self.runner.calls if c[0] == "run_eval"]
+        self.assertEqual(len(evals), 2)
+        for _, _, _, argv in evals:
+            self.assertEqual(Path(flag(argv, "--read-deny")), self.results.resolve())
+
     def test_trigger_half_never_sees_the_validation_prompt(self):
         validation_prompt = " ".join(pse.run_eval.load_fixture(
             REPO_ROOT / "evals" / SKILL / "supersede")["prompt"].split())
@@ -1739,8 +1747,15 @@ class SubprocessRunnerContractTests(unittest.TestCase):
             fail=None, plant=None, fake=str(TEST_DIR / "fake-claude"),
             fake_init=str(TEST_DIR / "fake-claude-init")), encoding="utf-8")
         fake.chmod(0o755)
+        # PATH and the mount table explicit: the arm's read fence is built
+        # from both, so the result does not depend on the host's.
+        mountinfo = self.tmp / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
         env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
-               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "TMPDIR": str(self.tmp), "SKILLS_EVALS_MOUNTINFO": str(mountinfo),
+               "PATH": os.pathsep.join(dict.fromkeys(
+                   (str(Path(sys.executable).parent), "/usr/local/bin",
+                    "/usr/bin", "/bin"))),
                "LANG": "C.UTF-8", "UNRELATED_INHERITED_VALUE": "test"}
         with mock.patch.dict(os.environ, env, clear=True), \
                 contextlib.redirect_stdout(io.StringIO()):

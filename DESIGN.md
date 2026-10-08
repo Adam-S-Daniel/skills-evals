@@ -1988,7 +1988,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 
 | Spawn | Flags beyond its own |
 |---|---|
-| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox JSON>` and `--disallowedTools WebFetch,WebSearch` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox, read-deny and agent-config-deny JSON>`, `--disallowedTools WebFetch,WebSearch` and `--no-chrome` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
 | judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
@@ -2002,9 +2002,9 @@ arm, one past the CLI's 200-character truncation, and one inside a guidance
 arm's own scratch are never touched. The judge's empty setting source means
 the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
 fleet-memory SessionStart hook: that is the isolation, not a regression.
-What none of this stops: managed settings, the CLI's bundled skills, writes
-to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
-file under the real HOME.
+What none of this stops: managed settings, the CLI's bundled skills and
+writes to `~/.claude.json`. An arm's own reads of the real HOME are fenced
+in separately (below).
 
 **Agent arms have no route to GitHub** ([ADR 0011](docs/decisions/0011-sandbox-agent-arm-network.md)).
 A real-work seed is a public repository's pre-fix tree, and the merged fix is
@@ -2021,9 +2021,139 @@ and `cdn.jsdelivr.net`. The sandbox covers Bash and its children only, so
 `--disallowedTools WebFetch,WebSearch` removes the two web tools. Nothing is
 written into the workspace: `seed_guard` still refuses any `.claude/`, and
 no scoring check sees a harness file. The judge, the guard and canary probes,
-`deps:`/`setup:` and objective commands are not sandboxed this way. Reads are
-not restricted: a sandboxed command and the Read tool can still read this
-checkout, `evals/real-work/*/checker/` and `solution.patch` included.
+`deps:`/`setup:` and objective commands are not sandboxed this way.
+
+**Agent arms cannot read the answer key on disk either** (ADR 0011's reads
+addendum). The same `--settings` denies reads of this checkout (a worktree
+resolves, through `git rev-parse --git-common-dir`, to its main clone), the
+directory holding that clone and its siblings (`~/repos` on a workstation,
+where cms-platform `main` holds the merged fixes), every registry and
+guidance checkout the run was given (`run_eval.run_checkouts`), the run's
+results directory, every `--read-deny` directory (a wrapper's whole output
+tree: local_eval's earlier trials, propose_skill_edit's baseline run and
+patch) and the harness's session archive, the harness's other
+directories under TMPDIR (other arms' workspaces and scratch profiles, and
+`workspace_git`'s private `trusted-git-` metadata copies), and
+the real HOME and Claude Code profiles (`~/.claude`, an inherited `CLAUDE_CONFIG_DIR`):
+`sandbox.filesystem.denyRead` for Bash and its children, and the same paths
+as `Read(//<abs>/**)` deny rules for the Read tool. For commands,
+`allowRead` re-opens only git's global configuration (so `git commit` keeps
+its identity) and PATH directories under HOME with a `bin`'s sibling `lib`
+(toolchains such as `~/.local/bin`), never one at or around a checkout. For
+the Read tool, a skill arm's HOME and profile are denied structurally around
+its own `~/.claude/projects/<munged workspace>`, where the CLI saves large
+tool outputs the agent reads back: complement patterns deny every other
+name at each level, sessions created after the settings included; a
+symlink there leading out to a system or PATH directory (a GitHub runner's
+`~/.ghcup`) is left out of those patterns rather than denied, and one that
+also leads to a denied path fails the arm with `read_rules_unsafe`. A workspace under a denied path (TMPDIR inside
+HOME, say) fails the arm with `workspace_read_denied` before the CLI starts.
+
+On Linux the read fences also cover alternate mounts of the root or HOME
+filesystem, discovered from `/proc/self/mountinfo` by device number,
+filesystem type, mount root and the longest HOME mount prefix. WSL drive
+mounts and root/HOME aliases under `/mnt` deny `/mnt` whole, closing WSLg's
+second view of Linux and Windows-side sibling clones. Other aliases, including
+custom drive mountpoints, are denied at their mount roots. Canonical self-binds
+such as `/tmp` on `/tmp` and HOME on itself stay available; malformed or
+unreadable Linux mount metadata refuses the arm with `read_rules_unsafe`.
+Other platforms add no mount fences.
+
+Every alias is denied **whole**: one `denyRead` entry and the
+`Read(//<alias>)`/`Read(//<alias>/**)` pair, with no rule and no `allowRead`
+carve-out inside it. A carve-out per Windows PATH directory made a skill
+arm's `--settings` 60,680 bytes on a WSL workstation, against the 64 KiB cap.
+Instead the arm never needs a Windows-side executable: `run_agent` drops
+every PATH entry under an alias (spelled there, or reached through a
+symlink) from the arm's environment, a skill arm's and a guidance arm's
+`env_override` alike (`path_without_aliases`), and builds the settings from
+that PATH. An arm whose `bash` or `git` is found only under an alias fails
+with `toolchain_under_alias` rather than reopen it. The Linux carve-outs
+under HOME refuse any directory that is, holds or lies inside a denied path
+other than HOME itself: a checkout or the directory holding the clone, the
+results, the archive, a profile, an alias. On this WSL workstation a skill
+arm's settings are now 12,695 bytes.
+
+The named temporary-store inventory under `TMPDIR` is explicit in
+[`HARNESS_TEMP_PREFIXES`](harness/run_eval.py). Both existing stores (`sandbox.filesystem.denyRead`)
+and later allocations (`Read` prefix rules) are denied, preserving only the
+arm's own workspace. The inventory includes explicit parent directories:
+`dest`, an output parent, or a fake CLI's `LOG_DIR` can itself be `TMPDIR`.
+
+| Denied prefix | Allocator |
+|---|---|
+| `workspace-` | [harness/run_eval.py](harness/run_eval.py) materialization and [scripts/local_eval.py](scripts/local_eval.py) |
+| `skills-evals-` | [harness/run_eval.py](harness/run_eval.py) guidance arms (`ARM_WORKSPACE_PREFIX`) |
+| `guidance-bridge-canary-` | [harness/run_canary.py](harness/run_canary.py) |
+| `propagation-` | [harness/run_propagation.py](harness/run_propagation.py), including `propagation-selftest-` |
+| `scoring-seed-`, `deps-python-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
+| `objective-repo-tests-` | [harness/scorers/repo_tests.py](harness/scorers/repo_tests.py) |
+| `objective-command-` | [harness/scorers/commands.py](harness/scorers/commands.py) |
+| `local-eval-guard-` | [scripts/local_eval.py](scripts/local_eval.py) |
+| `sink-mutation-` | Reserved existing sink-mutation scratch prefix |
+| `trusted-git-` | [harness/workspace_git.py](harness/workspace_git.py) private metadata, allocated with `mkdir` |
+| `scaffold-`, `scaffold-context-`, `.scaffold-` | [scripts/scaffold_real_work.py](scripts/scaffold_real_work.py) candidate, context Git stores, and destination staging |
+| `claude-probe-home-` | [scripts/probe_model_defaults.py](scripts/probe_model_defaults.py) isolated CLI profile |
+| `skill-edit-guard-`, `propose-skill-edit-` | [scripts/propose_skill_edit.py](scripts/propose_skill_edit.py) |
+| `scoring-guidance-`, `scoring-skill-` | [harness/run_eval.py](harness/run_eval.py) objective-only scoring copies |
+| `mine-real-work-` | [scripts/mine_real_work.py](scripts/mine_real_work.py) atomic output staging file |
+| `.gh-label-`, `.gh-timeline-` | [harness/fakes/gh](harness/fakes/gh) atomic local state files |
+| `usage-census-` | [scripts/publish_usage_census.sh](scripts/publish_usage_census.sh) scratch repositories |
+
+The only tempfile allocations without a prefix in this inventory are
+`TemporaryFile` handles, which have no named store an arm can open, and
+[`run_eval._archive_session_dir`](harness/run_eval.py)'s dynamic session-name prefix beneath the
+already-denied session archive. A Python AST regression inventories named
+allocations, including the extensionless fake CLI and explicit parents;
+a Bash AST regression checks the census allocation. The prefix coverage
+regression checks command denies for existing stores and file-tool denies
+for future names.
+
+Alias classification wins when deduplication finds that a profile or HOME
+also names an alias: that mountpoint remains denied whole, with no profile
+exception or HOME carve-out. PATH's physical alias check resolves each
+original spelling before interpreting `..` after a symlink. Mount-table
+read and decode errors refuse the arm as `read_rules_unsafe`.
+
+The mount table and PATH are parameters (`mountinfo=`, `path_env=`),
+defaulting to `host_mountinfo()` and `os.environ` only at the outermost
+call. `SKILLS_EVALS_MOUNTINFO` names a mountinfo-format file that stands in
+for `/proc/self/mountinfo` (an empty one names no alias): every test that
+runs an arm sets it and an explicit PATH, so no result depends on the host's
+mounts or PATH. The shared [test/arm_test_env.py](test/arm_test_env.py) module fixture covers the
+legacy runner and remaining arm-running issue modules; install helpers also
+set both locally, so a poisoned parent inside a test cannot override them.
+Tests measuring particular mounts keep their own mountinfo fixtures, and
+explicit child environment mappings carry the fixture too. See the
+[reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
+and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
+
+A live WSL probe with CLI 2.1.293 read an answer-key patch through WSLg
+using both Bash and Read before these fences. With the whole-alias deny,
+Bash got `No such file or directory` and Read refused it; the arm's PATH
+held no `/mnt` entry, and workspace, Python, Node and git still worked.
+Unix sockets were blocked in both runs by the existing
+`allowAllUnixSockets: false`, `allowUnixSockets: []` settings: Linux seccomp
+refused `AF_UNIX` socket creation with `EPERM` before connection, closing
+Docker and WSL interop. No additional `/run` fence was needed.
+
+**Nothing else outside the sandbox runs for an arm** (ADR 0011's hardening
+addendum). Hooks run unconfined, so the agent may not write its workspace's
+`.claude/` (settings, hooks, skills, agents, commands) or the profile it
+loads as user settings: `Edit(...)` deny rules for the file tools and
+`denyWrite` for Bash, in the same `--settings`.
+Trusted hooks (a plugin's or a skill's under test) keep running. A trial in
+which anything under `.claude/` or a guidance arm's scratch profile, or a
+configuration path of the shared `~/.claude` a skill arm uses, changed
+during a turn, beyond what was there before and the CLI's own measured
+writes, fails after that turn with `agent_wrote_agent_config`.
+Every turn passes `--no-chrome` and never receives `CLAUDE_CODE_ENABLE_CFC`.
+A managed policy with any `sandbox` or `permissions` key, nested object or
+value outside the allowlist `run_eval._MANAGED_ACCEPTED` documents (a
+widening key passes only at the arm's own restrictive value), or with
+`allowManagedPermissionRulesOnly` other than `false`, refuses the run with
+`managed_sandbox_policy`. The CLI's `Sandbox Error:` and `Sandbox disabled:`
+lines fail the arm as `sandbox_unavailable`, the latter even at exit 0.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
