@@ -63,7 +63,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, secret_values, tool_events)
 import guidance  # noqa: E402
-from harness_repo import harness_clone_root, harness_git_common_dir  # noqa: E402
+from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
 import guidance_violations  # noqa: E402
@@ -4110,33 +4110,19 @@ class ContextRepositories(dict):
             # This is trusted source discovery, never workspace collection:
             # linked and separate metadata must remain readable to the
             # resolver, then be fenced from the arm. Keep workspace Git's
-            # rejection of those layouts intact. Reuse its scrubbed process
-            # sink and validated timeout rather than launching raw Git.
+            # rejection of those layouts intact. Use the reviewed metadata
+            # reader shared with harness checkout discovery.
             try:
-                metadata = source / ".git"
-                if metadata.is_file():
-                    pointer = workspace_git._read_regular(metadata).decode("utf-8").strip()
-                    if not pointer.startswith("gitdir: ") or len(pointer.splitlines()) != 1:
-                        raise ValueError("invalid Git directory pointer")
-                    metadata = source / pointer.removeprefix("gitdir: ")
-                elif not metadata.is_dir():
-                    if not (source / "HEAD").is_file() or not (source / "objects").is_dir():
-                        raise ValueError("missing Git directory")
-                    metadata = source
-                result = workspace_git._invoke(
-                    ["--git-dir=" + str(metadata.resolve()), "--work-tree=" + str(source),
-                     "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
-                    cwd=source, home=Path("/nonexistent"),
-                    timeout=workspace_git.DEFAULT_TIMEOUT_S, check=True)
-                dirs = result.stdout.splitlines()
+                out = _git_out("rev-parse", "--path-format=absolute", "--git-dir",
+                               "--git-common-dir", cwd=source)
+                dirs = out.splitlines() if out else []
                 if len(dirs) != 2 or any(not Path(p).is_absolute() or not Path(p).is_dir() for p in dirs):
                     raise ValueError("invalid Git directory discovery")
                 for directory in dirs:
                     path = Path(directory).resolve()
                     if path not in paths:
                         paths.append(path)
-            except (OSError, ValueError, subprocess.SubprocessError,
-                    workspace_git.WorkspaceGitError) as exc:
+            except (OSError, ValueError) as exc:
                 raise ArmReadIsolationError(
                     "a context checkout's Git metadata cannot be determined",
                     code="context_git_metadata_unknown") from exc
