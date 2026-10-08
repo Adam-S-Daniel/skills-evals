@@ -5396,7 +5396,9 @@ case "$1" in
         fi
         count=$((count + 1))
         echo "$count" > "$counter"
-        if [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
+        if [ -f "$FIXTURES/pr-${num}.view${count}.json" ]; then
+          cat "$FIXTURES/pr-${num}.view${count}.json"
+        elif [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
           cat "$FIXTURES/pr-${num}.after.json"
         else
           cat "$FIXTURES/pr-${num}.json"
@@ -5447,6 +5449,11 @@ case "$1" in
 esac
 """
 
+    SLEEP_STUB = """#!/usr/bin/env bash
+echo "sleep $*" >> "$FIXTURES/calls.log"
+exit 0
+"""
+
     @classmethod
     def setUpClass(cls):
         import yaml
@@ -5464,6 +5471,10 @@ esac
         git = d / "git"
         git.write_text(self.GIT_STUB, encoding="utf-8")
         git.chmod(0o755)
+        # Tests must never really sleep: the stub only records the call.
+        sleep = d / "sleep"
+        sleep.write_text(self.SLEEP_STUB, encoding="utf-8")
+        sleep.chmod(0o755)
         return d
 
     def _fixtures_dir(self) -> Path:
@@ -5603,6 +5614,51 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue([c for c in self._calls(fixtures)
                          if c.startswith("pr update-branch")], self._calls(fixtures))
+        self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
+
+    # -- (h) mergeable=UNKNOWN is re-read, not final --------------------------
+
+    def test_unknown_mergeable_is_reread_then_merges(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 49, self._pr(49, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        self._write_pr(fixtures, 49, self._pr(49), suffix=".view3")
+        result = self._run(fixtures, bin_dir, [49])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        merge_calls = [c for c in calls if c.startswith("pr merge")]
+        self.assertEqual(len(merge_calls), 1, calls)
+        self.assertIn(f"--match-head-commit {self.HEAD_SHA}", merge_calls[0])
+        self.assertEqual(len([c for c in calls if c.startswith("sleep")]), 2, calls)
+        self.assertIn("merged=1 updated=0 skipped=0 blocked=0 failed=0", result.stdout)
+
+    def test_unknown_mergeable_forever_is_skipped_after_bounded_rereads(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 50, self._pr(50, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        result = self._run(fixtures, bin_dir, [50])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertFalse([c for c in calls if c.startswith("pr merge")], calls)
+        self.assertEqual(len([c for c in calls if c.startswith("pr view 50")]), 7, calls)
+        self.assertIn("still UNKNOWN after 6 re-reads", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+
+    # -- (i) #270 regression: a refused merge judges BEHIND on FRESH state ----
+
+    def test_refused_merge_behind_only_on_fresh_read_updates_the_branch(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        # Snapshot says CLEAN; a sibling's merge then put the PR behind main.
+        self._write_pr(fixtures, 51, self._pr(51))
+        self._write_pr(fixtures, 51, self._pr(51, mergeStateStatus="BEHIND"),
+                       suffix=".after")
+        result = self._run(fixtures, bin_dir, [51], merge_fails="51")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertIn("pr update-branch 51", calls)
         self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
 
 
