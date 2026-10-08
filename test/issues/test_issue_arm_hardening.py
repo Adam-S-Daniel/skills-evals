@@ -231,6 +231,107 @@ class GuidanceProfileTests(_StandIn):
         self.assertIn(".claude.json.lock", run_eval._agent_config_written(
             self.ws, before, self.config))
 
+    def test_fleet_delivery_receipt_changes_during_a_turn_are_bookkeeping(self):
+        # The trusted delivery hook can finish its detached receipt append
+        # after run_agent captured its baseline. No timing assumption is
+        # needed: perform each change while its first CLI call is returning.
+        receipt = self.config / "fleet-delivery.jsonl"
+        real_run = run_eval.subprocess.run
+        for action in ("create", "append", "delete"):
+            with self.subTest(action=action):
+                self.log.unlink(missing_ok=True)
+                receipt.unlink(missing_ok=True)
+                if action != "create":
+                    receipt.write_text('{"mode":"hook"}\n', encoding="utf-8")
+                changed = False
+
+                def during_turn(cmd, *args, **kwargs):
+                    nonlocal changed
+                    result = real_run(cmd, *args, **kwargs)
+                    if cmd[0] == str(self.root / "claude") and not changed:
+                        changed = True
+                        if action == "delete":
+                            receipt.unlink()
+                        else:
+                            with receipt.open("a", encoding="utf-8") as stream:
+                                stream.write('{"mode":"hook"}\n')
+                    return result
+
+                with mock.patch.object(run_eval.subprocess, "run", during_turn):
+                    out = self.run_guidance()
+                self.assertTrue(changed)
+                self.assertNotIn("error", out, out)
+                self.assertEqual(len(self.calls()), 2)
+
+    def test_fleet_delivery_receipt_final_bounded_append_is_bookkeeping(self):
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        receipt = self.config / "fleet-delivery.jsonl"
+        # The writer checks the 1 MiB limit before its last <=4096-byte append.
+        receipt.write_bytes(b"x" * (1024 * 1024 + 4096))
+        self.assertIsNone(run_eval._agent_config_written(self.ws, before, self.config))
+
+    def test_fleet_delivery_receipt_unsafe_shapes_are_watched(self):
+        receipt = self.config / "fleet-delivery.jsonl"
+        outside = self.root / "outside.jsonl"
+        outside.write_text("{}\n", encoding="utf-8")
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        for shape in ("symlink", "directory", "oversized", "hardlink"):
+            with self.subTest(shape=shape):
+                if shape == "symlink":
+                    receipt.symlink_to(outside)
+                elif shape == "directory":
+                    receipt.mkdir()
+                    (receipt / "hooks.json").write_text("{}", encoding="utf-8")
+                elif shape == "oversized":
+                    receipt.write_bytes(b"x" * (1024 * 1024 + 4097))
+                else:
+                    os.link(outside, receipt)
+                self.assertIn("$CLAUDE_CONFIG_DIR/fleet-delivery.jsonl",
+                              run_eval._agent_config_written(self.ws, before, self.config))
+                if receipt.is_dir():
+                    shutil.rmtree(receipt)
+                else:
+                    receipt.unlink()
+
+    def test_fleet_delivery_receipt_foreign_owner_is_watched(self):
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        receipt = self.config / "fleet-delivery.jsonl"
+        receipt.write_text("{}\n", encoding="utf-8")
+        real_lstat = os.lstat
+
+        def foreign_owner(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if Path(path) == receipt:
+                fields = list(info)
+                fields[4] = info.st_uid + 1
+                return os.stat_result(fields)
+            return info
+
+        with mock.patch.object(run_eval.os, "lstat", foreign_owner):
+            self.assertEqual(run_eval._agent_config_written(self.ws, before, self.config),
+                             "$CLAUDE_CONFIG_DIR/fleet-delivery.jsonl")
+
+    def test_fleet_delivery_receipt_without_an_owner_check_is_watched(self):
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        receipt = self.config / "fleet-delivery.jsonl"
+        receipt.write_text("{}\n", encoding="utf-8")
+        with mock.patch.object(run_eval.os, "geteuid", create=True):
+            del run_eval.os.geteuid
+            self.assertEqual(run_eval._agent_config_written(self.ws, before, self.config),
+                             "$CLAUDE_CONFIG_DIR/fleet-delivery.jsonl")
+
+    def test_fleet_delivery_receipt_exemption_is_exact_and_profile_only(self):
+        for rel in ("fleet-delivery.jsonl.other", "nested/fleet-delivery.jsonl"):
+            with self.subTest(rel=rel):
+                self.log.unlink(missing_ok=True)
+                out = self.run_guidance("write_config", str(self.config / rel))
+                self.assertEqual(out["error"], "agent_wrote_agent_config")
+                self.assertIn(f"$CLAUDE_CONFIG_DIR/{rel}", out["detail"])
+        self.log.unlink(missing_ok=True)
+        out = self.run_guidance("write_config", str(self.ws / ".claude/fleet-delivery.jsonl"))
+        self.assertEqual(out["error"], "agent_wrote_agent_config")
+        self.assertIn(".claude/fleet-delivery.jsonl", out["detail"])
+
     def test_what_the_cli_writes_into_the_profile_passes(self):
         for rel in ("projects/-tmp-x/s.jsonl", "sessions/12.json", ".claude.json",
                     "shell-snapshots/s.sh", "backups/b", "session-env/u/x"):

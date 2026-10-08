@@ -1735,12 +1735,12 @@ def managed_sandbox_refusal(files=None, dropins=None,
     return None
 
 
-# What the CLI itself writes, during a turn, under the directories
+# What the CLI and trusted delivery hook write, during a turn, under the directories
 # `_agent_config_dirs` names, as relative paths (fnmatch, `*` crossing `/`).
 # Measured with CLI 2.1.292 (strace of a two-turn arm with a Bash call, a
 # saved large output, a Write and a resume): under the workspace's `.claude/`
 # an empty `.cc-writes/`; under the profile the rest. Anything else that
-# changes during a turn is the agent's.
+# changes during a turn is the agent's, apart from the hook receipt below.
 #
 # Trees: the whole subtree is the CLI's, whatever it holds; the CLI loads no
 # configuration from any of them.
@@ -1755,6 +1755,10 @@ _CLI_PROFILE_MARKERS = {
     ".claude.json": None, ".claude.json.tmp.*": None,
     "plugins/cache/*/.orphaned_at": 4096,
     "skills/synced/*/.last-complete-round": 4096,
+    # The trusted fleet-memory hook appends this detached delivery receipt,
+    # possibly after delivery returned. It loads no CLI configuration. The
+    # writer checks 1 MiB before its last append of at most 4096 bytes.
+    "fleet-delivery.jsonl": 1024 * 1024 + 4096,
 }
 _CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
 # A shared profile (the operator's real `~/.claude`, or an inherited
@@ -1772,12 +1776,18 @@ _SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096}
 
 
 def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
-    """Whether `rel` is the CLI's own bookkeeping (see the tables above)."""
+    """Whether `rel` is CLI or trusted delivery bookkeeping (see above)."""
     if any(rel == t or rel.startswith(t + "/") for t in trees):
         return True
     st = os.lstat(path)
     for pattern, limit in markers.items():
         if fnmatch.fnmatchcase(rel, pattern):
+            # The receipt writer also refuses foreign-owned or hard-linked
+            # files; such a path is not its trusted bookkeeping.
+            if rel == "fleet-delivery.jsonl" and (
+                    not hasattr(os, "geteuid") or st.st_nlink != 1
+                    or st.st_uid != os.geteuid()):
+                return False
             return stat.S_ISREG(st.st_mode) and (limit is None or st.st_size <= limit)
     if rel in empty_dirs:
         return stat.S_ISDIR(st.st_mode) and not os.listdir(path)
