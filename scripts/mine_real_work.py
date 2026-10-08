@@ -84,6 +84,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 def _repo_roots() -> list[Path]:
     """This checkout and, when it is a worktree, the main checkout too."""
     roots = [REPO_ROOT]
+    # Raw git is fine here (#343): this repository's own checkout, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     done = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--path-format=absolute",
                            "--git-common-dir"], capture_output=True, text=True)
     if done.returncode == 0 and done.stdout.strip():
@@ -458,6 +460,8 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
 # ── prepare (redgreen.sh's tree step) ────────────────────────────────────────
 
 def _extract(clone: Path, ref: str, dest: Path) -> None:
+    # Raw git is fine here (#343): an upstream clone the operator made, never an agent-touched
+    # workspace, so harness/workspace_git.py does not apply.
     done = subprocess.run(["git", "-C", str(clone), "archive", "--format=tar",
                            "--end-of-options", ref],
                           capture_output=True)
