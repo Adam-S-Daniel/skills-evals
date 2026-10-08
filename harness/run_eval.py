@@ -40,11 +40,14 @@ and DESIGN.md "Guidance subject".
 from __future__ import annotations
 
 import argparse
+import fnmatch
+import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import statistics
 import subprocess
 import sys
@@ -841,37 +844,1245 @@ ARM_DENIED_DOMAINS = (
     "cdn.jsdelivr.net",
 )
 ARM_DISALLOWED_TOOLS = ("WebFetch", "WebSearch")
-# What the CLI prints, then exits 1, when `failIfUnavailable` refuses to start
-# without a working sandbox (CLI 2.1.292 with `socat` missing).
-SANDBOX_UNAVAILABLE_MARKER = "sandbox required but unavailable"
+# Claude in Chrome is a browser outside the sandbox, and `--strict-mcp-config`
+# does not remove it: `CLAUDE_CODE_ENABLE_CFC` or the account's default can
+# turn it on (CLI 2.1.292). `--no-chrome` turns it off, and the variable never
+# reaches an arm.
+ARM_DROPPED_ENV = ("CLAUDE_CODE_ENABLE_CFC",)
+# The CLI's own stderr lines for a sandbox that is not running, matched as the
+# whole start of a line (CLI 2.1.292's bundle): the `failIfUnavailable`
+# refusal, an initialization failure (`\u274c Sandbox Error: <reason>`, exit
+# 1) and the warning it prints when it runs commands unsandboxed. A line that
+# merely quotes one of them elsewhere does not match.
+_SANDBOX_DOWN_LINE = re.compile(
+    r"^(?:Error: sandbox required but unavailable: "
+    r"|(?:\u274c\s*)?Sandbox Error: "
+    r"|(?:\u26a0\ufe0f?\s*)?Sandbox disabled: )")
 
 
-def arm_sandbox_settings() -> dict:
-    """The sandbox settings every agent arm runs under, as one JSON object."""
-    return {"sandbox": {
-        "enabled": True,
-        # Refuse to start rather than run commands unsandboxed.
-        "failIfUnavailable": True,
-        # No `dangerouslyDisableSandbox` retry.
-        "allowUnsandboxedCommands": False,
-        "network": {"strictAllowlist": True, "allowedDomains": [],
-                    "deniedDomains": list(ARM_DENIED_DOMAINS)},
-    }}
+# The agent arm's READ boundary (ADR 0011's addendum). The answer key sits on
+# this machine as well as on GitHub: this checkout's
+# `evals/real-work/*/checker/` and `solution.patch`, the sibling clones beside
+# it (cms-platform `main` holds the merged fixes) and, on a workstation, the
+# transcripts of the original work under `~/.claude/projects/`. The sandbox
+# reads most of the machine by default, so `filesystem.denyRead` closes these
+# to Bash and its children, and the same paths as `Read(//<abs>/**)` deny
+# rules close them to the Read, Grep and Glob tools, which the sandbox does
+# not cover (https://code.claude.com/docs/en/sandboxing,
+# https://code.claude.com/docs/en/permissions). Paths are absolute: a guidance
+# arm runs with a scratch HOME, so `~/` would name the wrong directory.
+#
+# Re-opened inside the real HOME, for sandboxed commands only (`allowRead`;
+# a Read deny rule cannot be carved, and the file tools need none of them):
+# git's global configuration, so `git` keeps the identity and settings an
+# arm's `git commit` uses, the same files the CLI itself re-opens under
+# `blockReadsOutsideWorkingDirectories`; and every PATH directory under HOME,
+# with a `bin` directory's sibling `lib`, so a toolchain installed there
+# (`~/.local/bin`, nvm's `.../bin` and `.../lib`) still runs. A carve-out at
+# or around a denied checkout is never emitted.
+ARM_HOME_READ_CARVE_OUTS = (".gitconfig", ".config/git/config",
+                            ".config/git/ignore", ".config/git/attributes")
+HARNESS_ROOT = Path(__file__).resolve().parent.parent
 
 
-def arm_isolation_flags() -> list[str]:
-    """The CLI flags that put an agent arm behind `arm_sandbox_settings`."""
-    return ["--settings", json.dumps(arm_sandbox_settings(), sort_keys=True,
-                                     separators=(",", ":")),
-            "--disallowedTools", ",".join(ARM_DISALLOWED_TOOLS)]
+class ArmReadIsolationError(ValueError):
+    """The arm's read fence cannot be built safely; `code` is the arm's error
+    name (`workspace_read_denied`, `read_rules_unsafe`, `settings_too_large`)."""
+
+    def __init__(self, message: str, code: str = "workspace_read_denied"):
+        super().__init__(message)
+        self.code = code
+
+
+def _git_out(*args: str, cwd: Path) -> str | None:
+    try:
+        return subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                              text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def harness_git_common_dir(start: Path = HARNESS_ROOT) -> Path | None:
+    """The clone's shared git directory (its whole history), or None."""
+    out = _git_out("rev-parse", "--path-format=absolute", "--git-common-dir",
+                   cwd=start)
+    return Path(out).resolve() if out else None
+
+
+def harness_clone_root(start: Path = HARNESS_ROOT) -> Path | None:
+    """The main checkout of the clone a checkout belongs to, or None when it
+    cannot be determined with certainty.
+
+    In order: `core.worktree` in the repository's own config, includes
+    followed, when set (it overrides every default, whatever the directory
+    is called; an include git cannot read makes it None); the
+    nearest ancestor of `start` whose `.git` (a directory, or a `gitdir:`
+    file as `--separate-git-dir` and linked worktrees write) is that shared
+    directory; the parent of a shared directory named `.git`, which is
+    git's own default work tree. Git records no other path back from a
+    `--separate-git-dir` directory to its checkout, so a linked worktree
+    outside the main checkout, with the metadata elsewhere and no
+    `core.worktree`, is None: the arm fails rather than guess. Not a git
+    checkout (or no git): `start` itself.
+    """
+    start = Path(start)
+    common = harness_git_common_dir(start)
+    if common is None:
+        return start.resolve()
+    # The repository's own config, `[include]` and `[includeIf]` followed as
+    # git follows them; an include git cannot read is a value we cannot see,
+    # so the checkout is unknown rather than guessed.
+    # `-z`: an `includeIf` condition may hold spaces (`gitdir:**/[ r]*`), so
+    # each entry is `<origin>\0<key>\n<value>\0`, never split on a space.
+    try:
+        listed = subprocess.run(
+            ["git", "config", "-z", "--local", "--includes", "--show-origin",
+             "--get-regexp", r"^include(if\..*)?\.path$"],
+            cwd=start, capture_output=True, text=True).stdout
+    except OSError:
+        return None
+    fields = listed.split("\0")
+    for origin, entry in zip(fields[0::2], fields[1::2]):
+        _, _, value = entry.partition("\n")
+        source = Path(origin.removeprefix("file:"))
+        if not source.is_absolute():
+            source = start / source
+        target = Path(value).expanduser()
+        if not target.is_absolute():
+            target = source.parent / target
+        if not value or not target.is_file() or not os.access(target, os.R_OK):
+            return None
+    configured = _git_out("config", "--local", "--includes", "--get",
+                          "core.worktree", cwd=start)
+    if configured:
+        return (common / configured).resolve()
+    for candidate in (start.resolve(), *start.resolve().parents):
+        dot_git = candidate / ".git"
+        if dot_git.is_dir() and dot_git.resolve() == common:
+            return candidate
+        if dot_git.is_file():
+            text = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+            if text.startswith("gitdir:"):
+                target = (candidate / text[len("gitdir:"):].strip()).resolve()
+                if target == common:
+                    return candidate
+    if common.name == ".git":
+        return common.parent
+    return None
+
+
+# Resolved once, at import: before any test stands in for `subprocess.run`,
+# and the checkout this module runs from does not move during a run.
+HARNESS_CLONE_ROOT = harness_clone_root()
+HARNESS_GIT_COMMON_DIR = harness_git_common_dir()
+
+
+def _within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+PROFILE_LABEL = "a Claude Code profile"
+
+
+def profile_dirs(home: Path, environ=None) -> list[Path]:
+    """The Claude Code profiles on this machine an arm may not read: the real
+    `~/.claude` and any `CLAUDE_CONFIG_DIR` this process inherited (an
+    external profile's `projects/` holds other sessions' transcripts)."""
+    environ = os.environ if environ is None else environ
+    out = [Path(home) / ".claude"]
+    if environ.get("CLAUDE_CONFIG_DIR"):
+        out.append(Path(environ["CLAUDE_CONFIG_DIR"]).expanduser())
+    return out
+
+
+MOUNT_ALIAS_LABEL = "an alias of the host filesystem"
+
+
+def _linux_mounts() -> list[tuple[str, str, Path, Path, str, str]]:
+    """Linux mountinfo: device, source, filesystem root, mountpoint, type, options.
+
+    Mount paths escape spaces, tabs, newlines and backslashes as octal. Read
+    the current namespace, not a cached host snapshot. Without this metadata
+    a Linux arm cannot prove that its path-based read fences cover aliases.
+    """
+    if sys.platform != "linux":
+        return []
+    try:
+        text = Path("/proc/self/mountinfo").read_text(encoding="utf-8")
+        mounts = []
+        for line in text.splitlines():
+            before, separator, after = line.partition(" - ")
+            fields, tail = before.split(), after.split()
+            if not separator or len(fields) < 6 or len(tail) < 3:
+                raise ValueError("malformed mountinfo")
+            unescape = lambda value: re.sub(  # noqa: E731
+                r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), value)
+            root, mountpoint = Path(unescape(fields[3])), Path(unescape(fields[4]))
+            if not root.is_absolute() or not mountpoint.is_absolute():
+                raise ValueError("relative mount path")
+            mounts.append((fields[2], unescape(tail[1]), root, mountpoint,
+                           tail[0], tail[2]))
+        if not any(m[3] == Path("/") for m in mounts):
+            raise ValueError("missing root mount")
+        return mounts
+    except (OSError, ValueError) as exc:
+        raise ArmReadIsolationError(
+            "the Linux mount metadata cannot establish the host filesystem's "
+            "read aliases", code="read_rules_unsafe") from exc
+
+
+def _mount_at(path: Path, mounts):
+    """The active filesystem containing a path; later stacked mounts win."""
+    matches = [(len(m[3].parts), index, m) for index, m in enumerate(mounts)
+               if _within(path, m[3])]
+    return max(matches, key=lambda item: item[:2])[2]
+
+
+def _host_filesystem_aliases(home: Path, mounts) -> list[Path]:
+    """Alternate projections of the root/HOME filesystems, plus WSL /mnt.
+
+    Same-source self-binds (/tmp on /tmp, /snap on /snap) are canonical and
+    stay available. A separately mounted HOME uses its longest mount prefix.
+    WSL drives and WSLg aliases make all of /mnt a host-data boundary.
+    """
+    if not mounts:
+        return []
+    canonical = [_mount_at(Path("/"), mounts), _mount_at(home, mounts)]
+    aliases = []
+    for mount in mounts:
+        device, source, root, mountpoint, filesystem, options = mount
+        origins = [origin for origin in canonical
+                   if (device, filesystem) == (origin[0], origin[4])]
+        self_bind = any(_within(root, origin[2])
+                        and mountpoint == origin[3] / root.relative_to(origin[2])
+                        for origin in origins)
+        if (not self_bind and any(_within(root, origin[2])
+                                 or _within(origin[2], root) for origin in origins)
+                and mountpoint not in aliases):
+            aliases.append(mountpoint)
+        if (filesystem == "drvfs" or
+                filesystem == "9p" and "aname=drvfs" in options):
+            aliases.append(mountpoint)
+    if any(_within(alias, Path("/mnt")) for alias in aliases):
+        aliases = [p for p in aliases if not _within(p, Path("/mnt"))]
+        aliases.append(Path("/mnt"))
+    return list(dict.fromkeys(aliases))
+
+
+def _mount_source_path(path: Path, home: Path, mounts) -> Path | None:
+    """Translate an alias PATH entry into the canonical root/HOME view.
+
+    Windows drives have no Linux canonical view, so their path stays as-is.
+    A filesystem region absent from the canonical view cannot be carved out.
+    """
+    mount = _mount_at(path, mounts)
+    filesystem_path = mount[2] / path.relative_to(mount[3])
+    for origin in (_mount_at(Path("/"), mounts), _mount_at(home, mounts)):
+        if (mount[0], mount[4]) == (origin[0], origin[4]):
+            if _within(filesystem_path, origin[2]):
+                return origin[3] / filesystem_path.relative_to(origin[2])
+            return None
+    return path
+
+
+def _alias_read_carve_outs(aliases, home, guarded, path_env, tmp_root) -> list[Path]:
+    """Preserve PATH toolchain directories and sibling lib inside aliases.
+
+    These exceptions cannot lead into or around HOME, checkouts, profiles,
+    outputs or harness scratch trees through a root/HOME mount projection.
+    """
+    mounts = _linux_mounts()
+    out = []
+    for entry in path_env.split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        # Preserve the lexical PATH branch as well as its resolved target:
+        # masking the alias would otherwise hide a needed toolchain symlink.
+        directory = Path(os.path.normpath(entry))
+        candidates = [directory]
+        if directory.name == "bin":
+            candidates.append(directory.parent / "lib")
+        for path in candidates:
+            if (not path.is_dir() or path in out
+                    or not any(_within(path, a) and path != a for a in aliases)):
+                continue
+            # Check both projections: a symlink can leave an alias before
+            # reaching the canonical mount, or exist only in that alias.
+            targets = [_mount_source_path(path, home, mounts),
+                       _mount_source_path(path.resolve(), home, mounts)]
+            if any(t is None for t in targets):
+                continue
+            targets = [t.resolve() for t in targets]
+            if any(_within(t, g) or _within(g, t) for t in targets for g in guarded):
+                continue
+            # A PATH prefix cannot expose TMPDIR itself or present/future
+            # harness scratch trees, but ordinary /tmp toolchains are safe.
+            if any(_within(tmp_root, t)
+                   or (_within(t, tmp_root)
+                       and t.relative_to(tmp_root).parts[0].lower().startswith(
+                           tuple(p.lower() for p in HARNESS_TEMP_PREFIXES)))
+                   for t in targets):
+                continue
+            out.append(path)
+    return out
+
+
+def arm_read_denied(checkouts=(), *, home: Path | None = None,
+                    harness_root: Path = HARNESS_ROOT,
+                    profiles=None, outputs=()) -> list[tuple[str, Path]]:
+    """Every path an agent arm may not read, each with a label for errors.
+
+    The harness checkout, the clone it belongs to, the directory holding that
+    clone and its siblings (on a workstation, `~/repos`), every registry and
+    guidance checkout the run was given, the run's output directories
+    (`outputs`: the results directory, which holds earlier arms' transcripts
+    and tool traces), the harness's session archive (earlier multi-turn arms'
+    sessions, wherever `XDG_STATE_HOME` puts it), the real HOME and the
+    Claude Code profiles (`profile_dirs`). Resolved, in a fixed order, without
+    duplicates; a path that does not exist holds nothing to read and is left
+    out.
+    """
+    if harness_root == HARNESS_ROOT:
+        clone, common = HARNESS_CLONE_ROOT, HARNESS_GIT_COMMON_DIR
+    else:
+        clone, common = (harness_clone_root(harness_root),
+                         harness_git_common_dir(harness_root))
+    if clone is None:
+        raise ArmReadIsolationError(
+            "the harness clone's main checkout cannot be determined (its git "
+            "directory is elsewhere, with no core.worktree, and this checkout "
+            "is not inside it), so its siblings cannot be denied",
+            code="harness_clone_unknown")
+    home = Path(home if home is not None else Path.home())
+    if profiles is None:
+        profiles = profile_dirs(home)
+    labeled = [("the harness checkout", harness_root),
+               ("the harness clone", clone),
+               ("the directory holding the harness clone", clone.parent),
+               # Its history, wherever `--separate-git-dir` put it.
+               *((("the harness clone's git directory", common),)
+                 if common and not _within(common, clone) else ()),
+               *(("a registry or guidance checkout", Path(c)) for c in checkouts),
+               *(("a harness output directory", Path(o)) for o in outputs),
+               ("the harness's session archive", session_archive_dir().parent),
+               ("HOME", home),
+               *((PROFILE_LABEL, Path(p)) for p in profiles)]
+    out: list[tuple[str, Path]] = []
+    for label, path in labeled:
+        path = path.resolve()
+        if not path.exists():
+            continue
+        index = next((i for i, (_, seen) in enumerate(out) if seen == path), None)
+        if index is None:
+            out.append((label, path))
+        elif label in ("HOME", PROFILE_LABEL):
+            # HOME (or a profile) is also the directory holding the clone when
+            # it is cloned straight into HOME: it keeps the label that gives it
+            # the profile carve-out (`_profile_read_rules`).
+            out[index] = (label, path)
+    # Mountinfo establishes that these paths exist. Keep the alias spelling:
+    # resolving a filesystem bind does not recover its canonical source.
+    for path in _host_filesystem_aliases(home.resolve(), _linux_mounts()):
+        if path not in [p for _, p in out]:
+            out.append((MOUNT_ALIAS_LABEL, path))
+    return out
+
+
+def _arm_read_carve_outs(home: Path, hard_denied: list[Path],
+                         path_env: str) -> list[Path]:
+    """The `allowRead` entries inside HOME (see ARM_HOME_READ_CARVE_OUTS)."""
+    candidates = [home / rel for rel in ARM_HOME_READ_CARVE_OUTS]
+    for entry in path_env.split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue
+        entry = Path(entry).resolve()
+        candidates.append(entry)
+        # `~/bin`'s parent is HOME itself, not a toolchain prefix.
+        if entry.name == "bin" and entry.parent != home:
+            candidates.append(entry.parent / "lib")
+    out = []
+    for path in candidates:
+        if not path.exists():
+            continue
+        path = path.resolve()
+        # Strictly inside HOME, and neither inside nor around a checkout.
+        if path == home or home not in path.parents or path in out:
+            continue
+        if any(_within(path, d) or _within(d, path) for d in hard_denied):
+            continue
+        out.append(path)
+    return out
+
+
+def run_checkouts(args: argparse.Namespace, registries: dict | None = None,
+                  guidance_dir: Path | None = None) -> list[Path]:
+    """Every registry and guidance checkout this run was given or defaults to.
+
+    A skill run hands over its resolved `registries`, a guidance run its
+    `guidance_dir`; the other kind is resolved here the way `main` would, and
+    a registry override `main` would reject adds nothing (the sibling
+    defaults sit under the clone's parent, which is denied anyway).
+    """
+    # Callers that predate #63 hand `_run_arm` a bare registry path, which
+    # names no registry this run resolved: resolve them as main would.
+    if not isinstance(registries, dict):
+        try:
+            registries = resolve_registries(
+                getattr(args, "registry", None),
+                os.environ.get("SKILLS_EVALS_REGISTRIES"), HARNESS_ROOT,
+                os.environ.get("AGENTSKILLS_DIR"))
+        except ValueError:
+            registries = {}
+    if guidance_dir is None:
+        guidance_dir = guidance.resolve_guidance_dir(
+            getattr(args, "guidance", None), os.environ.get("AGENT_GUIDANCE_DIR"),
+            HARNESS_ROOT)
+    return [*(entry["path"] for entry in registries.values()), guidance_dir]
+
+
+def run_outputs(args: argparse.Namespace) -> list[Path]:
+    """Where this run writes results, transcripts and tool traces, and every
+    `--read-deny` directory a wrapper named: its own output tree, which holds
+    its earlier runs beside this one's `--results-dir` (local_eval's earlier
+    trials, propose_skill_edit's baseline run and proposed patch)."""
+    results = getattr(args, "results_dir", None)
+    return [*((Path(results).resolve(),) if results is not None else ()),
+            *(Path(p).resolve() for p in getattr(args, "read_deny", None) or ())]
+
+
+def check_workspace_readable(workspace: Path,
+                             denied: list[tuple[str, Path]]) -> None:
+    """Refuse a workspace the arm could not read: a denied path would cover it.
+
+    Raises ArmReadIsolationError naming the kind of path, not the path (the
+    message reaches summary.json, which is published).
+    """
+    real = Path(workspace).resolve()
+    for label, path in denied:
+        if _within(real, path):
+            raise ArmReadIsolationError(
+                f"the arm workspace lies under {label}, which the arm's read "
+                "sandbox denies; put TMPDIR outside HOME and the checkouts")
+
+
+def _glob_escape(text: str) -> str:
+    """Read rules use gitignore syntax: escape its pattern characters."""
+    return re.sub(r"([*?\[\]\\])", r"\\\1", text)
+
+
+def _read_rules(pattern: str) -> list[str]:
+    """`Read` deny rules for an escaped absolute path and everything under it.
+    `//` anchors at the filesystem root; the bare path also covers a Grep or
+    Glob rooted at the directory itself."""
+    return [f"Read(/{pattern})", f"Read(/{pattern}/**)"]
+
+
+# A name the complement patterns below can spell: the CLI's project
+# directory names (`-` for every other character), `.claude`, `projects`.
+_COMPLEMENT_NAME = re.compile(r"[A-Za-z0-9._+~@#%,=-]+\Z")
+# What a wildcard rule must never reach through a symlink: the CLI merges
+# Read deny rules into the sandbox and, on Linux, follows a symlink a
+# wildcard matches to its target (see `_profile_read_rules`).
+_SYSTEM_ROOTS = tuple(Path(p) for p in (
+    "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc",
+    "/opt", "/proc", "/sys", "/dev", "/run", "/nix", "/snap"))
+
+
+# The characters a complement pattern spells out in a bracket class. CLI
+# 2.1.292's Read-rule matcher does NOT negate a class (`[!c]` and `[^c]`
+# both match `c`) and matches case-insensitively (`[A-Z]` matched `t`), both
+# measured; so "any character but c" is written as the class of every
+# character here but c in either case. Every CLI project directory name is
+# drawn from it (`[A-Za-z0-9-]`); a name with a character outside it at the
+# point it leaves `keep` is named literally (`_profile_read_rules`). A name
+# that equals `keep` but for case is not denied (the matcher cannot tell
+# them apart).
+_CLASS_CHARS = ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                "0123456789._+~@#%,=-")
+
+
+def _class_without(char: str) -> str:
+    """A bracket class of `_CLASS_CHARS` minus `char` in either case, `-`
+    last (literal)."""
+    return _class_without_all(char)
+
+
+def _class_without_all(chars: str, alphabet: str = _CLASS_CHARS,
+                       compact_classes: bool = False) -> str:
+    """A bracket class of `_CLASS_CHARS` minus every one of `chars` in
+    either case, `-` last (literal) unless it is one of them."""
+    left = {c.lower() for c in chars}
+    kept = [c for c in alphabet if c.lower() not in left and c != "-"]
+    if compact_classes:
+        # Equivalent ASCII ranges retain both cases for the sandbox's glob
+        # matcher while keeping large Windows PATH complements below 64 KiB.
+        runs, index = [], 0
+        while index < len(kept):
+            end = index
+            while (end + 1 < len(kept) and kept[end].isalnum()
+                   and kept[end + 1].isalnum()
+                   and ord(kept[end + 1]) == ord(kept[end]) + 1):
+                end += 1
+            runs.append(kept[index] + "-" + kept[end] if end - index >= 2
+                        else "".join(kept[index:end + 1]))
+            index = end + 1
+        kept = runs
+    if "-" not in left:
+        kept.append("-")
+    return "[" + "".join(kept) + "]"
+
+
+def _complement_patterns(keep: str, spare=(),
+                         alphabet: str = _CLASS_CHARS,
+                         compact_classes: bool = False) -> list[str]:
+    """gitignore patterns that match every name in a directory but `keep`
+    and the `spare` names, including names created later: at each prefix the
+    kept names share, one leaving them there (`<prefix>[<every class char
+    but theirs>]*`) and the prefix by name (but `.`, and a kept name), and
+    every longer name than a kept one no other extends (`<name>?*`). With
+    one kept name: one leaving `keep` at each character, each strict prefix
+    by name and `<keep>?*`. Every name is spelled from `_CLASS_CHARS`
+    (`_COMPLEMENT_NAME`). Wildcards come without `/**`: a pattern that
+    matches a directory covers what is in it (measured with the Read tool)."""
+    kept = [keep, *(name for name in spare
+                    if name.lower() != keep.lower())]
+    folded = {name.lower() for name in kept}
+    out, seen = [], set()
+    # Prefixes in the order the names spell them: depth first along `keep`.
+    for name in kept:
+        for index in range(len(name) + 1):
+            prefix = name[:index]
+            if prefix.lower() in seen:
+                continue
+            seen.add(prefix.lower())
+            nexts = "".join(sorted({other[index] for other in kept
+                                    if len(other) > index
+                                    and other[:index].lower() == prefix.lower()}))
+            if nexts:
+                out.append(f"{prefix}{_class_without_all(nexts, alphabet, compact_classes)}*")
+            else:
+                out.append(f"{prefix}?*")
+            if (prefix and prefix not in (".", "..")
+                    and prefix.lower() not in folded):
+                out.append(prefix)
+    return out
+
+
+def _outside_class(directory: Path, keep: str, spare=(),
+                   alphabet: str = _CLASS_CHARS) -> list[str]:
+    """The entries of `directory` the complement patterns cannot reach: the
+    character where they leave every kept name is not in `_CLASS_CHARS`."""
+    if not directory.is_dir():
+        return []
+    kept = [keep.lower(), *(name.lower() for name in spare)]
+    out = []
+    for name in sorted(os.listdir(directory)):
+        # The matcher ignores case, so the patterns leave a kept name where
+        # the case-folded names part.
+        if name.lower() in kept:
+            continue
+        common = max(len(os.path.commonprefix([name.lower(), k])) for k in kept)
+        if common < len(name) and name[common] not in alphabet:
+            out.append(name)
+    return out
+
+
+def _check_symlinks(directory: Path, root: Path, keep: str,
+                    protected: list[Path], needed: list[Path],
+                    guarded=(), tmp_root: Path | None = None,
+                    carve_outs=()) -> list[str]:
+    """The symlinks in `directory` the wildcard rules must leave alone.
+
+    A wildcard rule that matches a symlink out of `root` denies its target
+    to every command (one HOME entry linking into /usr/bin made `bwrap:
+    execvp /bin/bash: Permission denied`, measured). So a link that leaves
+    `root` for a path the arm needs (`protected`, system and PATH
+    directories, reached at all; `needed`, the workspace and TMPDIR, covered
+    whole) is spared: no rule names it, and what it leads to is no secret (a
+    GitHub runner's and a container's HOME hold such links). A link to any
+    other directory outside `root` is denied as usual. Refused
+    (`read_rules_unsafe`): a link that would have to be spared but leads
+    into or around a path that must stay denied (`guarded`: a checkout, an
+    output directory, the archive, another profile, a harness directory
+    under TMPDIR, or `tmp_root` itself, where later ones appear), since the
+    Read tool would reach it through the spared name; and one whose name the
+    patterns cannot spell. The matcher ignores case, so another existing
+    entry at the same level with the same name ignoring case is refused
+    too: sparing the link would spare that entry, and a literal deny for
+    the entry would follow the link into its needed target."""
+    if not directory.is_dir():
+        return []
+    spare = []
+    entries = sorted(directory.iterdir())
+    for entry in entries:
+        if entry.name == keep:
+            continue
+        try:
+            if not entry.is_symlink():
+                continue
+            target = entry.resolve()
+        except PermissionError:
+            # An entry whose metadata this user cannot read cannot provide
+            # a readable escape. Leave the deny patterns covering its name.
+            continue
+        if _within(target, root):
+            continue
+        if not (any(_within(target, p) or _within(p, target) for p in protected)
+                or any(_within(n, target) for n in needed)):
+            continue
+        if (any((_within(target, g) or _within(g, target))
+                and not any(_within(target, c) and _within(c, g)
+                            for c in carve_outs) for g in guarded)
+                or (tmp_root is not None and _within(tmp_root, target))
+                or _within(root, target)
+                or not _COMPLEMENT_NAME.match(entry.name)):
+            raise ArmReadIsolationError(
+                f"a symlink in {PROFILE_LABEL} or HOME leads both to a path "
+                "the arm needs and to one it may not read",
+                code="read_rules_unsafe")
+        if any(other.name != entry.name
+               and other.name.lower() == entry.name.lower()
+               for other in entries):
+            raise ArmReadIsolationError(
+                f"a symlink in {PROFILE_LABEL} or HOME has another entry "
+                "with the same name ignoring case",
+                code="read_rules_unsafe")
+        spare.append(entry.name)
+    return spare
+
+
+def _profile_read_rules(root: Path, session_dir: Path | None,
+                        protected: list[Path], needed: list[Path],
+                        guarded=(), tmp_root: Path | None = None,
+                        carve_outs=()) -> list[str]:
+    """The Read deny rules for HOME or a profile, which leave `session_dir`.
+
+    `session_dir` is the arm's own session directory when it lies under
+    `root` (a skill arm's `~/.claude/projects/<workspace>`): the CLI saves a
+    large tool output there and the agent reads it back with the Read tool,
+    and a Read allow rule cannot carve a hole in a deny. So at each level on
+    the way down, `_complement_patterns` deny every other name, present or
+    future: another session's project directory created after these
+    settings were built is denied too. A symlink out of `root` to a path
+    the arm needs is spared at its level (`_check_symlinks`). The sandbox
+    still denies all of `root` to commands. A name the patterns cannot spell
+    denies `root` whole.
+    """
+    whole = _read_rules(_glob_escape(str(root)))
+    if session_dir is None or root not in session_dir.parents:
+        return whole
+    parts = session_dir.relative_to(root).parts
+    if not all(_COMPLEMENT_NAME.match(part) for part in parts):
+        return whole
+    rules, current = [], root
+    for part in parts:
+        spare = _check_symlinks(current, root, part, protected, needed,
+                                guarded, tmp_root, carve_outs)
+        base = _glob_escape(str(current))
+        for pattern in _complement_patterns(part, spare):
+            if "*" in pattern:
+                rules.append(f"Read(/{base}/{pattern})")
+            else:
+                rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
+        for name in _outside_class(current, part, spare):
+            rules += _read_rules(f"{base}/{_glob_escape(name)}")
+        current = current / part
+    return rules
+
+
+
+def _alias_read_rules(root: Path, carve_outs, protected, needed,
+                      guarded, tmp_root) -> list[str]:
+    """Deny an alias except safe PATH branches, to Bash and file tools alike.
+
+    Read denies merge into the command sandbox, so allowRead alone cannot
+    reopen a toolchain. Complement rules leave only its branch at each level.
+    Spaces are needed for Windows "Program Files" paths; HOME's alphabet and
+    symlink-name restrictions stay unchanged.
+    """
+    kept = [p for p in carve_outs if _within(p, root)]
+    if not kept:
+        return _read_rules(_glob_escape(str(root)))
+    alphabet = _CLASS_CHARS + " "
+    if any(any(c not in alphabet for part in p.relative_to(root).parts for c in part)
+           for p in kept):
+        raise ArmReadIsolationError(
+            "an alias PATH toolchain cannot be spared safely by the Read rules",
+            code="read_rules_unsafe")
+
+    def visit(directory, paths):
+        if directory in paths:
+            return []
+        names = list(dict.fromkeys(p.relative_to(directory).parts[0] for p in paths))
+        spare = _check_symlinks(directory, root, names[0], protected, needed,
+                                guarded, tmp_root, carve_outs)
+        others = list(dict.fromkeys([*names[1:], *spare]))
+        base = _glob_escape(str(directory))
+        rules = []
+        for pattern in _complement_patterns(names[0], others, alphabet, compact_classes=True):
+            if "*" in pattern:
+                rules.append(f"Read(/{base}/{pattern})")
+            else:
+                rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
+        for name in _outside_class(directory, names[0], others, alphabet):
+            rules += _read_rules(f"{base}/{_glob_escape(name)}")
+        for name in names:
+            child = directory / name
+            rules += visit(child, [p for p in paths if _within(p, child)])
+        return rules
+
+    return visit(root, kept)
+
+def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[Path]:
+    """The directories whose contents configure the arm: the workspace's
+    `.claude/` and the arm's own profile (`config_dir`: a guidance arm's
+    scratch `CLAUDE_CONFIG_DIR`, whose `settings.json` is the session's user
+    settings), each as given and resolved.
+
+    What the CLI loads from there (settings and their hooks, skills, agents,
+    commands) runs as the arm's own configuration, and a hook runs outside
+    the sandbox; a settings reload mid-session can fire one in the same turn.
+    So the agent may not write them: `Edit(...)` deny rules cover the Edit,
+    Write and NotebookEdit tools (https://code.claude.com/docs/en/permissions,
+    "Edit rules apply to all built-in tools that edit files"; deny rules hold
+    in every mode, `bypassPermissions` included), and `denyWrite` covers Bash
+    and its children. The CLI's own writes there are not tool calls and are
+    not affected. Trusted hooks (a plugin's, a skill's frontmatter) are left
+    running: turning hooks off would cripple the subject under test.
+    """
+    out = []
+    candidates = [Path(workspace) / ".claude", Path(workspace).resolve() / ".claude"]
+    if config_dir is not None:
+        candidates += [Path(config_dir), Path(config_dir).resolve()]
+    for path in candidates:
+        if path not in out:
+            out.append(path)
+    return out
+
+
+# The prefixes of every directory the harness makes under TMPDIR: other
+# arms' workspaces and scratch profiles (transcripts), canary and
+# propagation legs, scoring copies, `deps:` caches and objective-command
+# scratch. Leftovers from a crashed run, or a concurrent one, are denied.
+HARNESS_TEMP_PREFIXES = (
+    "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
+    "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
+    "objective-command-", "local-eval-guard-", "sink-mutation-")
+
+
+def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
+                        protected: list[Path], needed: list[Path]):
+    """The sandbox `denyRead` paths and Read deny rules for the harness's
+    directories under `tmp_root`, but the arm's own (the top directory its
+    workspace sits in). Read rules are structural, so a directory created
+    later is denied too: `<prefix>*` for a prefix the arm's own directory
+    does not carry, else the complement patterns of its name that keep the
+    prefix (`_complement_patterns`). Existing ones are listed for commands
+    as well; a symlink among them that reaches a path the arm needs is
+    refused, as in `_check_symlinks`."""
+    own = (workspace.relative_to(tmp_root).parts[0]
+           if workspace is not None and tmp_root in workspace.parents else None)
+    base = _glob_escape(str(tmp_root))
+    rules = []
+    for prefix in HARNESS_TEMP_PREFIXES:
+        if own is not None and own.lower().startswith(prefix.lower()) \
+                and _COMPLEMENT_NAME.match(own):
+            for index, pattern in enumerate(_complement_patterns(own)):
+                if pattern.lower().startswith(prefix.lower()):
+                    if "*" in pattern:
+                        rules.append(f"Read(/{base}/{pattern})")
+                    else:
+                        rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
+        else:
+            rules.append(f"Read(/{base}/{_glob_escape(prefix)}*)")
+    denied = []
+    try:
+        entries = sorted(os.listdir(tmp_root))
+    except OSError:
+        entries = []
+    for name in entries:
+        if name == own or not name.lower().startswith(
+                tuple(p.lower() for p in HARNESS_TEMP_PREFIXES)):
+            continue
+        path = tmp_root / name
+        if path.is_symlink():
+            target = path.resolve()
+            if (any(_within(target, p) or _within(p, target) for p in protected)
+                    or any(_within(n, target) for n in needed)):
+                raise ArmReadIsolationError(
+                    "a harness directory under TMPDIR is a symlink to a path "
+                    "the arm needs", code="read_rules_unsafe")
+        denied.append(path)
+    return denied, rules
+
+
+# The `--settings` value is one argv element; Linux caps one at 128 KiB
+# (E2BIG). Well under it, and a settings object this large means the rules
+# went wrong somewhere.
+MAX_SETTINGS_BYTES = 64 * 1024
+
+
+def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
+                         path_env: str | None = None,
+                         harness_root: Path = HARNESS_ROOT,
+                         session_dir: Path | None = None,
+                         workspace: Path | None = None,
+                         config_dir: Path | None = None,
+                         profiles=None, outputs=(),
+                         tmp_root: Path | None = None) -> dict:
+    """The settings every agent arm runs under, as one JSON object.
+
+    `checkouts` are the run's registry and guidance checkouts; `session_dir`
+    is where the arm's CLI will save its session (see `_profile_read_rules`);
+    `workspace` and `config_dir` are the arm's own, which the agent may not
+    configure (see `_agent_config_dirs`). `home`, `path_env`, `harness_root`
+    and `profiles` (`profile_dirs`) default to this process's own.
+    Raises ArmReadIsolationError when the read rules cannot be built safely.
+    """
+    home = Path(home if home is not None else Path.home()).resolve()
+    if profiles is None:
+        profiles = profile_dirs(home)
+    denied = arm_read_denied(checkouts, home=home, harness_root=harness_root,
+                             profiles=profiles, outputs=outputs)
+    aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
+    roots = [path for label, path in denied
+             if label in ("HOME", PROFILE_LABEL) or path == home]
+    # HOME may also be the directory holding the clone (a cloud routine
+    # clones into it): the carve-outs still keep clear of every checkout.
+    hard = [path for _, path in denied if path not in roots]
+    if path_env is None:
+        path_env = os.environ.get("PATH", "")
+    carve = _arm_read_carve_outs(home, hard, path_env) if home.is_dir() else []
+    keep = Path(session_dir).resolve() if session_dir else None
+    config_dirs = (_agent_config_dirs(workspace, config_dir)
+                   if workspace is not None else [])
+    protected = [*_SYSTEM_ROOTS,
+                 *(Path(e).resolve() for e in path_env.split(os.pathsep)
+                   if e and os.path.isabs(e))]
+    needed = [Path(tempfile.gettempdir()).resolve()]
+    if workspace is not None:
+        needed.append(Path(workspace).resolve())
+    tmp_root = Path(tmp_root or tempfile.gettempdir()).resolve()
+    tmp_denied, tmp_rules = _harness_temp_rules(
+        tmp_root, Path(workspace).resolve() if workspace is not None else None,
+        protected, needed)
+    alias_guarded = [p for _, p in denied if p not in aliases] + tmp_denied
+    alias_carve = (_alias_read_carve_outs(aliases, home, alias_guarded, path_env, tmp_root)
+                   if aliases else [])
+    carve += alias_carve
+    read_rules = []
+    for _, path in denied:
+        # What a spared symlink in HOME or a profile must not lead to: every
+        # other denied path and the harness's directories under TMPDIR.
+        guarded = [p for _, p in denied if p != path] + tmp_denied
+        for rule in (_profile_read_rules(path, keep, protected, needed,
+                                         guarded, tmp_root, alias_carve) if path in roots
+                     else _alias_read_rules(path, alias_carve, protected, needed,
+                                            guarded, tmp_root) if path in aliases
+                     else _read_rules(_glob_escape(str(path)))):
+            if rule not in read_rules:
+                read_rules.append(rule)
+    return {
+        "sandbox": {
+            "enabled": True,
+            # Refuse to start rather than run commands unsandboxed.
+            "failIfUnavailable": True,
+            # No `dangerouslyDisableSandbox` retry.
+            "allowUnsandboxedCommands": False,
+            # Explicit, so no user or project value fills them in; a managed
+            # value would still win, so `managed_sandbox_refusal` refuses one.
+            "excludedCommands": [],
+            "network": {"strictAllowlist": True, "allowedDomains": [],
+                        "deniedDomains": list(ARM_DENIED_DOMAINS),
+                        "allowAllUnixSockets": False, "allowUnixSockets": [],
+                        "allowLocalBinding": False},
+            "filesystem": {"denyRead": [*(str(p) for _, p in denied),
+                                        *(str(p) for p in tmp_denied)],
+                           "allowRead": [str(p) for p in carve],
+                           "denyWrite": [str(p) for p in config_dirs]},
+        },
+        "permissions": {"deny": [
+            *read_rules,
+            *tmp_rules,
+            *(rule for path in config_dirs
+              for rule in (f"Edit(/{_glob_escape(str(path))})",
+                           f"Edit(/{_glob_escape(str(path))}/**)"))]},
+    }
+
+
+def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
+                        workspace: Path | None = None,
+                        config_dir: Path | None = None, outputs=()) -> list[str]:
+    """The CLI flags that put an agent arm behind `arm_sandbox_settings`.
+    Raises ArmReadIsolationError (`settings_too_large`) past
+    MAX_SETTINGS_BYTES rather than handing the OS an argument it refuses."""
+    settings = json.dumps(arm_sandbox_settings(
+        checkouts, session_dir=session_dir, workspace=workspace,
+        config_dir=config_dir, outputs=outputs), sort_keys=True, separators=(",", ":"))
+    if len(settings.encode()) > MAX_SETTINGS_BYTES:
+        raise ArmReadIsolationError(
+            f"the arm's --settings is {len(settings.encode())} bytes, over "
+            f"the {MAX_SETTINGS_BYTES}-byte cap", code="settings_too_large")
+    return ["--settings", settings,
+            "--disallowedTools", ",".join(ARM_DISALLOWED_TOOLS), "--no-chrome"]
 
 
 def _sandbox_unavailable_detail(stderr: str) -> str | None:
-    """The CLI's own refusal line when the sandbox could not start, else None."""
+    """The CLI's own line saying the sandbox is not running, else None."""
     for line in (stderr or "").splitlines():
-        if SANDBOX_UNAVAILABLE_MARKER in line:
+        if _SANDBOX_DOWN_LINE.match(line.strip()):
             return line.strip()[:400]
     return None
+
+
+# The managed sandbox and permission settings an arm's run accepts, each with
+# the values it may take; ANY other key under `sandbox` or `permissions`, or
+# an accepted key with another value, refuses the run, so a key a later CLI
+# adds fails closed. A managed value outranks `--settings` and managed arrays
+# merge in (https://code.claude.com/docs/en/sandboxing, "Keep developers from
+# widening the policy"), so these are the keys that can only keep the arm's
+# boundary as tight as `--settings` sets it or tighter; a widening key is
+# accepted only at the arm's own restrictive value (`[]`, `false`). Among the
+# refused, measured or read in CLI 2.1.292: `enabledPlatforms` without this
+# platform and `filesystem.disabled: true` switch confinement off with no
+# sandbox-down line; `enableWeakerNestedSandbox: true` exposes the host's
+# /proc; `bwrapPath`/`socatPath` choose the binaries that enforce it;
+# non-empty `excludedCommands`, proxy ports, Unix sockets,
+# `allowLocalBinding: true`, `allowedDomains`, `allowRead`, `allowWrite` and
+# `permissions.additionalDirectories` widen it; and top-level
+# `allowManagedPermissionRulesOnly: true` drops the `--settings` Read and
+# Edit denies.
+_ANY_BOOL = (True, False)
+# Value kinds: a tuple of the exact values allowed (`True`/`False` compared by
+# identity, so `1` and `{}` do not pass), "strings" (a list of short strings),
+# "empty" (exactly `[]`, the arm's own baseline), "platforms" (strings,
+# including this platform), "str" (a short string), "credential_files" and
+# "credential_env" (lists of entries `_credential_entry_ok` accepts).
+_MANAGED_ACCEPTED = {
+    ("sandbox", "enabled"): (True,),
+    ("sandbox", "failIfUnavailable"): (True,),
+    ("sandbox", "allowUnsandboxedCommands"): (False,),
+    ("sandbox", "autoAllowBashIfSandboxed"): _ANY_BOOL,
+    ("sandbox", "enabledPlatforms"): "platforms",
+    # The arm's own baseline values, and the CLI defaults that match it.
+    ("sandbox", "excludedCommands"): "empty",
+    ("sandbox", "enableWeakerNestedSandbox"): (False,),
+    ("sandbox", "enableWeakerNetworkIsolation"): (False,),
+    ("sandbox", "filesystem", "disabled"): (False,),
+    ("sandbox", "filesystem", "allowRead"): "empty",
+    ("sandbox", "filesystem", "allowWrite"): "empty",
+    ("sandbox", "filesystem", "denyRead"): "strings",
+    ("sandbox", "filesystem", "denyWrite"): "strings",
+    ("sandbox", "filesystem", "allowManagedReadPathsOnly"): _ANY_BOOL,
+    ("sandbox", "network", "deniedDomains"): "strings",
+    ("sandbox", "network", "allowedDomains"): "empty",
+    ("sandbox", "network", "strictAllowlist"): (True,),
+    ("sandbox", "network", "allowManagedDomainsOnly"): _ANY_BOOL,
+    ("sandbox", "network", "allowAllUnixSockets"): (False,),
+    ("sandbox", "network", "allowUnixSockets"): "empty",
+    ("sandbox", "network", "allowLocalBinding"): (False,),
+    ("sandbox", "credentials", "files"): "credential_files",
+    ("sandbox", "credentials", "envVars"): "credential_env",
+    ("permissions", "deny"): "strings",
+    ("permissions", "ask"): "strings",
+    # An allow rule never outranks a deny rule (the arm's Read and Edit
+    # denies) and the sandbox still confines what it approves.
+    ("permissions", "allow"): "strings",
+    ("permissions", "additionalDirectories"): "empty",
+    ("permissions", "defaultMode"): "str",
+    ("permissions", "disableBypassPermissionsMode"): "str",
+    ("permissions", "disableAutoMode"): "str",
+    ("permissions", "blockReadsOutsideWorkingDirectories"): _ANY_BOOL,
+}
+# The objects the accepted keys sit in; only these may be (empty) objects.
+_MANAGED_STRUCTURE = {("sandbox",), ("sandbox", "filesystem"),
+                      ("sandbox", "network"), ("sandbox", "credentials"),
+                      ("permissions",)}
+# Top-level managed keys that change what the arm's `--settings` can do.
+_MANAGED_TOP_LEVEL = {"allowManagedPermissionRulesOnly": (False,)}
+_MANAGED_STRING_MAX = 4096
+
+
+def _short_string(value) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= _MANAGED_STRING_MAX
+
+
+# A credential entry's fields as CLI 2.1.292's schema declares them (read from
+# its bundle), each with a check of its value. Every one narrows access or,
+# in `deny` mode, is ignored; `injectHosts` would let the host proxy send the
+# real value to those hosts, so only an empty list is accepted.
+_CREDENTIAL_FIELDS = {
+    "mode": lambda v: v in ("deny", "mask"),
+    "extract": lambda v: isinstance(v, str) and len(v) <= _MANAGED_STRING_MAX,
+    "onExtractNoMatch": lambda v: v in ("warn", "deny", "error"),
+    "decode": lambda v: v == "jwt",
+    "maskClaims": lambda v: isinstance(v, list) and all(map(_short_string, v)),
+    "maskDuplicates": lambda v: isinstance(v, bool),
+    "injectHosts": lambda v: v == [] and isinstance(v, list),
+}
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _credential_entry_ok(entry, kind: str) -> bool:
+    """One `sandbox.credentials` entry: a `path` (files) or a `name` (envVars),
+    a `mode`, and only the schema's other fields, each of the right type."""
+    if not isinstance(entry, dict) or "mode" not in entry:
+        return False
+    if kind == "credential_files":
+        key, fields = "path", set(_CREDENTIAL_FIELDS)
+        key_ok = _short_string(entry.get("path"))
+    else:
+        key, fields = "name", set(_CREDENTIAL_FIELDS) - {"maskDuplicates"}
+        key_ok = isinstance(entry.get("name"), str) and bool(_ENV_NAME.match(entry["name"]))
+    return (key_ok and set(entry) <= fields | {key}
+            and all(_CREDENTIAL_FIELDS[name](value)
+                    for name, value in entry.items() if name != key))
+
+
+def _managed_value_ok(kind, value, platform: str) -> bool:
+    if kind == "platforms":
+        return (isinstance(value, list) and all(map(_short_string, value))
+                and platform in value)
+    if kind == "strings":
+        return isinstance(value, list) and all(map(_short_string, value))
+    if kind == "empty":
+        return value == [] and isinstance(value, list)
+    if kind == "str":
+        return _short_string(value)
+    if kind in ("credential_files", "credential_env"):
+        return isinstance(value, list) and all(
+            _credential_entry_ok(entry, kind) for entry in value)
+    return any(value is allowed for allowed in kind)
+
+
+def _managed_violation(value, keys: tuple, platform: str) -> str | None:
+    """The first key path under `keys` the arm's sandbox does not accept,
+    with why, or None: an object only at a `_MANAGED_STRUCTURE` path, every
+    other key on `_MANAGED_ACCEPTED` with a value of its kind."""
+    dotted = ".".join(keys)
+    if keys in _MANAGED_STRUCTURE:
+        if not isinstance(value, dict):
+            return f"{dotted} to something other than an object"
+        for key, child in value.items():
+            found = _managed_violation(child, (*keys, str(key)), platform)
+            if found:
+                return found
+        return None
+    kind = _MANAGED_ACCEPTED.get(keys)
+    if kind is None:
+        return (f"{dotted}, which is not on the list of managed keys an "
+                "arm's sandbox accepts")
+    if not _managed_value_ok(kind, value, platform):
+        if kind == "platforms":
+            return f"{dotted} without {platform!r}"
+        return f"{dotted} to a value the arm's sandbox does not accept"
+    return None
+
+
+# Where a managed policy lives (the CLI's documented locations). The one
+# copy: scripts/local_eval.py hands the same paths to its guard launcher.
+MANAGED_SETTINGS_FILES = (
+    Path("/etc/claude-code/managed-settings.json"),
+    Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+    Path("C:/Program Files/ClaudeCode/managed-settings.json"))
+MANAGED_SETTINGS_DROPINS = (Path("/etc/claude-code/managed-settings.d"),)
+
+
+def managed_settings_paths(files=None, dropins=None) -> list[Path]:
+    """The managed policy files, each drop-in directory's `*.json` included,
+    defaulting to the documented locations. A missing file is listed; a
+    reader treats it as no policy."""
+    paths = list(map(Path, MANAGED_SETTINGS_FILES if files is None else files))
+    for directory in map(Path, MANAGED_SETTINGS_DROPINS if dropins is None else dropins):
+        if directory.is_dir():
+            paths += sorted(directory.glob("*.json"))
+    return paths
+
+
+def cli_platform() -> str:
+    """The CLI's own name for this platform, as `enabledPlatforms` lists it."""
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("win"):
+        return "windows"
+    try:
+        version = Path("/proc/version").read_text(encoding="utf-8").lower()
+    except OSError:
+        version = ""
+    return "wsl" if "microsoft" in version else "linux"
+
+
+def managed_sandbox_refusal(files=None, dropins=None,
+                            platform: str | None = None) -> str | None:
+    """Why the managed settings make an arm's sandbox untrustworthy, or None.
+
+    Reads the managed policy files local_eval's settings guard checks
+    (`MANAGED_SETTINGS_FILES` and `_DROPINS`) and accepts only
+    `_MANAGED_ACCEPTED` under `sandbox` and `permissions`, plus
+    `_MANAGED_TOP_LEVEL`. Names the file and key, never a value; an
+    unreadable file is a refusal too.
+    """
+    platform = platform or cli_platform()
+    for path in managed_settings_paths(files, dropins):
+        try:
+            settings = json.loads(Path(path).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            return (f"managed settings file {path} cannot be read "
+                    f"({type(exc).__name__})")
+        if not isinstance(settings, dict):
+            return f"managed settings file {path} is not a JSON object"
+        for key, allowed in _MANAGED_TOP_LEVEL.items():
+            if key in settings and not _managed_value_ok(allowed, settings[key], platform):
+                return (f"managed settings file {path} sets {key}, which the "
+                        "arm's --settings cannot outrank")
+        for section in ("sandbox", "permissions"):
+            if section in settings:
+                found = _managed_violation(settings[section], (section,), platform)
+                if found:
+                    return f"managed settings file {path} sets {found}"
+    return None
+
+
+# What the CLI and trusted delivery hook write, during a turn, under the directories
+# `_agent_config_dirs` names, as relative paths (fnmatch, `*` crossing `/`).
+# Measured with CLI 2.1.292 (strace of a two-turn arm with a Bash call, a
+# saved large output, a Write and a resume): under the workspace's `.claude/`
+# an empty `.cc-writes/`; under the profile the rest. Anything else that
+# changes during a turn is the agent's, apart from the hook receipt below.
+#
+# Trees: the whole subtree is the CLI's, whatever it holds; the CLI loads no
+# configuration from any of them.
+_CLI_WORKSPACE_TREES = (".cc-writes",)
+_CLI_PROFILE_TREES = (".cc-writes", "backups", "bridge-spawn", "projects",
+                      "seed-admin", "session-env", "sessions", "shell-snapshots")
+# Markers: exempt only as what the CLI writes, a regular file (not a symlink
+# or a directory, which could hold a plugin's `hooks/hooks.json`) of at most
+# the given size in bytes; anything else at that path is a change. The lock
+# is a directory the CLI creates and removes, exempt only while empty.
+_CLI_PROFILE_MARKERS = {
+    ".claude.json": None, ".claude.json.tmp.*": None,
+    "plugins/cache/*/.orphaned_at": 4096,
+    "skills/synced/*/.last-complete-round": 4096,
+    # The trusted fleet-memory hook appends this detached delivery receipt,
+    # possibly after delivery returned. It loads no CLI configuration. The
+    # writer checks 1 MiB before its last append of at most 4096 bytes.
+    "fleet-delivery.jsonl": 1024 * 1024 + 4096,
+}
+_CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
+# A shared profile (the operator's real `~/.claude`, or an inherited
+# `CLAUDE_CONFIG_DIR`) changes under every other session, so only the paths
+# the CLI loads configuration from are watched there; the CLI's own synced
+# account skills are its bookkeeping.
+_SHARED_PROFILE_CONFIG = ("settings.json", "settings.local.json", "CLAUDE.md",
+                          "agents", "commands", "hooks", "rules",
+                          "output-styles", "skills", "plugins")
+_SHARED_PROFILE_TREES = ("skills/synced",)
+# `plugins/` (installed and known lists, cached plugins and marketplaces, all
+# plugin-loading surfaces) is watched whole; the only writes measured there
+# during a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers.
+_SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096}
+
+
+def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
+    """Whether `rel` is CLI or trusted delivery bookkeeping (see above)."""
+    if any(rel == t or rel.startswith(t + "/") for t in trees):
+        return True
+    st = os.lstat(path)
+    for pattern, limit in markers.items():
+        if fnmatch.fnmatchcase(rel, pattern):
+            # The receipt writer also refuses foreign-owned or hard-linked
+            # files; such a path is not its trusted bookkeeping.
+            if rel == "fleet-delivery.jsonl" and (
+                    not hasattr(os, "geteuid") or st.st_nlink != 1
+                    or st.st_uid != os.geteuid()):
+                return False
+            return stat.S_ISREG(st.st_mode) and (limit is None or st.st_size <= limit)
+    if rel in empty_dirs:
+        return stat.S_ISDIR(st.st_mode) and not os.listdir(path)
+    return False
+
+
+def _config_snapshot(root: Path, label: str, trees=(), markers=None,
+                     empty_dirs=(), only=None) -> dict[str, bytes | None]:
+    """Every file and symlink under `root` by `label`-prefixed relative path
+    (a file's SHA-256, a symlink's target), minus the CLI's bookkeeping.
+    `only` limits the walk to those top-level names."""
+    root = Path(root)
+    markers = markers or {}
+    out: dict[str, bytes | None] = {}
+    if root.is_symlink() or root.is_file():
+        return {label: b"symlink:" + os.readlink(root).encode()
+                if root.is_symlink() else hashlib.sha256(root.read_bytes()).digest()}
+    if not root.is_dir():
+        return out
+    for current, dirs, files in os.walk(root):
+        rel_dir = Path(current).relative_to(root)
+        if not rel_dir.parts and only is not None:
+            dirs[:] = [d for d in dirs if d in only]
+            files = [f for f in files if f in only]
+        kept = []
+        for name in sorted(dirs + files):
+            rel = (rel_dir / name).as_posix()
+            path = Path(current) / name
+            key = f"{label}/{rel}"
+            try:
+                if _exempt(path, rel, trees, markers, empty_dirs):
+                    continue
+            except FileNotFoundError:
+                # Listed, then gone (another session, or the agent): a
+                # change, never a crash. An exempt tree is never looked at.
+                out[key] = b"<vanished>"
+                continue
+            if path.is_symlink():
+                out[key] = b"symlink:" + os.readlink(path).encode()
+            elif path.is_dir():
+                # Not recorded itself: an empty directory configures
+                # nothing, and what it comes to hold is.
+                kept.append(name)
+            else:
+                try:
+                    out[key] = hashlib.sha256(path.read_bytes()).digest()
+                except OSError:
+                    out[key] = b"<unreadable>"
+        dirs[:] = [d for d in dirs if d in kept]
+    return out
+
+
+def _agent_config_snapshot(workspace: Path, config_dir: Path | None = None,
+                           shared: bool = False) -> dict[str, bytes | None]:
+    """The workspace's `.claude/` and the arm's profile, by relative path (see
+    `_config_snapshot`): a scratch profile whole, a shared one (`shared`)
+    only where the CLI loads configuration from."""
+    out = _config_snapshot(Path(workspace) / ".claude", ".claude",
+                           trees=_CLI_WORKSPACE_TREES)
+    if config_dir is not None:
+        if shared:
+            out.update(_config_snapshot(Path(config_dir), "$CLAUDE_CONFIG_DIR",
+                                        trees=_SHARED_PROFILE_TREES,
+                                        markers=_SHARED_PROFILE_MARKERS,
+                                        only=_SHARED_PROFILE_CONFIG))
+        else:
+            out.update(_config_snapshot(
+                Path(config_dir), "$CLAUDE_CONFIG_DIR", trees=_CLI_PROFILE_TREES,
+                markers=_CLI_PROFILE_MARKERS, empty_dirs=_CLI_PROFILE_EMPTY_DIRS))
+    return out
+
+
+def _agent_config_written(workspace: Path, before: dict,
+                          config_dir: Path | None = None,
+                          shared: bool = False) -> str | None:
+    """What the agent created, changed or removed in its configuration since
+    `before`, named relative to the workspace or profile (at most five)."""
+    after = _agent_config_snapshot(workspace, config_dir, shared)
+    changed = sorted(name for name in set(before) | set(after)
+                     if name not in before or name not in after
+                     or before[name] != after[name])
+    if not changed:
+        return None
+    more = f" and {len(changed) - 5} more" if len(changed) > 5 else ""
+    return ", ".join(changed[:5]) + more
 
 
 def agent_env(workspace: Path, env_spec: dict | None,
@@ -1028,8 +2239,13 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
     duration_ms/raw. Error dicts always have an "error" key — one of
     "invalid_skill_name", "skill_not_found", "skill_install_failed", "timeout",
-    "sandbox_unavailable", "nonzero_exit", "invalid_json", "agent_error" — plus
-    a "detail". Every call runs behind `arm_isolation_flags()` (ADR 0011). Callers
+    "sandbox_unavailable", "workspace_read_denied", "read_rules_unsafe",
+    "harness_clone_unknown",
+    "settings_too_large", "managed_sandbox_policy", "spawn_failed",
+    "nonzero_exit", "invalid_json", "agent_error", "agent_wrote_agent_config"
+    — plus a "detail". Every call runs behind
+    `arm_isolation_flags(arm["read_denied"])` (ADR 0011), the run's registry
+    and guidance checkouts denied to reads along with HOME and this clone. Callers
     MUST check `"error" in result` rather than relying on exceptions; only
     skill installation and process invocation failures are turned into error
     dicts here, nothing is raised.
@@ -1050,6 +2266,17 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     permission_mode = guidance.check_permission_mode(
         arm.get("permission_mode", guidance.DEFAULT_PERMISSION_MODE))
     effort = guidance.check_effort(arm.get("effort"))
+    # The arm must be able to read its own workspace: one under a denied path
+    # (TMPDIR inside HOME, say) is refused, never silently re-opened.
+    checkouts = tuple(arm.get("read_denied") or ())
+    outputs = tuple(arm.get("read_denied_outputs") or ())
+    try:
+        check_workspace_readable(workspace, arm_read_denied(checkouts, outputs=outputs))
+    except ArmReadIsolationError as exc:
+        return {"error": exc.code, "detail": str(exc)}
+    refusal = managed_sandbox_refusal()
+    if refusal is not None:
+        return {"error": "managed_sandbox_policy", "detail": refusal}
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         try:
@@ -1107,6 +2334,33 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # arms have always had — `project`, and this harness's own environment
     # with the fixture's `env:` applied — so skill fixtures are byte-identical
     # across this change.
+    # Auto-memory off, applied last (guidance.CLI_FORCED_ENV): a skill arm
+    # runs under the real HOME, so its memory would land in the operator's
+    # profile.
+    env = guidance.cli_child_env(arm.get("env_override")
+                                 or agent_env(workspace, arm.get("env")))
+    for name in ARM_DROPPED_ENV:
+        env.pop(name, None)
+    # Where this arm's CLI saves its session, which the read rules leave open
+    # when it lies under the real HOME or a profile (`_profile_read_rules`).
+    projects = _session_projects_dir(env)
+    session_dir = projects / _munged_project_name(workspace) if projects else None
+    # The profile the session loads as user settings: the arm's own
+    # `CLAUDE_CONFIG_DIR`, else `$HOME/.claude` of the child.
+    config_dir = (Path(env["CLAUDE_CONFIG_DIR"]) if env.get("CLAUDE_CONFIG_DIR")
+                  else Path(env["HOME"]) / ".claude" if env.get("HOME") else None)
+    # Watched after every turn: a scratch profile (a guidance arm's) whole; a
+    # shared one (the operator's `~/.claude`, or an inherited
+    # `CLAUDE_CONFIG_DIR`) only where the CLI loads configuration from, since
+    # other sessions write the rest (`_SHARED_PROFILE_CONFIG`).
+    shared_profile = not (env.get("CLAUDE_CONFIG_DIR") and env.get("CLAUDE_CONFIG_DIR")
+                          != os.environ.get("CLAUDE_CONFIG_DIR"))
+    try:
+        isolation = arm_isolation_flags(checkouts, session_dir, workspace, config_dir,
+                                        outputs)
+    except ArmReadIsolationError as exc:
+        return {"error": exc.code, "detail": str(exc)}
+
     # `--verbose` makes `--output-format json` print the whole message array
     # (every turn's `type: result`), not only the LAST result. An agent that
     # starts a background subagent answers, then answers again when the
@@ -1121,9 +2375,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
            # `--dangerously-skip-permissions` (guidance.PERMISSION_MODES).
            "--permission-mode", permission_mode,
            "--setting-sources", arm.get("setting_sources", "project"),
-           # The network sandbox and no web tools, for every arm and every
-           # follow-up turn (`turn_cmd` keeps everything after the prompt).
-           *arm_isolation_flags(),
+           # The network and read sandbox and no web tools, for every arm and
+           # every follow-up turn (`turn_cmd` keeps everything after the prompt).
+           *isolation,
            # The account's claude.ai MCP connectors (mail, drive, GitHub)
            # load even under `--setting-sources project` (CLI 2.1.289,
            # measured); strict means only `--mcp-config` servers, of which
@@ -1141,11 +2395,6 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # this command with only the prompt replaced, keeps it.
     if effort is not None:
         cmd += ["--effort", effort]
-    # Auto-memory off, applied last (guidance.CLI_FORCED_ENV): a skill arm
-    # runs under the real HOME, so its memory would land in the operator's
-    # profile.
-    env = guidance.cli_child_env(arm.get("env_override")
-                                 or agent_env(workspace, arm.get("env")))
 
     # `followups:` (ADR 0009): each entry is one more user turn in the SAME
     # session and workspace — the first call's flags plus `--resume
@@ -1153,8 +2402,6 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # whole `timeout`. The first turn's error details carry no label, so a
     # fixture without `followups:` behaves exactly as before.
     texts = [prompt, *(arm.get("followups") or [])]
-    projects = _session_projects_dir(env)
-    session_dir = projects / _munged_project_name(workspace) if projects else None
     preexisting = session_dir is not None and os.path.lexists(session_dir)
     # Every call's tool events (#89), for `transcripts/tool_trace.json`. The
     # scorers never see them: they are attached to the returned dict under
@@ -1173,6 +2420,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # leaves the profile whether the arm succeeded or not.
     try:
         turns: list[dict] = []
+        # What the harness installed (a with_skill arm's skill), before the
+        # agent's first turn.
+        config_before = _agent_config_snapshot(workspace, config_dir, shared_profile)
         for index, text in enumerate(texts):
             label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
             turn_cmd = cmd
@@ -1187,6 +2437,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             try:
                 result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
                                         text=True, timeout=timeout, env=env)
+            except OSError as exc:
+                # E2BIG and the like: the CLI never started.
+                trace_complete = False
+                return traced({"error": "spawn_failed",
+                               "detail": f"{label}the CLI could not be started "
+                                         f"({type(exc).__name__}, errno {exc.errno})"})
             except subprocess.TimeoutExpired:
                 trace_complete = False
                 return traced({"error": "timeout",
@@ -1213,6 +2469,14 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                                                    result.stderr),
                                "returncode": result.returncode})
 
+            unavailable = _sandbox_unavailable_detail(result.stderr)
+            if unavailable is not None:
+                # Exit 0 with the CLI's own "Sandbox disabled" warning: the
+                # commands ran unconfined, so nothing they did can score.
+                trace_complete = False
+                return traced({"error": "sandbox_unavailable",
+                               "detail": label + unavailable,
+                               "returncode": result.returncode})
             try:
                 decoded = json.loads(result.stdout)
                 calls[-1] = tool_events(decoded, secrets)
@@ -1236,6 +2500,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                "detail": f"{label}{detail}" if label else detail,
                                "raw": data})
             turns.append(data)
+            # After EVERY turn: the agent's own configuration under `.claude/`
+            # (blocked by the settings above) is not the arm the fixture
+            # describes, and project settings reload mid-session.
+            written = _agent_config_written(workspace, config_before, config_dir,
+                                            shared_profile)
+            if written:
+                return traced({"error": "agent_wrote_agent_config",
+                               "detail": f"{label}the agent wrote {written}",
+                               "raw": data})
 
         if len(turns) > 1:
             return traced(_combine_turns(turns, texts[1:]))
@@ -2704,6 +3977,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "env": fixture.get("env"),
             "followups": fixture.get("followups"),
             "permission_mode": permission_mode,
+            "read_denied": run_checkouts(args, registries=registries),
+            "read_denied_outputs": run_outputs(args),
             "effort": effort,
         }
         # A bad `registry:` (missing field, wrong type, unknown URL, or a
@@ -3344,6 +4619,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # A multi-turn arm's transcript lands under `config`, inside this
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
+            "read_denied": run_checkouts(args, guidance_dir=ctx["guidance_dir"]),
+            "read_denied_outputs": run_outputs(args),
         }
         baseline = guidance_violations.snapshot(workspace) if fixture.get("_real_work") else None
         result = run_agent(workspace, fixture["prompt"], arm_config)
@@ -3962,6 +5239,11 @@ def main() -> int:
                              "the fixture's own `timeout_s:` is held to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summaries + reports)")
+    parser.add_argument("--read-deny", type=Path, action="append", default=[],
+                        metavar="DIR",
+                        help="another directory no agent arm may read "
+                             "(repeatable): a wrapper's own output tree, "
+                             "holding its earlier runs beside --results-dir")
     parser.add_argument("--fixture", default=None, metavar="NAME",
                         help="when eval_dir is a skill directory holding "
                              "nested fixtures (<name>/fixture.yaml), run only "
@@ -4040,6 +5322,14 @@ def main() -> int:
               "20260716T070000Z). It becomes the run directory's name under "
               "results/")
         return 2
+    # Before any fixture or arm: a managed policy that turns the arms' sandbox
+    # off without the CLI saying so, or widens it past what `--settings` can
+    # take back (`managed_sandbox_refusal`). objective-only runs no agent.
+    if args.arm != "objective-only":
+        refusal = managed_sandbox_refusal()
+        if refusal is not None:
+            print(f"managed_sandbox_policy: {refusal}")
+            return 2
     # ONE timestamp per invocation: every fixture, arm and trial of this run
     # shares one run directory.
     args.run_timestamp = (args.timestamp

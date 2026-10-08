@@ -1925,7 +1925,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 
 | Spawn | Flags beyond its own |
 |---|---|
-| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox JSON>` and `--disallowedTools WebFetch,WebSearch` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox, read-deny and agent-config-deny JSON>`, `--disallowedTools WebFetch,WebSearch` and `--no-chrome` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
 | judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
@@ -1939,9 +1939,9 @@ arm, one past the CLI's 200-character truncation, and one inside a guidance
 arm's own scratch are never touched. The judge's empty setting source means
 the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
 fleet-memory SessionStart hook: that is the isolation, not a regression.
-What none of this stops: managed settings, the CLI's bundled skills, writes
-to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
-file under the real HOME.
+What none of this stops: managed settings, the CLI's bundled skills and
+writes to `~/.claude.json`. An arm's own reads of the real HOME are fenced
+in separately (below).
 
 **Agent arms have no route to GitHub** ([ADR 0011](docs/decisions/0011-sandbox-agent-arm-network.md)).
 A real-work seed is a public repository's pre-fix tree, and the merged fix is
@@ -1958,9 +1958,82 @@ and `cdn.jsdelivr.net`. The sandbox covers Bash and its children only, so
 `--disallowedTools WebFetch,WebSearch` removes the two web tools. Nothing is
 written into the workspace: `seed_guard` still refuses any `.claude/`, and
 no scoring check sees a harness file. The judge, the guard and canary probes,
-`deps:`/`setup:` and objective commands are not sandboxed this way. Reads are
-not restricted: a sandboxed command and the Read tool can still read this
-checkout, `evals/real-work/*/checker/` and `solution.patch` included.
+`deps:`/`setup:` and objective commands are not sandboxed this way.
+
+**Agent arms cannot read the answer key on disk either** (ADR 0011's reads
+addendum). The same `--settings` denies reads of this checkout (a worktree
+resolves, through `git rev-parse --git-common-dir`, to its main clone), the
+directory holding that clone and its siblings (`~/repos` on a workstation,
+where cms-platform `main` holds the merged fixes), every registry and
+guidance checkout the run was given (`run_eval.run_checkouts`), the run's
+results directory, every `--read-deny` directory (a wrapper's whole output
+tree: local_eval's earlier trials, propose_skill_edit's baseline run and
+patch) and the harness's session archive, the harness's other
+directories under TMPDIR (other arms' workspaces and scratch profiles), and
+the real HOME and Claude Code profiles (`~/.claude`, an inherited `CLAUDE_CONFIG_DIR`):
+`sandbox.filesystem.denyRead` for Bash and its children, and the same paths
+as `Read(//<abs>/**)` deny rules for the Read tool. For commands,
+`allowRead` re-opens only git's global configuration (so `git commit` keeps
+its identity) and PATH directories under HOME with a `bin`'s sibling `lib`
+(toolchains such as `~/.local/bin`), never one at or around a checkout. For
+the Read tool, a skill arm's HOME and profile are denied structurally around
+its own `~/.claude/projects/<munged workspace>`, where the CLI saves large
+tool outputs the agent reads back: complement patterns deny every other
+name at each level, sessions created after the settings included; a
+symlink there leading out to a system or PATH directory (a GitHub runner's
+`~/.ghcup`) is left out of those patterns rather than denied, and one that
+also leads to a denied path fails the arm with `read_rules_unsafe`. A workspace under a denied path (TMPDIR inside
+HOME, say) fails the arm with `workspace_read_denied` before the CLI starts.
+
+On Linux the read fences also cover alternate mounts of the root or HOME
+filesystem, discovered from `/proc/self/mountinfo` by device number,
+filesystem type, mount root and the longest HOME mount prefix. WSL drive
+mounts and root/HOME aliases under `/mnt` deny `/mnt` whole, closing WSLg's
+second view of Linux and Windows-side sibling clones. Other aliases, including
+custom drive mountpoints, are denied at their mount roots. Canonical self-binds
+such as `/tmp` on `/tmp` and HOME on itself stay available; malformed or
+unreadable Linux mount metadata refuses the arm with `read_rules_unsafe`.
+Other platforms add no mount fences.
+
+An alias's safe PATH toolchain directories and existing sibling `lib` stay
+readable through documented `allowRead` exceptions and complementary Read
+rules; a broad Read deny would otherwise merge into the sandbox and override
+the exception. Both mount-canonical paths and resolved symlink targets must
+stay clear of HOME, checkouts, profiles, outputs and present or future harness
+scratch trees. Ordinary TMPDIR toolchains are allowed; TMPDIR itself is
+not. Alias patterns support spaces and compress character classes into
+equivalent ASCII ranges, retaining both cases, within the existing 64 KiB
+settings cap. Mount discovery is a settings-build snapshot; complement rules
+share HOME's finite-alphabet limitation for names created later. See the
+[reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
+and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
+
+A before/after live WSL probe with CLI 2.1.293 read an answer-key patch through
+WSLg using both Bash and Read before these fences; afterward Bash aliases
+were masked and Read refused them. A Windows PATH executable remained
+readable, and workspace, Python, Node and git operations still worked. Unix
+sockets were blocked in both runs by the existing
+`allowAllUnixSockets: false`, `allowUnixSockets: []` settings: Linux seccomp
+refused `AF_UNIX` socket creation with `EPERM` before connection, closing
+Docker and WSL interop. No additional `/run` fence was needed.
+
+**Nothing else outside the sandbox runs for an arm** (ADR 0011's hardening
+addendum). Hooks run unconfined, so the agent may not write its workspace's
+`.claude/` (settings, hooks, skills, agents, commands) or the profile it
+loads as user settings: `Edit(...)` deny rules for the file tools and
+`denyWrite` for Bash, in the same `--settings`.
+Trusted hooks (a plugin's or a skill's under test) keep running. A trial in
+which anything under `.claude/` or a guidance arm's scratch profile, or a
+configuration path of the shared `~/.claude` a skill arm uses, changed
+during a turn, beyond what was there before and the CLI's own measured
+writes, fails after that turn with `agent_wrote_agent_config`.
+Every turn passes `--no-chrome` and never receives `CLAUDE_CODE_ENABLE_CFC`.
+A managed policy with any `sandbox` or `permissions` key, nested object or
+value outside the allowlist `run_eval._MANAGED_ACCEPTED` documents (a
+widening key passes only at the arm's own restrictive value), or with
+`allowManagedPermissionRulesOnly` other than `false`, refuses the run with
+`managed_sandbox_policy`. The CLI's `Sandbox Error:` and `Sandbox disabled:`
+lines fail the arm as `sandbox_unavailable`, the latter even at exit 0.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
