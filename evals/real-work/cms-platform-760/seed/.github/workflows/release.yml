@@ -1,0 +1,170 @@
+# Cut a cms-platform release.
+#
+# Releases are the platform's down-sync trigger: platform-bump.yml reads
+# `gh api repos/<repo>/releases/latest` (the latest RELEASE, not a bare tag)
+# to bump each site's platform_ref + platform.lock + the `uses:@<tag>` pins +
+# the theme gem, all atomically — Dependabot ignores every cms-platform ref in
+# both the github-actions (#244) and bundler (#242) ecosystems, so it never
+# touches these. Cutting was previously a manual `git tag` / UI step; this
+# makes it a one-click workflow_dispatch that creates the tag + GitHub Release
+# server-side from the current main HEAD.
+name: Cut release
+run-name: "${{ format('cut {0}{1} — @{2}', inputs.version, inputs.prerelease && ' (prerelease)' || '', github.actor) }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to cut (vX.Y.Z, or vX.Y.Z-rc.N with prerelease). Tags the dispatched ref + creates a GitHub Release.'
+        type: string
+        required: true
+      prerelease:
+        description: 'Cut a PRERELEASE instead. Marked prerelease on GitHub, so releases/latest skips it and NO consumer is bumped — pin ONE consumer PR at it to validate a fix on a real preview before cutting the real release.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Needed only by the manifest-version guard inside the next step — the
+      # release itself is cut server-side by `gh`, which needs no worktree.
+      - name: Check out the ref being tagged
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          TARGET: ${{ github.sha }}
+          GH_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Releases are the down-sync trigger: platform-bump fans the LATEST
+          # release out to every consuming site. workflow_dispatch lets the
+          # operator pick any branch in the "Use workflow from" dropdown, and
+          # github.sha then points at THAT ref's HEAD — so without this guard a
+          # feature branch could be tagged + released as "latest" and bumped
+          # into every site. Enforce the header's "from main HEAD" invariant
+          # rather than leaving it a convention.
+          if [ "$GH_REF" != "refs/heads/main" ]; then
+            echo "::error::releases must be cut from main (dispatched ref: ${GH_REF}). Re-run with 'main' selected in the branch dropdown."
+            exit 1
+          fi
+          # A prerelease MUST carry a suffix, so it can never collide with — or be
+          # mistaken for — the release it precedes. `v0.1.89-rc.1` also sorts before
+          # `v0.1.89` under semver, which is what makes "cut the RC, validate, then
+          # cut the real one" a coherent sequence rather than a version rewind.
+          if [ "$PRERELEASE" = "true" ]; then
+            if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$'; then
+              echo "::error::a prerelease must look like vX.Y.Z-<suffix>, e.g. v0.1.89-rc.1 (got '${VERSION}')"
+              exit 1
+            fi
+          elif ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must look like vX.Y.Z (got '${VERSION}')"
+            exit 1
+          fi
+          if gh release view "$VERSION" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "::error::release ${VERSION} already exists"
+            exit 1
+          fi
+          # The two plugin manifests carry this version as well — Claude Code
+          # reads .claude-plugin/plugin.json, the Agent Plugins conformant
+          # clients (Codex/VS Code/Cursor/Copilot) read the root plugin.json —
+          # and until v0.1.83 NOTHING kept them in step with the tag, which is
+          # how they shipped declaring 0.1.82 in the very release that
+          # introduced them. This job cannot rewrite-and-push them either:
+          # `main` is PR-only by ruleset, so a release-time commit would be
+          # rejected (GH013). So the release REFUSES to cut a tag the manifests
+          # disagree with, which puts the bump in the release PR — reviewed,
+          # atomic with AGENTS.md, docs/VERSION-HISTORY.md and the two pin
+          # surfaces the error below names — instead of in a step that can
+          # silently skew. e2e/plugin-manifests.test.js separately locks the two
+          # manifests to EACH OTHER; this locks them to the TAG.
+          #
+          # The message below is one of only two enumerations of the release
+          # PR's edit set (AGENTS.md's release paragraph is the other). Keep them
+          # complete: a releaser who fixes exactly what this names and no more
+          # cuts the tag and THEN reds the required node-unit-lints lane, which
+          # is the worst possible moment to discover a missing edit.
+          # The manifest guard locks the two plugin manifests to the RELEASE tag.
+          # A prerelease deliberately PRECEDES that bump — it is cut from main as-is
+          # to validate a fix, and the manifests move in the release PR that follows
+          # — so requiring them to already declare `0.1.89-rc.1` would force a commit
+          # whose only purpose is to be reverted. Skip the guard, never weaken it:
+          # the real release still cannot cut with skewed manifests.
+          expected="${VERSION#v}"
+          skew=0
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "::notice::prerelease ${VERSION} — skipping the plugin-manifest version guard (it locks manifests to a RELEASE tag)."
+            expected=""
+          fi
+          for manifest in ${expected:+plugin.json .claude-plugin/plugin.json}; do
+            declared=$(jq -r '.version // ""' "$manifest")
+            if [ "$declared" != "$expected" ]; then
+              echo "::error file=${manifest}::${manifest} declares version '${declared}' but this run cuts ${VERSION} (expected '${expected}'). The release PR bumps ALL of: both plugin manifests, AGENTS.md's 'Current release:' line, every platform pin in examples/site/.github/workflows (uses:@ref AND with: platform_ref:), and scaffold/create-site.js's PLATFORM_VERSION — the Current release line, the platform pins and PLATFORM_VERSION are enforced by e2e/examples-site-pins-current.test.js (which also holds the two manifests equal) in the REQUIRED node-unit-lints lane, so skipping them reds self-CI right after the tag is cut. Fix them all, then re-dispatch."
+              skew=1
+            fi
+          done
+          if [ "$skew" -ne 0 ]; then
+            exit 1
+          fi
+          RELEASE_ARGS=(--repo "$GH_REPO" --target "$TARGET" --title "$VERSION" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then
+            RELEASE_ARGS+=(--prerelease)
+          fi
+          gh release create "$VERSION" "${RELEASE_ARGS[@]}"
+          if [ "$PRERELEASE" = "true" ]; then
+            # `--prerelease` is what keeps this off `repos/<repo>/releases/latest`,
+            # which is the ONLY thing platform-bump resolves. A consumer therefore
+            # cannot drift onto this tag on its own — pin it deliberately, on ONE PR.
+            echo "::notice::Cut PRERELEASE ${VERSION} at ${TARGET}. It is excluded from releases/latest, so no consumer will be bumped to it. Pin one consumer PR at ${VERSION} to validate, then cut the real release."
+          else
+            echo "::notice::Cut ${VERSION} at ${TARGET}. platform-bump + Dependabot will fan it out to consuming sites."
+          fi
+
+      # Chained down-sync: dispatch each consumer's platform-bump the moment
+      # the release exists. This is the ONLY automatic trigger: the consumer
+      # caller has no weekly cron (the backstop never bumped anything — audit
+      # 2026-10-01). Uses `workflow_dispatch` on the consumer's
+      # platform-bump.yml caller.
+      #
+      # FAIL-OPEN by design: a missing/expired token or a failed dispatch is a
+      # warning, never a job failure, so a consumer outage cannot block cutting
+      # a release. With no cron behind it, that consumer stays on the old
+      # version until someone re-dispatches by hand — the `::warning::` names
+      # the exact command. Fine-grained PATs are
+      # minted per RESOURCE OWNER, so each consumer owner supplies its own
+      # secret: Actions read+write on that one repo, nothing else.
+      # A prerelease is validated on ONE consumer PR, pinned by hand. Dispatching
+      # the consumers' platform-bump would be a no-op today (it resolves
+      # releases/latest, which skips prereleases, and would exit "already on
+      # <current>") — but relying on that is relying on a downstream detail to
+      # undo something this job should not have done. Don't dispatch.
+      - name: Fan out bump dispatches to consumers
+        if: ${{ inputs.prerelease != true }}
+        env:
+          VERSION: ${{ inputs.version }}
+          TOKEN_ADAMDANIEL_AI: ${{ secrets.BUMP_DISPATCH_ADAMDANIEL_AI }}
+          TOKEN_JODIDANIEL_COM: ${{ secrets.BUMP_DISPATCH_JODIDANIEL_COM }}
+        run: |
+          set -euo pipefail
+          dispatch() {
+            repo="$1" token="$2"
+            if [ -z "$token" ]; then
+              echo "::warning::no bump-dispatch token for ${repo} — it is NOT bumped to ${VERSION} (no cron backstop); dispatch by hand: gh workflow run platform-bump.yml -R ${repo}"
+              return 0
+            fi
+            if GH_TOKEN="$token" gh workflow run platform-bump.yml -R "$repo"; then
+              echo "::notice::dispatched platform-bump in ${repo} for ${VERSION}."
+            else
+              echo "::warning::platform-bump dispatch failed for ${repo} — it is NOT bumped to ${VERSION} (no cron backstop); re-dispatch by hand: gh workflow run platform-bump.yml -R ${repo}"
+            fi
+          }
+          dispatch "Adam-S-Daniel/adamdaniel.ai"   "$TOKEN_ADAMDANIEL_AI"
+          dispatch "jodidaniel/jodidaniel.com"     "$TOKEN_JODIDANIEL_COM"
