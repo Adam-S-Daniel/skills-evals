@@ -188,6 +188,30 @@ class WorkspaceGitOverrideTests(_WorkspaceGitFixture, unittest.TestCase):
 
 
 class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
+    def test_harness_metadata_git_refuses_write_and_unreviewed_read_shapes(self):
+        from unittest import mock
+        import harness_repo
+        for args in (('config', 'core.worktree', '/tmp/other'),
+                     ('fetch', 'origin'), ('rev-parse', '--show-toplevel')):
+            for reader in (harness_repo._git, harness_repo._git_out):
+                with self.subTest(args=args, reader=reader.__name__), \
+                        mock.patch.object(harness_repo.subprocess, 'run') as spawn:
+                    with self.assertRaisesRegex(harness_repo.HarnessGitReadError, 'audited'):
+                        reader(*args, cwd=self.repo)
+                    spawn.assert_not_called()
+
+    def test_context_git_object_view_refuses_write_and_unreviewed_read_shapes(self):
+        from unittest import mock
+        import context
+        view = context._Git('example/repo', {'example/repo': self.repo})
+        for args in (('config', 'core.hooksPath', '/tmp/other'),
+                     ('fetch', 'origin'), ('show', '--textconv', 'HEAD'),
+                     ('log', '--ext-diff', 'HEAD'), ('cat-file', '--filters', 'HEAD')):
+            with self.subTest(args=args), mock.patch.object(context.subprocess, 'run') as spawn:
+                with self.assertRaisesRegex(context.ContextError, 'unsupported_git_read'):
+                    view.run(*args)
+                spawn.assert_not_called()
+
     def test_git_symlink(self):
         target = self.root / 'redirect'
         shutil.move(self.repo / '.git', target)
@@ -354,15 +378,42 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
 
     def test_no_raw_git_process_outside_helper(self):
         harness = Path(run_eval.__file__).parent
-        # Modules whose git calls only ever read a trusted, harness-supplied
-        # checkout, never an agent workspace: context.py resolves an ADR 0012
-        # context from --context-repo clones through git cat-file/ls-tree;
-        # harness_repo.py finds the harness's own clone for ADR 0011's read fence.
-        trusted_repo_readers = {'workspace_git.py', 'context.py', 'harness_repo.py'}
         for path in harness.rglob('*.py'):
-            if path.name in trusted_repo_readers:
+            if path.name == 'workspace_git.py':
                 continue
             tree = ast.parse(path.read_text())
+            allowed_reads = set()
+            if path == harness / 'context.py':
+                # Frozen objects have a distinct, read-only seam. Exempt its
+                # single audited sink, never the rest of context.py.
+                reader = next(node for node in tree.body
+                              if isinstance(node, ast.ClassDef) and node.name == '_Git')
+                method = next(node for node in reader.body
+                              if isinstance(node, ast.FunctionDef) and node.name == 'run')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", '
+                                     'str(self.path), *args], env=self.env, stdin=subprocess.DEVNULL, '
+                                     'stdout=subprocess.PIPE, stderr=subprocess.PIPE)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
+            if path == harness / 'harness_repo.py':
+                # Main's metadata reader has one hardened subprocess sink.
+                method = next(node for node in tree.body
+                              if isinstance(node, ast.FunctionDef) and node.name == '_git')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", '
+                                     'str(cwd), *args], env=_env(), stdin=subprocess.DEVNULL, '
+                                     'capture_output=True, text=True)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
             bindings = {}
             imported_sinks = set()
             for node in ast.walk(tree):
@@ -380,6 +431,8 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
+                if id(node) in allowed_reads:
+                    continue
                 sink = ((isinstance(node.func, ast.Attribute)
                          and node.func.attr in {'run', 'Popen', 'check_call', 'check_output'})
                         or (isinstance(node.func, ast.Name) and node.func.id in imported_sinks))
@@ -393,6 +446,65 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                     first = resolve(argv.elts[0])
                     self.assertFalse(isinstance(first, ast.Constant)
                                      and first.value in {'git', '/usr/bin/git'}, str(path))
+
+    def test_context_git_read_call_inventory_is_exact(self):
+        path = Path(run_eval.__file__).with_name('context.py')
+        tree = ast.parse(path.read_text())
+        calls = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'run' and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in {'self', 'consumer', 'source'}):
+                calls.append((tuple(arg.value if isinstance(arg, ast.Constant) else None
+                                    for arg in node.args), tuple(item.arg for item in node.keywords)))
+        self.assertCountEqual(calls, [
+            (('rev-parse', '--git-dir'), ('code',)),
+            (('rev-parse', '--verify', '--end-of-options', None), ()),
+            (('cat-file', '-e', None), ()), (('cat-file', 'blob', None), ()),
+            (('ls-tree', '-rz', None), ()), (('show', '-s', '--format=%ct', None), ()),
+            (('log', '--format=%H %ct', None), ()),
+        ])
+
+    def test_harness_metadata_git_read_call_inventory_is_exact(self):
+        harness = Path(run_eval.__file__).parent
+        calls = []
+        direct_calls = []
+        for name in ('harness_repo.py', 'run_eval.py'):
+            tree = ast.parse((harness / name).read_text())
+            if name == 'run_eval.py':
+                self.assertFalse(any(isinstance(node, ast.FunctionDef) and node.name in
+                                     {'_git_out', 'harness_clone_root', 'harness_git_common_dir'}
+                                     for node in ast.walk(tree)),
+                                 'metadata helpers must remain in harness_repo.py')
+            for method in ast.walk(tree):
+                if not isinstance(method, ast.FunctionDef):
+                    continue
+                for node in ast.walk(method):
+                    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                        continue
+                    if node.func.id == '_git_out':
+                        calls.append((name, method.name,
+                                      tuple(ast.literal_eval(arg) for arg in node.args),
+                                      tuple(item.arg for item in node.keywords)))
+                    elif name == 'harness_repo.py' and node.func.id == '_git':
+                        direct_calls.append((method.name,
+                                             tuple(ast.dump(arg) for arg in node.args),
+                                             tuple(item.arg for item in node.keywords)))
+        self.assertCountEqual(calls, [
+            ('harness_repo.py', 'harness_git_common_dir',
+             ('rev-parse', '--path-format=absolute', '--git-common-dir'), ('cwd',)),
+            ('harness_repo.py', 'harness_clone_root',
+             ('config', '--local', '--includes', '--get', 'core.worktree'), ('cwd',)),
+            # ADR 0012 fences both linked-worktree and shared context metadata.
+            ('run_eval.py', 'used_paths',
+             ('rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'), ('cwd',)),
+        ])
+        self.assertCountEqual(direct_calls, [
+            ('_git_out', (ast.dump(ast.parse('_git(*args)', mode='eval').body.args[0]),), ('cwd',)),
+            ('harness_clone_root', tuple(ast.dump(ast.Constant(value=value)) for value in
+                                       ('config', '-z', '--local', '--includes', '--show-origin',
+                                        '--get-regexp', r'^include(if\..*)?\.path$')), ('cwd',)),
+        ])
 
     def test_skill_arm_records_named_error_and_skips_judge(self):
         import argparse

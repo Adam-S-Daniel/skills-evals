@@ -248,14 +248,25 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
 
 ### Deployed context (ADR 0012)
 
-**part 1 of 4: resolution only, nothing delivered yet.** A fixture may name
-the deployed context it will eventually evaluate in, using `context:`:
+**Part 2 of 4: frozen resolution and delivery.** `--pairing isolation`
+remains the default. `--pairing in_place` is cloud-only and delivers the
+frozen skills and guidance into both arms' scratch user profiles; a local
+run fails with `in_place_local_unsupported`. No credential adapter exists.
+The model-call catalog and marker guard remain part 3 of
+[ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md).
+
+A bare skill name must resolve uniquely; `--skill-registry OWNER/REPO` and
+`--skill-bundle BUNDLE` qualify its source and bundle. Keep-or-remove runs
+test the deployed bytes by default. `--subject-candidate PATH` explicitly
+supplies a skill directory or a guidance file; only that skill or the pinned
+section's exact extent replaces the subject in `with`. Summaries retain both
+deployed and tested digests. A fixture names its deployed context using `context:`:
 
 ```yaml
 context:
   repository: Adam-S-Daniel/cms-platform
   revision: 5e66f6e3ced3e619e0fac869cff11c37c3877e2d
-  guidance_revision: 98a00535adb7fc8ebf03d4d5d4cadbfaf7321f10
+  guidance_revision: 35f62ec4d9ab7fd8b9d9fe2e3a547c7d5926c3f9
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 7603
@@ -304,8 +315,11 @@ context commit's committer timestamp. Exact bytes establish each match;
 timestamps only constrain eligibility. It counts all matches and chooses
 the greatest committer timestamp, then the lexicographically smallest full
 SHA for a tie. A missing `origin/main` fails closed. Scaffolds record the
-count and selection rule in a comment. Existing valid committed pins are
-preserved even when this deterministic selection finds another match.
+count and selection rule in a comment. Every committed pin is this
+deterministic selection, so one rule reproduces each of them, and
+`resolve_context` applies the same eligibility rule as
+`validate_guidance_revision` (a default-branch ancestor no newer than the
+context commit) before the byte proof.
 Historical base-only guidance may predate the section
 manifest or delivery hook: their absence is recorded, while the deployed
 base still requires exact proof. Missing evidence for an adopted section
