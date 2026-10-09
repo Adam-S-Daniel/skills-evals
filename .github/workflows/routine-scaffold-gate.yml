@@ -202,7 +202,7 @@ jobs:
             echo
             echo "Before removing \`draft: true\`, a person:"
             echo
-            echo "- confirms the prompt is the real ask, with the issue sections that describe the solution dropped, and that \`interface_strings:\` name only what the hidden tests check verbatim;"
+            echo "- confirms the prompt is the real ask, with the issue sections that describe the solution dropped, dates and version numbers omitted unless dropping one would very significantly disadvantage the agent relative to the one that did the original work, and that \`interface_strings:\` name only what the hidden tests check verbatim;"
             echo "- runs \`scripts/scaffold_real_work.py check --fixture evals/real-work/${FIXTURE_ID} --run\` (red on the seed, green with the fix);"
             echo "- adds the fixture to \`CHECKER_BLOBS\` in \`test/issues/test_issue_real_work_fixtures.py\`, and any \`deps:\` directory to ci.yml's real-work install step."
             echo

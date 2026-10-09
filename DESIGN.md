@@ -1351,8 +1351,14 @@ decisions (Adam, 2026-10-06)".
 Q6 puts the scaffolder's model call in the ADR 0010 routine and gives
 scaffold pull requests their own gate. The model writes only what needs
 judgment: the task text (the issue minus the sections that describe the
-fix), `interface_strings:` and the checker selection (`argv`,
-`fail_to_pass`, `pass_to_pass`, `deps:`), as a JSON spec. Everything else is
+fix, and minus its dates and version numbers),
+`interface_strings:` and the checker selection (`argv`,
+`fail_to_pass`, `pass_to_pass`, `deps:`), as a JSON spec. A date or version
+number stays only where dropping it would very significantly disadvantage
+the agent relative to the one that did the original work (Adam,
+2026-10-08: "Omit dates and version numbers from eval prompts unless doing
+so will very significantly disadvantage the agent relative to the agent
+that performed the work on which the eval is based"). Everything else is
 deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py):
 
 - **build** turns one miner candidate and the spec into
