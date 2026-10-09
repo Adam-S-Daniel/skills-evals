@@ -205,6 +205,36 @@ def _metadata(workspace: Path) -> Path:
     return entry
 
 
+def _sandbox_placeholder(path: Path) -> bool:
+    """Whether `path` is the empty file Claude Code's Linux sandbox leaves.
+
+    Measured 2026-10-09 (CLI 2.1.292, .293 and .295): one sandboxed Bash call
+    in a fresh repository leaves a 0-byte regular `.git/config.worktree`, the
+    bubblewrap mount point for a protected path that did not exist (the
+    distro `/usr/bin/bwrap` 0.9.0 and another build alike). Only that exact
+    shape counts: a regular file this user owns, empty, with no other link.
+    """
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return (stat.S_ISREG(info.st_mode) and info.st_size == 0
+            and info.st_nlink == 1 and info.st_uid == os.getuid())
+
+
+def _refuse_redirects(gitdir: Path) -> None:
+    # `commondir` and `gitdir` redirect Git elsewhere even when empty, so they
+    # stay refused. An empty `config.worktree` sets nothing even if
+    # `extensions.worktreeConfig` were on, and `_copy_metadata` never copies
+    # that file into the private metadata the harness's own Git reads.
+    for redirect in ('commondir', 'gitdir'):
+        if os.path.lexists(gitdir / redirect):
+            _refuse('redirected Git metadata')
+    worktree_config = gitdir / 'config.worktree'
+    if os.path.lexists(worktree_config) and not _sandbox_placeholder(worktree_config):
+        _refuse('redirected Git metadata')
+
+
 def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
               baseline: tuple | None = None) -> list[tuple[str, str]]:
     gitdir = workspace / '.git' if baseline is not None else _metadata(workspace)
@@ -216,9 +246,7 @@ def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
         _refuse('.git is not a plain directory')
     if identity.st_uid != os.getuid():
         _refuse('.git ownership changed')
-    for redirect in ('commondir', 'gitdir', 'config.worktree'):
-        if os.path.lexists(gitdir / redirect):
-            _refuse('redirected Git metadata')
+    _refuse_redirects(gitdir)
     for relative in ('objects/info/alternates', 'objects/info/http-alternates'):
         if os.path.lexists(gitdir / relative):
             _refuse('alternate object store')
@@ -838,9 +866,7 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
                 entry = workspace / '.git'
                 if entry.is_symlink() or not entry.is_dir():
                     _refuse('.git is not a plain directory')
-                for name in ('commondir', 'gitdir', 'config.worktree'):
-                    if os.path.lexists(entry / name):
-                        _refuse('redirected Git metadata')
+                _refuse_redirects(entry)
                 if (entry / 'config').exists():
                     _validate(workspace, context.private, deadline)
                 elif any(child.name != 'info' for child in entry.iterdir()):

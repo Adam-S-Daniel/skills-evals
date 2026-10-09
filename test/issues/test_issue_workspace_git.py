@@ -290,6 +290,56 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('status', cwd=self.repo)
 
+    def test_sandbox_placeholder_config_worktree_passes(self):
+        # Claude Code's Linux sandbox leaves an empty regular
+        # `.git/config.worktree` (the bubblewrap mount point); not a redirect.
+        import workspace_git
+        (self.repo / '.git' / 'config.worktree').write_bytes(b'')
+        run_eval._git('status', '--short', cwd=self.repo)
+        run_eval._git('diff', cwd=self.repo)
+        workspace_git.run('init', '-q', cwd=self.repo, check=True)
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        run_eval._git('status', '--short', cwd=self.repo)
+        self.assertIn('+after', run_eval._git('diff', cwd=self.repo).stdout)
+
+    def test_only_the_exact_placeholder_shape_passes(self):
+        import workspace_git
+        gitdir = self.repo / '.git'
+        elsewhere = self.root / 'elsewhere'
+        elsewhere.write_bytes(b'')
+
+        def text(path):
+            path.write_text('[core]\n')
+
+        def symlink(path):
+            path.symlink_to(elsewhere)
+
+        def hard_link(path):
+            os.link(elsewhere, path)
+
+        cases = {'content': ('config.worktree', text),
+                 'symlink to an empty file': ('config.worktree', symlink),
+                 'hard-linked empty file': ('config.worktree', hard_link),
+                 'directory': ('config.worktree', Path.mkdir),
+                 'empty commondir': ('commondir', lambda path: path.write_bytes(b'')),
+                 'empty gitdir': ('gitdir', lambda path: path.write_bytes(b''))}
+        for label, (name, make) in cases.items():
+            with self.subTest(label=label):
+                path = gitdir / name
+                make(path)
+                if name == 'config.worktree':
+                    self.assertFalse(workspace_git._sandbox_placeholder(path))
+                with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                    run_eval._git('status', cwd=self.repo)
+                with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                    workspace_git.run('init', '-q', cwd=self.repo)
+                if path.is_dir() and not path.is_symlink():
+                    path.rmdir()
+                else:
+                    path.unlink()
+        self.assertFalse(workspace_git._sandbox_placeholder(gitdir / 'config.worktree'))
+
     def test_sealed_baseline_and_staging_are_outside_workspace(self):
         import workspace_git
         workspace_git.seal(self.repo)
