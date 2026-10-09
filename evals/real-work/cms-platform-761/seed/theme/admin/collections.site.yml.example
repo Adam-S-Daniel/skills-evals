@@ -1,0 +1,45 @@
+# Opt-in per-site collections. Copy to admin/collections.site.yml to add or
+# override collections; the render splices these list items into the platform's
+# base collections at build time (the platform machinery collections — posts,
+# tags, projects, pages, and the mandatory e2e canary — always stay).
+#
+# Indentation must match the base collections list (2 spaces for `- name:`).
+#
+# $ref REUSE (OPTIONAL — inline fields still work, fully backward-compatible):
+# a field entry may be `$ref: "#/field_library/<name>"` to REUSE a platform
+# field/widget def from theme/admin/field_library.yml instead of re-authoring
+# it. A $ref resolves to a SINGLE field (e.g. body_markdown, date_widget,
+# image_widget) or a LIST of fields (e.g. published_pair → published +
+# publish_date) — both splice in place at build time. Decap never sees a $ref;
+# it's resolved to full field defs before the config is written. Mix $ref and
+# inline fields freely.
+  - name: notes
+    label: Notes
+    label_singular: Note
+    folder: _notes
+    create: true
+    delete: true
+    slug: "{{slug}}"
+    # `sortable_fields` is what puts a field into the admin list's "Sort by"
+    # dropdown — WITHOUT it there's no way to view a collection's manual
+    # order in the admin at all, even though the underlying entries really
+    # did get reordered on disk. If you add a manual-order field to a
+    # collection of your own (`weight` below, or under whatever name you
+    # give it), list it here too — skipping this is cms-platform#329.3:
+    # reordering worked, but the admin list never visibly reflected it, so
+    # there was no way to verify a reorder had taken effect.
+    sortable_fields:
+      - weight
+      - title
+    fields:
+      # Inline fields (the status quo — still fully supported):
+      - { name: title, label: Title, widget: string, required: true }
+      # Manual-order integer, paired with the `sortable_fields` entry above
+      # — the pairing IS the cms-platform#329.3 fix, not two unrelated
+      # lines. "Sort by → Weight" in the admin only works because both are
+      # present.
+      - { name: weight, label: Order, widget: number, value_type: int, default: 0, hint: "Lower numbers sort first. Controls display order on the site." }
+      # …or REUSE a platform field def by $ref:
+      - $ref: "#/field_library/body_markdown"      # → one markdown body field
+      - $ref: "#/field_library/image_widget"       # → one image field
+      - $ref: "#/field_library/published_pair"     # → TWO fields: published + publish_date
