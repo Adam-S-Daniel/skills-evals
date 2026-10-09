@@ -12,7 +12,7 @@ eval routine runs it, answers every GitHub GraphQL request with HTTP 403, and
     python3 scripts/mine_real_work.py mine \\
         --registry PATH/_agent-guidance/repos.yml --out /tmp/candidates.json \\
         [--sync-workflow PATH/_agent-guidance/.github/workflows/sync.yml] \\
-        [--limit 2000]
+        [--limit 2000 | --candidate OWNER__REPO__PR]
 
     python3 scripts/mine_real_work.py prepare --clone PATH --base SHA \\
         --merge SHA --test-file PATH ... --out /tmp/rg/<repo>-<pr>
@@ -43,6 +43,15 @@ the base branch at merge time; `base_from` says which. A repo whose pull
 requests 404, a PR with no readable merge commit, or a PR whose diff GitHub will
 not render (HTTP 406, over its line or file cap; counted as `diff_too_large`) is
 skipped with a warning naming repo#number; any other `gh` failure aborts.
+
+`--candidate KEY` mines one pull request instead of the fleet. From the files
+alone it checks that KEY parses and that its owner and repository are in
+`SYNC_OWNERS` and `cron_coverage.fleet`, before any `gh` call; then it reads
+only that repository (its view, the pull request, and that PR's own reads),
+and refuses a redirect, a private repository or an unmerged PR. A filtered PR
+yields zero candidates and exit 0. A routine session answers HTTP 403 for any
+repository not attached to it, so the full fleet enumeration cannot run there;
+the fire workflow and the scaffold gate pin the candidate to the fleet on Actions.
 
 PREPARE is the `redgreen.sh` tree step: `git archive` of base and merge into
 `<out>/red` and `<out>/green`, with the merge's test files laid over `red`.
@@ -174,6 +183,10 @@ DIFF_TOO_LARGE = re.compile(r"(?=.*\bHTTP 406\b)(?=.*exceeded the maximum number
 #: (s27, 2026-10-06: "HTTP 403: GitHub GraphQL is not available from Claude
 #: Code sessions; use the REST API").
 GRAPHQL_UNAVAILABLE = re.compile(r"GraphQL is not available")
+
+
+#: The miner key, as scaffold_real_work.KEY_RE (that module imports this one).
+KEY_RE = re.compile(r"(?P<owner>[A-Za-z0-9-]+)__(?P<name>[A-Za-z0-9._-]+)__(?P<pr>[1-9][0-9]{0,6})")
 
 
 def _gh(args: tuple[str, ...], what: str, *, diff: bool = False) -> str:
@@ -359,6 +372,75 @@ def answer_leak(body: str, diff: str) -> dict:
     return {"flag": bool(quoted), "quoted_lines": quoted[:5]}
 
 
+def _classify(repo: str, view: dict, pr: dict, counts: dict) -> dict | None:
+    """One merged pull request: the candidate record, or None after counting why not."""
+    if is_bot(pr):
+        counts["bot"] += 1
+        return None
+    if on_hold(pr):
+        counts["on_hold"] += 1
+        return None
+    files = gh_list(f"repos/{repo}/pulls/{pr['number']}/files?per_page=100")
+    paths = [f["filename"] for f in files]
+    tests, source = split_files(paths)
+    if not (tests and source):
+        counts["not_replayable"] += 1
+        return None
+    body = (pr.get("body") or "").strip()
+    if not body:
+        counts["no_task_text"] += 1
+        return None
+    merge_sha = pr.get("merge_commit_sha")
+    commit = None
+    if merge_sha:
+        try:
+            commit = gh_json("api", f"repos/{repo}/commits/{merge_sha}")
+        except GhNotFound:
+            commit = None
+    if commit is None:
+        print(f"mine_real_work: warning: {repo}#{pr['number']}: no readable merge "
+              "commit; skipped", file=sys.stderr)
+        counts["no_merge_commit"] += 1
+        return None
+    parents = [p["sha"] for p in commit.get("parents") or []]
+    # A true merge's first parent is the base. A single-parent merge
+    # commit is a squash or a rebase merge, and for a rebase merge the
+    # first parent is the previous rebased commit, so the base is the
+    # PR's own base.sha (which may predate the base branch's tip at
+    # merge time).
+    if len(parents) >= 2:
+        base_sha, base_from = parents[0], "merge-first-parent"
+    else:
+        base_sha, base_from = (pr.get("base") or {}).get("sha"), "pr-base-ref-oid"
+    try:
+        diff = gh_diff(repo, pr["number"])
+    except GhDiffTooLarge:
+        # The answer-leak check needs the diff; without it the PR cannot
+        # be judged, so it is skipped (and counted), not guessed at.
+        print(f"mine_real_work: warning: {repo}#{pr['number']}: diff too large "
+              "for GitHub to render; skipped", file=sys.stderr)
+        counts["diff_too_large"] += 1
+        return None
+    record = {
+        "key": f"{repo.replace('/', '__')}__{pr['number']}",
+        "repo": repo, "pr": pr["number"], "url": pr.get("html_url"),
+        "title": pr.get("title"), "task_text": body,
+        "spec_style": "sketch" if "```" in body else "symptom",
+        "merged_at": pr.get("merged_at"), "merge_sha": merge_sha,
+        "base_sha": base_sha, "base_from": base_from,
+        "head_ref": (pr.get("head") or {}).get("ref"),
+        "closing_issues": closing_issues(repo, pr, view.get("default_branch")),
+        "churn": sum((f.get("additions") or 0) + (f.get("deletions") or 0)
+                     for f in files),
+        "test_files": tests, "source_files": source,
+        "files_truncated": len(paths) >= FILES_CAP,
+        "touches": sorted(k for k, rx in TOUCHES.items() if any(rx.search(p) for p in paths)),
+        "answer_leak": answer_leak(body, diff),
+    }
+    counts["candidates"] += 1
+    return record
+
+
 def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
     names, owners = load_fleet(registry, sync_workflow)
     repos = resolve_fleet(names, owners)
@@ -389,72 +471,47 @@ def mine(registry: Path, sync_workflow: Path, limit: int) -> dict:
                   "not_replayable": 0, "no_task_text": 0, "no_merge_commit": 0,
                   "diff_too_large": 0, "candidates": 0}
         for pr in prs:
-            if is_bot(pr):
-                counts["bot"] += 1
-                continue
-            if on_hold(pr):
-                counts["on_hold"] += 1
-                continue
-            files = gh_list(f"repos/{repo}/pulls/{pr['number']}/files?per_page=100")
-            paths = [f["filename"] for f in files]
-            tests, source = split_files(paths)
-            if not (tests and source):
-                counts["not_replayable"] += 1
-                continue
-            body = (pr.get("body") or "").strip()
-            if not body:
-                counts["no_task_text"] += 1
-                continue
-            merge_sha = pr.get("merge_commit_sha")
-            commit = None
-            if merge_sha:
-                try:
-                    commit = gh_json("api", f"repos/{repo}/commits/{merge_sha}")
-                except GhNotFound:
-                    commit = None
-            if commit is None:
-                print(f"mine_real_work: warning: {repo}#{pr['number']}: no readable merge "
-                      "commit; skipped", file=sys.stderr)
-                counts["no_merge_commit"] += 1
-                continue
-            parents = [p["sha"] for p in commit.get("parents") or []]
-            # A true merge's first parent is the base. A single-parent merge
-            # commit is a squash or a rebase merge, and for a rebase merge the
-            # first parent is the previous rebased commit, so the base is the
-            # PR's own base.sha (which may predate the base branch's tip at
-            # merge time).
-            if len(parents) >= 2:
-                base_sha, base_from = parents[0], "merge-first-parent"
-            else:
-                base_sha, base_from = (pr.get("base") or {}).get("sha"), "pr-base-ref-oid"
-            try:
-                diff = gh_diff(repo, pr["number"])
-            except GhDiffTooLarge:
-                # The answer-leak check needs the diff; without it the PR cannot
-                # be judged, so it is skipped (and counted), not guessed at.
-                print(f"mine_real_work: warning: {repo}#{pr['number']}: diff too large "
-                      "for GitHub to render; skipped", file=sys.stderr)
-                counts["diff_too_large"] += 1
-                continue
-            out["candidates"].append({
-                "key": f"{repo.replace('/', '__')}__{pr['number']}",
-                "repo": repo, "pr": pr["number"], "url": pr.get("html_url"),
-                "title": pr.get("title"), "task_text": body,
-                "spec_style": "sketch" if "```" in body else "symptom",
-                "merged_at": pr.get("merged_at"), "merge_sha": merge_sha,
-                "base_sha": base_sha, "base_from": base_from,
-                "head_ref": (pr.get("head") or {}).get("ref"),
-                "closing_issues": closing_issues(repo, pr, view.get("default_branch")),
-                "churn": sum((f.get("additions") or 0) + (f.get("deletions") or 0)
-                             for f in files),
-                "test_files": tests, "source_files": source,
-                "files_truncated": len(paths) >= FILES_CAP,
-                "touches": sorted(k for k, rx in TOUCHES.items() if any(rx.search(p) for p in paths)),
-                "answer_leak": answer_leak(body, diff),
-            })
-            counts["candidates"] += 1
+            record = _classify(repo, view, pr, counts)
+            if record:
+                out["candidates"].append(record)
         out["summary"].append(counts)
     return out
+
+
+def mine_candidate(registry: Path, sync_workflow: Path, key: str) -> dict:
+    """Mine ONE candidate named by its key, reading only its own repository."""
+    match = KEY_RE.fullmatch(key)
+    if not match:
+        raise MineError("--candidate is not a miner key (OWNER__REPO__PR)")
+    owner, name, number = match["owner"], match["name"], int(match["pr"])
+    names, owners = load_fleet(registry, sync_workflow)
+    if owner.casefold() not in {o.casefold() for o in owners}:
+        raise MineError(f"--candidate owner {owner} is not in SYNC_OWNERS {owners}")
+    if name.casefold() not in {n.casefold() for n in names}:
+        raise MineError(f"--candidate repository {name} is not in the fleet")
+    try:
+        view = gh_json("api", f"repos/{owner}/{name}")
+    except GhNotFound:
+        raise MineError(f"{owner}/{name} not found (a 404 can also mean this credential "
+                        "cannot see it)") from None
+    repo = f"{owner}/{name}"
+    if view.get("full_name") != repo:
+        raise MineError(f"{repo} resolves to {view.get('full_name')} (renamed or redirected)")
+    if view.get("visibility") != "public" or view.get("private"):
+        raise MineError(f"{repo} is not public")
+    try:
+        pr = gh_json("api", f"repos/{repo}/pulls/{number}")
+    except GhNotFound:
+        raise MineError(f"{repo}#{number} not found (a 404 can also mean this credential "
+                        "cannot see it)") from None
+    if not pr.get("merged_at"):
+        raise MineError(f"{repo}#{number} is not merged")
+    counts = {"repo": repo, "merged": 1, "bot": 0, "on_hold": 0,
+              "not_replayable": 0, "no_task_text": 0, "no_merge_commit": 0,
+              "diff_too_large": 0, "candidates": 0}
+    record = _classify(repo, view, pr, counts)
+    return {"registry": str(registry), "owners": owners, "fleet": names,
+            "skipped": [], "summary": [counts], "candidates": [record] if record else []}
 
 
 # ── prepare (redgreen.sh's tree step) ────────────────────────────────────────
@@ -623,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--sync-workflow", type=Path)
     m.add_argument("--out", type=Path, required=True)
     m.add_argument("--limit", type=int, default=2000)
+    m.add_argument("--candidate")
     p = sub.add_parser("prepare")
     p.add_argument("--clone", type=Path, required=True)
     p.add_argument("--base", required=True)
@@ -639,10 +697,15 @@ def main(argv: list[str] | None = None) -> int:
         out = _outside_repo(args.out)
         if args.command == "mine":
             sync = args.sync_workflow or args.registry.parent / ".github/workflows/sync.yml"
-            doc = mine(args.registry, sync, args.limit)
-            _write(out, doc)
-            print(f"mine: {len(doc['candidates'])} candidates from "
-                  f"{len(doc['summary'])} public repos, {len(doc['skipped'])} skipped")
+            if args.candidate:
+                doc = mine_candidate(args.registry, sync, args.candidate)
+                _write(out, doc)
+                print(f"mine: {len(doc['candidates'])} candidate(s) for {args.candidate}")
+            else:
+                doc = mine(args.registry, sync, args.limit)
+                _write(out, doc)
+                print(f"mine: {len(doc['candidates'])} candidates from "
+                      f"{len(doc['summary'])} public repos, {len(doc['skipped'])} skipped")
         elif args.command == "prepare":
             prepare(args.clone, args.base, args.merge, args.test_file, out)
             print(f"prepare: red and green trees under {out}")
