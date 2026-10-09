@@ -2050,9 +2050,41 @@ _SHARED_PROFILE_CONFIG = ("settings.json", "settings.local.json", "CLAUDE.md",
                           "output-styles", "skills", "plugins")
 _SHARED_PROFILE_TREES = ("skills/synced",)
 # `plugins/` (installed and known lists, cached plugins and marketplaces, all
-# plugin-loading surfaces) is watched whole; the only writes measured there
-# during a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers.
+# plugin-loading surfaces) is watched whole. The writes measured there during
+# a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers, but only
+# because no refresh happened to be due. On 2026-10-09 two trials failed with
+# `known_marketplaces.json` changed: only the `lastUpdated` stamps of two
+# marketplaces, written 82 s after the marketplace clone's HEAD moved upstream,
+# by another interactive session's background auto-update (it runs a random
+# delay of up to ten minutes after that session's first message, which a `-p`
+# arm never does; https://code.claude.com/docs/en/plugins/loading#when-auto-update-runs).
+# CLI 2.1.293 failed the same way, so an older CLI does not avoid it.
+# `lastUpdated` records when the CLI last checked and changes nothing any
+# session loads, so that file is hashed without it (`_without_last_updated`).
+# Residual risk: another session's auto-update can still change
+# `installed_plugins.json`, `cache/` and the `marketplaces/` clones mid-arm when
+# a plugin's version changes. Those stay watched, because they change what a
+# resumed turn loads, and a trial that hits it fails closed as
+# `agent_wrote_agent_config`.
 _SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096}
+
+
+def _without_last_updated(raw: bytes) -> bytes:
+    """`known_marketplaces.json` minus each marketplace's `lastUpdated`, as a
+    canonical dump. Any other content or shape comes back unchanged, so any
+    change to it still counts."""
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError):
+        return raw
+    if not isinstance(data, dict) or not all(isinstance(v, dict) for v in data.values()):
+        return raw
+    stripped = {k: {f: v for f, v in entry.items() if f != "lastUpdated"}
+                for k, entry in data.items()}
+    return json.dumps(stripped, sort_keys=True, separators=(",", ":")).encode()
+
+
+_SHARED_PROFILE_NORMALIZE = {"plugins/known_marketplaces.json": _without_last_updated}
 
 
 def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
@@ -2075,12 +2107,16 @@ def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
 
 
 def _config_snapshot(root: Path, label: str, trees=(), markers=None,
-                     empty_dirs=(), only=None) -> dict[str, bytes | None]:
+                     empty_dirs=(), only=None,
+                     normalize=None) -> dict[str, bytes | None]:
     """Every file and symlink under `root` by `label`-prefixed relative path
     (a file's SHA-256, a symlink's target), minus the CLI's bookkeeping.
-    `only` limits the walk to those top-level names."""
+    `only` limits the walk to those top-level names. `normalize` maps a
+    relative path to a bytes-to-bytes function applied to that regular file
+    before hashing; no other path is touched."""
     root = Path(root)
     markers = markers or {}
+    normalize = normalize or {}
     out: dict[str, bytes | None] = {}
     if root.is_symlink() or root.is_file():
         return {label: b"symlink:" + os.readlink(root).encode()
@@ -2113,7 +2149,10 @@ def _config_snapshot(root: Path, label: str, trees=(), markers=None,
                 kept.append(name)
             else:
                 try:
-                    out[key] = hashlib.sha256(path.read_bytes()).digest()
+                    raw = path.read_bytes()
+                    if rel in normalize:
+                        raw = normalize[rel](raw)
+                    out[key] = hashlib.sha256(raw).digest()
                 except OSError:
                     out[key] = b"<unreadable>"
         dirs[:] = [d for d in dirs if d in kept]
@@ -2132,7 +2171,8 @@ def _agent_config_snapshot(workspace: Path, config_dir: Path | None = None,
             out.update(_config_snapshot(Path(config_dir), "$CLAUDE_CONFIG_DIR",
                                         trees=_SHARED_PROFILE_TREES,
                                         markers=_SHARED_PROFILE_MARKERS,
-                                        only=_SHARED_PROFILE_CONFIG))
+                                        only=_SHARED_PROFILE_CONFIG,
+                                        normalize=_SHARED_PROFILE_NORMALIZE))
         else:
             out.update(_config_snapshot(
                 Path(config_dir), "$CLAUDE_CONFIG_DIR", trees=_CLI_PROFILE_TREES,

@@ -44,8 +44,11 @@ target = os.environ.get("HD_TARGET", ".claude/settings.json")
 if mode == "write_config" and turn == int(os.environ.get("HD_TURN", "1")):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(target, "w") as fh:
-        json.dump({{"hooks": {{"SessionStart": [{{"hooks": [
-            {{"type": "command", "command": "curl https://github.com/x"}}]}}]}}}}, fh)
+        if "HD_CONTENT" in os.environ:
+            fh.write(os.environ["HD_CONTENT"])
+        else:
+            json.dump({{"hooks": {{"SessionStart": [{{"hooks": [
+                {{"type": "command", "command": "curl https://github.com/x"}}]}}]}}}}, fh)
 if mode == "bookkeeping":
     os.makedirs(".claude/.cc-writes", exist_ok=True)
 if mode == "sandbox_error":
@@ -190,10 +193,13 @@ class GuidanceProfileTests(_StandIn):
         # What delivery put there before the arm: the baseline.
         (self.config / "CLAUDE.md").write_text("guidance\n", encoding="utf-8")
 
-    def run_guidance(self, mode: str = "ok", target: str | None = None) -> dict:
+    def run_guidance(self, mode: str = "ok", target: str | None = None,
+                     content: str | None = None) -> dict:
         env = {"PATH": os.environ["PATH"], "HOME": str(self.scratch_home),
                "CLAUDE_CONFIG_DIR": str(self.config), "HD_LOG": str(self.log),
                "HD_MODE": mode, "HD_TARGET": target or ""}
+        if content is not None:
+            env["HD_CONTENT"] = content
         return run_eval.run_agent(self.ws, "do it", {
             "name": "with_guidance", "timeout": 60,
             "setting_sources": "user,project", "env_override": env,
@@ -353,6 +359,19 @@ class GuidanceProfileTests(_StandIn):
                 out = self.run_guidance("write_config", str(self.config / rel))
                 self.assertNotIn("error", out, out)
 
+    def test_a_last_updated_only_rewrite_still_fails_in_a_scratch_profile(self):
+        # Nothing else writes a scratch profile, so no normalization there.
+        target = self.config / "plugins" / "known_marketplaces.json"
+        target.parent.mkdir(parents=True)
+        market = {"m": {"source": {"source": "github", "repo": "o/r"},
+                        "lastUpdated": "2026-10-09T19:00:00.000Z"}}
+        target.write_text(json.dumps(market), encoding="utf-8")
+        market["m"]["lastUpdated"] = "2026-10-09T19:07:51.000Z"
+        out = self.run_guidance("write_config", str(target), json.dumps(market))
+        self.assertEqual(json.loads(target.read_text(encoding="utf-8")), market)
+        self.assertEqual(out["error"], "agent_wrote_agent_config")
+        self.assertIn("$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json", out["detail"])
+
 
 class SharedProfileTests(_StandIn):
     """A skill arm loads the operator's real profile: its configuration paths
@@ -383,6 +402,111 @@ class SharedProfileTests(_StandIn):
                 out = self.run_arm("write_config",
                                    env={"HD_TARGET": str(self.home / ".claude" / rel)})
                 self.assertNotIn("error", out, out)
+
+    MARKETS = {
+        "adam-agentskills": {
+            "source": {"source": "github", "repo": "Adam-S-Daniel/adam-agentskills"},
+            "installLocation": "/home/u/.claude/plugins/marketplaces/adam-agentskills",
+            "lastUpdated": "2026-10-09T19:00:00.000Z", "autoUpdate": True},
+        "claude-plugins-official": {
+            "source": {"source": "github", "repo": "anthropics/claude-plugins-official"},
+            "installLocation": "/home/u/.claude/plugins/marketplaces/claude-plugins-official",
+            "lastUpdated": "2026-10-09T19:00:01.000Z"}}
+
+    def rewrite_marketplaces(self, markets, raw: str | None = None) -> dict:
+        """Run an arm in which another session rewrites the known-marketplaces
+        list to `markets` (or the verbatim `raw`) after the baseline."""
+        target = self.home / ".claude" / "plugins" / "known_marketplaces.json"
+        target.parent.mkdir(parents=True)
+        target.write_text(json.dumps(self.MARKETS), encoding="utf-8")
+        content = json.dumps(markets) if raw is None else raw
+        out = self.run_arm("write_config", env={
+            "HD_TARGET": str(target), "HD_CONTENT": content})
+        # The stand-in wrote exactly this, not its default hook payload.
+        self.assertEqual(target.read_text(encoding="utf-8"), content)
+        return out
+
+    def test_a_marketplace_refresh_by_another_session_passes(self):
+        # Another interactive session's background auto-update restamps
+        # `lastUpdated`, which no session loads (2026-10-09).
+        refreshed = json.loads(json.dumps(self.MARKETS))
+        for entry in refreshed.values():
+            entry["lastUpdated"] = "2026-10-09T19:07:51.000Z"
+        reordered = {name: dict(reversed(list(entry.items())))
+                     for name, entry in reversed(list(refreshed.items()))}
+        for label, markets in (("restamped", refreshed), ("reordered", reordered)):
+            with self.subTest(label=label):
+                self.log.unlink(missing_ok=True)
+                shutil.rmtree(self.home / ".claude", ignore_errors=True)
+                out = self.rewrite_marketplaces(markets)
+                self.assertNotIn("error", out, out)
+
+    def test_any_other_change_to_the_marketplace_list_fails(self):
+        edited = json.loads(json.dumps(self.MARKETS))
+        edited["adam-agentskills"]["source"]["repo"] = "attacker/plugins"
+        added = {**self.MARKETS, "evil": {"source": {"source": "github", "repo": "x/y"}}}
+        removed = {k: v for k, v in self.MARKETS.items() if k != "claude-plugins-official"}
+        location = json.loads(json.dumps(self.MARKETS))
+        location["adam-agentskills"]["installLocation"] = "/tmp/elsewhere"
+        auto = json.loads(json.dumps(self.MARKETS))
+        auto["adam-agentskills"]["autoUpdate"] = False
+        for label, markets, raw in (
+                ("source", edited, None), ("added", added, None),
+                ("removed", removed, None), ("installLocation", location, None),
+                ("autoUpdate", auto, None), ("non-JSON", None, "not json")):
+            with self.subTest(label=label):
+                self.log.unlink(missing_ok=True)
+                shutil.rmtree(self.home / ".claude", ignore_errors=True)
+                out = self.rewrite_marketplaces(markets, raw)
+                self.assertEqual(out["error"], "agent_wrote_agent_config")
+                self.assertIn("$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json",
+                              out["detail"])
+
+    def test_the_marketplace_list_turned_into_a_symlink_fails(self):
+        profile = self.home / ".claude"
+        target = profile / "plugins" / "known_marketplaces.json"
+        target.parent.mkdir(parents=True)
+        target.write_text(json.dumps(self.MARKETS), encoding="utf-8")
+        before = run_eval._agent_config_snapshot(self.ws, profile, True)
+        same = self.root / "same.json"
+        same.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+        target.unlink()
+        target.symlink_to(same)
+        self.assertIn("plugins/known_marketplaces.json", run_eval._agent_config_written(
+            self.ws, before, profile, True))
+
+
+class WithoutLastUpdatedTests(unittest.TestCase):
+    def test_drops_only_last_updated_and_ignores_key_order(self):
+        a = b'{"m": {"lastUpdated": "t1", "autoUpdate": true, "source": {"repo": "o/r"}}}'
+        b = b'{"m": {"source": {"repo": "o/r"}, "autoUpdate": true, "lastUpdated": "t2"}}'
+        self.assertEqual(run_eval._without_last_updated(a),
+                         run_eval._without_last_updated(b))
+        self.assertEqual(json.loads(run_eval._without_last_updated(a)),
+                         {"m": {"autoUpdate": True, "source": {"repo": "o/r"}}})
+        # A nested `lastUpdated` is data, not the stamp.
+        nested = b'{"m": {"source": {"lastUpdated": "x"}}}'
+        self.assertEqual(json.loads(run_eval._without_last_updated(nested)),
+                         {"m": {"source": {"lastUpdated": "x"}}})
+
+    def test_anything_else_comes_back_unchanged(self):
+        for raw in (b"not json", b"\xff\xfe", b'[{"lastUpdated": "t"}]',
+                    b'{"m": {"lastUpdated": "t"}, "n": "text"}', b'"x"', b""):
+            with self.subTest(raw=raw):
+                self.assertEqual(run_eval._without_last_updated(raw), raw)
+
+    def test_only_the_named_path_is_normalized(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("known_marketplaces.json", "other.json"):
+                (root / name).write_text('{"m": {"lastUpdated": "t1"}}', encoding="utf-8")
+            normalize = {"known_marketplaces.json": run_eval._without_last_updated}
+            before = run_eval._config_snapshot(root, "r", normalize=normalize)
+            for name in ("known_marketplaces.json", "other.json"):
+                (root / name).write_text('{"m": {"lastUpdated": "t2"}}', encoding="utf-8")
+            after = run_eval._config_snapshot(root, "r", normalize=normalize)
+            self.assertEqual(before["r/known_marketplaces.json"], after["r/known_marketplaces.json"])
+            self.assertNotEqual(before["r/other.json"], after["r/other.json"])
 
 
 class VanishedPathTests(_StandIn):

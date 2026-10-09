@@ -348,7 +348,9 @@ An independent review of the merged decision found four routes around it.
   account sync) and `plugins/` whole (installed and known lists, cached
   plugins, marketplaces), but for `plugins/cache/*/.orphaned_at` markers,
   the only writes an strace of a two-turn arm measured there, exempt as
-  small regular files. A file listed and then gone before it is examined
+  small regular files; `plugins/known_marketplaces.json` is compared without
+  each marketplace's `lastUpdated` stamp, which another session's background
+  auto-update rewrites (measured 2026-10-09) and no session loads. A file listed and then gone before it is examined
   counts as a change, never a crash, except inside an exempt tree. Another session that edits one of those during a skill
   arm fails that arm. `.claude.json`, which can name MCP servers, is not
   watched in a shared profile (the CLI rewrites it every turn); the write
