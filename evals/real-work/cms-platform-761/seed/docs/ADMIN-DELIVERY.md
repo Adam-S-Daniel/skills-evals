@@ -1,0 +1,495 @@
+# Admin delivery: the gem-shipped Decap config
+
+What this is: how the `/admin` Decap config is built — the gem-shipped
+machinery under `theme/admin/`, the `:post_write` render hook that copies it
+into `_site/admin` and renders `config.yml`, the site-owned collections seam,
+the `base_collections` keep-list opt-out, and the `field_library` + `$ref`
+reuse mechanism. Read this before touching `theme/admin/`, either render path
+(`theme/lib/cms-platform-theme/decap_config_hook.rb` or
+`scripts/render-decap-config.rb`), `theme/admin/field_library.yml`, or a
+site's `admin/collections.site.yml` seam. See also the `admin-config-render`
+skill.
+
+This is also the doc that carries the two other gem-shipped-asset patterns
+below — the favicon (#325) and the seeded 404 page (#326) — because it's the
+one doc a change to `theme/**` is scoped to edit; neither is `/admin`
+machinery, but both extend the same "gem ships a neutral, site-shadowable
+default" pattern this file already documents for the logo.
+
+## Admin delivery (gem-shipped, v0.1.4+) — the render hook, the seam, base_collections
+
+The Decap admin (`/admin`) is the ~400-line invariant-heavy CMS config plus a
+set of JS/HTML/CSS shells and the `reviews/` dashboards. Two facts drive the
+whole design:
+
+1. **The gem root is `theme/`** (the gemspec lives there). For the gem to ship
+   the admin machinery, `admin/` had to live **under** the gem root, so it was
+   relocated from the repo root to `theme/admin/` in **v0.1.4**. (RubyGems drops
+   `..` paths and won't follow symlinks, so a sibling `admin/` couldn't be
+   packaged.) The gemspec packages `admin/**/*` **minus** the site-owned seam and
+   the build-generated files (`collections.site.yml`, `config.yml`,
+   `config-local.yml`, `commit.json`) — via `Dir[] - Dir[]` array subtraction,
+   because `Dir[]` has no `!` negation.
+
+2. **Consumers stop vendoring `admin/`.** A consuming site deletes its vendored
+   `admin/` and keeps **only** the seam `admin/collections.site.yml` (+
+   `.example`). The down-sync path is a gem bump via `platform-bump` — since
+   #242, Dependabot's `bundler` ecosystem carries an explicit `ignore` for the
+   `cms-platform-theme` gem and never touches it (see `docs/SYNC.md`).
+   `platform-drift-guard` was narrowed to **skills-only** when admin stopped
+   being byte-guarded, and was deleted outright in v0.1.83 along with the skills
+   mirror it was left guarding — nothing byte-compares a consumer's tree today.
+
+**The render hook** (`theme/lib/cms-platform-theme/decap_config_hook.rb`, a
+`:site, :post_write` Jekyll hook) does, at the end of every build:
+
+- **Resolve machinery inputs from the gem** (`site.theme.root/admin`), falling
+  back to a vendored `site.source/admin` (migration window + the platform's own
+  e2e fixture). No-op if neither has a `config.base.yml`.
+- **Copy the gem-resident machinery into `_site/admin`** — Jekyll won't, since
+  the site tree no longer contains `admin/`. It copies depth-1 files + the
+  `reviews/` subdir only (skipping `*.base.yml`, the seam, `README.md`). **If you
+  add another subdirectory under `theme/admin/`, extend this copy AND its parity
+  sibling `scripts/render-decap-config.rb`.**
+- **Render `config.yml` AND `config-local.yml` from their `.base.yml`
+  templates** by token-substituting the `window.CMS_*` identity
+  (`{{CMS_REPO}}`, `{{CMS_OAUTH_BASE_URL}}`, `{{CMS_SITE_URL}}`,
+  `{{CMS_DISPLAY_URL}}`, `{{CMS_LOGO_URL}}`) and **splicing the SITE-OWNED
+  seam** `admin/collections.site.yml` at each template's own
+  `# __SITE_COLLECTIONS__` marker — both `config.base.yml` and
+  `config-local.base.yml` carry one, so a site's own collections reach LOCAL
+  dev too, not just prod. The seam is read from the **SITE source**, never
+  the gem. Before the splice, the seam's `$ref`s are expanded against the
+  platform `field_library` (see "field_library + `$ref` reuse" below) — the
+  base config itself stays TEXT and is spliced byte-for-byte as today.
+- **Inject `window.CMS_*` globals** into the admin shells (`index*.html`) AND the
+  reviews dashboards (`reviews/*.html`) — skipping a file only if it already
+  *defines* the identity, not merely uses it.
+  `CMS_REPO` / `CMS_SITE_ORIGIN` / `CMS_ADMIN_ORIGIN` (#517, `""` unless
+  `cms.admin_origin` is set) / `CMS_APEX` / `CMS_OAUTH_BASE_URL` /
+  `CMS_SITE_TITLE` are strings; **`CMS_SITE_GATE` (v0.1.96) is an OBJECT or
+  `null`** — the site-level publish gate a site optionally declares as
+  `cms.site_gate`, read by `admin/site-gate-banner.js`. It is the one global
+  that must be serialised with `JSON.generate` rather than the `.inspect` the
+  others use: Ruby's `Hash#inspect` emits `{"a"=>1}`, which is a JavaScript
+  syntax error, and it lands *inside* the shell's `<script>` block — so
+  getting it wrong takes the whole admin down rather than degrading. A site
+  with no gate injects `null` and the banner is inert.
+  **`CMS_PRODUCTION_BRANCH` (v0.1.107)** is a string again, but it is not
+  read from `_config.yml`: it is `backend.branch` of the `config.yml` the
+  render path has *just written*, read back with a real YAML parse — the
+  branch the admin binds to when that file is served unpatched, i.e. from
+  production. `deploy-preview.yml` later patches the SERVED copy to the PR
+  head, and `admin/branch-binding-banner.js` compares the two to say, on a
+  preview admin, which branch it is bound to (#412). Unreadable → `""`, and
+  the banner stays inert rather than the build failing over an advisory
+  value. Both paths `require "date"` explicitly for the parse's
+  `permitted_classes` — Psych loads it lazily, and without the require the
+  first call NameErrors into the rescue and injects `""` (measured on the
+  CLI mirror while it was written).
+- **Delete `*.base.yml`** from the output (the templates aren't published).
+
+`scripts/render-decap-config.rb` is the **deploy-time CLI mirror** of the hook
+(same copy + render + inject + cleanup; resolves the gem via
+`Gem.loaded_specs['cms-platform-theme']`). The two are **parity-locked** by
+`e2e/decap-config-render-parity.test.js` — keep the injected globals and the
+`index*` / `reviews/*` globs **identical** in both, or the lint fails.
+
+**`write-commit-json.sh`** writes `_site/admin/commit.json` (the commit pill's
+`fetch('commit.json')` resolves under `_site/admin/` now that admin is served
+from there; CI deploys do this automatically — the script is for local dev).
+
+### base_collections opt-out (v0.1.7)
+
+`_config.yml` `cms.base_collections` is a **KEEP-LIST** of the platform's
+built-in collections (`posts tags projects pages e2e`):
+
+- **UNSET** → keep all (default, back-compat).
+- `[]` → hide them all, so `/admin` shows ONLY the site's own collections.
+- a subset → keep only those.
+
+The renderers delete each unwanted top-level collection block by regex —
+matched at **2-space indent**, through to the next top-level `- name:` or EOF;
+nested fields are deeper-indented so they survive. **Spec-locked** by
+`theme/spec/base_collections_filter_test.rb` (asserts nil keeps all, `[]` hides
+all base collections but keeps site collections, partial keep works, survivors'
+nested fields and a field literally named like a base collection are untouched,
+output stays valid YAML). Used by single-page sites (jodidaniel.com).
+
+### field_library + `$ref` reuse (#5 GOAL 2)
+
+A site's seam `admin/collections.site.yml` can **reuse** platform-defined
+field/widget defs instead of re-authoring them, by writing a `$ref` where a
+field (or fields) would go:
+
+```yaml
+  - name: articles
+    folder: _articles
+    fields:
+      - { name: title, label: Title, widget: string }   # inline still works
+      - $ref: "#/field_library/body_markdown"            # → ONE field
+      - $ref: "#/field_library/image_widget"             # → ONE field
+      - $ref: "#/field_library/published_pair"           # → TWO fields (spliced)
+```
+
+- **The platform OWNS the library:** `theme/admin/field_library.yml` (ships in
+  the gem next to `config.base.yml`, packaged by the `admin/**/*` glob). It
+  defines `body_markdown` (markdown body, modes rich_text+raw), `published_pair`
+  (the published + publish_date pair — a **list** of 2 fields), `date_widget`,
+  `image_widget` (flat-public_folder contract), and `archived_pdf_fields`
+  (private-archive file name + permission toggle + optional button label). The
+  datetime `format:` token
+  (`"YYYY-MM-DD HH:mm:ss ZZ"`) is copied **verbatim** from `config.base.yml`
+  (the dayjs/INVALID-DATE cross-engine contract) — keep them in lockstep.
+- **Resolved at RENDER time, in BOTH paths.** The shared resolver
+  `theme/lib/cms-platform-theme/field_library.rb`
+  (`CmsPlatformTheme::FieldLibrary`) is `require`d by **both** render paths and
+  invoked identically — `expand_seam_text(raw, field_library_path)` — so they
+  stay byte-in-lockstep. It parses the seam, replaces each
+  `{"$ref" => "#/field_library/<name>"}` with a **deep copy** of the lib entry
+  (single field → one item; list → spliced in place, 2-space list indent
+  preserved), then re-emits YAML and splices at the marker. **Decap never sees a
+  `$ref`** — it loads only fully-resolved field defs. An unknown / malformed
+  `$ref` **fails HARD** (the render aborts; a `$ref` must never leak).
+- **The base config stays TEXT.** This is a LOW-RISK increment: only the
+  **seam** is YAML-round-tripped (and only when it actually contains a `$ref`).
+  `config.base.yml` is byte-unchanged and still spliced verbatim, so every
+  load-bearing comment + verbatim-asserted base line (posts.summary, the format
+  token, media_folder/public_folder, preview_context) is preserved.
+- **Backward-compatible.** A seam with **no** `$ref` (inline fields — the status
+  quo, e.g. adamdaniel's notes, jodidaniel's collections) is returned UNCHANGED
+  by `expand_seam_text` and spliced exactly as before — **byte-identical**
+  renders. Proven by diffing the new vs origin/main render of jodidaniel's real
+  inline `collections.site.yml`.
+- **Spec-locked** by `theme/spec/field_library_resolution_test.rb` (the resolver:
+  single + multi-field refs, deep-copy isolation, hard-fail on unknown/malformed)
+  + `e2e/field-library-ref-render.test.js` (drives `render-decap-config.rb` on a
+  `$ref` fixture → resolved output, no `$ref` leak, base unchanged, hard-fail,
+  no-ref backward-compat). The `$ref`-render spec reads platform `scripts/` +
+  `theme/` source, so it's registered in `PLATFORM_META_SPECS` (playwright.config.js).
+- **OUT OF SCOPE / future work:** the full base-collection-override **deep-merge**
+  (a site overriding/reordering a base collection's fields) is deferred. Today
+  the seam is still **append-only** (collections are spliced after the base);
+  `$ref` only delivers shared-field REUSE, not base override.
+
+`archived_pdf_fields` is a list-valued ref, so a site opts in with one field
+list item and receives `pdf_archive_file`, `pdf_public`, then `pdf_label` in
+that order. The archive name stays optional and accepts only a `.pdf` suffix;
+the publishing toggle stays optional and defaults to `false`. Its reusable copy
+is deliberately site-neutral. The suffix pattern is written `[.]pdf$`,
+equivalent to `\.pdf$` without carrying a backslash through the resolved seam's
+replacement-string splice. `{{CMS_CURRENT_HOST}}` survives both render paths
+inside labels and hints, then `site-hostname.js` replaces it with the
+publishing destination (the host of the served config's `site_url`: the
+canonical host on production from any access host, the preview host on a
+preview, #533; see `theme/admin/README.md`) only inside Decap's own
+`FieldLabel` and `ControlHint` nodes.
+Authored content is outside that narrow mutation surface.
+
+## Form-control ownership (Decap 3.15.1 source audit)
+
+The three platform admin shells load Decap 3.15.1. Its
+[published source map](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map)
+establishes these upstream owners:
+
+- [`decap-cms-core/dist/esm/components/Editor/EditorControlPane/EditorControl.js`](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map)
+  generates the field ID and label's `htmlFor`; adjacent
+  [`Widget.js`](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map) passes
+  `forID` to the widget.
+- The posts `body` field uses `markdown` in
+  [`theme/admin/config.base.yml`](../theme/admin/config.base.yml).
+  [`decap-cms-widget-markdown/dist/esm/MarkdownControl/index.js`](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map) renders
+  `div.cms-editor-visual` without forwarding `forID`; its
+  [`VisualEditor.js`](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map)
+  renders Slate's `Editable` without an ID or `aria-labelledby`. This explains
+  the selected body label's missing target.
+- [`node_modules/react-textarea-autosize/dist/react-textarea-autosize.browser.esm.js`](https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js.map)
+  appends a hidden measurement textarea to `document.body`, with
+  `tabindex="-1"` and `aria-hidden="true"`. It is a sizing helper, not an
+  editor field.
+
+This source audit does not reconstruct the owner's reported ten unmatched
+labels or five anonymous textareas. The other nine label mappings and exact
+helper count require the original DOM snapshot. Keep upstream fixes upstream;
+do not patch the vendored bundle or add a generic label-repair observer.
+
+The platform owns the rejection textarea in
+[`theme/admin/reviews/index.html`](../theme/admin/reviews/index.html):
+its visible label targets a unique per-run ID, it has `name="comment"`, and
+only positive safe-integer run IDs enter the markup. The existing
+[`e2e/reviews-dashboard-lint.test.js`](../e2e/reviews-dashboard-lint.test.js)
+checks two simultaneous cards and malformed
+IDs offline. The posts-list fixture checkbox in
+[`theme/admin/posts-list-enhance.js`](../theme/admin/posts-list-enhance.js)
+already has a native enclosing label.
+
+## Draft media fallback: an unpublished upload still renders
+
+`public_folder: /assets/images/uploads` is absolute, and Decap's
+`isAbsolutePath` (`/^(?:[a-z]+:)?\/\/|^\//i`) hands an absolute value back
+untouched, so right after an upload Decap renders
+`<img src="/assets/images/uploads/<name>">` against the admin's own origin
+instead of the draft blob it holds. Production does not have the file until the
+post publishes: the Featured Image thumbnail, the preview pane and Live Preview
+(`/preview/`, which renders the raw field and marked's raw body srcs) all showed
+a broken image, while the preview-pr host, which serves the branch, did not.
+The flat absolute path stays: it is the content contract above
+`public_folder` in `config.base.yml`, locked by `e2e/cms-config.spec.js`.
+
+`theme/admin/draft-media-fallback.js` repairs the image after it fails, never
+before, so a published image costs nothing:
+
+- **Detection.** A capture-phase `error` listener on `document`, and on each
+  same-origin iframe's document (Decap's preview pane), attached from a
+  capture-phase `load` listener. There is no DOM-walking MutationObserver (the
+  Safari postmortem in `preview-bridge.js`). Only a same-origin `<img>` directly
+  under the served config's `public_folder` is touched, once per original src
+  (`data-draft-media-fallback`).
+- **Source 1: the File this tab uploaded.** The script loads non-deferred
+  before `decap-cms.js` in `index.html` and `index-local.html` and wraps
+  `URL.createObjectURL`, which Decap's `AssetProxy` calls for every upload. A
+  File matches when Decap's upload-name transform (`persistMedia`:
+  `sanitizeSlug(file.name.toLowerCase(), config.slug)`, mirrored by
+  `normalizeUploadName`) equals the image's basename. This covers an entry that
+  was never saved.
+- **Source 2: the entry's editorial branch.** `GET
+  /repos/<repo>/contents/<media_folder>/<name>?ref=cms/<collection>/<slug>`
+  (Decap's `branchFromContentKey`), `Accept: application/vnd.github.raw`, with
+  the token Decap stores in `localStorage["decap-cms-user"]`; on a 404, the
+  config's `backend.branch`. Collection and slug come from the editor route,
+  or on `/preview/` from the bridge, whose payload now carries `slug` (re-sent
+  once when a new entry's route gains it, because a new entry's `postSave`
+  carries an empty slug). Skipped for `local_backend` and non-GitHub configs.
+  The admin CSP already allows `connect-src https://api.github.com` and
+  `img-src blob:`; `connect-src blob:` covers Decap's fetch of an uploaded image (#627).
+
+Residual gap: with `slug.clean_accents: true` the name match strips accents with
+Unicode NFD, where Decap uses the `diacritics` map, so letters NFD does not
+decompose (ø, ß, ł) miss source 1 and fall through to source 2. Unit tests:
+`e2e/draft-media-fallback.test.js` and `e2e/preview-bridge-payload.test.js`;
+live: the pre-Save step in `e2e/cms-media-roundtrip.spec.js`. The other half of
+the incident, a cached 404 outliving the publish, is in `docs/OPERATIONS.md`
+§ "The production 404 page is never cacheable".
+
+## Media library tidy (#736): upload names, `.gitkeep`, and the image a deleted entry leaves
+
+Three rough edges in Decap's media library, all in Decap core with no config
+lever (decap-cms 3.15.1). Two are fixed by `theme/admin/media-library-tidy.js`
+(non-deferred, before `decap-cms.js`, in `index.html` and `index-local.html`;
+not in the stock-Decap rehearsal shell `index-test.html`); the third is a
+decision, recorded here.
+
+- **Trailing hyphen in an upload's name.** `Workshop Diagram (final).jpg` was
+  stored as `workshop-diagram-final-.jpg`. `persistMedia` names the file
+  `sanitizeSlug(file.name.toLowerCase(), config.slug)`; sanitizeSlug trims a
+  leading or trailing replacement off the WHOLE string, which still ends in
+  `.jpg`, so the `-` that `)` became is never seen. No `slug:` option helps
+  (`sanitize_replacement: ""` also deletes the hyphens between words, and the
+  options also name every post file). The shim trims leading and trailing
+  non-letter/mark/digit characters off the part of the name before its last
+  dot, on the File itself, in capture-phase `change` and `drop` listeners that
+  run before Decap's `handlePersist`. It renames the File in place (an own
+  `name` property), so `draft-media-fallback.js`, which matches uploads by File
+  and Decap's name transform, sees the stored name. Existing files are not
+  renamed.
+- **`.gitkeep` as a tile.** Decap lists every blob in the media folder. The
+  library is a virtualized grid, so hiding the tile in the DOM would leave a
+  blank cell; the shim instead filters the listing in a `window.fetch` wrap: the
+  GitHub `git/trees/<ref>:<dir>` answer (production) and decap-server's
+  `getMedia` answer (`index-local.html`). Dotfiles are dropped; everything else
+  passes through with the caller's own arguments.
+- **A deleted entry's image stays in Media. Not fixed, on purpose.** An upload
+  is not owned by an entry: the same file can be a featured image on two posts,
+  an inline body image, a site hero or a Site Settings value, and Decap keeps no
+  reference index. Deleting "the entry's images" with the entry would break any
+  other page that uses one, with no undo short of a git revert. So there is no
+  automatic delete. What the issue proposed as safe options are both feature
+  work for the owner to schedule: a delete-time prompt that lists only images
+  no other entry or data file references (needs a scan of every collection's
+  content, not just the one entry), or an "unused" flag in the library built
+  from the same scan. Until then an orphan costs repository bytes and a tile,
+  and is removed by hand from the Media library (or by a PR). The delete-success
+  toast is #649.
+
+Tests: `e2e/media-library-tidy.test.js` (name trim through Decap's transform,
+listing filters, the fetch wrap's pass-through, load order). The browser
+behavior of the two listeners was also checked in Chromium (real `<input
+type=file>` change and a synthetic drop); Firefox and WebKit were not.
+
+## The /admin logo is SITE-owned; the gem ships a neutral placeholder (#25)
+
+The rule (issue #25): the /admin logo is SITE-OWNED and the gem ships only a
+NEUTRAL placeholder. `theme/assets/images/logo.svg` is a wordless, brand-free
+generic glyph — NEVER a specific site's mark (no "AD"/initials/wordmark). The
+render hooks default `cms.logo_url` to `<url>/assets/images/logo.svg`, and a site
+brands `/admin` by **shadowing** that gem asset with its own
+`assets/images/logo.svg` (Jekyll site files win over same-path gem files) or by
+setting `cms.logo_url`. The scaffolder seeds a "replace me" copy into every new
+site. Locked by `theme/spec/neutral_logo_test.rb` (gem asset is wordless +
+carries the override comment) and `e2e/scaffold-seeds-neutral-logo.test.js`
+(scaffold output). Don't reintroduce a brand into the gem asset.
+
+## Site favicon (gem-shipped, brand-free — issue #325)
+
+The gem ships zero favicon references (no `<link rel="icon">` anywhere in
+`theme/_layouts/`, no icon asset), so every consumer page carries no
+declared icon and the browser falls back to an automatic same-origin
+`GET /favicon.ico` — which 404s, on both consumers, on every page view.
+
+**Same shadowing pattern as the `/admin` logo above**, applied to a page-level
+asset instead of an admin-only one:
+
+- **The gem ships a neutral, brand-free favicon**: `theme/assets/favicon.svg`
+  — wordless, no initials/wordmark, carrying an override comment (mirrors
+  `theme/assets/images/logo.svg`; locked by `theme/spec/neutral_favicon_test.rb`
+  the same way `neutral_logo_test.rb` locks the logo).
+- **A gem-owned, standalone include emits the `<link>` tag**:
+  `theme/_includes/favicon.html`. It reads only `site.cms.favicon_url` (falls
+  back to `<baseurl>/assets/favicon.svg` via `relative_url`, honoring an
+  explicit override verbatim — same own-value-wins semantics as `cms.logo_url`
+  in `decap_config_hook.rb`) and `site.baseurl`. Because it depends on nothing
+  else `default.html` provides, it also works from a **site-owned layout with
+  its own `<head>`** — just add:
+
+  ```liquid
+  {% include favicon.html %}
+  ```
+
+  inside that layout's `<head>`. This is the piece a single-page,
+  custom-design consumer (jodidaniel.com's `home.html`) needs, since its
+  layout never extends the gem's `default.html`.
+- **`theme/_layouts/default.html`'s `<head>` includes it once**, which is
+  sufficient coverage for every gem layout: `post.html`, `page.html`,
+  `project.html`, `tag.html`, `canary.html`, and `preview.html` all declare
+  `layout: default` in their own front matter, so they inherit it —
+  `e2e/scaffold-seeds-favicon.test.js` asserts this is actually true (parses
+  every non-`default.html` layout's front matter) rather than assuming it.
+- **A site brands it by shadowing `assets/favicon.svg`** (Jekyll site files
+  win over same-path gem files) or by setting `cms.favicon_url`. The
+  scaffolder seeds a "replace me" copy at `assets/favicon.svg`, byte-derived
+  from the gem asset so the two can't drift (`seedFavicon()` in
+  `scaffold/create-site.js`, mirroring `seedLogo()`).
+- **Fallback strategy, deliberately SVG-only**: once the `<link rel="icon">`
+  tag is present, on-spec browsers stop the automatic `/favicon.ico` probe
+  that was 404ing (that request only fires when the page declares no icon at
+  all) — so the SVG-only asset already closes the reported gap for every
+  currently-supported browser (Chromium/Firefox since ~2021, Safari 16.4+).
+  We do NOT also ship an `.ico`/`.png` fallback, for the same reason the logo
+  placeholder is SVG-only: it would be the only raster asset type the gem
+  ships. A site that needs pre-2021-browser or platform-icon (e.g.
+  `apple-touch-icon`) support can add those tags itself alongside the include.
+
+**Locked by**: `theme/spec/neutral_favicon_test.rb` (gem asset is wordless,
+square viewBox, carries the override comment) and
+`e2e/scaffold-seeds-favicon.test.js` (scaffold output + neutrality + the
+actual `<head>` emission — both the include's own content and its real
+presence in `default.html`'s `<head>`, not just documented intent). Existing
+consumers (adamdaniel.ai, jodidaniel.com) will not retroactively pick this
+up — a `platform_ref` bump gets them the gem's `favicon.html` include and
+`assets/favicon.svg` default automatically (nothing to change on their end for
+the default to work), but the fix for jodidaniel.com's own `<head>`
+(`_layouts/home.html`) is the one-line `{% include favicon.html %}` add above,
+made in that repo.
+
+## The scaffolder seeds `preview.md` + `404.html` (issue #23)
+
+The scaffolder seeds both files, and it has to (issue #23). A consuming
+site MUST expose `/preview/` (the admin "Live Preview" target) and a graceful
+`404.html`, or the admin button dead-ends on a raw S3 404 and unknown URLs 404
+ungracefully. The gem ships `theme/_layouts/preview.html` (the preview SHELL,
+with the hidden post/page/project variants the admin `preview-bridge` streams
+into) + the admin scripts, but the consuming site must provide the `/preview/`
+PAGE. `scaffold/create-site.js` seeds both (`SEED_PREVIEW` / `SEED_404`):
+`preview.md` is **front-matter only** (`layout: preview`, `permalink: /preview/`,
+`sitemap: false`) and carries **no front-matter `robots`** — the gem preview
+layout HARDCODES `<meta name="robots" content="noindex, nofollow">`, so a
+front-matter one would duplicate it (mirrors `adamdaniel.ai/preview.md`).
+`404.html` rides the gem `default` layout (which DOES render `page.robots`), so
+it carries `robots: "noindex,nofollow"` + `sitemap: false` + a home/blog link;
+copy is generic (no site identity). The `e2e/fixture-site` carries both (it
+represents a scaffolded site) and the platform lint
+`e2e/scaffold-preview-and-404.test.js` asserts the contract: (a) scaffold
+output, (b) fixture parity, (c) optional post-build proof that
+`_site/preview/index.html` renders the `data-preview-root` shell +
+`_site/404.html` exists (skips when no Jekyll toolchain — pure-fs self-CI
+lanes). **Single-page-site caveat:** per-item *live* preview is limited for a
+single-page bio (jodidaniel.com — no per-section route to drive the bridge);
+the seeded `preview.md` still gives a working `/preview/` shell + the seeded
+`404.html` a friendly not-found page.
+
+## The admin host's own not-found page (#517)
+
+`theme/admin/not-found.html` is not the site's 404. It is what a site that
+serves its editor from its own origin (`AdminDomainName`, see
+`docs/ADMIN-AUTH-SECURITY.md`) answers every miss on that host with, so it
+shares an origin with the editor's tokens: plain HTML, no script, no style, no
+external resource, no layout or include, and no `window.CMS_*` injection (the
+render paths only touch `index*.html` and `reviews/*.html`).
+`theme/spec/admin_not_found_page_test.rb` parses it against an allowlist.
+
+## Seeded 404 page: self-contained and neutral, not gem-styled (issue #326)
+
+`404.html` is, and always was, **site-owned** — the scaffolder seeds it
+(`SEED_404` in `scaffold/create-site.js`), but a consuming site's own repo
+commits and can freely edit its own copy. What changed in #326 is the LOOK the
+*seed* ships with.
+
+**The problem the redesign fixes**: the old seed carried `layout: default`, so
+its look came from the gem's `default` layout + `assets/css/main.css` — the
+"Cobalt Thermal" dark, monospace-accented design that IS adamdaniel.ai's whole
+site. That's invisible on adamdaniel.ai (it's the same look everywhere) and
+jarring on a consumer with its own design system (jodidaniel.com's light
+blue-gradient, Raleway/Source-Sans bio) whose 404 page was the ONLY gem-styled
+surface left in a visitor's path — two independent testers flagged it
+unprompted as reading like a different project. This is a **platform pattern
+problem**: every future design-custom consumer inherits the same brand break
+from the seed, not just this one site.
+
+**The fix**: the seeded `404.html` now carries **no `layout:` field at all**.
+It is its own complete, self-contained `<!DOCTYPE html>` document — no
+dependence on `default.html`, no `{% include header.html %}` /
+`{% include footer.html %}`, no `assets/css/main.css` — with its own minimal,
+neutral, system-font inline `<style>`. Brandability is a SMALL, explicit
+surface: a `:root { --nf-bg; --nf-fg; --nf-muted; --nf-accent; --nf-font; }`
+block at the top of that `<style>` a site can retune (in its own committed
+copy — there's no gem asset to shadow here, since 404.html was never
+gem-owned) without needing to redesign the whole page. The defaults are
+neutral enough to sit acceptably next to either the gem's own look or a fully
+custom one.
+
+**LOCKED regardless of any future restyle** (`e2e/scaffold-preview-and-404.test.js`
+enforces every one of these):
+
+- `permalink: /404.html` (the correct-HTTP-404 contract — unchanged),
+- `robots: "noindex,nofollow"` + `sitemap: false` — and since no layout
+  renders `page.robots` for this page anymore, it emits its own
+  `<meta name="robots" content="{{ page.robots }}">` directly,
+- a working link home (`{{ '/' | relative_url }}`),
+- generic, site-agnostic copy (no site identity baked into the seed).
+
+The lint also now asserts the *shape* of the redesign itself, not just the
+locked bits: the seed has NO `layout:` field (self-contained), is a full
+`<!DOCTYPE html>…</html>` document, does not reference
+`assets/css/main.css` or the gem header/footer includes, and exposes at least
+a few `--*` CSS custom properties. `e2e/fixture-site/404.html` is kept
+byte-identical to the scaffolder's own output (assertion (b) in that spec).
+
+As a byproduct, the redesign also dropped a dead "browse the blog" link the
+old seed carried unconditionally — a single-page-bio consumer with no `_posts/`
+had a 404 page linking to a blog index that itself 404s (the same class of bug
+`header.html`'s conditional Blog nav link exists to avoid — see the comment
+there).
+
+**Existing consumers do not retroactively pick this up.** `404.html` is
+site-owned and already committed in both adamdaniel.ai and jodidaniel.com; a
+`platform_ref` bump changes nothing about it, because the scaffolder only runs
+once, at site creation. A site that wants the new neutral shape has to copy
+the new `SEED_404` template (or hand-author an equivalent) into its own
+`404.html` itself. For jodidaniel.com specifically, this is a low-risk,
+high-value adopt: replace its `404.html` body with the new self-contained
+template (adjusting `--nf-*` to its own palette if desired) in a normal PR —
+nothing else in the seeding contract changes, and the render-neutral check in
+"Approving `regression-review` on a render-neutral PR" above does not apply
+here (`404.html` is not under `theme/`, so that specific gate is irrelevant;
+the PR will still go through the ordinary visual-regression lane like any
+other content change).

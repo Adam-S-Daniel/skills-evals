@@ -1,0 +1,382 @@
+# Reusable: cross-post a newly-published blog post to Mastodon and LinkedIn,
+# and render a Substack-ready Markdown draft as a job-summary section + run
+# artifact.
+#
+# Ported from adamdaniel.ai's site-local prototype (cms-platform#442) — the
+# dogfood site ran this as its own `.github/workflows/cross-post.yml` +
+# `scripts/cross_post/cross_post.py` first; this reusable + the thin caller
+# in `examples/site/.github/workflows/cross-post.yml` are what it becomes
+# once every consuming site can share the one script.
+#
+# A consuming site calls this from a thin wrapper that owns the push /
+# workflow_dispatch triggers, the `paths:` fixture exclusion, and the
+# run-name (see examples/site/.github/workflows/cross-post.yml).
+# `scripts/cross_post/cross_post.py` lives in THIS repo, so the job checks
+# the platform out into `.cms-platform/` (the same dot-dir every other
+# reusable that needs a platform-owned script or composite uses) and runs
+# the script from there, against the SITE's own checked-out `_posts/` and
+# `_config.yml` (the site checkout stays at the workspace root).
+#
+# ALL THREE LEGS ARE OPTIONAL, INDEPENDENTLY:
+#   - `mastodon_instance: ""` (the default) skips the Mastodon leg entirely
+#     (and with the instance set but no token, cross_post.py skips it with an
+#     `::warning::`).
+#   - `linkedin: false` (the default) skips the LinkedIn leg; with it on but
+#     no LINKEDIN_ACCESS_TOKEN, cross_post.py skips it with an `::warning::`.
+#   - `substack: false` (the default) skips rendering/uploading the
+#     Substack-ready Markdown — Substack has no publish API, so that leg is
+#     ALWAYS paste-by-hand from the job summary or the uploaded artifact;
+#     `substack: true` only controls whether this workflow bothers producing
+#     the draft at all.
+#   When a caller leaves ALL THREE at their default (unconfigured), the job
+#   prints one `::notice::` right after detect and does nothing else for
+#   that push — a site that adopts this reusable before wiring any leg
+#   gets a harmless no-op run, not a fistful of green-but-pointless steps.
+#
+# LINKEDIN IS ONE-SHOT BY CONSTRUCTION. Unlike Mastodon, LinkedIn's posts API
+# has no idempotency key and no cheap "did I already share this URL" lookup,
+# so cross_post.py never retries a LinkedIn POST (a 5xx or a dropped
+# connection MAY have posted) and the leg only ever fires on the push that
+# first publishes a post, or on a dispatch. `targets` (all / mastodon /
+# linkedin / substack) limits a manual re-run to the one leg that failed, so
+# re-running Mastodon cannot double-post to LinkedIn, and vice versa.
+#
+# ON A SCHEDULE the job only checks the LinkedIn token's age (a member token
+# lives 60 days and cannot be refreshed without re-consent): detect is
+# skipped, so every later step's `steps.detect.outputs.changed == 'true'`
+# guard is false, and `check-linkedin-token` runs when `linkedin: true` —
+# red from day 50, so the fleet's scheduled-run-health audit files an issue
+# while there is still time to rotate. With `linkedin: false` a scheduled run
+# is a no-op.
+#
+# CROSS-POST WATCHER: the final step fires a Claude Code routine (an agent that
+# audits the cross-posts, backfills and notifies) through its HTTP API. It
+# fires on EVERY push run of a site with a leg configured — even when detect
+# found nothing, since detect missing a post is the bug class the watcher
+# exists to catch — and on a scheduled run whose LinkedIn token-age check
+# failed. NEVER on `workflow_dispatch`: the watcher's own backfills are
+# dispatches, so firing there would loop. It needs the CALLER repo's variable
+# `vars.CROSS_POST_WATCHER_ROUTINE_ID` (the routine id, not a secret; `vars`
+# in a reusable resolves to the caller's variables, so no `with:` input is
+# needed) and the CLAUDE_ROUTINE_CROSSPOSTWATCHER secret (the bearer token);
+# with the variable unset nothing fires, with the secret unset it warns and
+# exits 0. The API
+# response body is never logged. See docs/CROSS-POSTING.md.
+#
+# FIXTURE EXCLUSION happens in the THIN CALLER's `paths:` (the prod-loop
+# `2099-*` canaries and `*-e2e-*` specs) — cross_post.py's own `detect`
+# subcommand skips `test_fixture`/`e2e-`-slugged posts on its own, so nothing
+# here re-implements that; excluding the paths in the caller just saves the
+# run entirely rather than paying for a detect-and-skip.
+#
+# AWAIT-PROD-DEPLOY IS INVOKED BY LOCAL PATH, NEVER A REMOTE `owner/repo/
+# .github/actions/<name>@<ref>` `uses:`. A consumer repo can enforce
+# `sha_pinning_required` on its actions-permissions policy, which GitHub
+# applies to every `uses:` INCLUDING a composite from another repository —
+# measured: a `uses: Adam-S-Daniel/cms-platform/.github/actions/
+# await-prod-deploy@v0.1.108` line fails job setup outright ("All actions
+# must be pinned to a full-length commit SHA"), and a composite is
+# deliberately never SHA-pinned+comment-tagged any more (see
+# `docs/PIN-CONSISTENCY.md` and `e2e/template-pin-rules.js`). The platform's
+# own loop reusables that call `await-prod-deploy` (cms-publish-loop-prod.yml,
+# cms-publish-loop-host.yml, cms-media-roundtrip.yml,
+# cms-scheduled-publish-loop.yml) all sidestep this the same way: check the
+# platform out into `.cms-platform/` and reference its composite by the
+# LOCAL path that checkout produces (`./.cms-platform/.github/actions/
+# await-prod-deploy`), which needs no pin at all because it never crosses a
+# repository boundary. This workflow follows that exact shape.
+#
+# CONCURRENCY: `cross-post` is not a required status context on any
+# `consumer-main`-shaped branch ruleset (it runs post-merge or on manual
+# dispatch and never gates a PR), so the "no `concurrency` on a
+# required-context publisher" rule (AGENTS.md, "A cancelled required check
+# blocks the merge") does not apply here — a workflow-level group that
+# serialises cross-post runs instead of racing two pushes against the same
+# Mastodon account is safe to keep.
+name: Cross-post (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      prod_url:
+        description: >-
+          Deployed production URL (scheme included, no trailing slash), e.g.
+          https://example.com. Passed straight through to await-prod-deploy's
+          `prod-url` on a push run.
+        type: string
+        required: true
+      mastodon_instance:
+        description: >-
+          Mastodon instance base URL (e.g. https://hachyderm.io). Empty (the
+          default) skips the Mastodon leg entirely.
+        type: string
+        default: ""
+      substack:
+        description: >-
+          Render the Substack-ready Markdown draft and upload it (plus the
+          job-summary section). Substack has no publish API — this only
+          controls whether the draft is produced; posting it is always
+          paste-by-hand.
+        type: boolean
+        default: false
+      linkedin:
+        description: >-
+          Post an article share to the token owner's LinkedIn profile (needs
+          the LINKEDIN_ACCESS_TOKEN secret). Also turns on the weekly
+          token-age check when the caller runs on a schedule.
+        type: boolean
+        default: false
+      linkedin_token_minted:
+        description: >-
+          The date the LinkedIn token was minted, YYYY-MM-DD, from the
+          caller's `vars.LINKEDIN_TOKEN_MINTED`. Drives the expiry warnings
+          (the token lives 60 days).
+        type: string
+        default: ""
+      targets:
+        description: >-
+          Which leg(s) to run: one of all / mastodon / linkedin / substack.
+          Limits a manual re-run to one leg so re-running a failed leg cannot
+          double-post another (LinkedIn has no dedupe).
+        type: string
+        default: all
+      post_path:
+        description: >-
+          Path of one `_posts/*.md` to cross-post (backfill or a manual
+          re-run). Used on `workflow_dispatch`-shaped callers; ignored on a
+          push (the push diff drives detection instead).
+        type: string
+        default: ""
+      dry_run:
+        description: 'Log what would be posted to Mastodon and LinkedIn; post nothing.'
+        type: boolean
+        default: false
+      visibility:
+        description: 'Mastodon post visibility (public / unlisted / direct).'
+        type: string
+        default: public
+      platform_repo:
+        description: "owner/name of the platform repo holding cross_post.py."
+        type: string
+        default: Adam-S-Daniel/cms-platform
+      platform_ref:
+        description: "Tag/sha of the platform repo to fetch the script from (pin to the same ref as this workflow's `uses:`)."
+        type: string
+        default: main
+    secrets:
+      MASTODON_ACCESS_TOKEN:
+        required: false
+      LINKEDIN_ACCESS_TOKEN:
+        required: false
+      CLAUDE_ROUTINE_CROSSPOSTWATCHER:
+        required: false
+
+# contents:read for the two checkouts; actions:read is what lets the
+# await-prod-deploy composite query this commit's deploy-production run
+# (mirrors cms-media-roundtrip.yml / cms-publish-loop-host.yml, the other
+# reusables that call the same composite).
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cross-post
+  cancel-in-progress: false
+
+jobs:
+  cross-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout site
+        # fetch-depth: 0 so github.event.before resolves for the diff below.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Checkout platform scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      # cross_post.py parses Markdown with markdown-it-py (plain-text excerpts
+      # for Mastodon/LinkedIn, the Substack HTML draft) and YAML with PyYAML.
+      # Ubuntu's system pip refuses installs (PEP 668), hence setup-python.
+      # Pins: newest release at least 7 days old as of 2026-09-29.
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      # Pinned: the await-prod-deploy composite below runs node
+      # (ubuntu-latest's default Node moves from 22 to 24 with Ubuntu 26.04,
+      # actions/runner-images#14748).
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+          package-manager-cache: false
+      - name: Install cross-post dependencies
+        run: python3 -m pip install --user 'markdown-it-py==4.2.0' 'mdurl==0.1.2' 'pyyaml==6.0.3'
+
+      - name: Detect newly published posts
+        id: detect
+        if: github.event_name != 'schedule'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          POST_PATH: ${{ inputs.post_path }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            python3 .cms-platform/scripts/cross_post/cross_post.py detect --before "$BEFORE" --after "$AFTER"
+          else
+            python3 .cms-platform/scripts/cross_post/cross_post.py detect --post "$POST_PATH"
+          fi
+
+      - name: Check LinkedIn token age
+        # Schedule-only: the caller's weekly cron exists for this step alone.
+        # Red from day 50 of the token's 60-day life, so the fleet's
+        # scheduled-run-health audit files an issue before the token dies.
+        if: github.event_name == 'schedule' && inputs.linkedin
+        env:
+          LINKEDIN_TOKEN_MINTED: ${{ inputs.linkedin_token_minted }}
+        run: python3 .cms-platform/scripts/cross_post/cross_post.py check-linkedin-token
+
+      - name: Cross-posting not configured
+        if: >-
+          github.event_name != 'schedule' && inputs.mastodon_instance == '' &&
+          inputs.substack == false && inputs.linkedin == false
+        run: echo "::notice::cross-posting is not configured for this site"
+
+      - name: Await production deploy
+        if: >-
+          steps.detect.outputs.changed == 'true' && github.event_name == 'push' &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        uses: ./.cms-platform/.github/actions/await-prod-deploy
+        with:
+          prod-url: ${{ inputs.prod_url }}
+
+      - name: Verify the post URLs are live
+        if: >-
+          steps.detect.outputs.changed == 'true' &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        run: python3 .cms-platform/scripts/cross_post/cross_post.py verify-live
+
+      - name: Render status, Substack Markdown, and job summary
+        if: >-
+          steps.detect.outputs.changed == 'true' && inputs.substack &&
+          (inputs.targets == 'all' || inputs.targets == 'substack') &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        run: python3 .cms-platform/scripts/cross_post/cross_post.py render
+
+      - name: Upload Substack Markdown
+        if: >-
+          steps.detect.outputs.changed == 'true' && inputs.substack &&
+          (inputs.targets == 'all' || inputs.targets == 'substack') &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cross-post-${{ github.run_id }}
+          path: cross-post-out/
+          retention-days: 30
+
+      # A failed Mastodon leg must not skip LinkedIn. Every later step's
+      # `if:` carries GitHub's implicit `success()`, so on a red Mastodon step
+      # (adamdaniel.ai run 36430252461: a revoked token's 401) LinkedIn never
+      # ran. continue-on-error keeps the job green for LinkedIn's gate while
+      # every EARLIER gate (deploy landed, URL live) still blocks it; the
+      # "Fail if the Mastodon leg failed" step below turns the run red again.
+      - name: Post to Mastodon
+        id: mastodon
+        continue-on-error: true
+        if: >-
+          steps.detect.outputs.changed == 'true' && inputs.mastodon_instance != '' &&
+          (inputs.targets == 'all' || inputs.targets == 'mastodon') &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        env:
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          MASTODON_INSTANCE: ${{ inputs.mastodon_instance }}
+          VISIBILITY: ${{ inputs.visibility }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--instance "$MASTODON_INSTANCE" --visibility "$VISIBILITY")
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python3 .cms-platform/scripts/cross_post/cross_post.py post-mastodon "${args[@]}"
+
+      - name: Post to LinkedIn
+        # One-shot: LinkedIn has no dedupe and cross_post.py never retries, so
+        # re-running a failed leg goes through a `targets: linkedin` dispatch
+        # after checking the profile — never a whole-run re-run.
+        if: >-
+          steps.detect.outputs.changed == 'true' && inputs.linkedin &&
+          (inputs.targets == 'all' || inputs.targets == 'linkedin') &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)
+        env:
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_TOKEN_MINTED: ${{ inputs.linkedin_token_minted }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python3 .cms-platform/scripts/cross_post/cross_post.py post-linkedin "${args[@]}"
+
+      - name: Fail if the Mastodon leg failed
+        if: ${{ !cancelled() && steps.mastodon.outcome == 'failure' }}
+        run: |
+          echo "::error::The Mastodon leg failed (see its step above). Re-run it alone with a targets: mastodon dispatch; the other legs are not affected."
+          exit 1
+
+      # Fires the watcher routine. `!cancelled()` (not the implicit success())
+      # so it runs after a red leg too, and it sits last so it never masks the
+      # step above that turns a swallowed Mastodon failure red. Push runs fire
+      # whether or not detect found a post; a schedule run fires only when the
+      # token-age check failed; a workflow_dispatch never does (loop).
+      - name: Fire the cross-post watcher
+        if: >-
+          ${{ !cancelled() && vars.CROSS_POST_WATCHER_ROUTINE_ID != '' &&
+          ((github.event_name == 'push' &&
+          (inputs.mastodon_instance != '' || inputs.substack || inputs.linkedin)) ||
+          (github.event_name == 'schedule' && failure())) }}
+        env:
+          ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_CROSSPOSTWATCHER }}
+          ROUTINE_ID: ${{ vars.CROSS_POST_WATCHER_ROUTINE_ID }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          DETECT_CHANGED: ${{ steps.detect.outputs.changed }}
+          DETECT_COUNT: ${{ steps.detect.outputs.count }}
+        run: |
+          if [ -z "$ROUTINE_TOKEN" ]; then
+            echo "::warning::cross-post watcher is not wired: the CLAUDE_ROUTINE_CROSSPOSTWATCHER secret is empty"
+            exit 0
+          fi
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          text=$(jq -rn \
+            --arg repo "$GITHUB_REPOSITORY" --arg event "$EVENT_NAME" \
+            --arg url "$run_url" --arg sha "$HEAD_SHA" \
+            --arg changed "${DETECT_CHANGED:-not run}" --arg count "${DETECT_COUNT:-n/a}" \
+            '"Cross-post run finished. Repository: \($repo). Event: \($event). Run: \($url). Head sha: \($sha). Detect changed: \($changed). Detect post count: \($count)."')
+          body=$(jq -n --arg text "$text" '{text: $text}')
+          resp=$(mktemp)
+          status=$(curl -sS -o "$resp" -w '%{http_code}' -X POST \
+            "https://api.anthropic.com/v1/claude_code/routines/$ROUTINE_ID/fire" \
+            -H "Authorization: Bearer $ROUTINE_TOKEN" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            -d "$body") || status="curl-failed"
+          case "$status" in
+            2??)
+              session=$(jq -r '[.. | strings | select(startswith("https://claude.ai/"))] | first // empty' "$resp" 2>/dev/null || true)
+              echo "::notice::cross-post watcher fired (HTTP $status) ${session}"
+              ;;
+            *)
+              echo "::error::cross-post watcher fire failed (HTTP $status)"
+              exit 1
+              ;;
+          esac

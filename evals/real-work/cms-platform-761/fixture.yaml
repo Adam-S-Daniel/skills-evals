@@ -1,0 +1,64 @@
+# Real-work fixture: cms-platform#761, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/cms-platform/pull/761, the fix for https://github.com/Adam-S-Daniel/cms-platform/issues/756.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  dd22fe4a89e0085b2793155c57ff8289f3b9c1e6 (merge-first-parent)
+#   merge d78494f66a7b1cf0ce982ade823ba7eee5460dcc
+# Checker overlay: the merge commit's e2e/tags-suggest.test.js.
+# Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
+# Guidance provenance: 56 eligible byte-matching revisions; selected greatest commit timestamp, then smallest full SHA.
+# Also every e2e spec but the checker's own (291 trimmed).
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#756 as it stood before the pull request's first commit (read with gh api graphql).
+
+subject: any
+draft: true
+strip_agent_context: true
+deps:
+- {manager: npm, dir: e2e}
+prompt: |-
+  Tags box: a trailing space is swallowed, an applied suggestion leaves no separator, and the chips are small on a phone
+
+  Found in an exploratory round (adamdaniel.ai owner pass, local admin). Follow-ups to the Tags box from https://github.com/Adam-S-Daniel/cms-platform/pull/746.
+
+  **Severity:** minor.
+
+  ## 1. A space typed at the end of a tag is swallowed
+
+  Steps (1440×900): in Posts → Tags type `agents, field`, press Space, type `notes`.
+  Seen: the box shows `agents, fieldnotes`; `Field Notes` becomes `FieldNotes`. Because the space is gone, the near-duplicate warning never compares `Field Notes` with `field-notes`. A space inserted mid-word (after ArrowLeft) stays.
+  Expected: the space stays, or the hint says multi-word tags use dashes.
+  Cause: Decap's list widget `handleChange` runs `e.target.value.trim()` each time a key is pressed, so a trailing space never survives. `theme/admin/tags-input.js` only handles Space right after a comma.
+
+  ## 2. Applying a suggestion leaves no separator
+
+  Steps: type `rel`, Tab to the "release-notes" chip, Enter, then type `agent`.
+  Seen: `release-notesagent`.
+  Expected: `release-notes, ` after applying, as Enter in the box already does.
+
+  ## 3. Suggestion and warning chips are small tap targets on a phone
+
+  About 62×20 px at 390×844; 44 px tall would match the share buttons.
+
+  Fix the Tags box shim in `theme/admin/tags-input.js` so that all three behave as expected.
+
+  Interface the reviewer's tests use: the shim exposes its pure helpers on `window.__tagsInput`, and the tests load `theme/admin/tags-input.js` in a bare `vm` sandbox with no DOM. `replaceTag(value, index, replacement)` swaps piece `index` of the comma-separated box value and now ends the result with `, ` (comma, space), never leaving an empty piece before it; the other pieces are joined with a bare comma and no space. So swapping the lone piece `rel` for `release` gives `release, `, swapping piece 1 of `a, re` gives `a,release, `, and swapping piece 0 of `rel, b, ` (which already ends in a separator) gives `release,b, `. A new pure helper `holdsTrailingSpace(value, caretAtEnd)` returns true only when the caret is at the end and the value ends in exactly one space that follows a letter (`field ` and `agents, field ` are true; `field`, `agents, `, `agents,`, `field  `, a lone space and the empty string are false, as is any value when `caretAtEnd` is false).
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: dd22fe4a89e0085b2793155c57ff8289f3b9c1e6
+  guidance_revision: 35f62ec4d9ab7fd8b9d9fe2e3a547c7d5926c3f9
+  budget: {guidance_bytes: 31374, skill_catalog_bytes: 7603, skill_payload_bytes: 857047}
+interface_strings: [__tagsInput, replaceTag, holdsTrailingSpace, analyze]
+issue_before_fix: issue-before-fix.txt
+issue_created_at: '2026-10-06T04:42:21Z'
+issue_last_edited_at: null
+first_commit_at: '2026-10-06T04:52:37Z'
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [node, e2e/node_modules/@playwright/test/cli.js, test, --config=e2e/playwright.unit.config.js]
+  fail_to_pass:
+  - [tags-suggest.test.js, -g, '#756']
+  pass_to_pass:
+  - [tags-suggest.test.js, --grep-invert, '#756']
