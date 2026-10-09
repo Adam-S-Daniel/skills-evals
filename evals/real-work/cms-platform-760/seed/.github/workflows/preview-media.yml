@@ -1,0 +1,400 @@
+# Reusable, lightweight, READ-ONLY preview-media merge gate.
+#
+# Asserts that a committed image under the flat media_folder
+# (assets/images/uploads/) actually resolves on the PR's
+# already-deployed preview-pr<N>.<apex> surface — verifying the flat
+# media_folder / broken-images regression class on the real
+# S3+CloudFront preview build rather than only structurally or against a
+# local Jekyll build.
+#
+# Required-check shape — ALWAYS-RUN + EARLY-SKIP, NOT workflow `paths:`.
+# A required check that uses paths/paths-ignore hits the missing-check
+# trap. So this fires on every PR, detects media-salient changes in an
+# early step, and reports success immediately when nothing salient
+# changed. The context is therefore always present — no stub needed.
+#
+# Preview-unavailable behaviour — HARD-FAIL on a media-salient PR, which
+# in practice requires deploy-preview to have succeeded for that PR.
+#
+# A consuming site calls this from a thin wrapper that owns the
+# pull_request trigger + run-name (see examples/site/.github/workflows/
+# preview-media.yml). The harness + composite live in the platform,
+# checked out into `.cms-platform/`.
+#
+# PLATFORM PORT NOTES (vs adamdaniel.ai@origin/main): GHCR build-image +
+# `container:` DROPPED for inline deps; the container-only
+# `/__w/<repo>/<repo>` safe.directory line was DROPPED (the workspace
+# safe.directory entry remains). The salient regex matches the SITE-side
+# media paths; the workflow + spec self-references were dropped since
+# those files now live in the platform, not the site.
+name: Preview Media Gate (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "PR number whose preview surface to probe; wired to PR_NUMBER."
+        required: true
+        type: string
+      base_ref:
+        description: "Base ref the PR targets (e.g. main); used for the salient-path diff."
+        required: false
+        type: string
+        default: main
+      apex:
+        description: "Site apex domain, e.g. example.com (no scheme). Builds preview-pr<N>.<apex>; wired to CMS_APEX."
+        required: true
+        type: string
+      platform_repo:
+        description: "owner/name of the platform repo holding the e2e harness + composite action."
+        required: false
+        type: string
+        default: Adam-S-Daniel/cms-platform
+      platform_ref:
+        description: "Tag/sha of the platform repo to fetch the harness from (pin to the same ref as this workflow)."
+        required: false
+        type: string
+        default: main
+
+permissions:
+  contents: read
+  # post-failure-comment composite needs this to post the failure
+  # summary on the PR (preview-unreachable or probe failure).
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ── THE WORK JOB: it carries the wall clock and publishes NO required ────
+  #
+  # `timeout-minutes` lives HERE and never on the `preview-media` gate below,
+  # because a job GitHub kills at its wall concludes `cancelled`, NOT
+  # `timed_out`. A CANCELLED required context hard-blocks the merge — the API
+  # answers `405 Required status check "<ctx>" is cancelled` — and nothing
+  # overrides it: not native auto-merge, not an explicit merge call, not a nudge
+  # bot, not an admin. Measured on adamdaniel.ai PR #3217 (2026-08-19):
+  # `preview-media / preview-media` ran 15:22:25Z → 15:52:45Z — 30m20s, exactly
+  # this wall — and concluded `cancelled` with NO `concurrency` group anywhere
+  # near it, v0.1.87 having already deleted those. So the group #285 removed was
+  # only ONE route to a cancelled required context; the timeout is a second one,
+  # and the #285 rule never covered it. cms-platform#289.
+  #
+  # This job publishes `<caller job> / media-probe`, which no ruleset names, so
+  # ITS cancellation is informational. The gate below turns it into a RED
+  # `preview-media / preview-media`, which a human can simply re-run.
+  #
+  # WHY A GATE JOB AND NOT AN IN-JOB WATCHDOG that exits just before the wall:
+  # this is the shape the repo already uses for exactly this problem —
+  # `e2e-tests.yml` publishes `e2e / e2e` from an `if: always()` job over its
+  # `project` matrix, and `visual-regression.yml` publishes
+  # `visual-regression / approve-regression` the same way. A watchdog would have
+  # to be threaded into every step's shell, would re-guess the remaining budget
+  # at each one, and still could not stop the wall arriving first inside a step
+  # it does not own (an `npx playwright test`, a composite action).
+  media-probe:
+    runs-on: ubuntu-latest
+    env:
+      CMS_APEX: ${{ inputs.apex }}
+      CMS_REPO: ${{ github.repository }}
+    # Generous: a media-salient PR must wait for deploy-preview + CDN
+    # propagation before the probe; the wait step bounds at ~20 min.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout site
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The PR merge commit plus its two parents, not full history
+          # (cms-platform#541): the salience step deepens it with
+          # ensure-merge-base.js until the diff against the base tip is
+          # provably the one a full clone gives.
+          fetch-depth: 2
+
+      - name: Checkout platform (e2e harness + composite action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+
+      - name: Mark workspace safe for git
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Detect media-salient changes
+        id: salient
+        # If nothing media-salient changed, the gate is not applicable
+        # and we report success immediately (early-skip) so the required
+        # context is always present without ever blocking a non-media PR.
+        env:
+          BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          set -o pipefail
+          # Escape workflow-command data before printing path or Git diagnostics.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          # Fail CLOSED, like the diff below: without a proven merge base the
+          # changed set is wrong or empty, and empty reads as non-salient.
+          if ! node .cms-platform/e2e/ensure-merge-base.js --base "$BASE_REF"; then
+            msg="preview-media could not establish the merge base of origin/${BASE_REF} and HEAD. Failing the required gate CLOSED so a media-salient PR cannot merge without the preview probe. Re-run the job; if it persists, investigate the workflow."
+            echo "::error title=preview-media::${msg}"
+            echo "$msg" | tee /tmp/preview-media.log
+            exit 1
+          fi
+          echo "::group::salient diff refs"
+          printf 'base_ref = %s\n' "$(escape_workflow_data "$BASE_REF")"
+          head_diagnostic=$(git rev-parse HEAD 2>&1) || :
+          base_diagnostic=$(git rev-parse "origin/$BASE_REF" 2>&1) || :
+          merge_diagnostic=$(git merge-base "origin/$BASE_REF" HEAD 2>&1) || :
+          printf 'HEAD            = %s\n' "$(escape_workflow_data "$head_diagnostic")"
+          printf 'origin/%s    = %s\n' "$(escape_workflow_data "$BASE_REF")" "$(escape_workflow_data "$base_diagnostic")"
+          printf 'merge-base      = %s\n' "$(escape_workflow_data "$merge_diagnostic")"
+          printf 'diff cmd        = git diff --name-only -z --no-renames origin/%s...HEAD\n' "$(escape_workflow_data "$BASE_REF")"
+          echo "::endgroup::"
+          # Fail CLOSED: a non-zero git diff must NOT be swallowed by
+          # `|| true` — an empty changed set matches no salient path, so
+          # the gate would silently report salient=false and let a
+          # media-salient PR merge without the preview probe. Hard-fail
+          # instead so a media-salient PR can never merge un-probed.
+          #
+          # NUL-delimited (`-z`) into a file, because a shell variable cannot
+          # hold NUL and the newline form quotes any non-ASCII name
+          # (`"assets/images/uploads/caf\303\251.png"`), which no salient
+          # pattern matches (cms-platform#539). `--no-renames` lists a moved
+          # file's source too: by default a rename reports only the
+          # destination, so moving `_layouts/post.html` elsewhere read as
+          # non-salient.
+          changed_z=$(mktemp)
+          diff_stderr=""
+          trap 'rm -f -- "$changed_z" "$diff_stderr"' EXIT
+          diff_stderr=$(mktemp)
+          if ! git diff --name-only -z --no-renames "origin/${BASE_REF}...HEAD" > "$changed_z" 2> "$diff_stderr"; then
+            printf 'Git diff diagnostic: %s\n' "$(escape_workflow_data "$(cat "$diff_stderr")")"
+            msg="preview-media could not compute the changed-file set against origin/${BASE_REF} (git diff exited non-zero). Failing the required gate CLOSED so a media-salient PR cannot merge without the preview probe. This indicates a CI/environment problem (e.g. git safe.directory), not a content issue — re-run the job; if it persists, investigate the workflow."
+            echo "::error title=preview-media::${msg}"
+            echo "$msg" | tee /tmp/preview-media.log
+            exit 1
+          fi
+          echo "Changed files:"
+          while IFS= read -r -d '' f; do
+            printf '  - %q\n' "$(escape_workflow_data "$f")"
+          done < "$changed_z"
+          # Salient = the flat media_folder, the Decap config, the site
+          # config, or the post/canary layouts. (The workflow + spec
+          # self-references from the original were dropped: those files
+          # live in the platform repo now, not the site.)
+          # PORT NOTE: the original's `scripts/patch-preview-config.sh`
+          # anchor is intentionally omitted from this SITE-side salient
+          # grep — that script is platform-owned and can never appear in
+          # a site PR diff, so an anchor for it here would be dead weight.
+          # `grep -z` reads the NUL records; the file operand (not a pipe)
+          # keeps `-q` from racing the writer. Three statuses, not two:
+          # 0 = a salient path, 1 = none, anything else = grep itself failed,
+          # which must fail the gate CLOSED, not read as "not salient".
+          grep_rc=0
+          grep -Ezq \
+            '^(assets/images/uploads/|admin/config(-local)?\.yml$|_config\.yml$|_layouts/(post|canary)\.html$)' \
+            "$changed_z" || grep_rc=$?
+          if [ "$grep_rc" -eq 0 ]; then
+            echo "salient=true" >> "$GITHUB_OUTPUT"
+            echo "Media-salient change detected — running the preview probe."
+          elif [ "$grep_rc" -eq 1 ]; then
+            echo "salient=false" >> "$GITHUB_OUTPUT"
+            echo "No media-salient change — preview-media gate not applicable; reporting success."
+          else
+            msg="preview-media could not classify the changed-file set (grep exited ${grep_rc}). Failing the required gate CLOSED so a media-salient PR cannot merge without the preview probe. Re-run the job; if it persists, investigate the workflow."
+            echo "::error title=preview-media::${msg}"
+            echo "$msg" | tee /tmp/preview-media.log
+            exit 1
+          fi
+
+      - name: Install harness deps
+        if: steps.salient.outputs.salient == 'true'
+        working-directory: .cms-platform/e2e
+        run: npm ci
+
+      - name: Install Playwright browser + system deps
+        if: steps.salient.outputs.salient == 'true'
+        uses: ./.cms-platform/.github/actions/install-playwright-browsers
+        with:
+          browser: chromium
+          # The `media-probe` job's timeout-minutes is 30; keep the composite's
+          # worst case under it so a stalled mirror surfaces as this action's
+          # diagnostic rather than an opaque job timeout, and still leaves room
+          # for the probe itself. (Locked by
+          # e2e/playwright-install-bounded.test.js.)
+          final-timeout-seconds: '900'
+
+      - name: Wait for the preview surface (bounded)
+        if: steps.salient.outputs.salient == 'true'
+        id: preview
+        # deploy-preview is path-filtered + non-required, so the
+        # preview-pr<N> surface may not exist yet. Poll the site root
+        # with a generous bound; record reachability. This step never
+        # fails — the "Require preview" step below converts an
+        # unreachable preview into a hard failure.
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CMS_APEX: ${{ inputs.apex }}
+        run: |
+          set -uo pipefail
+          host="https://preview-pr${PR_NUMBER}.${CMS_APEX}"
+          echo "Probing ${host}/ for readiness (bounded ~20 min)…"
+          reachable=false
+          for _ in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${host}/" || echo "000")
+            echo "  ${host}/ -> ${code}"
+            if [ "$code" = "200" ]; then
+              reachable=true
+              break
+            fi
+            sleep 30
+          done
+          echo "reachable=${reachable}" >> "$GITHUB_OUTPUT"
+          echo "host=${host}" >> "$GITHUB_OUTPUT"
+
+      - name: Require preview (hard-fail if unreachable on a salient PR)
+        if: ${{ steps.salient.outputs.salient == 'true' && steps.preview.outputs.reachable != 'true' }}
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CMS_APEX: ${{ inputs.apex }}
+        run: |
+          msg="preview-pr${PR_NUMBER}.${CMS_APEX} was not reachable within ~20 min on a media-salient PR. The preview-media gate requires a live preview surface (deploy-preview must have succeeded) to verify the flat media_folder path on the deployed build. If deploy-preview was path-skipped or failed, make a change that triggers it (or re-run deploy-preview) and push again; a maintainer can override if a preview genuinely cannot be produced."
+          echo "::error title=preview-media::${msg}"
+          echo "$msg" | tee /tmp/preview-media.log
+          exit 1
+
+      - name: Run preview media-resolve probe
+        if: ${{ steps.salient.outputs.salient == 'true' && steps.preview.outputs.reachable == 'true' }}
+        working-directory: .cms-platform/e2e
+        env:
+          # PW_PROJECT — the project(s) this step runs. e2e/install-browsers-on-miss.js
+          # narrows its missing-engine check to these projects' engines; without it the
+          # blanket check reports the engines this job never installed as "missing" and
+          # re-downloads them, while crying wolf about ci-runner image drift.
+          # Locked by e2e/engine-scope-lint.test.js.
+          PW_PROJECT: "chromium-desktop-1080"
+          # SITE_ROOT — the CONSUMING site's checkout (github.workspace). Uniform
+          # harness rule: any spec run from .cms-platform/e2e sets SITE_ROOT to the
+          # CONSUMER root so any base_collections / single-page guard reads the
+          # consumer's _config.yml, not the PLATFORM's (__dirname/.. fallback).
+          # preview-media-resolves.spec.js doesn't read it today, but the rule is
+          # uniform and future-proofs a later guard. Locked by
+          # e2e/loop-site-root-lint.test.js.
+          SITE_ROOT: ${{ github.workspace }}
+          # TARGET=prod skips the local Jekyll webServer — the spec hits
+          # the deployed preview directly.
+          TARGET: prod
+          # Opt-in that turns preview-media-resolves.spec.js ON, ONLY
+          # after the preview-pr<N> root is confirmed reachable.
+          RUN_PREVIEW_MEDIA_PROBE: "1"
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -o pipefail
+          export PLAYWRIGHT_JSON_OUTPUT_FILE=/tmp/preview-media.log.json
+          status=0
+          npx playwright test \
+            preview-media-resolves.spec.js \
+            --project=chromium-desktop-1080 \
+            --reporter=list,html,json \
+            --max-failures=1 \
+            > /tmp/preview-media.log 2>&1 || status=$?
+          node summarize-playwright.js "${PLAYWRIGHT_JSON_OUTPUT_FILE}"
+          exit "$status"
+
+      - name: Upload preview media diagnostics
+        if: ${{ !cancelled() && (steps.salient.outputs.salient == 'true' || steps.salient.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: preview-media-results
+          path: |
+            /tmp/preview-media.log
+            /tmp/preview-media.log.json
+            .cms-platform/e2e/playwright-report/
+            .cms-platform/e2e/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Post failure summary
+        # Also fires when the salient detector itself hard-failed (fail
+        # closed): it exits before setting `salient`, so cover its
+        # outcome too — it tees the reason into /tmp/preview-media.log.
+        if: ${{ failure() && (steps.salient.outputs.salient == 'true' || steps.salient.outcome == 'failure') }}
+        uses: ./.cms-platform/.github/actions/post-failure-comment
+        with:
+          mode: post
+          log-file: /tmp/preview-media.log
+          marker: preview-media-failure-summary
+          title: preview-media
+          pr-number: ${{ inputs.pr_number }}
+
+      - name: Resolve failure summary on success
+        if: ${{ success() && steps.salient.outputs.salient == 'true' && steps.preview.outputs.reachable == 'true' }}
+        # FAIL-OPEN: this step only stamps an EXISTING failure comment as
+        # resolved. It runs on success(), so its own failure says nothing about
+        # the tests — but without this it turns a fully GREEN job red, and via
+        # the aggregating gate that blocks merges. Observed 2026-08-12:
+        # adamdaniel.ai e2e run 31569023550 passed its tests, failed HERE, reddened
+        # `e2e / e2e`, blocked seed PR #3063, timed out cms-scheduled-publish-loop
+        # after 25 min and filed health-audit issue #3064. Same fail-open rationale
+        # the ephemeral-branch cleanup steps already carry. Locked by
+        # e2e/resolve-summary-fail-open.test.js.
+        continue-on-error: true
+        uses: ./.cms-platform/.github/actions/post-failure-comment
+        with:
+          mode: resolve
+          marker: preview-media-failure-summary
+          title: preview-media
+          pr-number: ${{ inputs.pr_number }}
+
+  # ── THE REQUIRED STATUS CONTEXT ──────────────────────────────────────────
+  #
+  # Branch protection requires `<caller-job> / preview-media`
+  # (`preview-media / preview-media` on both consumers). This job is the ONLY
+  # thing that ruleset has to know about, so do NOT rename it — and do NOT give
+  # it a `timeout-minutes`. Being a job that cannot be killed at a wall IS its
+  # purpose: the context it publishes can then only ever be success or failure.
+  #
+  # `always()` so a red, skipped or CANCELLED probe still reports here instead of
+  # leaving the required check pending forever (the missing-check trap), and so a
+  # cancelled RUN still gets a translated verdict rather than a cancelled one.
+  #
+  # Locked by e2e/required-context-cancellable.test.js (platform tree + the
+  # examples/site templates) and its CONSUMER-mode sibling
+  # e2e/consumer-required-context-cancellable.test.js.
+  preview-media:
+    needs: media-probe
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on the preview-media probe
+        env:
+          PROBE_RESULT: ${{ needs.media-probe.result }}
+        run: |
+          set -euo pipefail
+          echo "media-probe result: ${PROBE_RESULT}"
+          if [ "${PROBE_RESULT}" = "success" ]; then
+            echo "The preview-media probe passed."
+            exit 0
+          fi
+          msg="The media-probe job concluded ${PROBE_RESULT} — read that job for the reason."
+          if [ "${PROBE_RESULT}" = "cancelled" ]; then
+            msg="${msg} A cancelled probe is usually its 30-minute timeout-minutes wall:"
+            msg="${msg} GitHub reports a job it killed at the wall as cancelled, never as"
+            msg="${msg} timed_out. This gate reports that as FAILURE deliberately — a"
+            msg="${msg} cancelled REQUIRED context cannot be merged past by any mechanism,"
+            msg="${msg} whereas a failed one can be re-run (cms-platform#289)."
+          fi
+          echo "::error title=preview-media::${msg}"
+          exit 1
