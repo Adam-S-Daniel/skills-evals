@@ -1,9 +1,10 @@
-"""Git reads of the harness's OWN checkout, and nothing else.
+"""Audited metadata reads of trusted harness and context checkouts.
 
 ADR 0011's read fence denies the clone this harness runs from, the
 directory holding it and its history, so it must find them: the checkout's
 shared git directory and its main work tree. Every git call here reads that
-trusted checkout; none ever runs on an agent workspace, which goes through
+trusted checkout or discovers context metadata to fence from an arm; none
+ever runs on an agent workspace, which goes through
 `workspace_git` instead. Hardened like `context.py`: a fixed git binary, no
 hooks, no system or global configuration, no replace refs, and no ambient
 `GIT_*` variable (a `GIT_DIR` would point the reads elsewhere).
@@ -18,6 +19,10 @@ GIT = "/usr/bin/git"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 
 
+class HarnessGitReadError(ValueError):
+    """A command outside the reviewed metadata-read inventory."""
+
+
 def _env() -> dict[str, str]:
     env = {key: value for key, value in os.environ.items()
            if not key.startswith("GIT_")}
@@ -28,6 +33,14 @@ def _env() -> dict[str, str]:
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     """One read-only git command in `cwd`; OSError when git cannot start."""
+    if args not in (
+        ("rev-parse", "--path-format=absolute", "--git-common-dir"),
+        ("config", "-z", "--local", "--includes", "--show-origin",
+         "--get-regexp", r"^include(if\..*)?\.path$"),
+        ("config", "--local", "--includes", "--get", "core.worktree"),
+        ("rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"),
+    ):
+        raise HarnessGitReadError("harness metadata permits only audited Git reads")
     return subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", str(cwd),
                            *args], env=_env(), stdin=subprocess.DEVNULL,
                           capture_output=True, text=True)

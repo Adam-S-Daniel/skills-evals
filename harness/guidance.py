@@ -519,13 +519,22 @@ def h2_extents(text: str) -> list[dict]:
     before comparing, which is why it agrees; do not "fix" either side to
     match the other.
     """
-    lines = text.split("\n")
+    # CommonMark normalizes CRLF and lone CR before parsing. Keep offsets
+    # into the original text, including both characters of a CRLF delimiter.
     line_start = [0]
-    for i in range(len(lines) - 1):
-        line_start.append(line_start[-1] + len(lines[i]) + 1)
+    index = 0
+    while index < len(text):
+        if text[index] == "\r":
+            index += 2 if text[index:index + 2] == "\r\n" else 1
+            line_start.append(index)
+        elif text[index] == "\n":
+            index += 1
+            line_start.append(index)
+        else:
+            index += 1
 
     def offset_at(index: int) -> int:
-        return line_start[index] if index < len(lines) else len(text)
+        return line_start[index] if index < len(line_start) else len(text)
 
     tokens = _markdown_it().parse(text)
     raw = []
@@ -535,7 +544,7 @@ def h2_extents(text: str) -> list[dict]:
 
     out = []
     for i, (heading, start_line) in enumerate(raw):
-        end_line = raw[i + 1][1] if i + 1 < len(raw) else len(lines)
+        end_line = raw[i + 1][1] if i + 1 < len(raw) else len(line_start)
         out.append({"heading": heading, "start": offset_at(start_line),
                     "end": offset_at(end_line)})
     return out
@@ -754,7 +763,8 @@ def _refuse_real_config_dir(dest_dir: Path, home: Path) -> None:
 
 
 def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
-            payload: str, timeout: int = 120) -> dict:
+            payload: str | bytes, timeout: int = 120,
+            payload_mtime: int | None = None) -> dict:
     """Deliver `payload` the way the fleet does: the REAL fleet-memory.sh from
     the checkout, `FLEET_GUIDANCE_PAYLOAD` pointing at the assembled file,
     `CLAUDE_CONFIG_DIR` pointing at this arm's scratch dir — so the marked
@@ -764,6 +774,11 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     the delivery path measures the imitation.
 
     An empty payload (`mode: none`) runs nothing at all.
+
+    `payload` may be raw bytes (an in-place arm's frozen context, ADR 0012),
+    written as they are. `payload_mtime` fixes the payload file's mtime, which
+    the hook reads for its delivery stamp when the file is not committed, so
+    two arms delivered the same bytes get the same block.
 
     S1-a-2. The timeout is checked HERE, on entry, before anything is
     spawned — not because of what the one caller passes today, but because
@@ -792,7 +807,12 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
             f"no fleet-memory hook at {hook} — the guidance subject delivers "
             "through the real hook, not a copy of it")
     payload_path = scratch / "payload.md"
-    payload_path.write_text(payload, encoding="utf-8")
+    if isinstance(payload, bytes):
+        payload_path.write_bytes(payload)
+    else:
+        payload_path.write_text(payload, encoding="utf-8")
+    if payload_mtime is not None:
+        os.utime(payload_path, (payload_mtime, payload_mtime))
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     env = {name: os.environ[name] for name in ("PATH",) if name in os.environ}
@@ -817,7 +837,8 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     # provably failed — a sabotaged hook that prints `fleet-guidance: current`
     # and writes nothing exits 0 and says the right words, and only these two
     # facts catch it.
-    return {"bytes": len(payload.encode("utf-8")), "verdict": verdict,
+    size = len(payload) if isinstance(payload, bytes) else len(payload.encode("utf-8"))
+    return {"bytes": size, "verdict": verdict,
             "installed": installed, "returncode": proc.returncode,
             "dest": str(dest)}
 

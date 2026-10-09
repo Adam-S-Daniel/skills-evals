@@ -411,6 +411,85 @@ class AcceptTests(GitCase):
                 ingest.parse_result_path(rel)
 
 
+class InPlaceSemanticConsistencyTests(unittest.TestCase):
+    """The trusted ingester checks that arm proofs agree with the frozen context."""
+
+    @staticmethod
+    def record(role="without"):
+        guidance_digest = "a" * 64
+        return {
+            "pairing": "in_place", "role": role,
+            "arm": "with_skill" if role == "with" else "without_skill",
+            "skill": "sample",
+            "context": {
+                "repository": "owner/consumer", "revision": "1" * 40,
+                "digest": "2" * 64, "lock_digest": None, "sources": [],
+                "guidance": {"revision": "3" * 40, "digest": guidance_digest,
+                             "bytes": 100, "sections": [],
+                             "hook_digest": "4" * 64},
+                "measurements": {"guidance_bytes": 100,
+                                 "skill_catalog_bytes": 0,
+                                 "skill_payload_bytes": 0}},
+            "context_subject": {
+                "kind": "skill", "registry": "owner/registry",
+                "bundle": "bundle", "skill": "sample", "action": "added",
+                "deployed_digest": None, "tested_digest": "5" * 64,
+                "bytes": 1},
+            "arm_context": {
+                "skills": 1 if role == "with" else 0,
+                "skills_digest": "6" * 64, "guidance_bytes": 100,
+                "guidance_digest": guidance_digest,
+                "subject_present": role == "with"}}
+
+    def check(self, doc):
+        key = ("guidance/sample" if doc["context_subject"]["kind"] == "guidance"
+               else "sample")
+        ingest.check_in_place(doc, "summary.json", {"key": key})
+
+    @classmethod
+    def guidance_record(cls, role="without"):
+        doc = cls.record(role)
+        doc["arm"] = "with_guidance" if role == "with" else "without_guidance"
+        doc["subject"] = "guidance"
+        doc["section"] = "sample"
+        doc.pop("skill")
+        doc["context_subject"] = {
+            "kind": "guidance", "section": "sample", "file": "AGENTS.md",
+            "heading": "## Sample", "action": "added",
+            "start_char": 0, "end_char": 0, "start_byte": 0, "end_byte": 0,
+            "bytes": 0, "deployed_digest": None, "tested_digest": "5" * 64,
+            "tested_bytes": 10}
+        doc["arm_context"]["guidance_bytes"] = 111 if role == "with" else 100
+        if role == "with":
+            doc["arm_context"]["guidance_digest"] = "7" * 64
+        return doc
+
+    def test_accepts_consistent_added_subject_arms(self):
+        self.check(self.record("with"))
+        self.check(self.record("without"))
+        self.check(self.guidance_record("with"))
+        doc = self.guidance_record("without")
+        self.check(doc)
+
+    def test_rejects_added_subject_without_arm_guidance_change(self):
+        doc = self.guidance_record("without")
+        doc["arm_context"]["guidance_digest"] = "7" * 64
+        with self.assertRaisesRegex(ingest.Rejected, "guidance"):
+            self.check(doc)
+
+    def test_rejects_missing_in_place_hook_digest(self):
+        doc = self.guidance_record()
+        doc["context"]["guidance"]["hook_digest"] = None
+        with self.assertRaisesRegex(ingest.Rejected, "hook digest"):
+            self.check(doc)
+
+    def test_rejects_with_skill_arm_with_no_installed_skills(self):
+        doc = self.record("with")
+        doc["arm_context"]["skills"] = 0
+        with self.assertRaisesRegex(ingest.Rejected, "installed skill"):
+            self.check(doc)
+
+
 class RejectPathTests(GitCase):
 
     def test_rejects_a_modified_main_file(self):

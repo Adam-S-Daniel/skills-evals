@@ -3321,8 +3321,8 @@ class TestIssue97(unittest.TestCase):
         # zero-CLI-calls.
         ("deliver via an unvalidated deliver_timeout_s", "guidance",
          ("run_eval.py",
-          'dest_dir=config if delivery == "user" else workspace)',
-          'dest_dir=config if delivery == "user" else workspace,\n'
+          'dest_dir=config if channel == "user" else workspace)',
+          'dest_dir=config if channel == "user" else workspace,\n'
           '            timeout=fixture.get("deliver_timeout_s", 2200000))'),
          "deliver_timeout_s", "deliver"),
     )

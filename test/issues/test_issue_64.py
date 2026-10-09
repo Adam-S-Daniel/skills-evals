@@ -610,6 +610,8 @@ class Publication(unittest.TestCase):
 
     def test_complete_report_badge_and_metadata_are_distinct_from_delivery(self):
         w = World(self)
+        # A draft fixture is a generated review request (issue #60), so it is
+        # readiness metadata only: `delta` stays a gap, not covered.
         w.raw_fixture("declared", "skill: delta\nregistry: https://github.com/"
                       "Adam-S-Daniel/adam-agentskills\ndraft: true\ncontext:\n"
                       "  repository: Adam-S-Daniel/skills-evals\n"
@@ -622,14 +624,14 @@ class Publication(unittest.TestCase):
         self.assertEqual(proc.stdout, "")
         self.assertEqual(report["status"], "complete")
         self.assertEqual(report["totals"],
-                         {"total": 10, "covered": 5, "skipped": 1, "gap": 4})
+                         {"total": 10, "covered": 4, "skipped": 1, "gap": 5})
         self.assertEqual(report["fixture_readiness"],
                          {"total": 7, "draft": 1, "context_declared": 1,
                           "context_missing": 6, "guidance_unproven": 1,
                           "paired_context_delivery_verified": False})
         badge = json.loads((directory / "badge.json").read_text(encoding="utf-8"))
         self.assertEqual(badge["schemaVersion"], 1)
-        self.assertEqual(badge["message"], "5 covered · 1 skipped · 4 gap · 2026-10-08")
+        self.assertEqual(badge["message"], "4 covered · 1 skipped · 5 gap · 2026-10-08")
         self.assertEqual(badge["color"], "orange")
         self.assertIn("Paired context delivery verified: no",
                       (directory / "latest.md").read_text(encoding="utf-8"))

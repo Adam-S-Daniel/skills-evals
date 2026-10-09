@@ -34,7 +34,7 @@ draft: true
 context:
   repository: Adam-S-Daniel/cms-platform
   revision: 5e66f6e3ced3e619e0fac869cff11c37c3877e2d
-  guidance_revision: 98a00535adb7fc8ebf03d4d5d4cadbfaf7321f10
+  guidance_revision: 35f62ec4d9ab7fd8b9d9fe2e3a547c7d5926c3f9
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 7603

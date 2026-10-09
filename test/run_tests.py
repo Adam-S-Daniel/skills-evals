@@ -140,6 +140,13 @@ def _write_positive_cooling_off_policy() -> Path:
 POSITIVE_COOLING_OFF_POLICY = _write_positive_cooling_off_policy()
 
 
+def install_and_run(workspace, prompt, arm):
+    """An isolation `with_skill` arm as `_run_arm` drives it: the skill is
+    installed before the agent call (ADR 0012), never inside `run_agent`."""
+    error = run_eval.install_skill(workspace, arm)
+    return error if error is not None else run_eval.run_agent(workspace, prompt, arm)
+
+
 class WithSkillInstallTests(unittest.TestCase):
     """Skill-dir resolution must work against both registry layouts:
     plugins/<bundle>/skills/<skill>/ where a bundle holds several skills
@@ -155,7 +162,7 @@ class WithSkillInstallTests(unittest.TestCase):
                   "registry": FAKE_REGISTRY, "timeout": 30}
             with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
             skill_md = (workspace / ".claude" / "skills"
                         / "fixture-primary-skill" / "SKILL.md")
@@ -169,7 +176,7 @@ class WithSkillInstallTests(unittest.TestCase):
                   "registry": FAKE_REGISTRY_LEGACY, "timeout": 30}
             with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
             skill_md = (workspace / ".claude" / "skills"
                         / "fixture-solo-skill" / "SKILL.md")
@@ -188,16 +195,16 @@ class WithSkillInstallTests(unittest.TestCase):
                       "registry": FAKE_REGISTRY, "timeout": 30}
                 with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                                   "FAKE_CLAUDE_MODE": "agent"}):
-                    result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                    result = install_and_run(workspace, "audit the workflows", arm)
                 self.assertNotIn("error", result)
                 skill_md = workspace / ".claude" / "skills" / skill / "SKILL.md"
                 self.assertTrue(skill_md.is_file())
                 self.assertIn(bundle, skill_md.read_text(encoding="utf-8"))
 
-    def test_multiple_matches_pick_first_sorted(self):
+    def test_multiple_matches_are_refused_not_sorted(self):
         # Not a registry state that should ever occur (a skill name should be
-        # unique across bundles), but resolution must be deterministic if it
-        # ever did rather than depending on filesystem enumeration order.
+        # unique across bundles). ADR 0012 removed "first sorted match wins":
+        # two copies of one name are a named error, never a silent pick.
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry"
             for bundle in ("zzz-bundle", "aaa-bundle"):
@@ -211,12 +218,11 @@ class WithSkillInstallTests(unittest.TestCase):
                   "registry": registry, "timeout": 30}
             with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
-            self.assertNotIn("error", result)
-            content = (workspace / ".claude" / "skills" / "dup-skill" / "SKILL.md").read_text(
-                encoding="utf-8")
-            # "aaa-bundle" sorts before "zzz-bundle" lexicographically.
-            self.assertEqual(content, "from aaa-bundle\n")
+                result = install_and_run(workspace, "audit the workflows", arm)
+            self.assertEqual(result["error"], "ambiguous_skill")
+            self.assertIn("2 SKILL.md files matched", result["detail"])
+            self.assertNotIn(str(registry), result["detail"])
+            self.assertFalse((workspace / ".claude").exists())
 
     def test_stray_file_at_match_path_errors_cleanly(self):
         # A plain file sitting where a skill dir would be (not a real registry
@@ -233,7 +239,7 @@ class WithSkillInstallTests(unittest.TestCase):
             arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": registry, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_not_found")
 
@@ -244,7 +250,7 @@ class WithSkillInstallTests(unittest.TestCase):
             arm = {"name": "with_skill", "skill": "does-not-exist",
                   "registry": FAKE_REGISTRY, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
             # Item 6 (#129 review round 4): the registry's basename, not its
@@ -267,7 +273,7 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "does-not-exist",
                   "registry": registry, "timeout": 30}
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn(registry.name, result["detail"])
             self.assertNotIn(str(registry), result["detail"])
@@ -5396,7 +5402,9 @@ case "$1" in
         fi
         count=$((count + 1))
         echo "$count" > "$counter"
-        if [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
+        if [ -f "$FIXTURES/pr-${num}.view${count}.json" ]; then
+          cat "$FIXTURES/pr-${num}.view${count}.json"
+        elif [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
           cat "$FIXTURES/pr-${num}.after.json"
         else
           cat "$FIXTURES/pr-${num}.json"
@@ -5447,6 +5455,11 @@ case "$1" in
 esac
 """
 
+    SLEEP_STUB = """#!/usr/bin/env bash
+echo "sleep $*" >> "$FIXTURES/calls.log"
+exit 0
+"""
+
     @classmethod
     def setUpClass(cls):
         import yaml
@@ -5464,6 +5477,10 @@ esac
         git = d / "git"
         git.write_text(self.GIT_STUB, encoding="utf-8")
         git.chmod(0o755)
+        # Tests must never really sleep: the stub only records the call.
+        sleep = d / "sleep"
+        sleep.write_text(self.SLEEP_STUB, encoding="utf-8")
+        sleep.chmod(0o755)
         return d
 
     def _fixtures_dir(self) -> Path:
@@ -5603,6 +5620,51 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue([c for c in self._calls(fixtures)
                          if c.startswith("pr update-branch")], self._calls(fixtures))
+        self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
+
+    # -- (h) mergeable=UNKNOWN is re-read, not final --------------------------
+
+    def test_unknown_mergeable_is_reread_then_merges(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 49, self._pr(49, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        self._write_pr(fixtures, 49, self._pr(49), suffix=".view3")
+        result = self._run(fixtures, bin_dir, [49])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        merge_calls = [c for c in calls if c.startswith("pr merge")]
+        self.assertEqual(len(merge_calls), 1, calls)
+        self.assertIn(f"--match-head-commit {self.HEAD_SHA}", merge_calls[0])
+        self.assertEqual(len([c for c in calls if c.startswith("sleep")]), 2, calls)
+        self.assertIn("merged=1 updated=0 skipped=0 blocked=0 failed=0", result.stdout)
+
+    def test_unknown_mergeable_forever_is_skipped_after_bounded_rereads(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 50, self._pr(50, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        result = self._run(fixtures, bin_dir, [50])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertFalse([c for c in calls if c.startswith("pr merge")], calls)
+        self.assertEqual(len([c for c in calls if c.startswith("pr view 50")]), 7, calls)
+        self.assertIn("still UNKNOWN after 6 re-reads", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+
+    # -- (i) #270 regression: a refused merge judges BEHIND on FRESH state ----
+
+    def test_refused_merge_behind_only_on_fresh_read_updates_the_branch(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        # Snapshot says CLEAN; a sibling's merge then put the PR behind main.
+        self._write_pr(fixtures, 51, self._pr(51))
+        self._write_pr(fixtures, 51, self._pr(51, mergeStateStatus="BEHIND"),
+                       suffix=".after")
+        result = self._run(fixtures, bin_dir, [51], merge_fails="51")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertIn("pr update-branch 51", calls)
         self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
 
 
@@ -7271,6 +7333,10 @@ class TestIssue67Review(unittest.TestCase):
             eval_dir = self._fixture_dir(tmp, pinned=False)
             path = self._roster_file(tmp)
             results = Path(tmp) / "results"
+            skill = Path(tmp) / "plugins/test-bundle/skills/a-skill/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: a-skill\ndescription: Offline roster fixture.\n---\n",
+                             encoding="utf-8")
             argv = ["run_eval.py", str(eval_dir), "--arm", "both",
                     "--roster", str(path), "--results-dir", str(results),
                     "--registry", f"adam-agentskills={tmp}"]
@@ -10214,7 +10280,7 @@ class TestIssue63(unittest.TestCase):
               "layout": layout, "timeout": 30}
         with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                           "FAKE_CLAUDE_MODE": "agent"}):
-            return run_eval.run_agent(workspace, "audit the workflows", arm)
+            return install_and_run(workspace, "audit the workflows", arm)
 
     def test_resolves_flat_skills_layout(self):
         # cms-platform-shaped: skills/<skill>/SKILL.md. Two skills present —
@@ -11250,7 +11316,7 @@ class TestIssue63Round2(unittest.TestCase):
                   "layout": "skills/*/SKILL.md", "timeout": 30}
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
             # The skill name, not the destination's absolute workspace path
@@ -11275,7 +11341,7 @@ class TestIssue63Round2(unittest.TestCase):
                 "not a directory\n", encoding="utf-8")
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
+                result2 = install_and_run(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
             # N1 (#129 review round 6): "already exists" is FALSE for this
@@ -15014,12 +15080,13 @@ class TestIssue81(unittest.TestCase):
             fixture = copy.deepcopy(self._fixture("recruiter-reply"))
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             # recruiter-reply's registry is adam-agentskills-private, which CI
-            # has no token to clone, so `_run_arm` would stop at
-            # registry_not_found before the seed cap under test. run_agent is
-            # stubbed below, so any existing directory satisfies the checkout
-            # test.
+            # has no token to clone. Give the pre-agent install a minimal
+            # offline skill so the stubbed agent reaches the seed cap.
             private_stub = Path(tmp) / "adam-agentskills-private"
-            private_stub.mkdir()
+            skill = private_stub / "plugins/test-bundle/skills" / fixture["skill"] / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: adam-writing-style\ndescription: Offline seed cap fixture.\n---\n",
+                             encoding="utf-8")
             registries["adam-agentskills-private"] = dict(
                 registries["adam-agentskills-private"], path=private_stub)
             args = argparse.Namespace(model=None, timeout=30,
