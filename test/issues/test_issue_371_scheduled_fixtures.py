@@ -10,6 +10,7 @@ Run with: python3 -m pytest test/issues/test_issue_371_scheduled_fixtures.py -q
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 import re
 import sys
@@ -34,6 +35,29 @@ PINNED_WITH_REASON: dict[str, str] = {}
 # A scheduled fixture with no provable `guidance_revision` stays an isolation
 # pair and is named here with the reason. Empty: all eight resolve.
 ISOLATION_ONLY: dict[str, str] = {}
+
+# What each in-place arm measured on 2026-10-10, as (guidance, catalog,
+# payload) bytes: the context alone, then the `with` arm. The two differ only
+# where the context does not hold the skill and `with` adds the registry's
+# copy; the harness checks that larger arm against the same limits
+# (`run_eval._check_with_budget`). Measured through `run_eval._in_place_plan`
+# against clones of the context repositories, which no test here can reach,
+# so these are recorded figures: re-measure and update them with the budget.
+_CMS_PLATFORM = (25099, 6082, 685637)
+_ADAMDANIEL_AI = (25099, 14017, 885455)
+MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    "evals/workflow-path-audit": (_CMS_PLATFORM, _CMS_PLATFORM),
+    "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
+    "evals/review-bash-ci-reliability": (_CMS_PLATFORM, _CMS_PLATFORM),
+    "evals/skills-doctor/bucketed-account-store": ((25099, 6115, 644882),) * 2,
+    "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI, _ADAMDANIEL_AI),
+    "evals/writing-adrs/bootstrap": (_CMS_PLATFORM, _CMS_PLATFORM),
+    "evals/disarm-inherited-reach": (_CMS_PLATFORM, _CMS_PLATFORM),
+    # wsl-automation's lock resolves to the same skills as cms-platform's.
+    "evals/windows-elevation-from-wsl": (_CMS_PLATFORM, (25099, 7180, 695580)),
+}
+MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
+HEADROOM = 1.25
 
 
 def scheduled() -> list[dict]:
@@ -115,6 +139,21 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
                     # 1 is the scaffolder's unmeasured placeholder.
                     self.assertGreater(value, 1, key)
 
+    def test_each_limit_leaves_a_quarter_of_headroom_on_the_larger_arm(self):
+        # A limit sized on the context alone leaves the `with` arm of an
+        # added skill short: 7603 against 7180 catalog bytes was 5.9%.
+        self.assertEqual(set(MEASURED), set(fixtures()) - set(ISOLATION_ONLY))
+        self.assertEqual(set(MEASURED_KEYS), set(context.BUDGET_KEYS))
+        for path, fixture in fixtures().items():
+            if path in ISOLATION_ONLY:
+                continue
+            context_only, with_arm = MEASURED[path]
+            for index, key in enumerate(MEASURED_KEYS):
+                with self.subTest(fixture=path, key=key):
+                    self.assertGreaterEqual(with_arm[index], context_only[index])
+                    self.assertEqual(fixture["context"]["budget"][key],
+                                     math.ceil(with_arm[index] * HEADROOM))
+
     def test_each_fixture_still_declares_its_isolation_pair(self):
         # --pairing isolation stays runnable: the skill alone against nothing.
         for path, fixture in fixtures().items():
@@ -129,8 +168,10 @@ class ScheduleReadinessNotes(unittest.TestCase):
         for row in scheduled():
             with self.subTest(fixture=row["path"]):
                 note = row["readiness"]
-                self.assertIn("isolation pair", note.lower())
-                self.assertIn("claude-sonnet-5", note)
+                # Either pairing and any model: the first in-place baseline
+                # must not need this test edited.
+                self.assertRegex(note, r"(?i)\b(isolation|in-place) pair\b")
+                self.assertRegex(note, r"\bclaude-[a-z]+-[0-9]")
 
 
 if __name__ == "__main__":

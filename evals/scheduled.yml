@@ -1,3 +1,6 @@
+# The models each readiness note names are inferred, not read from a run
+# record: from the fixture's pins at skills-evals c1bf71c, or for the unpinned
+# fixture from the roster's first arm and judge at fc7e1cf.
 fixtures:
   - path: evals/workflow-path-audit
     readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Current scheduled fixture; local smoke: with 8 vs without 7."

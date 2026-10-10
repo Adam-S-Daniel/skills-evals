@@ -48,9 +48,12 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # `skills.lock` adopts the skill's bundle (`adam-coding-local`), so the
 # context does not hold the skill and the `with` arm adds the registry's copy.
 # Measured at that repository's `main` on 2026-10-10: guidance, catalog and
-# payload were 25099, 6082 and 685637 bytes; each limit is
-# ceil(measured * 1.25). With the skill added the `with` arm measured 7180
-# catalog and 695580 payload bytes, inside the same limits. 11 eligible
+# payload were 25099, 6082 and 685637 bytes. With the skill added the `with`
+# arm measured 7180 catalog and 695580 payload bytes, and the harness checks
+# that larger arm against the same limits, so each limit is
+# ceil(larger arm * 1.25): 25% headroom on `with`, more on `without`. The
+# added copy is read from the registry checkout, which is not pinned, so
+# this headroom is also what a longer description has to fit in. 11 eligible
 # guidance revisions matched the shipped bytes; the pin is the newest (then
 # the smallest SHA).
 context:
@@ -59,8 +62,8 @@ context:
   guidance_revision: 6d2415b4d0704acf7619b46f4c01479fd01f978e
   budget:
     guidance_bytes: 31374
-    skill_catalog_bytes: 7603
-    skill_payload_bytes: 857047
+    skill_catalog_bytes: 8975
+    skill_payload_bytes: 869475
 
 judge:
   # Diagnosis and Handoff carry the correctness axis; Restraint is the
