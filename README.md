@@ -192,7 +192,7 @@ tracking sub-issues under [the coverage backfill](https://github.com/Adam-S-Dani
 These are TODO skeletons, not evaluated fixtures; drafts remain GAPs in the
 census until an incident, measured context limits, objective checks, and
 red/green evidence have been reviewed. A backlog above three gaps can take
-multiple daily runs. The [registry-side graduation and touch gate](https://github.com/Adam-S-Daniel/agentskills/issues/153)
+multiple daily runs. The [registry-side graduation and touch gate](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66)
 is a separate dependency before [automatic coverage](https://github.com/Adam-S-Daniel/skills-evals/issues/60)
 can be considered complete.
 
