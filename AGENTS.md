@@ -99,6 +99,20 @@ session that lost the guidance must not also lose these.
   operational state is the status board,
   [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
 
+- **Running tests in a fresh or cloud session.** Run `bash scripts/dev_setup.sh`
+  first: it installs what `ci.yml`'s `test` job installs (the pip pins and the
+  four fixture `npm ci` directories), and `test/issues/test_issue_dev_setup.py`
+  keeps the two in step. Then run the module that covers your change,
+  `python3 -m pytest test/issues/<file>.py -q -n 2`, and report its count
+  beside its exit code. `python3 -m unittest test.issues.<name>` cannot import
+  (`test/` is not a package). The full suite,
+  `python3 test/run_tests.py --jobs auto`, did not finish inside a 10-minute
+  foreground command limit on 2 cores (2026-10-10), so start it in the
+  background with its output in a log and poll, or let CI's `test` be the
+  record. A cloud container has no `bwrap`, so tests of workspace-executing
+  scorers fail closed there. Wrap any run in
+  `unshare --user --map-current-user --pid --fork --mount-proc --`.
+
 - **Workflow triggers and salient paths.** `test` (ci.yml) is the one
   required check. Keep this table in step when a trigger or filter moves.
 
