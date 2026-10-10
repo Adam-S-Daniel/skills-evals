@@ -7,8 +7,8 @@ routines fire API. What is pinned here:
 
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
-    inputs mode, candidate, fixture, skill, holdout, arms and trials, and
-    `permissions: contents: read`;
+    inputs mode, candidate, fixture, skill, holdout, model, arms and trials
+    (`model`: test_issue_68_model_input.py), and `permissions: contents: read`;
   * every `uses:` is a 40-character SHA with nothing after it on the line,
     at the same SHA this repo's other workflows already pin;
   * no `${{ inputs.* }}` or `${{ github.event.* }}` inside any `run:` block;
@@ -137,7 +137,7 @@ class WorkflowShapeTests(unittest.TestCase):
         inputs = on["workflow_dispatch"]["inputs"]
         self.assertEqual(set(inputs),
                          {"mode", "candidate", "fixture", "skill", "holdout",
-                          "arms", "trials"})
+                          "model", "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
                          ["eval", "scaffold", "improve"])
