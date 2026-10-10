@@ -33,6 +33,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -43,6 +44,11 @@ REPO_ROOT = base.REPO_ROOT
 SCRIPT = REPO_ROOT / "scripts" / "roster_arm.py"
 ROSTER = REPO_ROOT / "evals" / "roster.yml"
 FIXED_REFUSAL = "input 'model' is not an arm of the committed evals/roster.yml"
+
+
+# Values an option parser would read as a flag, not as data.
+OPTION_SHAPED = ("-h", "--help", "--he", "--roster=x", "--roster", "-x", "--",
+                 "-", "-1", "--version")
 
 
 def roster_doc() -> dict:
@@ -115,6 +121,28 @@ class RosterArmScriptTests(unittest.TestCase):
                 self.assertIn(FIXED_REFUSAL, proc.stderr)
                 if bad.strip():
                     self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)
+
+    def test_an_option_shaped_model_is_refused_not_parsed(self):
+        # Review round 1, B1: argparse answered `-h` with its help and exit
+        # 0, so the workflow took it for an arm. The first argument is the
+        # model, read literally; nothing but the fixed refusal is printed.
+        for bad in OPTION_SHAPED:
+            with self.subTest(bad=bad):
+                proc = self.run_script(bad)
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stdout, "")
+                self.assertEqual(proc.stderr, FIXED_REFUSAL + "\n")
+
+    def test_a_wrong_argument_count_or_option_is_refused_with_fixed_text(self):
+        arm = arm_ids()[0]
+        for argv in ((), (arm, arm), (arm, "--roster"), (arm, "--help"),
+                     (arm, "-h"), ("--roster", str(ROSTER), arm),
+                     (arm, "--rost", str(ROSTER)), (arm, "--roster", str(ROSTER), "x")):
+            with self.subTest(argv=argv):
+                proc = self.run_script(*argv)
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stdout, "")
+                self.assertEqual(proc.stderr, FIXED_REFUSAL + "\n")
 
     def test_an_unreadable_or_wrong_shape_roster_refuses_every_model(self):
         tmp = Path(tempfile.mkdtemp())
@@ -206,6 +234,63 @@ class ValidateStepModelTests(unittest.TestCase):
                 self.assertIn(FIXED_REFUSAL, proc.stdout + proc.stderr)
                 self.assertNotIn(bad, proc.stdout + proc.stderr)
                 self.assertNotIn("run_id", values)
+
+    def test_an_option_shaped_model_fails_with_the_fixed_message_only(self):
+        # Review round 1, B1: `-h` passed the step and was fired.
+        for bad in OPTION_SHAPED:
+            with self.subTest(bad=bad):
+                proc, values = self.run_step(self.eval_inputs(model=bad))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(proc.stdout.strip(), "::error::" + FIXED_REFUSAL)
+                self.assertNotIn("usage", (proc.stdout + proc.stderr).lower())
+                self.assertEqual(values, {})
+
+    def test_the_step_refuses_an_option_shape_before_the_script_runs(self):
+        # The step's own shape check, isolated from the script: a stand-in
+        # `python3` that calls every model an arm, and fails the test if an
+        # option-shaped one reaches its command line.
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        reached = self.tmp / "reached"
+        stand_in = bin_dir / "python3"
+        stand_in.write_text(
+            f"#!{sys.executable}\nimport os, sys\n"
+            "if sys.argv[1:2] == ['scripts/roster_arm.py']:\n"
+            f"    open({str(reached)!r}, 'a').write('x')\n"
+            "    sys.exit(0)\n"
+            "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n",
+            encoding="utf-8")
+        stand_in.chmod(0o755)
+        path = f"{bin_dir}:{os.environ['PATH']}"
+        with mock.patch.dict(os.environ, {"PATH": path}):
+            proc, values = self.run_step(self.eval_inputs(model=self.arm))
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(reached.exists(), "the stand-in was not used")
+            reached.unlink()
+            for bad in (*OPTION_SHAPED, ".hidden", "_x", "a" * 129, "a b", "a/b"):
+                with self.subTest(bad=bad):
+                    proc, values = self.run_step(self.eval_inputs(model=bad))
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertEqual(proc.stdout.strip(), "::error::" + FIXED_REFUSAL)
+                    self.assertEqual(values, {})
+                    self.assertFalse(reached.exists())
+
+    def test_every_roster_arm_id_has_the_shape_the_step_admits(self):
+        for arm in arm_ids():
+            with self.subTest(arm=arm):
+                self.assertRegex(arm, r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+    def test_a_model_of_the_wrong_type_is_refused_by_the_type_check(self):
+        # Review round 1, N1: pins `model` in the type and NUL check, which
+        # the control-character check would otherwise mask with a jq error.
+        for label, bad in (("number", 5), ("list", [self.arm]), ("bool", True),
+                           ("object", {"id": self.arm}), ("nul", self.arm + "\u0000")):
+            with self.subTest(case=label):
+                proc, values = self.run_step(self.eval_inputs(model=bad))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("is missing, not a string, or contains a NUL byte",
+                              proc.stdout)
+                self.assertEqual(values, {})
 
     def test_a_malformed_model_value_is_refused(self):
         for label, bad in (("nul", self.arm + "\u0000"), ("newline", self.arm + "\n"),

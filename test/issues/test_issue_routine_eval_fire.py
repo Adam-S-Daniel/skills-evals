@@ -417,7 +417,7 @@ class ValidateStepTests(unittest.TestCase):
         checker = bin_dir / "python3"
         checker.write_text(f"#!{sys.executable}\nimport sys\n"
                            f"assert sys.argv[1:] == "
-                           f"{['scripts/improve_gate.py', 'fire-check', SKILL, '--holdout', holdout]!r}\n")
+                           f"{['scripts/improve_gate.py', 'fire-check', SKILL, '--holdout=' + holdout]!r}\n")
         checker.chmod(0o755)
         with mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}):
             proc, values = self.run_step(
@@ -485,6 +485,17 @@ class ValidateStepTests(unittest.TestCase):
             "holdout_nbsp": {"holdout": "super\u00a0sede"},
             "holdout_line_separator": {"holdout": "super\u2028sede"},
         }, expect="is longer than 128 characters or has characters outside")
+        # An option-shaped holdout is one `--holdout=VALUE` word, so the
+        # checker reads it as a name (no such fixture), never as a flag.
+        self._refuse_all(good, {
+            "holdout_short_help": {"holdout": "-h"},
+            "holdout_long_help": {"holdout": "--help"},
+            "holdout_help_prefix": {"holdout": "--he"},
+            "holdout_own_flag": {"holdout": "--holdout"},
+            "holdout_unknown_flag": {"holdout": "-x"},
+            "holdout_double_dash": {"holdout": "--"},
+        }, expect="is refused by the improvement loop's fixture check",
+            forbid="usage")
         # The loop's own resolution (improve_gate.py fire-check): not a
         # skill's fixture set, another registry's skill, too few fixtures.
         self._refuse_all(no_holdout, {
@@ -541,7 +552,7 @@ class ValidateStepTests(unittest.TestCase):
                     "holdout_nul": {"holdout": "\u0000"},
                 })
 
-    def _refuse_all(self, good, cases, expect=None):
+    def _refuse_all(self, good, cases, expect=None, forbid=None):
         for label, override in cases.items():
             with self.subTest(case=label):
                 inputs = {**good, **override}
@@ -552,6 +563,8 @@ class ValidateStepTests(unittest.TestCase):
                 self.assertIn("::error::", proc.stdout + proc.stderr)
                 if expect is not None:
                     self.assertIn(expect, proc.stdout + proc.stderr)
+                if forbid is not None:
+                    self.assertNotIn(forbid, proc.stdout + proc.stderr)
                 bad = next(iter(override.values()))
                 if isinstance(bad, str) and bad.strip():
                     self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)

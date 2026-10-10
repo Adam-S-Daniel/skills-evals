@@ -12,12 +12,13 @@ with the harness's own reader and arm extraction, so this agrees with what
 never a substring of the file. The judge and the preflight model are not arms.
 
 A refusal prints one fixed line to stderr and never the input: the workflow's
-log is public. `--roster` points at another file for tests.
+log is public. MODEL is always the first argument and is read literally, never
+as an option: `-h` is a model that is not an arm. `--roster` points at another
+file for tests.
 """
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -37,11 +38,18 @@ def is_arm(model: str, roster_path: Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("model")
-    parser.add_argument("--roster", type=Path, default=run_eval.TRUSTED_ROSTER)
-    args = parser.parse_args(argv)
-    if is_arm(args.model, args.roster):
+    # No option parser: one would read a MODEL of `-h` as a request for help
+    # and exit 0, which the workflow takes for "an arm". The first argument is
+    # the model, whatever it looks like; any other argument list is refused.
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) == 1:
+        roster_path = run_eval.TRUSTED_ROSTER
+    elif len(argv) == 3 and argv[1] == "--roster":
+        roster_path = Path(argv[2])
+    else:
+        print(REFUSAL, file=sys.stderr)
+        return 1
+    if is_arm(argv[0], roster_path):
         return 0
     print(REFUSAL, file=sys.stderr)
     return 1
