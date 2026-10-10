@@ -405,6 +405,12 @@ design, recorded verbatim:
 Q3, Q4, Q6 and Q8 are recorded in "Real-work fixtures from merged pull
 requests (2026-10-06)" below.
 
+A seed is frozen at its fixture's `context.revision`: the repository-specific
+text Q5 keeps is that commit's, and a seed is never edited to match a later
+fleet rule, even where it contradicts one. `cms-platform-221`'s seed still
+asks for a `# vX.Y.Z (date)` comment beside each pin, as cms-platform did at
+`3d7ca3e`. A fix to such a rule belongs in the live repository, not the seed.
+
 #### The answer-leak lint ([`harness/answer_leak.py`](harness/answer_leak.py))
 
 A library, not a run-time check. A four-word run of the task text (words are
