@@ -7,6 +7,26 @@
 skill: embeddable-tool-pages
 registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
 
+# In-place context (ADR 0012): adamdaniel.ai, the operational repository.
+# The skill is site-owned and lives in that repository's `.claude/skills/`.
+# It is not in `skills.lock`, which is all the resolver reads, so the
+# context does not hold the skill and the `with` arm adds the registry's
+# copy.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 14017 and 885455 bytes; each limit is
+# ceil(measured * 1.25). With the skill added the `with` arm measured 14646
+# catalog and 892334 payload bytes, inside the same limits. 14 eligible
+# guidance revisions matched the shipped bytes; the pin is the newest (then
+# the smallest SHA).
+context:
+  repository: Adam-S-Daniel/adamdaniel.ai
+  revision: 8074d5a38862594ae056651994ad110900d484ec
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 17522
+    skill_payload_bytes: 1106819
+
 judge:
   weights:
     correctness: 0.5

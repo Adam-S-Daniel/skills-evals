@@ -380,8 +380,14 @@ class TestIssue80Why(unittest.TestCase):
         for name in SIBLINGS:
             with self.subTest(sibling=name):
                 other = run_eval.load_fixture(ADRS_DIR / name)
-                for key in ("model", "skill", "registry", "arms"):
+                for key in ("skill", "registry", "arms"):
                     self.assertEqual(self.fixture[key], other[key])
+                if name == "bootstrap":
+                    # Scheduled, so it follows the roster (#371 item 5).
+                    self.assertNotIn("model", other)
+                    self.assertNotIn("model", other["judge"])
+                    continue
+                self.assertEqual(self.fixture["model"], other["model"])
                 self.assertEqual(self.fixture["judge"]["model"], other["judge"]["model"])
 
     def test_judge_weights_sum_to_one_and_name_the_rubrics_dimensions(self):

@@ -18,10 +18,29 @@
 skill: writing-adrs
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
+
+# In-place context (ADR 0012): cms-platform, a representative consumer.
+# The skill has no single operational repository. cms-platform adopts its
+# bundle (`adam-anything-anywhere`) in `skills.lock` and has no
+# `docs/decisions/` yet, which is the case this fixture bootstraps.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 6082 and 685637 bytes; each limit is
+# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+# bytes; the pin is the newest (then the smallest SHA). The context adopts
+# the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 28f2b6ed98837757417e058dd21047df046dadc7
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
 
 judge:
-  model: claude-opus-4-8
   weights:
     decision-with-alternatives-and-consequences: 0.5
     title-is-a-decision-statement: 0.3

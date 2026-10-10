@@ -507,12 +507,18 @@ class _RunEvalEndToEnd(unittest.TestCase):
         return runs[0]
 
 
+def _roster_models():
+    """The models an unpinned fixture runs on: the committed roster's first
+    arm and its judge. EVAL_DIR pins neither (#371 item 5)."""
+    committed = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+    return committed["arms"][0]["id"], committed["judge"]["id"]
+
+
 class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
 
     def test_both_arms_record_harness_and_models(self):
         skill = run_eval.load_fixture(EVAL_DIR)["skill"]
-        pinned = run_eval.load_fixture(EVAL_DIR)["model"]
-        judge_model = run_eval.load_fixture(EVAL_DIR)["judge"]["model"]
+        pinned, judge_model = _roster_models()
         proc = self._run(EVAL_DIR, "--arm", "both",
                          env_extra={"AGENTSKILLS_DIR": str(self._registry(skill))})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -598,7 +604,7 @@ class TestJudgeModelsOnTheExceptionPath(_RunEvalEndToEnd):
 
     def test_a_judge_that_answers_junk_still_records_its_model(self):
         skill = run_eval.load_fixture(EVAL_DIR)["skill"]
-        judge_model = run_eval.load_fixture(EVAL_DIR)["judge"]["model"]
+        _, judge_model = _roster_models()
         # Prose for every call: a fine transcript for the agent, and an
         # answer judge.score cannot parse, AFTER the CLI call completed.
         wrapper = _write_script(self.tmp / "cli", (

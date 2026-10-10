@@ -1016,10 +1016,15 @@ class TestIssue80Supersede(unittest.TestCase):
         for sibling in SIBLING_FIXTURES:
             with self.subTest(sibling=sibling.name):
                 other = run_eval.load_fixture(sibling)
-                self.assertEqual(self.fixture["model"], other["model"])
-                self.assertEqual(self.fixture["judge"]["model"], other["judge"]["model"])
                 self.assertEqual(self.fixture["skill"], other["skill"])
                 self.assertEqual(self.fixture["registry"], other["registry"])
+                if sibling.name == "bootstrap":
+                    # Scheduled, so it follows the roster (#371 item 5).
+                    self.assertNotIn("model", other)
+                    self.assertNotIn("model", other["judge"])
+                    continue
+                self.assertEqual(self.fixture["model"], other["model"])
+                self.assertEqual(self.fixture["judge"]["model"], other["judge"]["model"])
                 self.assertEqual(self.fixture["arms"], other["arms"])
 
     def test_judge_weights_sum_to_one_and_name_the_rubrics_dimensions(self):
