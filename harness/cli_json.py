@@ -67,6 +67,61 @@ def normalize_cli_result(decoded: object) -> dict:
     return merged
 
 
+# ---------------------------------------------------------------------------
+# Account-meter events (#370). With `--verbose` the message array carries a
+# `type: rate_limit_event` object whose `rate_limit_info` is the account's
+# usage windows as the API reported them on that call (CLI 2.1.296,
+# measured 2026-10-10). Reading them costs nothing: the harness only keeps
+# what a call it made anyway printed.
+
+#: Limits on one `rate_limit_info` kept verbatim in a public summary.json,
+#: each inside what scripts/ingest_routine_results.py accepts of any JSON
+#: value. The real object is about 330 bytes and three levels deep.
+METER_INFO_MAX_BYTES = 2048
+METER_INFO_MAX_DEPTH = 5
+METER_INFO_MAX_ITEMS = 64
+_MESSAGE_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z")
+
+
+def _plain_json(value: object, depth: int = 0) -> bool:
+    """Nothing but finite numbers of ordinary size, strings, booleans, nulls
+    and short containers of them, at most METER_INFO_MAX_DEPTH deep."""
+    if isinstance(value, (dict, list)):
+        if depth >= METER_INFO_MAX_DEPTH or len(value) > METER_INFO_MAX_ITEMS:
+            return False
+        if isinstance(value, dict) and not all(
+                isinstance(k, str) and len(k) <= 64 for k in value):
+            return False
+        return all(_plain_json(v, depth + 1) for v in (
+            value.values() if isinstance(value, dict) else value))
+    if isinstance(value, (int, float)):
+        return value == value and abs(value) < 1e15
+    return value is None or isinstance(value, str)
+
+
+def rate_limit_events(decoded: object) -> list[dict]:
+    """One `{"at", "info"}` per meter event in a `--verbose` message array,
+    in order. `info` is the event's `rate_limit_info`, verbatim, or None when
+    it is not an object within the limits above. `at` is the timestamp of the
+    nearest message before the event that carries one (the event has none of
+    its own), else None. A single result object (no `--verbose`) has no
+    events. Never raises on an unexpected shape."""
+    events, at = [], None
+    for message in decoded if isinstance(decoded, list) else ():
+        if not isinstance(message, dict):
+            continue
+        stamp = message.get("timestamp")
+        if isinstance(stamp, str) and _MESSAGE_TIME.fullmatch(stamp):
+            at = stamp
+        if message.get("type") != "rate_limit_event":
+            continue
+        info = message.get("rate_limit_info")
+        kept = (isinstance(info, dict) and _plain_json(info) and len(
+            json.dumps(info).encode("utf-8")) <= METER_INFO_MAX_BYTES)
+        events.append({"at": at, "info": info if kept else None})
+    return events
+
+
 # Paths in a CLI diagnostic: a quoted absolute path (spaces allowed), a
 # file:// URL, a ~/ path, a Windows drive path, then a bare absolute path.
 _PATH_PATTERNS = (

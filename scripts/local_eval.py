@@ -877,9 +877,14 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
 
     fixture = fixtures[0]["fixture"]
     skill = fixture["skill"]
+    # One id for the whole invocation, in the routine's run id shape; every
+    # trial's summaries carry it in their `run` block (#370).
+    run_id = (datetime.now(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
+              + "-" + os.urandom(3).hex())
     manifest = {
         "exhibit": EXHIBIT,
         "status": "running",
+        "run_id": run_id,
         "started_at": _utc_now(),
         "fixture": (eval_dir.relative_to(REPO_ROOT).as_posix()
                     if REPO_ROOT in eval_dir.parents else str(eval_dir)),
@@ -940,7 +945,11 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         _write_marker(trial_dir)
         cmd = [sys.executable, str(RUN_EVAL), str(eval_dir), "--arm", args.arm,
                "--results-dir", str(trial_dir),
-               "--permission-mode", args.permission_mode]
+               "--permission-mode", args.permission_mode,
+               # What kind of run this is: a workstation, under the
+               # operator's own login (rule 1 refuses an API credential).
+               "--run-billing", "subscription", "--run-runner", "workstation",
+               "--run-location", "local", "--run-id", run_id]
         # The whole results dir, not only this trial's: trial k's arms must
         # not read trials 1..k-1 (ADR 0011's reads addendum).
         for path in (out, *args.read_deny):

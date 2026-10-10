@@ -997,6 +997,72 @@ is objectively decidable from the resulting files alone.
   share against it, `canonical_model` is the arm model's canonical id, and
   the share is the one the counts give. Summaries without the fields still
   ingest.
+- **Run and usage ([#370](https://github.com/Adam-S-Daniel/skills-evals/issues/370)
+  item 1):** every `summary.json`, error paths and arm aggregates included,
+  carries a `run` block and a `usage` block. A value that could not be read
+  is `null` with an entry in its block's `reasons`, never omitted and never
+  guessed; nothing reads either block to weight or filter a result.
+  `run: {schema_version, billing, runner, location, id, session_id,
+  harness_commit, cli_version, source, reasons}`. `billing`, `runner`,
+  `location` and `id` are the run's `--run-billing {api,subscription}`,
+  `--run-runner {actions,routine,workstation}`, `--run-location {cloud,local}`
+  and `--run-id` when passed, else what the environment observes
+  (`run_eval.RUN_ENV`: `GITHUB_ACTIONS=true` is the `actions` runner,
+  `GITHUB_RUN_ID` its id, `CLAUDE_CODE_REMOTE_SESSION_ID` a `cloud` location
+  and the `session_id`), else `null`; `source` records `flag`, `env:<NAME>`
+  or `null` per field. Billing is never read from the environment, and a
+  hosted session does not say a routine started it. `eval.yml` passes
+  `api` / `actions` / `cloud`, and `scripts/local_eval.py` passes
+  `subscription` / `workstation` / `local` with one run id for all its
+  trials. `harness_commit` is the harness checkout's `HEAD`, read from its
+  git metadata files with no git command.
+  `usage` has a half the whole run shares and a half that is this summary's
+  own. The shared half: `started_at` and `ended_at` (UTC), `meter`,
+  `meter_delta`, `concurrent_runs` (`null`: not knowable inside one run,
+  computed at ingest), `other_account_activity` (`unknown`, or
+  `asserted_quiet` with `asserted_quiet_by` when `--asserted-quiet <who>` was
+  passed), `outer_session: {id, usage: null, note: "not measured"}`,
+  `limit_promotion` and `price_table_version` (both `null`: the CLI names a
+  cost basis, not a price table). It is written into each summary as it
+  stood at that moment, and when the run ends every summary the run wrote is
+  rewritten with the final one, so all of a run's summaries agree; a run that
+  is killed leaves `ended_at: null` with its reason.
+  `meter.snapshots` are the CLI's own `rate_limit_event` objects: with
+  `--verbose` the agent call's message array carries one (CLI 2.1.296,
+  measured 2026-10-10), so reading the account meter adds no model call. The
+  first and the last event of each agent CLI call are kept, each as `{at,
+  at_source, call: {role, arm, fixture, trial, index}, info}` with `info` the
+  event's `rate_limit_info` verbatim (whatever windows it names) and `at` the
+  timestamp of the message before it (`cli_message`), else the call's end
+  (`call_end`). A run keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its
+  first six and last six; `omitted` counts the rest and `unreadable_events`
+  those not kept for their shape or size. The judge call (`--output-format
+  json` without `--verbose`) and the guard call print no such event, which
+  `meter.not_sampled` says. `meter_delta` is the first snapshot against the
+  last, per window both name: `{from, to, delta, window_reset}`, `delta`
+  `null` when the window's reset time changed between them. It is
+  account-wide, so it is this run's cost only if nothing else used the
+  account, and it is labeled, never corrected. A run billed `api` has
+  `meter: null` and `meter_delta: null` with the reason.
+  `usage.measured` is `{scope, started_at, ended_at, calls, agent, judge,
+  guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
+  call with its role, start, end, wall-clock `duration_ms` and outcome, and
+  each role has `{calls, duration_ms, num_turns, cost_usd, cost_basis,
+  models, cache_creation, reasons}`: `models` per model id with the four
+  token counts and `cost_usd` from `modelUsage`, `cost_usd` the CLI's own
+  list-price figure, and `cache_creation` the 5-minute and 1-hour cache-write
+  split, which the CLI reports for the main loop only. The judge's result
+  reaches the harness as its `modelUsage` alone, so its turns and cache split
+  are `null`; the guard returns only its verdict, so its tokens and cost are
+  `null`. A role with no call records zeros. An arm aggregate (`scope: arm`)
+  sums its trials role by role, a `null` in any trial making that sum `null`,
+  and lists no calls. A trial with more than `run_eval.USAGE_MAX_CALLS` (32)
+  calls keeps the role totals and `calls: null`.
+  `scripts/ingest_routine_results.py` accepts both blocks (together or not at
+  all, so earlier summaries still ingest) and checks their shape. With every
+  snapshot and call slot taken the two blocks measured 26,369 bytes
+  pretty-printed, against the ingester's 64 KiB cap on a summary, which is
+  unchanged; a six-call run's measured 14,464.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work
