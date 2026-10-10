@@ -14,7 +14,8 @@ name: Fire eval routine
 #   public log), and validated before the bearer is ever in a step's env.
 # * Two modes (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
 #   (Recommended)"). `eval`, the default, sends exactly five fields: mode,
-#   run_id, fixture, arms, trials. `scaffold` sends exactly four: mode,
+#   run_id, fixture, arms, trials, and a sixth, `model`, only when that input
+#   is set (#68, #372 U4; see below). `scaffold` sends exactly four: mode,
 #   run_id, candidate (a miner key, OWNER__REPO__PR) and issue_snapshot, and
 #   the routine turns that one candidate into one draft real-work fixture on
 #   its own branch.
@@ -32,6 +33,16 @@ name: Fire eval routine
 #   trials in eval and improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
 #   every value.
+# * `model` (#68's first slice, #372 U4) is optional and valid in eval mode
+#   only: the sweep dispatches each fixture once per roster arm. When set it
+#   must be the `id` of an arm in evals/roster.yml on the default branch,
+#   checked by scripts/roster_arm.py, which parses the YAML with the
+#   harness's own reader; the judge is not an arm. A refusal is a fixed
+#   message that never echoes the input. The payload gains `model` as its
+#   last key only then, so with it empty the payload is byte for byte what
+#   it was and the weekly caller (routine-eval-weekly.yml, which sets no
+#   model) is unaffected. The routine's saved prompt turns the payload's
+#   `model` into the runner's model flag; that prompt is not in this repo.
 # * Scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow
 #   precomputes (Recommended)"): a routine session refuses GitHub GraphQL,
 #   and an issue's body revisions have no REST read, so after validation,
@@ -106,6 +117,13 @@ on:
           evals/<skill>/ to hold out, e.g. supersede. Empty means none.
         required: false
         type: string
+      model:
+        description: >-
+          Eval mode only, optional (leave empty otherwise): the id of one
+          arm in evals/roster.yml, e.g. claude-opus-5-5. Empty keeps the
+          fixture's pin or the roster's first arm.
+        required: false
+        type: string
       arms:
         description: Which arms to run.
         required: true
@@ -158,12 +176,13 @@ jobs:
           # NUL first, on the event file itself: bash's $( ) drops a NUL, so
           # every check below would otherwise judge a different string than
           # the dispatcher sent. No rejection echoes the value back.
-          # `fixture`, `candidate`, `skill` and `holdout` are optional
-          # strings (each is used in one mode only), so an absent one reads
-          # as empty.
+          # `fixture`, `candidate`, `skill`, `holdout` and `model` are
+          # optional strings (each is used in one mode only), so an absent
+          # one reads as empty.
           if jq -e '[.inputs.mode, .inputs.arms, .inputs.trials,
                      (.inputs.fixture // ""), (.inputs.candidate // ""),
-                     (.inputs.skill // ""), (.inputs.holdout // "")]
+                     (.inputs.skill // ""), (.inputs.holdout // ""),
+                     (.inputs.model // "")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
@@ -172,10 +191,11 @@ jobs:
           # Also on the event file: $( ) strips trailing newlines, so a
           # value ending in one would otherwise pass the pattern below.
           if jq -e '[.inputs.mode, (.inputs.candidate // ""),
-                     (.inputs.skill // ""), (.inputs.holdout // "")]
+                     (.inputs.skill // ""), (.inputs.holdout // ""),
+                     (.inputs.model // "")]
                     | any(test("[\u0000-\u001f\u007f]"))' \
                "$event" >/dev/null; then
-            echo "::error::input 'mode', 'candidate', 'skill' or 'holdout' contains a control character"
+            echo "::error::input 'mode', 'candidate', 'skill', 'holdout' or 'model' contains a control character"
             exit 1
           fi
           mode="$(jq -r '.inputs.mode' "$event")"
@@ -183,6 +203,7 @@ jobs:
           fixture="$(jq -r '.inputs.fixture // ""' "$event")"
           skill="$(jq -r '.inputs.skill // ""' "$event")"
           holdout="$(jq -r '.inputs.holdout // ""' "$event")"
+          model="$(jq -r '.inputs.model // ""' "$event")"
           arms="$(jq -r '.inputs.arms' "$event")"
           trials="$(jq -r '.inputs.trials' "$event")"
 
@@ -203,6 +224,13 @@ jobs:
             eval|scaffold)
               if [ -n "$skill" ] || [ -n "$holdout" ]; then
                 echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve"
+                exit 1
+              fi ;;
+          esac
+          case "$mode" in
+            scaffold|improve)
+              if [ -n "$model" ]; then
+                echo "::error::input 'model' must be empty unless the mode is eval"
                 exit 1
               fi ;;
           esac
@@ -268,6 +296,17 @@ jobs:
               echo "::error::input 'fixture' names no committed fixture on the default branch"
               exit 1
             fi
+            # An arm id from the committed roster, parsed as YAML. The shape
+            # check comes first so no value with a leading `-` reaches a
+            # command line; the script reads its first argument literally
+            # too, and its own refusal is the same fixed text.
+            if [ -n "$model" ]; then
+              if ! [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
+                 || ! python3 scripts/roster_arm.py "$model"; then
+                echo "::error::input 'model' is not an arm of the committed evals/roster.yml"
+                exit 1
+              fi
+            fi
           fi
 
           if [ "$mode" = improve ]; then
@@ -279,7 +318,9 @@ jobs:
             # must be one of them. Only the registry-side SKILL.md lookup,
             # which needs the registry checkout, is left to the routine.
             # Its refusals are fixed text and never echo the input.
-            if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout "$holdout"; then
+            # `--holdout=VALUE` is one word: a holdout with a leading `-`
+            # (its pattern allows one) is read as a name, never as a flag.
+            if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout="$holdout"; then
               echo "::error::input 'skill' or 'holdout' is refused by the improvement loop's fixture check"
               exit 1
             fi
@@ -297,6 +338,7 @@ jobs:
             echo "fixture=${fixture}"
             echo "skill=${skill}"
             echo "holdout=${holdout}"
+            echo "model=${model}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
@@ -307,7 +349,7 @@ jobs:
           elif [ "$mode" = improve ]; then
             echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
           else
-            echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}"
+            echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}, model: ${model:-none}"
           fi
 
       # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners (Recommended)"):
@@ -339,7 +381,7 @@ jobs:
         run: |
           set -euo pipefail
           out="${RUNNER_TEMP:?}/issue-snapshot.json"
-          python3 scripts/scaffold_real_work.py snapshot --candidate "$CANDIDATE" --out "$out" \
+          python3 scripts/scaffold_real_work.py snapshot --candidate="$CANDIDATE" --out "$out" \
             --registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
@@ -355,6 +397,7 @@ jobs:
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
           SKILL: ${{ steps.validate.outputs.skill }}
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
+          MODEL: ${{ steps.validate.outputs.model }}
           ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
         run: |
           set -euo pipefail
@@ -384,7 +427,9 @@ jobs:
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
                 --arg arms "$ARMS" --argjson trials "$TRIALS" \
-                '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials} | tojson)}')" ;;
+                --arg model "${MODEL:-}" \
+                '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials}
+                         + (if $model == "" then {} else {model: $model} end) | tojson)}')" ;;
             improve)
               # Exactly five keys; an empty holdout is null, never "".
               body="$(jq -n -c \
@@ -523,6 +568,9 @@ jobs:
               echo
               echo "- Run id: \`${RUN_ID}\`"
               echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
+              if [ -n "${MODEL:-}" ]; then
+                echo "- Model: \`${MODEL}\`"
+              fi
               echo "- Session: ${session_url}"
               echo "- Results branch: \`claude/eval-${RUN_ID}\`"
             } >> "$GITHUB_STEP_SUMMARY"
