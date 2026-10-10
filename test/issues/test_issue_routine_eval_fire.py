@@ -256,7 +256,7 @@ class WorkflowShapeTests(unittest.TestCase):
             "FLEET_REGISTRY": "_agent-guidance/repos.yml",
             "FLEET_SYNC_WORKFLOW": "_agent-guidance/.github/workflows/sync.yml"})
         self.assertIn("python3 scripts/scaffold_real_work.py snapshot "
-                      '--candidate "$CANDIDATE"', step["run"])
+                      '--candidate="$CANDIDATE"', step["run"])
         self.assertIn('--registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"',
                       step["run"])
         # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners
@@ -663,6 +663,21 @@ class SnapshotStepTests(unittest.TestCase):
         self.assertIn("not a fleet owner", proc.stderr)
         self.assertNotIn("file", values)
         self.assertFalse((self.tmp / "gh.log").exists())
+
+    def test_an_option_shaped_candidate_is_read_as_a_key_not_a_flag(self):
+        # The miner key pattern admits a leading `-`; `--candidate=VALUE`
+        # is one word, so the snapshot refuses the key with its own fixed
+        # line instead of argparse printing its usage.
+        rw = self.rw
+        for candidate in ("-h__toy__7", "--help__toy__7", "--out__toy__7"):
+            with self.subTest(candidate=candidate):
+                proc, values = self.run_step(candidate=candidate, **rw.rest(3),
+                                             graphql=rw.graphql())
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(proc.stderr, "scaffold_real_work: the candidate "
+                                 "is not a miner key (OWNER__REPO__PR)\n")
+                self.assertNotIn("file", values)
+                self.assertFalse((self.tmp / "gh.log").exists())
 
     def test_a_refusal_fails_the_step_and_names_no_file(self):
         rw = self.rw

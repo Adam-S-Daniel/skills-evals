@@ -381,7 +381,7 @@ jobs:
         run: |
           set -euo pipefail
           out="${RUNNER_TEMP:?}/issue-snapshot.json"
-          python3 scripts/scaffold_real_work.py snapshot --candidate "$CANDIDATE" --out "$out" \
+          python3 scripts/scaffold_real_work.py snapshot --candidate="$CANDIDATE" --out "$out" \
             --registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
