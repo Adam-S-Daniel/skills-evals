@@ -8,35 +8,29 @@
 skill: workflow-path-audit
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# `model:` and `judge.model:` are OVERRIDES, not the only source. Absent
-# either, the runner takes the committed model roster — `evals/roster.yml` on
-# `main`, proposed from the Models API and usage census by `harness/roster.py`
-# (thresholds in evals/roster-policy.yml, ADR 0001). The
-# precedence is `--model` > this pin > the roster > nothing runs: an unpinned
-# fixture with no usable roster is a runner-level error, never a silent
-# fall-through to whatever model the agent CLI would otherwise default to
-# (select_models() in run_eval.py fails closed).
-#
-# This fixture keeps its pins, on purpose and for now. Agent arms run on a
-# pinned mid-tier model, deliberately NOT Opus-tier: an Opus-tier agent would
-# likely ace this task WITHOUT the skill, and a ceiling effect leaves the
-# with/without comparison signal-free. Pinning also stops the arms silently
-# tracking Claude Code's default model as it changes across CLI releases,
-# which is what makes week-over-week badge comparisons meaningful. Carried
-# forward unchanged from the predecessor fixture so the retargeted eval stays
-# calibrated the same way. The roster cannot express "deliberately one tier
-# below the ceiling" — it names the arm set, not which arm suits which
-# fixture. That is the matrix runner's job; when it lands and runs every arm,
-# these two pins come out there rather than here (#67, step 5).
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
 
-# The judge is pinned to a strong model: judgment consistency matters more
-# than agent-arm parity, and two short judge calls per run cost pennies. The
-# roster's judge is chosen on the same principle — the most capable available
-# model at least one tier above the strongest arm, never an arm itself — so
-# dropping this pin later is a continuation, not a change of policy.
+# In-place context (ADR 0012): cms-platform, a representative consumer.
+# The skill has no single operational repository. cms-platform adopts its
+# bundle (`adam-coding-anywhere`) in `skills.lock` and has the most workflows
+# (48) of the fleet repositories checked.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 6082 and 685637 bytes; each limit is
+# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+# bytes; the pin is the newest (then the smallest SHA). The context adopts
+# the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 28f2b6ed98837757417e058dd21047df046dadc7
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
+
 judge:
-  model: claude-opus-4-8
   # Weighted overall — the harness recomputes it from these and ignores the
   # judge's own arithmetic. The three dimensions are NOT interchangeable:
   # Completeness carries the correctness axis (every pull_request/push workflow

@@ -1,17 +1,20 @@
+# The models each readiness note names are inferred, not read from a run
+# record: from the fixture's pins at skills-evals c1bf71c, or for the unpinned
+# fixture from the roster's first arm and judge at fc7e1cf.
 fixtures:
   - path: evals/workflow-path-audit
-    readiness: "Current scheduled fixture; local smoke: with 8 vs without 7."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Current scheduled fixture; local smoke: with 8 vs without 7."
   - path: evals/embeddable-tool-pages
-    readiness: "Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
+    readiness: "Isolation pair, unpinned (the committed roster then named arm claude-sonnet-5 and judge claude-fable-5-1). Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
   - path: evals/review-bash-ci-reliability
-    readiness: "Local N=3 judged baseline: objective with 8/11 vs without 5.67/11; judge 6.05 vs 4.95."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 8/11 vs without 5.67/11; judge 6.05 vs 4.95."
   - path: evals/skills-doctor/bucketed-account-store
-    readiness: "Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline: objective with 4/5 vs without 4.33/5; judge 9.6 vs 7.4."
   - path: evals/github-actions-sha-pinning
-    readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8.67/10 vs without 8.0/10; judge 7.93 vs 3.1, ranges 6.8-8.5 vs 0.9-4.4."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-5). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8.67/10 vs without 8.0/10; judge 7.93 vs 3.1, ranges 6.8-8.5 vs 0.9-4.4."
   - path: evals/writing-adrs/bootstrap
-    readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8/9 vs without 2.33/9; judge 9.03 vs 1.17, ranges 8.9-9.3 vs 0.4-1.9."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 8/9 vs without 2.33/9; judge 9.03 vs 1.17, ranges 8.9-9.3 vs 0.4-1.9."
   - path: evals/disarm-inherited-reach
-    readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7.67/9 vs without 6/9, ranges 7-9 vs 6-6; judge 9.2 vs 6.57, ranges 8.8-10 vs 5.7-7."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7.67/9 vs without 6/9, ranges 7-9 vs 6-6; judge 9.2 vs 6.57, ranges 8.8-10 vs 5.7-7."
   - path: evals/windows-elevation-from-wsl
-    readiness: "Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7/7 vs without 6/7, ranges 7-7 vs 6-6; judge 8.6 vs 7.53, ranges 8.4-8.8 vs 7.4-7.6."
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7/7 vs without 6/7, ranges 7-7 vs 6-6; judge 8.6 vs 7.53, ranges 8.4-8.8 vs 7.4-7.6."

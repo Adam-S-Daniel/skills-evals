@@ -16,13 +16,29 @@
 skill: review-bash-ci-reliability
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Same calibration as the other fixtures: a pinned mid-tier model so the
-# with/without comparison is not flattened by a ceiling effect, and so the
-# arms do not silently track the CLI's default model across releases.
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
+
+# In-place context (ADR 0012): cms-platform, a representative consumer.
+# The skill has no single operational repository. cms-platform adopts its
+# bundle (`adam-coding-anywhere`) in `skills.lock`, and its release and
+# deploy pipeline is CI shell of the kind this seed models.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 6082 and 685637 bytes; each limit is
+# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+# bytes; the pin is the newest (then the smallest SHA). The context adopts
+# the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 28f2b6ed98837757417e058dd21047df046dadc7
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
 
 judge:
-  model: claude-opus-4-8
   # Correctness carries the axis that matters: did each fix actually solve
   # the failure mode, not paper over it. Restraint is the guardrail (leave
   # the decoys and everything else alone) and must not outvote Correctness.
