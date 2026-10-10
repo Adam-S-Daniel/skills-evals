@@ -45,6 +45,16 @@ Every canned JSON result carries a `modelUsage` object keyed by the
 `--model` it was invoked with (else "fake-default-model"), as the real CLI's
 result does; run_eval.py records its keys as `models_used` (#202).
 
+$FAKE_CLAUDE_RATE_LIMIT_FILE, when set, names a JSON file holding a list of
+batches, each a list of `rate_limit_info` objects. A call made with
+`--verbose` then prints the real CLI's verbose shape instead of the single
+result object: a message array of an init message, an assistant message
+with a fixed timestamp, one `rate_limit_event` per object in the first batch,
+and the result. That call takes its batch off the file, so successive calls
+can report a moving account meter (#370); with no batch left the array
+carries no event. A call without `--verbose` (the judge's) prints the single
+object and takes nothing.
+
 `--version` is handled unconditionally (regardless of FAKE_CLAUDE_MODE) so
 that harness/run_canary.py's `claude --version` recording call succeeds even
 when a mode simulates a failure.
@@ -149,12 +159,39 @@ PAIRWISE_DIMENSIONS_BY_LABEL = {
 DEFAULT_FAKE_MODEL = "fake-default-model"
 
 
+#: The timestamp on the assistant message of a verbose array: fixed, so a
+#: test can name the time a meter event is stamped with.
+MESSAGE_TIMESTAMP = "2026-10-10T15:10:13.663Z"
+
+
+def _next_meter_batch() -> list | None:
+    """This call's `rate_limit_info` objects, taken off
+    $FAKE_CLAUDE_RATE_LIMIT_FILE; None when the call prints no array."""
+    path = os.environ.get("FAKE_CLAUDE_RATE_LIMIT_FILE")
+    if not path or "--verbose" not in sys.argv:
+        return None
+    batches = json.loads(Path(path).read_text(encoding="utf-8"))
+    Path(path).write_text(json.dumps(batches[1:]), encoding="utf-8")
+    return batches[0] if batches else []
+
+
 def emit(payload: dict) -> None:
     payload.setdefault("modelUsage", {
         (_flag_value("--model") or DEFAULT_FAKE_MODEL): {
             "inputTokens": USAGE["input_tokens"],
             "outputTokens": USAGE["output_tokens"]}})
-    print(json.dumps(payload))
+    batch = _next_meter_batch()
+    if batch is None:
+        print(json.dumps(payload))
+        return
+    print(json.dumps([
+        {"type": "system", "subtype": "init", "session_id": "fake-session"},
+        {"type": "assistant", "timestamp": MESSAGE_TIMESTAMP,
+         "message": {"content": [{"type": "text",
+                                  "text": payload.get("result")}]}},
+        *({"type": "rate_limit_event", "rate_limit_info": info}
+          for info in batch),
+        {"type": "result", **payload}]))
 
 
 def _load_claude_md() -> str:

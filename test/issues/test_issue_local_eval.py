@@ -1111,9 +1111,20 @@ class TestLocalEval(unittest.TestCase):
                     denied = [argv[i + 1] for i, a in enumerate(argv)
                               if a == "--read-deny"]
                     self.assertEqual(denied, [os.path.abspath(out)], argv)
+                    # What kind of run this is (#370): a workstation, under
+                    # the operator's own login, on this machine.
+                    for name, value in (("--run-billing", "subscription"),
+                                        ("--run-runner", "workstation"),
+                                        ("--run-location", "local")):
+                        self.assertEqual(argv[argv.index(name) + 1], value, argv)
                 manifest = json.loads(
                     (out / "manifest.json").read_text(encoding="utf-8"))
                 self.assertEqual(manifest["harness"]["permission_mode"], mode)
+                # One run id for the whole invocation, shared by its trials.
+                ids = {argv[argv.index("--run-id") + 1] for argv in launches}
+                self.assertEqual(ids, {manifest["run_id"]})
+                self.assertRegex(manifest["run_id"],
+                                 r"\A[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\Z")
 
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 

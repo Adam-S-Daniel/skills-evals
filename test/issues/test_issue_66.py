@@ -205,6 +205,23 @@ def _tree(root: Path) -> list[str]:
                   for p in root.rglob("*") if p.is_file())
 
 
+def _stable_bytes(path: Path) -> bytes:
+    """A result file's bytes without what differs from one run to the next
+    whatever the harness does: a summary's `run` and `usage` blocks (#370:
+    the harness commit, wall-clock times) and the report's two lines made
+    from them. Both blocks are a summary's last two keys, so the rest
+    re-serializes to the bytes the harness wrote before them."""
+    if path.name == "summary.json":
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        for block in ("run", "usage"):
+            summary.pop(block)
+        return json.dumps(summary, indent=2).encode("utf-8")
+    if path.name == "report.md":
+        return b"".join(line for line in path.read_bytes().splitlines(keepends=True)
+                        if not line.startswith((b"- Run: ", b"- Account meter")))
+    return path.read_bytes()
+
+
 class _HarnessCase(unittest.TestCase):
     """A scratch directory, and the two entry points run inside it."""
 
@@ -299,7 +316,9 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     bake in `n`, which this test appends itself). Per-model token reporting
     and explicit effort later added `"effort": null` to the `harness` block
     and the `model_tokens` and `cross_model` fields, regenerated with the
-    command below and with `n` removed. Its run directory is named for the second that
+    command below and with `n` removed. The `run` and `usage` blocks (#370)
+    are not in it: they name the harness commit and the wall clock, so the
+    comparison leaves them out (`_stable_bytes`). Its run directory is named for the second that
     command ran in, which is the timestamp these tests inject. To regenerate
     it, repeat that command from a checkout of the commit to compare against.
 
@@ -337,7 +356,7 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
         summaries = 0
         for rel in _tree(GOLDEN_RESULTS):
             golden = (GOLDEN_RESULTS / rel).read_bytes()
-            written = (self.results / rel).read_bytes()
+            written = _stable_bytes(self.results / rel)
             with self.subTest(file=rel):
                 if not rel.endswith("/summary.json"):
                     self.assertEqual(written, golden)
@@ -358,8 +377,8 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
         self.assertEqual(_tree(explicit), _tree(default))
         for rel in _tree(default):
             with self.subTest(file=rel):
-                self.assertEqual((explicit / rel).read_bytes(),
-                                 (default / rel).read_bytes())
+                self.assertEqual(_stable_bytes(explicit / rel),
+                                 _stable_bytes(default / rel))
 
     def test_the_documented_objective_only_invocation_still_works(self):
         # The issue's own verifier line, on the fixture the scheduled run
@@ -449,8 +468,8 @@ class TestIssue66NestedFixtures(_HarnessCase):
         self.assertEqual(_tree(by_flag), _tree(by_leaf))
         for rel in _tree(by_leaf):
             with self.subTest(file=rel):
-                self.assertEqual((by_flag / rel).read_bytes(),
-                                 (by_leaf / rel).read_bytes())
+                self.assertEqual(_stable_bytes(by_flag / rel),
+                                 _stable_bytes(by_leaf / rel))
 
     def test_two_fixtures_run_one_at_a_time_keep_separate_results(self):
         # The defect: both wrote results/<skill>/<ts>/<arm>/summary.json, so

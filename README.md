@@ -1043,7 +1043,11 @@ actually ran:
 | `model_tokens` | per model id in the agent result's `modelUsage` (subagents' models included), its `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` and `canonical_model`; `{}` when the agent call never produced a result |
 | `cross_model` | `{"model", "canonical_model", "complete", "dropped", "other_share", "threshold", "flagged"}` — whether that accounting is complete, and the share of its tokens spent on models other than the arm's own `--model`, flagged above 0.5; `null` when unknown (see DESIGN.md, "Per-model tokens") |
 
-`report.md` carries one `- Harness:` line naming the version and each arm's
+| `run` | how the run was paid for and where it ran: `billing` (`api`, `subscription`), `runner` (`actions`, `routine`, `workstation`), `location` (`cloud`, `local`), `id`, `session_id`, `harness_commit`, `cli_version`. Each of the first five comes from `--run-billing`, `--run-runner`, `--run-location` or `--run-id` when passed, else from what the environment observes, and `source` says which (`flag`, `env:<NAME>`, `null`). A field that could not be read is `null` with an entry in `reasons` (see DESIGN.md, "Run and usage") |
+| `usage` | what the run cost: its start and end, the account meter as the CLI reported it during the run's own calls (`meter`, and `meter_delta` labeled `"confounded": true, "scope": "account-wide"`), what else was running (`concurrent_runs`, `other_account_activity`, `outer_session`), and under `measured` this summary's own calls with tokens and cost split into `agent`, `judge` and `guard` |
+
+`report.md` carries one `- Run:` line (billing, runner, location, id, start
+and end), one `- Account meter` line, and one `- Harness:` line naming the version and each arm's
 models. The propagation probe's `--json` run record carries, per arm,
 `harness_version` and `model` from that arm's init event.
 

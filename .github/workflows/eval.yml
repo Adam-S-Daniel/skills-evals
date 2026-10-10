@@ -1780,6 +1780,7 @@ jobs:
           python3 harness/run_eval.py "$fixture" \
             --arm both \
             --permission-mode bypassPermissions \
+            --run-billing api --run-runner actions --run-location cloud \
             --guidance ../_agent-guidance \
             --registry adam-agentskills=../adam-agentskills \
             --registry cms-platform=../cms-platform \
