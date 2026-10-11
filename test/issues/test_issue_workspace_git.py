@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -289,6 +290,98 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         info.symlink_to(target, target_is_directory=True)
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('status', cwd=self.repo)
+
+    def test_sandbox_placeholder_config_worktree_passes(self):
+        # Claude Code's Linux sandbox leaves an empty regular
+        # `.git/config.worktree` (the bubblewrap mount point); not a redirect.
+        import workspace_git
+        (self.repo / '.git' / 'config.worktree').write_bytes(b'')
+        run_eval._git('status', '--short', cwd=self.repo)
+        run_eval._git('diff', cwd=self.repo)
+        workspace_git.run('init', '-q', cwd=self.repo, check=True)
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        run_eval._git('status', '--short', cwd=self.repo)
+        self.assertIn('+after', run_eval._git('diff', cwd=self.repo).stdout)
+
+    def test_only_the_exact_placeholder_shape_passes(self):
+        import workspace_git
+        gitdir = self.repo / '.git'
+        elsewhere = self.root / 'elsewhere'
+        elsewhere.write_bytes(b'')
+
+        def text(path):
+            path.write_text('[core]\n')
+
+        def symlink(path):
+            path.symlink_to(elsewhere)
+
+        def hard_link(path):
+            os.link(elsewhere, path)
+
+        cases = {'content': ('config.worktree', text),
+                 'symlink to an empty file': ('config.worktree', symlink),
+                 'hard-linked empty file': ('config.worktree', hard_link),
+                 'directory': ('config.worktree', Path.mkdir),
+                 # 0 bytes, one link, this user's: only the file type differs.
+                 'fifo': ('config.worktree', os.mkfifo),
+                 'empty commondir': ('commondir', lambda path: path.write_bytes(b'')),
+                 'empty gitdir': ('gitdir', lambda path: path.write_bytes(b''))}
+        for label, (name, make) in cases.items():
+            with self.subTest(label=label):
+                path = gitdir / name
+                make(path)
+                # Cleaned up even on failure, so one case cannot fail the next.
+                try:
+                    if name == 'config.worktree':
+                        self.assertFalse(workspace_git._sandbox_placeholder(path))
+                    with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                        run_eval._git('status', cwd=self.repo)
+                    with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                        workspace_git.run('init', '-q', cwd=self.repo)
+                finally:
+                    if path.is_dir() and not path.is_symlink():
+                        path.rmdir()
+                    else:
+                        path.unlink()
+        self.assertFalse(workspace_git._sandbox_placeholder(gitdir / 'config.worktree'))
+
+    def test_placeholder_owned_by_another_user_is_refused(self):
+        from unittest import mock
+        import workspace_git
+        path = self.repo / '.git' / 'config.worktree'
+        path.write_bytes(b'')
+        self.assertTrue(workspace_git._sandbox_placeholder(path))
+        real_lstat = os.lstat
+
+        def foreign(target, *args, **kwargs):
+            info = real_lstat(target, *args, **kwargs)
+            if os.fspath(target) != str(path):
+                return info
+            fields = list(info)
+            fields[stat.ST_UID] = os.getuid() + 1
+            return os.stat_result(fields)
+
+        # Only the owner differs: the file is still regular, empty, one link.
+        with mock.patch.object(workspace_git.os, 'lstat', foreign):
+            self.assertFalse(workspace_git._sandbox_placeholder(path))
+            with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                run_eval._git('status', cwd=self.repo)
+            with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                workspace_git.run('init', '-q', cwd=self.repo)
+
+    def test_init_refuses_redirects_before_incomplete_metadata(self):
+        # A `.git` holding no `config` never reaches `_validate`, so this is
+        # the `init` branch's own redirect check, named as such.
+        import workspace_git
+        gitdir = self.root / 'bare-bones' / '.git'
+        (gitdir / 'info').mkdir(parents=True)
+        for name in ('commondir', 'gitdir'):
+            with self.subTest(name=name):
+                (gitdir / name).write_bytes(b'')
+                with self.assertRaisesRegex(RuntimeError, 'redirected Git metadata'):
+                    workspace_git.run('init', '-q', cwd=gitdir.parent)
+                (gitdir / name).unlink()
 
     def test_sealed_baseline_and_staging_are_outside_workspace(self):
         import workspace_git
