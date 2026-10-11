@@ -3610,7 +3610,11 @@ class _RunTelemetry:
 
     `record()` queues a role's CLI calls; the next summary written takes
     them as its own (`usage.measured`), which is exact because trials run
-    one after another and each ends by writing its summary. A meter
+    one after another and each ends by writing its summary. The one
+    exception is `amend()`: a judge call held back for its pair's objective
+    result (#371) is made after every trial of the pair and added to the
+    summary of the trial it judges, so that trial's `started_at`..`ended_at`
+    spans the trials that ran in between. A meter
     snapshot is stored once, with the trial whose call printed it. The
     run-level half (times, how far the meter moved, what else was running)
     is written into every summary as it stood at that moment, and `finish()`
@@ -6662,7 +6666,8 @@ def main() -> int:
     if not 1 <= args.trials <= MAX_TRIALS:
         print(f"configuration error: --trials must be between 1 and "
               f"{MAX_TRIALS}, got {args.trials}. Every trial is a paid agent "
-              "call and a paid judge call per arm")
+              "call per arm, and a paid judge call too unless the judge is "
+              "skipped")
         return 2
     if args.trials > 1 and args.arm == "objective-only":
         print("configuration error: --trials applies to the agent arms. "

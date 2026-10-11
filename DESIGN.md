@@ -1068,7 +1068,17 @@ is objectively decidable from the resulting files alone.
   last, per window both name, whatever a trial's own list dropped. It
   therefore leaves out the call that printed the last snapshot and every
   call after it (that agent call's own spend, and the judge and guard calls
-  that follow), and any call before the first snapshot;
+  that follow), and any call before the first snapshot. Conditional judging
+  (#371) widens that: a pair's judge calls are all made after its last agent
+  call, so on a judged pair the delta covers none of the judging, where a
+  judge inside each trial (`--judge always`, a single arm) leaves out only
+  the last trial's. Measured on one fixture, two trials, a tie: 5 calls
+  after the last snapshot by default (the last agent call and all four judge
+  calls), 2 under `--judge always`. Such a held judge call is added to the
+  summary of the trial it judges after that summary was written
+  (`_RunTelemetry.amend`), so that trial's `usage.measured.started_at` to
+  `ended_at` spans the trials that ran in between and trial windows of a
+  judged pair overlap;
   `meter_delta.uncovered: {calls_before_first_snapshot,
   calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
   the second, and a run of one agent call has no delta at all. Each window
