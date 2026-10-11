@@ -7,8 +7,8 @@ routines fire API. What is pinned here:
 
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
-    inputs mode, candidate, fixture, skill, holdout, arms and trials, and
-    `permissions: contents: read`;
+    inputs mode, candidate, fixture, skill, holdout, model, arms and trials
+    (`model`: test_issue_68_model_input.py), and `permissions: contents: read`;
   * every `uses:` is a 40-character SHA with nothing after it on the line,
     at the same SHA this repo's other workflows already pin;
   * no `${{ inputs.* }}` or `${{ github.event.* }}` inside any `run:` block;
@@ -137,7 +137,7 @@ class WorkflowShapeTests(unittest.TestCase):
         inputs = on["workflow_dispatch"]["inputs"]
         self.assertEqual(set(inputs),
                          {"mode", "candidate", "fixture", "skill", "holdout",
-                          "arms", "trials"})
+                          "model", "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
                          ["eval", "scaffold", "improve"])
@@ -256,7 +256,7 @@ class WorkflowShapeTests(unittest.TestCase):
             "FLEET_REGISTRY": "_agent-guidance/repos.yml",
             "FLEET_SYNC_WORKFLOW": "_agent-guidance/.github/workflows/sync.yml"})
         self.assertIn("python3 scripts/scaffold_real_work.py snapshot "
-                      '--candidate "$CANDIDATE"', step["run"])
+                      '--candidate="$CANDIDATE"', step["run"])
         self.assertIn('--registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"',
                       step["run"])
         # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners
@@ -417,7 +417,7 @@ class ValidateStepTests(unittest.TestCase):
         checker = bin_dir / "python3"
         checker.write_text(f"#!{sys.executable}\nimport sys\n"
                            f"assert sys.argv[1:] == "
-                           f"{['scripts/improve_gate.py', 'fire-check', SKILL, '--holdout', holdout]!r}\n")
+                           f"{['scripts/improve_gate.py', 'fire-check', SKILL, '--holdout=' + holdout]!r}\n")
         checker.chmod(0o755)
         with mock.patch.dict(os.environ, {"PATH": f"{bin_dir}:{os.environ['PATH']}"}):
             proc, values = self.run_step(
@@ -485,6 +485,17 @@ class ValidateStepTests(unittest.TestCase):
             "holdout_nbsp": {"holdout": "super\u00a0sede"},
             "holdout_line_separator": {"holdout": "super\u2028sede"},
         }, expect="is longer than 128 characters or has characters outside")
+        # An option-shaped holdout is one `--holdout=VALUE` word, so the
+        # checker reads it as a name (no such fixture), never as a flag.
+        self._refuse_all(good, {
+            "holdout_short_help": {"holdout": "-h"},
+            "holdout_long_help": {"holdout": "--help"},
+            "holdout_help_prefix": {"holdout": "--he"},
+            "holdout_own_flag": {"holdout": "--holdout"},
+            "holdout_unknown_flag": {"holdout": "-x"},
+            "holdout_double_dash": {"holdout": "--"},
+        }, expect="is refused by the improvement loop's fixture check",
+            forbid="usage")
         # The loop's own resolution (improve_gate.py fire-check): not a
         # skill's fixture set, another registry's skill, too few fixtures.
         self._refuse_all(no_holdout, {
@@ -541,7 +552,7 @@ class ValidateStepTests(unittest.TestCase):
                     "holdout_nul": {"holdout": "\u0000"},
                 })
 
-    def _refuse_all(self, good, cases, expect=None):
+    def _refuse_all(self, good, cases, expect=None, forbid=None):
         for label, override in cases.items():
             with self.subTest(case=label):
                 inputs = {**good, **override}
@@ -552,6 +563,8 @@ class ValidateStepTests(unittest.TestCase):
                 self.assertIn("::error::", proc.stdout + proc.stderr)
                 if expect is not None:
                     self.assertIn(expect, proc.stdout + proc.stderr)
+                if forbid is not None:
+                    self.assertNotIn(forbid, proc.stdout + proc.stderr)
                 bad = next(iter(override.values()))
                 if isinstance(bad, str) and bad.strip():
                     self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)
@@ -650,6 +663,21 @@ class SnapshotStepTests(unittest.TestCase):
         self.assertIn("not a fleet owner", proc.stderr)
         self.assertNotIn("file", values)
         self.assertFalse((self.tmp / "gh.log").exists())
+
+    def test_an_option_shaped_candidate_is_read_as_a_key_not_a_flag(self):
+        # The miner key pattern admits a leading `-`; `--candidate=VALUE`
+        # is one word, so the snapshot refuses the key with its own fixed
+        # line instead of argparse printing its usage.
+        rw = self.rw
+        for candidate in ("-h__toy__7", "--help__toy__7", "--out__toy__7"):
+            with self.subTest(candidate=candidate):
+                proc, values = self.run_step(candidate=candidate, **rw.rest(3),
+                                             graphql=rw.graphql())
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(proc.stderr, "scaffold_real_work: the candidate "
+                                 "is not a miner key (OWNER__REPO__PR)\n")
+                self.assertNotIn("file", values)
+                self.assertFalse((self.tmp / "gh.log").exists())
 
     def test_a_refusal_fails_the_step_and_names_no_file(self):
         rw = self.rw
