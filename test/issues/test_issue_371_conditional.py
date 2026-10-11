@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -367,66 +369,171 @@ class StatisticsAndReportTests(unittest.TestCase):
         self.assertIn(f"| 1/1 | {CELL} |", row)
 
 
-#: test/fake-claude, except that the judge's result carries a per-model cost
-#: of its own (a judge result reaches the harness as `modelUsage` alone), so
-#: the judge's figure can be told from the agent's $0.04.
-COSTING_CLI = '''\
-import json
-import subprocess
-import sys
+FIGURES = ("num_turns", "cost_usd", "models", "cache_creation")
 
-FAKE = {fake!r}
-if "--version" in sys.argv:
-    sys.exit(subprocess.run([FAKE] + sys.argv[1:]).returncode)
-done = subprocess.run([FAKE] + sys.argv[1:], input=sys.stdin.read(),
-                      capture_output=True, text=True, check=True)
-payload = json.loads(done.stdout)
-if "fake-judge-model" in sys.argv:
-    for usage in payload["modelUsage"].values():
-        usage["costUSD"] = 0.03
-print(json.dumps(payload))
-'''
+
+class SinkTests(unittest.TestCase):
+    """What a judge call and a canary leg hand to a collecting block."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def env(self, **extra):
+        return mock.patch.dict(os.environ, {
+            "CLAUDE_BIN": str(FAKE_CLAUDE), "FAKE_CLAUDE_MODE": "judge",
+            "HOME": str(self.tmp), **extra})
+
+    def test_a_judge_sink_entry_carries_the_figures_the_result_has(self):
+        from scorers import judge
+        with self.env(FAKE_CLAUDE_FULL_USAGE="1"):
+            with judge.collecting_models() as sink:
+                judge._run_judge_cli("p", model="m-1", timeout=60)
+        (entry,) = sink
+        self.assertEqual(set(entry), {"modelUsage", "num_turns", "usage",
+                                      "total_cost_usd"})
+        self.assertEqual((entry["num_turns"], entry["total_cost_usd"]),
+                         (2, 0.07))
+        self.assertEqual(entry["usage"]["cache_creation"],
+                         {"ephemeral_5m_input_tokens": 3,
+                          "ephemeral_1h_input_tokens": 4})
+        self.assertEqual(entry["modelUsage"]["m-1"]["costUSD"], 0.07)
+
+    def test_a_judge_sink_entry_leaves_out_what_the_result_lacks(self):
+        from scorers import judge
+        done = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps({"result": "x", "total_cost_usd": 0.5}),
+            stderr="")
+        with mock.patch.object(judge.subprocess, "run", return_value=done):
+            with judge.collecting_models() as sink:
+                judge._run_judge_cli("p", model=None, timeout=60)
+        self.assertEqual(sink, [{"modelUsage": None, "total_cost_usd": 0.5}])
+
+    def test_a_canary_leg_collects_every_parsed_result_and_returns_as_before(self):
+        import run_canary
+        for mode, shape in (("agent", {"reply"}),
+                            ("agent_error", {"error", "detail", "raw"})):
+            with self.subTest(mode=mode), self.env(
+                    FAKE_CLAUDE_MODE=mode, FAKE_CLAUDE_FULL_USAGE="1"):
+                with run_canary.collecting_results() as sink:
+                    result = run_canary.run_leg(
+                        self.tmp, "p", "Read", model="m-1", timeout=60)
+                self.assertEqual(set(result), shape)
+                (entry,) = sink
+                self.assertEqual(set(entry), {"modelUsage", "num_turns",
+                                              "usage", "total_cost_usd"})
+
+    def test_a_leg_that_fails_before_a_result_collects_nothing(self):
+        import run_canary
+        with self.env(FAKE_CLAUDE_MODE="error"):
+            with run_canary.collecting_results() as sink:
+                result = run_canary.run_leg(self.tmp, "p", "Read", model=None,
+                                            timeout=60)
+        self.assertEqual(result["error"], "nonzero_exit")
+        self.assertEqual(sink, [])
 
 
 class UsageOfADeferredJudgeTests(PairCase):
 
-    def costing_cli(self) -> Path:
-        self.cli_dir.mkdir(exist_ok=True)
-        cli = self.cli_dir / "costing-claude"
-        cli.write_text("#!/usr/bin/env python3\n"
-                       + COSTING_CLI.format(fake=str(FAKE_CLAUDE)),
-                       encoding="utf-8")
-        cli.chmod(0o755)
-        return cli
+    def figures_run(self, *flags: str, full: bool = True, mode="agent_and_judge"):
+        """A both-arms run against test/fake-claude itself, every call
+        logged. With `full`, the judge's results (and the guard's, below)
+        carry every usage figure; the agent's never do, so its figures differ
+        from the judge's."""
+        self.log = self.tmp / "argv.log"
+        fixture = _write_fixture(
+            self.evals / "figures-skill", "figures-skill",
+            env={"FAKE_CLAUDE_MODE": mode,
+                 "FAKE_CLAUDE_ARGV_LOG": str(self.log)})
+        self.registry = self._registry("figures-skill")
+        extra = {"CLAUDE_BIN": str(FAKE_CLAUDE), "FAKE_CLAUDE_MODE": mode,
+                 "FAKE_CLAUDE_ARGV_LOG": str(self.log)}
+        if full:
+            extra["FAKE_CLAUDE_FULL_USAGE"] = "1"
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(fixture),
+               "--arm", "both", "--registry", f"adam-agentskills={self.registry}",
+               "--results-dir", str(self.results), "--timeout", "60",
+               "--timestamp", TS, *flags]
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              env=_child_env(self.tmp, **extra),
+                              cwd=str(REPO_ROOT), timeout=600)
 
-    def test_a_deferred_judge_call_is_recorded_on_its_own_trial(self):
-        cli = self.costing_cli()
-        proc = self._run(self.fixture_dir, "--arm", "both", "--trials", "2",
-                         "--registry", f"adam-agentskills={self.registry}",
-                         "--timestamp", TS, cli=cli, mode="agent_and_judge")
+    def argvs(self) -> list[list[str]]:
+        lines = self.log.read_text(encoding="utf-8").splitlines()
+        return [argv for argv in (json.loads(l)["argv"] for l in lines)
+                if "--version" not in argv]
+
+    def summaries_of(self, arm: str) -> dict:
+        return json.loads((self.results / "figures-skill" / TS / arm
+                           / "summary.json").read_text(encoding="utf-8"))
+
+    def test_a_judge_call_records_its_own_figures_apart_from_the_agents(self):
+        proc = self.figures_run()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        for rel, doc in self.results_files().items():
+        measured = self.summaries_of("with_skill")["usage"]["measured"]
+        judge, agent = measured["judge"], measured["agent"]
+        self.assertEqual(judge["calls"], 1)
+        self.assertEqual((judge["num_turns"], judge["cost_usd"]), (2, 0.07))
+        self.assertEqual(judge["cache_creation"], {
+            "ephemeral_5m_input_tokens": 3, "ephemeral_1h_input_tokens": 4})
+        self.assertEqual(list(judge["models"]), ["fake-judge-model"])
+        self.assertEqual(judge["models"]["fake-judge-model"]["cost_usd"], 0.07)
+        self.assertEqual(judge["reasons"], {})
+        # The agent's own result carries no such figures: its block says so.
+        self.assertEqual((agent["cost_usd"], agent["num_turns"]), (0.05, 2))
+        self.assertIsNone(agent["cache_creation"])
+        self.assertIn("agent", agent["reasons"]["cache_creation"])
+        for rel, doc in self.results_files_of("figures-skill").items():
             with self.subTest(summary=rel):
                 ingest.check_summary(doc, rel, ingest.parse_result_path(rel))
-        for arm, summaries in self.trial_summaries(2).items():
-            for summary in summaries:
-                measured = summary["usage"]["measured"]
-                self.assertEqual(measured["judge"]["calls"], 1)
-                self.assertEqual(measured["agent"]["calls"], 1)
-                self.assertEqual(measured["judge"]["cost_usd"], 0.03)
-                self.assertEqual(measured["agent"]["cost_usd"], 0.04)
-                self.assertEqual([(c["role"], c["index"])
-                                  for c in measured["calls"]],
-                                 [("agent", 0), ("judge", 0)])
-                self.assertLessEqual(measured["calls"][0]["ended_at"],
-                                     measured["calls"][1]["started_at"])
-                self.assertEqual(measured["ended_at"],
-                                 measured["calls"][1]["ended_at"])
-            total = self.arm_summary(arm)["usage"]["measured"]
-            self.assertEqual(total["judge"]["calls"], 2)
-            self.assertEqual(total["agent"]["calls"], 2)
-            self.assertAlmostEqual(total["judge"]["cost_usd"], 0.06)
-            self.assertAlmostEqual(total["agent"]["cost_usd"], 0.08)
+
+    def results_files_of(self, skill: str) -> dict:
+        return {k: v for k, v in self.results_files().items()
+                if k.startswith(skill)}
+
+    def test_a_judge_result_without_a_figure_is_null_with_its_reason(self):
+        proc = self.figures_run(full=False)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        judge = self.summaries_of("with_skill")["usage"]["measured"]["judge"]
+        self.assertEqual(judge["calls"], 1)
+        self.assertIsNone(judge["cache_creation"])
+        self.assertEqual(set(judge["reasons"]), {"cache_creation", "cost_basis"})
+        self.assertEqual(set(judge["reasons"].values()),
+                         {"the judge's CLI result does not carry it"})
+        for rel, doc in self.results_files_of("figures-skill").items():
+            with self.subTest(summary=rel):
+                ingest.check_summary(doc, rel, ingest.parse_result_path(rel))
+
+    def test_the_ingester_requires_a_reason_exactly_for_a_null_figure(self):
+        proc = self.figures_run()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        rel = "figures-skill/%s/with_skill/summary.json" % TS
+        doc = self.results_files()[rel]
+        parts = ingest.parse_result_path(rel)
+        for role in ("judge", "agent"):
+            for name in FIGURES:
+                nulled = json.loads(json.dumps(doc))
+                block = nulled["usage"]["measured"][role]
+                has_reason = name in block["reasons"]
+                with self.subTest(role=role, name=name):
+                    if has_reason:
+                        # A reason for a value that is there.
+                        block["reasons"].pop(name)
+                        block[name] = block[name] if block[name] is not None else 1
+                    else:
+                        # A null without its reason.
+                        block[name] = None
+                    with self.assertRaises(ingest.Rejected):
+                        ingest.check_summary(nulled, rel, parts)
+
+    def test_judging_adds_no_call_and_samples_no_meter(self):
+        proc = self.figures_run()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        argvs = self.argvs()
+        judges = [a for a in argvs if "fake-judge-model" in a]
+        self.assertEqual((len(argvs), len(judges)), (4, 2))
+        for argv in judges:
+            self.assertNotIn("--verbose", argv)
 
     def test_a_judge_that_fails_is_a_judge_error_with_its_outcome_listed(self):
         proc = self.both([BARE, BARE], [{"fail": True}, {"overall": 5.0}])
@@ -451,7 +558,7 @@ class GuidancePairTests(unittest.TestCase):
         self.log = self.tmp / "argv.log"
         self.results = self.tmp / "results"
 
-    def run_guidance(self, check: str, *flags: str, arms=None):
+    def run_guidance(self, check: str, *flags: str, arms=None, full=False):
         eval_dir = self.tmp / "eval"
         eval_dir.mkdir()
         fixture = {
@@ -466,8 +573,13 @@ class GuidancePairTests(unittest.TestCase):
             fixture["arms"] = arms
         (eval_dir / "fixture.yaml").write_text(
             yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+        if full:
+            fixture["env"]["FAKE_CLAUDE_FULL_USAGE"] = "1"
+            (eval_dir / "fixture.yaml").write_text(
+                yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
         env = _child_env(self.tmp, CLAUDE_BIN=str(FAKE_CLAUDE),
-                         FAKE_CLAUDE_ARGV_LOG=str(self.log))
+                         FAKE_CLAUDE_ARGV_LOG=str(self.log),
+                         **({"FAKE_CLAUDE_FULL_USAGE": "1"} if full else {}))
         cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
                "--arm", "both", "--guidance", str(self.root),
                "--results-dir", str(self.results), "--timeout", "60", *flags]
@@ -505,6 +617,46 @@ class GuidancePairTests(unittest.TestCase):
             summary = self.summary(arm)
             self.assertNotEqual(summary["judge"], SKIPPED)
             self.assertEqual(summary["usage"]["measured"]["judge"]["calls"], 1)
+
+    def test_a_guard_call_records_its_figures_and_adds_no_call(self):
+        proc = self.run_guidance(".", full=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for arm in ("with_guidance", "without_guidance"):
+            guard = self.summary(arm)["usage"]["measured"]["guard"]
+            with self.subTest(arm=arm):
+                self.assertEqual(guard["calls"], 1)
+                self.assertEqual((guard["num_turns"], guard["cost_usd"]),
+                                 (2, 0.07))
+                self.assertEqual(guard["cache_creation"], {
+                    "ephemeral_5m_input_tokens": 3,
+                    "ephemeral_1h_input_tokens": 4})
+                self.assertTrue(guard["models"])
+                self.assertEqual(guard["reasons"], {})
+        lines = self.log.read_text(encoding="utf-8").splitlines()
+        argvs = [a for a in (json.loads(l)["argv"] for l in lines)
+                 if "--version" not in a]
+        guards = [a for a in argvs if "--disallowedTools" in a
+                  and "--setting-sources" in a and "-p" in a
+                  and "fake-agent-model" in a and "--verbose" not in a]
+        # Two guards, two agents, two judges (a tie): nothing added.
+        self.assertEqual(len(argvs), 6)
+        self.assertEqual(sum("fake-judge" in a for a in argvs), 2)
+        self.assertGreaterEqual(len(guards), 2)
+        for argv in argvs:
+            if "fake-judge" in argv:
+                self.assertNotIn("--verbose", argv)
+
+    def test_a_guard_result_without_a_figure_is_null_with_its_reason(self):
+        proc = self.run_guidance(".")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        guard = self.summary("with_guidance")["usage"]["measured"]["guard"]
+        self.assertEqual(guard["calls"], 1)
+        self.assertIsNone(guard["cache_creation"])
+        self.assertEqual(guard["reasons"]["cache_creation"],
+                         "the guard's CLI result does not carry it")
+        for arm in ("with_guidance", "without_guidance"):
+            summary = self.summary(arm)
+            ingest.check_usage(summary["usage"], arm, summary["run"])
 
     def test_judge_always_judges_despite_a_gain(self):
         proc = self.run_guidance("$MAGIC_TOKEN", "--judge", "always")

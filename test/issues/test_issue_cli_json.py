@@ -321,7 +321,9 @@ class CliJsonConsumersTests(unittest.TestCase):
     def test_judge_reads_array_and_records_result_model_usage(self):
         text, models = self._judge([MESSAGE, RESULT])
         self.assertEqual(text, "done")
-        self.assertEqual(models, [{"modelUsage": RESULT["modelUsage"]}])
+        self.assertEqual(models, [{
+            "modelUsage": RESULT["modelUsage"], "num_turns": 1,
+            "usage": RESULT["usage"], "total_cost_usd": 0.25}])
         self.assertEqual(self._judge([RESULT, MESSAGE])[0], "done")
         with self.assertRaisesRegex(RuntimeError, "invalid JSON") as caught:
             self._judge(["private payload", RESULT])

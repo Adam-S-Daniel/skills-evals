@@ -636,7 +636,8 @@ def check_guidance_violations(value, where: str) -> None:
 # `run` and `usage` (#370 item 1): run_eval's `run_block` and `_RunTelemetry`.
 # Optional, and only together, so a summary written before them still
 # ingests. Every value is checked, not only every key: a field the harness
-# only ever writes as null must be null here. The one free-form value is a
+# only ever writes as null must be null here (`USAGE_ALWAYS_NULL`; a role's
+# figures are null exactly when `reasons` says so). The one free-form value is a
 # snapshot's `info`, the CLI's own object, which is bounded. The constants are
 # run_eval's own; a test pins them equal.
 

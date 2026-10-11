@@ -526,7 +526,8 @@ class MeasuredTests(Checks):
         ingest.check_usage(summary["usage"], "s", summary["run"])
 
     def test_a_judge_call_costs_what_its_model_usage_says(self):
-        # The judge's result reaches the harness as its modelUsage alone.
+        # A judge result that carries its modelUsage alone (#371 records the
+        # other figures when the result has them).
         started = self.clock.now()
         self.clock.advance(7)
         usage = result_object()["modelUsage"]
@@ -535,9 +536,9 @@ class MeasuredTests(Checks):
         self.assertEqual(judge, {
             **self.AGENT, "duration_ms": 7000, "num_turns": None,
             "cache_creation": None,
-            "reasons": dict.fromkeys(("num_turns", "cache_creation"),
-                                     judge["reasons"]["num_turns"])})
-        self.assertIn("judge", judge["reasons"]["num_turns"])
+            "reasons": dict.fromkeys(
+                ("num_turns", "cache_creation"),
+                "the judge's CLI result does not carry it")})
 
     def test_calls_belong_to_the_next_summary_written_and_to_no_other(self):
         self.agent(Cli(self.clock, json.dumps(result_object())))
@@ -1043,12 +1044,14 @@ class EndToEndTests(Checks):
                           for c in measured["calls"]],
                          [("agent", 0, "ok"), ("judge", 0, "ok")])
         self.assertEqual(measured["agent"]["cost_usd"], 0.05)
-        # The stand-in's modelUsage names tokens, not a cost.
+        # The stand-in's modelUsage names tokens, not a cost; its result
+        # carries the call's own total (#371).
         self.assertEqual(measured["judge"]["models"], {"fake-judge": {
             "input_tokens": 1234, "output_tokens": 567,
             "cache_read_input_tokens": None,
             "cache_creation_input_tokens": None, "cost_usd": None}})
-        self.assertIsNone(measured["judge"]["cost_usd"])
+        self.assertEqual(measured["judge"]["cost_usd"], 0.05)
+        self.assertEqual(measured["judge"]["num_turns"], 2)
         self.assertEqual(measured["guard"], no_calls("guard"))
         aggregate = self.summary("with_skill")["usage"]["measured"]
         self.assertEqual((aggregate["scope"], aggregate["calls"]), ("arm", None))

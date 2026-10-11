@@ -1056,9 +1056,10 @@ is objectively decidable from the resulting files alone.
   run's meter series is therefore the union of its trial summaries. The
   run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
   how many snapshots the run recorded, how many events were not kept for
-  their shape or size, and why the judge call (`--output-format json`
-  without `--verbose`), the guard call and the end of the run are not
-  sampled. The meter is read when an agent call starts and at no other
+  their shape or size, and why the judge call, the guard call and the end of
+  the run are not sampled (the judge and the guard are called without
+  `--verbose`, so they print no meter event, and no call is added to read
+  the meter). The meter is read when an agent call starts and at no other
   time: the one real call observed (two API requests) printed one event,
   as it began. That is one observation, and a longer call may print more;
   the first and last of each call are kept either way. So there is no
@@ -1087,10 +1088,13 @@ is objectively decidable from the resulting files alone.
   split, which the CLI reports for the main loop only. `models` is whole or
   `null`: a result with no `modelUsage`, or with an entry that could not be
   read, leaves it `null` and never the models that happened to be readable.
-  The judge's result reaches the harness as its `modelUsage` alone, so its
-  turns and cache split are `null`; the guard returns only its verdict, so
-  its tokens and cost are `null`; a call that ended without a result says
-  so. A role with no call records zeros. An arm aggregate (`scope: arm`)
+  The judge's and the guard's results are read like the agent's: the judge's
+  sink (`judge.collecting_models`) and the guard's (`run_canary.
+  collecting_results`) keep `modelUsage`, `num_turns`, `usage` and
+  `total_cost_usd` of each result, raw, whichever the result has. A figure a
+  result lacks is `null` with the reason "the <role>'s CLI result does not
+  carry it"; a call that ended without a result says so. A role with no call
+  records zeros. An arm aggregate (`scope: arm`)
   sums its trials role by role, a `null` in any trial making that sum
   `null`, `models` included, and lists no calls. A trial with more than
   `run_eval.USAGE_MAX_CALLS` (32) calls keeps the role totals and

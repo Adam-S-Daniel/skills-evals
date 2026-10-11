@@ -129,19 +129,24 @@ def _weighted_overall(dimensions: list, weights: dict) -> float:
     return sum(scores) / len(scores) if scores else 0.0
 
 
+#: The usage keys of a CLI result a sink keeps besides `modelUsage`.
+USAGE_RESULT_KEYS = ("num_turns", "usage", "total_cost_usd")
+
 #: The open `collecting_models()` blocks. Each is a list every judge CLI call
-#: made inside that block appends `{"modelUsage": <its result's, raw>}` to
-#: (#202).
+#: made inside that block appends one entry to (#202, #371): `modelUsage`
+#: (always, `None` when the result has none) plus `num_turns`, `usage` and
+#: `total_cost_usd`, each only when the result has that key, all raw.
 _MODEL_SINKS: list[list] = []
 
 
 @contextlib.contextmanager
 def collecting_models():
-    """Collect the raw `modelUsage` of every judge CLI call in this block.
+    """Collect the raw usage figures of every judge CLI call in this block.
 
     The judge runs through the same Claude Code CLI as the agent, so its
     result names the model(s) that served it; `run_eval.py` records their
-    keys as an arm's `judge_models_used` (#202). A context manager rather
+    keys as an arm's `judge_models_used` (#202), and the turns, cost, tokens
+    and cache-write split of the call as `usage.measured.judge` (#371). A context manager rather
     than a new `score()` keyword, so the call site keeps the shape it has
     always had and both judge modes — one CLI call or several — are covered
     by the one place a judge call is spelled. Values are recorded raw and
@@ -244,7 +249,9 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
         raise RuntimeError(f"judge CLI produced invalid JSON: {e}") from e
 
     for sink in _MODEL_SINKS:
-        sink.append({"modelUsage": data.get("modelUsage")}
+        sink.append({"modelUsage": data.get("modelUsage"),
+                     **{key: data[key] for key in USAGE_RESULT_KEYS
+                        if key in data}}
                     if isinstance(data, dict) else None)
     return data.get("result", "")
 

@@ -66,6 +66,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, rate_limit_events, secret_values, tool_events)
 import guidance  # noqa: E402
+import run_canary  # noqa: E402
 from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
@@ -3421,12 +3422,11 @@ _NO_RUN_END = ("no call the harness makes prints a meter event after its last "
                "agent call has started (one real call observed: one event, as "
                "the call began); reading the meter at run end would need an "
                "added call")
-_ROLE_GAPS = {
-    "agent": "the agent's CLI result does not carry it",
-    "judge": "the judge's CLI result reaches the harness as its modelUsage "
-             "alone (harness/scorers/judge.py)",
-    "guard": "the guard call returns only its verdict "
-             "(harness/run_canary.py keeps no usage)"}
+#: Why `usage.meter.not_sampled` names the judge and the guard: neither call
+#: is made with `--verbose`, so neither prints a meter event, and no call is
+#: added to read the meter.
+_NOT_METERED = ("the call is made without --verbose, so it prints no meter "
+                "event, and no call is added to read the meter")
 
 
 def _now() -> datetime:
@@ -3535,8 +3535,8 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
         "cost_basis": basis.pop() if len(basis) == 1 else None,
         "models": models if whole else None,
         "cache_creation": split if split and None not in split.values() else None})
-    why = _ROLE_GAPS[role] if results or role == "guard" else (
-        f"the {role} call ended without a result")
+    why = (f"the {role}'s CLI result does not carry it" if results
+           else f"the {role} call ended without a result")
     return {**block, "reasons": {name: why for name, value in block.items()
                                  if value is None}}
 
@@ -3772,8 +3772,8 @@ class _RunTelemetry:
             # The snapshots themselves are in the trial summaries, once each.
             meter = {"snapshot_count": len(self.snapshots),
                      "unreadable_events": self.unreadable,
-                     "not_sampled": {"judge": _ROLE_GAPS["judge"],
-                                     "guard": _ROLE_GAPS["guard"],
+                     "not_sampled": {"judge": _NOT_METERED,
+                                     "guard": _NOT_METERED,
                                      "run_end": _NO_RUN_END}}
             delta = _meter_delta(self.snapshots, {
                 "calls_before_first_snapshot": self.snapshot_calls[0],
@@ -5854,17 +5854,18 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # tool-free probe — is what this line consults instead.
             preflight_model = args.model or fixture.get("model")
             guard_started = _now()
-            guard = guidance.run_guard(
-                workspace=workspace, token=arm_token,
-                expected=guidance.guard_expectation(arm["mode"]), env=env,
-                # The other side, for EVERY arm: it must not report a token it
-                # was not delivered.
-                forbidden_tokens=forbidden,
-                setting_sources=setting_sources, model=preflight_model,
-                timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
+            with run_canary.collecting_results() as guard_results:
+                guard = guidance.run_guard(
+                    workspace=workspace, token=arm_token,
+                    expected=guidance.guard_expectation(arm["mode"]), env=env,
+                    # The other side, for EVERY arm: it must not report a token
+                    # it was not delivered.
+                    forbidden_tokens=forbidden,
+                    setting_sources=setting_sources, model=preflight_model,
+                    timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
             extra["guard"] = guard
-            _TELEMETRY.timed("guard", guard_started, outcome=(
+            _TELEMETRY.timed("guard", guard_started, guard_results, outcome=(
                 guard.get("error") or {}).get("type") or "ok")
 
             if not guard["ok"]:
