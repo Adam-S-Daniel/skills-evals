@@ -5854,14 +5854,23 @@ class CanaryTests(unittest.TestCase):
 
 def _judge_for_first_arm(document: dict) -> str:
     """The judge an unpinned fixture gets on this roster: the one chosen for
-    its first arm, a tier above it (#371, ADR 0013). The rule itself is
-    tested in test/issues/test_issue_371_judge_tier.py."""
-    arms = [arm["id"] for arm in document["arms"]]
-    chosen, problem = run_eval.judge_policy.judge_for_arm(
-        arms[0], arms, document["judge"]["id"],
-        run_eval.judge_policy.read_rungs()[0])
-    assert problem is None, problem
-    return chosen["model"]
+    its first arm, a tier above it (#371, ADR 0013). Worked out here from the
+    ladder, not by `judge_policy.judge_for_arm`, the function these
+    expectations check; the rule itself is tested in
+    test/issues/test_issue_371_judge_tier.py."""
+    arm_ids = [arm["id"] for arm in document["arms"]]
+    rungs = roster.tier_rungs(roster.load_policy(
+        REPO_ROOT / "evals" / "roster-policy.yml"))
+    tier = roster.rung_of(arm_ids[0], rungs)
+    placed = [(roster.rung_of(arm, rungs), arm) for arm in arm_ids]
+    above = sorted((rung, arm) for rung, arm in placed
+                   if rung is not None and rung > tier)
+    lowest = [arm for rung, arm in above if rung == above[0][0]]
+    # One arm in the tier above (or none): nothing here works out "newest".
+    assert len(lowest) <= 1, lowest
+    judge = lowest[0] if lowest else document["judge"]["id"]
+    assert roster.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
+    return judge
 
 
 class TestIssue67(unittest.TestCase):

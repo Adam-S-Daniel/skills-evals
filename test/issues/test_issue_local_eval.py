@@ -560,20 +560,28 @@ class TestLocalEval(unittest.TestCase):
                          version.splitlines()[0].strip())
         # EVAL_DIR pins neither model (#371 item 5): the committed roster's
         # first arm and the judge chosen for it, a tier above (ADR 0013),
-        # are what the run selects.
+        # are what the run selects. The judge is worked out here from the
+        # ladder, not by `judge_policy.judge_for_arm`, which this checks.
         roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
         arm_ids = [arm["id"] for arm in roster["arms"]]
         sys.path.insert(0, str(REPO_ROOT / "harness"))
         self.addCleanup(sys.path.remove, str(REPO_ROOT / "harness"))
-        import judge_policy
-        chosen, problem = judge_policy.judge_for_arm(
-            arm_ids[0], arm_ids, roster["judge"]["id"],
-            judge_policy.read_rungs()[0])
-        self.assertIsNone(problem)
+        import roster as tiers
+        rungs = tiers.tier_rungs(tiers.load_policy(
+            REPO_ROOT / "evals" / "roster-policy.yml"))
+        tier = tiers.rung_of(arm_ids[0], rungs)
+        placed = [(tiers.rung_of(arm, rungs), arm) for arm in arm_ids]
+        above = sorted((rung, arm) for rung, arm in placed
+                       if rung is not None and rung > tier)
+        lowest = [arm for rung, arm in above if rung == above[0][0]]
+        # One arm in the tier above (or none): nothing here works out "newest".
+        assert len(lowest) <= 1, lowest
+        judge = lowest[0] if lowest else roster["judge"]["id"]
+        assert tiers.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
         self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
                          {"model": None, "judge_model": None})
         self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
-                         {"agent": arm_ids[0], "judge": chosen["model"]})
+                         {"agent": arm_ids[0], "judge": judge})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",
