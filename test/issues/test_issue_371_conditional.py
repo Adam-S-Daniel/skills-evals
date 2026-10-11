@@ -167,6 +167,30 @@ class GainSkipsTests(PairCase):
                 with self.assertRaises(ingest.Rejected):
                     ingest.check_summary({**doc, "judge": bad}, rel, parts)
 
+    def test_the_ingester_rejects_a_skip_beside_a_judge_call(self):
+        # A skip made no judge call: no judge model, no judge usage.
+        self.gain(3)
+        for rel, doc in self.results_files().items():
+            parts = ingest.parse_result_path(rel)
+            self.assertEqual(doc["judge"], SKIPPED, rel)
+            named = {**doc, "judge_models_used": ["fake-judge-model"]}
+            called = json.loads(json.dumps(doc))
+            called["usage"]["measured"]["judge"]["calls"] = 1
+            # A trial lists its calls, and a count its list does not bear
+            # out is refused before this rule is reached; an arm aggregate
+            # lists none, so there only this rule sees it.
+            listed = doc["usage"]["measured"]["calls"] is not None
+            for name, bad, said in (("models", named, "skipped judge"),
+                                    ("calls", called,
+                                     "" if listed else "skipped judge")):
+                with self.subTest(summary=rel, contradiction=name):
+                    with self.assertRaisesRegex(ingest.Rejected, said):
+                        ingest.check_summary(bad, rel, parts)
+            # A summary from before the usage block has no call count to check.
+            older = {k: v for k, v in doc.items() if k not in ("run", "usage")}
+            with self.subTest(summary=rel, contradiction="none"):
+                ingest.check_summary(older, rel, parts)
+
     def test_the_badge_reads_the_pair_by_its_objective_result(self):
         for trials in (1, 3):
             with self.subTest(trials=trials):

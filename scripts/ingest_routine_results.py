@@ -1004,6 +1004,12 @@ def check_summary(doc, where: str, parts: dict) -> None:
                 isinstance(m, str) and MODEL_ID_RE.fullmatch(m)
                 for m in models):
             raise Rejected(f"{where}: {field} must be a short list of model ids")
+    # A skipped judge made no call, so nothing beside it may name one.
+    if judge == JUDGE_SKIPPED and (
+            doc["judge_models_used"] or "usage" in doc
+            and doc["usage"]["measured"]["judge"]["calls"] != 0):
+        raise Rejected(f"{where}: a skipped judge beside a judge model or a "
+                       "judge call")
 
     for field in ("errors", "scored"):
         if field in doc:
