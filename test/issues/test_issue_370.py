@@ -727,6 +727,91 @@ class MeasuredTests(Checks):
         self.assertEqual(measured["agent"]["calls"], 34)
         ingest.check_usage(summary["usage"], "s", summary["run"])
 
+    # A judge call held back until its pair's objective result was known
+    # (#371) is made after its trial's summary was written, and `amend` adds
+    # it to that summary.
+
+    def amended(self, summary: dict, seconds: float = 3) -> dict:
+        """`summary` after a judge call of `seconds`, begun two seconds after
+        the summary was written, is added to it."""
+        self.clock.advance(2)
+        started = self.clock.now()
+        self.clock.advance(seconds)
+        run_eval._TELEMETRY.amend(summary, "judge", started, [
+            {"modelUsage": result_object()["modelUsage"]}])
+        return summary["usage"]["measured"]
+
+    def test_a_call_added_after_the_summary_extends_its_times_and_calls(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        self.assertEqual(summary["usage"]["measured"]["ended_at"],
+                         "2026-10-12T17:00:05Z")
+        measured = self.amended(summary)
+        # Agent 17:00:00 to :05, then the judge :07 to :10.
+        self.assertEqual(measured["ended_at"], "2026-10-12T17:00:10Z")
+        self.assertEqual([(c["role"], c["index"], c["outcome"])
+                          for c in measured["calls"]],
+                         [("agent", 0, "ok"), ("judge", 0, "ok")])
+        self.assertEqual(measured["calls"][1], {
+            "role": "judge", "index": 0, "started_at": "2026-10-12T17:00:07Z",
+            "ended_at": "2026-10-12T17:00:10Z", "duration_ms": 3000,
+            "outcome": "ok"})
+        self.assertEqual((measured["judge"]["calls"],
+                          measured["judge"]["duration_ms"]), (1, 3000))
+        self.assertEqual(measured["agent"]["calls"], 1)
+        self.assert_complete(summary)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_a_call_added_after_the_summary_counts_toward_the_meter_delta(self):
+        # Two agent calls that each print a snapshot, then the added call:
+        # the delta leaves out the last agent call and the one after it.
+        for week in (0.72, 0.75):
+            self.agent(Cli(self.clock, json.dumps(
+                verbose_array(result_object(), [meter(week)]))))
+        summary = self.written()
+        self.assertEqual(summary["usage"]["meter_delta"]["uncovered"],
+                         uncovered(0, 1))
+        self.amended(summary)
+        self.assertEqual(self.written("with_skill")["usage"]["meter_delta"]
+                         ["uncovered"], uncovered(0, 2))
+
+    def test_a_call_added_past_the_call_bound_drops_the_list_not_the_totals(self):
+        for _ in range(run_eval.USAGE_MAX_CALLS):
+            self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        self.assertEqual(len(summary["usage"]["measured"]["calls"]),
+                         run_eval.USAGE_MAX_CALLS)
+        measured = self.amended(summary)
+        self.assertIsNone(measured["calls"])
+        self.assertIn(f"more than {run_eval.USAGE_MAX_CALLS} calls",
+                      measured["reasons"]["calls"])
+        self.assertEqual((measured["agent"]["calls"], measured["judge"]["calls"]),
+                         (run_eval.USAGE_MAX_CALLS, 1))
+        self.assert_complete(summary)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_a_call_added_past_the_size_bound_drops_the_list_not_the_totals(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        size = len(json.dumps({"usage": {"measured": summary["usage"]["measured"]}},
+                              indent=2).encode("utf-8"))
+        # Room for what is there now, and not for one more listed call.
+        with mock.patch.object(run_eval, "USAGE_MAX_BYTES", size):
+            measured = self.amended(summary)
+        self.assertIsNone(measured["calls"])
+        self.assertIn("too large to list", measured["reasons"]["calls"])
+        self.assertEqual(measured["judge"]["calls"], 1)
+        self.assert_complete(summary)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_a_call_added_to_a_summary_that_lists_no_calls_adds_none(self):
+        summary = self.fullest(17)
+        self.assertIsNone(summary["usage"]["measured"]["calls"])
+        measured = self.amended(summary)
+        self.assertIsNone(measured["calls"])
+        self.assertEqual(measured["judge"]["calls"], 1)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
 
 class RunLevelTests(Checks):
     """What every summary of one run shares, and what ending the run adds."""
@@ -1057,6 +1142,50 @@ class EndToEndTests(Checks):
         self.assertEqual((aggregate["scope"], aggregate["calls"]), ("arm", None))
         self.assertEqual((aggregate["agent"]["calls"], aggregate["agent"]["cost_usd"],
                           aggregate["judge"]["calls"]), (2, 0.1, 2))
+
+    def test_a_judged_pair_leaves_all_its_judging_outside_the_meter_delta(self):
+        # The default (`--judge auto`) on a tie: no judge call until both
+        # arms' trials are scored, so all four come after the last agent
+        # call, whose start printed the run's last snapshot (#371).
+        self.fixture(batches=[[meter(0.72)], [meter(0.73)], [meter(0.73)],
+                              [meter(0.75, five=0.04)]])
+        proc = self.run_eval("--trials", "2", "--run-billing", "subscription")
+        self.assertEqual(proc.returncode, 0, self.said(proc))
+        found = self.summaries()
+        self.assertEqual(len(found), 6, sorted(found))
+        shared = set()
+        for rel, summary in found.items():
+            with self.subTest(summary=rel):
+                self.assert_complete(summary)
+                ingest.check_summary(summary, rel, ingest.parse_result_path(rel))
+                usage = summary["usage"]
+                shared.add(json.dumps({k: v for k, v in usage.items()
+                                       if k != "measured"}, sort_keys=True))
+                # The last agent call and the four judge calls.
+                self.assertEqual(usage["meter_delta"]["uncovered"],
+                                 uncovered(0, 5))
+                self.assertEqual(usage["meter"]["snapshot_count"], 4)
+        self.assertEqual(len(shared), 1)
+        for arm in ("with_skill", "without_skill"):
+            for trial in (1, 2):
+                rel = f"trial-{trial}/summary.json"
+                with self.subTest(arm=arm, trial=trial):
+                    measured = self.summary(arm, rel)["usage"]["measured"]
+                    self.assertEqual([(c["role"], c["index"], c["outcome"])
+                                      for c in measured["calls"]],
+                                     [("agent", 0, "ok"), ("judge", 0, "ok")])
+                    self.assertEqual(measured["ended_at"],
+                                     measured["calls"][1]["ended_at"])
+                    self.assertEqual((measured["judge"]["calls"],
+                                      measured["judge"]["cost_usd"]), (1, 0.05))
+                    self.assertEqual(len(measured["meter"]["snapshots"]), 1)
+            aggregate = self.summary(arm)["usage"]["measured"]
+            self.assertEqual((aggregate["agent"]["calls"],
+                              aggregate["judge"]["calls"]), (2, 2))
+        # Every agent call came before any judge call.
+        kinds = ["judge" if "fake-judge" in argv else "agent"
+                 for argv in self.cli_calls() if "--version" not in argv]
+        self.assertEqual(kinds, ["agent"] * 4 + ["judge"] * 4)
 
     def test_telemetry_adds_no_cli_call(self):
         # One version call, then an agent call and a judge call per arm: the

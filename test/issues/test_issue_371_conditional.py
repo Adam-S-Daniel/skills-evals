@@ -235,6 +235,40 @@ class TieAndLossJudgeTests(PairCase):
         self.assertIsNone(found["with_skill"][0]["judge"])
         self.assertEqual(found["without_skill"][0]["judge"]["overall"], 7.0)
 
+    def test_a_without_arm_with_nothing_scored_does_not_decide_the_pair(self):
+        # The direction that could skip: `with` has a rate (1 of 2) and
+        # `without` has none. No rate is not a rate of zero.
+        proc = self.both([BARE, {"mode": "error"}], judge_steps(1))
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(self.kinds(), ["agents", "agents", "judges"])
+        found = self.trial_summaries(1)
+        self.assertEqual(found["with_skill"][0]["judge"]["overall"], 7.0)
+        self.assertIsNone(found["without_skill"][0]["judge"])
+        self.assertEqual(found["without_skill"][0]["error"]["type"],
+                         "nonzero_exit")
+        self.assertNotIn(CELL, self.report())
+
+    def test_no_rate_on_either_side_is_never_a_rate_of_zero(self):
+        def trial(*passed, error=None):
+            return {"error": error, "objective_checks": [
+                {"id": str(i), "passed": p} for i, p in enumerate(passed)]}
+        some, full, none = trial(True, False), trial(True, True), trial(False)
+        errored = trial(True, True, error={"type": "nonzero_exit"})
+        for with_trials, without_trials, decided in (
+                ([full], [some], True),
+                ([some], [none], True),
+                ([some], [some], False),
+                ([some], [], False),
+                ([some], [errored], False),
+                ([some], [trial()], False),
+                ([full], [errored, errored], False),
+                ([], [none], False),
+                ([errored], [none], False),
+                ([], [], False)):
+            with self.subTest(with_trials=with_trials, without=without_trials):
+                self.assertIs(run_eval._objective_decided(
+                    with_trials, without_trials), decided)
+
 
 class InPlaceJudgingTests(PairCase):
 
