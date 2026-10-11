@@ -651,12 +651,13 @@ USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", "concurrent_runs",
 USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
               "other_account_activity", "asserted_quiet_by", "outer_session",
               "measured", "reasons")
-METER_KEYS = ("snapshots", "omitted", "unreadable_events", "not_sampled")
+METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
+TRIAL_METER_KEYS = ("snapshots", "omitted")
 SNAPSHOT_KEYS = ("at", "at_source", "call", "info")
-SNAPSHOT_CALL_KEYS = ("role", "arm", "fixture", "trial", "index")
+SNAPSHOT_CALL_KEYS = ("role", "index")
 DELTA_KEYS = ("confounded", "scope", "from_at", "to_at", "windows")
 WINDOW_KEYS = ("from", "to", "delta", "window_reset")
-MEASURED_NULLABLE = ("started_at", "ended_at", "calls")
+MEASURED_NULLABLE = ("started_at", "ended_at", "calls", "meter")
 MEASURED_KEYS = ("scope", *MEASURED_NULLABLE, *USAGE_ROLES, "reasons")
 CALL_KEYS = ("role", "index", "started_at", "ended_at", "duration_ms", "outcome")
 ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation")
@@ -729,19 +730,32 @@ def _check_meter(usage, where: str, billing) -> None:
     if meter is not None:
         _object(meter, f"{where}.meter", METER_KEYS, METER_KEYS)
         bounded(meter, f"{where}.meter")
-        _integer(meter["omitted"], f"{where}.meter.omitted", 0, 10 ** 6)
+        _integer(meter["snapshot_count"], f"{where}.meter.snapshot_count", 0, 10 ** 6)
         _integer(meter["unreadable_events"], f"{where}.meter", 0, 10 ** 6)
-        if not isinstance(meter["snapshots"], list) \
-                or len(meter["snapshots"]) > MAX_METER_SNAPSHOTS:
-            raise Rejected(f"{where}.meter.snapshots must be a short list")
-        for snapshot in meter["snapshots"]:
-            _object(snapshot, f"{where}.meter snapshot", SNAPSHOT_KEYS, SNAPSHOT_KEYS)
-            _pattern(snapshot["at"], f"{where}.meter snapshot at", METER_TIME_RE)
-            _object(snapshot["call"], f"{where}.meter snapshot call",
+    # The snapshots are stored once each, in the trial that recorded them:
+    # an arm aggregate lists none, and an API-billed run has none.
+    measured = usage["measured"]
+    if not isinstance(measured, dict) or "meter" not in measured:
+        raise Rejected(f"{where}.measured must carry its meter record")
+    mine, where_mine = measured["meter"], f"{where}.measured.meter"
+    if (mine is None) != (meter is None or measured.get("scope") == "arm"):
+        raise Rejected(f"{where_mine} is null exactly for an arm aggregate or "
+                       "an API-billed run")
+    if mine is not None:
+        _object(mine, where_mine, TRIAL_METER_KEYS, TRIAL_METER_KEYS)
+        bounded(mine, where_mine)
+        _integer(mine["omitted"], f"{where_mine}.omitted", 0, 10 ** 6)
+        if not isinstance(mine["snapshots"], list) \
+                or len(mine["snapshots"]) > MAX_METER_SNAPSHOTS:
+            raise Rejected(f"{where_mine}.snapshots must be a short list")
+        for snapshot in mine["snapshots"]:
+            _object(snapshot, f"{where_mine} snapshot", SNAPSHOT_KEYS, SNAPSHOT_KEYS)
+            _pattern(snapshot["at"], f"{where_mine} snapshot at", METER_TIME_RE)
+            _object(snapshot["call"], f"{where_mine} snapshot call",
                     SNAPSHOT_CALL_KEYS, SNAPSHOT_CALL_KEYS)
             if snapshot["at_source"] not in ("cli_message", "call_end") \
                     or not isinstance(snapshot["info"], dict):
-                raise Rejected(f"{where}.meter snapshot is not one the harness writes")
+                raise Rejected(f"{where_mine} snapshot is not one the harness writes")
     if delta is not None:
         _object(delta, f"{where}.meter_delta", DELTA_KEYS, DELTA_KEYS)
         bounded(delta, f"{where}.meter_delta")

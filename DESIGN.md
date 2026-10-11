@@ -1027,25 +1027,32 @@ is objectively decidable from the resulting files alone.
   stood at that moment, and when the run ends every summary the run wrote is
   rewritten with the final one, so all of a run's summaries agree; a run that
   is killed leaves `ended_at: null` with its reason.
-  `meter.snapshots` are the CLI's own `rate_limit_event` objects: with
-  `--verbose` the agent call's message array carries one (CLI 2.1.296,
-  measured 2026-10-10), so reading the account meter adds no model call. The
-  first and the last event of each agent CLI call are kept, each as `{at,
-  at_source, call: {role, arm, fixture, trial, index}, info}` with `info` the
-  event's `rate_limit_info` verbatim (whatever windows it names) and `at` the
-  timestamp of the message before it (`cli_message`), else the call's end
-  (`call_end`). A run keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its
-  first six and last six; `omitted` counts the rest and `unreadable_events`
-  those not kept for their shape or size. The judge call (`--output-format
-  json` without `--verbose`) and the guard call print no such event, which
-  `meter.not_sampled` says. `meter_delta` is the first snapshot against the
-  last, per window both name: `{from, to, delta, window_reset}`, `delta`
+  A meter snapshot is the CLI's own `rate_limit_event`: with `--verbose`
+  the agent call's message array carries one (CLI 2.1.296, measured
+  2026-10-10), so reading the account meter adds no model call. Each
+  snapshot is stored once, in the summary of the trial whose call printed
+  it, under `usage.measured.meter: {snapshots, omitted}`: the first and the
+  last event of each of that trial's agent CLI calls, each as `{at,
+  at_source, call: {role, index}, info}` with `info` the event's
+  `rate_limit_info` verbatim (whatever windows it names), `at` the timestamp
+  of the message before it (`cli_message`), else the call's end
+  (`call_end`), and `call` naming the entry of the same trial's `calls`. A
+  trial keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its first six and
+  last six, and `omitted` counts the rest; an arm aggregate lists none. A
+  run's meter series is therefore the union of its trial summaries. The
+  run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
+  how many snapshots the run recorded, how many events were not kept for
+  their shape or size, and why the judge call (`--output-format json`
+  without `--verbose`) and the guard call are not sampled. `meter_delta` is
+  the run's first snapshot against its last, per window both name, whatever
+  a trial's own list dropped: `{from, to, delta, window_reset}`, `delta`
   `null` when the window's reset time changed between them. It is
   account-wide, so it is this run's cost only if nothing else used the
   account, and it is labeled, never corrected. A run billed `api` has
-  `meter: null` and `meter_delta: null` with the reason.
-  `usage.measured` is `{scope, started_at, ended_at, calls, agent, judge,
-  guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
+  `meter: null`, `meter_delta: null` and `measured.meter: null` with the
+  reason.
+  `usage.measured` is `{scope, started_at, ended_at, calls, meter, agent,
+  judge, guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
   call with its role, start, end, wall-clock `duration_ms` and outcome, and
   each role has `{calls, duration_ms, num_turns, cost_usd, cost_basis,
   models, cache_creation, reasons}`: `models` per model id with the four
@@ -1060,9 +1067,10 @@ is objectively decidable from the resulting files alone.
   calls keeps the role totals and `calls: null`.
   `scripts/ingest_routine_results.py` accepts both blocks (together or not at
   all, so earlier summaries still ingest) and checks their shape. With every
-  snapshot and call slot taken the two blocks measured 26,369 bytes
+  snapshot and call slot taken the two blocks measured 26,020 bytes
   pretty-printed, against the ingester's 64 KiB cap on a summary, which is
-  unchanged; a six-call run's measured 14,464.
+  unchanged. Over a both-arms, three-trial run (eight summaries, one event
+  per call) they measured 36,224 bytes in all, 3,865 to 4,749 each.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work

@@ -58,8 +58,9 @@ USAGE_KEYS = {"schema_version", "started_at", "ended_at", "meter",
               "price_table_version", "measured", "reasons"}
 USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", "concurrent_runs",
                   "limit_promotion", "price_table_version")
-MEASURED_KEYS = {"scope", "started_at", "ended_at", "calls", "agent", "judge",
-                 "guard", "reasons"}
+MEASURED_KEYS = {"scope", "started_at", "ended_at", "calls", "meter", "agent",
+                 "judge", "guard", "reasons"}
+MEASURED_NULLABLE = ("started_at", "ended_at", "calls", "meter")
 ROLE_KEYS = {"calls", "duration_ms", "num_turns", "cost_usd", "cost_basis",
              "models", "cache_creation", "reasons"}
 ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation")
@@ -157,8 +158,12 @@ class Checks(unittest.TestCase):
         self.assertEqual(usage["outer_session"]["note"], "not measured")
         measured = usage["measured"]
         self.assertEqual(set(measured), MEASURED_KEYS)
-        self.assert_reasons(measured, ("started_at", "ended_at", "calls"),
-                            "usage.measured")
+        self.assert_reasons(measured, MEASURED_NULLABLE, "usage.measured")
+        # A snapshot is stored once, in the trial that recorded it: the
+        # run-level record carries the count, never the snapshots.
+        if usage["meter"] is not None:
+            self.assertEqual(set(usage["meter"]),
+                             {"snapshot_count", "unreadable_events", "not_sampled"})
         for role in ("agent", "judge", "guard"):
             self.assertEqual(set(measured[role]), ROLE_KEYS, role)
             self.assert_reasons(measured[role], ROLE_NULLABLE, role)
@@ -443,11 +448,10 @@ class MeasuredTests(Checks):
         self.assertEqual(measured["agent"], self.AGENT)
         self.assertEqual(measured["judge"], no_calls("judge"))
         self.assertEqual(measured["guard"], no_calls("guard"))
-        self.assertEqual(summary["usage"]["meter"]["snapshots"], [
+        self.assertEqual(measured["meter"], {"omitted": 0, "snapshots": [
             {"at": FAKE_MESSAGE_AT, "at_source": "cli_message",
-             "call": {"role": "agent", "arm": "without_skill", "fixture": None,
-                      "trial": None, "index": 0},
-             "info": meter(0.72)}])
+             "call": {"role": "agent", "index": 0}, "info": meter(0.72)}]})
+        self.assertEqual(summary["usage"]["meter"]["snapshot_count"], 1)
 
     def test_a_follow_up_session_is_two_calls_and_one_cumulative_cost(self):
         # A resumed call's cost and modelUsage already cover the session.
@@ -537,6 +541,7 @@ class MeasuredTests(Checks):
     def test_a_summary_with_no_trial_says_so(self):
         measured = self.written()["usage"]["measured"]
         self.assertEqual(measured["calls"], [])
+        self.assertEqual(measured["meter"], {"snapshots": [], "omitted": 0})
         self.assertIsNone(measured["started_at"])
         self.assertIsNone(measured["ended_at"])
         self.assertEqual(set(measured["reasons"]), {"started_at", "ended_at"})
@@ -546,7 +551,8 @@ class MeasuredTests(Checks):
         self.agent(Cli(self.clock, json.dumps(
             verbose_array(result_object(), infos))))
         usage = self.written()["usage"]
-        self.assertEqual([s["info"] for s in usage["meter"]["snapshots"]],
+        self.assertEqual([s["info"] for s in
+                          usage["measured"]["meter"]["snapshots"]],
                          [infos[0], infos[2]])
         self.assertEqual(usage["meter_delta"], {
             "confounded": True, "scope": "account-wide",
@@ -568,16 +574,18 @@ class MeasuredTests(Checks):
     def test_an_event_without_a_timestamp_is_stamped_with_its_calls_end(self):
         self.agent(Cli(self.clock, json.dumps(
             verbose_array(result_object(), [meter(0.5)], at=None))))
-        snapshot = self.written()["usage"]["meter"]["snapshots"][0]
+        snapshot = self.written()["usage"]["measured"]["meter"]["snapshots"][0]
         self.assertEqual((snapshot["at"], snapshot["at_source"]),
                          ("2026-10-12T17:00:05Z", "call_end"))
 
     def test_an_unreadable_event_is_counted_not_kept(self):
         self.agent(Cli(self.clock, json.dumps(
             verbose_array(result_object(), ["junk", meter(0.5)]))))
-        found = self.written()["usage"]["meter"]
-        self.assertEqual(found["unreadable_events"], 1)
-        self.assertEqual([s["info"] for s in found["snapshots"]], [meter(0.5)])
+        found = self.written()["usage"]
+        self.assertEqual(found["meter"]["unreadable_events"], 1)
+        self.assertEqual(found["meter"]["snapshot_count"], 1)
+        self.assertEqual([s["info"] for s in found["measured"]["meter"]["snapshots"]],
+                         [meter(0.5)])
 
     def test_the_meter_record_is_bounded_and_keeps_both_ends(self):
         for week in range(40):
@@ -585,9 +593,11 @@ class MeasuredTests(Checks):
                 verbose_array(result_object(), [meter(week / 100)]))))
         found = self.written()["usage"]
         kept = [s["info"]["unifiedWindows"]["seven_day"]["utilization"]
-                for s in found["meter"]["snapshots"]]
+                for s in found["measured"]["meter"]["snapshots"]]
         self.assertEqual(kept, [w / 100 for w in (*range(6), *range(34, 40))])
-        self.assertEqual(found["meter"]["omitted"], 28)
+        self.assertEqual(found["measured"]["meter"]["omitted"], 28)
+        # The delta still spans the whole run: its ends are never dropped.
+        self.assertEqual(found["meter"]["snapshot_count"], 40)
         self.assertEqual(found["meter_delta"]["windows"]["seven_day"]["delta"], 0.39)
 
     def fullest(self, sessions: int) -> dict:
@@ -610,7 +620,7 @@ class MeasuredTests(Checks):
         # Measured, so the cap is known to hold: every snapshot slot and
         # every call slot taken, pretty-printed as on disk, is 26 KB.
         summary = self.fullest(16)
-        self.assertEqual(len(summary["usage"]["meter"]["snapshots"]), 12)
+        self.assertEqual(len(summary["usage"]["measured"]["meter"]["snapshots"]), 12)
         self.assertEqual(len(summary["usage"]["measured"]["calls"]), 32)
         size = len(json.dumps({"run": summary["run"], "usage": summary["usage"]},
                               indent=2).encode("utf-8"))
@@ -673,7 +683,9 @@ class RunLevelTests(Checks):
             self.assertEqual(usage["started_at"], "2026-10-12T17:00:00Z")
             self.assertEqual(usage["ended_at"], "2026-10-12T17:01:01Z")
             self.assertNotIn("ended_at", usage["reasons"])
-            self.assertEqual(len(usage["meter"]["snapshots"]), 2)
+            self.assertEqual(usage["meter"]["snapshot_count"], 2)
+            # Each summary holds only the snapshot its own call printed.
+            self.assertEqual(len(usage["measured"]["meter"]["snapshots"]), 1)
             self.assertEqual(usage["meter_delta"]["windows"]["seven_day"],
                              {"from": 0.72, "to": 0.74, "delta": 0.02,
                               "window_reset": False})
@@ -699,8 +711,10 @@ class RunLevelTests(Checks):
         usage = self.read(self.write("with_skill"))["usage"]
         self.assertIsNone(usage["meter"])
         self.assertIsNone(usage["meter_delta"])
+        self.assertIsNone(usage["measured"]["meter"])
         self.assertIn("API-billed", usage["reasons"]["meter"])
         self.assertIn("API-billed", usage["reasons"]["meter_delta"])
+        self.assertIn("API-billed", usage["measured"]["reasons"]["meter"])
 
     def test_what_else_ran_is_unknown_unless_someone_asserts_quiet(self):
         run_eval._TELEMETRY.begin(flags())
@@ -746,6 +760,9 @@ class RunLevelTests(Checks):
         measured = summary["usage"]["measured"]
         self.assertEqual(measured["scope"], "arm")
         self.assertIsNone(measured["calls"])
+        self.assertIsNone(measured["meter"])
+        self.assertEqual(measured["reasons"]["meter"],
+                         "listed in each trial's own summary")
         self.assertEqual((measured["started_at"], measured["ended_at"]),
                          ("2026-10-12T17:00:00Z", "2026-10-12T17:00:20Z"))
         self.assertEqual(measured["agent"], {
@@ -901,16 +918,19 @@ class EndToEndTests(Checks):
                                        if k != "measured"}, sort_keys=True))
         # One run, one run-level record, the same in all six.
         self.assertEqual(len(shared), 1)
+        # Each snapshot is in the summary of the trial whose call printed it,
+        # and nowhere else: four in the run, none in either arm's aggregate.
+        for arm, trial, week in (("with_skill", 1, 0.72), ("with_skill", 2, 0.73),
+                                 ("without_skill", 1, 0.73),
+                                 ("without_skill", 2, 0.75)):
+            mine = self.summary(arm, f"trial-{trial}/summary.json")["usage"]["measured"]
+            self.assertEqual(mine["meter"], {"omitted": 0, "snapshots": [
+                {"at": FAKE_MESSAGE_AT, "at_source": "cli_message",
+                 "call": {"role": "agent", "index": 0}, "info": meter(
+                     week, five=0.04 if week == 0.75 else 0.01)}]})
+            self.assertIsNone(self.summary(arm)["usage"]["measured"]["meter"])
         usage = self.summary("with_skill")["usage"]
-        self.assertEqual(
-            [(s["call"], s["info"]["unifiedWindows"]["seven_day"]["utilization"])
-             for s in usage["meter"]["snapshots"]],
-            [({"role": "agent", "arm": arm, "fixture": None, "trial": trial,
-               "index": 0}, week)
-             for arm, trial, week in (("with_skill", 1, 0.72),
-                                      ("with_skill", 2, 0.73),
-                                      ("without_skill", 1, 0.73),
-                                      ("without_skill", 2, 0.75))])
+        self.assertEqual(usage["meter"]["snapshot_count"], 4)
         self.assertEqual(usage["meter_delta"], {
             "confounded": True, "scope": "account-wide",
             "from_at": FAKE_MESSAGE_AT, "to_at": FAKE_MESSAGE_AT,
@@ -946,8 +966,8 @@ class EndToEndTests(Checks):
         calls = self.cli_calls()
         self.assertEqual(len(calls), 5, calls)
         self.assertEqual(sum("--version" in argv for argv in calls), 1)
-        self.assertEqual(len(self.summary("with_skill")["usage"]["meter"]
-                             ["snapshots"]), 2)
+        self.assertEqual(self.summary("with_skill")["usage"]["meter"]
+                         ["snapshot_count"], 2)
 
     def test_no_snapshot_is_invented_when_the_cli_emits_none(self):
         self.fixture()
@@ -955,8 +975,9 @@ class EndToEndTests(Checks):
         self.assertEqual(proc.returncode, 0, self.said(proc))
         for arm in ("with_skill", "without_skill"):
             usage = self.summary(arm)["usage"]
-            self.assertEqual(usage["meter"]["snapshots"], [])
-            self.assertEqual(usage["meter"]["omitted"], 0)
+            self.assertEqual(usage["meter"]["snapshot_count"], 0)
+            self.assertEqual(usage["measured"]["meter"],
+                             {"snapshots": [], "omitted": 0})
             self.assertIsNone(usage["meter_delta"])
             self.assertIn("meter_delta", usage["reasons"])
             self.assert_complete(self.summary(arm))
@@ -967,6 +988,7 @@ class EndToEndTests(Checks):
         self.assertEqual(proc.returncode, 0, self.said(proc))
         for rel, summary in self.summaries().items():
             self.assertIsNone(summary["usage"]["meter"])
+            self.assertIsNone(summary["usage"]["measured"]["meter"])
             self.assertIn("API-billed", summary["usage"]["reasons"]["meter"])
             ingest.check_summary(summary, rel, ingest.parse_result_path(rel))
 
@@ -1204,7 +1226,7 @@ class IngestTests(Checks):
             self.check(summary)
 
     def test_other_values_outside_the_usage_blocks_shape_are_rejected(self):
-        snapshots = self.good["usage"]["meter"]["snapshots"]
+        snapshots = self.good["usage"]["measured"]["meter"]["snapshots"]
         for path, value in (
                 (("usage", "schema_version"), 2),
                 (("usage", "started_at"), "yesterday"),
@@ -1212,10 +1234,18 @@ class IngestTests(Checks):
                 (("usage", "asserted_quiet_by"), "adam"),
                 (("usage", "outer_session", "note"), "x" * 5000),
                 (("usage", "extra"), 1),
-                (("usage", "meter", "snapshots"), snapshots * 13),
-                (("usage", "meter", "snapshots", 0, "info"), "text"),
-                (("usage", "meter", "snapshots", 0, "at_source"), "guess"),
+                (("usage", "measured", "meter", "snapshots"), snapshots * 7),
+                (("usage", "measured", "meter", "snapshots", 0, "info"), "text"),
+                (("usage", "measured", "meter", "snapshots", 0, "at_source"),
+                 "guess"),
+                (("usage", "measured", "meter", "snapshots", 0, "call"),
+                 {"role": "agent", "arm": "a", "index": 0}),
+                (("usage", "measured", "meter"), None),
+                (("usage", "meter", "snapshots"), snapshots),
+                (("usage", "meter", "snapshot_count"), "two"),
                 (("usage", "measured", "scope"), "run"),
+                # An arm aggregate lists no snapshots of its own.
+                (("usage", "measured", "scope"), "arm"),
                 (("usage", "measured", "agent", "cost_usd"), -1),
                 (("usage", "measured", "agent", "calls"), "one"),
                 (("usage", "measured", "agent", "models"),

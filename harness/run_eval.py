@@ -3392,7 +3392,8 @@ RUN_ENV = {"billing": (),
 USAGE_ROLES = ("agent", "judge", "guard")
 USAGE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 CACHE_SPLIT = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
-#: Meter snapshots kept per run: the first and the last half of this many.
+#: Meter snapshots one trial's summary keeps: the first and the last half
+#: of this many.
 METER_MAX_SNAPSHOTS = 12
 #: The most CLI calls one trial's summary lists; past it only the role
 #: totals are kept. Both bounds keep a summary inside the ingester's size cap.
@@ -3400,6 +3401,7 @@ USAGE_MAX_CALLS = 32
 #: A meter window's name, or a cost basis: a short label the CLI printed.
 _CLI_LABEL = re.compile(r"[A-Za-z0-9_.-]{1,32}")
 #: Why a role's figures are null even when its call succeeded.
+_API_BILLED = "API-billed run: the subscription's account meter does not apply"
 _ROLE_GAPS = {
     "agent": "the agent's CLI result does not carry it",
     "judge": "the judge's CLI result reaches the harness as its modelUsage "
@@ -3517,11 +3519,11 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
 def _sum_measured(trials: list) -> dict:
     """An arm aggregate's `usage.measured`: its trials' figures summed role
     by role (`_sum_or_null`), over the span from the first trial's start to
-    the last one's end. The calls themselves are listed in the trial
-    summaries."""
+    the last one's end. The calls and the meter snapshots themselves are
+    listed in the trial summaries."""
     blocks = [t["usage"]["measured"] for t in trials
               if isinstance((t.get("usage") or {}).get("measured"), dict)]
-    out = {"scope": "arm", "calls": None,
+    out = {"scope": "arm", "calls": None, "meter": None,
            "started_at": min((b["started_at"] for b in blocks if b["started_at"]),
                              default=None),
            "ended_at": max((b["ended_at"] for b in blocks if b["ended_at"]),
@@ -3536,7 +3538,10 @@ def _sum_measured(trials: list) -> dict:
         out[role] = {**total, "reasons": {
             name: "not every trial recorded it; see the trial summaries"
             for name, value in total.items() if value is None}}
-    out["reasons"] = {"calls": "listed in each trial's own summary",
+    listed = "listed in each trial's own summary"
+    unmetered = {b["reasons"].get("meter") for b in blocks} if blocks else {None}
+    out["reasons"] = {"calls": listed,
+                      "meter": unmetered.pop() if unmetered == {_API_BILLED} else listed,
                       **{name: "no trial of this arm made a call"
                          for name in ("started_at", "ended_at") if out[name] is None}}
     return out
@@ -3573,10 +3578,12 @@ class _RunTelemetry:
 
     `record()` queues a role's CLI calls; the next summary written takes
     them as its own (`usage.measured`), which is exact because trials run
-    one after another and each ends by writing its summary. The run-level
-    half (times, meter, what else was running) is written into every summary
-    as it stood at that moment, and `finish()` rewrites it in all of them
-    once the run has ended, so each summary of a run carries the same one.
+    one after another and each ends by writing its summary. A meter
+    snapshot is stored once, with the trial whose call printed it. The
+    run-level half (times, how far the meter moved, what else was running)
+    is written into every summary as it stood at that moment, and `finish()`
+    rewrites it in all of them once the run has ended, so each summary of a
+    run carries the same one.
     """
 
     def __init__(self):
@@ -3610,12 +3617,15 @@ class _RunTelemetry:
         return run_block(self.flags, os.environ, harness_commit=HARNESS_COMMIT,
                          cli_version=cli_version)
 
-    def _measure(self, arm_name: str, summary: dict) -> dict:
-        """This summary's own calls, and their meter events into the run's."""
+    def _api_billed(self) -> bool:
+        return getattr(self.flags, "run_billing", None) == "api"
+
+    def _measure(self) -> dict:
+        """This summary's own calls and the meter snapshots they printed."""
         groups, self.pending = self.pending, []
         started, self.trial_started = self.trial_started, None
         ended = _now() if groups or started else None
-        listed, counts = [], dict.fromkeys(USAGE_ROLES, 0)
+        listed, mine, counts = [], [], dict.fromkeys(USAGE_ROLES, 0)
         for group in groups:
             for call in group["calls"]:
                 index = counts[group["role"]]
@@ -3631,18 +3641,21 @@ class _RunTelemetry:
                 self.unreadable += sum(e["info"] is None for e in events)
                 events = [e for e in events if e["info"] is not None]
                 for event in events[:1] + events[1:][-1:]:
-                    self.snapshots.append({
+                    mine.append({
                         "at": event["at"] or _stamp(call["ended"]),
                         "at_source": "cli_message" if event["at"] else "call_end",
-                        "call": {"role": group["role"], "arm": arm_name,
-                                 "fixture": summary.get("fixture"),
-                                 "trial": summary.get("trial"), "index": index},
+                        "call": {"role": group["role"], "index": index},
                         "info": event["info"]})
+        self.snapshots += mine
+        half = METER_MAX_SNAPSHOTS // 2
+        kept = mine if len(mine) <= METER_MAX_SNAPSHOTS else mine[:half] + mine[-half:]
         first = started or min((c["started"] for g in groups for c in g["calls"]),
                                default=None)
         measured = {"scope": "trial", "started_at": _stamp(first),
                     "ended_at": _stamp(ended),
-                    "calls": listed if len(listed) <= USAGE_MAX_CALLS else None}
+                    "calls": listed if len(listed) <= USAGE_MAX_CALLS else None,
+                    "meter": None if self._api_billed() else {
+                        "snapshots": kept, "omitted": len(mine) - len(kept)}}
         for role in USAGE_ROLES:
             mine = [g for g in groups if g["role"] == role]
             measured[role] = _role_usage(role, [c for g in mine for c in g["calls"]],
@@ -3653,6 +3666,8 @@ class _RunTelemetry:
         if measured["calls"] is None:
             measured["reasons"]["calls"] = (
                 f"more than {USAGE_MAX_CALLS} calls: only the role totals are kept")
+        if measured["meter"] is None:
+            measured["reasons"]["meter"] = _API_BILLED
         return measured
 
     def _run_level(self) -> dict:
@@ -3665,14 +3680,11 @@ class _RunTelemetry:
         if self.ended is None:
             reasons["ended_at"] = "the run had not ended when this summary was written"
         meter = delta = None
-        if getattr(self.flags, "run_billing", None) == "api":
-            reasons["meter"] = reasons["meter_delta"] = (
-                "API-billed run: the subscription's account meter does not apply")
+        if self._api_billed():
+            reasons["meter"] = reasons["meter_delta"] = _API_BILLED
         else:
-            half = METER_MAX_SNAPSHOTS // 2
-            kept = (self.snapshots if len(self.snapshots) <= METER_MAX_SNAPSHOTS
-                    else self.snapshots[:half] + self.snapshots[-half:])
-            meter = {"snapshots": kept, "omitted": len(self.snapshots) - len(kept),
+            # The snapshots themselves are in the trial summaries, once each.
+            meter = {"snapshot_count": len(self.snapshots),
                      "unreadable_events": self.unreadable,
                      "not_sampled": {role: _ROLE_GAPS[role]
                                      for role in ("judge", "guard")}}
@@ -3692,11 +3704,10 @@ class _RunTelemetry:
                 "limit_promotion": None, "price_table_version": None,
                 "reasons": reasons}
 
-    def usage(self, arm_name: str, summary: dict, trials: list | None) -> dict:
+    def usage(self, trials: list | None) -> dict:
         """A summary's `usage` block. `trials` are an arm aggregate's trial
         summaries; None means the summary is one trial's own."""
-        measured = (self._measure(arm_name, summary) if trials is None
-                    else _sum_measured(trials))
+        measured = self._measure() if trials is None else _sum_measured(trials)
         return {"schema_version": USAGE_SCHEMA_VERSION, **self._run_level(),
                 "measured": measured}
 
@@ -3836,7 +3847,7 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         if key and len(key.split("/")) == 3:
             summary.setdefault("fixture", key.split("/")[2])
     summary["run"] = _TELEMETRY.run(harness_version)
-    summary["usage"] = _TELEMETRY.usage(arm_name, summary, usage_trials)
+    summary["usage"] = _TELEMETRY.usage(usage_trials)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     _TELEMETRY.written.append(arm_dir / "summary.json")
