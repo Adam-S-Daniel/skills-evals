@@ -54,7 +54,27 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     of both arms, never some trials of a pair and not others. A single-arm
     run, `--judge always`, and a fixture whose `judge.mode` is not absolute
     (pairwise) judge each trial inside the trial as before; `--no-judge`
-    judges nothing and records `null`, not a skip.
+    judges nothing and records `null`, not a skip. Which model judges is
+    chosen for the arm
+    ([ADR 0013](docs/decisions/0013-judge-policy.md)): a fixture's
+    `judge.model` pin if it has one; else, for an arm model in tier T, the
+    newest roster arm in the lowest tier above T, and the roster's `judge`
+    when no roster arm sits above T (so Sonnet arms are judged by the newest
+    Opus arm and an Opus arm by the roster's judge). A `pairwise` fixture
+    always gets the roster's `judge`. A judge is never the model it grades
+    nor in its tier, on either path: a roster that cannot give one is a
+    selection error and nothing runs. Tiers are the roster module's reading
+    of a model id against the ladder in `roster-policy.yml`. "Newest" is
+    read from the ids, which orders two only when their names differ in
+    nothing but numbers; peer families on one rung, or an older id shape
+    beside a newer one, leave no newest and are a selection error too. Each
+    summary of a skill
+    run records the choice as `judge_selection` (`model`, `rule`:
+    `tier-above-arm`, `roster-judge` or `fixture-pin`, `arm_tier`,
+    `judge_tier`), on a skipped pair too, and `null` under `--no-judge` or
+    after a selection error. A guidance run is unchanged: its judge is the
+    fixture's pin, else the CLI's default, and it records no
+    `judge_selection`.
 - **Report** — per-skill table of with vs. without across success %, judge
   score, and cost; a summary; and a regression line vs. the last run.
 
@@ -1618,8 +1638,11 @@ runs that loader.
 The `workflow-path-audit` fixture learned these the hard way; they are policy
 for every fixture, not folklore in one file's comments:
 
-- **Arms on a pinned mid-tier model, judge pinned strong.** A ceiling-effect
-  arm is signal-free.
+- **Arms follow the roster, and the judge follows the arm.** A fixture pins
+  neither model without a stated reason; the judge is one tier above the arm
+  it grades ([ADR 0013](docs/decisions/0013-judge-policy.md), which
+  supersedes "arms on a pinned mid-tier model, judge pinned strong"). A
+  ceiling-effect arm is still signal-free.
 - **Anything a script can decide is never left to the judge**, and the
   rubric caps a dimension when a decidable fact fails (the judge once scored
   a 9 on an arm the objective column failed).
@@ -1815,7 +1838,9 @@ only, so an arm, the judge, the preflight model or a `catalogue_seen` entry
 cannot appear there or vanish from there without a reviewed commit.
 `run_eval.select_models` reads that file and nothing else for the roster rung
 of its precedence (`--model` > the fixture's own pin > `evals/roster.yml` >
-error).
+error). Since [ADR 0013](docs/decisions/0013-judge-policy.md) the judge it
+picks from that file also depends on the tier ladder in
+`evals/roster-policy.yml`, committed and pull-request-only like the roster.
 
 **`harness/roster.py` computes a PROPOSAL, not the running set.** It is still
 **a pure function over files** — already-parsed documents and a frozen `now`

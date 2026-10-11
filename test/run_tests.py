@@ -5851,6 +5851,28 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+
+def _judges_for_first_arm(document: dict) -> list[str]:
+    """The judges an unpinned fixture may get on this roster: the roster arms
+    in the lowest tier above its first arm, else the roster's judge (#371,
+    ADR 0013). Worked out here from the ladder, not by
+    `judge_policy.judge_for_arm`, the function these expectations check;
+    which of several arms is the newest is tested in
+    test/issues/test_issue_371_judge_tier.py."""
+    arm_ids = [arm["id"] for arm in document["arms"]]
+    rungs = roster.tier_rungs(roster.load_policy(
+        REPO_ROOT / "evals" / "roster-policy.yml"))
+    tier = roster.rung_of(arm_ids[0], rungs)
+    placed = [(roster.rung_of(arm, rungs), arm) for arm in arm_ids]
+    above = sorted((rung, arm) for rung, arm in placed
+                   if rung is not None and rung > tier)
+    lowest = [arm for rung, arm in above if rung == above[0][0]]
+    judges = lowest or [document["judge"]["id"]]
+    for judge in judges:
+        assert roster.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
+    return judges
+
+
 class TestIssue67(unittest.TestCase):
     """Model roster: availability + usage -> arms/judge/preflight (#67).
 
@@ -6307,7 +6329,7 @@ class TestIssue67(unittest.TestCase):
             seen = self._capture_models(eval_dir, self._roster_file(tmp))
         expected = self._compute()
         self.assertEqual(seen["agent"], expected["arms"][0]["id"])
-        self.assertEqual(seen["judge"], expected["judge"]["id"])
+        self.assertIn(seen["judge"], _judges_for_first_arm(expected))
 
     def test_runner_takes_the_fixture_pin_when_it_has_one(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -28234,12 +28256,17 @@ class TestIssue67Review7(unittest.TestCase):
             fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
             args = argparse.Namespace(model=None, roster=path, no_judge=False)
             agent, judge_model, error = run_eval.select_models(fixture, args)
-        self.assertIsNone(error, error)
-        self.assertNotEqual(agent, judge_model)
+        # This catalogue is opus snapshots only, so its non-arm judge sits in
+        # the arm's own tier and the runner refuses it for that (#371, ADR
+        # 0013): never as a model grading its own run.
+        self.assertNotIn(result["judge"]["id"],
+                         [arm["id"] for arm in result["arms"]])
+        self.assertEqual((agent, judge_model), (None, None))
+        self.assertIn("is in the opus tier", error)
+        self.assertNotIn("same model", error)
         # Mutation check (manual): as above — both snapshots are seated,
         # nothing available is left un-seated except the models already
-        # taken, `judge.is_arm` is True, and select_models returns "names a
-        # judge that is also an arm".
+        # taken, `judge.is_arm` is True, and the judge is an arm.
 
     # The invariant itself, over a few catalogues: two ids the SEAT map
     # keeps distinct never collect the same census turns. Observed through
@@ -31934,7 +31961,7 @@ class TestIssue147(unittest.TestCase):
         self.assertIsNone(error)
         committed = self._committed()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertIn(judge_model, _judges_for_first_arm(committed))
 
     def test_the_precedence_above_the_roster_is_unchanged(self):
         committed = self._committed()
@@ -33001,7 +33028,7 @@ elif 'worktree' in args and 'remove' in args:
         planted = self._plant_published_roster(published)
         agent, judge_model = self._running_set()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertIn(judge_model, _judges_for_first_arm(committed))
         # And the plant really was where the old default looked, or the
         # row proves nothing.
         self.assertTrue(planted.is_file())
