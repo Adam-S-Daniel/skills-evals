@@ -223,10 +223,11 @@ def _sandbox_placeholder(path: Path) -> bool:
 
 
 def _refuse_redirects(gitdir: Path) -> None:
-    # `commondir` and `gitdir` redirect Git elsewhere even when empty, so they
-    # stay refused. An empty `config.worktree` sets nothing even if
-    # `extensions.worktreeConfig` were on, and `_copy_metadata` never copies
-    # that file into the private metadata the harness's own Git reads.
+    # The sandbox leaves neither `commondir` nor `gitdir`, so both stay
+    # refused in any shape, empty included. An empty `config.worktree` sets
+    # nothing even if `extensions.worktreeConfig` were on, and
+    # `_copy_metadata` never copies that file into the private metadata the
+    # harness's own Git reads.
     for redirect in ('commondir', 'gitdir'):
         if os.path.lexists(gitdir / redirect):
             _refuse('redirected Git metadata')
