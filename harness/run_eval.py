@@ -3396,12 +3396,29 @@ CACHE_SPLIT = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
 #: of this many.
 METER_MAX_SNAPSHOTS = 12
 #: The most CLI calls one trial's summary lists; past it only the role
-#: totals are kept. Both bounds keep a summary inside the ingester's size cap.
+#: totals are kept.
 USAGE_MAX_CALLS = 32
+#: The most bytes one summary's `usage.measured` may take AS WRITTEN (indented,
+#: at its depth in the file). The counts above bound how many entries there
+#: are, not how large a snapshot's verbatim `info` is once indented, so this
+#: is the bound that keeps a summary inside the ingester's 64 KiB cap: past
+#: it snapshots are dropped, then the call list.
+USAGE_MAX_BYTES = 32 * 1024
+#: The most windows a `meter_delta` names.
+METER_MAX_WINDOWS = 16
+#: A CLI call's recorded outcome: `ok`, or the harness's own error name.
+_OUTCOME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 #: A meter window's name, or a cost basis: a short label the CLI printed.
 _CLI_LABEL = re.compile(r"[A-Za-z0-9_.-]{1,32}")
 #: Why a role's figures are null even when its call succeeded.
 _API_BILLED = "API-billed run: the subscription's account meter does not apply"
+#: When the meter is read. Measured once (2026-10-10, CLI 2.1.296, one agent
+#: call of two API requests): one event, printed as the call began. So a
+#: run's last snapshot is the start of its last agent call.
+_NO_RUN_END = ("no call the harness makes prints a meter event after its last "
+               "agent call has started (one real call observed: one event, as "
+               "the call began); reading the meter at run end would need an "
+               "added call")
 _ROLE_GAPS = {
     "agent": "the agent's CLI result does not carry it",
     "judge": "the judge's CLI result reaches the harness as its modelUsage "
@@ -3477,7 +3494,9 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
     `modelUsage` (cumulative per session, so an agent's follow-up calls are
     one result). `cost_usd` is the results' own total when each has one,
     else the per-model costs summed. `cache_creation` is the 5-minute and
-    1-hour cache-write split, which the CLI reports for the main loop only."""
+    1-hour cache-write split, which the CLI reports for the main loop only.
+    A role that made no call records zeros; one that made a call records
+    null, with a reason, for whatever its results do not say."""
     block = {"calls": len(calls), "duration_ms": sum(c["duration_ms"] for c in calls),
              "num_turns": 0, "cost_usd": 0, "cost_basis": None, "models": {},
              "cache_creation": dict.fromkeys(CACHE_SPLIT, 0)}
@@ -3494,24 +3513,28 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
                     "cost_usd": _token_count(entry.get("costUSD"))}
             models[model] = (_sum_or_null([models[model], mine])
                              if model in models else mine)
+    whole = bool(results) and all(model_usage(r)["complete"] for r in results)
     costs = ([r.get("total_cost_usd") for r in results]
              if all("total_cost_usd" in r for r in results)
-             else [m["cost_usd"] for m in models.values()])
+             else [m["cost_usd"] for m in models.values()] if whole else [None])
     found = [r["usage"].get("cache_creation") if isinstance(r.get("usage"), dict)
              else None for r in results]
     split = _sum_or_null([
         {name: _token_count(part.get(name)) for name in CACHE_SPLIT}
         if isinstance(part, dict) else None for part in found])
+    # Whole or unknown: a result whose `modelUsage` is absent, empty or has
+    # an entry that could not be read leaves `models` null (and any cost summed
+    # from it), never the models that happened to be readable.
     block.update({
         "num_turns": _sum_or_null([
             _token_count(r.get("num_turns")) if isinstance(r.get("num_turns"), int)
             else None for r in results]),
         "cost_usd": _sum_or_null([_token_count(cost) for cost in costs]),
         "cost_basis": basis.pop() if len(basis) == 1 else None,
-        "models": models,
+        "models": models if whole else None,
         "cache_creation": split if split and None not in split.values() else None})
-    why = _ROLE_GAPS[role] if results or role != "agent" else (
-        "the agent call ended without a result")
+    why = _ROLE_GAPS[role] if results or role == "guard" else (
+        f"the {role} call ended without a result")
     return {**block, "reasons": {name: why for name, value in block.items()
                                  if value is None}}
 
@@ -3547,20 +3570,27 @@ def _sum_measured(trials: list) -> dict:
     return out
 
 
-def _meter_delta(snapshots: list) -> dict | None:
+def _meter_delta(snapshots: list, uncovered: dict) -> dict | None:
     """How far each window moved between the first and the last snapshot,
     for the windows both name. Account-wide, so it is this run's cost only
     if nothing else ran: labeled, never corrected. A window whose reset time
-    changed in between has no delta."""
+    changed in between has no delta.
+
+    It is not the whole run either. A call is read as it begins (_NO_RUN_END),
+    so the call that printed the last snapshot and every call after it are
+    outside the delta, as is any call before the first snapshot. `uncovered`
+    counts both and is carried in the block."""
     if len(snapshots) < 2:
         return None
     first, last = (s["info"].get("unifiedWindows") for s in (snapshots[0], snapshots[-1]))
     windows = {}
     for name in first if isinstance(first, dict) and isinstance(last, dict) else ():
         before, after = first[name], last.get(name)
-        if not (_CLI_LABEL.fullmatch(name) and isinstance(before, dict)
-                and isinstance(after, dict) and _is_number(before.get("utilization"))
-                and _is_number(after.get("utilization"))):
+        if len(windows) == METER_MAX_WINDOWS or not (
+                _CLI_LABEL.fullmatch(name) and isinstance(before, dict)
+                and isinstance(after, dict)
+                and _token_count(before.get("utilization")) is not None
+                and _token_count(after.get("utilization")) is not None):
             continue
         reset = before.get("resetsAt") != after.get("resetsAt")
         moved = round(after["utilization"] - before["utilization"], 6)
@@ -3570,7 +3600,7 @@ def _meter_delta(snapshots: list) -> dict | None:
         return None
     return {"confounded": True, "scope": "account-wide",
             "from_at": snapshots[0]["at"], "to_at": snapshots[-1]["at"],
-            "windows": windows}
+            "uncovered": uncovered, "windows": windows}
 
 
 class _RunTelemetry:
@@ -3595,11 +3625,18 @@ class _RunTelemetry:
         self.trial_started = None
         self.pending: list[dict] = []
         self.snapshots: list[dict] = []
+        # The run's CLI calls so far, and for each snapshot how many of them
+        # had started before the call that printed it.
+        self.calls_seen = 0
+        self.snapshot_calls: list[int] = []
         self.unreadable = 0
         self.written: list[Path] = []
 
     def begin_trial(self) -> None:
+        """A trial starts. Calls still queued belong to a trial that wrote
+        no summary, and are dropped rather than given to this one."""
         self.trial_started = _now()
+        self.pending = []
 
     def record(self, role: str, calls: list, results=()) -> None:
         """Queue one role's CLI calls, each `{"started", "ended", "outcome",
@@ -3625,49 +3662,67 @@ class _RunTelemetry:
         groups, self.pending = self.pending, []
         started, self.trial_started = self.trial_started, None
         ended = _now() if groups or started else None
-        listed, mine, counts = [], [], dict.fromkeys(USAGE_ROLES, 0)
+        listed, shots, counts = [], [], dict.fromkeys(USAGE_ROLES, 0)
         for group in groups:
             for call in group["calls"]:
                 index = counts[group["role"]]
                 counts[group["role"]] += 1
+                self.calls_seen += 1
                 call["duration_ms"] = int((call["ended"] - call["started"])
                                           .total_seconds() * 1000)
                 listed.append({"role": group["role"], "index": index,
                                "started_at": _stamp(call["started"]),
                                "ended_at": _stamp(call["ended"]),
                                "duration_ms": call["duration_ms"],
-                               "outcome": str(call["outcome"])[:64]})
+                               "outcome": call["outcome"] if _OUTCOME.fullmatch(
+                                   str(call["outcome"])) else "error"})
                 events = call.get("events") or []
                 self.unreadable += sum(e["info"] is None for e in events)
                 events = [e for e in events if e["info"] is not None]
                 for event in events[:1] + events[1:][-1:]:
-                    mine.append({
-                        "at": event["at"] or _stamp(call["ended"]),
-                        "at_source": "cli_message" if event["at"] else "call_end",
+                    # Only an event before the call's first timestamped
+                    # message has no time of its own; the call's start is
+                    # the latest time known to precede it.
+                    shots.append({
+                        "at": event["at"] or _stamp(call["started"]),
+                        "at_source": "cli_message" if event["at"] else "call_start",
                         "call": {"role": group["role"], "index": index},
                         "info": event["info"]})
-        self.snapshots += mine
+                    self.snapshot_calls.append(self.calls_seen - 1)
+        self.snapshots += shots
         half = METER_MAX_SNAPSHOTS // 2
-        kept = mine if len(mine) <= METER_MAX_SNAPSHOTS else mine[:half] + mine[-half:]
+        kept = shots if len(shots) <= METER_MAX_SNAPSHOTS else shots[:half] + shots[-half:]
         first = started or min((c["started"] for g in groups for c in g["calls"]),
                                default=None)
         measured = {"scope": "trial", "started_at": _stamp(first),
                     "ended_at": _stamp(ended),
                     "calls": listed if len(listed) <= USAGE_MAX_CALLS else None,
                     "meter": None if self._api_billed() else {
-                        "snapshots": kept, "omitted": len(mine) - len(kept)}}
+                        "snapshots": kept, "omitted": len(shots) - len(kept)}}
         for role in USAGE_ROLES:
-            mine = [g for g in groups if g["role"] == role]
-            measured[role] = _role_usage(role, [c for g in mine for c in g["calls"]],
-                                         [r for g in mine for r in g["results"]])
+            own = [g for g in groups if g["role"] == role]
+            measured[role] = _role_usage(role, [c for g in own for c in g["calls"]],
+                                         [r for g in own for r in g["results"]])
         measured["reasons"] = {name: "no trial was attempted"
                                for name in ("started_at", "ended_at")
                                if measured[name] is None}
-        if measured["calls"] is None:
-            measured["reasons"]["calls"] = (
-                f"more than {USAGE_MAX_CALLS} calls: only the role totals are kept")
         if measured["meter"] is None:
             measured["reasons"]["meter"] = _API_BILLED
+        # Bound what is written, not what is counted: fewer snapshots (the
+        # trial's first and last, then none), then no call list.
+        def written() -> int:
+            return len(json.dumps({"usage": {"measured": measured}},
+                                  indent=2).encode("utf-8"))
+        for ends in (shots[:1] + shots[1:][-1:], []):
+            if measured["meter"] is None or written() <= USAGE_MAX_BYTES:
+                break
+            measured["meter"] = {"snapshots": ends, "omitted": len(shots) - len(ends)}
+        if written() > USAGE_MAX_BYTES:
+            measured["calls"] = None
+        if measured["calls"] is None:
+            measured["reasons"]["calls"] = (
+                f"more than {USAGE_MAX_CALLS} calls, or too large to list: "
+                "only the role totals are kept")
         return measured
 
     def _run_level(self) -> dict:
@@ -3686,12 +3741,19 @@ class _RunTelemetry:
             # The snapshots themselves are in the trial summaries, once each.
             meter = {"snapshot_count": len(self.snapshots),
                      "unreadable_events": self.unreadable,
-                     "not_sampled": {role: _ROLE_GAPS[role]
-                                     for role in ("judge", "guard")}}
-            delta = _meter_delta(self.snapshots)
+                     "not_sampled": {"judge": _ROLE_GAPS["judge"],
+                                     "guard": _ROLE_GAPS["guard"],
+                                     "run_end": _NO_RUN_END}}
+            delta = _meter_delta(self.snapshots, {
+                "calls_before_first_snapshot": self.snapshot_calls[0],
+                "calls_from_last_snapshot":
+                    self.calls_seen - self.snapshot_calls[-1]}
+                if self.snapshots else {})
             if delta is None:
-                reasons["meter_delta"] = ("fewer than two meter snapshots that "
-                                          "share a window were recorded")
+                reasons["meter_delta"] = (
+                    "fewer than two meter snapshots that share a window were "
+                    "recorded; the meter is read once per agent call, as the "
+                    "call starts, so a run of one agent call has none")
         quiet = getattr(self.flags, "asserted_quiet", None)
         session = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
         return {"started_at": _stamp(self.started), "ended_at": _stamp(self.ended),
@@ -3740,9 +3802,11 @@ class _RunTelemetry:
             return [*lines, f"- Account meter: no change recorded ({why})"]
         moved = ", ".join(f"{name} {window['from']} to {window['to']}"
                           for name, window in delta["windows"].items())
+        late = delta["uncovered"]["calls_from_last_snapshot"]
         return [*lines, "- Account meter (account-wide, so anything else the "
-                        f"account ran is in it): {moved}, from "
-                        f"{len(self.snapshots)} snapshots"]
+                        "account ran is in it; read as each agent call starts, "
+                        f"so the {late} call(s) from the last reading on are "
+                        f"not in it): {moved}, from {len(self.snapshots)} snapshots"]
 
 
 _TELEMETRY = _RunTelemetry()
@@ -5216,7 +5280,8 @@ def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
              else fixture["skill"])
     report = _render_report(title, fixture.get("prompt", ""),
                             timestamp,
-                            [{"arm": name, "error": error} for name in arm_names])
+                            [{"arm": name, "error": error} for name in arm_names],
+                            run_lines=_TELEMETRY.report_lines(None))
     report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:

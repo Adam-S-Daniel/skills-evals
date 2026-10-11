@@ -43,6 +43,8 @@ import run_eval  # noqa: E402
 from arm_test_env import install_arm_test_environment  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
+#: `IngestTests.edited`: remove the key instead of setting it.
+DROP = object()
 FAKE_VERSION = "fake-claude 0.0.0 (hermetic test stub)"
 #: The timestamp test/fake-claude puts on the message before its meter events.
 FAKE_MESSAGE_AT = "2026-10-10T15:10:13.663Z"
@@ -63,7 +65,14 @@ MEASURED_KEYS = {"scope", "started_at", "ended_at", "calls", "meter", "agent",
 MEASURED_NULLABLE = ("started_at", "ended_at", "calls", "meter")
 ROLE_KEYS = {"calls", "duration_ms", "num_turns", "cost_usd", "cost_basis",
              "models", "cache_creation", "reasons"}
-ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation")
+ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation",
+                 "models")
+#: `meter_delta.uncovered` for a run whose only calls printed its snapshots.
+def uncovered(before: int, from_last: int) -> dict:
+    return {"calls_before_first_snapshot": before,
+            "calls_from_last_snapshot": from_last}
+
+
 
 
 def meter(week: float, five: float = 0.01, week_resets: int = 1791824400) -> dict:
@@ -482,7 +491,8 @@ class MeasuredTests(Checks):
         self.assertEqual((agent["calls"], agent["duration_ms"]), (1, 5000))
         for name in ROLE_NULLABLE:
             self.assertIsNone(agent[name], name)
-        self.assertEqual(agent["models"], {})
+        self.assertEqual(agent["reasons"]["models"],
+                         "the agent call ended without a result")
 
     def test_a_result_without_the_optional_figures_is_null_with_a_reason(self):
         bare = {"type": "result", "is_error": False, "result": "done",
@@ -493,9 +503,9 @@ class MeasuredTests(Checks):
             "input_tokens": 5, "output_tokens": None,
             "cache_read_input_tokens": None,
             "cache_creation_input_tokens": None, "cost_usd": None}})
-        for name in ROLE_NULLABLE:
+        for name in ROLE_NULLABLE[:4]:
             self.assertIsNone(agent[name], name)
-        self.assertEqual(set(agent["reasons"]), set(ROLE_NULLABLE))
+        self.assertEqual(set(agent["reasons"]), set(ROLE_NULLABLE[:4]))
 
     def test_misshapen_cli_figures_are_null_and_the_summary_still_ingests(self):
         odd = result_object(
@@ -508,11 +518,10 @@ class MeasuredTests(Checks):
         summary = self.written()
         self.assert_complete(summary)
         agent = summary["usage"]["measured"]["agent"]
+        # Two of its three modelUsage entries could not be read, so the
+        # per-model record is unknown rather than one model presented as all.
         for name in ROLE_NULLABLE:
             self.assertIsNone(agent[name], name)
-        self.assertEqual(agent["models"], {"m-1": dict.fromkeys((
-            "input_tokens", "output_tokens", "cache_read_input_tokens",
-            "cache_creation_input_tokens", "cost_usd"))})
         ingest.check_run(summary["run"], "s")
         ingest.check_usage(summary["usage"], "s", summary["run"])
 
@@ -557,6 +566,7 @@ class MeasuredTests(Checks):
         self.assertEqual(usage["meter_delta"], {
             "confounded": True, "scope": "account-wide",
             "from_at": FAKE_MESSAGE_AT, "to_at": FAKE_MESSAGE_AT,
+            "uncovered": uncovered(0, 1),
             "windows": {
                 "five_hour": {"from": 0.01, "to": 0.01, "delta": 0.0,
                               "window_reset": False},
@@ -571,12 +581,91 @@ class MeasuredTests(Checks):
         self.assertEqual(windows["seven_day"], {
             "from": 0.95, "to": 0.01, "delta": None, "window_reset": True})
 
-    def test_an_event_without_a_timestamp_is_stamped_with_its_calls_end(self):
+    def test_an_event_without_a_timestamp_is_stamped_with_its_calls_start(self):
+        # Only an event before the first timestamped message has none, so
+        # the call's start is the nearest time known to come before it, and
+        # the run's snapshots stay in order.
+        array = verbose_array(result_object(), [meter(0.5)], at=None)
+        array += [{"type": "assistant", "timestamp": "2026-10-12T17:00:01.000Z"},
+                  {"type": "rate_limit_event", "rate_limit_info": meter(0.6)}]
+        self.agent(Cli(self.clock, json.dumps(array)))
+        usage = self.written()["usage"]
+        first, last = usage["measured"]["meter"]["snapshots"]
+        self.assertEqual((first["at"], first["at_source"]),
+                         ("2026-10-12T17:00:00Z", "call_start"))
+        self.assertEqual((last["at"], last["at_source"]),
+                         ("2026-10-12T17:00:01.000Z", "cli_message"))
+        self.assertLessEqual(usage["meter_delta"]["from_at"],
+                             usage["meter_delta"]["to_at"])
+
+    def test_the_delta_names_the_calls_it_does_not_cover(self):
+        # Review round 1 on #378: one real call printed one event, as it
+        # began. So the last snapshot is the START of the last agent call,
+        # and that call and everything after it are not in the delta.
+        guard_started = self.clock.now()
+        self.clock.advance(2)
+        run_eval._TELEMETRY.timed("guard", guard_started)
+        for week in (0.72, 0.74):
+            self.agent(Cli(self.clock, json.dumps(
+                verbose_array(result_object(), [meter(week)]))))
+        judge_started = self.clock.now()
+        self.clock.advance(3)
+        run_eval._TELEMETRY.timed("judge", judge_started,
+                                  [{"modelUsage": result_object()["modelUsage"]}])
+        usage = self.written()["usage"]
+        # The guard came before the first snapshot; the second agent call
+        # and the judge are from the last snapshot on.
+        self.assertEqual(usage["meter_delta"]["uncovered"], uncovered(1, 2))
+        self.assertEqual(set(usage["meter"]["not_sampled"]),
+                         {"judge", "guard", "run_end"})
+        self.assertIn("added call", usage["meter"]["not_sampled"]["run_end"])
+
+    def test_a_run_of_one_agent_call_has_no_delta_and_says_why(self):
         self.agent(Cli(self.clock, json.dumps(
-            verbose_array(result_object(), [meter(0.5)], at=None))))
-        snapshot = self.written()["usage"]["measured"]["meter"]["snapshots"][0]
-        self.assertEqual((snapshot["at"], snapshot["at_source"]),
-                         ("2026-10-12T17:00:05Z", "call_end"))
+            verbose_array(result_object(), [meter(0.72)]))))
+        usage = self.written()["usage"]
+        self.assertIsNone(usage["meter_delta"])
+        self.assertIn("one agent call", usage["reasons"]["meter_delta"])
+
+    def test_snapshots_too_large_to_write_are_dropped_to_fit_the_ingest_cap(self):
+        # Review round 1 on #378: twelve snapshots whose `info` is within the
+        # event limits (keys of short number lists, about 2 KB compact, one
+        # number to a line once indented) wrote a summary.json more than
+        # twice the ingester's 65,536-byte cap.
+        info = {f"w{i:02}": [1, 2, 3, 4, 5, 6, 7, 8, 9] for i in range(40)}
+        info["unifiedWindows"] = meter(0.72)["unifiedWindows"]
+        self.assertLess(len(json.dumps(info)), cli_json.METER_INFO_MAX_BYTES)
+        self.assertEqual(cli_json.rate_limit_events(
+            verbose_array(result_object(), [info]))[0]["info"], info)
+        for _ in range(12):
+            self.agent(Cli(self.clock, json.dumps(
+                verbose_array(result_object(), [info]))))
+        summary = self.written()
+        path = self.tmp / "results" / "s" / self.TS / "without_skill" / "summary.json"
+        self.assertLess(path.stat().st_size, ingest.SIZE_CAPS["summary.json"] // 2)
+        self.assert_complete(summary)
+        kept = summary["usage"]["measured"]["meter"]
+        # What could not be written is counted, and the delta still has its ends.
+        self.assertEqual(len(kept["snapshots"]) + kept["omitted"], 12)
+        self.assertLess(len(kept["snapshots"]), 12)
+        self.assertEqual(summary["usage"]["meter"]["snapshot_count"], 12)
+        self.assertIsNotNone(summary["usage"]["meter_delta"])
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_calls_of_a_trial_that_wrote_no_summary_go_to_no_other_trial(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        run_eval._TELEMETRY.begin_trial()
+        measured = self.written()["usage"]["measured"]
+        self.assertEqual(measured["calls"], [])
+        self.assertEqual(measured["agent"], no_calls("agent"))
+
+    def test_a_judge_call_that_failed_says_it_ended_without_a_result(self):
+        run_eval._TELEMETRY.timed("judge", self.clock.now(), [], "error")
+        judge = self.written()["usage"]["measured"]["judge"]
+        self.assertEqual(judge["calls"], 1)
+        for name in ROLE_NULLABLE:
+            self.assertEqual(judge["reasons"][name],
+                             "the judge call ended without a result")
 
     def test_an_unreadable_event_is_counted_not_kept(self):
         self.agent(Cli(self.clock, json.dumps(
@@ -617,8 +706,9 @@ class MeasuredTests(Checks):
         return self.written()
 
     def test_the_fullest_blocks_fit_in_half_the_ingest_cap(self):
-        # Measured, so the cap is known to hold: every snapshot slot and
-        # every call slot taken, pretty-printed as on disk, is 26 KB.
+        # Measured: every snapshot slot and every call slot taken, with
+        # today's size of `info` plus one window, pretty-printed as on disk,
+        # is 26 KB. A larger `info` is held by the written-size bound below.
         summary = self.fullest(16)
         self.assertEqual(len(summary["usage"]["measured"]["meter"]["snapshots"]), 12)
         self.assertEqual(len(summary["usage"]["measured"]["calls"]), 32)
@@ -804,6 +894,9 @@ class RunLevelTests(Checks):
         self.assertEqual(agent["calls"], 2)
         self.assertIsNone(agent["cost_usd"])
         self.assertIsNone(agent["num_turns"])
+        # Not trial 1's tokens alone, presented as the arm's.
+        self.assertIsNone(agent["models"])
+        self.assertIn("models", agent["reasons"])
 
 
 # ---------------------------------------------------------------------------
@@ -934,6 +1027,8 @@ class EndToEndTests(Checks):
         self.assertEqual(usage["meter_delta"], {
             "confounded": True, "scope": "account-wide",
             "from_at": FAKE_MESSAGE_AT, "to_at": FAKE_MESSAGE_AT,
+            # The last agent call and its judge call.
+            "uncovered": uncovered(0, 2),
             "windows": {
                 "five_hour": {"from": 0.01, "to": 0.04, "delta": 0.03,
                               "window_reset": False},
@@ -1032,6 +1127,10 @@ class EndToEndTests(Checks):
             self.assertRegex(summary["usage"]["ended_at"], TIME)
             self.assertEqual(summary["usage"]["measured"]["calls"], [])
         self.assertFalse(self.log.exists())
+        # The refusal's report names the run like any other.
+        report = (self.results / self.SKILL / self.TS / "report.md").read_text(
+            encoding="utf-8")
+        self.assertIn("- Run: billing subscription, runner not recorded, ", report)
 
     def test_the_report_names_the_run_and_the_meter(self):
         self.fixture(batches=[[meter(0.72)], [meter(0.74)]])
@@ -1048,8 +1147,9 @@ class EndToEndTests(Checks):
             report)
         self.assertIn(
             "- Account meter (account-wide, so anything else the account ran "
-            "is in it): five_hour 0.01 to 0.01, seven_day 0.72 to 0.74, from "
-            "2 snapshots", report)
+            "is in it; read as each agent call starts, so the 1 call(s) from "
+            "the last reading on are not in it): five_hour 0.01 to 0.01, "
+            "seven_day 0.72 to 0.74, from 2 snapshots", report)
         self.assertEqual(report[0], f"# Eval report: {self.SKILL}")
 
     def test_a_report_without_a_meter_reading_says_why(self):
@@ -1123,8 +1223,7 @@ class GuidanceArmTests(Checks):
         self.assertEqual(measured["started_at"], "2026-10-12T17:00:00Z")
         self.assertEqual(measured["ended_at"], "2026-10-12T17:00:03Z")
         guard = measured["guard"]
-        self.assertEqual((guard["calls"], guard["duration_ms"], guard["models"]),
-                         (1, 3000, {}))
+        self.assertEqual((guard["calls"], guard["duration_ms"]), (1, 3000))
         for name in ROLE_NULLABLE:
             self.assertIsNone(guard[name], name)
             self.assertIn("guard", guard["reasons"][name])
@@ -1170,9 +1269,121 @@ class IngestTests(Checks):
         target[path[-1]] = value
         return summary
 
+    def edited(self, *edits) -> dict:
+        """`self.good` with each (path, value) applied; DROP removes the key."""
+        summary = copy.deepcopy(self.good)
+        for path, value in edits:
+            target = summary
+            for key in path[:-1]:
+                target = target[key]
+            if value is DROP:
+                del target[path[-1]]
+            else:
+                target[path[-1]] = value
+        return summary
+
     def test_a_summary_with_both_blocks_is_accepted(self):
         self.assert_complete(self.good)
         self.check(self.good)
+
+    def test_values_the_harness_never_writes_are_rejected(self):
+        # Review round 1 on #378: each of these passed `check_summary`.
+        flood = ["x" * 4000] * 100
+        usage, measured = ("usage",), ("usage", "measured")
+        delta, window = (*usage, "meter_delta"), (*usage, "meter_delta", "windows",
+                                                  "seven_day")
+        snapshot = (*measured, "meter", "snapshots", 0)
+        cases = {
+            "concurrent_runs": [((*usage, "concurrent_runs"), flood),
+                                ((*usage, "reasons", "concurrent_runs"), DROP)],
+            "limit_promotion": [((*usage, "limit_promotion"), flood),
+                                ((*usage, "reasons", "limit_promotion"), DROP)],
+            "price_table_version": [((*usage, "price_table_version"), flood),
+                                    ((*usage, "reasons", "price_table_version"),
+                                     DROP)],
+            "outer_session.usage": [((*usage, "outer_session", "usage"), flood)],
+            "window.from": [((*window, "from"), "text")],
+            "window.delta": [((*window, "delta"), "big")],
+            "window.delta is not to minus from": [((*window, "delta"), 0.5)],
+            "from_at": [((*delta, "from_at"), "whenever")],
+            "windows empty": [((*delta, "windows"), {})],
+            "uncovered": [((*delta, "uncovered"), {"calls_before_first_snapshot": -1,
+                                                  "calls_from_last_snapshot": "x"})],
+            "snapshot role": [((*snapshot, "call", "role"), ["agent"])],
+            "snapshot index": [((*snapshot, "call", "index"), -5)],
+            "not_sampled": [((*usage, "meter", "not_sampled"), ["judge"])],
+            "not_sampled role": [((*usage, "meter", "not_sampled"),
+                                  {"someone": "why"})],
+            "source of another field": [(("run", "source", "runner"),
+                                         "env:GITHUB_ACTIONS")],
+            "env source of billing": [(("run", "source", "billing"),
+                                       "env:ANTHROPIC_API_KEY")],
+            "flag source of session_id": [
+                (("run", "session_id"), "session_01AbC"),
+                (("run", "source", "session_id"), "flag"),
+                (("run", "reasons", "session_id"), DROP)],
+            "calls and role count": [((*measured, "calls"), [])],
+            "ended before started": [((*usage, "ended_at"), "2026-10-12T16:59:59Z")],
+            "impossible time": [((*usage, "started_at"), "9999-99-99T99:99:99Z")],
+            "measured ended before started": [
+                ((*measured, "ended_at"), "2026-10-12T16:59:59Z")],
+            "call ended before started": [
+                ((*measured, "calls", 0, "ended_at"), "2026-10-12T16:59:59Z")],
+            "empty cli_version": [(("run", "cli_version"), "")],
+            "empty outcome": [((*measured, "calls", 0, "outcome"), "")],
+            "outcome with a space": [((*measured, "calls", 0, "outcome"), "it broke")],
+            "delta without two snapshots": [((*usage, "meter", "snapshot_count"), 1)],
+            "more snapshots than the run": [((*usage, "meter", "snapshot_count"), 2),
+                                            ((*measured, "meter", "omitted"), 5)],
+        }
+        for name, edits in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(ingest.Rejected):
+                    self.check(self.edited(*edits))
+
+    def test_no_single_changed_value_makes_the_ingester_crash(self):
+        # Every node of both blocks, replaced by each of these in turn: the
+        # ingester answers or raises Rejected, never anything else.
+        values = (None, "x", "", -1, 1.5, 10 ** 400, True, [], {}, ["x"],
+                  {"a": 1}, "9999-99-99T99:99:99Z")
+
+        def paths(node, prefix):
+            yield prefix
+            for key, value in (node.items() if isinstance(node, dict) else
+                               enumerate(node) if isinstance(node, list) else ()):
+                yield from paths(value, (*prefix, key))
+
+        tried = 0
+        for block in ("run", "usage"):
+            for path in paths(self.good[block], (block,)):
+                for value in values:
+                    tried += 1
+                    try:
+                        self.check(self.edited((path, value)))
+                    except ingest.Rejected:
+                        pass
+        self.assertGreater(tried, 2000)
+
+    def test_a_call_that_has_not_ended_is_rejected(self):
+        with self.assertRaises(ingest.Rejected):
+            self.check(self.edited(
+                (("usage", "measured", "calls", 0, "ended_at"), None)))
+
+    def test_a_source_must_be_one_the_harness_reads_for_that_field(self):
+        # The env sources the harness has, each on its own field and value.
+        self.check(self.edited(
+            (("run", "runner"), "actions"),
+            (("run", "source", "runner"), "env:GITHUB_ACTIONS"),
+            (("run", "id"), "4242"), (("run", "source", "id"), "env:GITHUB_RUN_ID"),
+            (("run", "session_id"), "session_01AbC"),
+            (("run", "source", "session_id"), "env:CLAUDE_CODE_REMOTE_SESSION_ID"),
+            (("run", "reasons", "session_id"), DROP),
+            (("usage", "outer_session", "id"), "session_01AbC")))
+        with self.assertRaises(ingest.Rejected):
+            # GITHUB_ACTIONS observes the `actions` runner and nothing else.
+            self.check(self.edited(
+                (("run", "runner"), "workstation"),
+                (("run", "source", "runner"), "env:GITHUB_ACTIONS")))
 
     def test_a_summary_with_neither_block_still_ingests(self):
         old = {k: v for k, v in self.good.items() if k not in ("run", "usage")}
@@ -1238,6 +1449,8 @@ class IngestTests(Checks):
                 (("usage", "measured", "meter", "snapshots", 0, "info"), "text"),
                 (("usage", "measured", "meter", "snapshots", 0, "at_source"),
                  "guess"),
+                (("usage", "measured", "meter", "snapshots", 0, "at_source"),
+                 "call_end"),
                 (("usage", "measured", "meter", "snapshots", 0, "call"),
                  {"role": "agent", "arm": "a", "index": 0}),
                 (("usage", "measured", "meter"), None),
@@ -1261,6 +1474,17 @@ class IngestTests(Checks):
         self.assertEqual(ingest.MAX_METER_SNAPSHOTS, run_eval.METER_MAX_SNAPSHOTS)
         self.assertEqual(ingest.USAGE_ROLES, run_eval.USAGE_ROLES)
         self.assertEqual(ingest.MAX_USAGE_CALLS, run_eval.USAGE_MAX_CALLS)
+        # The same observations, per field: source -> the value it implies.
+        self.assertEqual(ingest.RUN_ENV, {
+            field: {f"env:{name}": meaning for name, _, meaning in observed}
+            for field, observed in run_eval.RUN_ENV.items()})
+        # The fields a flag can set are the `--run-*` options `main` declares.
+        usage = subprocess.run(
+            [sys.executable, str(HARNESS_DIR / "run_eval.py"), "--help"],
+            capture_output=True, text=True, timeout=60, cwd=str(ROOT))
+        self.assertEqual(usage.returncode, 0, usage.stderr)
+        self.assertEqual(set(re.findall(r"--run-([a-z]+)", usage.stdout)),
+                         set(ingest.RUN_FLAGGED))
 
 
 # ---------------------------------------------------------------------------

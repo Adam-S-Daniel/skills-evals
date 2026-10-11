@@ -76,7 +76,10 @@ def normalize_cli_result(decoded: object) -> dict:
 
 #: Limits on one `rate_limit_info` kept verbatim in a public summary.json,
 #: each inside what scripts/ingest_routine_results.py accepts of any JSON
-#: value. The real object is about 330 bytes and three levels deep.
+#: value. The real object is about 330 bytes and three levels deep. The byte
+#: limit is on the compact form and does not bound what is written: indented,
+#: an object of short lists is several times larger. run_eval bounds the
+#: written size (USAGE_MAX_BYTES).
 METER_INFO_MAX_BYTES = 2048
 METER_INFO_MAX_DEPTH = 5
 METER_INFO_MAX_ITEMS = 64

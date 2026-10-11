@@ -1047,7 +1047,8 @@ actually ran:
 | `usage` | what the run cost: its start and end, how far the account meter moved over the run (`meter_delta`, labeled `"confounded": true, "scope": "account-wide"`, with `meter` counting the snapshots behind it), what else was running (`concurrent_runs`, `other_account_activity`, `outer_session`), and under `measured` this summary's own calls with tokens and cost split into `agent`, `judge` and `guard`, plus the meter snapshots those calls printed (`measured.meter`, each stored once, in its trial's summary) |
 
 `report.md` carries one `- Run:` line (billing, runner, location, id, start
-and end), one `- Account meter` line, and one `- Harness:` line naming the version and each arm's
+and end), one `- Account meter` line (which says how many calls at the end of the run it does not
+cover), and one `- Harness:` line naming the version and each arm's
 models. The propagation probe's `--json` run record carries, per arm,
 `harness_version` and `model` from that arm's init event.
 

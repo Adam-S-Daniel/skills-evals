@@ -42,6 +42,7 @@ for $GITHUB_OUTPUT):
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import math
 import os
@@ -632,40 +633,57 @@ def check_guidance_violations(value, where: str) -> None:
 # ---------------------------------------------------------------------------
 # `run` and `usage` (#370 item 1): run_eval's `run_block` and `_RunTelemetry`.
 # Optional, and only together, so a summary written before them still
-# ingests. The constants are run_eval's own; a test pins them equal.
+# ingests. Every value is checked, not only every key: a field the harness
+# only ever writes as null must be null here. The one free-form value is a
+# snapshot's `info`, the CLI's own object, which is bounded. The constants are
+# run_eval's own; a test pins them equal.
 
 RUN_CHOICES = {"billing": ("api", "subscription"),
                "runner": ("actions", "routine", "workstation"),
                "location": ("cloud", "local")}
-RUN_SOURCED = (*RUN_CHOICES, "id", "session_id")
-RUN_NULLABLE = (*RUN_SOURCED, "harness_commit", "cli_version")
+#: The fields a `--run-*` flag can set, and per field the environment
+#: sources the harness reads with the value each implies (None: the
+#: variable's own).
+RUN_FLAGGED = (*RUN_CHOICES, "id")
+RUN_ENV = {"billing": {},
+           "runner": {"env:GITHUB_ACTIONS": "actions"},
+           "location": {"env:CLAUDE_CODE_REMOTE_SESSION_ID": "cloud"},
+           "id": {"env:GITHUB_RUN_ID": None},
+           "session_id": {"env:CLAUDE_CODE_REMOTE_SESSION_ID": None}}
+RUN_NULLABLE = (*RUN_ENV, "harness_commit", "cli_version")
 RUN_KEYS = ("schema_version", *RUN_NULLABLE, "source", "reasons")
 RUN_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-RUN_SOURCE_RE = re.compile(r"flag|env:[A-Z][A-Z0-9_]{0,63}")
 USAGE_ROLES = ("agent", "judge", "guard")
-USAGE_TIME_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
-METER_TIME_RE = re.compile(USAGE_TIME_RE.pattern[:-1] + r"(?:\.[0-9]{1,9})?Z")
+USAGE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+METER_FRACTION_RE = re.compile(r"(?:\.[0-9]{1,9})?Z")
+LABEL_RE = re.compile(r"[A-Za-z0-9_.-]{1,32}")
+OUTCOME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 MAX_METER_SNAPSHOTS = 12
-USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", "concurrent_runs",
-                  "limit_promotion", "price_table_version")
+MAX_METER_WINDOWS = 16
+MAX_USAGE_CALLS = 32
+MAX_COUNT = 10 ** 6
+WEEK_MS = 7 * 24 * 3600 * 1000
+#: Fields the harness writes as null and nothing else, until something
+#: measures them; `concurrent_runs` is computed after ingest, not before.
+USAGE_ALWAYS_NULL = ("concurrent_runs", "limit_promotion", "price_table_version")
+USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", *USAGE_ALWAYS_NULL)
 USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
               "other_account_activity", "asserted_quiet_by", "outer_session",
               "measured", "reasons")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
+NOT_SAMPLED = ("judge", "guard", "run_end")
 TRIAL_METER_KEYS = ("snapshots", "omitted")
 SNAPSHOT_KEYS = ("at", "at_source", "call", "info")
-SNAPSHOT_CALL_KEYS = ("role", "index")
-DELTA_KEYS = ("confounded", "scope", "from_at", "to_at", "windows")
+DELTA_KEYS = ("confounded", "scope", "from_at", "to_at", "uncovered", "windows")
+UNCOVERED_KEYS = ("calls_before_first_snapshot", "calls_from_last_snapshot")
 WINDOW_KEYS = ("from", "to", "delta", "window_reset")
 MEASURED_NULLABLE = ("started_at", "ended_at", "calls", "meter")
 MEASURED_KEYS = ("scope", *MEASURED_NULLABLE, *USAGE_ROLES, "reasons")
 CALL_KEYS = ("role", "index", "started_at", "ended_at", "duration_ms", "outcome")
-ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation")
-ROLE_KEYS = ("calls", "duration_ms", *ROLE_NULLABLE, "models", "reasons")
+ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation", "models")
+ROLE_KEYS = ("calls", "duration_ms", *ROLE_NULLABLE, "reasons")
 ROLE_MODEL_KEYS = (*MODEL_TOKEN_KEYS, "cost_usd")
 CACHE_SPLIT_KEYS = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
-MAX_USAGE_CALLS = 32
-WEEK_MS = 7 * 24 * 3600 * 1000
 
 
 def _reasons(block: dict, where: str, nullable) -> None:
@@ -679,6 +697,33 @@ def _reasons(block: dict, where: str, nullable) -> None:
             raise Rejected(f"{where}: a reason must be a short string")
 
 
+def _time(value, where: str, *, null=False, fraction=False):
+    """A real UTC time as the harness writes it (a snapshot's may carry the
+    CLI's fraction of a second), returned for comparing; None when null."""
+    if value is None and null:
+        return None
+    if not isinstance(value, str):
+        raise Rejected(f"{where}: expected a UTC time")
+    head, tail = value[:19] + "Z", value[19:]
+    if not (tail == "Z" or (fraction and METER_FRACTION_RE.fullmatch(tail))):
+        raise Rejected(f"{where}: expected a UTC time")
+    try:
+        if datetime.strptime(head, USAGE_TIME_FORMAT).strftime(
+                USAGE_TIME_FORMAT) != head:
+            raise ValueError
+    except ValueError:
+        raise Rejected(f"{where}: expected a UTC time") from None
+    return value
+
+
+def _span(block: dict, where: str, *, start_null=False, end_null=True) -> None:
+    """`started_at` and `ended_at`, in that order when both are there."""
+    started = _time(block["started_at"], f"{where}.started_at", null=start_null)
+    ended = _time(block["ended_at"], f"{where}.ended_at", null=end_null)
+    if started and ended and ended < started:
+        raise Rejected(f"{where}: ends before it starts")
+
+
 def check_run(run, where: str) -> None:
     where = f"{where}: run"
     _object(run, where, RUN_KEYS, RUN_KEYS)
@@ -690,25 +735,35 @@ def check_run(run, where: str) -> None:
         _pattern(run[field], f"{where}.{field}", RUN_NAME_RE, null=True)
     _pattern(run["harness_commit"], f"{where}.harness_commit", SHA_RE, null=True)
     _string(run["cli_version"], f"{where}.cli_version", 64, null=True)
-    _object(run["source"], f"{where}.source", RUN_SOURCED, RUN_SOURCED)
-    for field in RUN_SOURCED:
-        _pattern(run["source"][field], f"{where}.source", RUN_SOURCE_RE, null=True)
-        if (run["source"][field] is None) != (run[field] is None):
+    if run["cli_version"] == "":
+        raise Rejected(f"{where}.cli_version is empty")
+    _object(run["source"], f"{where}.source", RUN_ENV, RUN_ENV)
+    for field, observed in RUN_ENV.items():
+        source, value = run["source"][field], run[field]
+        # A source is the flag, where the field has one, or an environment
+        # variable the harness reads for THAT field, with the value it implies.
+        known = (source is None and value is None) or (
+            value is not None and (
+                (source == "flag" and field in RUN_FLAGGED)
+                or (isinstance(source, str) and source in observed
+                    and observed[source] in (None, value))))
+        if not known:
             raise Rejected(f"{where}.source does not match its fields")
     _reasons(run, where, RUN_NULLABLE)
 
 
 def _check_role(block, where: str) -> None:
     _object(block, where, ROLE_KEYS, ROLE_KEYS)
-    _integer(block["calls"], f"{where}.calls", 0, 10 ** 6)
+    _integer(block["calls"], f"{where}.calls", 0, MAX_COUNT)
     _integer(block["duration_ms"], f"{where}.duration_ms", 0, WEEK_MS)
     _integer(block["num_turns"], f"{where}.num_turns", 0, 10 ** 7, null=True)
     _number(block["cost_usd"], f"{where}.cost_usd", 0, 10 ** 6, null=True)
-    _string(block["cost_basis"], f"{where}.cost_basis", 32, null=True)
+    _pattern(block["cost_basis"], f"{where}.cost_basis", LABEL_RE, null=True)
     models = block["models"]
-    if not isinstance(models, dict) or len(models) > MAX_MODELS:
+    if models is not None and (not isinstance(models, dict)
+                               or len(models) > MAX_MODELS):
         raise Rejected(f"{where}.models must be an object of at most {MAX_MODELS}")
-    for model, counts in models.items():
+    for model, counts in (models or {}).items():
         if not MODEL_ID_RE.fullmatch(model):
             raise Rejected(f"{where}.models: bad model id")
         _object(counts, f"{where}.models", ROLE_MODEL_KEYS, ROLE_MODEL_KEYS)
@@ -724,16 +779,20 @@ def _check_role(block, where: str) -> None:
 
 
 def _check_meter(usage, where: str, billing) -> None:
+    """The run-level `meter` and `meter_delta`, and the trial's own snapshots
+    under `measured.meter` (stored once each, in the trial that recorded
+    them: an arm aggregate lists none, and an API-billed run has none)."""
     meter, delta = usage["meter"], usage["meter_delta"]
     if (meter is None) != (billing == "api") or (meter is None and delta is not None):
         raise Rejected(f"{where}.meter is null exactly when the run is API-billed")
     if meter is not None:
         _object(meter, f"{where}.meter", METER_KEYS, METER_KEYS)
-        bounded(meter, f"{where}.meter")
-        _integer(meter["snapshot_count"], f"{where}.meter.snapshot_count", 0, 10 ** 6)
-        _integer(meter["unreadable_events"], f"{where}.meter", 0, 10 ** 6)
-    # The snapshots are stored once each, in the trial that recorded them:
-    # an arm aggregate lists none, and an API-billed run has none.
+        _integer(meter["snapshot_count"], f"{where}.meter.snapshot_count", 0, MAX_COUNT)
+        _integer(meter["unreadable_events"], f"{where}.meter", 0, MAX_COUNT)
+        _object(meter["not_sampled"], f"{where}.meter.not_sampled", NOT_SAMPLED)
+        for why in meter["not_sampled"].values():
+            if not isinstance(why, str) or not 0 < len(why) <= 512:
+                raise Rejected(f"{where}.meter.not_sampled: not a short string")
     measured = usage["measured"]
     if not isinstance(measured, dict) or "meter" not in measured:
         raise Rejected(f"{where}.measured must carry its meter record")
@@ -743,44 +802,66 @@ def _check_meter(usage, where: str, billing) -> None:
                        "an API-billed run")
     if mine is not None:
         _object(mine, where_mine, TRIAL_METER_KEYS, TRIAL_METER_KEYS)
-        bounded(mine, where_mine)
-        _integer(mine["omitted"], f"{where_mine}.omitted", 0, 10 ** 6)
+        _integer(mine["omitted"], f"{where_mine}.omitted", 0, MAX_COUNT)
         if not isinstance(mine["snapshots"], list) \
                 or len(mine["snapshots"]) > MAX_METER_SNAPSHOTS:
             raise Rejected(f"{where_mine}.snapshots must be a short list")
+        if len(mine["snapshots"]) + mine["omitted"] > meter["snapshot_count"]:
+            raise Rejected(f"{where_mine} holds more snapshots than its run")
         for snapshot in mine["snapshots"]:
             _object(snapshot, f"{where_mine} snapshot", SNAPSHOT_KEYS, SNAPSHOT_KEYS)
-            _pattern(snapshot["at"], f"{where_mine} snapshot at", METER_TIME_RE)
-            _object(snapshot["call"], f"{where_mine} snapshot call",
-                    SNAPSHOT_CALL_KEYS, SNAPSHOT_CALL_KEYS)
-            if snapshot["at_source"] not in ("cli_message", "call_end") \
+            _time(snapshot["at"], f"{where_mine} snapshot at", fraction=True)
+            call = snapshot["call"]
+            _object(call, f"{where_mine} snapshot call", ("role", "index"),
+                    ("role", "index"))
+            _integer(call["index"], f"{where_mine} snapshot call", 0, MAX_COUNT)
+            if call["role"] not in USAGE_ROLES \
+                    or snapshot["at_source"] not in ("cli_message", "call_start") \
                     or not isinstance(snapshot["info"], dict):
                 raise Rejected(f"{where_mine} snapshot is not one the harness writes")
+            bounded(snapshot["info"], f"{where_mine} snapshot info")
     if delta is not None:
-        _object(delta, f"{where}.meter_delta", DELTA_KEYS, DELTA_KEYS)
-        bounded(delta, f"{where}.meter_delta")
+        where = f"{where}.meter_delta"
+        _object(delta, where, DELTA_KEYS, DELTA_KEYS)
         if delta["confounded"] is not True or delta["scope"] != "account-wide":
-            raise Rejected(f"{where}.meter_delta must be labeled confounded and "
-                           "account-wide")
-        if not isinstance(delta["windows"], dict):
-            raise Rejected(f"{where}.meter_delta.windows must be an object")
-        for window in delta["windows"].values():
-            _object(window, f"{where}.meter_delta window", WINDOW_KEYS, WINDOW_KEYS)
+            raise Rejected(f"{where} must be labeled confounded and account-wide")
+        if meter["snapshot_count"] < 2:
+            raise Rejected(f"{where} needs two snapshots")
+        for field in ("from_at", "to_at"):
+            _time(delta[field], f"{where}.{field}", fraction=True)
+        _object(delta["uncovered"], f"{where}.uncovered", UNCOVERED_KEYS,
+                UNCOVERED_KEYS)
+        for field in UNCOVERED_KEYS:
+            _integer(delta["uncovered"][field], f"{where}.uncovered", 0, MAX_COUNT)
+        windows = delta["windows"]
+        if not isinstance(windows, dict) or not 0 < len(windows) <= MAX_METER_WINDOWS:
+            raise Rejected(f"{where}.windows must name one to "
+                           f"{MAX_METER_WINDOWS} windows")
+        for name, window in windows.items():
+            if not LABEL_RE.fullmatch(name):
+                raise Rejected(f"{where}.windows: bad window name")
+            _object(window, f"{where} window", WINDOW_KEYS, WINDOW_KEYS)
+            for field in ("from", "to"):
+                _number(window[field], f"{where} window {field}", 0, MAX_TOKEN_COUNT)
+            _number(window["delta"], f"{where} window delta", -MAX_TOKEN_COUNT,
+                    MAX_TOKEN_COUNT, null=True)
             if (window["delta"] is None) is not window["window_reset"]:
-                raise Rejected(f"{where}.meter_delta: a window has no delta "
-                               "exactly when it reset")
+                raise Rejected(f"{where}: a window has no delta exactly when it "
+                               "reset")
+            if window["delta"] is not None and abs(
+                    window["delta"] - (window["to"] - window["from"])) > 1e-6:
+                raise Rejected(f"{where}: a window's delta is not its change")
 
 
 def check_usage(usage, where: str, run: dict) -> None:
     where = f"{where}: usage"
     _object(usage, where, USAGE_KEYS, USAGE_KEYS)
     _integer(usage["schema_version"], f"{where}.schema_version", 1, 1)
-    _pattern(usage["started_at"], f"{where}.started_at", USAGE_TIME_RE)
-    _pattern(usage["ended_at"], f"{where}.ended_at", USAGE_TIME_RE, null=True)
+    _span(usage, where)
     _check_meter(usage, where, run["billing"])
-    for field in ("concurrent_runs", "limit_promotion", "price_table_version",
-                  "outer_session"):
-        bounded(usage[field], f"{where}.{field}")
+    for field in USAGE_ALWAYS_NULL:
+        if usage[field] is not None:
+            raise Rejected(f"{where}.{field} is not measured by any harness yet")
     quiet = usage["asserted_quiet_by"]
     _pattern(quiet, f"{where}.asserted_quiet_by", RUN_NAME_RE, null=True)
     if usage["other_account_activity"] != ("unknown" if quiet is None
@@ -791,15 +872,15 @@ def check_usage(usage, where: str, run: dict) -> None:
     _object(session, f"{where}.outer_session", ("id", "usage", "note"),
             ("id", "usage", "note"))
     _pattern(session["id"], f"{where}.outer_session.id", RUN_NAME_RE, null=True)
-    _string(session["note"], f"{where}.outer_session.note", 64)
+    if session["usage"] is not None or session["note"] != "not measured":
+        raise Rejected(f"{where}.outer_session is not measured by any harness yet")
     _reasons(usage, where, USAGE_NULLABLE)
 
     measured, where = usage["measured"], f"{where}.measured"
     _object(measured, where, MEASURED_KEYS, MEASURED_KEYS)
     if measured["scope"] not in ("trial", "arm"):
         raise Rejected(f"{where}.scope is not a known value")
-    for field in ("started_at", "ended_at"):
-        _pattern(measured[field], f"{where}.{field}", USAGE_TIME_RE, null=True)
+    _span(measured, where, start_null=True)
     calls = measured["calls"]
     if calls is not None and (not isinstance(calls, list)
                               or len(calls) > MAX_USAGE_CALLS):
@@ -808,13 +889,15 @@ def check_usage(usage, where: str, run: dict) -> None:
         _object(call, f"{where} call", CALL_KEYS, CALL_KEYS)
         _integer(call["index"], f"{where} call index", 0, MAX_USAGE_CALLS)
         _integer(call["duration_ms"], f"{where} call duration", 0, WEEK_MS)
-        _string(call["outcome"], f"{where} call outcome", 64)
-        for field in ("started_at", "ended_at"):
-            _pattern(call[field], f"{where} call {field}", USAGE_TIME_RE)
+        _pattern(call["outcome"], f"{where} call outcome", OUTCOME_RE)
+        _span(call, f"{where} call", end_null=False)
         if call["role"] not in USAGE_ROLES:
             raise Rejected(f"{where}: call of an unknown role")
     for role in USAGE_ROLES:
         _check_role(measured[role], f"{where}.{role}")
+        if calls is not None and measured[role]["calls"] != sum(
+                call["role"] == role for call in calls):
+            raise Rejected(f"{where}.{role}.calls does not match the calls listed")
     _reasons(measured, where, MEASURED_NULLABLE)
 
 
