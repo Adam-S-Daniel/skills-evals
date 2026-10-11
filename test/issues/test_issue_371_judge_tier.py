@@ -159,6 +159,10 @@ class RosterJudgeTests(_RosterCase):
         self.assertIn("judge", error)
         self.assertIn("canned-roster.yml", error)
         self.assertNotIn(str(self.tmp), error)
+        # Its own refusal, not the tier one below it (review round 1).
+        self.assertIn("is that same model", error)
+        self.assertIn("must not grade its own run", error)
+        self.assertNotIn("which is not above it", error)
 
     def test_a_roster_judge_in_the_arms_own_tier_fails_closed(self):
         for judge_id in (OPUS_OLD, "claude-opus-4-8"):
@@ -195,6 +199,152 @@ class RosterJudgeTests(_RosterCase):
         self.assertEqual((agent, judge), (None, None))
         self.assertIn("no-such-policy.yml", error)
         self.assertNotIn(str(self.tmp), error)
+
+
+class NewestInTierTests(_RosterCase):
+    """Which arm is the newest in the tier above (review round 1, finding 1).
+
+    Two ids are ordered only when their names differ in nothing but numbers,
+    a `-YYYYMMDD` snapshot date read as the date of the id before it. Where
+    the names differ in a word (peer families, or an older id shape beside a
+    newer one) the newest is unknown and the run fails closed.
+    """
+
+    def judge_over(self, arm: str, *above: str) -> tuple:
+        """(judge, error) for `arm` on a roster of it and `above`, in the
+        order given and reversed: the answer must not depend on the order."""
+        answers = []
+        for arms in ([arm, *above], [arm, *reversed(above)]):
+            _, judge, error, _ = self.select(roster_doc(arms), model=arm)
+            answers.append((judge, error is not None))
+        self.assertEqual(answers[0], answers[1], above)
+        _, judge, error, _ = self.select(roster_doc([arm, *above]), model=arm)
+        return judge, error
+
+    def test_peer_families_on_one_rung_are_not_ordered_by_their_words(self):
+        """`mythos` sorts after `fable` as a string, so it used to win
+        whatever the numbers said."""
+        for peers in (("claude-fable-6", "claude-mythos-5"),
+                      ("claude-fable-5-1", "claude-mythos-1"),
+                      ("claude-fable-5", "claude-mythos-6")):
+            with self.subTest(peers=peers):
+                judge, error = self.judge_over(OPUS, *peers)
+                self.assertIsNone(judge)
+                self.assertIn("cannot be ordered", error)
+                self.assertIn("fable/mythos", error)
+                for peer in peers:
+                    self.assertIn(f"`{peer}`", error)
+                self.assertIn("canned-roster.yml", error)
+                self.assertIn("Pin `judge.model:`", error)
+
+    def test_one_family_of_a_peer_rung_is_ordered_among_itself(self):
+        judge, error = self.judge_over(OPUS, "claude-mythos-5", "claude-mythos-6")
+        self.assertEqual((judge, error), ("claude-mythos-6", None))
+        judge, error = self.judge_over(OPUS, "claude-mythos-5")
+        self.assertEqual((judge, error), ("claude-mythos-5", None))
+
+    def test_an_older_id_shape_does_not_outrank_a_newer_one(self):
+        """`claude-3-opus-20240229` used to beat `claude-opus-5-5`: a number
+        compared above the family word."""
+        judge, error = self.judge_over(SONNET, "claude-3-opus-20240229", OPUS)
+        self.assertIsNone(judge)
+        self.assertIn("cannot be ordered", error)
+        self.assertIn("`claude-3-opus-20240229`", error)
+        judge, error = self.judge_over(
+            HAIKU, "claude-3-sonnet-20240229", "claude-3-5-sonnet-20241022")
+        self.assertIsNone(judge)
+        self.assertIn("cannot be ordered", error)
+
+    def test_the_older_id_shape_is_ordered_among_itself(self):
+        judge, error = self.judge_over(
+            HAIKU, "claude-3-5-sonnet-20241022", "claude-3-7-sonnet-20250219")
+        self.assertEqual((judge, error), ("claude-3-7-sonnet-20250219", None))
+        judge, error = self.judge_over(
+            HAIKU, "claude-3-5-sonnet-20240620", "claude-3-5-sonnet-20241022")
+        self.assertEqual((judge, error), ("claude-3-5-sonnet-20241022", None))
+
+    def test_a_snapshot_date_is_not_a_version_number(self):
+        """`claude-opus-4-20250514` used to beat `claude-opus-4-1`: its date
+        compared as a minor version."""
+        for older, newer in (
+                ("claude-opus-4-20250514", "claude-opus-4-1"),
+                ("claude-opus-4-20250514", "claude-opus-4-1-20250805"),
+                ("claude-opus-4", "claude-opus-4-1-20250805"),
+                ("claude-opus-4-9-20260101", "claude-opus-4-10"),
+                ("claude-opus-4-5-20251101", "claude-opus-5")):
+            with self.subTest(older=older, newer=newer):
+                self.assertEqual(self.judge_over(SONNET, older, newer),
+                                 (newer, None))
+
+    def test_a_snapshot_beside_its_own_base_is_the_same_model(self):
+        """Either names the model; the dated id is the one taken."""
+        self.assertEqual(
+            self.judge_over(SONNET, OPUS, f"{OPUS}-20260301"),
+            (f"{OPUS}-20260301", None))
+        self.assertEqual(
+            self.judge_over(SONNET, f"{OPUS}-20260301", f"{OPUS}-20260915"),
+            (f"{OPUS}-20260915", None))
+
+    def test_a_longer_version_is_newer_than_its_prefix(self):
+        self.assertEqual(self.judge_over(SONNET, OPUS_OLD, OPUS), (OPUS, None))
+        self.assertEqual(self.judge_over(HAIKU, SONNET_OLD, SONNET),
+                         (SONNET, None))
+
+    def test_only_the_lowest_tier_above_has_to_be_ordered(self):
+        """Unordered peers two tiers up do not stop a Sonnet arm."""
+        judge, error = self.judge_over(
+            SONNET, OPUS, "claude-fable-6", "claude-mythos-5")
+        self.assertEqual((judge, error), (OPUS, None))
+
+    def test_every_id_the_committed_roster_holds_is_ordered_in_its_tier(self):
+        """Arms, judge, preflight and `catalogue_seen`: no two ids the
+        committed roster puts in one tier are left unordered, unless they
+        are peer families."""
+        document = yaml.safe_load(
+            run_eval.TRUSTED_ROSTER.read_text(encoding="utf-8"))
+        rungs, problem = judge_policy.read_rungs()
+        self.assertIsNone(problem)
+        ids = [entry["id"] for entry in document["arms"]]
+        ids += [document["judge"]["id"], document["preflight"]["id"]]
+        ids += [entry["id"] for entry in document["catalogue_seen"]]
+        by_family: dict = {}
+        for model_id in ids:
+            family = roster_module.family_of(model_id, rungs)
+            self.assertIsNotNone(family, model_id)
+            by_family.setdefault(family, set()).add(model_id)
+        self.assertGreaterEqual(len(by_family), 3)
+        for family, members in sorted(by_family.items()):
+            with self.subTest(family=family):
+                newest, unordered = judge_policy.newest_of(sorted(members))
+                self.assertIsNone(unordered)
+                self.assertIn(newest, members)
+
+    def test_the_order_reuses_roster_py_and_parses_no_name_itself(self):
+        with mock.patch.object(judge_policy.roster, "_version_key",
+                               wraps=roster_module._version_key) as key:
+            newest, unordered = judge_policy.newest_of([OPUS_OLD, OPUS])
+        self.assertEqual((newest, unordered), (OPUS, None))
+        self.assertTrue(key.called)
+        self.assertIs(judge_policy.roster.SNAPSHOT_SUFFIX,
+                      roster_module.SNAPSHOT_SUFFIX)
+
+    def test_a_roster_arm_the_ladder_cannot_place_is_never_the_judge(self):
+        """Review round 1, finding 3: an unplaced arm is not "above"."""
+        for arms in ([SONNET, "claude-zzz-9"], ["claude-zzz-9", SONNET],
+                     [SONNET, "some-unranked-model", "claude-zzz-9"]):
+            with self.subTest(arms=arms):
+                _, judge, error, selection = self.select(roster_doc(arms),
+                                                         model=SONNET)
+                self.assertIsNone(error)
+                self.assertEqual(judge, FABLE)
+                self.assertEqual(selection["rule"], "roster-judge")
+        _, judge, error, _ = self.select(
+            roster_doc([SONNET, "claude-zzz-9", OPUS]), model=SONNET)
+        self.assertEqual((judge, error), (OPUS, None))
+        _, judge, error, _ = self.select(
+            roster_doc([SONNET, "claude-zzz-9"], None), model=SONNET)
+        self.assertIsNone(judge)
+        self.assertIn("no roster arm sits above", error)
 
 
 class NeverItselfNeverItsTierTests(_RosterCase):
@@ -316,6 +466,63 @@ class PinAndPairwiseTests(_RosterCase):
                 TODAY, model=SONNET, no_judge=True)
         self.assertEqual((agent, judge, error, selection),
                          (SONNET, None, None, None))
+
+    def test_a_pairwise_fixture_is_never_judged_by_its_own_arm(self):
+        """Review round 1, finding 2: an arm from `--model` or the fixture's
+        `model:` pin that is the roster's judge, though not a roster arm."""
+        pairwise = fixture_doc(mode="pairwise")
+        for label, kwargs in (
+                ("--model", {"model": FABLE, "fixture": pairwise}),
+                ("fixture pin", {"fixture": {**pairwise, "model": FABLE}})):
+            with self.subTest(arm_from=label):
+                agent, judge, error, selection = self.select(TODAY, **kwargs)
+                self.assertEqual((agent, judge, selection), (None, None, None))
+                self.assertIn("must not grade its own run", error)
+                self.assertIn(f"`{FABLE}`", error)
+                self.assertIn("canned-roster.yml", error)
+                self.assertNotIn(str(self.tmp), error)
+
+    def test_a_pairwise_fixture_is_never_judged_from_its_arms_own_tier(self):
+        for arm in ("claude-fable-5", "claude-mythos-5"):
+            with self.subTest(arm=arm):
+                agent, judge, error, selection = self.select(
+                    TODAY, model=arm, fixture=fixture_doc(mode="pairwise"))
+                self.assertEqual((agent, judge, selection), (None, None, None))
+                self.assertIn("fable/mythos tier", error)
+                self.assertIn("canned-roster.yml", error)
+                self.assertNotIn("must not grade its own run", error)
+
+    def test_a_pairwise_arm_the_ladder_cannot_place_keeps_the_roster_judge(self):
+        """Not the same model, and no tier to compare: served, tier null."""
+        _, judge, error, selection = self.select(
+            TODAY, model="some-unranked-model",
+            fixture=fixture_doc(mode="pairwise"))
+        self.assertEqual((judge, error), (FABLE, None))
+        self.assertEqual(selection, {
+            "model": FABLE, "rule": "roster-judge",
+            "arm_tier": None, "judge_tier": "fable/mythos"})
+
+    def test_no_judge_on_an_unpinned_fixture_selects_no_judge(self):
+        """Review round 1, finding 3: the roster is read for the arm, and
+        then nothing chooses, records or refuses a judge."""
+        cases = {"today": (TODAY, None, SONNET_OLD),
+                 "a top arm with nothing above it": (
+                     roster_doc([FABLE], None), None, FABLE),
+                 "a judge that is the arm": (
+                     roster_doc([OPUS], OPUS), None, OPUS),
+                 "pairwise on the judge itself": (TODAY, FABLE, FABLE)}
+        for label, (document, model, arm) in cases.items():
+            with self.subTest(case=label), mock.patch.object(
+                    judge_policy, "read_rungs",
+                    side_effect=AssertionError("ladder read")), \
+                    mock.patch.object(
+                        judge_policy, "judge_for_arm",
+                        side_effect=AssertionError("judge chosen")):
+                fixture = fixture_doc(mode="pairwise") if model else None
+                self.assertEqual(
+                    self.select(document, model=model, fixture=fixture,
+                                no_judge=True),
+                    (arm, None, None, None))
 
     def test_select_models_keeps_its_three_values(self):
         args = argparse.Namespace(model=OPUS, no_judge=False,

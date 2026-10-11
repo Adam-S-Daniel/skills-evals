@@ -761,11 +761,13 @@ def select_judged_models(fixture: dict, args: argparse.Namespace) -> tuple:
     1. `fixture-pin`: the fixture's `judge.model:` wins, unchecked, as before.
     2. `roster-judge`, for a fixture whose `judge.mode` is not absolute
        (pairwise): the roster's `judge`, whatever the arm, and refused when
-       the roster says that judge is also an arm.
+       the roster says that judge is also an arm, when it is this run's arm
+       model, or when the ladder puts it in that model's tier.
     3. `tier-above-arm`: the newest roster arm in the lowest tier above the
-       arm model's. With no roster arm above it, `roster-judge`: the roster's
-       `judge`, which must sit in a tier above the arm's
-       (`judge_policy.judge_for_arm`).
+       arm model's, refused when the ids in that tier cannot be ordered
+       (`judge_policy.newest_of`). With no roster arm above it,
+       `roster-judge`: the roster's `judge`, which must sit in a tier above
+       the arm's (`judge_policy.judge_for_arm`).
 
     A run is one arm model on both of its arms, so it still has one judge.
     Rule 3 needs the tier ladder; a pin and a pairwise fixture record their
@@ -823,8 +825,24 @@ def select_judged_models(fixture: dict, args: argparse.Namespace) -> tuple:
                           f"that is also an arm; a model must not grade its "
                           f"own run. Pin `judge.model:` in the fixture to "
                           f"override")
-        return agent, judge_id, None, judge_policy.selection(
+        # The arm need not be a roster arm (`--model`, the fixture's
+        # `model:`), so the roster's own flag does not cover these two.
+        if judge_id == agent:
+            return refuse(f"the model roster at {path.name} names the judge "
+                          f"`{judge_id}`, which is this run's arm model; a "
+                          f"model must not grade its own run. Pin "
+                          f"`judge.model:` in the fixture to override")
+        chosen = judge_policy.selection(
             judge_id, judge_policy.RULE_ROSTER_JUDGE, agent, rungs)
+        if chosen["arm_tier"] is not None \
+                and chosen["arm_tier"] == chosen["judge_tier"]:
+            return refuse(f"the model roster at {path.name} names the judge "
+                          f"`{judge_id}`, which is in the "
+                          f"{chosen['judge_tier']} tier of the arm model "
+                          f"`{agent}`; a judge must not share its arm's "
+                          f"tier. Pin `judge.model:` in the fixture to "
+                          f"override")
+        return agent, judge_id, None, chosen
     if ladder_problem:
         return refuse(f"{ladder_problem}, so no judge can be chosen for the "
                       f"arm, and this fixture pins no judge model")

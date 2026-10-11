@@ -11,8 +11,12 @@ A model's tier is `harness/roster.py`'s reading of its id against the ladder
 in `evals/roster-policy.yml`; this module parses no model name itself.
 
 The committed roster carries no `created_at`, so "newest" within a tier is
-`roster._version_key`, the id's version compared numerically: the tie-break
-`roster.py` ranks by after `created_at`.
+read from the ids (`newest_of`): `roster._version_key`, the tie-break
+`roster.py` ranks by after `created_at`, with a `roster.SNAPSHOT_SUFFIX` date
+read as the date of the id before it. That orders two ids only when their
+names differ in nothing but numbers. Peer families on one rung, or an older
+id shape beside a newer one, differ in a word, and no number says which is
+newer: there is then no newest, no judge, and the caller fails closed.
 """
 
 from __future__ import annotations
@@ -60,6 +64,32 @@ def selection(model: str, rule: str, arm_model: str | None,
             "judge_tier": tier_label(model, rungs)}
 
 
+def _order_key(model_id: str) -> tuple:
+    """(the version of the id a snapshot date is attached to, the version of
+    the whole id). The date orders two snapshots of one model and nothing
+    else: read as a version it put `-4-20250514` above `-4-1`."""
+    match = roster.SNAPSHOT_SUFFIX.match(model_id)
+    base = match.group("base") if match else model_id
+    return roster._version_key(base), roster._version_key(model_id)
+
+
+def _numbers_decide(one: tuple, other: tuple) -> bool:
+    """Whether two `roster._version_key`s differ in nothing but numbers: at
+    every position both hold, a number each or the same word. One key running
+    longer than the other is a further version component (`-5-5` over `-5`)."""
+    return all(a[0] == b[0] == 1 or a == b for a, b in zip(one, other))
+
+
+def newest_of(model_ids: list[str]) -> tuple[str | None, str | None]:
+    """(the newest of these ids, None), or (None, an id the highest of them
+    cannot be ordered against). Independent of the order they are listed in."""
+    top = max(model_ids, key=_order_key)
+    for model_id in sorted(model_ids):
+        if not _numbers_decide(_order_key(top)[0], _order_key(model_id)[0]):
+            return None, model_id
+    return top, None
+
+
 def judge_for_arm(arm_model: str, arm_ids: list[str], roster_judge: str | None,
                   rungs: list[list[str]]) -> tuple[dict | None, str | None]:
     """(the `judge_selection` for this arm, or None; why there is none).
@@ -78,8 +108,15 @@ def judge_for_arm(arm_model: str, arm_ids: list[str], roster_judge: str | None,
              if rung is not None and rung > tier]
     if above:
         lowest = min(rung for rung, _ in above)
-        newest = max((arm for rung, arm in above if rung == lowest),
-                     key=roster._version_key)
+        candidates = [arm for rung, arm in above if rung == lowest]
+        newest, unordered = newest_of(candidates)
+        if newest is None:
+            highest = max(candidates, key=_order_key)
+            return None, (f"the roster arms `{highest}` and `{unordered}` in "
+                          f"the {roster.rung_label(rungs, lowest)} tier "
+                          "cannot be ordered by version (their names differ "
+                          "in more than numbers), so the newest arm above "
+                          f"`{arm_model}` is unknown")
         return selection(newest, RULE_TIER_ABOVE, arm_model, rungs), None
     nothing_above = f"no roster arm sits above the {label} tier of `{arm_model}`"
     if not roster_judge:
