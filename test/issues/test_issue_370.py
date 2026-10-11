@@ -982,7 +982,10 @@ class EndToEndTests(Checks):
     def test_every_summary_of_a_run_carries_both_blocks_and_ingests(self):
         self.fixture(batches=[[meter(0.72)], [meter(0.73)], [meter(0.73)],
                               [meter(0.75, five=0.04)]])
-        proc = self.run_eval("--trials", "2", "--run-billing", "subscription",
+        # `--judge always`: this test is about the usage record of a judge
+        # that runs inside each trial, not about when the judge runs (#371).
+        proc = self.run_eval("--trials", "2", "--judge", "always",
+                             "--run-billing", "subscription",
                              "--run-runner", "routine", "--run-location", "cloud",
                              "--run-id", "20261012T170500Z-ab12cd")
         self.assertEqual(proc.returncode, 0, self.said(proc))

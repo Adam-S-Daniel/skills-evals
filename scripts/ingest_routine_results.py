@@ -281,6 +281,8 @@ def _object(value, where, allowed, required=()):
 
 
 MODEL_ID_RE = re.compile(r"[^\s`|]{1,128}")
+#: A summary's `judge` when the pair's objective result decided it (#371).
+JUDGE_SKIPPED = {"status": "skipped", "reason": "objective-decided"}
 
 SUMMARY_REQUIRED = ("arm", "timestamp", "error", "agent", "objective_checks",
                     "judge", "harness", "models_used", "judge_models_used")
@@ -960,6 +962,12 @@ def check_summary(doc, where: str, parts: dict) -> None:
         if not isinstance(judge, dict):
             raise Rejected(f"{where}: judge must be an object")
         bounded(judge, f"{where}: judge")
+        # A judge the harness skipped because the objective result decided
+        # the pair (#371) is exactly this block, and nothing else with a
+        # `status` is one.
+        if "status" in judge and judge != JUDGE_SKIPPED:
+            raise Rejected(f"{where}: judge status is not a skip the harness "
+                           "writes")
         if "overall" in judge:
             _number(judge["overall"], f"{where}: judge.overall", 0, 10)
         if isinstance(judge.get("dimensions"), list):

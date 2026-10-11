@@ -41,7 +41,20 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     `workflow-path-audit`: replay a changeset through each workflow's `on:`
     filters and assert exactly which workflows fire, and that they parse).
   - *judge* — an LLM grades the transcript/result against the fixture's rubric,
-    emitting JSON (scores + reasons), temperature 0.
+    emitting JSON (scores + reasons), temperature 0. For a with/without pair
+    it is conditional (#371): no judge call is made while trials run, and
+    once every trial of both arms is scored the arms' objective pass rates
+    (checks passed over checks scored, over the trials that did not error)
+    are compared exactly. `with` strictly ahead decides the pair, so no trial
+    of it is judged and each scored trial's `summary.json` records
+    `"judge": {"status": "skipped", "reason": "objective-decided"}` (an arm
+    aggregate's `aggregate.judge` carries it with `n` and `errors` 0, and
+    reports print `skipped (objective-decided)`); a tie, a loss or a rate
+    that is undefined (an arm with no scored check) judges every scored trial
+    of both arms, never some trials of a pair and not others. A single-arm
+    run, `--judge always`, and a fixture whose `judge.mode` is not absolute
+    (pairwise) judge each trial inside the trial as before; `--no-judge`
+    judges nothing and records `null`, not a skip.
 - **Report** — per-skill table of with vs. without across success %, judge
   score, and cost; a summary; and a regression line vs. the last run.
 
