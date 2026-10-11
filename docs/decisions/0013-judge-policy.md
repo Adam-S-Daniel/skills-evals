@@ -57,12 +57,22 @@
    `claude-opus-5-5` and the Opus arm by `claude-fable-5-1`.
 3. **A judge is never the model it grades and never in its tier.** When the
    rule cannot give such a judge, the run fails closed with a selection
-   error, as it already did when the roster's judge was also an arm.
+   error. Under rule 2 that replaces the earlier refusal of any roster whose
+   `judge` is also an arm: such a roster now stops only the arms that would
+   fall to that judge (its own tier and above), and an arm with a roster arm
+   above it still runs. The same holds where the newest arm in the tier
+   above cannot be told (see "Newest" under Consequences): no judge is
+   guessed.
 4. **A fixture's `judge.model` pin still wins**, and `--model` still picks
    the arm. A pin is not checked against rule 3.
 5. **A judge-carried fixture keeps the strongest judge.** A fixture whose
    `judge.mode` is `pairwise` is never skipped and is always judged by the
-   roster's `judge`, whatever the arm.
+   roster's `judge`, whatever the arm. Rule 3 still holds: the run fails
+   closed when the roster flags that judge as an arm, when it is the run's
+   arm model (an arm from `--model` or the fixture's `model:` need not be a
+   roster arm), or when the ladder puts it in that model's tier. A judge
+   below the arm's tier is not refused here, and an arm the ladder cannot
+   place is served with a null `arm_tier`.
 6. **The roster is not changed.** Its schema, and how it is computed,
    rendered, admitted and merged (ADRs 0001 to
    [0004](0004-eval-runs-on-the-roster-its-run-merged.md)), stay as they
@@ -99,11 +109,21 @@
   starts another window for their judge scores.
 - **An arm model the ladder cannot place does not run judged** unless the
   fixture pins its judge. That includes a `--model` outside the ladder.
-- **"Newest" is read from the id.** The committed roster carries no
-  `created_at`, so the newest arm in a tier is the one whose version
-  compares highest (`roster._version_key`). `roster.py` ranks by
-  `created_at` first and uses that key as the tie-break; the two would
-  disagree only for a model released later under a lower version.
+- **"Newest" is read from the id, and only where the id can say.** The
+  committed roster carries no `created_at`, so the newest arm in a tier is
+  the one whose version compares highest (`judge_policy.newest_of`, on
+  `roster._version_key`; `roster.py` ranks by `created_at` first and uses
+  that key as the tie-break). A `-YYYYMMDD` snapshot date
+  (`roster.SNAPSHOT_SUFFIX`) is read as the date of the id before it, not as
+  a version, so `claude-opus-4-1` is newer than `claude-opus-4-20250514`.
+  Two ids are ordered only when their names differ in nothing but numbers.
+  Peer families on one rung (`claude-fable-6` beside `claude-mythos-5`) and
+  an older id shape beside a newer one (`claude-3-opus-20240229` beside
+  `claude-opus-5-5`) differ in a word, and no number says which is newer:
+  the arm below them then gets no judge and the run fails closed until a
+  fixture pin or a roster change settles it. Where ids are ordered, this
+  disagrees with `created_at` only for a model released later under a lower
+  version.
 - **A weaker judge may grade differently.** No paired Opus-versus-Fable
   comparison was run first (Adam's decision); the pin remains the override
   for a fixture that needs a specific judge.

@@ -62,9 +62,13 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     when no roster arm sits above T (so Sonnet arms are judged by the newest
     Opus arm and an Opus arm by the roster's judge). A `pairwise` fixture
     always gets the roster's `judge`. A judge is never the model it grades
-    nor in its tier: a roster that cannot give one is a selection error and
-    nothing runs. Tiers are the roster module's reading of a model id
-    against the ladder in `roster-policy.yml`. Each summary of a skill
+    nor in its tier, on either path: a roster that cannot give one is a
+    selection error and nothing runs. Tiers are the roster module's reading
+    of a model id against the ladder in `roster-policy.yml`. "Newest" is
+    read from the ids, which orders two only when their names differ in
+    nothing but numbers; peer families on one rung, or an older id shape
+    beside a newer one, leave no newest and are a selection error too. Each
+    summary of a skill
     run records the choice as `judge_selection` (`model`, `rule`:
     `tier-above-arm`, `roster-judge` or `fixture-pin`, `arm_tier`,
     `judge_tier`), on a skipped pair too, and `null` under `--no-judge` or
@@ -1834,7 +1838,9 @@ only, so an arm, the judge, the preflight model or a `catalogue_seen` entry
 cannot appear there or vanish from there without a reviewed commit.
 `run_eval.select_models` reads that file and nothing else for the roster rung
 of its precedence (`--model` > the fixture's own pin > `evals/roster.yml` >
-error).
+error). Since [ADR 0013](docs/decisions/0013-judge-policy.md) the judge it
+picks from that file also depends on the tier ladder in
+`evals/roster-policy.yml`, committed and pull-request-only like the roster.
 
 **`harness/roster.py` computes a PROPOSAL, not the running set.** It is still
 **a pure function over files** — already-parsed documents and a frozen `now`
