@@ -47,10 +47,28 @@
 skill: skills-doctor
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
+
+# In-place context (ADR 0012): adam-agentskills, the operational repository.
+# It ships the `skills-bootstrap` hook and the `skills.lock` format this
+# skill audits, and it adopts its own bundles in its own `skills.lock`.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 6115 and 644882 bytes; each limit is
+# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+# bytes; the pin is the newest (then the smallest SHA). The context adopts
+# the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/adam-agentskills
+  revision: 2a322dde20fcd4ac98e214795b1453e941c529f8
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7644
+    skill_payload_bytes: 806103
 
 judge:
-  model: claude-opus-4-8
   weights:
     root-cause: 0.5
     which-copy-the-model-reads: 0.3

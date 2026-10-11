@@ -558,13 +558,14 @@ class TestLocalEval(unittest.TestCase):
                                  capture_output=True, text=True).stdout
         self.assertEqual(manifest["harness"]["claude_version"],
                          version.splitlines()[0].strip())
-        fixture = yaml.safe_load((EVAL_DIR / "fixture.yaml").read_text(encoding="utf-8"))
+        # EVAL_DIR pins neither model (#371 item 5): the committed roster's
+        # first arm and its judge are what the run selects.
+        roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
         self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
-                         {"model": fixture["model"],
-                          "judge_model": fixture["judge"]["model"]})
+                         {"model": None, "judge_model": None})
         self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
-                         {"agent": fixture["model"],
-                          "judge": fixture["judge"]["model"]})
+                         {"agent": roster["arms"][0]["id"],
+                          "judge": roster["judge"]["id"]})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",

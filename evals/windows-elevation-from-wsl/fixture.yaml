@@ -38,18 +38,34 @@
 skill: windows-elevation-from-wsl
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Same calibration as workflow-path-audit: arms on a pinned mid-tier model so
-# the with/without comparison is not flattened by a ceiling effect, and so the
-# arms do not silently track the CLI's default model across releases.
-#
-# Both keys are OVERRIDES now — absent them the runner takes the committed
-# roster (`evals/roster.yml`; harness/run_eval.py, ADR 0001).
-# The pins stay until the matrix runner lands and runs every arm in the
-# roster, which is where a per-fixture calibration belongs.
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
+
+# In-place context (ADR 0012): wsl-automation, the operational repository.
+# It owns the scheduled Windows backup task for a WSL distro and the
+# PowerShell that registers it, which is what this seed models. No fleet
+# `skills.lock` adopts the skill's bundle (`adam-coding-local`), so the
+# context does not hold the skill and the `with` arm adds the registry's copy.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 6082 and 685637 bytes. With the skill added the `with`
+# arm measured 7180 catalog and 695580 payload bytes, and the harness checks
+# that larger arm against the same limits, so each limit is
+# ceil(larger arm * 1.25): 25% headroom on `with`, more on `without`. The
+# added copy is read from the registry checkout, which is not pinned, so
+# this headroom is also what a longer description has to fit in. 11 eligible
+# guidance revisions matched the shipped bytes; the pin is the newest (then
+# the smallest SHA).
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 9303b57da1bfd5bccd529dd5d36bf71dda72c60f
+  guidance_revision: 6d2415b4d0704acf7619b46f4c01479fd01f978e
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 8975
+    skill_payload_bytes: 869475
 
 judge:
-  model: claude-opus-4-8
   # Diagnosis and Handoff carry the correctness axis; Restraint is the
   # guardrail and must not outvote them (DESIGN.md, harness-wide rules).
   weights:

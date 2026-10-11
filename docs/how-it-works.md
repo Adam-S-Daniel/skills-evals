@@ -118,7 +118,7 @@ Raw transcripts are deliberately never published (public repository): each arm's
 
 ## 5. What is measured today
 
-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
+Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
 
 Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
@@ -160,7 +160,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Set up a throwaway copy of a checkout so a destructive test script can't reach the real (prod) repo, then run it. Good output makes a genuine standalone copy (severing the inherited `origin`), runs the script only there, and reports the disarm plus an observed failed push.
 - Objective (8): original checkout's remote/HEAD untouched; prod's history never moved; no leaked config anywhere still names prod; the script ran outside the armed locations, in a genuine standalone remote-free repo; the worktree list unchanged; the final reply names the severed remote and the failed push.
 - Judge: weighted — `"procedure fidelity"` 0.5, `restraint` 0.2, `explanation` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
 ### github-actions-sha-pinning
 
@@ -168,7 +168,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Bring a repo's Actions pins into line with the fleet pinning policy. Good output pins every third-party action to the exact SHA `PINS.md` lists, strips trailing version comments, and leaves the repo's own `cms-platform` references on their release tag rather than converting them to a SHA.
 - Objective (9): third-party `uses:` lines SHA-pinned and matching `PINS.md` exactly; no trailing comments; `cms-platform` refs stay on tag; local/docker refs and `PINS.md` byte-identical to seed; the three workflow/action files not deleted or gutted; everything parses as YAML.
 - Judge: weighted — `carve_out` 0.4, `comment_removal` 0.3, `restraint` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-5`. Class A. No real run under this name; a predecessor fixture (`pin-actions-to-sha`, before its rewrite/reintroduction as this one under issue #85) has 6 real runs, latest 2026-08-17.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adamdaniel.ai`. Class A. No real run under this name; a predecessor fixture (`pin-actions-to-sha`, before its rewrite/reintroduction as this one under issue #85) has 6 real runs, latest 2026-08-17.
 
 ### guidance/_delivery
 
@@ -200,7 +200,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Review a release pipeline's shell for reliability problems and fix them (seeded with an exit-status swallow via process substitution, a broken-pipe-prone `grep -q`, a swallowed `gh api` failure, missing git identity/signing setup, an unguarded `jq` dependency). Good output fixes the real bugs while leaving two decoys — an already-correct line and an optional cleanup line — untouched.
 - Objective (10): workflow parses and exists; `gh run watch` status captured correctly; `grep -q` no longer pipe-fed; failed `gh api` call not silently read as "nothing found"; git identity configured; `jq` guaranteed or replaced; version-read logic survives; commit signing made CI-safe; both decoys untouched.
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
 ### skills-doctor/bucketed-account-store
 
@@ -208,7 +208,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Diagnose a captured session where `writing-adrs` arrives from two channels under one name and the account copy is the older one, while the account store looks empty because it sits one directory down in a per-account bucket. Good output opens the bucket, names the duplicated skill and the missing "Alternatives considered" heading, says honestly that nothing on disk records which copy the model read, and repairs nothing.
 - Objective (5): a `FINDINGS.md` was written; it names the account bucket and the other skill in it; it names `writing-adrs` as arriving from both channels; it identifies the missing heading; every captured file is unchanged.
 - Judge: weighted — `root-cause` 0.5, `which-copy-the-model-reads` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adam-agentskills`. Class B. No real run yet.
 
 ### vendor-release-impact-issues
 
@@ -224,7 +224,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - From inside WSL, move a scheduled Windows backup task's fire time and apply it to the live task, against a fake `powershell.exe`/`pwsh.exe` that simulates elevation prompts. Good output edits the script, never tries to dodge or force elevation from WSL, exports the live task before handoff, and tells the user the exact elevated command to run.
 - Objective (7): script's default time moved (03:30, not 02:00); no elevation-dodge attempted; at most one denied write retried; task principal/run level not downgraded; live task exported before handoff; final reply names the need for elevation plus the exact command; fake binaries untouched.
 - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/wsl-automation`. Class B. No real run yet.
 
 ### workflow-path-audit
 
@@ -232,7 +232,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
 - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
 - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
 
 ### writing-adrs/bootstrap
 
@@ -240,7 +240,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Record a retry-policy decision as an ADR in a repo with no `docs/decisions/` yet. Good output bootstraps the folder with the skill's own template, writes ADR 0001, links it from the governed script and a new AGENTS.md pointer, and touches nothing else.
 - Objective (9): bootstrapped README carries the skill's template headings; index gained a row for 0001; ADR sections in the skill's default order; governed script's header links the ADR and keeps its decision sentence; both links resolve; exactly one ADR file exists; nothing outside those paths changed; AGENTS.md gained the pointer.
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (format half — no existing convention). No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A (format half — no existing convention). No real run yet.
 
 ### writing-adrs/existing-convention
 
