@@ -983,8 +983,10 @@ class TestIssue66Trials(_HarnessCase):
     def test_both_arms_are_trialed_and_aggregated_separately(self):
         self._script(agents=[{"write": "marker.txt"}] * 2 + [{}] * 2,
                      judges=[{"overall": 9.0}] * 2 + [{"overall": 4.0}] * 2)
+        # `--judge always`: the arms differ, so the default would skip the
+        # judge (#371); this test is about aggregating its scores.
         proc = self._run(self.fixture_dir, "--arm", "both", "--trials", "2",
-                         "--timestamp", TS, "--registry",
+                         "--judge", "always", "--timestamp", TS, "--registry",
                          f"adam-agentskills={self._registry(self.SKILL)}")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         got = {}

@@ -41,7 +41,20 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     `workflow-path-audit`: replay a changeset through each workflow's `on:`
     filters and assert exactly which workflows fire, and that they parse).
   - *judge* — an LLM grades the transcript/result against the fixture's rubric,
-    emitting JSON (scores + reasons), temperature 0.
+    emitting JSON (scores + reasons), temperature 0. For a with/without pair
+    it is conditional (#371): no judge call is made while trials run, and
+    once every trial of both arms is scored the arms' objective pass rates
+    (checks passed over checks scored, over the trials that did not error)
+    are compared exactly. `with` strictly ahead decides the pair, so no trial
+    of it is judged and each scored trial's `summary.json` records
+    `"judge": {"status": "skipped", "reason": "objective-decided"}` (an arm
+    aggregate's `aggregate.judge` carries it with `n` and `errors` 0, and
+    reports print `skipped (objective-decided)`); a tie, a loss or a rate
+    that is undefined (an arm with no scored check) judges every scored trial
+    of both arms, never some trials of a pair and not others. A single-arm
+    run, `--judge always`, and a fixture whose `judge.mode` is not absolute
+    (pairwise) judge each trial inside the trial as before; `--no-judge`
+    judges nothing and records `null`, not a skip.
 - **Report** — per-skill table of with vs. without across success %, judge
   score, and cost; a summary; and a regression line vs. the last run.
 
@@ -1043,9 +1056,10 @@ is objectively decidable from the resulting files alone.
   run's meter series is therefore the union of its trial summaries. The
   run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
   how many snapshots the run recorded, how many events were not kept for
-  their shape or size, and why the judge call (`--output-format json`
-  without `--verbose`), the guard call and the end of the run are not
-  sampled. The meter is read when an agent call starts and at no other
+  their shape or size, and why the judge call, the guard call and the end of
+  the run are not sampled (the judge and the guard are called without
+  `--verbose`, so they print no meter event, and no call is added to read
+  the meter). The meter is read when an agent call starts and at no other
   time: the one real call observed (two API requests) printed one event,
   as it began. That is one observation, and a longer call may print more;
   the first and last of each call are kept either way. So there is no
@@ -1054,7 +1068,17 @@ is objectively decidable from the resulting files alone.
   last, per window both name, whatever a trial's own list dropped. It
   therefore leaves out the call that printed the last snapshot and every
   call after it (that agent call's own spend, and the judge and guard calls
-  that follow), and any call before the first snapshot;
+  that follow), and any call before the first snapshot. Conditional judging
+  (#371) widens that: a pair's judge calls are all made after its last agent
+  call, so on a judged pair the delta covers none of the judging, where a
+  judge inside each trial (`--judge always`, a single arm) leaves out only
+  the last trial's. Measured on one fixture, two trials, a tie: 5 calls
+  after the last snapshot by default (the last agent call and all four judge
+  calls), 2 under `--judge always`. Such a held judge call is added to the
+  summary of the trial it judges after that summary was written
+  (`_RunTelemetry.amend`), so that trial's `usage.measured.started_at` to
+  `ended_at` spans the trials that ran in between and trial windows of a
+  judged pair overlap;
   `meter_delta.uncovered: {calls_before_first_snapshot,
   calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
   the second, and a run of one agent call has no delta at all. Each window
@@ -1074,10 +1098,13 @@ is objectively decidable from the resulting files alone.
   split, which the CLI reports for the main loop only. `models` is whole or
   `null`: a result with no `modelUsage`, or with an entry that could not be
   read, leaves it `null` and never the models that happened to be readable.
-  The judge's result reaches the harness as its `modelUsage` alone, so its
-  turns and cache split are `null`; the guard returns only its verdict, so
-  its tokens and cost are `null`; a call that ended without a result says
-  so. A role with no call records zeros. An arm aggregate (`scope: arm`)
+  The judge's and the guard's results are read like the agent's: the judge's
+  sink (`judge.collecting_models`) and the guard's (`run_canary.
+  collecting_results`) keep `modelUsage`, `num_turns`, `usage` and
+  `total_cost_usd` of each result, raw, whichever the result has. A figure a
+  result lacks is `null` with the reason "the <role>'s CLI result does not
+  carry it"; a call that ended without a result says so. A role with no call
+  records zeros. An arm aggregate (`scope: arm`)
   sums its trials role by role, a `null` in any trial making that sum
   `null`, `models` included, and lists no calls. A trial with more than
   `run_eval.USAGE_MAX_CALLS` (32) calls keeps the role totals and

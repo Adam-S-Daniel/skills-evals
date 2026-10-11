@@ -4771,8 +4771,9 @@ class TestIssue97(unittest.TestCase):
     DEFAULT_GUARD_BUDGET_S = _harness_default(
         _RUN_EVAL, ("_run_guidance_arm",), "fixture.get('guard') or {}",
         "timeout_s")
+    # Both arm functions judge through `_call_judge` (#371), the one site.
     DEFAULT_JUDGE_BUDGET_S = _harness_default(
-        _RUN_EVAL, _ARM_FNS, "judge_cfg", "timeout_s")
+        _RUN_EVAL, ("_call_judge",), "judge_cfg", "timeout_s")
     # The per-arm `setup:` hook (`run_setup`, skill arms only).
     DEFAULT_SETUP_BUDGET_S = _harness_default(
         _RUN_EVAL, ("run_setup",), "fixture", "setup_timeout_s")

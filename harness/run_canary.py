@@ -24,6 +24,7 @@ invocation failed for at least one leg).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -77,6 +78,25 @@ def claude_version() -> str:
     except Exception:  # noqa: BLE001 — record "unknown", never crash the run
         pass
     return "unknown"
+
+
+#: The open `collecting_results()` blocks, as `judge._MODEL_SINKS` is for the
+#: judge: each is a list every leg's parsed result is appended to.
+_RESULT_SINKS: list[list] = []
+
+
+@contextlib.contextmanager
+def collecting_results():
+    """Collect the usage figures of every CLI result `run_leg` parses in this
+    block: `modelUsage` (always) and `num_turns`, `usage` and
+    `total_cost_usd` where the result has them, raw and unvalidated (#371).
+    An `is_error` result is collected too: it was still spent."""
+    sink: list = []
+    _RESULT_SINKS.append(sink)
+    try:
+        yield sink
+    finally:
+        _RESULT_SINKS.remove(sink)
 
 
 def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
@@ -143,6 +163,11 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
                           f"{e.pos} of {len(result.stdout)})"}
     except ValueError as e:
         return {"error": "invalid_json", "detail": str(e)}
+
+    for sink in _RESULT_SINKS:
+        sink.append({"modelUsage": data.get("modelUsage"),
+                     **{key: data[key] for key in
+                        ("num_turns", "usage", "total_cost_usd") if key in data}})
 
     if data.get("is_error"):
         return {"error": "agent_error", "detail": data.get("result", ""), "raw": data}

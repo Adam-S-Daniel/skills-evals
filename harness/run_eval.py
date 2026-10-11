@@ -4,7 +4,7 @@
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...]
-        [--roster PATH] [--no-judge]
+        [--roster PATH] [--no-judge | --judge {auto,always}]
     python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
     python3 harness/run_eval.py evals/<skill> --arm both [--fixture NAME]
         [--trials N]
@@ -25,7 +25,9 @@ pristine seed should FAIL the fixture's checks; a correctly reworked copy
 should PASS. `--arm with_skill|without_skill|both` runs the agent under test
 (the Claude Code CLI, headless) on a fresh copy of the seed, scores it with
 the objective checks and the LLM judge, and writes a summary + report under
-`--results-dir` (default `results/`).
+`--results-dir` (default `results/`). For a with/without pair the judge is
+conditional (#371): see "Conditional judging" below, and `--judge always` to
+judge every trial regardless.
 
 TWO SUBJECTS. `subject: skill` (the default) copies one skill from a registry
 into `<workspace>/.claude/skills/` and runs with `--setting-sources project`.
@@ -64,6 +66,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
                       normalize_cli_result, rate_limit_events, secret_values, tool_events)
 import guidance  # noqa: E402
+import run_canary  # noqa: E402
 from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
@@ -3419,12 +3422,11 @@ _NO_RUN_END = ("no call the harness makes prints a meter event after its last "
                "agent call has started (one real call observed: one event, as "
                "the call began); reading the meter at run end would need an "
                "added call")
-_ROLE_GAPS = {
-    "agent": "the agent's CLI result does not carry it",
-    "judge": "the judge's CLI result reaches the harness as its modelUsage "
-             "alone (harness/scorers/judge.py)",
-    "guard": "the guard call returns only its verdict "
-             "(harness/run_canary.py keeps no usage)"}
+#: Why `usage.meter.not_sampled` names the judge and the guard: neither call
+#: is made with `--verbose`, so neither prints a meter event, and no call is
+#: added to read the meter.
+_NOT_METERED = ("the call is made without --verbose, so it prints no meter "
+                "event, and no call is added to read the meter")
 
 
 def _now() -> datetime:
@@ -3533,8 +3535,8 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
         "cost_basis": basis.pop() if len(basis) == 1 else None,
         "models": models if whole else None,
         "cache_creation": split if split and None not in split.values() else None})
-    why = _ROLE_GAPS[role] if results or role == "guard" else (
-        f"the {role} call ended without a result")
+    why = (f"the {role}'s CLI result does not carry it" if results
+           else f"the {role} call ended without a result")
     return {**block, "reasons": {name: why for name, value in block.items()
                                  if value is None}}
 
@@ -3608,7 +3610,11 @@ class _RunTelemetry:
 
     `record()` queues a role's CLI calls; the next summary written takes
     them as its own (`usage.measured`), which is exact because trials run
-    one after another and each ends by writing its summary. A meter
+    one after another and each ends by writing its summary. The one
+    exception is `amend()`: a judge call held back for its pair's objective
+    result (#371) is made after every trial of the pair and added to the
+    summary of the trial it judges, so that trial's `started_at`..`ended_at`
+    spans the trials that ran in between. A meter
     snapshot is stored once, with the trial whose call printed it. The
     run-level half (times, how far the meter moved, what else was running)
     is written into every summary as it stood at that moment, and `finish()`
@@ -3725,6 +3731,35 @@ class _RunTelemetry:
                 "only the role totals are kept")
         return measured
 
+    def amend(self, summary: dict, role: str, started: datetime,
+              results=(), outcome: str = "ok") -> None:
+        """Add one call made AFTER `summary` was written to its
+        `usage.measured`: a judge call held back until its pair's objective
+        result was known (#371). The role made no call before it, so its
+        block is that one call's. `calls` keeps its bound, as `_measure`
+        does."""
+        measured = summary["usage"]["measured"]
+        ended = _now()
+        self.calls_seen += 1
+        call = {"started": started, "ended": ended,
+                "duration_ms": int((ended - started).total_seconds() * 1000)}
+        measured["ended_at"] = _stamp(ended)
+        measured[role] = _role_usage(role, [call], [
+            r for r in results if isinstance(r, dict)])
+        if measured["calls"] is not None:
+            measured["calls"].append({
+                "role": role, "index": 0, "started_at": _stamp(started),
+                "ended_at": _stamp(ended), "duration_ms": call["duration_ms"],
+                "outcome": outcome if _OUTCOME.fullmatch(str(outcome))
+                else "error"})
+            if (len(measured["calls"]) > USAGE_MAX_CALLS
+                    or len(json.dumps({"usage": {"measured": measured}},
+                                      indent=2).encode("utf-8")) > USAGE_MAX_BYTES):
+                measured["calls"] = None
+                measured["reasons"]["calls"] = (
+                    f"more than {USAGE_MAX_CALLS} calls, or too large to list: "
+                    "only the role totals are kept")
+
     def _run_level(self) -> dict:
         """The half of `usage` every summary of the run shares."""
         reasons = {
@@ -3741,8 +3776,8 @@ class _RunTelemetry:
             # The snapshots themselves are in the trial summaries, once each.
             meter = {"snapshot_count": len(self.snapshots),
                      "unreadable_events": self.unreadable,
-                     "not_sampled": {"judge": _ROLE_GAPS["judge"],
-                                     "guard": _ROLE_GAPS["guard"],
+                     "not_sampled": {"judge": _NOT_METERED,
+                                     "guard": _NOT_METERED,
                                      "run_end": _NO_RUN_END}}
             delta = _meter_delta(self.snapshots, {
                 "calls_before_first_snapshot": self.snapshot_calls[0],
@@ -3914,7 +3949,8 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     summary["usage"] = _TELEMETRY.usage(usage_trials)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
-    _TELEMETRY.written.append(arm_dir / "summary.json")
+    if arm_dir / "summary.json" not in _TELEMETRY.written:
+        _TELEMETRY.written.append(arm_dir / "summary.json")
     if raw is not None:
         transcripts_dir = arm_dir / "transcripts"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -3949,13 +3985,7 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         checks = s.get("objective_checks")
         objective_str = f"{sum(1 for c in checks if c['passed'])}/{len(checks)}" if checks else "-"
 
-        jd = s.get("judge") or {}
-        if "overall" in jd:
-            judge_str = f"{jd['overall']:.1f}"
-        elif "error" in jd:
-            judge_str = "error"
-        else:
-            judge_str = "-"
+        judge_str = _judge_cell(s.get("judge"))
 
         agent = s.get("agent") or {}
         cost = agent.get("cost_usd")
@@ -4310,7 +4340,10 @@ def aggregate_trials(trials: list[dict],
         unless the fixture uses one id for several checks), how many of
         those passed, and `pass_rate`.
       * `judge` — null when no scored trial has a judge result (`--no-judge`,
-        or nothing was scored). Otherwise `n` (results with a numeric
+        or nothing was scored). When every scored trial's judge was skipped
+        (`JUDGE_SKIPPED`, #371) it is that block plus `n` 0, `errors` 0,
+        `overall` null and no dimensions: a skip is not a judge error.
+        Otherwise `n` (results with a numeric
         `overall`), `errors` (results without one: the judge call failed or
         answered something unusable), `overall` (`_stats`, or null when
         `n` is 0) and `dimensions`: `_stats` per dimension name, matched
@@ -4360,8 +4393,12 @@ def aggregate_trials(trials: list[dict],
             "checks": list(by_id.values())}
 
     judge_stats = None
-    judged = [t["judge"] for t in scored if isinstance(t.get("judge"), dict)]
-    if judged:
+    judged = [t["judge"] for t in scored
+              if isinstance(t.get("judge"), dict) and not _is_skipped(t["judge"])]
+    if not judged and any(_is_skipped(t.get("judge")) for t in scored):
+        judge_stats = {**JUDGE_SKIPPED, "n": 0, "errors": 0, "overall": None,
+                       "dimensions": []}
+    elif judged:
         usable = [j for j in judged
                   if "error" not in j and _is_number(j.get("overall"))]
         by_name: dict = {}
@@ -4519,6 +4556,8 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
             judge_stats = block["judge"]
             if not judge_stats:
                 judge_str = "-"
+            elif _is_skipped(judge_stats):
+                judge_str = SKIPPED_CELL
             elif not judge_stats["overall"]:
                 judge_str = "error"
             else:
@@ -4857,20 +4896,138 @@ def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
     return workspace, env, delivered
 
 
+# ---------------------------------------------------------------------------
+# Conditional judging (#371)
+#
+# The judge is the expensive call, and a with/without pair whose objective
+# result already decides it gains nothing from it. For a pair (`--arm both`,
+# or a guidance run of exactly one `with` and one `without` arm) no trial
+# calls the judge while trials run (`_judge_hold`); each leaves the inputs of
+# its call in the pair's `hold` list. Once every trial of both arms is scored,
+# the arms' objective pass rates are compared exactly (`_objective_decided`):
+# `with` strictly ahead records JUDGE_SKIPPED in every scored trial's summary
+# and calls nothing; a tie, a loss or an undefined rate judges every scored
+# trial of both arms. Never some trials of a pair and not others.
+# `--judge always`, a single-arm run and a fixture whose judge mode is not
+# absolute judge each trial inside the trial, as before; `--no-judge` judges
+# nothing and records null.
+# ---------------------------------------------------------------------------
+
+JUDGE_SKIPPED = {"status": "skipped", "reason": "objective-decided"}
+SKIPPED_CELL = f"skipped ({JUDGE_SKIPPED['reason']})"
+
+
+def _is_skipped(block) -> bool:
+    return isinstance(block, dict) and block.get("status") == "skipped"
+
+
+def _judge_cell(block: dict | None) -> str:
+    """The judge column of one arm's row in a single-trial report."""
+    jd = block or {}
+    if _is_skipped(jd):
+        return SKIPPED_CELL
+    if "overall" in jd:
+        return f"{jd['overall']:.1f}"
+    return "error" if "error" in jd else "-"
+
+
+def _judge_hold(args: argparse.Namespace, fixture: dict,
+                arm_names: list[str]) -> list | None:
+    """`[]` when this run's judging waits for its pair's objective result, else
+    None: the judge runs inside each trial. A fixture whose `judge.mode` is
+    anything but absolute (judged pairwise, for one) is never held."""
+    judge_cfg = fixture.get("judge")
+    mode = judge_cfg.get("mode") if isinstance(judge_cfg, dict) else None
+    mode = mode.strip().casefold() if isinstance(mode, str) else mode
+    if (args.no_judge or getattr(args, "judge", "auto") == "always"
+            or mode not in (None, "", "absolute")
+            or sorted(str(_ROLES.get(name)) for name in arm_names)
+            != ["with", "without"]):
+        return None
+    return []
+
+
+def _objective_decided(with_trials: list[dict], without_trials: list[dict]) -> bool:
+    """Whether the `with` arm's objective pass rate is strictly above the
+    `without` arm's: checks passed over checks scored, over the trials whose
+    `error` is null (so an errored trial cannot move it). Compared exactly.
+    An arm with no scored check has no rate, and nothing is decided."""
+    rates = []
+    for trials in (with_trials, without_trials):
+        checks = [check for trial in trials if not trial.get("error")
+                  for check in trial.get("objective_checks") or []]
+        rates.append(Fraction(sum(1 for c in checks if c.get("passed")),
+                              len(checks)) if checks else None)
+    return None not in rates and rates[0] > rates[1]
+
+
+def _call_judge(fixture: dict, transcript: str, diff: str, model: str | None,
+                permission_mode: str | None) -> tuple:
+    """One judge call: (the result, the models that served it, when it began,
+    the CLI results it produced, the outcome to record). A call that fails is
+    `{"error": ...}`, a result and not a crash."""
+    judge_cfg = fixture.get("judge", {})
+    # Bound before the `with`, and read AFTER the try: a judge CLI call that
+    # completed is recorded even when `score` then raises on its answer (#203
+    # round 1).
+    judge_results: list = []
+    started = _now()
+    try:
+        with judge.collecting_models() as judge_results:
+            judge_result = judge.score(
+                fixture["judge_rubric"], transcript, diff, model=model,
+                timeout=judge_cfg.get("timeout_s", 120),
+                weights=judge_cfg.get("weights"),
+                permission_mode=permission_mode)
+    except guidance.GuidanceError:
+        # S1-a-2. A sink's own timeout refusal is a CONFIGURATION error, not a
+        # judge result: recorded as `{"error": ...}` it would score the arm
+        # and exit 0/1 with the rule never named. Re-raised so main()'s rc-2
+        # contract holds.
+        raise
+    except Exception as exc:  # noqa: BLE001 — record, never crash the run
+        judge_result = {"error": str(exc)}
+    return (judge_result, models_used(*judge_results), started, judge_results,
+            "error" if "error" in (judge_result or ()) else "ok")
+
+
+def _settle_judging(hold: list, decided: bool) -> None:
+    """Finish the trials whose judge call waited for their pair: each held
+    summary gets JUDGE_SKIPPED when the pair is `decided`, else the call is
+    made now and its usage added to that summary (`_RunTelemetry.amend`). The
+    in-memory result the report is rendered from is updated alongside."""
+    for entry in hold:
+        summary = json.loads(entry["path"].read_text(encoding="utf-8"))
+        if decided:
+            block, models = dict(JUDGE_SKIPPED), []
+        else:
+            block, models, started, results, outcome = entry["call"]()
+            _TELEMETRY.amend(summary, "judge", started, results, outcome)
+        summary["judge"], summary["judge_models_used"] = block, models
+        entry["path"].write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        entry["result"]["judge"] = block
+
+
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str,
             selection: tuple | None = None, *,
             out_dir: Path | None = None, extra: dict | None = None,
-            plan: dict | None = None) -> dict:
+            plan: dict | None = None, hold: list | None = None) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up.
+
+    `hold` (#371) is None when the judge runs inside the trial. A list defers
+    the judge call: the summary is written with `judge: null` and the list
+    gets one entry (the summary's path, the call as a function of the inputs
+    captured while the workspace still exists, and this result) for
+    `_settle_judging`, which fills it in once the pair is scored.
 
     `plan` (`_in_place_plan`) makes this an in-place arm (ADR 0012): the
     workspace sits in a scratch beside its own HOME and profile, the frozen
     context is delivered there, and the subject is added or removed, all
     before the agent (`_prepare_in_place`).
 
-    ONE TRIAL (#66). A fresh workspace, one agent call, one judge call, one
-    summary.json. `out_dir` and `extra` are how `_run_arm_trials` points that
+    ONE TRIAL (#66). A fresh workspace, one agent call, one judge call (unless
+    skipped or deferred, #371), one summary.json. `out_dir` and `extra` are how `_run_arm_trials` points that
     summary at a trial directory and labels it (`trial`, `fixture`, `n`); a
     caller that passes neither gets the path and the fields this function
     wrote before trials existed.
@@ -4885,7 +5042,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     if plan is not None and "_pair_parent" not in plan:
         with _in_place_pair(plan):
             return _run_arm(arm_name, fixture, seed, registries, args, timestamp,
-                            selection, out_dir=out_dir, extra=extra, plan=plan)
+                            selection, out_dir=out_dir, extra=extra, plan=plan,
+                            hold=hold)
     _TELEMETRY.begin_trial()
     agent_model, roster_judge_model, selection_error = (
         selection if selection is not None else select_models(fixture, args))
@@ -5052,7 +5210,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         error = None
         agent_summary = None
         objective_checks = None
-        judge_result = None
+        judge_result = judge_call = None
         raw = result.get("raw")
         tool_trace = result.get("tool_trace")
         # Only a run that produced a result can say what served it; an
@@ -5116,33 +5274,16 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                         "judge": None, "models_used": agent_models, **extra}
 
             if not args.no_judge:
-                diff = _build_judge_diff(workspace)
-                judge_cfg = fixture.get("judge", {})
-                # Bound before the `with`, and read AFTER the try: a judge
-                # CLI call that completed is recorded even when `score`
-                # then raises on its answer (#203 round 1).
-                judge_results: list = []
-                judge_started = _now()
-                try:
-                    with judge.collecting_models() as judge_results:
-                        judge_result = judge.score(
-                            fixture["judge_rubric"], result.get("transcript") or "",
-                            diff, model=roster_judge_model,
-                            timeout=judge_cfg.get("timeout_s", 120),
-                            weights=judge_cfg.get("weights"),
-                            permission_mode=permission_mode,
-                        )
-                except guidance.GuidanceError:
-                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
-                    # error, not a judge result: recorded as `{"error": ...}`
-                    # it would score the arm and exit 0/1 with the rule never
-                    # named. Re-raised so main()'s rc-2 contract holds.
-                    raise
-                except Exception as exc:  # noqa: BLE001 — record, never crash the run
-                    judge_result = {"error": str(exc)}
-                judge_models = models_used(*judge_results)
-                _TELEMETRY.timed("judge", judge_started, judge_results,
-                                 "error" if "error" in (judge_result or ()) else "ok")
+                judge_call = functools.partial(
+                    _call_judge, fixture, result.get("transcript") or "",
+                    _build_judge_diff(workspace), roster_judge_model,
+                    permission_mode)
+                if hold is None:
+                    (judge_result, judge_models, judge_started, judge_results,
+                     outcome) = judge_call()
+                    _TELEMETRY.timed("judge", judge_started, judge_results,
+                                     outcome)
+                    judge_call = None
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, objective_checks, judge_result, raw,
@@ -5152,9 +5293,14 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        arm_dir=out_dir, tool_trace=tool_trace, effort=effort,
                        agent_usage=agent_usage, agent_model=agent_model)
 
-        return {"arm": arm_name, "error": error, "agent": agent_summary,
+        done = {"arm": arm_name, "error": error, "agent": agent_summary,
                 "objective_checks": objective_checks, "judge": judge_result,
                 "models_used": agent_models, **extra}
+        if judge_call is not None:
+            hold.append({"path": (out_dir or args.results_dir / fixture["skill"]
+                                  / timestamp / arm_name) / "summary.json",
+                         "call": judge_call, "result": done})
+        return done
     except workspace_git.WorkspaceGitError as exc:
         error = {"type": exc.name, "detail": str(exc)}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
@@ -5192,13 +5338,49 @@ def _union(summaries: list[dict], key: str) -> list[str]:
     return sorted(found)[:MODELS_USED_MAX]
 
 
+def _aggregate_arm(arm_name: str, item: dict, args: argparse.Namespace,
+                   timestamp: str) -> tuple[list[dict], dict]:
+    """(the trial summaries, `aggregate_trials` over them) for one arm, read
+    back from disk. Above one trial it also writes the arm's aggregate
+    summary, so it can run again once a deferred judge has settled (#371)."""
+    fixture = item["fixture"]
+    plan = item.get("in_place")
+    arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
+                        item["name"]) / arm_name
+    label = {"fixture": item["name"]} if item["name"] else {}
+    if args.trials == 1:
+        written = [_read_summary(arm_dir)]
+        return written, aggregate_trials(written, [_trial_tool_errors(arm_dir)])
+    trial_dirs = [arm_dir / f"{TRIAL_DIR_PREFIX}{index}"
+                  for index in range(1, args.trials + 1)]
+    written = [_read_summary(trial_dir) for trial_dir in trial_dirs]
+    stats = aggregate_trials(written, [_trial_tool_errors(d) for d in trial_dirs])
+    _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                   _trials_error(stats), None, None,
+                   dict(JUDGE_SKIPPED) if _is_skipped(stats["aggregate"]["judge"])
+                   else None, None,
+                   extra={**label, **stats, **(
+                       _in_place_record(plan, _ROLES[arm_name]) if plan else {})},
+                   harness_version=getattr(args, "harness_version", None),
+                   permission_mode=_permission_mode(args),
+                   models=_union(written, "models_used"),
+                   judge_models=_union(written, "judge_models_used"),
+                   arm_dir=arm_dir, effort=_effort(args, fixture),
+                   agent_usage=sum_model_usage(written),
+                   agent_model=_arm_model(written), usage_trials=written)
+    return written, stats
+
+
 def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                     args: argparse.Namespace, timestamp: str,
-                    selection: tuple | None) -> dict:
+                    selection: tuple | None, *,
+                    hold: list | None = None) -> dict:
     """Run `args.trials` trials of one arm of one fixture, and aggregate.
 
     `item` is one prepared fixture: `{"fixture", "seed", "name"}`, `name`
-    being the nested fixture's name or None for a flat one.
+    being the nested fixture's name or None for a flat one. `hold` is
+    `_run_arm`'s: a list defers every trial's judge call to
+    `_settle_judging`, after which `_settle_skill_pair` aggregates again.
 
     Returns `{"arm", "models_used", "stats", "results"}`: `stats` is
     `aggregate_trials` over the trial summaries AS WRITTEN (read back from
@@ -5210,41 +5392,38 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
     plan = item.get("in_place")
     if plan is not None and "_pair_parent" not in plan:
         with _in_place_pair(plan):
-            return _run_arm_trials(arm_name, item, registries, args, timestamp, selection)
+            return _run_arm_trials(arm_name, item, registries, args, timestamp,
+                                   selection, hold=hold)
     arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
                         item["name"]) / arm_name
     label = {"fixture": item["name"]} if item["name"] else {}
-    results, written = [], []
     if args.trials == 1:
-        results.append(_run_arm(arm_name, fixture, item["seed"], registries,
-                                args, timestamp, selection, out_dir=arm_dir,
-                                extra={**label, "n": 1}, plan=plan))
-        written.append(_read_summary(arm_dir))
-        stats = aggregate_trials(written, [_trial_tool_errors(arm_dir)])
+        results = [_run_arm(arm_name, fixture, item["seed"], registries,
+                            args, timestamp, selection, out_dir=arm_dir,
+                            extra={**label, "n": 1}, plan=plan, hold=hold)]
     else:
-        tool_errors = []
-        for index in range(1, args.trials + 1):
-            trial_dir = arm_dir / f"{TRIAL_DIR_PREFIX}{index}"
-            results.append(_run_arm(arm_name, fixture, item["seed"], registries,
-                                    args, timestamp, selection,
-                                    out_dir=trial_dir,
-                                    extra={**label, "trial": index}, plan=plan))
-            written.append(_read_summary(trial_dir))
-            tool_errors.append(_trial_tool_errors(trial_dir))
-        stats = aggregate_trials(written, tool_errors)
-        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       _trials_error(stats), None, None, None, None,
-                       extra={**label, **stats, **(
-                           _in_place_record(plan, _ROLES[arm_name]) if plan else {})},
-                       harness_version=getattr(args, "harness_version", None),
-                       permission_mode=_permission_mode(args),
-                       models=_union(written, "models_used"),
-                       judge_models=_union(written, "judge_models_used"),
-                       arm_dir=arm_dir, effort=_effort(args, fixture),
-                       agent_usage=sum_model_usage(written),
-                       agent_model=_arm_model(written), usage_trials=written)
+        results = [_run_arm(arm_name, fixture, item["seed"], registries,
+                            args, timestamp, selection,
+                            out_dir=arm_dir / f"{TRIAL_DIR_PREFIX}{index}",
+                            extra={**label, "trial": index}, plan=plan,
+                            hold=hold)
+                   for index in range(1, args.trials + 1)]
+    written, stats = _aggregate_arm(arm_name, item, args, timestamp)
     return {"arm": arm_name, "models_used": _union(written, "models_used"),
             "stats": stats, "results": results}
+
+
+def _settle_skill_pair(hold: list, arms: list[dict], item: dict,
+                       args: argparse.Namespace, timestamp: str) -> None:
+    """`_settle_judging` for one fixture's `with_skill` and `without_skill`
+    arms, then each arm aggregated again so its `stats` and its aggregate
+    summary carry the judged or skipped trials."""
+    if not hold:
+        return
+    _settle_judging(hold, _objective_decided(arms[0]["results"],
+                                             arms[1]["results"]))
+    for arm in arms:
+        arm["stats"] = _aggregate_arm(arm["arm"], item, args, timestamp)[1]
 
 
 def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
@@ -5542,7 +5721,10 @@ def _guard_error(guard: dict) -> dict:
 
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
-    """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
+    """Materialize a scratch dir, deliver, guard, invoke, score, clean up.
+
+    `ctx["judge_hold"]`, a list, defers the judge call as `_run_arm`'s `hold`
+    does (#371); None or absent judges inside the trial."""
     plan = ctx.get("plan")
     if plan is not None and "_pair_parent" not in plan:
         with _in_place_pair(plan):
@@ -5676,17 +5858,18 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # tool-free probe — is what this line consults instead.
             preflight_model = args.model or fixture.get("model")
             guard_started = _now()
-            guard = guidance.run_guard(
-                workspace=workspace, token=arm_token,
-                expected=guidance.guard_expectation(arm["mode"]), env=env,
-                # The other side, for EVERY arm: it must not report a token it
-                # was not delivered.
-                forbidden_tokens=forbidden,
-                setting_sources=setting_sources, model=preflight_model,
-                timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
+            with run_canary.collecting_results() as guard_results:
+                guard = guidance.run_guard(
+                    workspace=workspace, token=arm_token,
+                    expected=guidance.guard_expectation(arm["mode"]), env=env,
+                    # The other side, for EVERY arm: it must not report a token
+                    # it was not delivered.
+                    forbidden_tokens=forbidden,
+                    setting_sources=setting_sources, model=preflight_model,
+                    timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
             extra["guard"] = guard
-            _TELEMETRY.timed("guard", guard_started, outcome=(
+            _TELEMETRY.timed("guard", guard_started, guard_results, outcome=(
                 guard.get("error") or {}).get("type") or "ok")
 
             if not guard["ok"]:
@@ -5734,7 +5917,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         error = None
         agent_summary = None
         objective_checks = None
-        judge_result = None
+        judge_result = judge_call = None
         raw = result.get("raw")
         tool_trace = result.get("tool_trace")
         agent_models = [] if "error" in result else models_used(raw)
@@ -5778,29 +5961,15 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                     excludes.append(":!CLAUDE.md")
                 diff = _git("diff", "--cached", "--", ".", *excludes,
                             cwd=workspace).stdout
-                judge_cfg = fixture.get("judge", {})
-                # Read after the try, as in the skill path (#203 round 1).
-                judge_results: list = []
-                judge_started = _now()
-                try:
-                    with judge.collecting_models() as judge_results:
-                        judge_result = judge.score(
-                            fixture["judge_rubric"], result.get("transcript") or "",
-                            diff, model=judge_cfg.get("model"),
-                            timeout=judge_cfg.get("timeout_s", 120),
-                            weights=judge_cfg.get("weights"),
-                            permission_mode=permission_mode)
-                except guidance.GuidanceError:
-                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
-                    # error, not a judge result: recorded as `{"error": ...}`
-                    # it would score the arm and exit 0/1 with the rule never
-                    # named. Re-raised so main()'s rc-2 contract holds.
-                    raise
-                except Exception as exc:  # noqa: BLE001 — record, never crash the run
-                    judge_result = {"error": str(exc)}
-                judge_models = models_used(*judge_results)
-                _TELEMETRY.timed("judge", judge_started, judge_results,
-                                 "error" if "error" in (judge_result or ()) else "ok")
+                judge_call = functools.partial(
+                    _call_judge, fixture, result.get("transcript") or "", diff,
+                    (fixture.get("judge") or {}).get("model"), permission_mode)
+                if ctx.get("judge_hold") is None:
+                    (judge_result, judge_models, judge_started, judge_results,
+                     outcome) = judge_call()
+                    _TELEMETRY.timed("judge", judge_started, judge_results,
+                                     outcome)
+                    judge_call = None
 
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
                        agent_summary, objective_checks, judge_result, raw,
@@ -5810,13 +5979,18 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                        judge_models=judge_models, tool_trace=tool_trace,
                        effort=effort, agent_usage=agent_usage,
                        agent_model=agent_model)
-        return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+        done = {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,
                 "models_used": agent_models,
                 **({"pairing": "in_place"} if plan is not None else {}),
                 **({"guidance_violations": extra["guidance_violations"]}
                    if "guidance_violations" in extra else {})}
+        if judge_call is not None:
+            ctx["judge_hold"].append({
+                "path": args.results_dir / ctx["key"] / timestamp / arm["name"]
+                / "summary.json", "call": judge_call, "result": done})
+        return done
     except workspace_git.WorkspaceGitError as exc:
         error = {"type": exc.name, "detail": str(exc)}
         _write_summary(args.results_dir, None, arm["name"], timestamp,
@@ -5880,13 +6054,7 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         checks = s.get("objective_checks")
         objective_str = (f"{sum(1 for c in checks if c['passed'])}/{len(checks)}"
                          if checks else "-")
-        jd = s.get("judge") or {}
-        if "overall" in jd:
-            judge_str = f"{jd['overall']:.1f}"
-        elif "error" in jd:
-            judge_str = "error"
-        else:
-            judge_str = "-"
+        judge_str = _judge_cell(s.get("judge"))
         agent = s.get("agent") or {}
         cost = agent.get("cost_usd")
         cost_str = f"{cost:.4f}" if isinstance(cost, (int, float)) else "-"
@@ -6016,6 +6184,7 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
 
     ctx = {"guidance_dir": guidance_dir, "row": row, "section": section,
            "key": key, "delivery": args.delivery, "plan": plan,
+           "judge_hold": _judge_hold(args, fixture, [a["name"] for a in arms]),
            # One fresh token per RUN, shared by every arm: the control arm
            # looks for the SAME token the treatment arm was given, which is
            # what turns "the control saw it" into proof of contamination.
@@ -6038,6 +6207,10 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         with _in_place_pair(plan):
             arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
                              for arm in arms]
+            if ctx["judge_hold"]:
+                by_role = {_ROLES[s["arm"]]: [s] for s in arm_summaries}
+                _settle_judging(ctx["judge_hold"], _objective_decided(
+                    by_role["with"], by_role["without"]))
     except guidance.GuidanceError as exc:
         # A checkout missing the hook, a heading that has drifted from its
         # manifest row, a payload that cannot be read: all configuration, all
@@ -6392,7 +6565,14 @@ def main() -> int:
                              "either, no `--effort` is passed (the CLI's "
                              "default). Recorded in every summary.json's "
                              "`harness` block; the judge does not take it")
-    parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
+    parser.add_argument("--no-judge", action="store_true",
+                        help="skip judge scoring (wins over --judge)")
+    parser.add_argument("--judge", default="auto", choices=("auto", "always"),
+                        help="auto (default): a with/without pair is judged "
+                             "only when the objective result does not already "
+                             "decide it (the `with` arm's pass rate strictly "
+                             "above the `without` arm's skips the judge for "
+                             "the pair); always: judge every trial")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds); "
                              f"1..{guidance.MAX_TIMEOUT_S}, the same ceiling "
@@ -6419,7 +6599,8 @@ def main() -> int:
                              "(local review only; no workflow passes it)")
     parser.add_argument("--trials", type=int, default=1,
                         help="trials per arm, each a fresh workspace, a fresh "
-                             "agent call and its own judge call "
+                             "agent call and (unless --judge auto skips the "
+                             "pair) its own judge call "
                              f"(default 1; 1..{MAX_TRIALS}). Above 1, each "
                              "trial is written under <arm>/trial-<k>/ and "
                              "<arm>/summary.json carries the aggregate")
@@ -6485,7 +6666,8 @@ def main() -> int:
     if not 1 <= args.trials <= MAX_TRIALS:
         print(f"configuration error: --trials must be between 1 and "
               f"{MAX_TRIALS}, got {args.trials}. Every trial is a paid agent "
-              "call and a paid judge call per arm")
+              "call per arm, and a paid judge call too unless the judge is "
+              "skipped")
         return 2
     if args.trials > 1 and args.arm == "objective-only":
         print("configuration error: --trials applies to the agent arms. "
@@ -6875,11 +7057,14 @@ def main() -> int:
             # Resolved once per fixture: one trusted-roster read, one model
             # choice, every arm and every trial of that fixture.
             selection = select_models(item["fixture"], args)
+            hold = _judge_hold(args, item["fixture"], arm_names)
             with _in_place_pair(item.get("in_place")):
-                outcomes.append((item, [
-                    _run_arm_trials(name, item, registries, args, timestamp,
-                                    selection)
-                    for name in arm_names]))
+                arms = [_run_arm_trials(name, item, registries, args, timestamp,
+                                        selection, hold=hold)
+                        for name in arm_names]
+                if hold is not None:
+                    _settle_skill_pair(hold, arms, item, args, timestamp)
+                outcomes.append((item, arms))
     except guidance.GuidanceError as exc:
         # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,
         # _nested_repo_diff, judge.score, the objective git checks — checks

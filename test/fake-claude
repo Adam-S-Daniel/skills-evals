@@ -55,6 +55,10 @@ can report a moving account meter (#370); with no batch left the array
 carries no event. A call without `--verbose` (the judge's) prints the single
 object and takes nothing.
 
+$FAKE_CLAUDE_FULL_USAGE, when set, gives every result `num_turns`, a
+`total_cost_usd`, `usage.cache_creation` and a complete, costed `modelUsage`
+(#371); without it the output is unchanged.
+
 `--version` is handled unconditionally (regardless of FAKE_CLAUDE_MODE) so
 that harness/run_canary.py's `claude --version` recording call succeeds even
 when a mode simulates a failure.
@@ -180,6 +184,17 @@ def emit(payload: dict) -> None:
         (_flag_value("--model") or DEFAULT_FAKE_MODEL): {
             "inputTokens": USAGE["input_tokens"],
             "outputTokens": USAGE["output_tokens"]}})
+    if os.environ.get("FAKE_CLAUDE_FULL_USAGE"):
+        # Every figure the harness records per role (#371), on every result:
+        # turns, a cost, the cache-write split and a complete `modelUsage`.
+        payload.update({"num_turns": 2, "total_cost_usd": 0.07,
+                        "usage": {**USAGE, "cache_creation": {
+                            "ephemeral_5m_input_tokens": 3,
+                            "ephemeral_1h_input_tokens": 4}}})
+        for entry in payload["modelUsage"].values():
+            entry.update({"cacheReadInputTokens": 5,
+                          "cacheCreationInputTokens": 7, "costUSD": 0.07,
+                          "costBasis": "list"})
     batch = _next_meter_batch()
     if batch is None:
         print(json.dumps(payload))
