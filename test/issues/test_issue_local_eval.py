@@ -559,13 +559,21 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(manifest["harness"]["claude_version"],
                          version.splitlines()[0].strip())
         # EVAL_DIR pins neither model (#371 item 5): the committed roster's
-        # first arm and its judge are what the run selects.
+        # first arm and the judge chosen for it, a tier above (ADR 0013),
+        # are what the run selects.
         roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+        arm_ids = [arm["id"] for arm in roster["arms"]]
+        sys.path.insert(0, str(REPO_ROOT / "harness"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "harness"))
+        import judge_policy
+        chosen, problem = judge_policy.judge_for_arm(
+            arm_ids[0], arm_ids, roster["judge"]["id"],
+            judge_policy.read_rungs()[0])
+        self.assertIsNone(problem)
         self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
                          {"model": None, "judge_model": None})
         self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
-                         {"agent": roster["arms"][0]["id"],
-                          "judge": roster["judge"]["id"]})
+                         {"agent": arm_ids[0], "judge": chosen["model"]})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",

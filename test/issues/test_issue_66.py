@@ -210,10 +210,12 @@ def _stable_bytes(path: Path) -> bytes:
     whatever the harness does: a summary's `run` and `usage` blocks (#370:
     the harness commit, wall-clock times) and the report's two lines made
     from them. Both blocks are a summary's last two keys, so the rest
-    re-serializes to the bytes the harness wrote before them."""
+    re-serializes to the bytes the harness wrote before them. Also without
+    `judge_selection` (#371), the key before those two, which names the judge
+    chosen and is tested in test_issue_371_judge_tier.py."""
     if path.name == "summary.json":
         summary = json.loads(path.read_text(encoding="utf-8"))
-        for block in ("run", "usage"):
+        for block in ("run", "usage", "judge_selection"):
             summary.pop(block)
         return json.dumps(summary, indent=2).encode("utf-8")
     if path.name == "report.md":

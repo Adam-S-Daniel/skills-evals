@@ -71,6 +71,7 @@ from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  #
 import context  # noqa: E402
 import delivery  # noqa: E402
 import guidance_violations  # noqa: E402
+import judge_policy  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
@@ -738,6 +739,103 @@ def roster_models(roster: dict | None) -> tuple[list[str], str | None, bool, int
            flagged or (judge_id is not None and judge_id in arm_ids), skipped)
 
 
+def _judge_is_pairwise(fixture: dict) -> bool:
+    """Whether the fixture's `judge.mode` is anything but absolute, casefolded
+    as `judge.score()` and main()'s `judge_mode_unsupported` check fold it."""
+    judge_cfg = fixture.get("judge")
+    mode = judge_cfg.get("mode") if isinstance(judge_cfg, dict) else None
+    mode = mode.strip().casefold() if isinstance(mode, str) else mode
+    return mode not in (None, "", "absolute")
+
+
+def select_judged_models(fixture: dict, args: argparse.Namespace) -> tuple:
+    """(agent model, judge model, error, `judge_selection`) for this run.
+
+    The first three are `select_models()`'s answer. `judge_selection` is the
+    block every summary of the run records (#371, ADR 0013): the judge chosen,
+    the rule that chose it and both tiers; None when no judge is selected
+    (`--no-judge`, or an error).
+
+    THE JUDGE IS CHOSEN FOR THE ARM, in this order:
+
+    1. `fixture-pin`: the fixture's `judge.model:` wins, unchecked, as before.
+    2. `roster-judge`, for a fixture whose `judge.mode` is not absolute
+       (pairwise): the roster's `judge`, whatever the arm, and refused when
+       the roster says that judge is also an arm.
+    3. `tier-above-arm`: the newest roster arm in the lowest tier above the
+       arm model's. With no roster arm above it, `roster-judge`: the roster's
+       `judge`, which must sit in a tier above the arm's
+       (`judge_policy.judge_for_arm`).
+
+    A run is one arm model on both of its arms, so it still has one judge.
+    Rule 3 needs the tier ladder; a pin and a pairwise fixture record their
+    tiers when it can be read and null when it cannot.
+    """
+    pinned_agent = args.model or fixture.get("model")
+    judge_cfg = fixture.get("judge")
+    pinned_judge = judge_cfg.get("model") if isinstance(judge_cfg, dict) else None
+    no_judge = getattr(args, "no_judge", False)
+    needs_agent = not pinned_agent
+    needs_judge = not pinned_judge and not no_judge
+    if not needs_agent and not needs_judge:
+        if no_judge:
+            return pinned_agent, pinned_judge, None, None
+        return pinned_agent, pinned_judge, None, judge_policy.selection(
+            pinned_judge, judge_policy.RULE_FIXTURE_PIN, pinned_agent,
+            judge_policy.read_rungs()[0])
+
+    def refuse(error: str) -> tuple:
+        return None, None, error, None
+
+    path = _resolve_roster(getattr(args, "roster", None))
+    roster, problem = read_roster(path)
+    if problem:
+        missing = [w for need, w in ((needs_agent, "model"),
+                                     (needs_judge, "judge model")) if need]
+        return refuse(f"{problem}, and this fixture pins no {' or '.join(missing)}")
+    arm_ids, judge_id, judge_is_arm, skipped = roster_models(roster)
+    raw_arms = roster.get("arms") if isinstance(roster, dict) else None
+    if isinstance(raw_arms, list) and raw_arms and not arm_ids:
+        # Non-empty `arms` that parses to zero usable ids is a broken
+        # roster, not "no arms configured" — and it is unsafe to trust for
+        # ANYTHING this roster names (including the judge), regardless of
+        # whether this particular run even needed an arm from it.
+        return refuse(f"the model roster at {path.name} lists "
+                      f"{len(raw_arms)} arm entry/entries but none has "
+                      f"a usable string `id` (skipped {skipped}); this "
+                      f"roster cannot be trusted for a model pick")
+    if needs_agent and not arm_ids:
+        return refuse(f"the model roster at {path.name} names no usable "
+                      f"arm, and this fixture pins no model")
+    agent = pinned_agent or arm_ids[0]
+    if no_judge:
+        return agent, pinned_judge, None, None
+    rungs, ladder_problem = judge_policy.read_rungs()
+    if pinned_judge:
+        return agent, pinned_judge, None, judge_policy.selection(
+            pinned_judge, judge_policy.RULE_FIXTURE_PIN, agent, rungs)
+    if _judge_is_pairwise(fixture):
+        if not judge_id:
+            return refuse(f"the model roster at {path.name} names no usable "
+                          f"judge, and this fixture pins no judge model")
+        if judge_is_arm:
+            return refuse(f"the model roster at {path.name} names a judge "
+                          f"that is also an arm; a model must not grade its "
+                          f"own run. Pin `judge.model:` in the fixture to "
+                          f"override")
+        return agent, judge_id, None, judge_policy.selection(
+            judge_id, judge_policy.RULE_ROSTER_JUDGE, agent, rungs)
+    if ladder_problem:
+        return refuse(f"{ladder_problem}, so no judge can be chosen for the "
+                      f"arm, and this fixture pins no judge model")
+    chosen, why = judge_policy.judge_for_arm(agent, arm_ids, judge_id, rungs)
+    if chosen is None:
+        return refuse(f"the model roster at {path.name} gives this arm no "
+                      f"judge: {why}. Pin `judge.model:` in the fixture to "
+                      f"override")
+    return agent, chosen["model"], None, chosen
+
+
 def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
     """(agent model, judge model, error) for this run.
 
@@ -759,43 +857,11 @@ def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
     floor effect is as signal-free as a ceiling effect, and the matrix runner
     that will run every arm is where the per-fixture calibration belongs. A
     fixture that needs a specific one keeps its pin.
-    """
-    pinned_agent = args.model or fixture.get("model")
-    pinned_judge = (fixture.get("judge") or {}).get("model")
-    needs_agent = not pinned_agent
-    needs_judge = not pinned_judge and not getattr(args, "no_judge", False)
-    if not needs_agent and not needs_judge:
-        return pinned_agent, pinned_judge, None
 
-    path = _resolve_roster(getattr(args, "roster", None))
-    roster, problem = read_roster(path)
-    if problem:
-        missing = [w for need, w in ((needs_agent, "model"),
-                                     (needs_judge, "judge model")) if need]
-        return None, None, f"{problem}, and this fixture pins no {' or '.join(missing)}"
-    arm_ids, judge_id, judge_is_arm, skipped = roster_models(roster)
-    raw_arms = roster.get("arms") if isinstance(roster, dict) else None
-    if isinstance(raw_arms, list) and raw_arms and not arm_ids:
-        # Non-empty `arms` that parses to zero usable ids is a broken
-        # roster, not "no arms configured" — and it is unsafe to trust for
-        # ANYTHING this roster names (including the judge), regardless of
-        # whether this particular run even needed an arm from it.
-        return None, None, (f"the model roster at {path.name} lists "
-                            f"{len(raw_arms)} arm entry/entries but none has "
-                            f"a usable string `id` (skipped {skipped}); this "
-                            f"roster cannot be trusted for a model pick")
-    if needs_agent and not arm_ids:
-        return None, None, (f"the model roster at {path.name} names no usable "
-                            f"arm, and this fixture pins no model")
-    if needs_judge and not judge_id:
-        return None, None, (f"the model roster at {path.name} names no usable "
-                            f"judge, and this fixture pins no judge model")
-    if needs_judge and judge_is_arm:
-        return None, None, (f"the model roster at {path.name} names a judge "
-                            f"that is also an arm; a model must not grade its "
-                            f"own run. Pin `judge.model:` in the fixture to "
-                            f"override")
-    return (pinned_agent or arm_ids[0]), (pinned_judge or judge_id), None
+    The judge is chosen for that arm model (`select_judged_models`, which
+    also returns why): a tier above it, never the same model.
+    """
+    return select_judged_models(fixture, args)[:3]
 
 
 _VAR_RE = re.compile(r"\$(\w+)|\$\{([^}]*)\}")
@@ -4936,11 +5002,8 @@ def _judge_hold(args: argparse.Namespace, fixture: dict,
     """`[]` when this run's judging waits for its pair's objective result, else
     None: the judge runs inside each trial. A fixture whose `judge.mode` is
     anything but absolute (judged pairwise, for one) is never held."""
-    judge_cfg = fixture.get("judge")
-    mode = judge_cfg.get("mode") if isinstance(judge_cfg, dict) else None
-    mode = mode.strip().casefold() if isinstance(mode, str) else mode
     if (args.no_judge or getattr(args, "judge", "auto") == "always"
-            or mode not in (None, "", "absolute")
+            or _judge_is_pairwise(fixture)
             or sorted(str(_ROLES.get(name)) for name in arm_names)
             != ["with", "without"]):
         return None
@@ -5032,7 +5095,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     caller that passes neither gets the path and the fields this function
     wrote before trials existed.
 
-    `selection` is `select_models()`'s answer, resolved ONCE by main() and
+    `selection` is `select_judged_models()`'s answer, resolved ONCE by main() and
     passed in: the roster is one file describing one run, and re-reading it per
     arm let two arms of the same run disagree if it changed underneath them.
     A selection error is checked and recorded FIRST, before any workspace is
@@ -5045,14 +5108,20 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                             selection, out_dir=out_dir, extra=extra, plan=plan,
                             hold=hold)
     _TELEMETRY.begin_trial()
-    agent_model, roster_judge_model, selection_error = (
-        selection if selection is not None else select_models(fixture, args))
+    # A caller's own three-value selection (`select_models()`'s shape)
+    # records no `judge_selection`.
+    agent_model, judge_model, selection_error, judge_selection = (
+        (*selection, None)[:4] if selection is not None
+        else select_judged_models(fixture, args))
     # Read once per run by main() (#202); a caller that built its own
     # Namespace without it records null rather than probing the CLI here.
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
     effort = _effort(args, fixture)
     extra = dict(extra or {})
+    # Which model judges this arm and why (#371): on every summary of the
+    # trial, a skipped or errored one included.
+    extra["judge_selection"] = judge_selection
     if plan is not None:
         extra.update(_in_place_record(plan, _ROLES[arm_name]))
     if fixture.get("_real_work"):
@@ -5276,7 +5345,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             if not args.no_judge:
                 judge_call = functools.partial(
                     _call_judge, fixture, result.get("transcript") or "",
-                    _build_judge_diff(workspace), roster_judge_model,
+                    _build_judge_diff(workspace), judge_model,
                     permission_mode)
                 if hold is None:
                     (judge_result, judge_models, judge_started, judge_results,
@@ -5359,8 +5428,10 @@ def _aggregate_arm(arm_name: str, item: dict, args: argparse.Namespace,
                    _trials_error(stats), None, None,
                    dict(JUDGE_SKIPPED) if _is_skipped(stats["aggregate"]["judge"])
                    else None, None,
-                   extra={**label, **stats, **(
-                       _in_place_record(plan, _ROLES[arm_name]) if plan else {})},
+                   extra={**label, **stats,
+                          "judge_selection": written[0].get("judge_selection"),
+                          **(_in_place_record(plan, _ROLES[arm_name])
+                             if plan else {})},
                    harness_version=getattr(args, "harness_version", None),
                    permission_mode=_permission_mode(args),
                    models=_union(written, "models_used"),
@@ -7056,7 +7127,7 @@ def main() -> int:
         for item in prepared:
             # Resolved once per fixture: one trusted-roster read, one model
             # choice, every arm and every trial of that fixture.
-            selection = select_models(item["fixture"], args)
+            selection = select_judged_models(item["fixture"], args)
             hold = _judge_hold(args, item["fixture"], arm_names)
             with _in_place_pair(item.get("in_place")):
                 arms = [_run_arm_trials(name, item, registries, args, timestamp,

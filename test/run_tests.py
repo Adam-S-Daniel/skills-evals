@@ -5851,6 +5851,19 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+
+def _judge_for_first_arm(document: dict) -> str:
+    """The judge an unpinned fixture gets on this roster: the one chosen for
+    its first arm, a tier above it (#371, ADR 0013). The rule itself is
+    tested in test/issues/test_issue_371_judge_tier.py."""
+    arms = [arm["id"] for arm in document["arms"]]
+    chosen, problem = run_eval.judge_policy.judge_for_arm(
+        arms[0], arms, document["judge"]["id"],
+        run_eval.judge_policy.read_rungs()[0])
+    assert problem is None, problem
+    return chosen["model"]
+
+
 class TestIssue67(unittest.TestCase):
     """Model roster: availability + usage -> arms/judge/preflight (#67).
 
@@ -6307,7 +6320,7 @@ class TestIssue67(unittest.TestCase):
             seen = self._capture_models(eval_dir, self._roster_file(tmp))
         expected = self._compute()
         self.assertEqual(seen["agent"], expected["arms"][0]["id"])
-        self.assertEqual(seen["judge"], expected["judge"]["id"])
+        self.assertEqual(seen["judge"], _judge_for_first_arm(expected))
 
     def test_runner_takes_the_fixture_pin_when_it_has_one(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -28234,12 +28247,17 @@ class TestIssue67Review7(unittest.TestCase):
             fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
             args = argparse.Namespace(model=None, roster=path, no_judge=False)
             agent, judge_model, error = run_eval.select_models(fixture, args)
-        self.assertIsNone(error, error)
-        self.assertNotEqual(agent, judge_model)
+        # This catalogue is opus snapshots only, so its non-arm judge sits in
+        # the arm's own tier and the runner refuses it for that (#371, ADR
+        # 0013): never as a model grading its own run.
+        self.assertNotIn(result["judge"]["id"],
+                         [arm["id"] for arm in result["arms"]])
+        self.assertEqual((agent, judge_model), (None, None))
+        self.assertIn("is in the opus tier", error)
+        self.assertNotIn("same model", error)
         # Mutation check (manual): as above — both snapshots are seated,
         # nothing available is left un-seated except the models already
-        # taken, `judge.is_arm` is True, and select_models returns "names a
-        # judge that is also an arm".
+        # taken, `judge.is_arm` is True, and the judge is an arm.
 
     # The invariant itself, over a few catalogues: two ids the SEAT map
     # keeps distinct never collect the same census turns. Observed through
@@ -31934,7 +31952,7 @@ class TestIssue147(unittest.TestCase):
         self.assertIsNone(error)
         committed = self._committed()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertEqual(judge_model, _judge_for_first_arm(committed))
 
     def test_the_precedence_above_the_roster_is_unchanged(self):
         committed = self._committed()
@@ -33001,7 +33019,7 @@ elif 'worktree' in args and 'remove' in args:
         planted = self._plant_published_roster(published)
         agent, judge_model = self._running_set()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertEqual(judge_model, _judge_for_first_arm(committed))
         # And the plant really was where the old default looked, or the
         # row proves nothing.
         self.assertTrue(planted.is_file())

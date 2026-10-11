@@ -509,9 +509,15 @@ class _RunEvalEndToEnd(unittest.TestCase):
 
 def _roster_models():
     """The models an unpinned fixture runs on: the committed roster's first
-    arm and its judge. EVAL_DIR pins neither (#371 item 5)."""
+    arm and the judge chosen for it, a tier above (#371, ADR 0013). EVAL_DIR
+    pins neither (#371 item 5)."""
     committed = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
-    return committed["arms"][0]["id"], committed["judge"]["id"]
+    arm_ids = [arm["id"] for arm in committed["arms"]]
+    chosen, problem = run_eval.judge_policy.judge_for_arm(
+        arm_ids[0], arm_ids, committed["judge"]["id"],
+        run_eval.judge_policy.read_rungs()[0])
+    assert problem is None, problem
+    return arm_ids[0], chosen["model"]
 
 
 class TestSkillArmsRecordVersions(_RunEvalEndToEnd):

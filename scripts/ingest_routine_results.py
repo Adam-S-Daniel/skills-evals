@@ -294,7 +294,12 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "subject", "section", "mode", "bytes", "delivery", "hook_verdict",
     "installed", "decoy", "hook_returncode", "guard",
     "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
-                                      "context_subject", "arm_context") + ("run", "usage")
+                                      "context_subject", "arm_context") + ("run", "usage") + (
+    "judge_selection",)
+#: A summary's `judge_selection` (#371): which model judges the arm, and the
+#: rule that chose it. Null when the run selected no judge.
+JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
+JUDGE_SELECTION_RULES = ("tier-above-arm", "roster-judge", "fixture-pin")
 AGENT_KEYS = ("usage", "cost_usd", "num_turns", "duration_ms")
 #: `harness` keys every summary has carried since #71; `effort` came later
 #: and is optional, so an older summary still ingests.
@@ -1004,6 +1009,18 @@ def check_summary(doc, where: str, parts: dict) -> None:
                 isinstance(m, str) and MODEL_ID_RE.fullmatch(m)
                 for m in models):
             raise Rejected(f"{where}: {field} must be a short list of model ids")
+    selection = doc.get("judge_selection")
+    if selection is not None:
+        _object(selection, f"{where}: judge_selection", JUDGE_SELECTION_KEYS,
+                JUDGE_SELECTION_KEYS)
+        if not isinstance(selection["model"], str) \
+                or not MODEL_ID_RE.fullmatch(selection["model"]):
+            raise Rejected(f"{where}: judge_selection.model is not a model id")
+        if selection["rule"] not in JUDGE_SELECTION_RULES:
+            raise Rejected(f"{where}: judge_selection.rule is not a known rule")
+        for field in ("arm_tier", "judge_tier"):
+            _string(selection[field], f"{where}: judge_selection.{field}", 64,
+                    null=True)
     # A skipped judge made no call, so nothing beside it may name one.
     if judge == JUDGE_SKIPPED and (
             doc["judge_models_used"] or "usage" in doc
