@@ -997,6 +997,109 @@ is objectively decidable from the resulting files alone.
   share against it, `canonical_model` is the arm model's canonical id, and
   the share is the one the counts give. Summaries without the fields still
   ingest.
+- **Run and usage ([#370](https://github.com/Adam-S-Daniel/skills-evals/issues/370)
+  item 1):** every `summary.json`, error paths and arm aggregates included,
+  carries a `run` block and a `usage` block. A value that could not be read
+  is `null` with an entry in its block's `reasons`, never omitted and never
+  guessed; nothing reads either block to weight or filter a result.
+  `run: {schema_version, billing, runner, location, id, session_id,
+  harness_commit, cli_version, source, reasons}`. `billing`, `runner`,
+  `location` and `id` are the run's `--run-billing {api,subscription}`,
+  `--run-runner {actions,routine,workstation}`, `--run-location {cloud,local}`
+  and `--run-id` when passed, else what the environment observes
+  (`run_eval.RUN_ENV`: `GITHUB_ACTIONS=true` is the `actions` runner,
+  `GITHUB_RUN_ID` its id, `CLAUDE_CODE_REMOTE_SESSION_ID` a `cloud` location
+  and the `session_id`), else `null`; `source` records `flag`, `env:<NAME>`
+  or `null` per field. Billing is never read from the environment, and a
+  hosted session does not say a routine started it. `eval.yml` passes
+  `api` / `actions` / `cloud`, and `scripts/local_eval.py` passes
+  `subscription` / `workstation` / `local` with one run id for all its
+  trials. `harness_commit` is the harness checkout's `HEAD`, read from its
+  git metadata files with no git command.
+  `usage` has a half the whole run shares and a half that is this summary's
+  own. The shared half: `started_at` and `ended_at` (UTC), `meter`,
+  `meter_delta`, `concurrent_runs` (`null`: not knowable inside one run,
+  computed at ingest), `other_account_activity` (`unknown`, or
+  `asserted_quiet` with `asserted_quiet_by` when `--asserted-quiet <who>` was
+  passed), `outer_session: {id, usage: null, note: "not measured"}`,
+  `limit_promotion` and `price_table_version` (both `null`: the CLI names a
+  cost basis, not a price table). It is written into each summary as it
+  stood at that moment, and when the run ends every summary the run wrote is
+  rewritten with the final one, so all of a run's summaries agree; a run that
+  is killed leaves `ended_at: null` with its reason.
+  A meter snapshot is the CLI's own `rate_limit_event`: with `--verbose`
+  the agent call's message array carries one (CLI 2.1.296, measured
+  2026-10-10), so reading the account meter adds no model call. Each
+  snapshot is stored once, in the summary of the trial whose call printed
+  it, under `usage.measured.meter: {snapshots, omitted}`: the first and the
+  last event of each of that trial's agent CLI calls, each as `{at,
+  at_source, call: {role, index}, info}` with `info` the event's
+  `rate_limit_info` verbatim (whatever windows it names), `at` the timestamp
+  of the message before it (`cli_message`), else the call's start
+  (`call_start`: only an event before the call's first timestamped message
+  has none), and `call` naming the entry of the same trial's `calls`. A
+  trial keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its first six and
+  last six, and `omitted` counts the rest; an arm aggregate lists none. A
+  run's meter series is therefore the union of its trial summaries. The
+  run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
+  how many snapshots the run recorded, how many events were not kept for
+  their shape or size, and why the judge call (`--output-format json`
+  without `--verbose`), the guard call and the end of the run are not
+  sampled. The meter is read when an agent call starts and at no other
+  time: the one real call observed (two API requests) printed one event,
+  as it began. That is one observation, and a longer call may print more;
+  the first and last of each call are kept either way. So there is no
+  snapshot at run end, and the run's last snapshot is the start of its
+  last agent call. `meter_delta` is the run's first snapshot against its
+  last, per window both name, whatever a trial's own list dropped. It
+  therefore leaves out the call that printed the last snapshot and every
+  call after it (that agent call's own spend, and the judge and guard calls
+  that follow), and any call before the first snapshot;
+  `meter_delta.uncovered: {calls_before_first_snapshot,
+  calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
+  the second, and a run of one agent call has no delta at all. Each window
+  is `{from, to, delta, window_reset}`, at most 16 of them, `delta`
+  `null` when the window's reset time changed between them. It is
+  account-wide, so it is this run's cost only if nothing else used the
+  account, and it is labeled, never corrected. A run billed `api` has
+  `meter: null`, `meter_delta: null` and `measured.meter: null` with the
+  reason.
+  `usage.measured` is `{scope, started_at, ended_at, calls, meter, agent,
+  judge, guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
+  call with its role, start, end, wall-clock `duration_ms` and outcome, and
+  each role has `{calls, duration_ms, num_turns, cost_usd, cost_basis,
+  models, cache_creation, reasons}`: `models` per model id with the four
+  token counts and `cost_usd` from `modelUsage`, `cost_usd` the CLI's own
+  list-price figure, and `cache_creation` the 5-minute and 1-hour cache-write
+  split, which the CLI reports for the main loop only. `models` is whole or
+  `null`: a result with no `modelUsage`, or with an entry that could not be
+  read, leaves it `null` and never the models that happened to be readable.
+  The judge's result reaches the harness as its `modelUsage` alone, so its
+  turns and cache split are `null`; the guard returns only its verdict, so
+  its tokens and cost are `null`; a call that ended without a result says
+  so. A role with no call records zeros. An arm aggregate (`scope: arm`)
+  sums its trials role by role, a `null` in any trial making that sum
+  `null`, `models` included, and lists no calls. A trial with more than
+  `run_eval.USAGE_MAX_CALLS` (32) calls keeps the role totals and
+  `calls: null`. Calls queued by a trial that wrote no summary are dropped
+  when the next trial starts, not given to it.
+  The counts above bound how many entries a summary lists, not how large a
+  snapshot's verbatim `info` is once indented, so `usage.measured` is also
+  held to `run_eval.USAGE_MAX_BYTES` (32 KiB) as written: past it the trial
+  keeps its first and last snapshot, then none (`omitted` counts them), then
+  no call list. `meter_delta` is computed from the run's own record and is
+  unaffected. `scripts/ingest_routine_results.py` accepts both blocks
+  (together or not at all, so earlier summaries still ingest) and checks
+  every value, not only every key: times are real and in order, a `source`
+  is the flag or an environment variable the harness reads for that field
+  with the value it implies, a role's `calls` matches the calls listed, a
+  window's `delta` is its change, and a field the harness only ever writes
+  as `null` must be `null`. The one free-form value is a snapshot's `info`,
+  which is bounded. With every snapshot and call slot taken the two blocks
+  measured 26,347 bytes pretty-printed, against the ingester's 64 KiB cap on
+  a summary, which is unchanged. Over a both-arms, three-trial run (eight
+  summaries, one event per call) they measured 38,840 bytes in all, 4,192
+  to 5,076 each.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work

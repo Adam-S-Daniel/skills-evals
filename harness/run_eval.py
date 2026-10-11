@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import fnmatch
+import functools
 import hashlib
 import json
 import math
@@ -61,7 +62,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 from cli_json import (bounded_tool_trace, failed_run_detail,  # noqa: E402
-                      normalize_cli_result, secret_values, tool_events)
+                      normalize_cli_result, rate_limit_events, secret_values, tool_events)
 import guidance  # noqa: E402
 from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
@@ -968,6 +969,33 @@ class ArmReadIsolationError(ValueError):
 # and the checkout this module runs from does not move during a run.
 HARNESS_CLONE_ROOT = harness_clone_root()
 HARNESS_GIT_COMMON_DIR = harness_git_common_dir()
+
+
+def harness_commit(root: Path = HARNESS_ROOT,
+                   common: Path | None = HARNESS_GIT_COMMON_DIR) -> str | None:
+    """The commit this harness checkout is at, or None: its `HEAD`, followed
+    through one loose or packed ref. Read from the git metadata files, with
+    no git command (harness_repo's reads are a fixed inventory), so a ref
+    store this cannot read (reftable) records null rather than a guess."""
+    try:
+        dot = root / ".git"
+        gitdir = dot if dot.is_dir() else root / dot.read_text(
+            encoding="utf-8").removeprefix("gitdir:").strip()
+        head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref: refs/") and ".." not in head:
+            ref, refs = head[5:], common or gitdir
+            if (refs / ref).is_file():
+                head = (refs / ref).read_text(encoding="utf-8").strip()
+            else:
+                head = next(line.split()[0] for line in (refs / "packed-refs")
+                            .read_text(encoding="utf-8").splitlines()
+                            if line.endswith(" " + ref))
+    except (OSError, ValueError, StopIteration):
+        return None
+    return head if re.fullmatch(r"[0-9a-f]{40}", head) else None
+
+
+HARNESS_COMMIT = harness_commit()
 
 
 def _within(path: Path, root: Path) -> bool:
@@ -2556,8 +2584,16 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     secrets = secret_values(env, dict(os.environ))
     calls: list[list[dict]] = []
     trace_complete = True
+    # Each call's times and meter events (#370), for the summary's `usage`.
+    clocked: list[dict] = []
 
     def traced(answer: dict) -> dict:
+        for call in clocked:
+            call.setdefault("ended", _now())
+            call["outcome"] = "ok"
+        if clocked:
+            clocked[-1]["outcome"] = answer.get("error", "ok")
+            _TELEMETRY.record("agent", clocked, [answer.get("raw")])
         if calls:
             answer["tool_trace"] = bounded_tool_trace(calls, complete=trace_complete)
         return answer
@@ -2580,9 +2616,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                              "session_id to resume"})
                 turn_cmd = [*cmd[:2], text, *cmd[3:], "--resume", session_id]
             calls.append([])
+            clocked.append({"started": _now()})
             try:
                 result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
                                         text=True, timeout=timeout, env=env)
+                clocked[-1]["ended"] = _now()
             except OSError as exc:
                 # E2BIG and the like: the CLI never started.
                 trace_complete = False
@@ -2606,6 +2644,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                 try:
                     decoded = json.loads(result.stdout)
                     calls[-1] = tool_events(decoded, secrets)
+                    clocked[-1]["events"] = rate_limit_events(decoded)
                     normalize_cli_result(decoded)
                     trace_complete = trace_complete and isinstance(decoded, list)
                 except ValueError:
@@ -2626,6 +2665,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             try:
                 decoded = json.loads(result.stdout)
                 calls[-1] = tool_events(decoded, secrets)
+                clocked[-1]["events"] = rate_limit_events(decoded)
                 data = normalize_cli_result(decoded)
                 trace_complete = trace_complete and isinstance(decoded, list)
             except json.JSONDecodeError as e:
@@ -3323,6 +3363,468 @@ def _is_model_id(key) -> bool:
             and "`" not in key and "|" not in key)
 
 
+# ---------------------------------------------------------------------------
+# Run metadata and usage (#370 item 1). Every summary.json carries a `run`
+# block (how the run was billed, what ran it, where, and its identity) and a
+# `usage` block (times, tokens and cost per role, and the account meter as
+# the CLI reported it during calls the harness made anyway: no call is ever
+# added to read it). A value that could not be read is null with an entry in
+# its block's `reasons`, never omitted and never guessed.
+# ---------------------------------------------------------------------------
+
+RUN_SCHEMA_VERSION = USAGE_SCHEMA_VERSION = 1
+#: The `run` fields a flag can set, with the values each takes.
+RUN_CHOICES = {"billing": ("api", "subscription"),
+               "runner": ("actions", "routine", "workstation"),
+               "location": ("cloud", "local")}
+#: An identifier a public summary may carry: a run id, a session id, the
+#: name of whoever asserted a quiet window.
+RUN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+#: What the environment OBSERVES about a run, per field, as (variable, the
+#: value it must hold or None for any identifier, the field's value or None
+#: for the variable's own). Billing has no such observation, and a hosted
+#: session does not say a routine started it.
+RUN_ENV = {"billing": (),
+           "runner": (("GITHUB_ACTIONS", "true", "actions"),),
+           "location": (("CLAUDE_CODE_REMOTE_SESSION_ID", None, "cloud"),),
+           "id": (("GITHUB_RUN_ID", None, None),),
+           "session_id": (("CLAUDE_CODE_REMOTE_SESSION_ID", None, None),)}
+USAGE_ROLES = ("agent", "judge", "guard")
+USAGE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+CACHE_SPLIT = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+#: Meter snapshots one trial's summary keeps: the first and the last half
+#: of this many.
+METER_MAX_SNAPSHOTS = 12
+#: The most CLI calls one trial's summary lists; past it only the role
+#: totals are kept.
+USAGE_MAX_CALLS = 32
+#: The most bytes one summary's `usage.measured` may take AS WRITTEN (indented,
+#: at its depth in the file). The counts above bound how many entries there
+#: are, not how large a snapshot's verbatim `info` is once indented, so this
+#: is the bound that keeps a summary inside the ingester's 64 KiB cap: past
+#: it snapshots are dropped, then the call list.
+USAGE_MAX_BYTES = 32 * 1024
+#: The most windows a `meter_delta` names.
+METER_MAX_WINDOWS = 16
+#: A CLI call's recorded outcome: `ok`, or the harness's own error name.
+_OUTCOME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
+#: A meter window's name, or a cost basis: a short label the CLI printed.
+_CLI_LABEL = re.compile(r"[A-Za-z0-9_.-]{1,32}")
+#: Why a role's figures are null even when its call succeeded.
+_API_BILLED = "API-billed run: the subscription's account meter does not apply"
+#: When the meter is read. Measured once (2026-10-10, CLI 2.1.296, one agent
+#: call of two API requests): one event, printed as the call began. So a
+#: run's last snapshot is the start of its last agent call.
+_NO_RUN_END = ("no call the harness makes prints a meter event after its last "
+               "agent call has started (one real call observed: one event, as "
+               "the call began); reading the meter at run end would need an "
+               "added call")
+_ROLE_GAPS = {
+    "agent": "the agent's CLI result does not carry it",
+    "judge": "the judge's CLI result reaches the harness as its modelUsage "
+             "alone (harness/scorers/judge.py)",
+    "guard": "the guard call returns only its verdict "
+             "(harness/run_canary.py keeps no usage)"}
+
+
+def _now() -> datetime:
+    """The current UTC time: the one clock every `usage` time is read from."""
+    return datetime.now(timezone.utc)
+
+
+def _stamp(moment: datetime | None) -> str | None:
+    return None if moment is None else moment.strftime(USAGE_TIME_FORMAT)
+
+
+def _run_name(value: str) -> str:
+    """argparse `type=` for a flag whose value is recorded as an identifier."""
+    if not RUN_NAME.fullmatch(value):
+        raise argparse.ArgumentTypeError(
+            "expected 1 to 128 letters, digits, dots, underscores or hyphens, "
+            "starting with a letter or digit")
+    return value
+
+
+def run_block(flags, environ, *, harness_commit: str | None,
+              cli_version: str | None) -> dict:
+    """A summary's `run` block. Each of RUN_ENV's fields is the run's flag
+    (`--run-<field>`) when one was passed, else what the environment
+    observes, else null; `source` says which (`flag`, `env:<NAME>`, null)."""
+    block, source = {"schema_version": RUN_SCHEMA_VERSION}, {}
+    reasons = {}
+    for field, observations in RUN_ENV.items():
+        value = getattr(flags, f"run_{field}", None)
+        origin = None if value is None else "flag"
+        for name, wanted, meaning in () if value is not None else observations:
+            seen = environ.get(name) or ""
+            if (seen == wanted) if wanted else RUN_NAME.fullmatch(seen):
+                value, origin = meaning or seen, f"env:{name}"
+                break
+        block[field], source[field] = value, origin
+        if value is None:
+            reasons[field] = ("no flag named it and nothing in the environment "
+                              "identifies it")
+    if harness_commit is None:
+        reasons["harness_commit"] = ("the harness checkout's HEAD could not be "
+                                     "read from its git metadata")
+    if cli_version is None:
+        reasons["cli_version"] = ("the CLI version was not read: no CLI call "
+                                  "was made, or `--version` failed")
+    return {**block, "harness_commit": harness_commit,
+            "cli_version": cli_version, "source": source, "reasons": reasons}
+
+
+def _sum_or_null(values: list):
+    """Numbers add and mappings merge key by key; a null among them makes
+    the sum null, because a partial sum would read as the whole. Anything
+    else is kept only when every value agrees."""
+    if not values or any(v is None for v in values):
+        return None
+    if all(_is_number(v) for v in values):
+        return _token_count(sum(values))
+    if all(isinstance(v, dict) for v in values):
+        return {key: _sum_or_null([v[key] for v in values if key in v])
+                for key in dict.fromkeys(k for v in values for k in v)}
+    return values[0] if all(v == values[0] for v in values) else None
+
+
+def _role_usage(role: str, calls: list, results: list) -> dict:
+    """`usage.measured.<role>` for one trial: the role's CLI calls and what
+    their results say they spent. `models` is per model id, from
+    `modelUsage` (cumulative per session, so an agent's follow-up calls are
+    one result). `cost_usd` is the results' own total when each has one,
+    else the per-model costs summed. `cache_creation` is the 5-minute and
+    1-hour cache-write split, which the CLI reports for the main loop only.
+    A role that made no call records zeros; one that made a call records
+    null, with a reason, for whatever its results do not say."""
+    block = {"calls": len(calls), "duration_ms": sum(c["duration_ms"] for c in calls),
+             "num_turns": 0, "cost_usd": 0, "cost_basis": None, "models": {},
+             "cache_creation": dict.fromkeys(CACHE_SPLIT, 0)}
+    if not calls:
+        return {**block, "reasons": {"cost_basis": f"no {role} call was made"}}
+    models, basis = {}, set()
+    for result in results:
+        for model, counts in model_usage(result)["tokens"].items():
+            entry = result["modelUsage"][model]
+            label = entry.get("costBasis")
+            basis.add(label if isinstance(label, str)
+                      and _CLI_LABEL.fullmatch(label) else None)
+            mine = {**{name: counts[name] for name, _ in MODEL_TOKEN_FIELDS},
+                    "cost_usd": _token_count(entry.get("costUSD"))}
+            models[model] = (_sum_or_null([models[model], mine])
+                             if model in models else mine)
+    whole = bool(results) and all(model_usage(r)["complete"] for r in results)
+    costs = ([r.get("total_cost_usd") for r in results]
+             if all("total_cost_usd" in r for r in results)
+             else [m["cost_usd"] for m in models.values()] if whole else [None])
+    found = [r["usage"].get("cache_creation") if isinstance(r.get("usage"), dict)
+             else None for r in results]
+    split = _sum_or_null([
+        {name: _token_count(part.get(name)) for name in CACHE_SPLIT}
+        if isinstance(part, dict) else None for part in found])
+    # Whole or unknown: a result whose `modelUsage` is absent, empty or has
+    # an entry that could not be read leaves `models` null (and any cost summed
+    # from it), never the models that happened to be readable.
+    block.update({
+        "num_turns": _sum_or_null([
+            _token_count(r.get("num_turns")) if isinstance(r.get("num_turns"), int)
+            else None for r in results]),
+        "cost_usd": _sum_or_null([_token_count(cost) for cost in costs]),
+        "cost_basis": basis.pop() if len(basis) == 1 else None,
+        "models": models if whole else None,
+        "cache_creation": split if split and None not in split.values() else None})
+    why = _ROLE_GAPS[role] if results or role == "guard" else (
+        f"the {role} call ended without a result")
+    return {**block, "reasons": {name: why for name, value in block.items()
+                                 if value is None}}
+
+
+def _sum_measured(trials: list) -> dict:
+    """An arm aggregate's `usage.measured`: its trials' figures summed role
+    by role (`_sum_or_null`), over the span from the first trial's start to
+    the last one's end. The calls and the meter snapshots themselves are
+    listed in the trial summaries."""
+    blocks = [t["usage"]["measured"] for t in trials
+              if isinstance((t.get("usage") or {}).get("measured"), dict)]
+    out = {"scope": "arm", "calls": None, "meter": None,
+           "started_at": min((b["started_at"] for b in blocks if b["started_at"]),
+                             default=None),
+           "ended_at": max((b["ended_at"] for b in blocks if b["ended_at"]),
+                           default=None)}
+    for role in USAGE_ROLES:
+        active = [b[role] for b in blocks if b[role]["calls"]]
+        if not active:
+            out[role] = _role_usage(role, [], [])
+            continue
+        total = {name: _sum_or_null([a[name] for a in active])
+                 for name in active[0] if name != "reasons"}
+        out[role] = {**total, "reasons": {
+            name: "not every trial recorded it; see the trial summaries"
+            for name, value in total.items() if value is None}}
+    listed = "listed in each trial's own summary"
+    unmetered = {b["reasons"].get("meter") for b in blocks} if blocks else {None}
+    out["reasons"] = {"calls": listed,
+                      "meter": unmetered.pop() if unmetered == {_API_BILLED} else listed,
+                      **{name: "no trial of this arm made a call"
+                         for name in ("started_at", "ended_at") if out[name] is None}}
+    return out
+
+
+def _meter_delta(snapshots: list, uncovered: dict) -> dict | None:
+    """How far each window moved between the first and the last snapshot,
+    for the windows both name. Account-wide, so it is this run's cost only
+    if nothing else ran: labeled, never corrected. A window whose reset time
+    changed in between has no delta.
+
+    It is not the whole run either. A call is read as it begins (_NO_RUN_END),
+    so the call that printed the last snapshot and every call after it are
+    outside the delta, as is any call before the first snapshot. `uncovered`
+    counts both and is carried in the block."""
+    if len(snapshots) < 2:
+        return None
+    first, last = (s["info"].get("unifiedWindows") for s in (snapshots[0], snapshots[-1]))
+    windows = {}
+    for name in first if isinstance(first, dict) and isinstance(last, dict) else ():
+        before, after = first[name], last.get(name)
+        if len(windows) == METER_MAX_WINDOWS or not (
+                _CLI_LABEL.fullmatch(name) and isinstance(before, dict)
+                and isinstance(after, dict)
+                and _token_count(before.get("utilization")) is not None
+                and _token_count(after.get("utilization")) is not None):
+            continue
+        reset = before.get("resetsAt") != after.get("resetsAt")
+        moved = round(after["utilization"] - before["utilization"], 6)
+        windows[name] = {"from": before["utilization"], "to": after["utilization"],
+                         "delta": None if reset else moved, "window_reset": reset}
+    if not windows:
+        return None
+    return {"confounded": True, "scope": "account-wide",
+            "from_at": snapshots[0]["at"], "to_at": snapshots[-1]["at"],
+            "uncovered": uncovered, "windows": windows}
+
+
+class _RunTelemetry:
+    """One run's usage record, filled as the run goes.
+
+    `record()` queues a role's CLI calls; the next summary written takes
+    them as its own (`usage.measured`), which is exact because trials run
+    one after another and each ends by writing its summary. A meter
+    snapshot is stored once, with the trial whose call printed it. The
+    run-level half (times, how far the meter moved, what else was running)
+    is written into every summary as it stood at that moment, and `finish()`
+    rewrites it in all of them once the run has ended, so each summary of a
+    run carries the same one.
+    """
+
+    def __init__(self):
+        self.begin()
+
+    def begin(self, flags=None) -> None:
+        self.flags = flags
+        self.started, self.ended = _now(), None
+        self.trial_started = None
+        self.pending: list[dict] = []
+        self.snapshots: list[dict] = []
+        # The run's CLI calls so far, and for each snapshot how many of them
+        # had started before the call that printed it.
+        self.calls_seen = 0
+        self.snapshot_calls: list[int] = []
+        self.unreadable = 0
+        self.written: list[Path] = []
+
+    def begin_trial(self) -> None:
+        """A trial starts. Calls still queued belong to a trial that wrote
+        no summary, and are dropped rather than given to this one."""
+        self.trial_started = _now()
+        self.pending = []
+
+    def record(self, role: str, calls: list, results=()) -> None:
+        """Queue one role's CLI calls, each `{"started", "ended", "outcome",
+        "events"}`, and the CLI results they produced."""
+        self.pending.append({"role": role, "calls": calls, "results": [
+            r for r in results if isinstance(r, dict)]})
+
+    def timed(self, role: str, started: datetime, results=(),
+              outcome: str = "ok") -> None:
+        """Queue one call that began at `started` and has just returned."""
+        self.record(role, [{"started": started, "ended": _now(),
+                            "outcome": outcome, "events": []}], results)
+
+    def run(self, cli_version: str | None) -> dict:
+        return run_block(self.flags, os.environ, harness_commit=HARNESS_COMMIT,
+                         cli_version=cli_version)
+
+    def _api_billed(self) -> bool:
+        return getattr(self.flags, "run_billing", None) == "api"
+
+    def _measure(self) -> dict:
+        """This summary's own calls and the meter snapshots they printed."""
+        groups, self.pending = self.pending, []
+        started, self.trial_started = self.trial_started, None
+        ended = _now() if groups or started else None
+        listed, shots, counts = [], [], dict.fromkeys(USAGE_ROLES, 0)
+        for group in groups:
+            for call in group["calls"]:
+                index = counts[group["role"]]
+                counts[group["role"]] += 1
+                self.calls_seen += 1
+                call["duration_ms"] = int((call["ended"] - call["started"])
+                                          .total_seconds() * 1000)
+                listed.append({"role": group["role"], "index": index,
+                               "started_at": _stamp(call["started"]),
+                               "ended_at": _stamp(call["ended"]),
+                               "duration_ms": call["duration_ms"],
+                               "outcome": call["outcome"] if _OUTCOME.fullmatch(
+                                   str(call["outcome"])) else "error"})
+                events = call.get("events") or []
+                self.unreadable += sum(e["info"] is None for e in events)
+                events = [e for e in events if e["info"] is not None]
+                for event in events[:1] + events[1:][-1:]:
+                    # Only an event before the call's first timestamped
+                    # message has no time of its own; the call's start is
+                    # the latest time known to precede it.
+                    shots.append({
+                        "at": event["at"] or _stamp(call["started"]),
+                        "at_source": "cli_message" if event["at"] else "call_start",
+                        "call": {"role": group["role"], "index": index},
+                        "info": event["info"]})
+                    self.snapshot_calls.append(self.calls_seen - 1)
+        self.snapshots += shots
+        half = METER_MAX_SNAPSHOTS // 2
+        kept = shots if len(shots) <= METER_MAX_SNAPSHOTS else shots[:half] + shots[-half:]
+        first = started or min((c["started"] for g in groups for c in g["calls"]),
+                               default=None)
+        measured = {"scope": "trial", "started_at": _stamp(first),
+                    "ended_at": _stamp(ended),
+                    "calls": listed if len(listed) <= USAGE_MAX_CALLS else None,
+                    "meter": None if self._api_billed() else {
+                        "snapshots": kept, "omitted": len(shots) - len(kept)}}
+        for role in USAGE_ROLES:
+            own = [g for g in groups if g["role"] == role]
+            measured[role] = _role_usage(role, [c for g in own for c in g["calls"]],
+                                         [r for g in own for r in g["results"]])
+        measured["reasons"] = {name: "no trial was attempted"
+                               for name in ("started_at", "ended_at")
+                               if measured[name] is None}
+        if measured["meter"] is None:
+            measured["reasons"]["meter"] = _API_BILLED
+        # Bound what is written, not what is counted: fewer snapshots (the
+        # trial's first and last, then none), then no call list.
+        def written() -> int:
+            return len(json.dumps({"usage": {"measured": measured}},
+                                  indent=2).encode("utf-8"))
+        for ends in (shots[:1] + shots[1:][-1:], []):
+            if measured["meter"] is None or written() <= USAGE_MAX_BYTES:
+                break
+            measured["meter"] = {"snapshots": ends, "omitted": len(shots) - len(ends)}
+        if written() > USAGE_MAX_BYTES:
+            measured["calls"] = None
+        if measured["calls"] is None:
+            measured["reasons"]["calls"] = (
+                f"more than {USAGE_MAX_CALLS} calls, or too large to list: "
+                "only the role totals are kept")
+        return measured
+
+    def _run_level(self) -> dict:
+        """The half of `usage` every summary of the run shares."""
+        reasons = {
+            "concurrent_runs": "not knowable inside one run; computed at ingest",
+            "limit_promotion": "not observable from the harness",
+            "price_table_version": "costs are the CLI's own figures; it names "
+                                   "a cost basis, not a price table version"}
+        if self.ended is None:
+            reasons["ended_at"] = "the run had not ended when this summary was written"
+        meter = delta = None
+        if self._api_billed():
+            reasons["meter"] = reasons["meter_delta"] = _API_BILLED
+        else:
+            # The snapshots themselves are in the trial summaries, once each.
+            meter = {"snapshot_count": len(self.snapshots),
+                     "unreadable_events": self.unreadable,
+                     "not_sampled": {"judge": _ROLE_GAPS["judge"],
+                                     "guard": _ROLE_GAPS["guard"],
+                                     "run_end": _NO_RUN_END}}
+            delta = _meter_delta(self.snapshots, {
+                "calls_before_first_snapshot": self.snapshot_calls[0],
+                "calls_from_last_snapshot":
+                    self.calls_seen - self.snapshot_calls[-1]}
+                if self.snapshots else {})
+            if delta is None:
+                reasons["meter_delta"] = (
+                    "fewer than two meter snapshots that share a window were "
+                    "recorded; the meter is read once per agent call, as the "
+                    "call starts, so a run of one agent call has none")
+        quiet = getattr(self.flags, "asserted_quiet", None)
+        session = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
+        return {"started_at": _stamp(self.started), "ended_at": _stamp(self.ended),
+                "meter": meter, "meter_delta": delta, "concurrent_runs": None,
+                "other_account_activity": "asserted_quiet" if quiet else "unknown",
+                "asserted_quiet_by": quiet,
+                "outer_session": {
+                    "id": session if RUN_NAME.fullmatch(session) else None,
+                    "usage": None, "note": "not measured"},
+                "limit_promotion": None, "price_table_version": None,
+                "reasons": reasons}
+
+    def usage(self, trials: list | None) -> dict:
+        """A summary's `usage` block. `trials` are an arm aggregate's trial
+        summaries; None means the summary is one trial's own."""
+        measured = self._measure() if trials is None else _sum_measured(trials)
+        return {"schema_version": USAGE_SCHEMA_VERSION, **self._run_level(),
+                "measured": measured}
+
+    def finish(self) -> None:
+        """End the run: every summary it wrote gets the run-level record as
+        it finally stood. A summary that cannot be read back is left alone."""
+        self.ended = self.ended or _now()
+        level = self._run_level()
+        for path in self.written:
+            try:
+                summary = json.loads(path.read_text(encoding="utf-8"))
+                summary["usage"].update(level)
+            except (OSError, ValueError, KeyError, AttributeError):
+                continue
+            path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        self.written = []
+
+    def report_lines(self, cli_version: str | None) -> list[str]:
+        """report.md's lines naming the run and what the account meter did.
+        Rendering the report is the end of the run."""
+        self.ended = self.ended or _now()
+        run, level = self.run(cli_version), self._run_level()
+        named = ", ".join(f"{field} {run[field] or 'not recorded'}"
+                          for field in ("billing", "runner", "location", "id"))
+        lines = [f"- Run: {named}; started {level['started_at']}, "
+                 f"ended {level['ended_at']}"]
+        delta = level["meter_delta"]
+        if delta is None:
+            why = level["reasons"]["meter_delta"]
+            return [*lines, f"- Account meter: no change recorded ({why})"]
+        moved = ", ".join(f"{name} {window['from']} to {window['to']}"
+                          for name, window in delta["windows"].items())
+        late = delta["uncovered"]["calls_from_last_snapshot"]
+        return [*lines, "- Account meter (account-wide, so anything else the "
+                        "account ran is in it; read as each agent call starts, "
+                        f"so the {late} call(s) from the last reading on are "
+                        f"not in it): {moved}, from {len(self.snapshots)} snapshots"]
+
+
+_TELEMETRY = _RunTelemetry()
+
+
+def _ending_the_run(run):
+    """`main`, with the run's usage record begun before it and finished
+    however it returns."""
+    @functools.wraps(run)
+    def wrapper():
+        _TELEMETRY.begin()
+        try:
+            return run()
+        finally:
+            _TELEMETRY.finish()
+    return wrapper
+
+
 def _harness_line(harness_version: str | None, arm_summaries: list[dict]) -> str:
     """report.md's one line naming the harness and each arm's models."""
     models = "; ".join(
@@ -3345,7 +3847,8 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    arm_dir: Path | None = None,
                    effort: str | None = None,
                    agent_usage: dict | None = None,
-                   agent_model: str | None = None) -> None:
+                   agent_model: str | None = None,
+                   usage_trials: list | None = None) -> None:
     """One arm's summary.json (+ raw transcript).
 
     `key` is the results-tree path for this subject — a skill's own name, or
@@ -3367,6 +3870,11 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     (`cross_model()` of it and `agent_model`, the arm's own `--model`) are in
     every summary too. An aggregate summary passes `sum_model_usage()` of
     its trials.
+
+    `run` and `usage` (#370) are in every summary too: how the run was
+    billed, what ran it and where, and what this summary's own CLI calls and
+    the run as a whole cost (`_RunTelemetry`). An arm aggregate passes its
+    trial summaries as `usage_trials`.
 
     `arm_dir` (#66) names the directory to write into when it is not the
     default `<results>/<key or skill>/<timestamp>/<arm>/`: a nested fixture's
@@ -3402,8 +3910,11 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         summary.setdefault("n", 1)
         if key and len(key.split("/")) == 3:
             summary.setdefault("fixture", key.split("/")[2])
+    summary["run"] = _TELEMETRY.run(harness_version)
+    summary["usage"] = _TELEMETRY.usage(usage_trials)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+    _TELEMETRY.written.append(arm_dir / "summary.json")
     if raw is not None:
         transcripts_dir = arm_dir / "transcripts"
         transcripts_dir.mkdir(parents=True, exist_ok=True)
@@ -3422,12 +3933,13 @@ _REPORT_CELL_CHARS = 200
 
 
 def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict],
-                   harness_version: str | None = None) -> str:
+                   harness_version: str | None = None, run_lines=()) -> str:
     lines = [
         f"# Eval report: {skill}",
         "",
         f"- Prompt: {prompt.strip()}",
         f"- Timestamp: {timestamp}",
+        *run_lines,
         _harness_line(harness_version, arm_summaries),
         "",
         "| Arm | Objective | Judge overall | Cost (USD) | Turns | Duration (ms) | Error |",
@@ -3974,7 +4486,7 @@ def _render_efficiency_table(arms: list[dict]) -> list[str]:
 
 def _render_trials_report(skill: str, timestamp: str, trials: int,
                           sections: list[dict],
-                          harness_version: str | None = None) -> str:
+                          harness_version: str | None = None, run_lines=()) -> str:
     """report.md for a run with more than one trial, or with nested fixtures.
 
     One section per fixture, its header carrying `n`. `sections` is a list of
@@ -3985,7 +4497,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
     """
     lines = [f"# Eval report: {skill}", "",
              f"- Timestamp: {timestamp}",
-             f"- Trials per arm: {trials}"]
+             f"- Trials per arm: {trials}", *run_lines]
     for section in sections:
         arms = section["arms"]
         lines += ["",
@@ -4374,6 +4886,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         with _in_place_pair(plan):
             return _run_arm(arm_name, fixture, seed, registries, args, timestamp,
                             selection, out_dir=out_dir, extra=extra, plan=plan)
+    _TELEMETRY.begin_trial()
     agent_model, roster_judge_model, selection_error = (
         selection if selection is not None else select_models(fixture, args))
     # Read once per run by main() (#202); a caller that built its own
@@ -4609,6 +5122,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 # CLI call that completed is recorded even when `score`
                 # then raises on its answer (#203 round 1).
                 judge_results: list = []
+                judge_started = _now()
                 try:
                     with judge.collecting_models() as judge_results:
                         judge_result = judge.score(
@@ -4627,6 +5141,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
                 judge_models = models_used(*judge_results)
+                _TELEMETRY.timed("judge", judge_started, judge_results,
+                                 "error" if "error" in (judge_result or ()) else "ok")
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, objective_checks, judge_result, raw,
@@ -4726,7 +5242,7 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                        judge_models=_union(written, "judge_models_used"),
                        arm_dir=arm_dir, effort=_effort(args, fixture),
                        agent_usage=sum_model_usage(written),
-                       agent_model=_arm_model(written))
+                       agent_model=_arm_model(written), usage_trials=written)
     return {"arm": arm_name, "models_used": _union(written, "models_used"),
             "stats": stats, "results": results}
 
@@ -4764,7 +5280,8 @@ def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
              else fixture["skill"])
     report = _render_report(title, fixture.get("prompt", ""),
                             timestamp,
-                            [{"arm": name, "error": error} for name in arm_names])
+                            [{"arm": name, "error": error} for name in arm_names],
+                            run_lines=_TELEMETRY.report_lines(None))
     report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
@@ -5030,6 +5547,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     if plan is not None and "_pair_parent" not in plan:
         with _in_place_pair(plan):
             return _run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
+    _TELEMETRY.begin_trial()
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
     effort = _effort(args, fixture)
@@ -5157,6 +5675,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # its `preflight` entry — the cheapest model that can answer a
             # tool-free probe — is what this line consults instead.
             preflight_model = args.model or fixture.get("model")
+            guard_started = _now()
             guard = guidance.run_guard(
                 workspace=workspace, token=arm_token,
                 expected=guidance.guard_expectation(arm["mode"]), env=env,
@@ -5167,6 +5686,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
             extra["guard"] = guard
+            _TELEMETRY.timed("guard", guard_started, outcome=(
+                guard.get("error") or {}).get("type") or "ok")
 
             if not guard["ok"]:
                 error = _guard_error(guard)
@@ -5260,6 +5781,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 judge_cfg = fixture.get("judge", {})
                 # Read after the try, as in the skill path (#203 round 1).
                 judge_results: list = []
+                judge_started = _now()
                 try:
                     with judge.collecting_models() as judge_results:
                         judge_result = judge.score(
@@ -5277,6 +5799,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
                 judge_models = models_used(*judge_results)
+                _TELEMETRY.timed("judge", judge_started, judge_results,
+                                 "error" if "error" in (judge_result or ()) else "ok")
 
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
                        agent_summary, objective_checks, judge_result, raw,
@@ -5333,7 +5857,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
 def _render_guidance_report(section: str, prompt: str, timestamp: str,
                             delivery: str, arm_bytes: dict,
                             arm_summaries: list[dict],
-                            harness_version: str | None = None) -> str:
+                            harness_version: str | None = None, run_lines=()) -> str:
     """The guidance report. Its header names the MODE PAIR, because "with vs
     without" is meaningless here without it — `section` vs `none` and `full`
     vs `full-minus-section` are different questions about the same section.
@@ -5346,6 +5870,7 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         f"- Delivery: {delivery}",
         f"- Prompt: {prompt.strip()}",
         f"- Timestamp: {timestamp}",
+        *run_lines,
         _harness_line(harness_version, arm_summaries),
         "",
         "| Arm | Mode | Bytes | Guard | Objective | Judge overall | Cost (USD) | Error |",
@@ -5529,7 +6054,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
             arm_bytes[arm["arm"]] = json.load(f)["bytes"]
     report = _render_guidance_report(section, fixture["prompt"], timestamp,
                                      args.delivery, arm_bytes, arm_summaries,
-                                     args.harness_version)
+                                     args.harness_version,
+                                     _TELEMETRY.report_lines(args.harness_version))
     with open(report_dir / REPORT_NAME, "w", encoding="utf-8") as f:
         f.write(report)
 
@@ -5787,6 +6313,7 @@ def _valid_timestamp(value: str) -> bool:
     return True
 
 
+@_ending_the_run
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
@@ -5902,7 +6429,23 @@ def main() -> int:
                              "wrappers that need a deterministic path. Refused "
                              "when that run directory already holds one of "
                              "the arms this invocation would write")
+    for field, choices in RUN_CHOICES.items():
+        parser.add_argument(f"--run-{field}", default=None, choices=list(choices),
+                            help=f"the run's {field}, recorded in every "
+                                 "summary.json's `run` block. Without it the "
+                                 "field is what the environment observes, "
+                                 "else null with a reason")
+    parser.add_argument("--run-id", default=None, type=_run_name,
+                        help="the run's identifier on its path: a routine or "
+                             "workstation run id (default: $GITHUB_RUN_ID "
+                             "when that is set)")
+    parser.add_argument("--asserted-quiet", default=None, type=_run_name,
+                        metavar="WHO",
+                        help="record that WHO asserts nothing else used the "
+                             "account during this run (`usage."
+                             "other_account_activity`); otherwise `unknown`")
     args = parser.parse_args()
+    _TELEMETRY.flags = args
     try:
         args.context_repos = context.parse_context_repos(args.context_repo)
     except guidance.GuidanceError as exc:
@@ -6351,18 +6894,19 @@ def main() -> int:
     # its header.
     single_trial_flat = (len(outcomes) == 1 and outcomes[0][0]["name"] is None
                          and args.trials == 1)
+    run_lines = _TELEMETRY.report_lines(args.harness_version)
     if single_trial_flat:
         item, arms = outcomes[0]
         report = _render_report(skill, item["fixture"]["prompt"], timestamp,
                                 [arm["results"][0] for arm in arms],
-                                args.harness_version)
+                                args.harness_version, run_lines)
     else:
         report = _render_trials_report(
             skill, timestamp, args.trials,
             [{"label": item["name"] or skill,
               "prompt": item["fixture"]["prompt"], "arms": arms}
              for item, arms in outcomes],
-            args.harness_version)
+            args.harness_version, run_lines)
     report_path = args.results_dir / skill / timestamp / REPORT_NAME
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
