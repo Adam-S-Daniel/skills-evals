@@ -1,0 +1,27 @@
+Tags box: a trailing space is swallowed, an applied suggestion leaves no separator, and the chips are small on a phone
+
+Found in the 2026-10-06 exploratory round 2 (adamdaniel.ai owner pass, local admin, platform v0.1.148). Follow-ups to the Tags box from https://github.com/Adam-S-Daniel/cms-platform/pull/746.
+
+**Severity:** minor.
+
+## 1. A space typed at the end of a tag is swallowed
+
+Steps (1440×900): in Posts → Tags type `agents, field`, press Space, type `notes`.
+Seen: the box shows `agents, fieldnotes`; `Field Notes` becomes `FieldNotes`. Because the space is gone, the near-duplicate warning never compares `Field Notes` with `field-notes`. A space inserted mid-word (after ArrowLeft) stays.
+Expected: the space stays, or the hint says multi-word tags use dashes.
+Cause: Decap's list widget `handleChange` runs `e.target.value.trim()` on every keystroke (`decap-cms-widget-list` 3.5.0 `src/ListControl.js`, read locally; the 3.15.1 bundle shows the same behavior), so a trailing space never survives. `theme/admin/tags-input.js` only handles Space right after a comma. Possible fixes: in the shim, turn a Space typed after a letter into `-` (or hold it until the next letter), or change the hint.
+
+## 2. Applying a suggestion leaves no separator
+
+Steps: type `rel`, Tab to the "release-notes" chip, Enter, then type `agent`.
+Seen: `release-notesagent`.
+Expected: `release-notes, ` after applying, as Enter in the box already does.
+Cause: `replaceTag()` in `tags-input.js` joins with no trailing comma on purpose (a trailing comma could save an empty tag if the editor stops). But Enter in the box already appends one, and Decap's `handleBlur` drops empty items, so appending `,` after a chip looks safe; worth confirming in the fix's test.
+
+## 3. Suggestion and warning chips are small tap targets on a phone
+
+About 62×20 px at 390×844 (`p07-02-quo-typed.png`); 44 px tall would match the share buttons.
+
+## Evidence (local)
+
+`~/sprint-out/s18/ux/ad-owner/shots/`: `a06-02-tags-field-notes.png`, `a29-03-typed-field-notes.png`, `a29-04-space-mid.png`, `a28-05-agent-typed.png`, `p07-02-quo-typed.png`.
