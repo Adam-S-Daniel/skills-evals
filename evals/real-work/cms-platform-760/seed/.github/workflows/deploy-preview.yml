@@ -1,0 +1,685 @@
+# Reusable PR-preview deploy + teardown for platform sites.
+#
+# A consuming site calls this from a thin wrapper that owns the
+# `on: pull_request` trigger + paths-ignore + run-name (see
+# examples/site/.github/workflows/deploy-preview.yml). The platform-owned
+# helper scripts (cms-preview-slug.sh, patch-preview-config.sh) are NOT in the
+# site repo, so this workflow checks the platform repo out into `.cms-platform/`
+# (a dot-dir Jekyll ignores) and runs them from there. Pin `platform_ref` to
+# the same tag/sha the caller pins this workflow to.
+name: Deploy Preview (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      apex_domain:
+        description: "Site apex domain, e.g. example.com (no scheme)."
+        required: true
+        type: string
+      preview_bucket:
+        description: "S3 bucket name for PR previews."
+        required: true
+        type: string
+      media_archive_bucket:
+        description: >
+          Optional private S3 bucket holding archived media PDFs. Mirrors the
+          production input so an editor can check a newly-ticked
+          `pdf_public` on the preview before it reaches the live site. Empty
+          (the default) skips the step.
+        required: false
+        type: string
+        default: ""
+      bot_marker:
+        description: "Slug for the HTML-comment marker on the preview PR comment (kept unique per site)."
+        required: false
+        type: string
+        default: cms-preview-bot
+      aws_region:
+        required: false
+        type: string
+        default: us-east-1
+      ruby_version:
+        required: false
+        type: string
+        default: "3.2"
+      platform_repo:
+        description: "owner/name of the platform repo holding the helper scripts."
+        required: false
+        type: string
+        default: Adam-S-Daniel/cms-platform
+      platform_ref:
+        description: "Tag/sha of the platform repo to fetch scripts from (pin to the same ref as this workflow)."
+        required: false
+        type: string
+        default: main
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      PREVIEW_CLOUDFRONT_ID:
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write  # to post the preview URL comment
+  id-token: write
+  deployments: write    # GH Deployment rows for the per-PR/per-slug previews
+  statuses: write        # the `deploy/preview` commit status Decap reads
+
+jobs:
+  # ────────────────────────────────────────────────────────────
+  # Build & Deploy preview (on open / update)
+  # ────────────────────────────────────────────────────────────
+  deploy-preview:
+    # Dependabot PRs can't access the OIDC role secret, and the preview is
+    # for a human reviewer — Dependabot PRs are unattended by design.
+    if: github.event.action != 'closed' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      PREVIEW_BUCKET: ${{ inputs.preview_bucket }}
+      APEX_DOMAIN: ${{ inputs.apex_domain }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.PREVIEW_CLOUDFRONT_ID }}
+      # Bound once at job level (visual-regression.yml's generate job does the
+      # same) rather than re-expanded in each consuming step: an expression is
+      # substituted into the command TEXT before bash parses it, so no `run:`
+      # body may carry one. Three steps below read "$PR_NUMBER" from here.
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Checkout platform scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      - name: Compute CMS slug (cms/<col>/<entry> → bounded <col>-<entry>)
+        id: cms_slug
+        # Decap-opened editorial PRs land on `cms/<collection>/<slug>` head
+        # refs. The shared script translates that to a DNS-safe, length-bounded
+        # slug so we can publish an additional, draft-cycle-stable alias at
+        # `preview-cms-<slug>.<apex>`. Output is empty for non-cms branches;
+        # downstream steps gate on `slug != ''`. Teardown calls the SAME script
+        # so the two always agree on which `cms-<slug>/` prefix to clean up.
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          SLUG=$(./.cms-platform/scripts/cms-preview-slug.sh "$HEAD_REF")
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$SLUG" ]]; then
+            echo "Computed CMS slug: ${SLUG}"
+          else
+            echo "Not a cms/* branch — skipping per-slug preview"
+          fi
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@e8944e80fb94b20106697132f8c20c665fab29e9
+        with:
+          ruby-version: ${{ inputs.ruby_version }}
+          bundler-cache: true
+
+      - name: Build Jekyll (preview mode)
+        env:
+          JEKYLL_ENV: preview
+        # No --baseurl: each PR serves from its own subdomain
+        # (preview-prN.<apex>), so pages use root-relative URLs identical to
+        # production. S3 stores the build under the pr-N/ prefix; the
+        # CloudFront Function maps host → S3 prefix transparently.
+        run: |
+          bundle exec jekyll build --destination ./_site_preview
+
+      - name: Patch CMS config for preview deployment
+        # admin/config.yml ships with production values. See the platform
+        # scripts/patch-preview-config.sh for the per-field rationale.
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          BRANCH="$HEAD_REF"
+          CONFIG=./_site_preview/admin/config.yml
+          PREVIEW_HOST="preview-pr${PR_NUMBER}.${APEX_DOMAIN}"
+
+          ./.cms-platform/scripts/patch-preview-config.sh \
+            "$CONFIG" \
+            "$PR_NUMBER" \
+            "$BRANCH" \
+            "$PREVIEW_HOST"
+
+          echo "--- Patched admin/config.yml ---"
+          grep -E "^(site_url|display_url):|^  branch:|preview_path:" "$CONFIG" || true
+
+      - name: Write deploy-time commit metadata
+        # PR_HEAD_SHA via `env:` — the same name the three github-script
+        # steps below already bind. A head SHA is 40 hex chars and cannot
+        # carry a metacharacter, but the SHAPE is what review can check, and
+        # binding costs one line.
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Escape workflow-command data before printing repository-controlled text.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          mkdir -p ./_site_preview/admin
+          SHA="$PR_HEAD_SHA"
+          ISO=$(git log -1 --format=%cI HEAD)
+          # Tolerant: see deploy-production.yml's identical read — missing
+          # file/keys must never fail this step, just omit that pill.
+          PLATFORM_REPO=$(grep -m1 '^platform_repo:' platform.lock 2>/dev/null | sed -E 's/^[^:]+:[[:space:]]*//;s/[[:space:]]+$//') || true
+          PLATFORM_REF=$(grep -m1 '^platform_ref:' platform.lock 2>/dev/null | sed -E 's/^[^:]+:[[:space:]]*//;s/[[:space:]]+$//') || true
+          cat > ./_site_preview/admin/commit.json <<JSON
+          { "sha": "${SHA}", "iso": "${ISO}", "branch": "${HEAD_REF}", "platform_repo": "${PLATFORM_REPO}", "platform_ref": "${PLATFORM_REF}" }
+          JSON
+          printf 'Commit metadata diagnostic: %s\n' "$(escape_workflow_data "$(cat ./_site_preview/admin/commit.json)")"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure preview 404 error page exists at bucket root
+        # issue #324 — PreviewDistribution's CustomErrorResponses (see
+        # infrastructure/bootstrap/template.yaml) point every preview 404/403
+        # at ONE generic object kept at the previews bucket ROOT — never under
+        # a `pr-<N>/` or `cms-<slug>/` prefix, because CloudFront fetches
+        # ResponsePagePath directly from the origin and does NOT re-run the
+        # viewer-request Function that prepends those prefixes for a normal
+        # client request, so a prefixed path would never resolve for that
+        # fetch. Without this object present, CloudFront's own error-page
+        # fetch 404s too, and the viewer gets S3's nested "could not retrieve
+        # custom error document" failure — the exact bug #324 exists to fix,
+        # just moved one layer down.
+        #
+        # Deliberately generic and preview-flavoured, not per-site-branded:
+        # this ONE object is shared by every PR (and every cms-<slug> alias)
+        # of every consumer of this reusable workflow, because it lives at
+        # the bucket root rather than under any one PR's prefix.
+        #
+        # `aws s3 cp` of a small static file is idempotent — safe to repeat on
+        # every deploy. It must stay OUTSIDE any `pr-<N>/`/`cms-<slug>/`
+        # prefix: both `aws s3 sync --delete` steps below are scoped to their
+        # own prefix (`s3://.../pr-${PR_NUMBER}/`, `s3://.../cms-${SLUG}/`),
+        # and the teardown job's `aws s3 rm --recursive` is scoped the same
+        # way — none of them can ever see, let alone reap, a root-level key.
+        run: |
+          set -euo pipefail
+          cat > /tmp/preview-404.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <meta name="robots" content="noindex, nofollow">
+          <title>Not Found — Preview</title>
+          <style>
+            /* Palette lives in custom properties so the dark scheme cannot be
+               overridden by a later base rule (cms-platform#651: a dark
+               `.card` background declared BEFORE the base `.card` lost the
+               cascade, leaving light text on a white card). */
+            :root {
+              color-scheme: light dark;
+              --page-bg: #f6f7f9;
+              --card-bg: #fff;
+              --card-border: #e2e4e8;
+              --text: #1a1a1a;
+              --muted: #4b5563;
+              --link: #1d4ed8;
+            }
+            @media (prefers-color-scheme: dark) {
+              :root {
+                --page-bg: #17181a;
+                --card-bg: #202124;
+                --card-border: #34363a;
+                --text: #e8e8e8;
+                --muted: #b4b9c0;
+                --link: #8ab4ff;
+              }
+            }
+            body {
+              margin: 0;
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2rem;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              background: var(--page-bg);
+              color: var(--text);
+            }
+            .card {
+              max-width: 32rem;
+              padding: 2rem 2.25rem;
+              border: 1px solid var(--card-border);
+              border-radius: 12px;
+              background: var(--card-bg);
+              color: var(--text);
+            }
+            h1 { margin: 0 0 0.5rem; font-size: 1.375rem; }
+            p { margin: 0.5rem 0; line-height: 1.5; }
+            .tag {
+              display: inline-block;
+              font-size: 0.75rem;
+              letter-spacing: 0.04em;
+              text-transform: uppercase;
+              color: var(--muted);
+              margin-bottom: 0.75rem;
+            }
+            a { color: var(--link); text-decoration: none; }
+            a:hover { text-decoration: underline; }
+          </style>
+          </head>
+          <body>
+            <div class="card">
+              <span class="tag">Preview environment</span>
+              <h1>Page not found</h1>
+              <p>This page doesn't exist on this preview — it may not have been deployed here yet, or the link may be out of date.</p>
+              <p>Previews are temporary, per-change copies of the site and won't always have everything the live site has.</p>
+              <p><a href="/">&larr; Back to this preview's home page</a></p>
+            </div>
+          </body>
+          </html>
+          HTML
+          aws s3 cp /tmp/preview-404.html "s3://${PREVIEW_BUCKET}/preview-404.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, must-revalidate"
+          # ALSO seed the same page at the key S3's own website error-document
+          # lookup asks for (#324). The previews bucket's WebsiteConfiguration
+          # declares `ErrorDocument: 404.html`, and that lookup resolves against
+          # the BUCKET ROOT, not the pr-<N>/ prefix the viewer-request Function
+          # rewrote to -- which is why a miss produced the raw double-error page
+          # naming `Key: 404.html`. Measured on preview-pr176 2026-08-29.
+          #
+          # This half needs NO CloudFormation deploy: it takes effect on the next
+          # preview deploy, whereas the CustomErrorResponses block is inert until
+          # an operator runs infrastructure/bootstrap/deploy.sh per consumer. Both
+          # are kept: S3's error document covers previews the moment this ships,
+          # and CloudFront's covers 403 as well and normalises the status at the
+          # edge regardless of the bucket's website config.
+          #
+          # Same reaping analysis as above: every sync/rm in this workflow is
+          # scoped to pr-<N>/ or cms-<slug>/, so a bucket-root key is outside all
+          # of them. A site's OWN 404.html still syncs to pr-<N>/404.html and is
+          # untouched by this.
+          aws s3 cp /tmp/preview-404.html "s3://${PREVIEW_BUCKET}/404.html" \
+            --content-type "text/html" \
+            --cache-control "no-cache, must-revalidate"
+
+      - name: Publish opted-in archived PDFs
+        # Between the credentials and BOTH syncs below: they upload
+        # ./_site_preview, so an opted-in PDF has to be in that tree first, and
+        # reading the private archive needs the role. See
+        # deploy-production.yml's copy of this step and docs/MEDIA-ARCHIVE.md.
+        if: inputs.media_archive_bucket != ''
+        env:
+          MEDIA_ARCHIVE_BUCKET: ${{ inputs.media_archive_bucket }}
+        run: bash ./.cms-platform/scripts/publish-opted-in-pdfs.sh ./_site_preview
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync ./_site_preview \
+            "s3://${PREVIEW_BUCKET}/pr-${PR_NUMBER}/" \
+            --delete \
+            --cache-control "no-cache, must-revalidate" \
+            --exclude 'admin/index-local.html' \
+            --exclude 'admin/config-local.yml' \
+            --exclude 'admin/index-test.html' \
+            --exclude 'admin/config-test.yml'
+
+      - name: Sync to S3 — per-CMS-slug alias
+        if: steps.cms_slug.outputs.slug != ''
+        # Additional alias keyed on the CMS entry's slug rather than the GH PR
+        # number, so editors get a URL stable across Decap's close/reopen
+        # cycles. Same files; same --exclude set; kept in lockstep with the
+        # primary sync above.
+        #
+        # The slug arrives via `env:`, never `${{ }}` inside this body: the
+        # runner expands an expression into the command TEXT before bash parses
+        # it, so a slug containing a quote would close the literal and execute
+        # the remainder under the OIDC deploy role assumed a few steps above.
+        # Same shape as HEAD_REF earlier in this job.
+        env:
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+        run: |
+          SLUG="$CMS_SLUG"
+          aws s3 sync ./_site_preview \
+            "s3://${PREVIEW_BUCKET}/cms-${SLUG}/" \
+            --delete \
+            --cache-control "no-cache, must-revalidate" \
+            --exclude 'admin/index-local.html' \
+            --exclude 'admin/config-local.yml' \
+            --exclude 'admin/index-test.html' \
+            --exclude 'admin/config-test.yml'
+
+      - name: Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        # CMS_SLUG via `env:` — see the alias-sync step above for why an
+        # expression must never be expanded into this command text.
+        env:
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+        run: |
+          SLUG="$CMS_SLUG"
+          # Batch PR-number + (optional) cms-slug invalidations into one call —
+          # invalidation requests are quota'd per month.
+          PATHS=("/pr-${PR_NUMBER}/*")
+          if [[ -n "$SLUG" ]]; then
+            PATHS+=("/cms-${SLUG}/*")
+          fi
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "${PATHS[@]}"
+
+      - name: Register GitHub Deployment for the preview URL
+        # Registers a GH Deployment so the per-PR Environment row exists and
+        # admin/deploy-status-pill.js can find the preview URL.
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const pr = process.env.PR_NUMBER;
+            const sha = process.env.PR_HEAD_SHA;
+            const apex = process.env.APEX_DOMAIN;
+            const cfId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
+            const bucket = process.env.PREVIEW_BUCKET;
+            const region = process.env.AWS_REGION;
+
+            const url = cfId
+              ? `https://preview-pr${pr}.${apex}/`
+              : `http://${bucket}.s3-website-${region}.amazonaws.com/pr-${pr}/`;
+
+            const { data: deployment } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+              environment: `preview-pr-${pr}`,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+              description: 'PR preview',
+            });
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.id,
+              state: 'success',
+              environment_url: url,
+              log_url: runUrl,
+              description: `Preview live at ${url}`,
+            });
+
+            core.notice(`Registered deployment ${deployment.id} → ${url}`);
+
+      - name: Set Decap deploy-preview commit status
+        # THIS is the status Decap CMS's editor actually reads (its github
+        # backend implements getDeployPreview as
+        # GET /repos/.../commits/<pr-head-sha>/status and picks the status
+        # whose `context` matches backend.preview_context = `deploy/preview`).
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const pr = process.env.PR_NUMBER;
+            const sha = process.env.PR_HEAD_SHA;
+            const apex = process.env.APEX_DOMAIN;
+            const cfId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
+            const bucket = process.env.PREVIEW_BUCKET;
+            const region = process.env.AWS_REGION;
+
+            const url = cfId
+              ? `https://preview-pr${pr}.${apex}/`
+              : `http://${bucket}.s3-website-${region}.amazonaws.com/pr-${pr}/`;
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha,
+              state: 'success',
+              context: 'deploy/preview',
+              target_url: url,
+              description: `Preview live at ${url}`,
+            });
+
+            core.notice(`Set deploy/preview commit status on ${sha} → ${url}`);
+
+      - name: Register GitHub Deployment for the per-CMS-slug preview
+        if: steps.cms_slug.outputs.slug != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+        with:
+          script: |
+            const sha = process.env.PR_HEAD_SHA;
+            const apex = process.env.APEX_DOMAIN;
+            const cfId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
+            const bucket = process.env.PREVIEW_BUCKET;
+            const region = process.env.AWS_REGION;
+            const slug = process.env.CMS_SLUG;
+
+            const url = cfId
+              ? `https://preview-cms-${slug}.${apex}/`
+              : `http://${bucket}.s3-website-${region}.amazonaws.com/cms-${slug}/`;
+
+            const { data: deployment } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+              environment: `preview-cms-${slug}`,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+              description: 'Per-CMS-entry preview alias',
+            });
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.id,
+              state: 'success',
+              environment_url: url,
+              log_url: runUrl,
+              description: `Per-slug preview live at ${url}`,
+            });
+
+            core.notice(`Registered cms-slug deployment ${deployment.id} → ${url}`);
+
+      - name: Post preview URL comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        # PR_HEAD_SHA joins the env map this step already carries: a
+        # github-script body is JS handed to an eval, so an interpolated
+        # value arrives as SOURCE. Every other value here was already read
+        # from process.env/context — the sha was the lone substitution.
+        env:
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+          BOT_MARKER_SLUG: ${{ inputs.bot_marker }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const apex = process.env.APEX_DOMAIN;
+            const cfId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
+            const bucket = process.env.PREVIEW_BUCKET;
+            const region = process.env.AWS_REGION;
+            const slug = process.env.CMS_SLUG;
+            const branch = process.env.HEAD_REF;
+            const sha = process.env.PR_HEAD_SHA;
+
+            const url = cfId
+              ? `https://preview-pr${pr}.${apex}/`
+              : `http://${bucket}.s3-website-${region}.amazonaws.com/pr-${pr}/`;
+
+            const cmsUrl = slug
+              ? (cfId
+                ? `https://preview-cms-${slug}.${apex}/`
+                : `http://${bucket}.s3-website-${region}.amazonaws.com/cms-${slug}/`)
+              : null;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: pr,
+            });
+
+            const BOT_MARKER = `<!-- ${process.env.BOT_MARKER_SLUG} -->`;
+            const existing = comments.find(c => c.body.includes(BOT_MARKER));
+
+            const rows = [
+              `| **Preview URL** | [${url}](${url}) |`,
+            ];
+            if (cmsUrl) {
+              rows.push(
+                `| **CMS slug alias** | [${cmsUrl}](${cmsUrl}) — stable across draft cycles for this entry |`,
+              );
+            }
+            rows.push(
+              `| **Commit** | \`${sha}\` |`,
+              `| **Branch** | \`${branch}\` |`,
+            );
+
+            const body = [
+              BOT_MARKER,
+              '## 🔵 Preview Deployed',
+              '',
+              '| | |',
+              '|---|---|',
+              ...rows,
+              '',
+              '*Preview updates automatically on every push to this PR.*',
+            ].join('\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: pr,
+                body,
+              });
+            }
+
+  # ────────────────────────────────────────────────────────────
+  # Teardown preview (on close / merge)
+  # ────────────────────────────────────────────────────────────
+  teardown-preview:
+    if: github.event.action == 'closed' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      PREVIEW_BUCKET: ${{ inputs.preview_bucket }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.PREVIEW_CLOUDFRONT_ID }}
+      # Job-level, matching the deploy job above — the two teardown steps
+      # below read "$PR_NUMBER" instead of expanding an expression into
+      # their command text.
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Checkout platform scripts
+        # Only the slug script is needed here; pin to the same ref so the
+        # teardown computes the identical bounded slug the deploy job used.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          path: .cms-platform
+
+      - name: Compute CMS slug (cms/<col>/<entry> → bounded <col>-<entry>)
+        id: cms_slug
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          SLUG=$(./.cms-platform/scripts/cms-preview-slug.sh "$HEAD_REF")
+          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete preview from S3
+        run: |
+          aws s3 rm "s3://${PREVIEW_BUCKET}/pr-${PR_NUMBER}/" --recursive
+
+      - name: Delete per-CMS-slug alias from S3
+        if: steps.cms_slug.outputs.slug != ''
+        # CMS_SLUG via `env:`, matching the deploy job — teardown assumes the
+        # same OIDC role, so an interpolated slug is exactly as dangerous here.
+        env:
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+        run: |
+          SLUG="$CMS_SLUG"
+          aws s3 rm "s3://${PREVIEW_BUCKET}/cms-${SLUG}/" --recursive
+
+      - name: Invalidate CloudFront cache
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        env:
+          CMS_SLUG: ${{ steps.cms_slug.outputs.slug }}
+        run: |
+          SLUG="$CMS_SLUG"
+          PATHS=("/pr-${PR_NUMBER}/*")
+          if [[ -n "$SLUG" ]]; then
+            PATHS+=("/cms-${SLUG}/*")
+          fi
+          aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "${PATHS[@]}"
+
+      - name: Post teardown comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          BOT_MARKER_SLUG: ${{ inputs.bot_marker }}
+        with:
+          script: |
+            const pr = context.payload.pull_request.number;
+            const BOT_MARKER = `<!-- ${process.env.BOT_MARKER_SLUG} -->`;
+            const body = `${BOT_MARKER}\n🗑️ Preview environment cleaned up.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: pr,
+            });
+            const existing = comments.find(c => c.body.includes(BOT_MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: pr,
+                body,
+              });
+            }
