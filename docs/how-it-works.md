@@ -97,6 +97,62 @@ adopted: see ADR
 [0002](decisions/0002-runs-bill-the-api-org-not-the-subscription.md) and § 7's
 blocking decision 5.
 
+### The weekly allowance guard
+
+Since 2026-10-06 the scheduled evals run as Claude Code routines on the
+subscription, so they spend the weekly allowance. Adam's standing decision
+([#68, 2026-10-10](https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979))
+is that all automated evals together stay within **30% of the weekly
+allowance**. The numbers live in [`evals/budget.yml`](../evals/budget.yml),
+as fractions of the allowance (0.01 is one point, and points = percent of the
+weekly allowance):
+
+| Key | Value | Meaning |
+|---|---|---|
+| `weekly_cap` | 0.30 | all automated evals, in any rolling seven days |
+| `per_run_cap` | 0.03 | one run stops starting new work after this much |
+| `per_run_overrun` | 0.005 | added to every run: its last call is never measured |
+| `stop_when_account_above` | 0.80 | a run stops once the account's weekly meter reads this |
+
+Three layers enforce it:
+
+1. **The in-run stop** (`harness/run_eval.py`). The CLI prints the account's
+   weekly meter as each agent call begins. Before each trial and each judge
+   call, a run checks the latest reading: once the meter has moved
+   `per_run_cap` since the run's first reading (after a window reset, the
+   new reading alone counts), or reads `stop_when_account_above`, nothing
+   more is started. Skipped trials are written with error `budget_stop`, a
+   skipped judge call as a judge error, and every summary of the run carries
+   `usage.budget_stop` naming the limit. A guidance run, being one pair, ends
+   with exit 2 instead. A run with no reading yet, or an API-billed one, is
+   never stopped. `--budget PATH` reads another budget file.
+2. **The pre-fire check** (`scripts/allowance_guard.py check`, a step of
+   `routine-eval-fire.yml` before the fire, in every mode). It adds up the
+   last seven days: each ingested run on `persistent/eval-results` at its
+   measured weekly delta plus the overrun (or the full reservation,
+   `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
+   fire without results at the full reservation. The fire goes only if one
+   more reservation still fits under `weekly_cap`. If the GitHub API cannot
+   be read, the fire is refused. The log shows numbers only.
+3. **The weekly plan** (`scripts/plan_scheduled_evals.py --allowance-tree`).
+   The Tuesday sweep plans only as many fixtures as fit, in the schedule's
+   order; when none fits, the dispatch job is skipped.
+
+Known gaps:
+
+- **Local evals** (`scripts/local_eval.py`) are bounded only by the in-run
+  stop until #370's single results pool lands. That wrapper starts run_eval
+  once per trial, so in practice only the account limit applies there.
+- **Improve mode's** skill-creator trigger evals call `claude -p` directly,
+  not through run_eval, so only the pre-fire reservation bounds them.
+- **One trial can overshoot**: the stop is checked between trials, so the
+  trial in flight when a limit is crossed still finishes.
+- **The meter is account-wide**: Adam's own use during a run is counted as
+  eval spend. That overcounts, which is the safe direction.
+- **Fires racing each other**: a fire counts only fires that have finished
+  successfully, so two dispatched at the same moment do not see each other.
+  The weekly plan accounts for its own fires up front.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected

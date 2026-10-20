@@ -3261,6 +3261,10 @@ class TestIssue97(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         shutil.copytree(HARNESS_DIR, tmp / "harness",
                         ignore=shutil.ignore_patterns("__pycache__"))
+        # The copy reads its budget from its own root's evals/ (#68);
+        # without one it stops at a configuration error before any sink.
+        (tmp / "evals").mkdir()
+        shutil.copy2(REPO_ROOT / "evals" / "budget.yml", tmp / "evals" / "budget.yml")
         for rel, old, new in replacements:
             path = tmp / "harness" / rel
             source = path.read_text(encoding="utf-8")
