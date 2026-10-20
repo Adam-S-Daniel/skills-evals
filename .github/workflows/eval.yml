@@ -186,12 +186,12 @@
 #   fails the job loudly rather than retrying. The README badge URL consumes
 #   raw content from `persistent/eval-results` accordingly.
 #
-# * All actions are SHA-pinned, bare — no trailing version/date comment. The
-#   comment went stale silently and then lied (Dependabot rewrites it only
-#   sometimes), so the SHA is the only claim made; resolve a version with
-#   `git ls-remote <url> | grep <sha>` when you need one. Same pins as
-#   adam-agentskills' ci.yml, and this repo's own eval seeds practice what we
-#   pin.
+# * All actions are named by an exact release tag and locked to a full commit
+#   SHA in .github/workflows/actions.lock (ADR 0021 in _agent-guidance); the
+#   runner runs the locked commit, and ci.yml's "Verify action lockfile" step
+#   fails on a missing, stale or moved pin. No trailing version/date comment:
+#   one went stale silently and then lied, so the tag and its lockfile entry
+#   are the only claims made. An actions.lock diff is reviewed like a SHA pin.
 
 name: Real eval
 

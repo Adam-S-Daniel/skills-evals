@@ -178,8 +178,9 @@ jobs:
           # The checkout above is GitHub's synthetic merge commit for the PR
           # (actions/checkout's default ref for a pull_request event), whose
           # first parent is the base branch tip — so HEAD^1..HEAD is exactly
-          # the PR's changeset.
-          if ! changed=$(git diff --name-only HEAD^1 HEAD 2>&1); then
+          # the PR's changeset. --no-renames lists both sides of a rename, so
+          # moving a file out of a salient path still counts as touching it.
+          if ! changed=$(git diff --no-renames --name-only HEAD^1 HEAD 2>&1); then
             echo "::warning::$(head -n1 <<<"$changed") -- could not diff against HEAD^1; running the suite rather than risking a false skip"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0

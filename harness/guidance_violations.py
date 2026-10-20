@@ -34,7 +34,8 @@ INTERPOLATION = re.compile(r"\$\{\{\s*(?:inputs\.|github\.event\.)[^}]*\}\}")
 
 def _pinned(value: str, locked: frozenset = frozenset()) -> bool:
     """A full SHA, a local or docker ref, a cms-platform release tag, or (for
-    a workflow step only, via `locked`) a ref actions.lock locks to a commit."""
+    a workflow step or a called local composite's step only, via `locked`) a
+    ref actions.lock locks to a commit."""
     if value.startswith(("./", "$/", "docker://")):
         return True
     action, _, ref = value.rpartition("@")
@@ -80,14 +81,19 @@ def _locked_refs(source: str) -> dict[str, frozenset]:
     """Per workflow path, the `uses:` strings actions.lock locks to a commit.
 
     An entry counts only when `dependencies` keys it by the exact `uses:`
-    string with a `sha1-<40 lowercase hex>` commit and the workflow's own
-    `workflows` list names it. The result is transient, like the counters.
+    string with a `sha1-<40 lowercase hex>` commit and a `ref` equal to the
+    text after the key's last `@`, and the workflow's own `workflows` list
+    names it. The result is transient, like the counters.
     """
     top = _mapping(_compose(source))
     locked = set()
     for key, entry in _mapping(top.get("dependencies")).items():
-        commit = _mapping(entry).get("commit")
-        if isinstance(commit, yaml.ScalarNode) and LOCKED_COMMIT.fullmatch(commit.value):
+        fields = _mapping(entry)
+        commit, ref = fields.get("commit"), fields.get("ref")
+        _action, at, tag = key.rpartition("@")
+        if (at and tag and isinstance(commit, yaml.ScalarNode)
+                and LOCKED_COMMIT.fullmatch(commit.value)
+                and isinstance(ref, yaml.ScalarNode) and ref.value == tag):
             locked.add(key)
     out = {}
     for path, refs in _mapping(top.get("workflows")).items():
@@ -97,12 +103,15 @@ def _locked_refs(source: str) -> dict[str, frozenset]:
     return out
 
 
-def _yaml_counts(source: str, workflow: bool, locked: frozenset = frozenset()) -> dict[str, Counter]:
+def _yaml_counts(source: str, workflow: bool, locked: frozenset = frozenset(),
+                 callers: set | None = None) -> dict[str, Counter]:
     """Parse YAML nodes, retaining scalar values only in transient counters.
 
-    `locked` holds the step refs actions.lock locks for this workflow; a
+    `locked` holds the step refs actions.lock locks for this workflow, or,
+    for a local composite action, for the workflows that call it; a
     job-level reusable workflow ref is never locked there, so it still needs
-    a full SHA.
+    a full SHA. For a workflow, `callers` collects the directory of each
+    `$/<dir>` step ref (a local composite action it calls).
     """
     out = {name: Counter() for name in RULES if name != "push_without_verification"}
     root = _compose(source)
@@ -124,8 +133,11 @@ def _yaml_counts(source: str, workflow: bool, locked: frozenset = frozenset()) -
         if uses is not None and not isinstance(uses, yaml.ScalarNode):
             raise ValueError("invalid_uses")
         if isinstance(uses, yaml.ScalarNode) and not _pinned(
-                uses.value, locked if workflow and is_step else frozenset()):
+                uses.value, locked if is_step else frozenset()):
             out["unpinned_actions"][uses.value] += 1
+        if (workflow and is_step and callers is not None and isinstance(uses, yaml.ScalarNode)
+                and uses.value.startswith("$/")):
+            callers.add(uses.value[2:].rstrip("/"))
         run = fields.get("run")
         if is_step and run is not None and not isinstance(run, yaml.ScalarNode):
             raise ValueError("invalid_run")
@@ -180,6 +192,26 @@ def snapshot(workspace: Path | None) -> dict | None:
 
     files = {}
     locks, complete = _lockfile(workspace)
+    # Composite actions are scored after the walk: a tag ref inside one is
+    # credited only through the lockfile entries of the workflows that call
+    # it as `$/<dir>` (ADR 0021: the caller's lockfile locks the composite's
+    # inner actions), and those workflows may be walked later.
+    composites, callers = [], {}
+
+    def finish(done: bool) -> dict:
+        nonlocal complete
+        for relative, path in composites:
+            directory = relative.rpartition("/")[0]
+            locked = frozenset().union(*(locks.get(workflow, frozenset())
+                                         for workflow, dirs in callers.items()
+                                         if directory in dirs))
+            try:
+                files[relative] = _yaml_counts(_read_regular(path), False, locked)
+            except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
+                files[relative] = None
+                complete = False
+        return {"files": files, "complete": complete and done}
+
     try:
         def failed(_error):
             nonlocal complete
@@ -191,7 +223,7 @@ def snapshot(workspace: Path | None) -> dict | None:
             dirs[:] = sorted(name for name in dirs if name not in (".git", ".claude", "node_modules"))
             entries += 1 + len(dirs) + len(names)
             if entries > MAX_NODES:
-                return {"files": files, "complete": False}
+                return finish(False)
             if any((parent / name).is_symlink() for name in dirs):
                 complete = False
             dirs[:] = [name for name in dirs if not (parent / name).is_symlink()]
@@ -203,16 +235,22 @@ def snapshot(workspace: Path | None) -> dict | None:
                         or name in ("action.yml", "action.yaml")):
                     continue
                 if len(files) >= MAX_FILES:
-                    return {"files": files, "complete": False}
+                    return finish(False)
+                if not workflow:
+                    files[relative] = None
+                    composites.append((relative, path))
+                    continue
                 try:
+                    called = set()
                     files[relative] = _yaml_counts(_read_regular(path), workflow,
-                                                   locks.get(relative, frozenset()))
+                                                   locks.get(relative, frozenset()), called)
+                    callers[relative] = called
                 except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
                     files[relative] = None
                     complete = False
     except OSError:
         complete = False
-    return {"files": files, "complete": complete}
+    return finish(True)
 
 
 def _entry(name: str, count: int, known: bool) -> dict:

@@ -4930,8 +4930,9 @@ class CiDispatchTests(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "adam-agentskills")
         self.assertIs(with_block.get("persist-credentials"), False)
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
-                         "the adam-agentskills checkout must pin the same "
-                         "bare 40-hex SHA as ci.yml's own checkout")
+                         "the adam-agentskills checkout must name the same "
+                         "release tag as ci.yml's own checkout (one "
+                         "actions.lock entry locks both to a commit)")
 
     # -- always-run + early-skip shape (cms-platform#437) -------------------
 
@@ -5184,6 +5185,32 @@ class ActionLockfileGuardTests(unittest.TestCase):
         self.assertEqual(len(steps), 1, "ci.yml's test job must carry one Verify action lockfile step")
         return steps[0]
 
+    def test_lock_problem_refuses_unpinned_docker_and_cms_platform_refs(self):
+        digest = "0123456789abcdef" * 4
+        lock = {"workflows": {}, "dependencies": {}}
+        cases = {
+            "docker tag": ("docker://alpine:3.20", False),
+            "docker untagged": ("docker://alpine", False),
+            "docker short digest": ("docker://alpine@sha256:" + digest[:63], False),
+            "docker uppercase digest": ("docker://alpine@sha256:" + digest.upper(), False),
+            "docker digest": ("docker://alpine@sha256:" + digest, True),
+            "docker tag and digest": ("docker://alpine:3.20@sha256:" + digest, True),
+            "cms-platform branch": ("Adam-S-Daniel/cms-platform/.github/actions/x@main", False),
+            "cms-platform major": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0", False),
+            "cms-platform suffix": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0.1.2-rc1", False),
+            "cms-platform sha": ("Adam-S-Daniel/cms-platform/.github/actions/x@" + "a" * 40, False),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.163", True),
+            "local ./": ("./.github/actions/x", True),
+            "local $/": ("$/.github/actions/x", True),
+        }
+        for label, (uses, ok) in cases.items():
+            with self.subTest(case=label):
+                problem = lock_problem(uses, "ci.yml", lock)
+                if ok:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIsNotNone(problem)
+
     def test_verify_step_runs_the_checked_tool_and_fails_closed(self):
         step = self._verify_step()
         lines = step["run"].split("\n")
@@ -5376,6 +5403,32 @@ class CiSalientDetectionTests(unittest.TestCase):
     def test_salient_change_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._repo_with_merge(Path(tmp), {"harness/x.py": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_salient_step_diffs_with_no_renames(self):
+        diffs = [line for line in self.SCRIPT.split("\n") if "git diff" in line]
+        self.assertTrue(diffs, "the salient step no longer runs git diff")
+        for line in diffs:
+            self.assertIn("git diff --no-renames --name-only ", line)
+
+    def test_salient_file_renamed_to_a_non_salient_path_runs(self):
+        # With rename detection on, git diff lists only the destination
+        # (AGENTS.md, non-salient); --no-renames lists harness/moved.py too.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            self._git(repo, "init", "-q", "-b", "main")
+            (repo / "harness").mkdir()
+            (repo / "harness" / "moved.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            self._git(repo, "add", "harness/moved.py")
+            self._git(repo, "commit", "-q", "-m", "base")
+            self._git(repo, "checkout", "-q", "-b", "feature")
+            self._git(repo, "mv", "harness/moved.py", "AGENTS.md")
+            self._git(repo, "commit", "-q", "-m", "feature")
+            self._git(repo, "checkout", "-q", "main")
+            self._git(repo, "merge", "--no-ff", "-q", "-m", "merge", "feature")
             result, outputs = self._run(repo, "pull_request")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "true")
@@ -5763,6 +5816,51 @@ class DependabotAutoMergeStructureTests(unittest.TestCase):
             "job `auto-merge` must merge nothing (cms-platform#437: gh "
             "merges a Dependabot PR on the spot when nothing is required, "
             "so an 'Attempt auto-merge' step here is never safe)")
+
+
+class DependabotManifestAllowlistTests(unittest.TestCase):
+    """Dependabot rewrites .github/workflows/actions.lock with every action
+    bump (ADR 0021), so both copies of the manifest-path allowlist — job
+    `auto-merge`'s and job `sweep`'s re-check — must accept exactly that
+    path and still refuse anything else. Each copy's `case "$f" in ... esac`
+    block is lifted from the PyYAML-parsed step and run by bash."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml"
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
+        cls.RUNS = {
+            "auto-merge": next(s for s in doc["jobs"]["auto-merge"]["steps"]
+                               if s.get("id") == "paths")["run"],
+            "sweep": next(s for s in doc["jobs"]["sweep"]["steps"]
+                          if s.get("name") == "Sweep open Dependabot PRs")["run"],
+        }
+
+    def _allowed(self, job: str, path: str) -> bool:
+        lines = self.RUNS[job].split("\n")
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("REJECT=0\nnum=1\nf=\"$1\"\n" + "\n".join(lines[start:end + 1])
+                  + '\necho "REJECT=$REJECT"\n')
+        result = subprocess.run(["bash", "-c", script, "bash", path],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip().splitlines()[-1] == "REJECT=0"
+
+    def test_both_allowlists_accept_the_action_lockfile(self):
+        for job in self.RUNS:
+            with self.subTest(job=job):
+                self.assertTrue(self._allowed(job, ".github/workflows/actions.lock"))
+                self.assertTrue(self._allowed(job, ".github/workflows/ci.yml"))
+
+    def test_both_allowlists_still_refuse_other_paths(self):
+        for job in self.RUNS:
+            for path in (".github/workflows/actions.lock.bak", ".github/workflows/notes.txt",
+                         "actions.lock", "README.md"):
+                with self.subTest(job=job, path=path):
+                    self.assertFalse(self._allowed(job, path))
 
 
 class EndToEndTests(unittest.TestCase):

@@ -2,9 +2,11 @@
 
 Third-party actions are named by release tag, and
 `.github/workflows/actions.lock` locks each tag to an exact commit (ADR 0021
-in Adam-S-Daniel/_agent-guidance). A step `uses:` that is not local (`./`,
-`$/`), not `docker://` and not an `Adam-S-Daniel/cms-platform/` release-tag
-ref must therefore have a lockfile entry keyed by the exact `uses:` string,
+in Adam-S-Daniel/_agent-guidance). A local step `uses:` (`./`, `$/`) needs
+no lock. A `docker://` ref is not in the lockfile, so it must be pinned by
+digest (`@sha256:<64 lowercase hex>`). An `Adam-S-Daniel/cms-platform/` ref
+must name an exact release tag (`@vX.Y.Z`). Any other `uses:`
+must have a lockfile entry keyed by the exact `uses:` string,
 whose `commit` is `sha1-<40 lowercase hex>`, whose `ref` is the text after the
 last `@`, and which the lockfile's `workflows` list for that file names.
 
@@ -20,7 +22,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOCKFILE = REPO_ROOT / ".github" / "workflows" / "actions.lock"
 LOCKED_COMMIT = re.compile(r"sha1-[0-9a-f]{40}")
-UNLOCKED_PREFIXES = ("./", "$/", "docker://", "Adam-S-Daniel/cms-platform/")
+LOCAL_PREFIXES = ("./", "$/")
+DOCKER_PREFIX = "docker://"
+DOCKER_DIGEST = re.compile(r"@sha256:[0-9a-f]{64}\Z")
+CMS_PLATFORM_PREFIX = "Adam-S-Daniel/cms-platform/"
+CMS_PLATFORM_TAG = re.compile(r"@v\d+\.\d+\.\d+\Z")
 
 
 def load_lock(path: Path = LOCKFILE) -> dict:
@@ -29,8 +35,16 @@ def load_lock(path: Path = LOCKFILE) -> dict:
 
 def lock_problem(uses: str, workflow: Path | str, lock: dict | None = None) -> str | None:
     """Why `uses` in `workflow` is not locked, or None when it is (or needs no lock)."""
-    if uses.startswith(UNLOCKED_PREFIXES):
+    if uses.startswith(LOCAL_PREFIXES):
         return None
+    if uses.startswith(DOCKER_PREFIX):
+        if DOCKER_DIGEST.search(uses):
+            return None
+        return f"{uses!r} is a docker image not pinned by @sha256:<64 lowercase hex> digest"
+    if uses.startswith(CMS_PLATFORM_PREFIX):
+        if CMS_PLATFORM_TAG.search(uses):
+            return None
+        return f"{uses!r} is a cms-platform ref not pinned to an exact vX.Y.Z release tag"
     lock = load_lock() if lock is None else lock
     key = f".github/workflows/{Path(workflow).name}"
     entry = (lock.get("dependencies") or {}).get(uses)
