@@ -67,6 +67,16 @@ name: Fire eval routine
 #   on stdin, never in argv. The HTTP response body is never printed: the
 #   log names the status code and the run id, and the session URL goes to the
 #   job summary only after it matches the documented shape.
+# * The weekly allowance guard (#68; Adam, 2026-10-10: all automated evals
+#   within 30% of the weekly allowance): after validation and before the
+#   fire, in every mode, scripts/allowance_guard.py check reads the ingested
+#   runs of the last seven days from a read-only checkout of
+#   persistent/eval-results, counts this workflow's successful runs in the
+#   same window with the job's token (hence `actions: read`), and refuses the
+#   fire unless spent + pending + this run's reservation stays within
+#   evals/budget.yml's weekly_cap. An API error refuses too (fail closed). Its
+#   log line is numbers only. See docs/how-it-works.md, "The weekly allowance
+#   guard".
 # * No retry: the fire API has no idempotency key, so a retry after a lost
 #   response would start a second session (and spend a second fire).
 # * Results land on `claude/eval-<run id>`, pushed by the routine; the
@@ -139,6 +149,8 @@ on:
 
 permissions:
   contents: read
+  # The allowance guard counts this workflow's own successful runs (#68).
+  actions: read
 
 jobs:
   fire:
@@ -351,6 +363,27 @@ jobs:
           else
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}, model: ${model:-none}"
           fi
+
+      # The ingested routine runs the allowance guard charges (#68). Data
+      # only: the bot-written branch is untrusted, nothing from it runs, and
+      # only routine-results/ is checked out.
+      - name: Check out persistent/eval-results (the ingested runs)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: persistent/eval-results
+          path: eval-results-branch
+          persist-credentials: false
+          sparse-checkout: routine-results
+
+      # Every mode, before the fire: refused (exit 1, numbers-only log) when
+      # this run's reservation would take the last seven days past the weekly
+      # cap, or when the spend cannot be read. The job's read-only token,
+      # never the bearer.
+      - name: Check the weekly allowance
+        id: allowance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/allowance_guard.py check --results-tree eval-results-branch
 
       # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners (Recommended)"):
       # the candidate's owner must be in SYNC_OWNERS and its name in

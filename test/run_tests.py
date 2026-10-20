@@ -11264,6 +11264,12 @@ class TestIssue63Round2(unittest.TestCase):
             harness_dir = skills_evals_root / "harness"
             shutil.copytree(HARNESS_DIR, harness_dir,
                             ignore=shutil.ignore_patterns("__pycache__"))
+            # The copy reads its budget from its own root's evals/ (#68);
+            # without one it stops at a configuration error before this
+            # test's registry is ever resolved.
+            (skills_evals_root / "evals").mkdir()
+            shutil.copy2(REPO_ROOT / "evals" / "budget.yml",
+                         skills_evals_root / "evals" / "budget.yml")
             (harness_dir / "registries.yml").write_text(
                 "registries:\n"
                 "  - name: scratch-registry\n"

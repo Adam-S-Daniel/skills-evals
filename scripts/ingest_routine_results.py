@@ -678,6 +678,12 @@ USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", *USAGE_ALWAYS_NULL)
 USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
               "other_account_activity", "asserted_quiet_by", "outer_session",
               "measured", "reasons")
+#: `budget_stop` (#68): present only on a run that stopped starting work for
+#: its weekly allowance budget, so every summary written before it still
+#: ingests. run_eval.budget_stop_reading's keys and reasons.
+USAGE_OPTIONAL = ("budget_stop",)
+BUDGET_STOP_KEYS = ("reason", "utilization", "moved", "limit")
+BUDGET_STOP_REASONS = ("per_run_cap", "account_above")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
 NOT_SAMPLED = ("judge", "guard", "run_end")
 TRIAL_METER_KEYS = ("snapshots", "omitted")
@@ -861,9 +867,32 @@ def _check_meter(usage, where: str, billing) -> None:
                 raise Rejected(f"{where}: a window's delta is not its change")
 
 
+def check_budget_stop(stop, where: str, billing) -> None:
+    """`usage.budget_stop`: exactly its four keys, a reason the harness
+    writes, and consistent with itself: the limit it names is a budget value
+    (above 0, at most 1) and the reading it gives reached it. An API-billed
+    run has no meter, so it never stops for one."""
+    where = f"{where}.budget_stop"
+    _object(stop, where, BUDGET_STOP_KEYS, BUDGET_STOP_KEYS)
+    if billing == "api":
+        raise Rejected(f"{where}: an API-billed run has no meter to stop on")
+    if stop["reason"] not in BUDGET_STOP_REASONS:
+        raise Rejected(f"{where}.reason is not one the harness writes")
+    _number(stop["utilization"], f"{where}.utilization", 0, MAX_TOKEN_COUNT)
+    _number(stop["moved"], f"{where}.moved", -MAX_TOKEN_COUNT, MAX_TOKEN_COUNT)
+    _number(stop["limit"], f"{where}.limit", 0, 1)
+    if stop["limit"] == 0:
+        raise Rejected(f"{where}.limit must be above 0")
+    reached = stop["utilization"] if stop["reason"] == "account_above" else stop["moved"]
+    if reached < stop["limit"]:
+        raise Rejected(f"{where}: the reading does not reach its limit")
+
+
 def check_usage(usage, where: str, run: dict) -> None:
     where = f"{where}: usage"
-    _object(usage, where, USAGE_KEYS, USAGE_KEYS)
+    _object(usage, where, USAGE_KEYS + USAGE_OPTIONAL, USAGE_KEYS)
+    if "budget_stop" in usage:
+        check_budget_stop(usage["budget_stop"], where, run["billing"])
     _integer(usage["schema_version"], f"{where}.schema_version", 1, 1)
     _span(usage, where)
     _check_meter(usage, where, run["billing"])
