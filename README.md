@@ -986,7 +986,7 @@ empty, the job uploads an unresolved report and fails the scheduled run;
 it publishes no fleet totals or numeric badge. Pull requests, pushes, and manual dispatches get
 the same safe report and a warning when a checkout is unavailable. The private
 registry is checked out only on schedule with the optional
-`COVERAGE_REGISTRY_READ_TOKEN` read credential; its skill names, bundle names,
+read-only GitHub App (repository variable `REGISTRY_READ_APP_CLIENT_ID`, secret `REGISTRY_READ_APP_PEM`); its skill names, bundle names,
 skip reasons, and paths never appear in the public report.
 
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fcoverage.json)](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json)

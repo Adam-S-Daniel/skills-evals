@@ -861,9 +861,26 @@ class PublicationWorkflow(unittest.TestCase):
         self.assertTrue(all(s["with"]["persist-credentials"] == "false"
                             for s in checkouts))
         private = next(s for s in checkouts if s["with"].get("repository", "").endswith("-private"))
-        self.assertEqual(private["if"], "github.event_name == 'schedule'")
+        mint = next(s for s in steps if s.get("id") == "registry-token")
+        self.assertLess(steps.index(mint), steps.index(private))
+        self.assertEqual(mint["uses"],
+                         "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1")
+        self.assertEqual(mint["if"],
+                         "github.event_name == 'schedule' && "
+                         "vars.REGISTRY_READ_APP_CLIENT_ID != ''")
+        self.assertEqual(mint["continue-on-error"], "true")
+        self.assertEqual(mint["with"], {
+            "client-id": "${{ vars.REGISTRY_READ_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.REGISTRY_READ_APP_PEM }}",
+            "owner": "Adam-S-Daniel",
+            "repositories": "adam-agentskills-private",
+            "permission-contents": "read"})
+        self.assertEqual(private["if"],
+                         "github.event_name == 'schedule' && "
+                         "steps.registry-token.outcome == 'success'")
         self.assertEqual(private["with"]["token"],
-                         "${{ secrets.COVERAGE_REGISTRY_READ_TOKEN }}")
+                         "${{ steps.registry-token.outputs.token }}")
+        self.assertNotIn("COVERAGE_REGISTRY_READ_TOKEN", json.dumps(self.workflow))
         self.assertTrue(all("token" not in s.get("with", {}) for s in checkouts
                             if s is not private))
         self.assertTrue(all(s.get("continue-on-error") == "true"
