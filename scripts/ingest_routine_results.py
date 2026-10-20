@@ -1071,6 +1071,9 @@ def check_summary(doc, where: str, parts: dict) -> None:
 
 
 TRACE_KEYS = ("schema_version", "limits", "calls", "events", "omitted_events")
+#: `cli_json.bounded_tool_trace`'s `complete` came later and is optional, so
+#: an older trace still ingests.
+TRACE_ALLOWED = TRACE_KEYS + ("complete",)
 LIMIT_KEYS = ("input_chars", "output_chars", "max_bytes")
 EVENT_KEYS = {
     "tool_use": ("call", "kind", "id", "name", "input", "input_chars",
@@ -1078,15 +1081,20 @@ EVENT_KEYS = {
     "tool_result": ("call", "kind", "id", "is_error", "output",
                     "output_chars", "subagent"),
 }
+#: `cli_json.tool_events` adds this flag, always true, only to an event whose
+#: text it clipped.
+EVENT_FLAGS = {"tool_use": "input_incomplete", "tool_result": "output_incomplete"}
 #: `_clip` appends "..." to a cut string, and a string too large to redact
 #: becomes "<N chars, too large to redact>"; both fit within this slack.
 CLIP_SLACK = 48
 
 
 def check_tool_trace(doc, where: str) -> None:
-    _object(doc, where, TRACE_KEYS, TRACE_KEYS)
+    _object(doc, where, TRACE_ALLOWED, TRACE_KEYS)
     if doc["schema_version"] != 1 or isinstance(doc["schema_version"], bool):
         raise Rejected(f"{where}: unknown schema_version")
+    if "complete" in doc and not isinstance(doc["complete"], bool):
+        raise Rejected(f"{where}: complete not a bool")
     _object(doc["limits"], f"{where}: limits", LIMIT_KEYS, LIMIT_KEYS)
     input_cap = doc["limits"]["input_chars"]
     output_cap = doc["limits"]["output_chars"]
@@ -1096,6 +1104,8 @@ def check_tool_trace(doc, where: str) -> None:
              SIZE_CAPS["tool_trace.json"])
     _integer(doc["calls"], f"{where}: calls", 0, 100)
     _integer(doc["omitted_events"], f"{where}: omitted_events", 0, 1_000_000)
+    if doc.get("complete") is True and doc["omitted_events"]:
+        raise Rejected(f"{where}: complete with omitted events")
     events = doc["events"]
     if not isinstance(events, list) or len(events) > 5000:
         raise Rejected(f"{where}: events must be a bounded list")
@@ -1103,9 +1113,13 @@ def check_tool_trace(doc, where: str) -> None:
         if not isinstance(event, dict) or event.get("kind") not in EVENT_KEYS:
             raise Rejected(f"{where}: event of unknown kind")
         keys = EVENT_KEYS[event["kind"]]
-        _object(event, f"{where}: event", keys, keys)
+        flag = EVENT_FLAGS[event["kind"]]
+        _object(event, f"{where}: event", keys + (flag,), keys)
+        if flag in event and event[flag] is not True:
+            raise Rejected(f"{where}: event.{flag} not true")
         _integer(event["call"], f"{where}: event.call", 0, 100)
-        _string(event["id"], f"{where}: event.id", 128)
+        # `cli_json._tool_use_id` writes null for an id it does not recognize.
+        _string(event["id"], f"{where}: event.id", 128, null=True)
         if not isinstance(event["subagent"], bool):
             raise Rejected(f"{where}: event.subagent not a bool")
         if event["kind"] == "tool_use":
