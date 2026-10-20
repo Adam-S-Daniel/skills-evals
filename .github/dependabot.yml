@@ -52,6 +52,21 @@ updates:
       # is what lets that one bump land without the third-party wait
       # (https://github.com/Adam-S-Daniel/cms-platform/issues/424).
       exclude: ["Adam-S-Daniel/cms-platform/*"]
+    # ONE pull request per weekly run, not one per action. Every action bump
+    # here edits the same few workflow files (eval.yml is in all of them), so
+    # sibling PRs share files. The sweep merges with GITHUB_TOKEN, which has
+    # no `workflows` permission: once the first sibling lands, merging the
+    # next means GitHub writing a merged workflow file that neither branch
+    # holds, and it refuses. Dependabot does not rebase them, since nothing
+    # conflicts. Measured 2026-10-19: #386 merged, then #385 and #384 got
+    # "refusing to allow a GitHub App to create or update workflow
+    # `.github/workflows/eval.yml` without `workflows` permission", and the
+    # 2026-10-20 sweep saw both as mergeStateStatus=BLOCKED. A single grouped
+    # PR has no sibling to fall behind. Security updates stay one per
+    # advisory (a group's `applies-to` defaults to version-updates).
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   # The real-work fixtures' seeds (evals/real-work/*/seed) are frozen copies of
   # other repositories, lockfiles included: a bump there changes what a fixture
