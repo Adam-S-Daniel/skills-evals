@@ -5862,6 +5862,57 @@ class DependabotManifestAllowlistTests(unittest.TestCase):
                 with self.subTest(job=job, path=path):
                     self.assertFalse(self._allowed(job, path))
 
+    def test_every_git_diff_disables_rename_detection(self):
+        # With rename detection on, `--name-only` prints only a rename's new
+        # name, so a non-manifest file renamed into an allowed path would be
+        # deleted from its old path without the allowlist ever seeing it.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        diffs = [line.strip() for job in doc["jobs"].values()
+                 for step in job.get("steps", []) if isinstance(step.get("run"), str)
+                 for line in step["run"].split("\n") if "git diff" in line]
+        self.assertEqual(len(diffs), 2, diffs)
+        for line in diffs:
+            with self.subTest(line=line):
+                self.assertIn("--no-renames", line.split())
+
+    def test_both_jobs_refuse_a_rename_into_a_workflow_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def git(*args):
+                subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test")
+            git("config", "diff.renames", "true")  # git's default, made explicit
+            (Path(tmp) / "docs").mkdir()
+            (Path(tmp) / "docs" / "notes.md").write_text("on: push\njobs: {}\n" * 20,
+                                                          encoding="utf-8")
+            git("add", ".")
+            git("commit", "-q", "-m", "base")
+            git("update-ref", "refs/remotes/origin/main", "HEAD")
+            git("checkout", "-q", "-b", "dependabot-sweep/pr-1")
+            (Path(tmp) / ".github" / "workflows").mkdir(parents=True)
+            git("mv", "docs/notes.md", ".github/workflows/x.yml")
+            git("commit", "-q", "-m", "rename")
+            head = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], check=True,
+                                  capture_output=True, text=True).stdout.strip()
+            for job, run in self.RUNS.items():
+                with self.subTest(job=job):
+                    lines = run.split("\n")
+                    diff = next(line for line in lines if "git diff" in line).strip()
+                    start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+                    end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+                    script = ("set -euo pipefail\nBASE=origin/main\nHEAD=$1\nbase=main\nnum=1\n"
+                              f"REJECT=0\n{diff}\n"
+                              'for f in "${CHANGED[@]}"; do\n'
+                              + "\n".join(lines[start:end + 1])
+                              + '\ndone\necho "REJECT=$REJECT"\n')
+                    result = subprocess.run(["bash", "-c", script, "bash", head], cwd=tmp,
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("docs/notes.md", result.stdout)
+                    self.assertEqual(result.stdout.strip().splitlines()[-1], "REJECT=1")
+
 
 class EndToEndTests(unittest.TestCase):
     @staticmethod

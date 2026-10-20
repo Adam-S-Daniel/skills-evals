@@ -26,7 +26,7 @@ LOCAL_PREFIXES = ("./", "$/")
 DOCKER_PREFIX = "docker://"
 DOCKER_DIGEST = re.compile(r"@sha256:[0-9a-f]{64}\Z")
 CMS_PLATFORM_PREFIX = "Adam-S-Daniel/cms-platform/"
-CMS_PLATFORM_TAG = re.compile(r"@v\d+\.\d+\.\d+\Z")
+CMS_PLATFORM_TAG = re.compile(r"@v[0-9]+\.[0-9]+\.[0-9]+\Z")
 
 
 def load_lock(path: Path = LOCKFILE) -> dict:
