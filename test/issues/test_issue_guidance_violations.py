@@ -59,6 +59,16 @@ def workflow(steps):
     return "jobs:\n  test:\n    steps:\n" + steps
 
 
+LOCKFILE = ".github/workflows/actions.lock"
+TAG = "actions/checkout@v7.0.1"
+
+
+def lockfile(uses=TAG, commit="sha1-" + SHA, workflow_path=WORKFLOW, listed=TAG):
+    return (f"version: 'v0.0.3'\nworkflows:\n  '{workflow_path}':\n    - '{listed}'\n"
+            f"dependencies:\n  '{uses}':\n    ref: '{uses.rpartition('@')[2]}'\n"
+            f"    commit: '{commit}'\n")
+
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
 
@@ -163,6 +173,66 @@ class GuidanceViolationTests(unittest.TestCase):
                 mock.patch.object(counters, "MAX_FILES", 1):
             bounded = counters.snapshot(self.workspace)
         self.assertEqual(list(bounded["files"]), [".github/workflows/a.yml"])
+
+    def test_actions_lock_pins_a_tagged_step_for_its_own_workflow(self):
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(), LOCKFILE)
+        self.write(workflow(f"      - uses: {TAG}\n      - uses: $/local/action\n"
+                            f"      - uses: actions/setup-node@{SHA}\n"
+                            "      - uses: Adam-S-Daniel/cms-platform/.github/actions/demo@v0.1.88\n"))
+        measured = self.measure(before)
+        self.assertEqual(measured["rules"]["unpinned_actions"],
+                         {"section_id": counters.RULES["unpinned_actions"],
+                          "status": "known", "count": 0, "observed_count": 0})
+        self.assertNotIn("sha1-", json.dumps(measured))
+        self.assertNotIn(TAG, json.dumps(measured))
+
+    def test_a_tag_actions_lock_does_not_lock_still_counts(self):
+        cases = {
+            "no lockfile": None,
+            "uppercase commit": lockfile(commit="sha1-" + SHA.upper()),
+            "bare hex commit": lockfile(commit=SHA),
+            "short commit": lockfile(commit="sha1-" + SHA[:39]),
+            "other key": lockfile(uses="actions/checkout@v7.0.0"),
+            "other workflow": lockfile(workflow_path=".github/workflows/other.yml"),
+            "not listed": lockfile(listed="actions/checkout@v7.0.0"),
+        }
+        for label, lock in cases.items():
+            with self.subTest(case=label):
+                (self.workspace / LOCKFILE).unlink(missing_ok=True)
+                before = counters.snapshot(self.workspace)
+                if lock is not None:
+                    self.write(lock, LOCKFILE)
+                self.write(workflow(f"      - uses: {TAG}\n"))
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", 1))
+                self.write("jobs: {}")
+
+    def test_actions_lock_never_pins_reusable_workflows_or_composite_steps(self):
+        reusable = "owner/repo/.github/workflows/demo.yml@v1.2.3"
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(uses=reusable, listed=reusable), LOCKFILE)
+        self.write(f"jobs: {{reusable: {{uses: {reusable}}}}}\n")
+        self.write("runs:\n  using: composite\n  steps:\n    - uses: " + TAG + "\n",
+                   "nested/action.yml")
+        self.assertEqual(self.measure(before)["rules"]["unpinned_actions"]["count"], 2)
+
+    def test_an_unreadable_actions_lock_is_unknown(self):
+        before = counters.snapshot(self.workspace)
+        self.write(workflow(f"      - uses: {TAG}\n"))
+        for source in ("dependencies: [", "dependencies: {}\ndependencies: {}\n",
+                       "x: &x [*x]\n", "- not a mapping\n"):
+            with self.subTest(source=source):
+                self.write(source, LOCKFILE)
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("unknown", None))
+        lock = self.workspace / LOCKFILE
+        lock.unlink()
+        outside = Path(self.temp.name) / "outside.lock"
+        outside.write_text(lockfile(), encoding="utf-8")
+        lock.symlink_to(outside)
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        self.assertEqual((entry["status"], entry["count"]), ("unknown", None))
 
     def test_failed_pushes_do_not_count_and_typical_successful_push_does(self):
         rules = self.measure(evidence=trace(("git push -u origin feat/demo", True),

@@ -21,6 +21,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
+sys.path.insert(0, str(ROOT / "test"))
+from lockfile_pins import lock_problem  # noqa: E402
 EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability",
             "evals/skills-doctor/bucketed-account-store",
@@ -218,9 +220,7 @@ class TestScheduledFixtures(unittest.TestCase):
                 self.assertNotIn("${{", s.get("run", ""))
                 secrets += [(name, key, value) for key, value in {**s.get("env", {}), **s.get("with", {})}.items() if "secrets." in str(value)]
                 if "uses" in s:
-                    ref = s["uses"].rsplit("@", 1)[-1]
-                    self.assertEqual(len(ref), 40)
-                    self.assertTrue(all(char in "0123456789abcdef" for char in ref))
+                    self.assertIsNone(lock_problem(s["uses"], WORKFLOW))
         self.assertEqual(len(secrets), 1)
         self.assertEqual(secrets[0][0], "roster-pr")
 
@@ -477,7 +477,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             for item in job["steps"]:
                 self.assertNotIn("${{", item.get("run", ""))
                 if "uses" in item:
-                    self.assertRegex(item["uses"], r"@[0-9a-f]{40}$")
+                    self.assertIsNone(lock_problem(item["uses"], "routine-eval-weekly.yml"))
                     if "checkout@" in item["uses"]:
                         self.assertEqual(item["with"]["persist-credentials"], False)
                         self.assertEqual(item["with"]["ref"],

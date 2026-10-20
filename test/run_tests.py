@@ -63,6 +63,7 @@ VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
 
 
 @install_arm_test_environment
@@ -4187,7 +4188,6 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
     CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-    USES_SHA_RE = re.compile(r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
 
     def _doc(self) -> dict:
         import yaml
@@ -4200,16 +4200,16 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             steps.extend(job.get("steps", []))
         return steps
 
-    def test_every_uses_is_a_bare_40_hex_sha(self):
+    def test_every_uses_is_locked_by_actions_lock(self):
         for step in self._steps():
             uses = step.get("uses")
             if uses is None:
                 continue
             with self.subTest(uses=uses):
-                self.assertRegex(
-                    uses, self.USES_SHA_RE,
-                    f"{uses!r} is not a bare owner/repo@<40-hex-sha> pin, per "
-                    "the header's cooling-off convention")
+                self.assertIsNone(
+                    lock_problem(uses, self.WORKFLOW),
+                    f"{uses!r} is not an owner/repo@<tag> pin locked to a "
+                    "commit in actions.lock (ADR 0021)")
         # The assertion above is on the PARSED `uses:` value, which
         # yaml.safe_load has already stripped of any comment — it cannot see
         # a trailing version/date comment even when one is there. That is a
@@ -4224,7 +4224,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "#", line,
                         f"{self.WORKFLOW}:{lineno} has a uses: line with a "
                         "trailing comment — the header's cooling-off "
-                        "convention makes the bare SHA the only claim, since "
+                        "convention makes the bare pin the only claim, since "
                         "a version/date comment can go stale silently and "
                         "then lie")
 
@@ -4251,7 +4251,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "bypassPermissions with a live key in env is a "
                         "command-injection vector")
 
-    def test_ci_yml_shares_the_sha_pin_persist_creds_and_no_interp_rules(self):
+    def test_ci_yml_shares_the_lock_pin_persist_creds_and_no_interp_rules(self):
         # Item H (round 3, optional): the three rules above are workflow-file
         # hygiene, not eval.yml-specific — ci.yml's two checkouts were
         # compared only to EACH OTHER (CiDispatchTests), so pinning both to
@@ -4263,8 +4263,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             uses = step.get("uses")
             with self.subTest(uses=uses, step=step.get("name")):
                 if uses is not None:
-                    self.assertRegex(uses, self.USES_SHA_RE,
-                                     f"{uses!r} is not a bare SHA pin")
+                    self.assertIsNone(lock_problem(uses, self.CI_WORKFLOW),
+                                      f"{uses!r} is not locked in actions.lock")
                 if (uses or "").startswith("actions/checkout@"):
                     self.assertIs(
                         (step.get("with") or {}).get("persist-credentials"), False,
@@ -4709,6 +4709,8 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/workflows/skill-coverage.yml",
+               ".github/workflows/actions.lock", ".github/workflows/**",
+               ".github/actions/**",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
@@ -5051,7 +5053,8 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
     system Python from 3.12 to 3.14 and pip from 24 to 25.1. A job that calls
     the bare system interpreter would change Python under the suite with no
     diff to blame, so each one carries an `actions/setup-python` step, pinned
-    to a full commit SHA and to 3.12, BEFORE its first python/pip step.
+    by tag and locked to a commit in actions.lock, and to 3.12, BEFORE its
+    first python/pip step.
 
     `python3` and `pip` are lexical tokens in a `run:` body, so a word match
     there is fine; the workflow structure itself (jobs, step order, `uses`) is
@@ -5061,17 +5064,18 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
 
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
     PYTHON_TOKEN = re.compile(r"\b(?:python3?|pip3?)\b")
-    SETUP_PYTHON = re.compile(r"^actions/setup-python@[0-9a-f]{40}$")
+    SETUP_PYTHON = "actions/setup-python@"
 
     @classmethod
-    def unpinned_jobs(cls, doc: dict) -> list[str]:
+    def unpinned_jobs(cls, doc: dict, workflow: str = "ci.yml") -> list[str]:
         """Jobs in a parsed workflow whose python/pip use precedes a pin."""
         bad = []
         for name, job in (doc.get("jobs") or {}).items():
             pinned = False
             for step in job.get("steps") or []:
                 uses = step.get("uses") or ""
-                if cls.SETUP_PYTHON.match(uses):
+                if (uses.startswith(cls.SETUP_PYTHON)
+                        and lock_problem(uses, workflow) is None):
                     pinned = (step.get("with") or {}).get(
                         "python-version") == "3.12"
                 elif cls.PYTHON_TOKEN.search(step.get("run") or "") \
@@ -5087,16 +5091,16 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             seen += 1
             with self.subTest(workflow=path.name):
                 self.assertEqual(
-                    self.unpinned_jobs(doc), [],
-                    f"{path.name}: a job runs python3/pip before an "
-                    "actions/setup-python@<sha> step with python-version "
+                    self.unpinned_jobs(doc, path.name), [],
+                    f"{path.name}: a job runs python3/pip before a locked "
+                    "actions/setup-python@<tag> step with python-version "
                     '"3.12"; the runner image is changing its system Python')
         self.assertGreater(seen, 0, "no workflow files found")
 
     def test_the_guard_can_fail(self):
         # Mutation inside the test: the helper must flag each unpinned shape,
         # so a parser that silently matches nothing cannot pass the real check.
-        pin = {"uses": "actions/setup-python@" + "a" * 40,
+        pin = {"uses": "actions/setup-python@v7.0.0",
                "with": {"python-version": "3.12"}}
         run = {"name": "go", "run": "python3 x.py"}
         cases = {
@@ -5104,9 +5108,11 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             "pin after use": ([run, pin], ["j: go"]),
             "pip counts": ([{"name": "i", "run": "pip install pyyaml"}],
                            ["j: i"]),
-            "tag not sha": ([{"uses": "actions/setup-python@v5",
-                              "with": {"python-version": "3.12"}}, run],
-                            ["j: go"]),
+            "tag not locked": ([{"uses": "actions/setup-python@v5",
+                                 "with": {"python-version": "3.12"}}, run],
+                               ["j: go"]),
+            "bare sha not locked": ([{**pin, "uses": "actions/setup-python@" + "a" * 40},
+                                     run], ["j: go"]),
             "wrong version": ([{**pin, "with": {"python-version": "3.14"}},
                                run], ["j: go"]),
             "pinned first": ([pin, run], []),
@@ -5117,6 +5123,75 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
                 self.assertEqual(
                     self.unpinned_jobs({"jobs": {"j": {"steps": steps}}}),
                     expected)
+
+
+class ActionLockfileGuardTests(unittest.TestCase):
+    """The two guards actions.lock (ADR 0021) leaves to this repo: reusable
+    workflow refs it does not lock, and the CI step that verifies it."""
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    CI_WORKFLOW = WORKFLOWS / "ci.yml"
+    # actions.lock does not lock reusable workflows and neither `--verify` nor sha_pinning_required flags a tag there.
+    REUSABLE_SHA = re.compile(r"@[0-9a-f]{40}")
+    REUSABLE_EXEMPT = ("./", "$/", "Adam-S-Daniel/cms-platform/")
+    VERIFY_LINES = [
+        "set -euo pipefail",
+        'gh release download v0.2.0 -R github/gh-actions-lock -p linux-amd64 -O "$ext/gh-actions-lock"',
+        'echo "79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6  $ext/gh-actions-lock" | sha256sum -c -',
+        '(cd "$ext" && gh extension install .)',
+        "out=$(gh actions-lock --verify --no-interactive --json=valid,findings) || rc=$?",
+        """if [[ "$rc" -ne 0 ]] || ! jq -e '.valid == true and ([.findings[] | select(.category != "cooldown-config-ignored")] | length) == 0' <<<"$out" >/dev/null; then""",
+    ]
+
+    @classmethod
+    def unpinned_reusable(cls, doc: dict) -> list[str]:
+        """`jobs.<id>.uses` refs in a parsed workflow that are not a full SHA."""
+        bad = []
+        for name, job in (doc.get("jobs") or {}).items():
+            uses = (job or {}).get("uses")
+            if not isinstance(uses, str) or uses.startswith(cls.REUSABLE_EXEMPT):
+                continue
+            _, at, ref = uses.rpartition("@")
+            if not at or not cls.REUSABLE_SHA.fullmatch("@" + ref):
+                bad.append(f"{name}: {uses}")
+        return bad
+
+    def test_every_reusable_workflow_ref_is_a_full_sha(self):
+        paths = sorted([*self.WORKFLOWS.glob("*.yml"), *self.WORKFLOWS.glob("*.yaml")])
+        self.assertTrue(paths, "no workflow files found")
+        for path in paths:
+            with self.subTest(workflow=path.name):
+                doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertEqual(self.unpinned_reusable(doc), [])
+
+    def test_the_reusable_guard_can_fail(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        cases = {
+            "tag": ("octo-org/example/.github/workflows/x.yml@v1.2.3", ["x: octo-org/example/.github/workflows/x.yml@v1.2.3"]),
+            "uppercase sha": ("octo-org/example/.github/workflows/x.yml@" + sha.upper(), ["x: octo-org/example/.github/workflows/x.yml@" + sha.upper()]),
+            "full sha": ("octo-org/example/.github/workflows/x.yml@" + sha, []),
+            "local": ("./.github/workflows/x.yml", []),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.88", []),
+        }
+        for label, (uses, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.unpinned_reusable({"jobs": {"x": {"uses": uses}}}), expected)
+
+    def _verify_step(self) -> dict:
+        doc = yaml.safe_load(self.CI_WORKFLOW.read_text(encoding="utf-8"))
+        steps = [s for s in doc["jobs"]["test"]["steps"]
+                 if s.get("name") == "Verify action lockfile"]
+        self.assertEqual(len(steps), 1, "ci.yml's test job must carry one Verify action lockfile step")
+        return steps[0]
+
+    def test_verify_step_runs_the_checked_tool_and_fails_closed(self):
+        step = self._verify_step()
+        lines = step["run"].split("\n")
+        for expected in self.VERIFY_LINES:
+            with self.subTest(line=expected):
+                self.assertIn(expected, lines)
+        self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step["env"]["GH_TOKEN"], "${{ github.token }}")
 
 
 class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
@@ -6546,18 +6621,18 @@ class TestIssue67(unittest.TestCase):
                                  "run: block; read inputs from $GITHUB_EVENT_PATH")
                 uses = step.get("uses")
                 if uses:
-                    self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
-                                     "every uses: is a bare 40-hex SHA, no comment")
+                    self.assertIsNone(lock_problem(uses, "eval.yml"),
+                                      "every uses: is a tag locked in actions.lock")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
-        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # The bare-pin rule is LEXICAL and yaml.safe_load strips comments, so
         # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
         # (mutation-proven). Re-assert it on the raw text, where the comment
         # still exists. TestIssue67Review carries the same rule; the
         # duplication is deliberate — this is the test nobody may delete.
         for line in raw.splitlines():
             if re.match(r"^\s*(?:-\s+)?uses:", line):
-                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$",
                                  "a `uses:` pin carries a trailing comment")
         # B1 (round 3 on #209): the `roster` job now checks out
         # skills-evals too, so this scans every job, not just `eval`.
@@ -7619,14 +7694,14 @@ exec {GIT} "$@"
         comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
         A trailing version comment is a LEXICAL property of the file, and a
         regex over the raw text is the right tool for a lexical property."""
-        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$")
         raw = self.WORKFLOW.read_text(encoding="utf-8")
         lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
         self.assertTrue(lines, "no `uses:` lines found — the check is inert")
         for line in lines:
             with self.subTest(line=line.strip()):
                 self.assertRegex(line, bare,
-                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "every `uses:` is a bare owner/repo@<tag> with no "
                                  "trailing version/date comment")
 
     def test_every_checkout_disables_persist_credentials(self):

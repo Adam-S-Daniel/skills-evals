@@ -405,12 +405,12 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       - name: Install planning dependency
@@ -452,7 +452,7 @@ jobs:
       roster_latest_json: ${{ steps.propose.outputs.roster_latest_json }}
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           # Full history; this repo is small. (Round 7: this job no longer
@@ -461,7 +461,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
 
@@ -510,7 +510,7 @@ jobs:
           { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -1370,7 +1370,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           # Full history so the push-race rebase below always has the commits
@@ -1479,21 +1479,21 @@ jobs:
           echo "roster: merged evals/roster.yml from $merge_sha"
 
       - name: Check out adam-agentskills registry (side-by-side)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: adam-agentskills
           persist-credentials: false
 
       - name: Check out cms-platform registry (side-by-side)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/cms-platform
           path: cms-platform
           persist-credentials: false
 
       - name: Check out adamdaniel.ai registry (side-by-side)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adamdaniel.ai
           path: adamdaniel.ai
@@ -1504,14 +1504,14 @@ jobs:
         # harness/guidance.py through --guidance. Its content is executed
         # under bypassPermissions by a guidance fixture's `with` arm — see the
         # header's trust-boundary clause.
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
 
@@ -1560,7 +1560,7 @@ jobs:
           { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -1802,7 +1802,7 @@ jobs:
       # hidden files stay excluded (the action's default).
       - name: Upload eval results
         if: ${{ success() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: eval-results-payload-${{ matrix.slot }}-${{ github.run_attempt }}
           path: |
@@ -1813,7 +1813,7 @@ jobs:
           include-hidden-files: false
       - name: Upload eval diagnostics
         if: ${{ failure() && !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: eval-results-diagnostics-${{ matrix.slot }}-${{ github.run_attempt }}
           path: |
@@ -1853,7 +1853,7 @@ jobs:
       # default, so this checkout can never silently drift onto a `main`
       # that moved between this run's trigger and `publish` starting.
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           ref: ${{ github.sha }}
@@ -1864,7 +1864,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -1880,7 +1880,7 @@ jobs:
       - name: Download eval results
         id: download
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@v8.0.1
         with:
           name: eval-results-payload-${{ matrix.slot }}-${{ github.run_attempt }}
           path: skills-evals/results
@@ -2063,7 +2063,7 @@ jobs:
       # exact: this job's next step holds the roster App token. 6.0.3 is the
       # newest release (2025-09-25), long past the 7-day cooling-off.
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       - name: Install roster dependency
@@ -2087,7 +2087,7 @@ jobs:
       - name: Mint the roster App token
         id: roster-app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@v3.2.0
         with:
           client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
           private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
@@ -3084,7 +3084,7 @@ jobs:
       # The poll and sweep scripts are stdlib-only Python; pinned to the
       # same 3.12 as the other jobs rather than the runner's system Python.
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       # Polls the armed pull request (the polls themselves are reads) every

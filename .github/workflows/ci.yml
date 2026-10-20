@@ -15,7 +15,11 @@ name: CI
 # test_issue_routine_improve.py parses; propagation.yml, which test_issue_64.py
 # parses for coverage publication gates; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
 # parses to check it covers every seed manifest. Plus this file itself, so a change to
-# the filter is always exercised by the filter. README.md and DESIGN.md are
+# the filter is always exercised by the filter. .github/workflows/actions.lock,
+# .github/workflows/** and .github/actions/** are here for the "Verify action
+# lockfile" step: any change to a workflow, a local action or the lockfile
+# must re-verify the pins (ADR 0021), so this list also names files no test
+# reads. README.md and DESIGN.md are
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
 # reads the former and test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate
 # reads the latter, so a change that drops the README's writing-adrs/ line or
@@ -62,6 +66,9 @@ on:
       - .github/workflows/routine-scaffold-gate.yml
       - .github/workflows/routine-scaffold-pushed.yml
       - .github/workflows/skill-coverage.yml
+      - .github/workflows/actions.lock
+      - .github/workflows/**
+      - .github/actions/**
       - .github/dependabot.yml
       - evals/**
       - harness/**
@@ -94,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 2
           path: skills-evals
@@ -118,6 +125,9 @@ jobs:
             .github/workflows/routine-scaffold-gate.yml
             .github/workflows/routine-scaffold-pushed.yml
             .github/workflows/skill-coverage.yml
+            .github/workflows/actions.lock
+            .github/workflows/**
+            .github/actions/**
             .github/dependabot.yml
             evals/**
             harness/**
@@ -209,6 +219,37 @@ jobs:
             echo "no salient path changed — skipping the suite; \`test\` still reports success so the required context is present"
           fi
 
+      - name: Verify action lockfile
+        if: steps.salient.outputs.run == 'true'
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ext="$RUNNER_TEMP/gh-actions-lock"
+          mkdir -p "$ext"
+          gh release download v0.2.0 -R github/gh-actions-lock -p linux-amd64 -O "$ext/gh-actions-lock"
+          echo "79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6  $ext/gh-actions-lock" | sha256sum -c -
+          chmod +x "$ext/gh-actions-lock"
+          (cd "$ext" && gh extension install .)
+          rc=0
+          out=$(gh actions-lock --verify --no-interactive --json=valid,findings) || rc=$?
+          # v0.2.0 exits 0 with a reachability-unknown finding when the API fails; fail on any finding
+          # except cooldown-config-ignored, which reports dependabot.yml's cooldown exclude, not a pin.
+          if [[ "$rc" -ne 0 ]] || ! jq -e '.valid == true and ([.findings[] | select(.category != "cooldown-config-ignored")] | length) == 0' <<<"$out" >/dev/null; then
+            # Escape %, CR and LF so finding text cannot start a new workflow command.
+            if jq -e 'type == "object"' <<<"$out" >/dev/null 2>&1; then
+              jq -r 'def esc: tostring | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A"); .findings[]? | select(.category != "cooldown-config-ignored") | "::error::actions.lock \(.category | esc): \(.dependency // .workflow // "-" | esc): \(.detail | esc)"' <<<"$out"
+            else
+              echo '::error::gh actions-lock --verify returned no readable JSON.'
+            fi
+            if jq -e 'any(.findings[]?; .category == "reachability-unknown")' <<<"$out" >/dev/null 2>&1; then
+              echo '::error::reachability-unknown means the GitHub API was unreachable; re-run once it is back.'
+            fi
+            echo "::error::gh actions-lock --verify failed (exit $rc)."
+            exit 1
+          fi
+
       # Side-by-side, same convention as eval.yml and propagation.yml: this
       # is what makes the harness's sibling-directory default
       # (`../adam-agentskills` next to a skills-evals checkout) resolve to
@@ -217,7 +258,7 @@ jobs:
       # run in CI instead of skipping every time.
       - name: Check out adam-agentskills registry (side-by-side)
         if: steps.salient.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: adam-agentskills
@@ -229,7 +270,7 @@ jobs:
       # reason and CI never exercises the delivery path at all.
       - name: Check out _agent-guidance (side-by-side)
         if: steps.salient.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
@@ -241,7 +282,7 @@ jobs:
       # eval.yml and propagation.yml already run.
       - name: Set up Python
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -260,7 +301,7 @@ jobs:
         run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0
       - name: Set up Node for the browser-testing AST fixture
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
       - name: Install browser-testing parser dependencies

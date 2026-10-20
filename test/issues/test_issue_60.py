@@ -15,6 +15,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "test"))
+from lockfile_pins import lock_problem  # noqa: E402
 import scaffold_skill_gaps as gaps  # noqa: E402
 
 
@@ -607,10 +609,7 @@ class WorkflowTests(unittest.TestCase):
         for job in self.workflow["jobs"].values():
             for step in job["steps"]:
                 if "uses" in step:
-                    action = step["uses"]
-                    self.assertEqual(len(action.rsplit("@", 1)[-1]), 40)
-                    self.assertTrue(all(c in "0123456789abcdef" for c in
-                                        action.rsplit("@", 1)[-1]))
+                    self.assertIsNone(lock_problem(step["uses"], "skill-coverage.yml"))
                 if "run" in step:
                     self.assertNotIn("${{ github.event.", step["run"])
                     self.assertNotIn("${{ inputs.", step["run"])
