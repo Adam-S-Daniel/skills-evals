@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FRziJrEGaPQfpZFCwvnA1w",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls .github/workflows 2><path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FRziJrEGaPQfpZFCwvnA1w",
+      "is_error": false,
+      "output": ".github/workflows/release.yml\nREADME.md\npackage.json\nscripts/bump.sh\nscripts/collect.sh\nscripts/publish.sh\nrelease.yml",
+      "output_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EUysSsgq3Z7H58DZ8Q4BFt",
+      "name": "Bash",
+      "input": "cat .github/workflows/release.yml scripts/*.sh package.json README.md",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EUysSsgq3Z7H58DZ8Q4BFt",
+      "is_error": false,
+      "output": "name: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Collect changed packages\n        run: bash scripts/collec...",
+      "output_chars": 2128,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013BMszCaNhPTJi5qgdJixxW",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/collect.sh'\ns=open(p).read()\ns=s.replace('out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq \\'.[].title\\') || true','# A failed API call must fail the job, not read as \"n...",
+      "input_chars": 1252,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013BMszCaNhPTJi5qgdJixxW",
+      "is_error": false,
+      "output": " .github/workflows/release.yml | 3 +++\n scripts/collect.sh            | 7 ++-----\n scripts/publish.sh            | 9 +++++----\n 3 files changed, 10 insertions(+), 9 deletions(-)\n#!<path> bash\n# Collect the packages changed since the last release, via the GitHub API.\nset -euo pipefail\n\nREPO=\"example-...",
+      "output_chars": 591,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

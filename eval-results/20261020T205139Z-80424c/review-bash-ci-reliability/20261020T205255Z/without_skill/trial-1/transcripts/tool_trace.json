@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ux54TCDRinKNV4CcbqaZQs",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls .github/workflows 2><path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ux54TCDRinKNV4CcbqaZQs",
+      "is_error": false,
+      "output": ".github/workflows/release.yml\nREADME.md\npackage.json\nscripts/bump.sh\nscripts/collect.sh\nscripts/publish.sh\nrelease.yml",
+      "output_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WaGzQqaiSGeK7ojWieW563",
+      "name": "Bash",
+      "input": "cat .github/workflows/release.yml scripts/*.sh package.json README.md",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WaGzQqaiSGeK7ojWieW563",
+      "is_error": false,
+      "output": "name: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Collect changed packages\n        run: bash scripts/collec...",
+      "output_chars": 2128,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TtPUSUBELUEbnqR7qzUPG7",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\np='scripts/collect.sh'; s=open(p).read()\ns=s.replace('''out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || true\n''','''# No `|| true`: on an HTTP error gh p...",
+      "input_chars": 1746,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TtPUSUBELUEbnqR7qzUPG7",
+      "is_error": false,
+      "output": " .github/workflows/release.yml | 4 ++++\n scripts/bump.sh               | 8 +++++++-\n scripts/collect.sh            | 7 ++++++-\n scripts/publish.sh            | 8 ++++----\n 4 files changed, 21 insertions(+), 6 deletions(-)\n0",
+      "output_chars": 223,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
