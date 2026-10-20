@@ -32,6 +32,12 @@ LOCKFILE = ".github/workflows/actions.lock"
 INTERPOLATION = re.compile(r"\$\{\{\s*(?:inputs\.|github\.event\.)[^}]*\}\}")
 
 
+def _lock_key(uses: str) -> str:
+    """`uses` as gh-actions-lock keys it: owner/repo lowercased, the ref exact."""
+    name, at, ref = uses.rpartition("@")
+    return name.lower() + at + ref
+
+
 def _pinned(value: str, locked: frozenset = frozenset()) -> bool:
     """A full SHA, a local or docker ref, a cms-platform release tag, or (for
     a workflow step or a called local composite's step only, via `locked`) a
@@ -42,7 +48,7 @@ def _pinned(value: str, locked: frozenset = frozenset()) -> bool:
     if action.startswith(("Adam-S-Daniel/cms-platform/.github/actions/",
                           "Adam-S-Daniel/cms-platform/.github/workflows/")):
         return bool(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", ref))
-    return bool(SHA.fullmatch(ref)) or value in locked
+    return bool(SHA.fullmatch(ref)) or _lock_key(value) in locked
 
 
 def _compose(source: str):
@@ -80,8 +86,8 @@ def _mapping(node) -> dict:
 def _locked_refs(source: str) -> dict[str, frozenset]:
     """Per workflow path, the `uses:` strings actions.lock locks to a commit.
 
-    An entry counts only when `dependencies` keys it by the exact `uses:`
-    string with a `sha1-<40 lowercase hex>` commit and a `ref` equal to the
+    An entry counts only when `dependencies` keys it by the `uses:` string
+    (owner/repo compared lowercase, as the tool writes it; the ref exact) with a `sha1-<40 lowercase hex>` commit and a `ref` equal to the
     text after the key's last `@`, and the workflow's own `workflows` list
     names it. The result is transient, like the counters.
     """
@@ -94,12 +100,12 @@ def _locked_refs(source: str) -> dict[str, frozenset]:
         if (at and tag and isinstance(commit, yaml.ScalarNode)
                 and LOCKED_COMMIT.fullmatch(commit.value)
                 and isinstance(ref, yaml.ScalarNode) and ref.value == tag):
-            locked.add(key)
+            locked.add(_lock_key(key))
     out = {}
     for path, refs in _mapping(top.get("workflows")).items():
         if isinstance(refs, yaml.SequenceNode):
             out[path] = frozenset(ref.value for ref in refs.value
-                                  if isinstance(ref, yaml.ScalarNode) and ref.value in locked)
+                                  if isinstance(ref, yaml.ScalarNode) and _lock_key(ref.value) in locked)
     return out
 
 

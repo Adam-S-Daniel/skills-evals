@@ -4987,6 +4987,10 @@ class CiDispatchTests(unittest.TestCase):
         salient_idx = next(i for i, s in enumerate(steps)
                            if s.get("id") == "salient")
         for step in steps[salient_idx + 1:]:
+            if step.get("name") == "Verify action lockfile":
+                # The shared action decides by itself whether the PR touched
+                # workflow dependencies; it must run on every PR, ungated.
+                continue
             cond = step.get("if", "")
             self.assertIn("steps.salient.outputs.run", cond,
                          f"step {step.get('name')!r} runs after `salient` "
@@ -5135,14 +5139,7 @@ class ActionLockfileGuardTests(unittest.TestCase):
     # actions.lock does not lock reusable workflows and neither `--verify` nor sha_pinning_required flags a tag there.
     REUSABLE_SHA = re.compile(r"@[0-9a-f]{40}")
     REUSABLE_EXEMPT = ("./", "$/", "Adam-S-Daniel/cms-platform/")
-    VERIFY_LINES = [
-        "set -euo pipefail",
-        'gh release download v0.2.0 -R github/gh-actions-lock -p linux-amd64 -O "$ext/gh-actions-lock"',
-        'echo "79ec84c191667fd935a277e6fd3662cf5d3669cccc9e99998731d8f306f373b6  $ext/gh-actions-lock" | sha256sum -c -',
-        '(cd "$ext" && gh extension install .)',
-        "out=$(gh actions-lock --verify --no-interactive --json=valid,findings) || rc=$?",
-        """if [[ "$rc" -ne 0 ]] || ! jq -e '.valid == true and ([.findings[] | select(.category != "cooldown-config-ignored")] | length) == 0' <<<"$out" >/dev/null; then""",
-    ]
+    VERIFY_ACTION = re.compile(r"Adam-S-Daniel/verify-actions-lock@v\d+\.\d+\.\d+\Z")
 
     @classmethod
     def unpinned_reusable(cls, doc: dict) -> list[str]:
@@ -5213,12 +5210,10 @@ class ActionLockfileGuardTests(unittest.TestCase):
 
     def test_verify_step_runs_the_checked_tool_and_fails_closed(self):
         step = self._verify_step()
-        lines = step["run"].split("\n")
-        for expected in self.VERIFY_LINES:
-            with self.subTest(line=expected):
-                self.assertIn(expected, lines)
+        self.assertRegex(step.get("uses", ""), self.VERIFY_ACTION)
+        self.assertNotIn("if", step)
         self.assertNotIn("continue-on-error", step)
-        self.assertEqual(step["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertEqual(step["with"]["working-directory"], "skills-evals")
 
 
 class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):

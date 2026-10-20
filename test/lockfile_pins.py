@@ -47,7 +47,10 @@ def lock_problem(uses: str, workflow: Path | str, lock: dict | None = None) -> s
         return f"{uses!r} is a cms-platform ref not pinned to an exact vX.Y.Z release tag"
     lock = load_lock() if lock is None else lock
     key = f".github/workflows/{Path(workflow).name}"
-    entry = (lock.get("dependencies") or {}).get(uses)
+    # The tool lowercases owner and repo in its keys (GitHub names are case-insensitive).
+    name, at, tag = uses.rpartition("@")
+    lock_key = name.lower() + at + tag
+    entry = (lock.get("dependencies") or {}).get(lock_key)
     if not isinstance(entry, dict):
         return f"{uses!r} has no actions.lock dependencies entry"
     commit = entry.get("commit")
@@ -55,6 +58,6 @@ def lock_problem(uses: str, workflow: Path | str, lock: dict | None = None) -> s
         return f"{uses!r} locks commit {commit!r}, not sha1-<40 lowercase hex>"
     if entry.get("ref") != uses.rsplit("@", 1)[-1]:
         return f"{uses!r} locks ref {entry.get('ref')!r}, not the tag it names"
-    if uses not in ((lock.get("workflows") or {}).get(key) or []):
+    if lock_key not in ((lock.get("workflows") or {}).get(key) or []):
         return f"{uses!r} is missing from actions.lock's workflows[{key!r}]"
     return None

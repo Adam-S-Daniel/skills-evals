@@ -211,6 +211,32 @@ class GuidanceViolationTests(unittest.TestCase):
                 self.assertEqual((entry["status"], entry["count"]), ("known", 1))
                 self.write("jobs: {}")
 
+    def test_actions_lock_key_matches_owner_and_repo_case_insensitively_but_the_ref_exactly(self):
+        mixed = "Adam-S-Daniel/verify-actions-lock@v1.0.0"
+        lower = mixed.lower()
+        cases = {
+            "mixed-case step, lowercase key": (mixed, lockfile(uses=lower, listed=lower), 0),
+            "only the ref's case differs": ("Adam-S-Daniel/verify-actions-lock@V1.0.0",
+                                            lockfile(uses=lower, listed=lower), 1),
+        }
+        for label, (uses, lock, count) in cases.items():
+            with self.subTest(case=label):
+                (self.workspace / LOCKFILE).unlink(missing_ok=True)
+                before = counters.snapshot(self.workspace)
+                self.write(lock, LOCKFILE)
+                self.write(workflow(f"      - uses: {uses}\n"))
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", count))
+                self.write("jobs: {}")
+
+    def test_lock_problem_matches_owner_and_repo_case_insensitively_but_the_ref_exactly(self):
+        from lockfile_pins import lock_problem
+        lower = "adam-s-daniel/verify-actions-lock@v1.0.0"
+        lock = {"workflows": {WORKFLOW: [lower]},
+                "dependencies": {lower: {"ref": "v1.0.0", "commit": "sha1-" + SHA}}}
+        self.assertIsNone(lock_problem("Adam-S-Daniel/verify-actions-lock@v1.0.0", WORKFLOW, lock))
+        self.assertIsNotNone(lock_problem("Adam-S-Daniel/verify-actions-lock@V1.0.0", WORKFLOW, lock))
+
     def test_actions_lock_never_pins_reusable_workflows_or_uncalled_composite_steps(self):
         reusable = "owner/repo/.github/workflows/demo.yml@v1.2.3"
         before = counters.snapshot(self.workspace)
