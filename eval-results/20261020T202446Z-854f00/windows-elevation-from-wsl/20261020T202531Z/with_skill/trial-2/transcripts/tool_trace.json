@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L8bn5RL2g4NuUSzm1DhHSg",
+      "name": "Skill",
+      "input": "adam-coding-local:windows-elevation-from-wsl",
+      "input_chars": 44,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L8bn5RL2g4NuUSzm1DhHSg",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-local:windows-elevation-from-wsl",
+      "output_chars": 61,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DjTiFtVPWZj4hQ3H1VK6xG",
+      "name": "Bash",
+      "input": "git ls-files | head -50 && cat scripts/register-tasks.ps1",
+      "input_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DjTiFtVPWZj4hQ3H1VK6xG",
+      "is_error": false,
+      "output": "README.md\nbin/powershell.exe\nbin/pwsh.exe\nscripts/backup.ps1\nscripts/register-tasks.ps1\n<#\n.SYNOPSIS\n  Register (or re-register) the \\WslAutomation\\WSL-Backup scheduled task.\n\n.PARAMETER BackupTime\n  Daily trigger time, HH:mm (24h). Default 02:00.\n#>\n[CmdletBinding()]\nparam(\n    [string]$BackupTime ...",
+      "output_chars": 1386,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016HSBKdrMMJM4Y2Cwi8FXzS",
+      "name": "Bash",
+      "input": "cat README.md; which powershell.exe pwsh.exe; powershell.exe -NoProfile -Command \"Get-ScheduledTask -TaskPath '\\WslAutomation\\' -TaskName 'WSL-Backup' | Select-Object -ExpandProperty Triggers\"; powers...",
+      "input_chars": 393,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016HSBKdrMMJM4Y2Cwi8FXzS",
+      "is_error": false,
+      "output": "# wsl-backup\n\nNightly export of every WSL distro on this machine to\n`<path>`, driven by a Windows scheduled task.\n\nThis checkout lives at `<path>` and is worked on\nfrom **inside WSL** (`<path>`). Windows\nPowerShell is reachable from the WSL shell as `powershell.exe` (Windows\nPowerShell 5.1) or `pwsh...",
+      "output_chars": 2158,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MWV5gMgt6PLG1KG7dVh2so",
+      "name": "Bash",
+      "input": "sed -i 's/Default 02:00\\./Default 03:30./; s/\\[string\\]\\$BackupTime = \"02:00\"<path>\"03:30\"/' scripts/register-tasks.ps1 && git diff --stat && grep -n \"03:30\\|02:00\" scripts/*.ps1 README.md",
+      "input_chars": 205,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MWV5gMgt6PLG1KG7dVh2so",
+      "is_error": false,
+      "output": " scripts/register-tasks.ps1 | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)\nscripts/register-tasks.ps1:6:  Daily trigger time, HH:mm (24h). Default 03:30.\nscripts/register-tasks.ps1:10:    [string]$BackupTime = \"03:30\"",
+      "output_chars": 228,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

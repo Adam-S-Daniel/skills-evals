@@ -1,0 +1,99 @@
+{
+  "duration_api_ms": 28038,
+  "stop_reason": "end_turn",
+  "session_id": "d8f29716-3346-4e84-afdc-b39370bfd8ae",
+  "total_cost_usd": 0.1321345,
+  "usage": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 24478,
+    "cache_read_input_tokens": 184785,
+    "output_tokens": 1572,
+    "output_tokens_details": {
+      "thinking_tokens": 96
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 24478,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 726,
+        "cache_read_input_tokens": 36591,
+        "cache_creation_input_tokens": 280,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 280
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 12,
+      "outputTokens": 1572,
+      "cacheReadInputTokens": 184785,
+      "cacheCreationInputTokens": 24478,
+      "webSearchRequests": 0,
+      "costUSD": 0.1321345,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 96,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 7,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "I updated the script, but the live task is still at 02:00. The change needs an elevated Windows shell, and I can't get one from WSL.\n\n- **Script:** In `scripts/register-tasks.ps1`, the `-BackupTime` default and its help text now say `03:30` instead of `02:00`. I haven't committed it.\n- **Live task:** I ran the script from WSL with `powershell.exe -NoProfile -File scripts/register-tasks.ps1`. `Register-ScheduledTask` failed with `Access is denied` (HRESULT 0x80070005), exit 1. A process launched from WSL has a filtered, non-elevated token, and the task is registered with `-RunLevel Highest`, so re-registering it needs elevation.\n- **Not tried:** `Start-Process -Verb RunAs` or `schtasks`. WSL can't show a UAC prompt, and `schtasks` hits the same restriction.\n- **Current state:** `\\WslAutomation\\WSL-Backup` still has its 02:00 trigger. Its next run is 9/5/2026 at 2:00 AM, according to a read-only `Get-ScheduledTaskInfo`.\n\nTo finish, open **Windows Terminal or PowerShell as Administrator** and run this, with the path adjusted to wherever the repo is checked out on Windows (clones live under `D:\\repos\\<owner>\\<repo>`):\n\n```powershell\npwsh -NoProfile -File D:\\repos\\<owner>\\wsl-automation\\scripts\\register-tasks.ps1\n```\n\nThe script re-registers the task with `-Force` and prints `Registered \\WslAutomation\\WSL-Backup (daily at 03:30).` Because the script is Windows-side, run it from the checkout that has this edit. Then check the trigger with `Get-ScheduledTask -TaskPath '\\WslAutomation\\' -TaskName WSL-Backup | Get-ScheduledTaskInfo`. `NextRunTime` should show 3:30 AM.\n\nI can commit the script change on a branch if you want.",
+  "ttft_ms": 3988,
+  "type": "result",
+  "duration_ms": 29246,
+  "uuid": "217f1d59-6253-4467-badc-4e1ca6b86c00",
+  "ttft_stream_ms": 3107,
+  "time_to_request_ms": 121,
+  "first_content_frame_ms": 3108,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

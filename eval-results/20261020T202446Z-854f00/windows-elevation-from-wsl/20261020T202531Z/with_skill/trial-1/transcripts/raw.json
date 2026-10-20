@@ -1,0 +1,99 @@
+{
+  "duration_api_ms": 21562,
+  "stop_reason": "end_turn",
+  "session_id": "d5b46f36-bccf-4023-8664-5b26d4c268fe",
+  "total_cost_usd": 0.1262397,
+  "usage": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 25245,
+    "cache_read_input_tokens": 119037,
+    "output_tokens": 1334,
+    "output_tokens_details": {
+      "thinking_tokens": 130
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 25245,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 614,
+        "cache_read_input_tokens": 37263,
+        "cache_creation_input_tokens": 375,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 375
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 8,
+      "outputTokens": 1334,
+      "cacheReadInputTokens": 119037,
+      "cacheCreationInputTokens": 25245,
+      "webSearchRequests": 0,
+      "costUSD": 0.1262397,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 130,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 6,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "I changed the default in the script, but I couldn't apply it to the live task. The live task still fires at 02:00.\n\n**What changed:** in `scripts/register-tasks.ps1`, `-BackupTime` now defaults to `03:30` instead of `02:00`, and the help text matches. I haven't committed it. I also didn't run the registration from WSL.\n\n**Why the live task isn't updated:** the task runs with `RunLevel Highest`. PowerShell launched from WSL has a filtered, non-elevated token and can't prompt for UAC, so re-registering it would be denied. Changing the principal to get around that would be worse. A SYSTEM task can't see your WSL distros, so it would register fine and back up nothing.\n\n**Run this from an elevated Windows prompt** (PowerShell, then *Run as administrator*):\n\n```powershell\ncd D:\\repos\\<owner>\\wsl-automation\n.\\scripts\\register-tasks.ps1\n```\n\nThe default is now 03:30, so no parameter is needed. Fill in your actual `<owner>` in the path; I couldn't see it from here.\n\n**Rollback:** the old task definition is saved in `wsl-backup.before.xml` in the repo root. It's untracked, so don't commit it. To restore it, run `Register-ScheduledTask -TaskPath '\\WslAutomation\\' -TaskName 'WSL-Backup' -Xml (Get-Content -Raw .\\wsl-backup.before.xml)`.\n\nTell me once it has run, and I'll read the task's trigger back to confirm it shows 03:30.",
+  "ttft_ms": 6055,
+  "type": "result",
+  "duration_ms": 22339,
+  "uuid": "72072d14-9c34-4eab-a945-1125cb19276f",
+  "ttft_stream_ms": 5403,
+  "time_to_request_ms": 131,
+  "first_content_frame_ms": 5403,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

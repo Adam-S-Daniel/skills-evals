@@ -1,0 +1,99 @@
+{
+  "duration_api_ms": 19194,
+  "stop_reason": "end_turn",
+  "session_id": "03c560e7-66eb-4360-af21-53a03d3ebe92",
+  "total_cost_usd": 0.12095439999999999,
+  "usage": {
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 25138,
+    "cache_read_input_tokens": 82204,
+    "output_tokens": 1217,
+    "output_tokens_details": {
+      "thinking_tokens": 161
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 25138,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 698,
+        "cache_read_input_tokens": 36608,
+        "cache_creation_input_tokens": 923,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 923
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 6,
+      "outputTokens": 1217,
+      "cacheReadInputTokens": 82204,
+      "cacheCreationInputTokens": 25138,
+      "webSearchRequests": 0,
+      "costUSD": 0.12095439999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 161,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 5,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "I changed the script but couldn't change the live task, so it still fires at 02:00. That part needs an elevated Windows prompt. PowerShell launched from WSL runs with a filtered, non-elevated token, and the task runs at `RunLevel Highest`, so a write would be denied. I didn't try it. Retries, `-Verb RunAs`, `schtasks`, or switching to a SYSTEM principal wouldn't help either. A SYSTEM task would also see none of your WSL distros.\n\n**Done:**\n- In `scripts/register-tasks.ps1`, the `-BackupTime` default and the help text now say `03:30` instead of `02:00`. It's uncommitted.\n- I exported the current task definition to `wsl-backup.before.xml` in the repo root. It's untracked and shows the live trigger at `2026-01-01T02:00:00`. To roll back, run `Register-ScheduledTask -Xml (Get-Content -Raw wsl-backup.before.xml) -TaskPath '\\WslAutomation\\' -TaskName 'WSL-Backup' -Force` from an elevated prompt.\n\n**For you to run:** open PowerShell with *Run as administrator* and run this. Substitute your actual clone path under `D:\\repos\\...`, since I couldn't confirm it from here.\n\n```powershell\ncd D:\\repos\\<owner>\\wsl-automation\n.\\scripts\\register-tasks.ps1 -BackupTime '03:30'\n```\n\nOnce you've run it, tell me and I'll check from WSL with `Get-ScheduledTask -TaskPath '\\WslAutomation\\' | Select-Object -ExpandProperty Triggers`. I won't call it applied until that read shows 03:30.",
+  "ttft_ms": 3140,
+  "type": "result",
+  "duration_ms": 19758,
+  "uuid": "4fda2b34-db97-4974-a9d1-350098ed2373",
+  "ttft_stream_ms": 2540,
+  "time_to_request_ms": 138,
+  "first_content_frame_ms": 2541,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

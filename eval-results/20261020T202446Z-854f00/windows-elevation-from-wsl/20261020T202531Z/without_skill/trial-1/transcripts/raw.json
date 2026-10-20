@@ -1,0 +1,99 @@
+{
+  "duration_api_ms": 15450,
+  "stop_reason": "end_turn",
+  "session_id": "a73fd183-b919-4af5-aa27-c7b9d3066a73",
+  "total_cost_usd": 0.1140224,
+  "usage": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 23102,
+    "cache_read_input_tokens": 114184,
+    "output_tokens": 1018,
+    "output_tokens_details": {
+      "thinking_tokens": 108
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 23102,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 488,
+        "cache_read_input_tokens": 35157,
+        "cache_creation_input_tokens": 338,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 338
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 8,
+      "outputTokens": 1018,
+      "cacheReadInputTokens": 114184,
+      "cacheCreationInputTokens": 23102,
+      "webSearchRequests": 0,
+      "costUSD": 0.1140224,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 108,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 4,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "I updated `scripts/register-tasks.ps1`, but the live task is still at 02:00. Registering it failed with \"Access is denied\".\n\n**Script change:** the `-BackupTime` default and its `.PARAMETER` doc now say `03:30` instead of `02:00`. Nothing else in the repo mentions the old time. I haven't committed the change.\n\n**Live task:** I ran `powershell.exe -NoProfile -File scripts/register-tasks.ps1`. It failed with `Register-ScheduledTask : Access is denied. HRESULT 0x80070005`, exit code 1. The task is registered at `RunLevel Highest`, and this WSL session's Windows token isn't elevated, so the write was refused. I didn't try to get around that, for example by launching an elevated process.\n\n**To finish it:** open an elevated PowerShell on Windows (Run as administrator) and run:\n\n```powershell\ncd D:\\repos\\adam-s-daniel\\wsl-backup\n.\\scripts\\register-tasks.ps1\n```\n\nRe-running it replaces the existing task in place. To check, run `Get-ScheduledTask -TaskPath '\\WslAutomation\\' | Get-ScheduledTaskInfo`. The next run time should read 03:30.\n\nI can commit the script change if you want.",
+  "ttft_ms": 2592,
+  "type": "result",
+  "duration_ms": 16153,
+  "uuid": "c1be24aa-d417-4575-b91a-02bd15f7e61a",
+  "ttft_stream_ms": 1492,
+  "time_to_request_ms": 129,
+  "first_content_frame_ms": 1493,
+  "queued_turn_count": 0,
+  "result_index": 0
+}
