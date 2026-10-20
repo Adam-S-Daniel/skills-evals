@@ -5849,6 +5849,20 @@ class DependabotManifestAllowlistTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout.strip().splitlines()[-1] == "REJECT=0"
 
+    def _run_diff_and_case(self, job: str, repo: str, rev: str):
+        """Run the job's own `git diff` line and allowlist `case` block in `repo`."""
+        lines = self.RUNS[job].split("\n")
+        diff = next(line for line in lines if "git diff" in line).strip()
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("set -euo pipefail\ncd \"$2\"\nBASE=origin/main\nHEAD=$1\nbase=main\nnum=1\n"
+                  "REJECT=0\n" + diff + "\n"
+                  'for f in "${CHANGED[@]}"; do\n'
+                  + "\n".join(lines[start:end + 1])
+                  + '\ndone\necho "REJECT=$REJECT"\n')
+        return subprocess.run(["bash", "-c", script, "bash", rev, repo],
+                              capture_output=True, text=True)
+
     def test_both_allowlists_accept_the_action_lockfile(self):
         for job in self.RUNS:
             with self.subTest(job=job):
@@ -5879,7 +5893,7 @@ class DependabotManifestAllowlistTests(unittest.TestCase):
     def test_both_jobs_refuse_a_rename_into_a_workflow_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             def git(*args):
-                subprocess.run(["git", "-C", tmp, *args], check=True, capture_output=True)
+                subprocess.run(["git", *args], cwd=tmp, check=True, capture_output=True)
             git("init", "-q", "-b", "main")
             git("config", "user.email", "test@example.com")
             git("config", "user.name", "Test")
@@ -5894,21 +5908,11 @@ class DependabotManifestAllowlistTests(unittest.TestCase):
             (Path(tmp) / ".github" / "workflows").mkdir(parents=True)
             git("mv", "docs/notes.md", ".github/workflows/x.yml")
             git("commit", "-q", "-m", "rename")
-            head = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], check=True,
-                                  capture_output=True, text=True).stdout.strip()
-            for job, run in self.RUNS.items():
+            rev = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+            for job in self.RUNS:
                 with self.subTest(job=job):
-                    lines = run.split("\n")
-                    diff = next(line for line in lines if "git diff" in line).strip()
-                    start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
-                    end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
-                    script = ("set -euo pipefail\nBASE=origin/main\nHEAD=$1\nbase=main\nnum=1\n"
-                              f"REJECT=0\n{diff}\n"
-                              'for f in "${CHANGED[@]}"; do\n'
-                              + "\n".join(lines[start:end + 1])
-                              + '\ndone\necho "REJECT=$REJECT"\n')
-                    result = subprocess.run(["bash", "-c", script, "bash", head], cwd=tmp,
-                                            capture_output=True, text=True)
+                    result = self._run_diff_and_case(job, tmp, rev)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn("docs/notes.md", result.stdout)
                     self.assertEqual(result.stdout.strip().splitlines()[-1], "REJECT=1")
