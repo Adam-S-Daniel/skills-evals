@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012U9TtCRDL5o4MiryRMX1CS",
+      "name": "Bash",
+      "input": "git ls-files | head -50 && grep -rnE \"uses:\" .github 2><path>",
+      "input_chars": 64,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012U9TtCRDL5o4MiryRMX1CS",
+      "is_error": false,
+      "output": ".github/actions/gate/action.yml\n.github/workflows/ci.yml\n.github/workflows/deploy.yml\n.github/workflows/lint.yml\nPINS.md\n.github/actions/gate/action.yml:7:    - uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@v0.1.104\n.github/workflows/lint.yml:10:      - uses: ./.github/actions/loca...",
+      "output_chars": 825,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018mMEBmd21uD2SMRzZXGKrk",
+      "name": "Bash",
+      "input": "cat PINS.md; cat .github/workflows/ci.yml; git ls-remote https://github.com/actions/checkout 'refs/tags/v4*' 2>&1 | tail -5",
+      "input_chars": 123,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018mMEBmd21uD2SMRzZXGKrk",
+      "is_error": false,
+      "output": "# Commit SHAs for the action versions this repo pins, resolved 2026-08-30\n\n| Action | Tag | SHA |\n|---|---|---|\n| actions/checkout | v4 | 8c145d657eb0e222586a451c0917c3072252d69a |\n| actions/setup-node | v4 | 297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708 |\n| actions/upload-artifact | v4.1.0 | 469fdae6c9a...",
+      "output_chars": 1219,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012dEHcr6JQTh8aKvaCeQt3U",
+      "name": "Bash",
+      "input": "sed -i -e 's#actions/checkout@v4#actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a#' -e 's#setup-node@297dbbf$#setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708#' -e 's#\\(upload-artifact@[0-...",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012dEHcr6JQTh8aKvaCeQt3U",
+      "is_error": false,
+      "output": "sed: -e expression #3, char 48: unknown option to `s'",
+      "output_chars": 53,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VQyWBj7Xf3KWrcFeL9FtzG",
+      "name": "Bash",
+      "input": "sed -i -e 's|actions/checkout@v4|actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a|' -e 's|setup-node@297dbbf$|setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708|' -e 's|\\(upload-artifact@[0-...",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VQyWBj7Xf3KWrcFeL9FtzG",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex e3b56ad..d54b5d1 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -15,2 +15,2 @@ jobs:\n-      - uses: actions/checkout@v4\n-      - uses: actions/setup-node@297dbbf\n+      - uses: actions/checkout@8c145d657e...",
+      "output_chars": 901,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
