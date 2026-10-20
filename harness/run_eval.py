@@ -2155,6 +2155,16 @@ _CLI_PROFILE_MARKERS = {
     # possibly after delivery returned. It loads no CLI configuration. The
     # writer checks 1 MiB before its last append of at most 4096 bytes.
     "fleet-delivery.jsonl": 1024 * 1024 + 4096,
+    # CLI 2.1.304 writes these at startup in a fresh profile. The policy
+    # limits are server-signed and can only restrict; the stamp, synced-at,
+    # cleanup and sweep files are timestamps.
+    ".last-cleanup": 4096, "plugins/.last_inuse_sweep": 4096,
+    "policy-limits.json": 65536, "policy-limits.json.signature.json": 65536,
+    "policy-limits.json.stamp.json": 4096, "remote-settings.json.synced-at": 4096,
+    # Server-managed settings, which the CLI loads: exempt only while they
+    # are an empty JSON object, as written at startup; anything else could
+    # configure the agent.
+    "remote-settings.json": (4096, "{}"),
 }
 _CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
 # A shared profile (the operator's real `~/.claude`, or an inherited
@@ -2168,7 +2178,29 @@ _SHARED_PROFILE_TREES = ("skills/synced",)
 # `plugins/` (installed and known lists, cached plugins and marketplaces, all
 # plugin-loading surfaces) is watched whole; the only writes measured there
 # during a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers.
-_SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096}
+_SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096,
+                           # A CLI 2.1.304 startup timestamp (see above).
+                           "plugins/.last_inuse_sweep": 4096}
+
+
+def _is_empty_json_object(path: Path, limit: int) -> bool:
+    """Whether `path` (not followed if a symlink) holds `{}` as JSON."""
+    try:
+        # Non-blocking, so a FIFO swapped in after the lstat cannot hang it.
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return False
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            return False
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        return False
+    try:
+        return json.loads(data) == {}
+    except ValueError:
+        return False
 
 
 def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
@@ -2184,6 +2216,11 @@ def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
                     not hasattr(os, "geteuid") or st.st_nlink != 1
                     or st.st_uid != os.geteuid()):
                 return False
+            if isinstance(limit, tuple):
+                # (size cap, "{}"): also content-checked as an empty object.
+                limit = limit[0]
+                return (stat.S_ISREG(st.st_mode) and st.st_size <= limit
+                        and _is_empty_json_object(path, limit))
             return stat.S_ISREG(st.st_mode) and (limit is None or st.st_size <= limit)
     if rel in empty_dirs:
         return stat.S_ISDIR(st.st_mode) and not os.listdir(path)
