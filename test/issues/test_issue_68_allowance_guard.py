@@ -16,7 +16,8 @@ Three layers enforce it, all reading `evals/budget.yml`:
   * the pre-fire check (scripts/allowance_guard.py): spent (ingested runs of
     the last seven days, each its measured delta plus the overrun, or the full
     reservation when unmeasured, counted once per run_eval invocation) plus
-    pending (successful fires without results, each reserved in full) plus
+    pending (successful fires without results: reserved in full under 24 hours
+    old, the overrun alone after that) plus
     this run's reservation must stay within the cap; an API error refuses;
     routine-eval-fire.yml runs it before the fire in every mode, and the
     weekly planner plans only the fires that fit, skipping its dispatch job
@@ -493,7 +494,7 @@ class GuardTests(unittest.TestCase):
         doc = {"arm": "with_skill"} if usage is None else {"arm": "x", "usage": usage}
         path.write_text(json.dumps(doc), encoding="utf-8")
 
-    def spent(self, fires=0) -> dict:
+    def spent(self, fires=(0, 0)) -> dict:
         return guard.account(self.tree, LIMITS, NOW, fires)
 
     def test_a_measured_run_is_its_delta_plus_the_overrun(self):
@@ -559,22 +560,54 @@ class GuardTests(unittest.TestCase):
         (self.tree / "routine-results" / "20261019T100000Z-XYZ123").mkdir()
         (self.tree / "routine-results" / "20261399T100000Z-a1b2c3").mkdir()
         self.assertEqual(self.spent()["runs"], 0)
-        self.assertEqual(guard.account(self.tree / "absent", LIMITS, NOW, 0)["spent"], 0)
+        self.assertEqual(guard.account(self.tree / "absent", LIMITS, NOW, (0, 0))["spent"], 0)
 
     def test_fires_without_results_are_reserved_and_never_negative(self):
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
-        self.assertAlmostEqual(self.spent(fires=3)["pending"], 2 * RESERVE, places=12)
-        self.assertEqual(self.spent(fires=0)["pending"], 0)
+        self.assertAlmostEqual(self.spent(fires=(3, 3))["pending"], 2 * RESERVE, places=12)
+        self.assertEqual(self.spent(fires=(0, 0))["pending"], 0)
+
+    def test_old_fires_without_results_are_charged_the_overrun_only(self):
+        for index in range(6):
+            run = self.run_dir("20261019T100000Z", suffix=f"a1b2c{index}")
+            self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.0))
+        state = self.spent(fires=(16, 0))
+        self.assertAlmostEqual(state["pending"], 10 * 0.005, places=12)
+        self.assertEqual(state["recent"], 0)
+        self.assertTrue(guard.check(state))
+
+    def test_fires_inside_the_day_stay_reserved_in_full(self):
+        state = self.spent(fires=(3, 3))
+        self.assertAlmostEqual(state["pending"], 3 * RESERVE, places=12)
+        self.assertEqual(state["recent"], 3)
+
+    def test_old_and_recent_fires_are_charged_apart(self):
+        # 5 fires, 2 of them recent, 1 ingested run assumed to be an old one:
+        # 4 unresulted = 2 recent in full + 2 old at the overrun.
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
+        state = self.spent(fires=(5, 2))
+        self.assertAlmostEqual(state["pending"], 2 * 0.035 + 2 * 0.005, places=12)
+        self.assertEqual(state["recent"], 2)
+
+    def test_ingested_runs_are_assumed_old_so_recent_fires_stay_held(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
+        # Two fires, both recent, one ingested: one unresulted, held in full.
+        self.assertAlmostEqual(self.spent(fires=(2, 2))["pending"], RESERVE, places=12)
+        # A 24h count above the 7d count (a fire landed between the two API
+        # calls) cannot hold more than the unresulted fires.
+        self.assertAlmostEqual(self.spent(fires=(1, 3))["pending"], 0, places=12)
 
     def test_the_check_is_spent_plus_pending_plus_one_reservation(self):
         # Seven fires reserved (0.245) leave room for one more (0.28 <= 0.30);
         # eight (0.28) do not (0.315).
-        self.assertTrue(guard.check(self.spent(fires=7)))
-        self.assertEqual(guard.fits(self.spent(fires=7)), 1)
-        self.assertFalse(guard.check(self.spent(fires=8)))
-        self.assertEqual(guard.fits(self.spent(fires=8)), 0)
-        self.assertEqual(guard.fits(self.spent(fires=0)), 8)
+        self.assertTrue(guard.check(self.spent(fires=(7, 7))))
+        self.assertEqual(guard.fits(self.spent(fires=(7, 7))), 1)
+        self.assertFalse(guard.check(self.spent(fires=(8, 8))))
+        self.assertEqual(guard.fits(self.spent(fires=(8, 8))), 0)
+        self.assertEqual(guard.fits(self.spent(fires=(0, 0))), 8)
         state = self.spent()
         state["spent"] = 0.31
         self.assertEqual(guard.fits(state), 0)
@@ -588,7 +621,8 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(guard.fits(state), 0)
 
     def test_a_bad_fire_count_is_refused(self):
-        for fires in (-1, True, 1.5, None):
+        for fires in ((-1, 0), (True, 0), (1.5, 0), (None, 0), (0, -1), (0, None),
+                      5, None, (1,), (1, 2, 3)):
             with self.subTest(fires=fires):
                 with self.assertRaises(guard.GuardError):
                     self.spent(fires=fires)
@@ -606,22 +640,23 @@ class GuardTests(unittest.TestCase):
     def test_check_passes_and_reports_numbers_only(self):
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
-        code, out, summary = self.main("check", lambda now: 1)
+        code, out, summary = self.main("check", lambda now: (1, 1))
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
         self.assertIn("pending 0.0 points", out)
+        self.assertIn("(0 from the last 24h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
         self.assertNotIn("20261019T100000Z", out + summary)
         self.assertNotIn(str(self.tree), out + summary)
 
     def test_check_refuses_over_the_cap(self):
-        code, out, _ = self.main("check", lambda now: 8)
+        code, out, _ = self.main("check", lambda now: (8, 8))
         self.assertEqual(code, 1)
         self.assertIn(guard.REFUSAL, out)
 
     def test_fits_prints_the_count(self):
-        code, out, _ = self.main("fits", lambda now: 6)
+        code, out, _ = self.main("fits", lambda now: (6, 6))
         self.assertEqual(code, 0)
         self.assertIn("fires=2", out)
 
@@ -637,9 +672,57 @@ class GuardTests(unittest.TestCase):
         bad.write_text("weekly_cap: 2\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()) as out:
             code = guard.main(["check", "--results-tree", str(self.tree),
-                               "--budget", str(bad)], now=NOW, fire_count=lambda now: 0)
+                               "--budget", str(bad)], now=NOW, fire_count=lambda now: (0, 0))
         self.assertEqual(code, 1)
         self.assertIn("refusing", out.getvalue())
+
+
+class LiveFiresTests(unittest.TestCase):
+    """_live_fires makes the same call twice, at the 7-day and 24-hour bounds."""
+
+    def live(self, opener):
+        with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+                                          "GH_TOKEN": "tok"}), \
+             self.use(opener):
+            return guard._live_fires(NOW)
+
+    def use(self, opener):
+        # The opener is a default argument, bound at definition: wrap the call.
+        real = guard.count_successful_fires
+        return mock.patch.object(
+            guard, "count_successful_fires",
+            lambda *args, **kwargs: real(*args, opener=opener, **kwargs))
+
+    def test_it_counts_the_week_and_the_last_day(self):
+        seen = []
+
+        def opener(request, timeout):
+            seen.append(request.full_url)
+            total = 5 if "2026-10-13T15" in request.full_url else 2
+            return FireCountTests.Response(json.dumps({"total_count": total}).encode())
+        self.assertEqual(self.live(opener), (5, 2))
+        self.assertEqual(len(seen), 2)
+        self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
+        self.assertIn("created=%3E%3D2026-10-19T15%3A30%3A00Z", seen[1])
+        self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
+
+    def test_a_failed_24_hour_count_fails_closed(self):
+        def opener(request, timeout):
+            if "2026-10-19T15" in request.full_url:
+                raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
+                                             io.BytesIO(b"private-body-marker"))
+            return FireCountTests.Response(b'{"total_count": 5}')
+        with self.assertRaises(guard.GuardError) as caught:
+            self.live(opener)
+        self.assertEqual(str(caught.exception), "the workflow runs API answered 502")
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+                                          "GH_TOKEN": "tok"}), \
+             self.use(opener), contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", tempfile.gettempdir()], now=NOW)
+        self.assertEqual(code, 1)
+        self.assertIn("answered 502; refusing", out.getvalue())
+        self.assertNotIn("private-body-marker", out.getvalue())
 
 
 class FireCountTests(unittest.TestCase):
@@ -725,7 +808,7 @@ class PlannerTests(unittest.TestCase):
                               for i in range(include)]}
         live = (mock.patch.object(guard, "_live_fires", side_effect=fires)
                 if callable(fires) else
-                mock.patch.object(guard, "_live_fires", return_value=fires))
+                mock.patch.object(guard, "_live_fires", return_value=(fires, fires)))
         out = io.StringIO()
         with mock.patch.object(sys, "argv", argv), \
              mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "schedule",
