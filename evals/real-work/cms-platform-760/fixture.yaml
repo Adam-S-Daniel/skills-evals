@@ -1,0 +1,72 @@
+# Real-work fixture: cms-platform#760, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/cms-platform/pull/760, the fix for https://github.com/Adam-S-Daniel/cms-platform/issues/754.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  22023bce0f1d1b70672d456341b927a77cc0035e (merge-first-parent)
+#   merge dd22fe4a89e0085b2793155c57ff8289f3b9c1e6
+# Checker overlay: the merge commit's theme/spec/tag_case_variants_build_test.rb.
+# Trimmed from the seed: .claude-plugin, docs/CI-INVARIANTS.md, docs/VERSION-HISTORY.md, docs/health-audit-close-rule/runs.json, scripts/audit-repo-settings.js, skills, theme/assets/js/aws-rum-web/LICENSE-THIRD-PARTY, theme/assets/js/aws-rum-web/cwr-1.25.0.js.
+# Guidance provenance: 56 eligible byte-matching revisions; selected greatest commit timestamp, then smallest full SHA.
+# Also every e2e spec but the checker's own (292 trimmed).
+# issue-before-fix.txt is Adam-S-Daniel/cms-platform#754 as it stood before the pull request's first commit (read with gh api graphql).
+
+subject: any
+draft: true
+strip_agent_context: true
+prompt: |-
+  Tags that differ only by case (quotes / Quotes) show as two identical cards and one tag page drops the other's posts
+
+  Found in an exploratory pass over the adamdaniel.ai visitor flow, in a local build.
+
+  **Severity:** minor (no live post has a case-variant tag today, but when one appears, a post silently drops off its own tag page).
+
+  ## Steps
+
+  1. Have one post tagged `quotes` and another tagged `Quotes`.
+  2. Open `/tags/`, the home Tags row, and `/tags/quotes/`.
+
+  Viewport: 1440×900 Chromium (also seen in Firefox home).
+
+  ## Seen
+
+  - Two identical cards, both "QUOTES 1", both linking to `/tags/quotes/`.
+  - `/tags/quotes/` lists only the `Quotes` post; the `quotes` post is gone from its own tag page.
+
+  ## Expected
+
+  Tags that slugify the same are one tag: one card with the combined count, and one archive (and tag feed) listing every post.
+
+  ## Task
+
+  Fix this in the theme so that tags which slugify the same are one tag everywhere they appear.
+
+  ## Interface the reviewer's tests use
+
+  The reviewer's tests run a real Jekyll build of a small site with several tags in two spellings, and read `site.config['all_tags']`, whose rows carry `slug`, `name` and `count`. Each tag appears in it once, however many spellings the posts use; its count is of posts, so a post that has both spellings among its tags is counted once. On `/tags/` each tag is a single `tag-list-item` card (`tag-list-name`, `tag-list-link`, `tag-list-count`) labelled with whichever spelling most posts use. The page at `/tags/<slug>/` lists every matching post as `post-item` entries with a `post-title` link, newest first, and the number on a card equals how many it lists. Exactly one page and one `feed.xml` (Atom `entry` per post) exist at each tag's URL. A tag nobody has posted under still gets a page and a feed, both without entries.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 22023bce0f1d1b70672d456341b927a77cc0035e
+  guidance_revision: 35f62ec4d9ab7fd8b9d9fe2e3a547c7d5926c3f9
+  budget: {skill_catalog_bytes: 7603, skill_payload_bytes: 857047, guidance_bytes: 31374}
+interface_strings: [all_tags, tag-list-item, tag-list-name, tag-list-link, tag-list-count, post-item, post-title, /tags/quotes/, feed.xml, No posts yet]
+issue_before_fix: issue-before-fix.txt
+issue_created_at: '2026-10-06T04:42:18Z'
+issue_last_edited_at: null
+first_commit_at: '2026-10-06T04:47:44Z'
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [ruby, -E, 'UTF-8:UTF-8', theme/spec/tag_case_variants_build_test.rb]
+  fail_to_pass:
+  - [-n, test_tags_index_shows_one_card_per_tag]
+  - [-n, test_every_card_count_equals_its_archive_post_count]
+  - [-n, test_one_archive_page_per_slug]
+  - [-n, test_tag_page_lists_every_post_under_any_spelling]
+  - [-n, test_one_feed_per_slug_with_every_post]
+  - [-n, test_all_tags_has_one_row_per_slug_with_the_combined_count]
+  - [-n, test_a_tags_entry_page_lists_posts_under_a_different_spelling]
+  pass_to_pass:
+  - [-n, test_a_tag_with_no_posts_renders_empty_page_and_feed]
+  - [-n, test_tag_page_heading_is_the_display_name]
