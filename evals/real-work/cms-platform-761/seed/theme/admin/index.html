@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+  <!-- Minimal Decap CMS admin shell: it carries no custom site theme (the
+       legacy cobalt theme was removed); the editor's live-preview pane
+       renders the real site layout instead. Keep this admin shell minimal. -->
+  <!-- Neutral placeholder title for the un-rendered file; replaced at
+       runtime from the injected window.CMS_SITE_TITLE (render-decap-config.rb
+       writes it into <head> at build, from the site's _config.yml `title`),
+       so the admin chrome carries no hardcoded site identity. -->
+  <title>Content Manager — CMS</title>
+  <script>
+    // window.CMS_SITE_TITLE is injected ahead of this script (see
+    // render-decap-config.rb). When present, brand the tab from the site's
+    // configured title; otherwise keep the neutral placeholder above.
+    if (window.CMS_SITE_TITLE) {
+      document.title = window.CMS_SITE_TITLE + ' — Content Manager';
+    }
+  </script>
+  <style>
+    /* Decap CMS ships its own UI styling — we only carry the minimum
+     * here for the floating-link affordances and the deployed-commit
+     * pill. The cobalt-thermal theme that used to live in admin/custom.css
+     * was retired; the live preview at /preview/?collection=<n> is the
+     * editor's WYSIWYG, so styling the form itself isn't useful.
+     */
+    .floating-link {
+      position: fixed;
+      right: 1.5rem;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1rem;
+      background: #ffffff;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      color: #24292f;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 0.85rem;
+      text-decoration: none;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+    .floating-link:hover {
+      border-color: #0969da;
+      color: #0969da;
+    }
+    .floating-link svg {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+    /* Stack Live Preview above Reviews, leaving room below for the
+     * commit + platform-release pill stack (bottom-right corner; see
+     * the pill script's positioning comments near the end of <body>). */
+    #live-preview-link { bottom: 6rem; }
+    #reviews-link      { bottom: 3.25rem; }
+    /* Reviews opens a developer dashboard (visual-regression gate, QA
+     * health), not something the site's owner needs on every screen (#625.9).
+     * Keep it reachable but low-key: smaller, borderless and faded until
+     * hovered/focused. admin-mobile.css hides it outright at phone/tablet
+     * widths, where it only ever covered content (#625.10). */
+    #reviews-link {
+      padding: 0.25rem 0.6rem;
+      font-size: 0.72rem;
+      border-color: transparent;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.7);
+      opacity: 0.6;
+    }
+    #reviews-link:hover,
+    #reviews-link:focus-visible { opacity: 1; }
+    #reviews-link svg { width: 12px; height: 12px; }
+  </style>
+
+  <!-- This admin shell is intentionally minimal: the cobalt theme was
+       removed in #81 and /preview/?collection=<n> is the editor's WYSIWYG,
+       so we only carry the floating-link chrome above plus the responsive
+       layer below. admin-mobile.css makes the Decap shell usable on phones
+       / small screens (iPhone 16 is the primary target); it's the single
+       source of truth shared by all three admin shells and supersedes the
+       old inline narrow-viewport sidebar rule. Rationale + the no-fork
+       decision: docs/decisions/0003-extend-decap-for-mobile-instead-of-forking.md. -->
+  <link rel="stylesheet" href="admin-mobile.css" />
+  <!-- Room for the permanent in-flow notices (site-gate-banner.js,
+       branch-binding-banner.js): Decap's entry editor is an absolute box
+       anchored to the viewport, and without this it paints OVER a banner in
+       flow at body's top — measured at 1280x800, see the file's header
+       (#412). Inert until a banner adds `cms-notice-band` to <body>. -->
+  <link rel="stylesheet" href="admin-notice-band.css" />
+</head>
+<body>
+  <!--
+    Live Preview — opens /preview/?collection=<current> in a new tab.
+    The /preview/ page renders draft content with the real Jekyll
+    layouts and is the WYSIWYG surface for editors. The link's href
+    is updated on every URL hash change so it always points at the
+    collection of the entry currently open.
+
+    The `title` is the whole explanation an editor gets, so it has to
+    carry BOTH halves and both have to be TRUE of the sync script below
+    (#328.5): what the button does (opens a tab that mirrors this entry
+    on every Save — /preview/ fills from Save broadcasts, so it never
+    updates as you type) and WHEN it is there at all (only on an entry-
+    editor route, and only for a collection /preview/ has a real template
+    for — see PREVIEWABLE_COLLECTIONS). Before this the button simply
+    vanished on every other route with nothing anywhere saying why.
+    Locked, with the gating it describes, by
+    e2e/live-preview-gating-lint.test.js. The visible label is text, not
+    an icon alone, so the accessible name is already "Live Preview" and
+    no aria-label is added — one would only override it with a duplicate.
+  -->
+  <a id="live-preview-link" class="floating-link"
+     href="/preview/"
+     target="_blank" rel="noopener"
+     title="Live Preview — opens a tab that mirrors this entry each time you Save. Available while you're editing an entry in a section the preview can render.">
+    <svg viewBox="0 0 24 24"><path d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+    Live Preview
+  </a>
+
+  <a id="reviews-link" class="floating-link" href="/admin/reviews/" title="Visual regression reviews">
+    <svg viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+    Reviews
+  </a>
+
+  <script>
+    // Keep the Live Preview link's `?collection=…` in sync with the
+    // collection the editor is currently inside, and only SHOW the link
+    // while an entry editor is open ON A COLLECTION /preview/ CAN ACTUALLY
+    // RENDER. Decap uses hash routing, so we listen on hashchange (and call
+    // updateHref once directly for the initial load).
+    (function () {
+      var link = document.getElementById('live-preview-link');
+      // Collections with a REAL /preview/ template — see the
+      // data-preview-layout variants in theme/_layouts/preview.html. Any
+      // OTHER collection falls back there to the "posts" variant and
+      // renders as a generic dark blog article with "1 MIN READ" chrome —
+      // nothing like the entry actually is on the site. A wrong preview is
+      // worse than none (it teaches distrust of the real one), so those
+      // collections get no Live Preview button at all rather than a
+      // misleading one (cms-platform#328.1). Keep this in lockstep with
+      // preview.html's variants — e2e/live-preview-gating-lint.test.js
+      // locks both.
+      var PREVIEWABLE_COLLECTIONS = { posts: true, pages: true, projects: true };
+      // On a separate admin origin (cms.admin_origin, #517) /preview/ is a
+      // public page on another origin, which this tab's same-origin Save
+      // broadcasts cannot reach — so it could never fill. Hidden there.
+      var ADMIN_ORIGIN = !!window.CMS_ADMIN_ORIGIN && location.origin === window.CMS_ADMIN_ORIGIN;
+      function updateHref() {
+        var h = location.hash || '';
+        var m = /#\/collections\/([^\/]+)/.exec(h);
+        var col = m ? m[1] : '';
+        link.href = '/preview/' + (col ? '?collection=' + encodeURIComponent(col) : '');
+        // Only useful while EDITING: /preview/ fills from the editor's
+        // Save broadcasts (preview-bridge.js), so on the list / login /
+        // workflow routes the button opened a canvas that can never
+        // fill. Editor routes: #/collections/<c>/entries/<slug> and
+        // #/collections/<c>/new. display:'' restores the stylesheet's
+        // flex; the anchor stays in the DOM (link crawler + native-view
+        // -live specs address it by id/href, not visibility).
+        var editing = /^#\/collections\/[^\/]+\/(entries\/|new(\?|$))/.test(h);
+        link.style.display = editing && PREVIEWABLE_COLLECTIONS[col] && !ADMIN_ORIGIN ? '' : 'none';
+      }
+      window.addEventListener('hashchange', updateHref);
+      updateHref();
+    })();
+
+    // Reviews -> "Back to CMS" must land on the screen the owner left, not
+    // the admin front page (#625.9). Carry the current Decap hash route in
+    // ?return=; the dashboards validate it (same-origin "#/…" only) before
+    // using it, so this side only has to keep it current.
+    (function () {
+      var rl = document.getElementById('reviews-link');
+      if (!rl) return;
+      function syncReviewsReturn() {
+        var h = window.location.hash;
+        rl.setAttribute('href', '/admin/reviews/' + (h && h.length > 1 ? '?return=' + encodeURIComponent(h) : ''));
+      }
+      window.addEventListener('hashchange', syncReviewsReturn);
+      syncReviewsReturn();
+    })();
+  </script>
+
+  <!--
+    publish-via-auto-merge shim. MUST load before decap-cms.js so the
+    window.fetch wrap is in place before Decap captures any reference
+    to the original. Catches the 422 "rule violations" response from
+    the main-branch ruleset (`pull_request` + required-status-checks)
+    that Decap's "Publish Now" button hits, and rewrites it onto the
+    cms/ready-label path so the editorial-workflow auto-merge can do
+    the actual merge once required checks finish.
+  -->
+  <script src="publish-via-auto-merge.js"></script>
+
+  <!--
+    confirm-wrap-local-backup shim (#161). Same non-deferred / before-decap
+    idiom as publish-via-auto-merge.js above: it captures window.confirm and
+    replaces it BEFORE Decap loads, so Decap's misleading "restore local
+    backup?" dialog (an unguarded core race that silently drops the restored
+    work — decaporg/decap-cms#6989) is suppressed. Returning false for that
+    one prompt drives Decap's own deleteBackup() to clear the stale backup;
+    every other confirm (delete etc.) passes through to the native dialog.
+  -->
+  <script src="confirm-wrap-local-backup.js"></script>
+
+  <!--
+    draft-media-fallback shim. Same non-deferred / before-decap idiom: it
+    wraps URL.createObjectURL before Decap's AssetProxy calls it, so it can
+    remember each File an editor uploads. The absolute public_folder makes
+    Decap render a just-uploaded image as /assets/images/uploads/<name> on
+    this origin, which 404s until the post publishes; the shim retries such
+    an image once, from that File or from the entry's cms/ branch. See the
+    file's header. Live Preview (/preview/) loads it too.
+  -->
+  <script src="draft-media-fallback.js"></script>
+
+  <!--
+    media-library-tidy shim (#736). Same non-deferred / before-decap idiom: it
+    wraps window.fetch (to drop dotfiles such as .gitkeep from the media
+    folder listing) and installs capture-phase listeners that trim a dangling
+    separator off an uploaded file's name before Decap sanitizes it. See the
+    file's header.
+  -->
+  <script src="media-library-tidy.js"></script>
+
+  <!--
+    Decap CMS — pinned to an exact version. Editorial workflow + the
+    GitHub backend with our custom OAuth proxy (`base_url` +
+    `auth_endpoint` in admin/config.yml) drive the cms/<branch> →
+    PR → preview → merge pipeline documented in AGENTS.md.
+
+    The integrity hash makes the browser refuse a bundle whose bytes differ
+    from the reviewed release. A version bump must recompute it
+    (`curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`,
+    cross-checked against `npm pack decap-cms@<v>`) in all three shells
+    (index.html, index-local.html, index-test.html).
+  -->
+  <script src="https://unpkg.com/decap-cms@3.15.1/dist/decap-cms.js" integrity="sha384-in6eHztHveqQ7uMZ1fDaKlDmacQLFuLH2wWrFTiymyuS8zQ5bixwL8U3AeRi8h/L" crossorigin="anonymous"></script>
+
+  <!--
+    Issue #329 owner-persona fix set. All five are independent, standalone
+    shims — no shared state beyond the DOM/hash contracts each documents in
+    its own header comment. Loaded after decap-cms.js so `window.CMS` and
+    Decap's rendered DOM exist; each degrades to a silent no-op if a future
+    Decap release changes the surface it reads.
+
+      1. publish-baseline-refresh.js       — #329.1 (BLOCKER): a Publish
+         doesn't refresh Decap's dirty-tracking baseline, so retyping a
+         prior value can silently strand an unpublished edit. Remounts the
+         entry (a hash round-trip) after a publish to refresh it.
+      2. publish-step-hint.js              — #329.2: the toolbar's one
+         obvious "Publish" control is a dropdown trigger, not a button, and
+         a SAVED entry is not a published one. Renders the publish-state bar
+         (#cms-publish-state) directly under the toolbar, IN FLOW — it began
+         life as a fixed top-centre overlay and covered the very controls it
+         named (see that file's PLACEMENT block, and docs/PUBLISHING-UX.md).
+      3. search-scope-all.js               — #329.4: the sidebar search box
+         is labelled "Search all" but can silently scope to the current
+         collection. Rewrites a scoped search route to the all-collections
+         one.
+      4. list-row-affordance.js            — #329.5: list-widget rows are
+         collapsed behind an unlabeled 32×26px chevron. Labels the chevron
+         and makes the row's own summary text clickable too.
+      5. single-entry-collection-shortcut.js — #329.7: singleton file
+         collections (Header/Hero, About, Contact, Site Settings) force an
+         extra click through a one-item list. Jumps straight to the single
+         entry — never for a folder collection, which always keeps its
+         "+ New" link reachable.
+  -->
+
+  <!-- Publishing UX (docs/PUBLISHING-UX.md, staged plan phases 2-5).
+       ORDER IS LOAD-BEARING, and `defer` preserves document order:
+
+       1. entry-status-model.js — pure, no DOM, no network. The single
+          derivation of "is this on the website?" (four badges + two
+          modifiers) that BOTH the editor bar and the collection list
+          render, which is what stops them drifting back into three
+          vocabularies for three states. Must precede every consumer.
+       2. publish-progress.js — polls the entry's own PR, so the 5-15
+          minutes between Publish and the deploy stops being a silence.
+          Must precede publish-button.js, which reads its PR number.
+       3. publish-step-hint.js — the state bar, and the host of the
+          actions slot the Publish button renders into.
+       4. publish-button.js — the platform-owned Publish button; hides
+          Decap's split button ONLY once its own replacement is on
+          screen. Must follow publish-step-hint.js.
+       5. one-door-publish.js — closes the second, unlabelled route to
+          production (Status -> Ready, and the Workflow board).
+       6. site-gate-banner.js — inert unless the site declares
+          `cms.site_gate`; says so when the whole site is gated.
+       7. branch-binding-banner.js — inert on production; on a preview
+          deploy, whose served config.yml is bound to the PR branch, says
+          which branch this admin edits and where a change made here goes
+          (#412). Order-independent of 1-6 (it reads the served config, not
+          any of their state), and the gate banner sits below it by id.
+
+       2, 4, 5, 6 and 7 are PRODUCTION-SHELL ONLY. index-test.html keeps
+       Decap's real Status control and board because the editorial-workflow
+       specs drive them there; index-local.html has no editorial workflow
+       at all, and neither shell is ever served from a patched config.
+       Both facts are asserted by e2e/admin-publishing-ux.test.js.
+  -->
+  <script src="site-hostname.js" defer></script>
+  <script src="entry-status-model.js" defer></script>
+  <script src="publish-progress.js" defer></script>
+  <script src="publish-baseline-refresh.js" defer></script>
+  <script src="publish-step-hint.js" defer></script>
+  <script src="publish-button.js" defer></script>
+  <script src="one-door-publish.js" defer></script>
+  <script src="site-gate-banner.js" defer></script>
+  <script src="branch-binding-banner.js" defer></script>
+  <script src="search-scope-all.js" defer></script>
+  <script src="list-row-affordance.js" defer></script>
+  <script src="single-entry-collection-shortcut.js" defer></script>
+
+  <!-- Collection-list controls trim — hides Decap's "Sort by" dropdown and
+       its list/grid view-style toggle, and collapses the row they sat in
+       when nothing else (a Filter / Group dropdown) is left in it. Neither
+       control is useful on these sites and both cost a row above the entry
+       list on a phone. NOT loaded on index-test.html: that shell has to keep
+       rendering Decap's stock collection chrome. See the file's own header. -->
+  <script src="collection-controls-trim.js" defer></script>
+
+  <!-- "HTML Embed" editor component — adds a toolbar button on every
+       markdown body field so authors can drop a block of raw HTML / JS /
+       CSS that round-trips through rich-text and raw modes. Loads after
+       Decap so `window.CMS.registerEditorComponent` is available. -->
+  <script src="editor-component-html-embed.js" defer></script>
+  <script src="editor-component-image.js" defer></script>
+
+  <!-- In-editor preview pane styled like the site (site stylesheet + a post /
+       page / project template). Loads after Decap so `window.CMS` exists. -->
+  <script src="preview-pane.js" defer></script>
+
+  <!-- Live Preview bridge: broadcasts entry data on every save to any
+       open /preview/ tab. Loads after Decap so `window.CMS` exists. -->
+  <script src="preview-bridge.js" defer></script>
+
+  <!-- Single source of truth for "what URL does the currently-edited
+       Decap entry resolve to on the live site?" — exposes
+       window.LiveURL.compute() consumed by the banner and the native
+       toolbar override below. MUST load before either consumer. -->
+  <script src="live-url-derive.js" defer></script>
+
+  <!-- Pins an empty URL Slug on Save (Decap preSave) so a later title edit
+       cannot move a post's address — adamdaniel.ai#3857. Reads
+       window.LiveURL.slugify at save time. -->
+  <script src="slug-pin.js" defer></script>
+
+  <!-- Pattern-validation feedback (cms-platform#730): the site's own message
+       alone ("URL slug: Use lowercase ..."), in normal case, plus a toast and
+       a scroll to the first bad field when Save or Publish is blocked. Deferred,
+       after decap-cms.js (it edits Decap's English locale phrases). -->
+  <script src="validation-feedback.js" defer></script>
+
+  <!-- Tags box: Enter ends a tag, and a space after a comma no longer eats the
+       comma — cms-platform#638. Standalone: touches only the tags-field input. -->
+  <script src="tags-input.js" defer></script>
+
+  <!-- "View page on site:" banner above the entry form. Reads form
+       state from the DOM and renders a link (or placeholder when
+       Published is OFF / no slug yet). Restored in #1042 — a past
+       change removed it, leaving the editor with no link to the post.
+       MUST load AFTER live-url-derive.js (it calls
+       window.LiveURL.compute) and BEFORE native-preview-href.js. -->
+  <script src="live-url-banner.js" defer></script>
+
+  <!-- CSS-hides Decap's native "View Live" toolbar anchor — redundant
+       with the floating "Live Preview" button (#live-preview-link) and
+       the deploy-status / commit pills, and clips the publish pill
+       off-screen on narrow viewports. The anchor stays in the DOM
+       (React owns it; `removeChild` provoked a re-mount loop that
+       wedged publish-loop e2e runs on commit 503365a) but display:none
+       + visibility:hidden + aria-hidden remove it from layout, focus,
+       and the a11y tree. The override also keeps the historical
+       `live-url-derive.js`-based href rewrite contract moot, but
+       live-url-derive.js is still loaded for the in-editor banner. -->
+  <script src="native-preview-href.js" defer></script>
+
+  <!-- Posts collection list dashboard (#1042). Augments Decap's bare
+       Posts list in place — status / published-link / last-edited /
+       preview-PR columns (one batched GitHub query, refreshed on
+       return-to-list + a ↻ button), hides the E2E-canary fixtures by
+       default, and drops the "E2E Canary" Quick-add item. Self-
+       contained; degrades to local-only columns without a token. -->
+  <script src="posts-list-enhance.js" defer></script>
+
+  <!--
+    Autosave-on-hide shim (#161). Deferred (post-load behaviour): it clicks
+    the toolbar Save button on tab-hide (visibilitychange→hidden / pagehide)
+    and after ~2min idle while the entry is dirty, so work persists reliably
+    now that the misleading local-backup restore is disabled (see
+    confirm-wrap-local-backup.js). Inherits Save's exact semantics — under
+    editorial_workflow it commits to the entry's cms/<collection>/<slug> PR
+    branch, nothing goes live until Publish. Wraps nothing (no fetch, no
+    confirm); a click on a clean entry is a no-op via Decap's own onClick
+    guard. Idle threshold is overridable via window.__AUTOSAVE_IDLE_MS. -->
+  <script src="autosave-on-hide.js" defer></script>
+
+  <!--
+    OAuth-App-restriction detector (#26). PROD-ONLY: only the real GitHub
+    backend can produce the "OAuth App access restrictions" persist error
+    that hits org-owned consumers (jodidaniel#27), so it's loaded here in
+    the prod shell, not the local/test shells. It's inert until that exact
+    error text appears in Decap's notification surface — at which point it
+    shows a dismissible banner pointing the ORG OWNER at Settings →
+    Third-party access → OAuth App policy to approve the app. It does NOT
+    block editing and does NOT wrap window.fetch (it observes the toast DOM
+    so it can't interfere with publish-via-auto-merge.js's fetch wrap).
+    Order-independent: it touches none of the live-url-derive → banner →
+    native-preview-href → posts-list-enhance chain the load-order spec
+    locks. NO-OPs harmlessly if it ever runs in a non-github backend.
+  -->
+  <script src="oauth-app-restriction-detector.js" defer></script>
+
+  <!--
+    Production deploy status pill — shows "Publishing…" with a spinner
+    while deploy-production.yml's GitHub Deployment is `in_progress` /
+    `queued`, transitions to a hidden state on `success` (the commit
+    pill below already shows the deployed SHA), and shows a red
+    "⚠ Deploy failed — view logs" link on failure. Decap CMS itself
+    doesn't track post-merge production deploys for the github
+    backend; this fills the gap. See admin/deploy-status-pill.js for
+    polling cadence + the upstream workflow steps that drive it.
+  -->
+  <script src="deploy-status-pill.js" defer></script>
+
+  <!--
+    Deployed-build commit indicator, plus (below it) the cms-platform
+    release pill. Pinned to the bottom-right corner, tucked above the
+    floating Live Preview / Reviews links, so editors can tell which
+    commit — and which platform release — the admin they're looking at
+    was built from. The deploy workflows (deploy-prod and deploy-preview)
+    write `commit.json` next to this file before the S3 sync; if it's
+    absent (local dev, or someone served the repo root without running
+    the writer) both pills stay hidden. The platform pill additionally
+    needs `platform_repo`/`platform_ref` in commit.json (sourced from the
+    site's `platform.lock`) — an older commit.json without them hides
+    just that pill, not the commit one.
+  -->
+  <script>
+    (function () {
+      // Repo derived from the injected identity (render-decap-config.rb writes
+      // window.CMS_REPO into <head> at build, before this script). Mirrors how
+      // posts-list-enhance.js consumes the same global.
+      var REPO_URL = 'https://github.com/' + window.CMS_REPO;
+      fetch('commit.json', { cache: 'no-cache' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (c) {
+          // Expose the DEPLOYED backend branch for publish-via-auto-merge's
+          // delete-ref scoping (#114): deploy-production writes
+          // branch:"main", deploy-preview writes the PR head ref (the
+          // preview backend branch). Deliberately NOT part of the Ruby
+          // render-time window.CMS_* injection — the render hooks run at
+          // BUILD time and don't know the deployed branch; commit.json is
+          // written at DEPLOY time. Fail-closed by construction: a missing
+          // / unreadable commit.json leaves this undefined, which disables
+          // the shim's multi-segment delete-ref recovery.
+          if (c && c.branch) window.CMS_BACKEND_BRANCH = c.branch;
+          if (!c || !c.sha) return;
+          var d = c.iso ? new Date(c.iso) : null;
+          var dateLabel = d
+            ? d.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' })
+            : '';
+          var isPreview = c.branch && c.branch !== 'main';
+
+          var a = document.createElement('a');
+          a.id = 'cms-commit-pill';
+          // Deployment metadata, not content: the visual-regression text
+          // check strips [data-visreg-ignore] nodes before diffing (the
+          // deployed sha/date differs between prod and a CI build by
+          // definition, and must not force the manual review gate).
+          a.setAttribute('data-visreg-ignore', '');
+          a.href = REPO_URL + '/commit/' + c.sha;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.title = 'Deployed commit — opens on GitHub';
+          // On a feature/preview branch the pill leads with the branch
+          // name in amber so it's unmissable that this isn't production
+          // and that any CMS edits made here stay on this branch.
+          a.innerHTML = (isPreview
+            ? '<span style="color:#bf8700;font-weight:600;margin-right:0.5em">' +
+                'PREVIEW: ' + escapeHTML(c.branch) +
+              '</span>'
+            : '') +
+            '<span>' + escapeHTML(c.sha.slice(0, 7)) +
+            (dateLabel ? '  ' + escapeHTML(dateLabel) : '') + '</span>';
+          // Bottom-right corner, tucked above the floating Live Preview
+          // / Reviews links (their `bottom` offsets were bumped up in the
+          // <style> block above to make room for this pill stack). Was
+          // at top:60px right:12px and overlapped Decap's editor toolbar
+          // on narrow viewports / when Decap surfaces an extra
+          // notification banner. Bottom-right doesn't conflict with form
+          // fields and leaves the attention-grabbing top of the page
+          // alone. `bottom:1.75rem` (rather than the very corner) leaves
+          // room for the platform-release pill directly below it.
+          // PREVIEW-branch pills keep their amber accent (and stay
+          // opaque so the branch name is unmistakable); main-branch
+          // pills go more subdued — they're informational, not
+          // actionable.
+          a.style.cssText = [
+            'position:fixed',
+            'bottom:1.75rem',
+            'right:0.25rem',
+            'z-index:10000',
+            'padding:0.15rem 0.45rem',
+            'background:rgba(255,255,255,' + (isPreview ? '0.95' : '0.75') + ')',
+            'border:1px solid ' + (isPreview ? '#bf8700' : 'rgba(208,215,222,0.6)'),
+            'border-radius:3px',
+            'color:' + (isPreview ? '#57606a' : '#8c959f'),
+            'font-family:ui-monospace,SFMono-Regular,Menlo,monospace',
+            'font-size:0.65rem',
+            'letter-spacing:0.03em',
+            'text-decoration:none',
+            'opacity:' + (isPreview ? '1' : '0.7'),
+            'transition:opacity 0.15s,border-color 0.15s,color 0.15s'
+          ].join(';') + ';';
+          a.onmouseenter = function () {
+            a.style.borderColor = isPreview ? '#bf8700' : '#0969da';
+            a.style.color = '#24292f';
+            a.style.opacity = '1';
+          };
+          a.onmouseleave = function () {
+            a.style.borderColor = isPreview ? '#bf8700' : 'rgba(208,215,222,0.6)';
+            a.style.color = isPreview ? '#57606a' : '#8c959f';
+            a.style.opacity = isPreview ? '1' : '0.7';
+          };
+          document.body.appendChild(a);
+
+          // Platform-version pill — which cms-platform release (tag) this
+          // site's admin was built from, sourced from the site's own
+          // platform.lock via commit.json's platform_repo/platform_ref
+          // (scripts/write-commit-json.sh and the deploy workflows write
+          // them; both empty when platform.lock is absent or the fields
+          // are missing — treat empty as "not present", same as no pill).
+          // Stacked directly below the commit pill, same right offset,
+          // at the corner's bottom:0.25rem — the slot the commit pill
+          // used to occupy before it moved up to make room.
+          if (c.platform_repo && c.platform_ref) {
+            var p = document.createElement('a');
+            p.id = 'cms-platform-pill';
+            p.setAttribute('data-visreg-ignore', '');
+            p.href = 'https://github.com/' + c.platform_repo + '/releases/tag/' + c.platform_ref;
+            p.target = '_blank';
+            p.rel = 'noopener';
+            p.title = 'cms-platform release — opens on GitHub';
+            p.innerHTML = '<span>platform ' + escapeHTML(c.platform_ref) + '</span>';
+            p.style.cssText = [
+              'position:fixed',
+              'bottom:0.25rem',
+              'right:0.25rem',
+              'z-index:10000',
+              'padding:0.15rem 0.45rem',
+              'background:rgba(255,255,255,0.75)',
+              'border:1px solid rgba(208,215,222,0.6)',
+              'border-radius:3px',
+              'color:#8c959f',
+              'font-family:ui-monospace,SFMono-Regular,Menlo,monospace',
+              'font-size:0.65rem',
+              'letter-spacing:0.03em',
+              'text-decoration:none',
+              'opacity:0.7',
+              'transition:opacity 0.15s,border-color 0.15s,color 0.15s'
+            ].join(';') + ';';
+            p.onmouseenter = function () {
+              p.style.borderColor = '#0969da';
+              p.style.color = '#24292f';
+              p.style.opacity = '1';
+            };
+            p.onmouseleave = function () {
+              p.style.borderColor = 'rgba(208,215,222,0.6)';
+              p.style.color = '#8c959f';
+              p.style.opacity = '0.7';
+            };
+            document.body.appendChild(p);
+          }
+        })
+        .catch(function () { /* offline / 404 — leave hidden */ });
+
+      function escapeHTML(s) {
+        return String(s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+    })();
+  </script>
+</body>
+</html>
