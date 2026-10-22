@@ -1008,6 +1008,14 @@ class EndToEndTests(Checks):
             f"---\nname: {self.SKILL}\ndescription: stand-in.\n---\n",
             encoding="utf-8")
         self.results = self.tmp / "results"
+        # A budget no stand-in meter here reaches (#68): these tests are
+        # about the usage record, and the committed per-run cap (3 points) is
+        # what their 0.72 to 0.75 readings would otherwise stop at. The stop
+        # itself is test_issue_68_allowance_guard.py's.
+        self.budget = self.tmp / "budget.yml"
+        self.budget.write_text(yaml.safe_dump({
+            "weekly_cap": 1, "per_run_cap": 1, "per_run_overrun": 0.005,
+            "stop_when_account_above": 1}), encoding="utf-8")
 
     def fixture(self, batches=None, **extra) -> None:
         # The stand-in CLI's settings reach an arm only through the fixture's
@@ -1044,7 +1052,7 @@ class EndToEndTests(Checks):
              str(self.eval_dir), "--arm", arm,
              "--registry", f"adam-agentskills={self.registry}",
              "--results-dir", str(self.results), "--timeout", "30",
-             "--timestamp", self.TS, *args],
+             "--timestamp", self.TS, "--budget", str(self.budget), *args],
             capture_output=True, text=True, env=env, cwd=str(ROOT), timeout=300)
 
     def said(self, proc) -> str:

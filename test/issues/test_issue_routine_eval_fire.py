@@ -8,7 +8,9 @@ routines fire API. What is pinned here:
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
     inputs mode, candidate, fixture, skill, holdout, model, arms and trials
-    (`model`: test_issue_68_model_input.py), and `permissions: contents: read`;
+    (`model`: test_issue_68_model_input.py), and `permissions: contents: read`
+    plus `actions: read` for the weekly allowance guard (#68; the guard
+    itself is test_issue_68_allowance_guard.py's);
   * every `uses:` is a 40-character SHA with nothing after it on the line,
     at the same SHA this repo's other workflows already pin;
   * no `${{ inputs.* }}` or `${{ github.event.* }}` inside any `run:` block;
@@ -160,7 +162,10 @@ class WorkflowShapeTests(unittest.TestCase):
                          ["1", "2", "3"])
 
     def test_permissions_are_contents_read(self):
-        self.assertEqual(self.doc.get("permissions"), {"contents": "read"})
+        # `actions: read` lets the allowance guard count this workflow's own
+        # successful runs (#68); nothing here writes.
+        self.assertEqual(self.doc.get("permissions"),
+                         {"contents": "read", "actions": "read"})
         for name, job in self.doc["jobs"].items():
             self.assertNotIn("permissions", job,
                              f"job {name} must not widen the workflow's permissions")
@@ -273,10 +278,11 @@ class WorkflowShapeTests(unittest.TestCase):
             "persist-credentials": False})
         self.assertEqual(self.steps[fire]["env"]["ISSUE_SNAPSHOT_FILE"],
                          "${{ steps.snapshot.outputs.file }}")
-        # The job token reaches the snapshot step only.
+        # The job token reaches the snapshot step and the allowance guard
+        # (#68), which reads the workflow runs API with it, and no other.
         holders = [s.get("name") for s in self.steps
                    if "github.token" in yaml.safe_dump(s)]
-        self.assertEqual(holders, [step["name"]])
+        self.assertEqual(holders, ["Check the weekly allowance", step["name"]])
 
     def test_pinned_pyyaml_is_installed_before_validation(self):
         # improve_gate.py fire-check loads fixture.yaml with PyYAML, at the
@@ -291,7 +297,9 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_checkout_does_not_persist_credentials(self):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
-        self.assertEqual(len(checkout), 2)
+        # The default branch, persistent/eval-results for the allowance
+        # guard (#68), and _agent-guidance for scaffold mode.
+        self.assertEqual(len(checkout), 3)
         for step in checkout:
             self.assertIs(step["with"]["persist-credentials"], False)
 

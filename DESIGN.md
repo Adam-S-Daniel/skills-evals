@@ -1745,9 +1745,12 @@ One manual API dispatch selects one fixture. At the workflow's estimate of
 $0.30–0.90 per skill fixture, that is its estimated cost; actual usage varies,
 and the API workspace spend limit is the hard ceiling for this path. Adding a
 fixture to the weekly routine's reviewed list is a subscription-usage
-decision, not an API-spend estimate. Rotation, monthly sweeps, model
-products, trial changes, and automated budget enforcement remain deferred under
-[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
+decision, not an API-spend estimate. Automated budget enforcement is the
+weekly allowance guard: [`evals/budget.yml`](evals/budget.yml) holds Adam's
+30% cap, enforced in the run, before each fire and in the weekly plan
+([docs/how-it-works.md](docs/how-it-works.md#the-weekly-allowance-guard)).
+Rotation, monthly sweeps, model products and trial changes remain deferred
+under [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 

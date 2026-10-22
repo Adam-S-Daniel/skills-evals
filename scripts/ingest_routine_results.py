@@ -678,6 +678,12 @@ USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", *USAGE_ALWAYS_NULL)
 USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
               "other_account_activity", "asserted_quiet_by", "outer_session",
               "measured", "reasons")
+#: `budget_stop` (#68): present only on a run that stopped starting work for
+#: its weekly allowance budget, so every summary written before it still
+#: ingests. run_eval.budget_stop_reading's keys and reasons.
+USAGE_OPTIONAL = ("budget_stop",)
+BUDGET_STOP_KEYS = ("reason", "utilization", "moved", "limit")
+BUDGET_STOP_REASONS = ("per_run_cap", "account_above")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
 NOT_SAMPLED = ("judge", "guard", "run_end")
 TRIAL_METER_KEYS = ("snapshots", "omitted")
@@ -861,9 +867,32 @@ def _check_meter(usage, where: str, billing) -> None:
                 raise Rejected(f"{where}: a window's delta is not its change")
 
 
+def check_budget_stop(stop, where: str, billing) -> None:
+    """`usage.budget_stop`: exactly its four keys, a reason the harness
+    writes, and consistent with itself: the limit it names is a budget value
+    (above 0, at most 1) and the reading it gives reached it. An API-billed
+    run has no meter, so it never stops for one."""
+    where = f"{where}.budget_stop"
+    _object(stop, where, BUDGET_STOP_KEYS, BUDGET_STOP_KEYS)
+    if billing == "api":
+        raise Rejected(f"{where}: an API-billed run has no meter to stop on")
+    if stop["reason"] not in BUDGET_STOP_REASONS:
+        raise Rejected(f"{where}.reason is not one the harness writes")
+    _number(stop["utilization"], f"{where}.utilization", 0, MAX_TOKEN_COUNT)
+    _number(stop["moved"], f"{where}.moved", -MAX_TOKEN_COUNT, MAX_TOKEN_COUNT)
+    _number(stop["limit"], f"{where}.limit", 0, 1)
+    if stop["limit"] == 0:
+        raise Rejected(f"{where}.limit must be above 0")
+    reached = stop["utilization"] if stop["reason"] == "account_above" else stop["moved"]
+    if reached < stop["limit"]:
+        raise Rejected(f"{where}: the reading does not reach its limit")
+
+
 def check_usage(usage, where: str, run: dict) -> None:
     where = f"{where}: usage"
-    _object(usage, where, USAGE_KEYS, USAGE_KEYS)
+    _object(usage, where, USAGE_KEYS + USAGE_OPTIONAL, USAGE_KEYS)
+    if "budget_stop" in usage:
+        check_budget_stop(usage["budget_stop"], where, run["billing"])
     _integer(usage["schema_version"], f"{where}.schema_version", 1, 1)
     _span(usage, where)
     _check_meter(usage, where, run["billing"])
@@ -1042,6 +1071,9 @@ def check_summary(doc, where: str, parts: dict) -> None:
 
 
 TRACE_KEYS = ("schema_version", "limits", "calls", "events", "omitted_events")
+#: `cli_json.bounded_tool_trace`'s `complete` came later and is optional, so
+#: an older trace still ingests.
+TRACE_ALLOWED = TRACE_KEYS + ("complete",)
 LIMIT_KEYS = ("input_chars", "output_chars", "max_bytes")
 EVENT_KEYS = {
     "tool_use": ("call", "kind", "id", "name", "input", "input_chars",
@@ -1049,15 +1081,20 @@ EVENT_KEYS = {
     "tool_result": ("call", "kind", "id", "is_error", "output",
                     "output_chars", "subagent"),
 }
+#: `cli_json.tool_events` adds this flag, always true, only to an event whose
+#: text it clipped.
+EVENT_FLAGS = {"tool_use": "input_incomplete", "tool_result": "output_incomplete"}
 #: `_clip` appends "..." to a cut string, and a string too large to redact
 #: becomes "<N chars, too large to redact>"; both fit within this slack.
 CLIP_SLACK = 48
 
 
 def check_tool_trace(doc, where: str) -> None:
-    _object(doc, where, TRACE_KEYS, TRACE_KEYS)
+    _object(doc, where, TRACE_ALLOWED, TRACE_KEYS)
     if doc["schema_version"] != 1 or isinstance(doc["schema_version"], bool):
         raise Rejected(f"{where}: unknown schema_version")
+    if "complete" in doc and not isinstance(doc["complete"], bool):
+        raise Rejected(f"{where}: complete not a bool")
     _object(doc["limits"], f"{where}: limits", LIMIT_KEYS, LIMIT_KEYS)
     input_cap = doc["limits"]["input_chars"]
     output_cap = doc["limits"]["output_chars"]
@@ -1067,6 +1104,8 @@ def check_tool_trace(doc, where: str) -> None:
              SIZE_CAPS["tool_trace.json"])
     _integer(doc["calls"], f"{where}: calls", 0, 100)
     _integer(doc["omitted_events"], f"{where}: omitted_events", 0, 1_000_000)
+    if doc.get("complete") is True and doc["omitted_events"]:
+        raise Rejected(f"{where}: complete with omitted events")
     events = doc["events"]
     if not isinstance(events, list) or len(events) > 5000:
         raise Rejected(f"{where}: events must be a bounded list")
@@ -1074,9 +1113,13 @@ def check_tool_trace(doc, where: str) -> None:
         if not isinstance(event, dict) or event.get("kind") not in EVENT_KEYS:
             raise Rejected(f"{where}: event of unknown kind")
         keys = EVENT_KEYS[event["kind"]]
-        _object(event, f"{where}: event", keys, keys)
+        flag = EVENT_FLAGS[event["kind"]]
+        _object(event, f"{where}: event", keys + (flag,), keys)
+        if flag in event and event[flag] is not True:
+            raise Rejected(f"{where}: event.{flag} not true")
         _integer(event["call"], f"{where}: event.call", 0, 100)
-        _string(event["id"], f"{where}: event.id", 128)
+        # `cli_json._tool_use_id` writes null for an id it does not recognize.
+        _string(event["id"], f"{where}: event.id", 128, null=True)
         if not isinstance(event["subagent"], bool):
             raise Rejected(f"{where}: event.subagent not a bool")
         if event["kind"] == "tool_use":

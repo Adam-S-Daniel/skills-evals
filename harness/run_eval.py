@@ -75,6 +75,7 @@ import judge_policy  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 import seed_prep  # noqa: E402
 import answer_leak  # noqa: E402
+import budget  # noqa: E402
 import workspace_git  # noqa: E402
 
 
@@ -2154,6 +2155,16 @@ _CLI_PROFILE_MARKERS = {
     # possibly after delivery returned. It loads no CLI configuration. The
     # writer checks 1 MiB before its last append of at most 4096 bytes.
     "fleet-delivery.jsonl": 1024 * 1024 + 4096,
+    # CLI 2.1.304 writes these at startup in a fresh profile. The policy
+    # limits are server-signed and can only restrict; the stamp, synced-at,
+    # cleanup and sweep files are timestamps.
+    ".last-cleanup": 4096, "plugins/.last_inuse_sweep": 4096,
+    "policy-limits.json": 65536, "policy-limits.json.signature.json": 65536,
+    "policy-limits.json.stamp.json": 4096, "remote-settings.json.synced-at": 4096,
+    # Server-managed settings, which the CLI loads: exempt only while they
+    # are an empty JSON object, as written at startup; anything else could
+    # configure the agent.
+    "remote-settings.json": (4096, "{}"),
 }
 _CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
 # A shared profile (the operator's real `~/.claude`, or an inherited
@@ -2167,7 +2178,29 @@ _SHARED_PROFILE_TREES = ("skills/synced",)
 # `plugins/` (installed and known lists, cached plugins and marketplaces, all
 # plugin-loading surfaces) is watched whole; the only writes measured there
 # during a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers.
-_SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096}
+_SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096,
+                           # A CLI 2.1.304 startup timestamp (see above).
+                           "plugins/.last_inuse_sweep": 4096}
+
+
+def _is_empty_json_object(path: Path, limit: int) -> bool:
+    """Whether `path` (not followed if a symlink) holds `{}` as JSON."""
+    try:
+        # Non-blocking, so a FIFO swapped in after the lstat cannot hang it.
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return False
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            return False
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        return False
+    try:
+        return json.loads(data) == {}
+    except ValueError:
+        return False
 
 
 def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
@@ -2183,6 +2216,11 @@ def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
                     not hasattr(os, "geteuid") or st.st_nlink != 1
                     or st.st_uid != os.geteuid()):
                 return False
+            if isinstance(limit, tuple):
+                # (size cap, "{}"): also content-checked as an empty object.
+                limit = limit[0]
+                return (stat.S_ISREG(st.st_mode) and st.st_size <= limit
+                        and _is_empty_json_object(path, limit))
             return stat.S_ISREG(st.st_mode) and (limit is None or st.st_size <= limit)
     if rel in empty_dirs:
         return stat.S_ISDIR(st.st_mode) and not os.listdir(path)
@@ -3689,6 +3727,60 @@ def _meter_delta(snapshots: list, uncovered: dict) -> dict | None:
             "uncovered": uncovered, "windows": windows}
 
 
+#: Why a trial, a judge call or a guidance arm was not started (#68): the
+#: run's budget stop had been reached. `usage.budget_stop` says which limit.
+BUDGET_STOP_ERROR = "budget_stop"
+
+
+def _seven_day(info) -> tuple | None:
+    """(utilization, resetsAt) of one meter snapshot's weekly window, or None
+    when the snapshot does not carry a readable one."""
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    if not isinstance(week, dict) or _token_count(week.get("utilization")) is None:
+        return None
+    return week["utilization"], week.get("resetsAt")
+
+
+def budget_stop_reading(readings: list, limits: dict) -> dict | None:
+    """The budget stop (#68) a run's weekly-window readings call for, oldest
+    first, or None. `limits` is `budget.load_budget()`'s.
+
+    `moved` is the latest reading less the first, rounded as `_meter_delta`
+    rounds a window's delta so the two agree; when the window's reset time
+    changed in between, the latest reading alone, which is what was spent
+    since the reset and never less than this run spent in it. The account
+    limit wins when both are reached: it is the one that protects Adam's own
+    work."""
+    if not readings:
+        return None
+    (start, start_reset), (latest, latest_reset) = readings[0], readings[-1]
+    moved = round(latest - start, 6) if latest_reset == start_reset else latest
+    if latest >= limits["stop_when_account_above"]:
+        reason, limit = "account_above", limits["stop_when_account_above"]
+    elif moved >= limits["per_run_cap"]:
+        reason, limit = "per_run_cap", limits["per_run_cap"]
+    else:
+        return None
+    return {"reason": reason, "utilization": latest, "moved": moved, "limit": limit}
+
+
+def _budget_detail(stop: dict, what: str) -> str:
+    """A skipped piece of work's error detail: no meter value, only which
+    limit, so the line reads the same whatever the account was doing."""
+    return (f"{what} not started: the run reached its budget stop "
+            f"({stop['reason']}); see usage.budget_stop")
+
+
+class BudgetStopped(Exception):
+    """A guidance arm was not started because the run reached its budget
+    stop (#68). `_run_guidance` ends the run with exit 2 and no report."""
+
+    def __init__(self, stop: dict):
+        super().__init__(_budget_detail(stop, "guidance arm"))
+        self.stop = stop
+
+
 class _RunTelemetry:
     """One run's usage record, filled as the run goes.
 
@@ -3711,6 +3803,11 @@ class _RunTelemetry:
 
     def begin(self, flags=None) -> None:
         self.flags = flags
+        # The budget limits (#68): set by main() once `--budget` is read.
+        # None, as for an in-process caller that never sets them, stops
+        # nothing. `stop` is sticky: once reached, no later work starts.
+        self.budget: dict | None = None
+        self.stop: dict | None = None
         self.started, self.ended = _now(), None
         self.trial_started = None
         self.pending: list[dict] = []
@@ -3746,6 +3843,23 @@ class _RunTelemetry:
 
     def _api_billed(self) -> bool:
         return getattr(self.flags, "run_billing", None) == "api"
+
+    def budget_stop(self) -> dict | None:
+        """The run's budget stop (#68), or None while it may start more work.
+
+        Read from every weekly-window reading the run has so far, including
+        those of calls still queued for the summary being built (an agent
+        call whose judge is about to be made). A run with no reading yet goes
+        on: the meter is only read as an agent call begins. An API-billed run
+        is never stopped: it has no account meter (`_API_BILLED`)."""
+        if self.stop is not None or self.budget is None or self._api_billed():
+            return self.stop
+        infos = [s["info"] for s in self.snapshots] + [
+            event["info"] for group in self.pending for call in group["calls"]
+            for event in call.get("events") or ()]
+        readings = [r for r in map(_seven_day, infos) if r is not None]
+        self.stop = budget_stop_reading(readings, self.budget)
+        return self.stop
 
     def _measure(self) -> dict:
         """This summary's own calls and the meter snapshots they printed."""
@@ -3875,6 +3989,10 @@ class _RunTelemetry:
                     "call starts, so a run of one agent call has none")
         quiet = getattr(self.flags, "asserted_quiet", None)
         session = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
+        # Present only once the run has stopped for its budget (#68), so a
+        # run that never did writes the record it always wrote; `finish()`
+        # puts it in every summary of the run, written before the stop or not.
+        stopped = {} if self.stop is None else {"budget_stop": dict(self.stop)}
         return {"started_at": _stamp(self.started), "ended_at": _stamp(self.ended),
                 "meter": meter, "meter_delta": delta, "concurrent_runs": None,
                 "other_account_activity": "asserted_quiet" if quiet else "unknown",
@@ -3883,7 +4001,7 @@ class _RunTelemetry:
                     "id": session if RUN_NAME.fullmatch(session) else None,
                     "usage": None, "note": "not measured"},
                 "limit_promotion": None, "price_table_version": None,
-                "reasons": reasons}
+                "reasons": reasons, **stopped}
 
     def usage(self, trials: list | None) -> dict:
         """A summary's `usage` block. `trials` are an arm aggregate's trial
@@ -3915,6 +4033,11 @@ class _RunTelemetry:
                           for field in ("billing", "runner", "location", "id"))
         lines = [f"- Run: {named}; started {level['started_at']}, "
                  f"ended {level['ended_at']}"]
+        if self.stop is not None:
+            lines.append(f"- Budget stop: {self.stop['reason']} (limit "
+                         f"{self.stop['limit']}, weekly meter "
+                         f"{self.stop['utilization']}, moved {self.stop['moved']}); "
+                         "no trial or judge call started after it")
         delta = level["meter_delta"]
         if delta is None:
             why = level["reasons"]["meter_delta"]
@@ -5072,6 +5195,18 @@ def _call_judge(fixture: dict, transcript: str, diff: str, model: str | None,
             "error" if "error" in (judge_result or ()) else "ok")
 
 
+def _judge_unless_stopped(judge_call) -> tuple:
+    """(the judge's result, the models that served it) for a judge call made
+    inside its trial, its usage queued for that trial's summary; or, once the
+    run has reached its budget stop (#68), an error result and no call."""
+    stop = _TELEMETRY.budget_stop()
+    if stop is not None:
+        return {"error": _budget_detail(stop, "judge call")}, []
+    judge_result, judge_models, started, results, outcome = judge_call()
+    _TELEMETRY.timed("judge", started, results, outcome)
+    return judge_result, judge_models
+
+
 def _settle_judging(hold: list, decided: bool) -> None:
     """Finish the trials whose judge call waited for their pair: each held
     summary gets JUDGE_SKIPPED when the pair is `decided`, else the call is
@@ -5079,8 +5214,12 @@ def _settle_judging(hold: list, decided: bool) -> None:
     in-memory result the report is rendered from is updated alongside."""
     for entry in hold:
         summary = json.loads(entry["path"].read_text(encoding="utf-8"))
+        stop = None if decided else _TELEMETRY.budget_stop()
         if decided:
             block, models = dict(JUDGE_SKIPPED), []
+        elif stop is not None:
+            # No call made, so nothing is added to the summary's usage.
+            block, models = {"error": _budget_detail(stop, "judge call")}, []
         else:
             block, models, started, results, outcome = entry["call"]()
             _TELEMETRY.amend(summary, "judge", started, results, outcome)
@@ -5144,6 +5283,19 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         extra.update(_in_place_record(plan, _ROLES[arm_name]))
     if fixture.get("_real_work"):
         extra["guidance_violations"] = guidance_violations.measure(None, None, None)
+    stop = _TELEMETRY.budget_stop()
+    if stop is not None:
+        # The run reached its budget stop (#68): this trial is not started,
+        # and is recorded as an error so the arm's aggregate, the report and
+        # the exit code all say it is missing rather than scoring around it.
+        error = {"type": BUDGET_STOP_ERROR, "detail": _budget_detail(stop, "trial")}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None, extra=extra,
+                       harness_version=harness_version,
+                       permission_mode=permission_mode, arm_dir=out_dir,
+                       effort=effort, agent_model=agent_model)
+        return {"arm": arm_name, "error": error, "agent": None,
+                "objective_checks": None, "judge": None, "models_used": [], **extra}
     if selection_error:
         # A runner-level error, recorded on the arm exactly like an agent
         # failure, so it leaves through main()'s existing exit-2 path instead
@@ -5366,10 +5518,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     _build_judge_diff(workspace), judge_model,
                     permission_mode)
                 if hold is None:
-                    (judge_result, judge_models, judge_started, judge_results,
-                     outcome) = judge_call()
-                    _TELEMETRY.timed("judge", judge_started, judge_results,
-                                     outcome)
+                    judge_result, judge_models = _judge_unless_stopped(judge_call)
                     judge_call = None
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
@@ -5819,6 +5968,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         with _in_place_pair(plan):
             return _run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
     _TELEMETRY.begin_trial()
+    if _TELEMETRY.budget_stop() is not None:
+        # A guidance run is one pair: an arm left out leaves nothing to
+        # compare, so the run ends here (#68) instead of writing a summary
+        # shaped like a delivery result that never happened.
+        raise BudgetStopped(_TELEMETRY.budget_stop())
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
     effort = _effort(args, fixture)
@@ -6054,10 +6208,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                     _call_judge, fixture, result.get("transcript") or "", diff,
                     (fixture.get("judge") or {}).get("model"), permission_mode)
                 if ctx.get("judge_hold") is None:
-                    (judge_result, judge_models, judge_started, judge_results,
-                     outcome) = judge_call()
-                    _TELEMETRY.timed("judge", judge_started, judge_results,
-                                     outcome)
+                    judge_result, judge_models = _judge_unless_stopped(judge_call)
                     judge_call = None
 
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
@@ -6305,6 +6456,11 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         # manifest row, a payload that cannot be read: all configuration, all
         # exit 2, none of them a traceback out of the middle of a run.
         print(f"guidance configuration error: {exc}")
+        return 2
+    except BudgetStopped as exc:
+        # The arms already run keep their summaries, which `finish()` stamps
+        # with `usage.budget_stop`; there is no pair to report on.
+        print(f"Budget stop: {exc}")
         return 2
 
     report_dir = args.results_dir / key / timestamp
@@ -6709,6 +6865,13 @@ def main() -> int:
                         help="the run's identifier on its path: a routine or "
                              "workstation run id (default: $GITHUB_RUN_ID "
                              "when that is set)")
+    parser.add_argument("--budget", type=Path, default=budget.DEFAULT_BUDGET,
+                        metavar="PATH",
+                        help="the weekly allowance budget (#68): a run stops "
+                             "starting trials and judge calls once the weekly "
+                             "meter has moved per_run_cap since its first "
+                             "reading, or reads stop_when_account_above "
+                             "(default: evals/budget.yml)")
     parser.add_argument("--asserted-quiet", default=None, type=_run_name,
                         metavar="WHO",
                         help="record that WHO asserts nothing else used the "
@@ -6716,6 +6879,11 @@ def main() -> int:
                              "other_account_activity`); otherwise `unknown`")
     args = parser.parse_args()
     _TELEMETRY.flags = args
+    try:
+        _TELEMETRY.budget = budget.load_budget(args.budget)
+    except budget.BudgetError as exc:
+        print(f"configuration error: {exc}")
+        return 2
     try:
         args.context_repos = context.parse_context_repos(args.context_repo)
     except guidance.GuidanceError as exc:
@@ -7200,6 +7368,9 @@ def main() -> int:
             if args.trials > 1:
                 label += f" ({stats['errors']} of {stats['n']} trials)"
             errored_arms.append(label)
+    if _TELEMETRY.stop is not None:
+        print(f"Budget stop: {_TELEMETRY.stop['reason']}; trials and judge "
+              "calls after it were not started (see usage.budget_stop)")
     if errored_arms:
         print(f"Runner-level error in arm(s): {', '.join(errored_arms)}")
         return 2

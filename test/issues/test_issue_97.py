@@ -968,6 +968,28 @@ class TestIssue97(unittest.TestCase):
         # widening left behind would silently un-scrub every arm.
         self.assertEqual(guidance.EXTRA_PASSTHROUGH, ())
 
+    def test_hosted_passthrough_is_exactly_the_remote_flag(self):
+        # Same floor as PASSTHROUGH: a name added here reaches every guidance
+        # arm, so the exact tuple is the assertion.
+        self.assertEqual(guidance.HOSTED_PASSTHROUGH, ("CLAUDE_CODE_REMOTE",))
+
+    def test_remote_flag_reaches_the_arm_only_when_the_host_sets_it(self):
+        # CLI 2.1.305 refuses a hosted arm without CLAUDE_CODE_REMOTE ("Not
+        # logged in"); the rest of the host's CLAUDE_* names stay out.
+        scratch = Path(tempfile.mkdtemp(prefix="hosted-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        kwargs = dict(workspace=scratch / "ws", home=scratch / "home",
+                      tmpdir=scratch / "tmp", config_dir=scratch / "config")
+        hosted = {"CLAUDE_CODE_REMOTE": "true",
+                  "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/example/token"}
+        with mock.patch.dict(os.environ, hosted):
+            env = guidance.agent_env(**kwargs)
+        self.assertEqual(env["CLAUDE_CODE_REMOTE"], "true")
+        self.assertNotIn("CLAUDE_SESSION_INGRESS_TOKEN_FILE", env)
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop("CLAUDE_CODE_REMOTE", None)
+            self.assertNotIn("CLAUDE_CODE_REMOTE", guidance.agent_env(**kwargs))
+
     # ------------------------------------------------------------------
     # Items 3-6 — a whole guidance run through the fake CLI
     # ------------------------------------------------------------------
@@ -3262,6 +3284,10 @@ class TestIssue97(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         shutil.copytree(HARNESS_DIR, tmp / "harness",
                         ignore=shutil.ignore_patterns("__pycache__"))
+        # The copy reads its budget from its own root's evals/ (#68);
+        # without one it stops at a configuration error before any sink.
+        (tmp / "evals").mkdir()
+        shutil.copy2(REPO_ROOT / "evals" / "budget.yml", tmp / "evals" / "budget.yml")
         for rel, old, new in replacements:
             path = tmp / "harness" / rel
             source = path.read_text(encoding="utf-8")

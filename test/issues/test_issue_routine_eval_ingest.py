@@ -51,10 +51,13 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 INGEST = WORKFLOWS / "routine-eval-ingest.yml"
 SIGNAL = WORKFLOWS / "routine-eval-results-pushed.yml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
 
+import cli_json  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
+import run_eval  # noqa: E402
 
 RUN_ID = "20261006T194256Z-f944ea"
 BRANCH = f"claude/eval-{RUN_ID}"
@@ -411,6 +414,43 @@ class AcceptTests(GitCase):
                     "transcripts/tool_trace.json"):
             with self.subTest(rel=rel):
                 ingest.parse_result_path(rel)
+
+
+class HarnessWriterTests(GitCase):
+    """The validator accepts what the harness's own writers produce, so a
+    field the harness adds cannot drift past the ingest schema unnoticed
+    (2026-10-20: `complete` and the `*_incomplete` event flags did)."""
+
+    def test_accepts_files_the_harness_writes(self):
+        messages = [
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "toolu_1", "name": "Bash",
+                 "input": {"command": "curl https://example.com/" + "a" * 400}},
+                {"type": "tool_use", "id": "not an id", "name": "Read",
+                 "input": {"file_path": "README.md"}}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1",
+                 "is_error": True, "content": "b" * 500}]}}]
+        tool_trace = cli_json.bounded_tool_trace([cli_json.tool_events(messages)])
+        self.assertIn("complete", tool_trace)
+        flags = {key for event in tool_trace["events"] for key in event}
+        self.assertTrue({"input_incomplete", "output_incomplete"} <= flags)
+        self.assertIn(None, [event["id"] for event in tool_trace["events"]])
+        quiet = {k: v for k, v in os.environ.items()
+                 if k not in ("GITHUB_ACTIONS", "GITHUB_RUN_ID",
+                              "CLAUDE_CODE_REMOTE_SESSION_ID")}
+        results = self.repo / ingest.SOURCE_ROOT / RUN_ID
+        with mock.patch.dict(os.environ, quiet, clear=True):
+            for arm in ("with_skill", "without_skill"):
+                run_eval._write_summary(
+                    results, "writing-adrs", arm, STAMP, None, None, None, None,
+                    None, extra={"n": 1},
+                    harness_version="2.1.296 (Claude Code)",
+                    tool_trace=tool_trace)
+        self.write({f"{ingest.SOURCE_ROOT}/{RUN_ID}/writing-adrs/{STAMP}/"
+                    "report.md": REPORT.encode()})
+        sha = self.commit({})
+        self.assertEqual(self.validate(expect=sha)["files"], "3")
 
 
 class InPlaceSemanticConsistencyTests(unittest.TestCase):
@@ -771,6 +811,16 @@ class RejectContentTests(GitCase):
                 "call": 0, "kind": "tool_result", "id": "t", "is_error": False,
                 "output": "", "output_chars": 0, "subagent": False,
                 "run": "x"}])),
+            ("complete not a bool", trace(complete="yes")),
+            ("complete with omitted", trace(complete=True, omitted_events=1)),
+            ("input_incomplete not true", trace(events=[{
+                "call": 0, "kind": "tool_use", "id": "t", "name": "Bash",
+                "input": "", "input_chars": 0, "input_incomplete": False,
+                "subagent": False}])),
+            ("event: unexpected", trace(events=[{
+                "call": 0, "kind": "tool_use", "id": "t", "name": "Bash",
+                "input": "", "input_chars": 0, "output_incomplete": True,
+                "subagent": False}])),
         ]
         for pattern, doc in cases:
             with self.subTest(pattern=pattern):

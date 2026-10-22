@@ -157,7 +157,9 @@
 #     - a GUIDANCE arm's agent gets an ALLOWLIST built from nothing
 #       (harness/guidance.py's `agent_env`): PATH, LANG, LC_ALL, SHELL, USER,
 #       NODE_PATH, plus the HOME, TMPDIR, CLAUDE_CONFIG_DIR and WORKSPACE the
-#       harness sets and every ANTHROPIC_* variable, and on top of all of
+#       harness sets, every ANTHROPIC_* variable and, only inside a hosted
+#       Claude Code session, its CLAUDE_CODE_REMOTE mode flag (no credential;
+#       never set on this runner), and on top of all of
 #       that the fixture's own `env:` block, which may add any name except
 #       those three isolation variables (HOME, TMPDIR, CLAUDE_CONFIG_DIR are
 #       refused by name, because the block is applied after they are set, so
