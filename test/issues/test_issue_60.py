@@ -15,6 +15,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "test"))
+from lockfile_pins import lock_problem  # noqa: E402
 import scaffold_skill_gaps as gaps  # noqa: E402
 
 
@@ -609,7 +611,7 @@ class WorkflowTests(unittest.TestCase):
                        if step["with"].get("repository", "").endswith("-private"))
         self.assertLess(census_steps.index(mint), census_steps.index(private))
         self.assertEqual(mint["uses"],
-                         "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1")
+                         "actions/create-github-app-token@v3.2.0")
         self.assertEqual(mint["with"], {
             "client-id": "${{ vars.REGISTRY_READ_APP_CLIENT_ID }}",
             "private-key": "${{ secrets.REGISTRY_READ_APP_PEM }}",
@@ -632,10 +634,7 @@ class WorkflowTests(unittest.TestCase):
         for job in self.workflow["jobs"].values():
             for step in job["steps"]:
                 if "uses" in step:
-                    action = step["uses"]
-                    self.assertEqual(len(action.rsplit("@", 1)[-1]), 40)
-                    self.assertTrue(all(c in "0123456789abcdef" for c in
-                                        action.rsplit("@", 1)[-1]))
+                    self.assertIsNone(lock_problem(step["uses"], "skill-coverage.yml"))
                 if "run" in step:
                     self.assertNotIn("${{ github.event.", step["run"])
                     self.assertNotIn("${{ inputs.", step["run"])

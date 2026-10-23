@@ -864,7 +864,7 @@ class PublicationWorkflow(unittest.TestCase):
         mint = next(s for s in steps if s.get("id") == "registry-token")
         self.assertLess(steps.index(mint), steps.index(private))
         self.assertEqual(mint["uses"],
-                         "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1")
+                         "actions/create-github-app-token@v3.2.0")
         self.assertEqual(mint["if"],
                          "github.event_name == 'schedule' && "
                          "vars.REGISTRY_READ_APP_CLIENT_ID != ''")

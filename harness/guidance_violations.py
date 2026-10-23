@@ -27,22 +27,32 @@ MAX_FILE_BYTES = 1024 * 1024
 MAX_FILES = 2000
 MAX_NODES = 20000
 SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
+LOCKED_COMMIT = re.compile(r"sha1-[0-9a-f]{40}\Z")
+LOCKFILE = ".github/workflows/actions.lock"
 INTERPOLATION = re.compile(r"\$\{\{\s*(?:inputs\.|github\.event\.)[^}]*\}\}")
 
 
-def _pinned(value: str) -> bool:
-    if value.startswith(("./", "docker://")):
+def _lock_key(uses: str) -> str:
+    """`uses` as gh-actions-lock keys it: owner/repo lowercased, the ref exact."""
+    name, at, ref = uses.rpartition("@")
+    return name.lower() + at + ref
+
+
+def _pinned(value: str, locked: frozenset = frozenset()) -> bool:
+    """A full SHA, a local or docker ref, a cms-platform release tag, or (for
+    a workflow step or a called local composite's step only, via `locked`) a
+    ref actions.lock locks to a commit."""
+    if value.startswith(("./", "$/", "docker://")):
         return True
     action, _, ref = value.rpartition("@")
     if action.startswith(("Adam-S-Daniel/cms-platform/.github/actions/",
                           "Adam-S-Daniel/cms-platform/.github/workflows/")):
-        return bool(re.fullmatch(r"v\d+\.\d+\.\d+", ref))
-    return bool(SHA.fullmatch(ref))
+        return bool(re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", ref))
+    return bool(SHA.fullmatch(ref)) or _lock_key(value) in locked
 
 
-def _yaml_counts(source: str, workflow: bool) -> dict[str, Counter]:
-    """Parse YAML nodes, retaining scalar values only in transient counters."""
-    out = {name: Counter() for name in RULES if name != "push_without_verification"}
+def _compose(source: str):
+    """Compose a bounded YAML node tree: no aliases, duplicate keys or excess nodes."""
     root = yaml.compose(source, Loader=yaml.SafeLoader)
     if root is not None and not isinstance(root, yaml.MappingNode):
         raise ValueError("invalid_document")
@@ -64,30 +74,76 @@ def _yaml_counts(source: str, workflow: bool) -> dict[str, Counter]:
                 pending.extend((key, value))
         elif isinstance(node, yaml.SequenceNode):
             pending.extend(node.value)
-    def mapping(node):
-        if not isinstance(node, yaml.MappingNode):
-            return {}
-        return {key.value: value for key, value in node.value if isinstance(key, yaml.ScalarNode)}
+    return root
 
-    top = mapping(root)
+
+def _mapping(node) -> dict:
+    if not isinstance(node, yaml.MappingNode):
+        return {}
+    return {key.value: value for key, value in node.value if isinstance(key, yaml.ScalarNode)}
+
+
+def _locked_refs(source: str) -> dict[str, frozenset]:
+    """Per workflow path, the `uses:` strings actions.lock locks to a commit.
+
+    An entry counts only when `dependencies` keys it by the `uses:` string
+    (owner/repo compared lowercase, as the tool writes it; the ref exact) with a `sha1-<40 lowercase hex>` commit and a `ref` equal to the
+    text after the key's last `@`, and the workflow's own `workflows` list
+    names it. The result is transient, like the counters.
+    """
+    top = _mapping(_compose(source))
+    locked = set()
+    for key, entry in _mapping(top.get("dependencies")).items():
+        fields = _mapping(entry)
+        commit, ref = fields.get("commit"), fields.get("ref")
+        _action, at, tag = key.rpartition("@")
+        if (at and tag and isinstance(commit, yaml.ScalarNode)
+                and LOCKED_COMMIT.fullmatch(commit.value)
+                and isinstance(ref, yaml.ScalarNode) and ref.value == tag):
+            locked.add(_lock_key(key))
+    out = {}
+    for path, refs in _mapping(top.get("workflows")).items():
+        if isinstance(refs, yaml.SequenceNode):
+            out[path] = frozenset(ref.value for ref in refs.value
+                                  if isinstance(ref, yaml.ScalarNode) and _lock_key(ref.value) in locked)
+    return out
+
+
+def _yaml_counts(source: str, workflow: bool, locked: frozenset = frozenset(),
+                 callers: set | None = None) -> dict[str, Counter]:
+    """Parse YAML nodes, retaining scalar values only in transient counters.
+
+    `locked` holds the step refs actions.lock locks for this workflow, or,
+    for a local composite action, for every workflow that reaches it; a
+    job-level reusable workflow ref is never locked there, so it still needs
+    a full SHA. `callers` collects the directory of each `$/<dir>` step ref
+    (a local composite action this workflow or composite calls).
+    """
+    out = {name: Counter() for name in RULES if name != "push_without_verification"}
+    root = _compose(source)
+    top = _mapping(root)
     targets = []
-    for job in (mapping(top.get("jobs")).values() if workflow else []):
+    for job in (_mapping(top.get("jobs")).values() if workflow else []):
         targets.append((job, False))
-        steps = mapping(job).get("steps")
+        steps = _mapping(job).get("steps")
         if isinstance(steps, yaml.SequenceNode):
             targets.extend((step, True) for step in steps.value)
-    runs = mapping(top.get("runs"))
+    runs = _mapping(top.get("runs"))
     using = runs.get("using")
     steps = runs.get("steps")
     if not workflow and isinstance(using, yaml.ScalarNode) and using.value == "composite" and isinstance(steps, yaml.SequenceNode):
         targets.extend((step, True) for step in steps.value)
     for node, is_step in targets:
-        fields = mapping(node)
+        fields = _mapping(node)
         uses = fields.get("uses")
         if uses is not None and not isinstance(uses, yaml.ScalarNode):
             raise ValueError("invalid_uses")
-        if isinstance(uses, yaml.ScalarNode) and not _pinned(uses.value):
+        if isinstance(uses, yaml.ScalarNode) and not _pinned(
+                uses.value, locked if is_step else frozenset()):
             out["unpinned_actions"][uses.value] += 1
+        if (is_step and callers is not None and isinstance(uses, yaml.ScalarNode)
+                and uses.value.startswith("$/")):
+            callers.add(uses.value[2:].rstrip("/"))
         run = fields.get("run")
         if is_step and run is not None and not isinstance(run, yaml.ScalarNode):
             raise ValueError("invalid_run")
@@ -96,8 +152,41 @@ def _yaml_counts(source: str, workflow: bool) -> dict[str, Counter]:
     return out
 
 
+def _read_regular(path: Path) -> str:
+    """A regular file's bounded UTF-8 text; anything else raises."""
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_BYTES:
+        raise ValueError("unsafe_file")
+    with path.open("rb") as stream:
+        content = stream.read(MAX_FILE_BYTES + 1)
+    if len(content) > MAX_FILE_BYTES:
+        raise ValueError("file_limit")
+    return content.decode("utf-8")
+
+
+def _lockfile(workspace: Path) -> tuple[dict[str, frozenset], bool]:
+    """The workspace's actions.lock locks, and whether they could be read.
+
+    A missing lockfile locks nothing. One behind a symlinked directory, or
+    one that is unreadable or invalid, is unknown evidence: its tag refs can
+    be neither credited nor counted, so `unpinned_actions` is unknown, while
+    counters that do not read the lockfile stay known.
+    """
+    path = workspace / LOCKFILE
+    try:
+        for parent in (path.parent.parent, path.parent):
+            if stat.S_ISLNK(parent.lstat().st_mode):
+                return {}, False
+        return _locked_refs(_read_regular(path)), True
+    except (FileNotFoundError, NotADirectoryError):
+        return {}, True
+    except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
+        return {}, False
+
+
 def snapshot(workspace: Path | None) -> dict | None:
-    """Read only workflow/action YAML, refusing symlinks and oversized inputs.
+    """Read only workflow/action YAML and actions.lock, refusing symlinks and
+    oversized inputs.
 
     A failed file is an unknown baseline/final observation, not a violation.
     os.walk does not follow directory symlinks; .git and profiles are excluded.
@@ -105,10 +194,62 @@ def snapshot(workspace: Path | None) -> dict | None:
     if workspace is None:
         return None
     if workspace.is_symlink() or not workspace.is_dir():
-        return {"files": {}, "complete": False}
+        return {"files": {}, "complete": False, "lockfile_known": False}
     import os
 
-    files, complete = {}, True
+    files = {}
+    complete = True
+    # Only `unpinned_actions` depends on the lockfile, so an unreadable one
+    # is tracked apart from `complete` and never hides the other counters.
+    locks, lockfile_known = _lockfile(workspace)
+    # Composite actions are scored after the walk: a tag ref inside one is
+    # credited only through the lockfile entries of the workflows that reach
+    # it through `$/<dir>` steps (ADR 0024: the caller's lockfile locks the
+    # composite's inner actions), and those workflows may be walked later.
+    composites, callers = [], {}
+
+    def finish(done: bool) -> dict:
+        nonlocal complete
+        sources, calls = {}, {}
+        for relative, path in composites:
+            try:
+                source, called = _read_regular(path), set()
+                _yaml_counts(source, False, frozenset(), called)
+            except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
+                files[relative] = None
+                complete = False
+                continue
+            sources[relative] = source
+            calls.setdefault(relative.rpartition("/")[0], set()).update(called)
+        # Each workflow reaches the composites it calls and, transitively,
+        # the ones they call; `reached` guards cycles.
+        reachers = {}
+        for workflow, dirs in callers.items():
+            reached, pending = set(), list(dirs)
+            while pending:
+                directory = pending.pop()
+                if directory not in reached:
+                    reached.add(directory)
+                    pending.extend(calls.get(directory, ()))
+            for directory in reached:
+                reachers.setdefault(directory, set()).add(workflow)
+        for relative, source in sources.items():
+            # Intersection: a ref is credited only when EVERY reaching
+            # workflow's own lockfile list locks it. A workflow absent from
+            # the lockfile's `workflows` map locks nothing, and a composite
+            # no workflow reaches is credited by none.
+            workflows = reachers.get(relative.rpartition("/")[0])
+            locked = (frozenset.intersection(*(locks.get(workflow, frozenset())
+                                               for workflow in workflows))
+                      if workflows else frozenset())
+            try:
+                files[relative] = _yaml_counts(source, False, locked)
+            except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
+                files[relative] = None
+                complete = False
+        return {"files": files, "complete": complete and done,
+                "lockfile_known": lockfile_known}
+
     try:
         def failed(_error):
             nonlocal complete
@@ -120,7 +261,7 @@ def snapshot(workspace: Path | None) -> dict | None:
             dirs[:] = sorted(name for name in dirs if name not in (".git", ".claude", "node_modules"))
             entries += 1 + len(dirs) + len(names)
             if entries > MAX_NODES:
-                return {"files": files, "complete": False}
+                return finish(False)
             if any((parent / name).is_symlink() for name in dirs):
                 complete = False
             dirs[:] = [name for name in dirs if not (parent / name).is_symlink()]
@@ -132,22 +273,22 @@ def snapshot(workspace: Path | None) -> dict | None:
                         or name in ("action.yml", "action.yaml")):
                     continue
                 if len(files) >= MAX_FILES:
-                    return {"files": files, "complete": False}
+                    return finish(False)
+                if not workflow:
+                    files[relative] = None
+                    composites.append((relative, path))
+                    continue
                 try:
-                    info = path.lstat()
-                    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_BYTES:
-                        raise ValueError("unsafe_file")
-                    with path.open("rb") as stream:
-                        content = stream.read(MAX_FILE_BYTES + 1)
-                    if len(content) > MAX_FILE_BYTES:
-                        raise ValueError("file_limit")
-                    files[relative] = _yaml_counts(content.decode("utf-8"), workflow)
+                    called = set()
+                    files[relative] = _yaml_counts(_read_regular(path), workflow,
+                                                   locks.get(relative, frozenset()), called)
+                    callers[relative] = called
                 except (OSError, UnicodeError, ValueError, yaml.YAMLError, RecursionError):
                     files[relative] = None
                     complete = False
     except OSError:
         complete = False
-    return {"files": files, "complete": complete}
+    return finish(True)
 
 
 def _entry(name: str, count: int, known: bool) -> dict:
@@ -327,6 +468,9 @@ def measure(before: dict | None, workspace: Path | None, trace: dict | None) -> 
     for name in ("unpinned_actions", "event_input_in_run"):
         count = 0
         known = bool(before and after and before["complete"] and after["complete"])
+        if name == "unpinned_actions":
+            known = known and before.get("lockfile_known") is True \
+                and after.get("lockfile_known") is True
         if before and after:
             for path, values in after["files"].items():
                 previous = before["files"].get(path, {name: Counter()})
