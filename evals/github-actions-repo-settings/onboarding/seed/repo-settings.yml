@@ -15,4 +15,6 @@ defaults:
 
 repos:
   - name: example-org/service-alpha
+    manage: ["all"]
   - name: example-org/service-beta
+    manage: ["all"]

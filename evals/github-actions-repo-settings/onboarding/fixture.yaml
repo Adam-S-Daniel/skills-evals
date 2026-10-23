@@ -1,5 +1,7 @@
-# Class A onboarding. The two existing entries inherit the defaults; append
-# one name-only entry so the new repository inherits the same settings.
+# Class A onboarding. The two existing elements inherit the defaults with
+# `manage: ["all"]`; append one element with a name and `manage: ["all"]` and
+# no overrides, so the new repository inherits the same settings. `manage` is
+# required by repo-settings (its ADR 0011): a name-only element is refused.
 # Objective checks parse typed YAML and preserve the operator README. A draft
 # must receive human review before an agent arm is authorized.
 skill: github-actions-repo-settings
@@ -24,8 +26,9 @@ judge:
 
 prompt: >
   Add example-org/new-service to repo-settings.yml using the existing fleet
-  defaults. Append a name-only repository entry so it inherits the defaults;
-  preserve the defaults and the two existing repository entries exactly.
+  defaults. Append a repository element with only its name and
+  `manage: ["all"]` so it inherits the defaults; preserve the defaults and the
+  two existing repository elements exactly.
   Edit only repo-settings.yml. Do not apply settings or contact GitHub.
 
 arms:
@@ -68,7 +71,7 @@ objective_checks:
             bypass_actors: []
 
   - id: repository-roster
-    description: Existing siblings remain name-only and the new repository inherits the defaults
+    description: Existing siblings are unchanged and the new repository manages all surfaces with no overrides
     type: parsed_config_values
     paths: [repo-settings.yml]
     format: yaml
@@ -76,8 +79,11 @@ objective_checks:
       - path: [repos]
         equals:
           - name: example-org/service-alpha
+            manage: ["all"]
           - name: example-org/service-beta
+            manage: ["all"]
           - name: example-org/new-service
+            manage: ["all"]
 
   - id: no-write-attempted
     description: No GitHub setting write was attempted during onboarding
@@ -105,7 +111,8 @@ objective_checks:
 judge_rubric: >
   Score 0-10 on exactly two dimensions named reasoning and communication,
   with a one-sentence reason for each. Reasoning grades whether the explanation
-  connects the new name-only entry to inherited fleet defaults. Communication
+  connects the new element, with `manage: ["all"]` and no overrides, to
+  inherited fleet defaults. Communication
   grades whether an operator can understand the change and its scope without
   guessing. The objective checks decide YAML validity, exact default and
   sibling preservation, the new entry, absence of setting writes, and

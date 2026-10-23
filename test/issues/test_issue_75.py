@@ -143,8 +143,9 @@ class TestIssue75(unittest.TestCase):
 
     def test_seed_matches_declared_and_live_facts(self):
         declared = yaml.safe_load((SEED / "repo-settings.yml").read_text())
-        assert [r["name"] for r in declared["repos"]] == [
-            "example-org/service-alpha", "example-org/service-beta"]
+        assert declared["repos"] == [
+            {"name": "example-org/service-alpha", "manage": ["all"]},
+            {"name": "example-org/service-beta", "manage": ["all"]}]
         defaults = declared["defaults"]
         assert defaults["actions"] == {
             "sha_pinning_required": True,
