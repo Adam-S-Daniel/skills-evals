@@ -10,7 +10,7 @@ defaults:
       required_approving_review_count: 0
     block_force_pushes: true
     block_deletions: true
-    admin_bypass: true
+    admin_bypass: always
     bypass_actors: []
 
 repos:

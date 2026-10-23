@@ -156,7 +156,7 @@ class TestIssue75(unittest.TestCase):
             "enforcement": "active",
             "require_pull_request": {"required_approving_review_count": 0},
             "block_force_pushes": True, "block_deletions": True,
-            "admin_bypass": True, "bypass_actors": [],
+            "admin_bypass": "always", "bypass_actors": [],
         }
         replay = SEED / ".gh/replay/api/repos/example-org"
         for service, managed_id, sha in (("service-alpha", 7201, False),
