@@ -18,7 +18,7 @@ name: CI
 # the filter is always exercised by the filter. .github/workflows/actions.lock,
 # .github/workflows/** and .github/actions/** are here for the "Verify action
 # lockfile" step: any change to a workflow, a local action or the lockfile
-# must re-verify the pins (ADR 0021), so this list also names files no test
+# must re-verify the pins (ADR 0024), so this list also names files no test
 # reads. README.md and DESIGN.md are
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
 # reads the former and test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate
@@ -221,7 +221,7 @@ jobs:
           fi
 
       - name: Verify action lockfile
-        uses: Adam-S-Daniel/verify-actions-lock@v1.0.0
+        uses: Adam-S-Daniel/verify-actions-lock@v1.1.0
         with:
           working-directory: skills-evals
 

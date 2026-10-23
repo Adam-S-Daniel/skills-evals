@@ -249,7 +249,7 @@ class GuidanceViolationTests(unittest.TestCase):
     COMPOSITE = "runs:\n  using: composite\n  steps:\n    - uses: " + TAG + "\n"
 
     def test_actions_lock_pins_a_composite_step_through_a_calling_workflow(self):
-        # ADR 0021: a `$/` composite's inner actions are locked by the
+        # ADR 0024: a `$/` composite's inner actions are locked by the
         # lockfile list of the workflow that calls it. The composite sorts
         # before .github/workflows, so this also proves walk order is moot.
         before = counters.snapshot(self.workspace)

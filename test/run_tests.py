@@ -4209,7 +4209,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                 self.assertIsNone(
                     lock_problem(uses, self.WORKFLOW),
                     f"{uses!r} is not an owner/repo@<tag> pin locked to a "
-                    "commit in actions.lock (ADR 0021)")
+                    "commit in actions.lock (ADR 0024)")
         # The assertion above is on the PARSED `uses:` value, which
         # yaml.safe_load has already stripped of any comment — it cannot see
         # a trailing version/date comment even when one is there. That is a
@@ -5131,7 +5131,7 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
 
 
 class ActionLockfileGuardTests(unittest.TestCase):
-    """The two guards actions.lock (ADR 0021) leaves to this repo: reusable
+    """The two guards actions.lock (ADR 0024) leaves to this repo: reusable
     workflow refs it does not lock, and the CI step that verifies it."""
 
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
@@ -5815,7 +5815,7 @@ class DependabotAutoMergeStructureTests(unittest.TestCase):
 
 class DependabotManifestAllowlistTests(unittest.TestCase):
     """Dependabot rewrites .github/workflows/actions.lock with every action
-    bump (ADR 0021), so both copies of the manifest-path allowlist — job
+    bump (ADR 0024), so both copies of the manifest-path allowlist — job
     `auto-merge`'s and job `sweep`'s re-check — must accept exactly that
     path and still refuse anything else. Each copy's `case "$f" in ... esac`
     block is lifted from the PyYAML-parsed step and run by bash."""

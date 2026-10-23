@@ -189,7 +189,7 @@
 #   raw content from `persistent/eval-results` accordingly.
 #
 # * All actions are named by an exact release tag and locked to a full commit
-#   SHA in .github/workflows/actions.lock (ADR 0021 in _agent-guidance); the
+#   SHA in .github/workflows/actions.lock (ADR 0024 in _agent-guidance); the
 #   runner runs the locked commit, and ci.yml's "Verify action lockfile" step
 #   fails on a missing, stale or moved pin. No trailing version/date comment:
 #   one went stale silently and then lied, so the tag and its lockfile entry

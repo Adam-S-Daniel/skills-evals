@@ -1,7 +1,7 @@
 """Shared check that a workflow's `uses:` pin goes through actions.lock.
 
 Third-party actions are named by release tag, and
-`.github/workflows/actions.lock` locks each tag to an exact commit (ADR 0021
+`.github/workflows/actions.lock` locks each tag to an exact commit (ADR 0024
 in Adam-S-Daniel/_agent-guidance). A local step `uses:` (`./`, `$/`) needs
 no lock. A `docker://` ref is not in the lockfile, so it must be pinned by
 digest (`@sha256:<64 lowercase hex>`). An `Adam-S-Daniel/cms-platform/` ref

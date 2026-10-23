@@ -204,7 +204,7 @@ def snapshot(workspace: Path | None) -> dict | None:
     locks, lockfile_known = _lockfile(workspace)
     # Composite actions are scored after the walk: a tag ref inside one is
     # credited only through the lockfile entries of the workflows that reach
-    # it through `$/<dir>` steps (ADR 0021: the caller's lockfile locks the
+    # it through `$/<dir>` steps (ADR 0024: the caller's lockfile locks the
     # composite's inner actions), and those workflows may be walked later.
     composites, callers = [], {}
 
