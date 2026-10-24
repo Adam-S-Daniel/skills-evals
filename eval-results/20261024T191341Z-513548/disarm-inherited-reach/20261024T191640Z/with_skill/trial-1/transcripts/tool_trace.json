@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E2zt38Zu5rJFzbigq9vHK5",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:disarm-inherited-reach",
+      "input_chars": 43,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E2zt38Zu5rJFzbigq9vHK5",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:disarm-inherited-reach",
+      "output_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PUfxz9vGuAY1vxSq1o1W1T",
+      "name": "Bash",
+      "input": "pwd; ls; ls checkout scripts 2>&1 | head -50; git -C checkout rev-parse --show-toplevel --git-dir 2>&1",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PUfxz9vGuAY1vxSq1o1W1T",
+      "is_error": false,
+      "output": "<path>\ncheckout\nprod.git\nscratch-wt\nls: cannot access 'scripts': No such file or directory\ncheckout:\nREADME.md\nscripts\n<path>\n.git",
+      "output_chars": 193,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KzsRV6dayJGc7QPNQyj15d",
+      "name": "Bash",
+      "input": "set -e; src=<path>; ls -la $src | head; test -d $src/.git && echo \"src .git is a dir\"; d=$(mktemp -d \"$TMPDIR/reaper-scratch.XXXXXX\"); cp -a $src \"$d/checkout\"; cd \"$d/checkout\"; pwd; git rev-parse --...",
+      "input_chars": 619,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KzsRV6dayJGc7QPNQyj15d",
+      "is_error": false,
+      "output": "total 24\ndrwxr-xr-x 4 root root 4096 Oct 24 19:16 .\ndrwxr-xr-x 7 root root 4096 Oct 24 19:16 ..\ndrwxr-xr-x 8 root root 4096 Oct 24 19:16 .git\n-rw-r--r-- 1 root root    8 Oct 24 19:16 .gitattributes\n-rw-r--r-- 1 root root  333 Oct 24 19:16 README.md\ndrwxr-xr-x 2 root root 4096 Oct 24 19:16 scripts\nsr...",
+      "output_chars": 2757,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FVu5xttVWjdksACsseUTwg",
+      "name": "Bash",
+      "input": "cd <path> && git rev-parse --show-toplevel && git remote remove origin && echo \"remotes: [$(git remote -v)]\" && git config --local user.name scratch-tree && git config --local user.email <email> && gi...",
+      "input_chars": 483,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FVu5xttVWjdksACsseUTwg",
+      "is_error": false,
+      "output": "<path>\nremotes: []\n--- push attempt:\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\npush exit: 128\n--- script:\nreaper.sh\n#!<path> bash\n# reaper.sh \u2014 rotates out expir...",
+      "output_chars": 1572,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UWcJTA4YfjPUcvpAWJzPU4",
+      "name": "Bash",
+      "input": "cd <path> && echo \"WORKSPACE was: [${WORKSPACE:-unset}]\"; env -u WORKSPACE bash scripts/reaper.sh; echo \"reaper exit: $?\"; git log --oneline -3; git status --short; ls -A; cat .reaper-ran\necho \"--- re...",
+      "input_chars": 432,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UWcJTA4YfjPUcvpAWJzPU4",
+      "is_error": false,
+      "output": "WORKSPACE was: [<path>]\nreaper: rotation complete in <path>\nreaper exit: 0\n567d8e5 reaper: rotate expired snapshots\n0a289bb initial import\n.git\n.gitattributes\n.reaper-ran\nscripts\nreaper ran in <path>\n--- real checkout untouched?\n0a289bb initial import\nREADME.md\nscripts\n0a289bb initial import",
+      "output_chars": 455,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K1QVYnYhZsB3tjSP4bhxgj",
+      "name": "Bash",
+      "input": "rm -rf <path> && ls <path> | grep reaper-scratch; echo \"remaining: $?\"; ls <path> 2>&1",
+      "input_chars": 234,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K1QVYnYhZsB3tjSP4bhxgj",
+      "is_error": true,
+      "output": "Exit code 2\nremaining: 1\nls: cannot access '<path>': No such file or directory",
+      "output_chars": 129,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
