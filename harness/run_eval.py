@@ -2165,6 +2165,10 @@ _CLI_PROFILE_MARKERS = {
     # are an empty JSON object, as written at startup; anything else could
     # configure the agent.
     "remote-settings.json": (4096, "{}"),
+    # CLI 2.1.310 caches the plugin directory's catalog here (it reads back at
+    # most 16 MiB). It is a list of plugins one could install, not an install:
+    # plugins load from installed_plugins.json and plugins/cache/, still watched.
+    "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024,
 }
 _CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
 # A shared profile (the operator's real `~/.claude`, or an inherited
@@ -2180,7 +2184,9 @@ _SHARED_PROFILE_TREES = ("skills/synced",)
 # during a two-turn arm (strace, CLI 2.1.292) were `.orphaned_at` markers.
 _SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096,
                            # A CLI 2.1.304 startup timestamp (see above).
-                           "plugins/.last_inuse_sweep": 4096}
+                           "plugins/.last_inuse_sweep": 4096,
+                           # The CLI 2.1.310 catalog cache (see above).
+                           "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024}
 
 
 def _is_empty_json_object(path: Path, limit: int) -> bool:

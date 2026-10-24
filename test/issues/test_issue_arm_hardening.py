@@ -350,7 +350,8 @@ class GuidanceProfileTests(_StandIn):
                        "policy-limits.json": 65536,
                        "policy-limits.json.signature.json": 65536,
                        "policy-limits.json.stamp.json": 4096,
-                       "remote-settings.json.synced-at": 4096}
+                       "remote-settings.json.synced-at": 4096,
+                       "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024}
 
     def _remove(self, path: Path) -> None:
         if path.is_dir() and not path.is_symlink():
@@ -459,7 +460,8 @@ class SharedProfileTests(_StandIn):
         for rel in ("projects/-tmp-other/s.jsonl", "skills/synced/u/SKILL.md",
                     "todos/t.json",
                     # The writes measured under plugins/: small markers.
-                    "plugins/cache/m/p/1/.orphaned_at", "plugins/.last_inuse_sweep"):
+                    "plugins/cache/m/p/1/.orphaned_at", "plugins/.last_inuse_sweep",
+                    "plugins/plugin-directory-cache-v2.json"):
             with self.subTest(rel=rel):
                 self.log.unlink(missing_ok=True)
                 out = self.run_arm("write_config",
