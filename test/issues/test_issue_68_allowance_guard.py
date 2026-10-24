@@ -102,8 +102,10 @@ def tearDownModule() -> None:
 
 class BudgetFileTests(unittest.TestCase):
 
-    def test_the_committed_budget_is_adams_thirty_percent(self):
-        self.assertEqual(budget.load_budget(), LIMITS)
+    def test_the_committed_budget_is_adams_current_cap(self):
+        # Adam raised the weekly cap to 60% until the 2026-10-26 reset
+        # (evals/budget.yml says so); set this back to LIMITS with the file.
+        self.assertEqual(budget.load_budget(), {**LIMITS, "weekly_cap": 0.60})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -628,12 +630,20 @@ class GuardTests(unittest.TestCase):
                 with self.assertRaises(guard.GuardError):
                     self.spent(fires=fires)
 
+    def budget_file(self):
+        # The guard's own numbers are tested against LIMITS, not whatever
+        # evals/budget.yml holds this week.
+        path = self.tree / "budget.yml"
+        path.write_text(VALID_BUDGET, encoding="utf-8")
+        return path
+
     def main(self, command, fires):
         out = io.StringIO()
         summary = self.tree / "step-summary.md"
         with mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}), \
              contextlib.redirect_stdout(out):
-            code = guard.main([command, "--results-tree", str(self.tree)], now=NOW,
+            code = guard.main([command, "--results-tree", str(self.tree),
+                               "--budget", str(self.budget_file())], now=NOW,
                               fire_count=fires)
         return code, out.getvalue(), summary.read_text(encoding="utf-8") \
             if summary.exists() else ""
@@ -803,8 +813,10 @@ class PlannerTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         output = tmp / "output"
         output.write_text("")
+        budget_path = tmp / "budget.yml"
+        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
         argv = ["plan_scheduled_evals.py", "--max-fixtures", "30",
-                "--allowance-tree", str(tree or tmp)]
+                "--allowance-tree", str(tree or tmp), "--budget", str(budget_path)]
         matrix = {"include": [{"fixture": f"evals/x{i}", "eval_key": f"x{i}", "slot": i}
                               for i in range(include)]}
         live = (mock.patch.object(guard, "_live_fires", side_effect=fires)
