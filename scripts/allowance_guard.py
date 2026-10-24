@@ -26,10 +26,15 @@ under the cap wherever the account's own week starts):
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
   * pending: successful runs of routine-eval-fire.yml in the window that
-    have no ingested results yet, each reserved at `per_run_cap +
-    per_run_overrun`. A fire whose routine never pushed (a failed session, a
-    scaffold or improve run, which never land in routine-results/) stays
-    reserved for seven days: conservative by design.
+    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (24
+    hours) is reserved at `per_run_cap + per_run_overrun`; an older one is
+    charged `per_run_overrun` only for the rest of the week. A routine run
+    finishes within minutes (healthy runs take 4-12), so a fire with no
+    results a day later failed (or is a scaffold or improve run, which never
+    lands in routine-results/), and the in-run stops (`per_run_cap`,
+    `stop_when_account_above` in harness/run_eval.py) still bound what it
+    could have spent. Ingested runs are assumed to belong to the old fires,
+    so the recent ones stay held in full: the safe direction.
 
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
@@ -38,7 +43,8 @@ The results branch is bot-written and untrusted (AGENTS.md, "Automation vs
 branch protection"): files are read as data, never executed; a symlink, an
 oversize file or a summary that does not parse is charged the full
 reservation rather than trusted. Output is numbers only. The GitHub API call
-is isolated in `count_successful_fires`, so tests pass the count in; an API
+is isolated in `count_successful_fires` (called once per age bound), so tests
+pass the counts in; an API
 error refuses the fire (fail closed) and prints only the status code. Tests
 pass `now` in too: nothing here reads the clock except `main`.
 """
@@ -66,6 +72,9 @@ import budget as budget_file  # noqa: E402
 RUN_ID_RE = re.compile(r"(?P<stamp>[0-9]{8}T[0-9]{6}Z)-[0-9a-f]{6}")
 DEST_ROOT = "routine-results"
 WINDOW = timedelta(days=7)
+#: A fire without results younger than this is held at the full reservation;
+#: an older one failed, and is charged per_run_overrun only.
+PENDING_FULL_HOLD = timedelta(hours=24)
 #: ingest_routine_results.SIZE_CAPS["summary.json"]: a bigger file was never
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024
@@ -152,17 +161,29 @@ def ingested_runs(tree: Path, now: datetime) -> list[Path]:
     return found
 
 
-def account(tree: Path, limits: dict, now: datetime, fires: int) -> dict:
-    """{spent, pending, runs, fires, reservation, cap} for the seven days up
-    to `now`, given `fires`, the successful fires in that window."""
-    if isinstance(fires, bool) or not isinstance(fires, int) or fires < 0:
-        raise GuardError("fire count is not a non-negative integer")
+def account(tree: Path, limits: dict, now: datetime,
+            fires: tuple[int, int]) -> dict:
+    """{spent, pending, runs, fires, recent, reservation, cap} for the seven
+    days up to `now`, given `fires`, a pair: the successful fires of the last
+    seven days and of the last `PENDING_FULL_HOLD`. Ingested runs are assumed
+    to belong to the old fires, so the unresulted recent ones are held in
+    full and the rest are charged `per_run_overrun`."""
+    try:
+        fires_7d, fires_24h = fires
+    except (TypeError, ValueError):
+        raise GuardError("fire counts are not a pair") from None
+    for count in (fires_7d, fires_24h):
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise GuardError("fire count is not a non-negative integer")
     runs = ingested_runs(tree, now)
     reserve = budget_file.run_reservation(limits)
     spent = sum(run_cost(run_dir, limits) for run_dir in runs)
-    pending = max(0, fires - len(runs)) * reserve
+    unresulted = max(0, fires_7d - len(runs))
+    recent = min(fires_24h, unresulted)
+    pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
     return {"spent": spent, "pending": pending, "runs": len(runs),
-            "fires": fires, "reservation": reserve, "cap": limits["weekly_cap"]}
+            "fires": fires_7d, "recent": recent, "reservation": reserve,
+            "cap": limits["weekly_cap"]}
 
 
 def fits(state: dict) -> int:
@@ -216,8 +237,10 @@ def count_successful_fires(repo: str, since: datetime, token: str,
     return total
 
 
-def fires_that_fit(tree: Path, limits: dict, now: datetime, fires: int) -> int:
-    """`fits` of the accounting for `now`: the weekly planner's cap."""
+def fires_that_fit(tree: Path, limits: dict, now: datetime,
+                   fires: tuple[int, int]) -> int:
+    """`fits` of the accounting for `now`: the weekly planner's cap. `fires`
+    is `account`'s pair."""
     return fits(account(tree, limits, now, fires))
 
 
@@ -228,7 +251,7 @@ def describe(state: dict) -> str:
     return (f"weekly eval allowance: spent {points(state['spent'])} points over "
             f"{state['runs']} ingested run(s), pending {points(state['pending'])} "
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
-            f"results, this run reserves {points(state['reservation'])}, cap "
+            f"results ({state['recent']} from the last 24h held in full), this run reserves {points(state['reservation'])}, cap "
             f"{points(state['cap'])} (last 7 days)")
 
 
@@ -237,16 +260,19 @@ def check(state: dict) -> bool:
     return fits(state) >= 1
 
 
-def _live_fires(now: datetime) -> int:
-    return count_successful_fires(
-        os.environ.get("GITHUB_REPOSITORY", ""), now - WINDOW,
-        os.environ.get("GH_TOKEN", ""),
-        api=os.environ.get("GITHUB_API_URL") or "https://api.github.com")
+def _live_fires(now: datetime) -> tuple[int, int]:
+    """(successful fires in the last seven days, in the last 24 hours)."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    token = os.environ.get("GH_TOKEN", "")
+    api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
+    return (count_successful_fires(repo, now - WINDOW, token, api=api),
+            count_successful_fires(repo, now - PENDING_FULL_HOLD, token, api=api))
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
          fire_count=None) -> int:
-    """`fire_count`, a function of `now`, stands in for the API in tests."""
+    """`fire_count`, a function of `now` returning `(fires_7d, fires_24h)`,
+    stands in for the API in tests."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("check", "fits"))
     parser.add_argument("--results-tree", type=Path, required=True,

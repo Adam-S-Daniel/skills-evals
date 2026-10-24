@@ -519,7 +519,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             captured = io.StringIO()
             with mock.patch.object(sys, "argv", argv[1:]), \
                  mock.patch.dict(os.environ, env), \
-                 mock.patch.object(allowance_guard, "_live_fires", return_value=0), \
+                 mock.patch.object(allowance_guard, "_live_fires", return_value=(0, 0)), \
                  mock.patch.object(Path, "cwd", return_value=ROOT), \
                  contextlib.redirect_stdout(captured):
                 self.assertEqual(planner.main(), 0, captured.getvalue())
