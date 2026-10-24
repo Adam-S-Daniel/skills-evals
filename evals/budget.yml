@@ -25,7 +25,13 @@
 # 30 points: all automated evals together, in any rolling seven days. A
 # rolling window keeps every allowance week under it, wherever the account's
 # own week starts.
-weekly_cap: 0.30
+#
+# TEMPORARY: 60 points until the allowance week resets on 2026-10-26 around
+# 17:00 UTC (Adam's decision of 2026-10-24: raise the eval cap from 30% to 60%
+# for this week, keeping the per-run and 80% stops). Set it back to 0.30 after
+# that reset. Fires made under 0.60 stay in the rolling window for seven days,
+# so fires may be refused for a while after the revert.
+weekly_cap: 0.60
 
 # 3 points: one run stops starting new work once the meter has moved this
 # much since the run's first reading.
