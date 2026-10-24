@@ -37,6 +37,8 @@ import yaml
 TEST_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = TEST_DIR.parent
 EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
 
 REPO = "example/skills-evals"
 WAIT_STEP = "Wait for the armed roster pull request to merge"
@@ -297,8 +299,9 @@ class TestTheWaitJobsShape(_Scripts):
                          ["Set up Python", WAIT_STEP, SWEEP_STEP])
         self.assertEqual(self.job["steps"][0], {
             "name": "Set up Python",
-            "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+            "uses": "actions/setup-python@v7.0.0",
             "with": {"python-version": "3.12"}})
+        self.assertIsNone(lock_problem(self.job["steps"][0]["uses"], EVAL_WORKFLOW))
         wait = _step(self.job, WAIT_STEP)
         sweep = _step(self.job, SWEEP_STEP)
         self.assertEqual(wait.get("id"), "wait")

@@ -26,7 +26,7 @@ from scorers import objective  # noqa: E402
 
 CHECK_IDS = ("config-parses", "inherited-defaults", "repository-roster",
              "no-write-attempted", "instrument-unchanged")
-NEW_REPO = {"name": "example-org/new-service"}
+NEW_REPO = {"name": "example-org/new-service", "manage": ["all"]}
 
 
 def scores(fixture: dict, workspace: Path) -> dict[str, bool]:
@@ -118,6 +118,12 @@ class TestIssue75Onboarding(unittest.TestCase):
             "sibling-name": lambda d: d["repos"][0].update(name="example-org/other-service"),
             "sibling-override": lambda d: d["repos"][1].update(ruleset={"enabled": False}),
             "wrong-type": lambda d: d["repos"][-1].update(name=True),
+            # repo-settings requires `manage` (its ADR 0011); a name-only
+            # element, the old boolean and `[]` do not onboard the repo.
+            "missing-manage": lambda d: d["repos"][-1].pop("manage"),
+            "manage-boolean": lambda d: d["repos"][-1].update(manage=True),
+            "manage-empty": lambda d: d["repos"][-1].update(manage=[]),
+            "sibling-manage": lambda d: d["repos"][0].pop("manage"),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name):

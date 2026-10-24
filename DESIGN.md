@@ -1168,7 +1168,19 @@ is objectively decidable from the resulting files alone.
   `git-push-does-not-mean-commit-exists`, respectively. YAML is parsed with
   PyYAML nodes: workflow job-level reusable `uses`, workflow step `uses`
   and `run`, and composite-action step `uses` and `run`. Remote actions
-  require a full 40-character hexadecimal SHA; local `./` and `docker://`
+  require a full 40-character hexadecimal SHA, or the lockfile form (ADR
+  0021 in `_agent-guidance`): a step ref is also credited when
+  `.github/workflows/actions.lock` keys it by the exact `uses` string with
+  a `sha1-<40 lowercase hex>` commit and a `ref` equal to the tag after
+  `@`, and that workflow's `workflows` list names it. A tag inside a local
+  composite action is credited only when every workflow that reaches the
+  composite through `$/<dir>` steps, directly or through other composites
+  (cycles included), lists it; a reaching workflow absent from the
+  lockfile's `workflows` map locks nothing, and a composite no workflow
+  reaches gets no credit. Job-level reusable workflow refs never take
+  lockfile credit. An unreadable, invalid or symlinked lockfile makes
+  `unpinned_actions` unknown; the interpolation counter, which does not
+  read it, stays known. Local `./`, `$/` and `docker://`
   references are exempt, and this account's `cms-platform/.github/actions/`
   and `cms-platform/.github/workflows/` references accept
   `vMAJOR.MINOR.PATCH` release tags. The interpolation

@@ -74,6 +74,7 @@ _MEMORY_BEFORE: str | None = None
 
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
 
 
 def _watched_user_memory() -> Path:
@@ -4369,7 +4370,7 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "_agent-guidance",
                          "side by side, so the harness's sibling default resolves")
         self.assertIs(with_block.get("persist-credentials"), False)
-        self.assertRegex(checkout["uses"], r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(checkout["uses"], EVAL_WORKFLOW))
         run = self._step_named("Run the eval")["run"]
         self.assertNotIn("--registry _agent-guidance", run,
                          "_agent-guidance is not a skill registry")
@@ -4651,8 +4652,7 @@ class TestIssue97(unittest.TestCase):
                          "_agent-guidance")
         self.assertIs((guidance_checkout["with"] or {}).get("persist-credentials"),
                       False)
-        self.assertRegex(guidance_checkout["uses"],
-                         r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(guidance_checkout["uses"], CI_WORKFLOW))
 
     # ------------------------------------------------------------------
     # A5 — an EMPTY `arms:` is a fixture error, not the default pair

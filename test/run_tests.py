@@ -63,6 +63,7 @@ VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
 
 
 @install_arm_test_environment
@@ -4187,7 +4188,6 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
     CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-    USES_SHA_RE = re.compile(r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
 
     def _doc(self) -> dict:
         import yaml
@@ -4200,16 +4200,16 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             steps.extend(job.get("steps", []))
         return steps
 
-    def test_every_uses_is_a_bare_40_hex_sha(self):
+    def test_every_uses_is_locked_by_actions_lock(self):
         for step in self._steps():
             uses = step.get("uses")
             if uses is None:
                 continue
             with self.subTest(uses=uses):
-                self.assertRegex(
-                    uses, self.USES_SHA_RE,
-                    f"{uses!r} is not a bare owner/repo@<40-hex-sha> pin, per "
-                    "the header's cooling-off convention")
+                self.assertIsNone(
+                    lock_problem(uses, self.WORKFLOW),
+                    f"{uses!r} is not an owner/repo@<tag> pin locked to a "
+                    "commit in actions.lock (ADR 0024)")
         # The assertion above is on the PARSED `uses:` value, which
         # yaml.safe_load has already stripped of any comment — it cannot see
         # a trailing version/date comment even when one is there. That is a
@@ -4224,7 +4224,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "#", line,
                         f"{self.WORKFLOW}:{lineno} has a uses: line with a "
                         "trailing comment — the header's cooling-off "
-                        "convention makes the bare SHA the only claim, since "
+                        "convention makes the bare pin the only claim, since "
                         "a version/date comment can go stale silently and "
                         "then lie")
 
@@ -4251,7 +4251,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "bypassPermissions with a live key in env is a "
                         "command-injection vector")
 
-    def test_ci_yml_shares_the_sha_pin_persist_creds_and_no_interp_rules(self):
+    def test_ci_yml_shares_the_lock_pin_persist_creds_and_no_interp_rules(self):
         # Item H (round 3, optional): the three rules above are workflow-file
         # hygiene, not eval.yml-specific — ci.yml's two checkouts were
         # compared only to EACH OTHER (CiDispatchTests), so pinning both to
@@ -4263,8 +4263,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             uses = step.get("uses")
             with self.subTest(uses=uses, step=step.get("name")):
                 if uses is not None:
-                    self.assertRegex(uses, self.USES_SHA_RE,
-                                     f"{uses!r} is not a bare SHA pin")
+                    self.assertIsNone(lock_problem(uses, self.CI_WORKFLOW),
+                                      f"{uses!r} is not locked in actions.lock")
                 if (uses or "").startswith("actions/checkout@"):
                     self.assertIs(
                         (step.get("with") or {}).get("persist-credentials"), False,
@@ -4709,6 +4709,8 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/workflows/skill-coverage.yml",
+               ".github/workflows/actions.lock", ".github/workflows/**",
+               ".github/actions/**",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
@@ -4928,8 +4930,9 @@ class CiDispatchTests(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "adam-agentskills")
         self.assertIs(with_block.get("persist-credentials"), False)
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
-                         "the adam-agentskills checkout must pin the same "
-                         "bare 40-hex SHA as ci.yml's own checkout")
+                         "the adam-agentskills checkout must name the same "
+                         "release tag as ci.yml's own checkout (one "
+                         "actions.lock entry locks both to a commit)")
 
     # -- always-run + early-skip shape (cms-platform#437) -------------------
 
@@ -4984,6 +4987,10 @@ class CiDispatchTests(unittest.TestCase):
         salient_idx = next(i for i, s in enumerate(steps)
                            if s.get("id") == "salient")
         for step in steps[salient_idx + 1:]:
+            if step.get("name") == "Verify action lockfile":
+                # The shared action decides by itself whether the PR touched
+                # workflow dependencies; it must run on every PR, ungated.
+                continue
             cond = step.get("if", "")
             self.assertIn("steps.salient.outputs.run", cond,
                          f"step {step.get('name')!r} runs after `salient` "
@@ -5051,7 +5058,8 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
     system Python from 3.12 to 3.14 and pip from 24 to 25.1. A job that calls
     the bare system interpreter would change Python under the suite with no
     diff to blame, so each one carries an `actions/setup-python` step, pinned
-    to a full commit SHA and to 3.12, BEFORE its first python/pip step.
+    by tag and locked to a commit in actions.lock, and to 3.12, BEFORE its
+    first python/pip step.
 
     `python3` and `pip` are lexical tokens in a `run:` body, so a word match
     there is fine; the workflow structure itself (jobs, step order, `uses`) is
@@ -5061,17 +5069,18 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
 
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
     PYTHON_TOKEN = re.compile(r"\b(?:python3?|pip3?)\b")
-    SETUP_PYTHON = re.compile(r"^actions/setup-python@[0-9a-f]{40}$")
+    SETUP_PYTHON = "actions/setup-python@"
 
     @classmethod
-    def unpinned_jobs(cls, doc: dict) -> list[str]:
+    def unpinned_jobs(cls, doc: dict, workflow: str = "ci.yml") -> list[str]:
         """Jobs in a parsed workflow whose python/pip use precedes a pin."""
         bad = []
         for name, job in (doc.get("jobs") or {}).items():
             pinned = False
             for step in job.get("steps") or []:
                 uses = step.get("uses") or ""
-                if cls.SETUP_PYTHON.match(uses):
+                if (uses.startswith(cls.SETUP_PYTHON)
+                        and lock_problem(uses, workflow) is None):
                     pinned = (step.get("with") or {}).get(
                         "python-version") == "3.12"
                 elif cls.PYTHON_TOKEN.search(step.get("run") or "") \
@@ -5087,16 +5096,16 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             seen += 1
             with self.subTest(workflow=path.name):
                 self.assertEqual(
-                    self.unpinned_jobs(doc), [],
-                    f"{path.name}: a job runs python3/pip before an "
-                    "actions/setup-python@<sha> step with python-version "
+                    self.unpinned_jobs(doc, path.name), [],
+                    f"{path.name}: a job runs python3/pip before a locked "
+                    "actions/setup-python@<tag> step with python-version "
                     '"3.12"; the runner image is changing its system Python')
         self.assertGreater(seen, 0, "no workflow files found")
 
     def test_the_guard_can_fail(self):
         # Mutation inside the test: the helper must flag each unpinned shape,
         # so a parser that silently matches nothing cannot pass the real check.
-        pin = {"uses": "actions/setup-python@" + "a" * 40,
+        pin = {"uses": "actions/setup-python@v7.0.0",
                "with": {"python-version": "3.12"}}
         run = {"name": "go", "run": "python3 x.py"}
         cases = {
@@ -5104,9 +5113,11 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             "pin after use": ([run, pin], ["j: go"]),
             "pip counts": ([{"name": "i", "run": "pip install pyyaml"}],
                            ["j: i"]),
-            "tag not sha": ([{"uses": "actions/setup-python@v5",
-                              "with": {"python-version": "3.12"}}, run],
-                            ["j: go"]),
+            "tag not locked": ([{"uses": "actions/setup-python@v5",
+                                 "with": {"python-version": "3.12"}}, run],
+                               ["j: go"]),
+            "bare sha not locked": ([{**pin, "uses": "actions/setup-python@" + "a" * 40},
+                                     run], ["j: go"]),
             "wrong version": ([{**pin, "with": {"python-version": "3.14"}},
                                run], ["j: go"]),
             "pinned first": ([pin, run], []),
@@ -5117,6 +5128,92 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
                 self.assertEqual(
                     self.unpinned_jobs({"jobs": {"j": {"steps": steps}}}),
                     expected)
+
+
+class ActionLockfileGuardTests(unittest.TestCase):
+    """The two guards actions.lock (ADR 0024) leaves to this repo: reusable
+    workflow refs it does not lock, and the CI step that verifies it."""
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    CI_WORKFLOW = WORKFLOWS / "ci.yml"
+    # actions.lock does not lock reusable workflows and neither `--verify` nor sha_pinning_required flags a tag there.
+    REUSABLE_SHA = re.compile(r"@[0-9a-f]{40}")
+    REUSABLE_EXEMPT = ("./", "$/", "Adam-S-Daniel/cms-platform/")
+    VERIFY_ACTION = re.compile(r"Adam-S-Daniel/verify-actions-lock@v\d+\.\d+\.\d+\Z")
+
+    @classmethod
+    def unpinned_reusable(cls, doc: dict) -> list[str]:
+        """`jobs.<id>.uses` refs in a parsed workflow that are not a full SHA."""
+        bad = []
+        for name, job in (doc.get("jobs") or {}).items():
+            uses = (job or {}).get("uses")
+            if not isinstance(uses, str) or uses.startswith(cls.REUSABLE_EXEMPT):
+                continue
+            _, at, ref = uses.rpartition("@")
+            if not at or not cls.REUSABLE_SHA.fullmatch("@" + ref):
+                bad.append(f"{name}: {uses}")
+        return bad
+
+    def test_every_reusable_workflow_ref_is_a_full_sha(self):
+        paths = sorted([*self.WORKFLOWS.glob("*.yml"), *self.WORKFLOWS.glob("*.yaml")])
+        self.assertTrue(paths, "no workflow files found")
+        for path in paths:
+            with self.subTest(workflow=path.name):
+                doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertEqual(self.unpinned_reusable(doc), [])
+
+    def test_the_reusable_guard_can_fail(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        cases = {
+            "tag": ("octo-org/example/.github/workflows/x.yml@v1.2.3", ["x: octo-org/example/.github/workflows/x.yml@v1.2.3"]),
+            "uppercase sha": ("octo-org/example/.github/workflows/x.yml@" + sha.upper(), ["x: octo-org/example/.github/workflows/x.yml@" + sha.upper()]),
+            "full sha": ("octo-org/example/.github/workflows/x.yml@" + sha, []),
+            "local": ("./.github/workflows/x.yml", []),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.88", []),
+        }
+        for label, (uses, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.unpinned_reusable({"jobs": {"x": {"uses": uses}}}), expected)
+
+    def _verify_step(self) -> dict:
+        doc = yaml.safe_load(self.CI_WORKFLOW.read_text(encoding="utf-8"))
+        steps = [s for s in doc["jobs"]["test"]["steps"]
+                 if s.get("name") == "Verify action lockfile"]
+        self.assertEqual(len(steps), 1, "ci.yml's test job must carry one Verify action lockfile step")
+        return steps[0]
+
+    def test_lock_problem_refuses_unpinned_docker_and_cms_platform_refs(self):
+        digest = "0123456789abcdef" * 4
+        lock = {"workflows": {}, "dependencies": {}}
+        cases = {
+            "docker tag": ("docker://alpine:3.20", False),
+            "docker untagged": ("docker://alpine", False),
+            "docker short digest": ("docker://alpine@sha256:" + digest[:63], False),
+            "docker uppercase digest": ("docker://alpine@sha256:" + digest.upper(), False),
+            "docker digest": ("docker://alpine@sha256:" + digest, True),
+            "docker tag and digest": ("docker://alpine:3.20@sha256:" + digest, True),
+            "cms-platform branch": ("Adam-S-Daniel/cms-platform/.github/actions/x@main", False),
+            "cms-platform major": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0", False),
+            "cms-platform suffix": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0.1.2-rc1", False),
+            "cms-platform sha": ("Adam-S-Daniel/cms-platform/.github/actions/x@" + "a" * 40, False),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.163", True),
+            "local ./": ("./.github/actions/x", True),
+            "local $/": ("$/.github/actions/x", True),
+        }
+        for label, (uses, ok) in cases.items():
+            with self.subTest(case=label):
+                problem = lock_problem(uses, "ci.yml", lock)
+                if ok:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIsNotNone(problem)
+
+    def test_verify_step_runs_the_checked_tool_and_fails_closed(self):
+        step = self._verify_step()
+        self.assertRegex(step.get("uses", ""), self.VERIFY_ACTION)
+        self.assertNotIn("if", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step["with"]["working-directory"], "skills-evals")
 
 
 class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
@@ -5301,6 +5398,32 @@ class CiSalientDetectionTests(unittest.TestCase):
     def test_salient_change_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._repo_with_merge(Path(tmp), {"harness/x.py": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_salient_step_diffs_with_no_renames(self):
+        diffs = [line for line in self.SCRIPT.split("\n") if "git diff" in line]
+        self.assertTrue(diffs, "the salient step no longer runs git diff")
+        for line in diffs:
+            self.assertIn("git diff --no-renames --name-only ", line)
+
+    def test_salient_file_renamed_to_a_non_salient_path_runs(self):
+        # With rename detection on, git diff lists only the destination
+        # (AGENTS.md, non-salient); --no-renames lists harness/moved.py too.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            self._git(repo, "init", "-q", "-b", "main")
+            (repo / "harness").mkdir()
+            (repo / "harness" / "moved.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            self._git(repo, "add", "harness/moved.py")
+            self._git(repo, "commit", "-q", "-m", "base")
+            self._git(repo, "checkout", "-q", "-b", "feature")
+            self._git(repo, "mv", "harness/moved.py", "AGENTS.md")
+            self._git(repo, "commit", "-q", "-m", "feature")
+            self._git(repo, "checkout", "-q", "main")
+            self._git(repo, "merge", "--no-ff", "-q", "-m", "merge", "feature")
             result, outputs = self._run(repo, "pull_request")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "true")
@@ -5688,6 +5811,106 @@ class DependabotAutoMergeStructureTests(unittest.TestCase):
             "job `auto-merge` must merge nothing (cms-platform#437: gh "
             "merges a Dependabot PR on the spot when nothing is required, "
             "so an 'Attempt auto-merge' step here is never safe)")
+
+
+class DependabotManifestAllowlistTests(unittest.TestCase):
+    """Dependabot rewrites .github/workflows/actions.lock with every action
+    bump (ADR 0024), so both copies of the manifest-path allowlist — job
+    `auto-merge`'s and job `sweep`'s re-check — must accept exactly that
+    path and still refuse anything else. Each copy's `case "$f" in ... esac`
+    block is lifted from the PyYAML-parsed step and run by bash."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml"
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
+        cls.RUNS = {
+            "auto-merge": next(s for s in doc["jobs"]["auto-merge"]["steps"]
+                               if s.get("id") == "paths")["run"],
+            "sweep": next(s for s in doc["jobs"]["sweep"]["steps"]
+                          if s.get("name") == "Sweep open Dependabot PRs")["run"],
+        }
+
+    def _allowed(self, job: str, path: str) -> bool:
+        lines = self.RUNS[job].split("\n")
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("REJECT=0\nnum=1\nf=\"$1\"\n" + "\n".join(lines[start:end + 1])
+                  + '\necho "REJECT=$REJECT"\n')
+        result = subprocess.run(["bash", "-c", script, "bash", path],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip().splitlines()[-1] == "REJECT=0"
+
+    def _run_diff_and_case(self, job: str, repo: str, rev: str):
+        """Run the job's own `git diff` line and allowlist `case` block in `repo`."""
+        lines = self.RUNS[job].split("\n")
+        diff = next(line for line in lines if "git diff" in line).strip()
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("set -euo pipefail\ncd \"$2\"\nBASE=origin/main\nHEAD=$1\nbase=main\nnum=1\n"
+                  "REJECT=0\n" + diff + "\n"
+                  'for f in "${CHANGED[@]}"; do\n'
+                  + "\n".join(lines[start:end + 1])
+                  + '\ndone\necho "REJECT=$REJECT"\n')
+        return subprocess.run(["bash", "-c", script, "bash", rev, repo],
+                              capture_output=True, text=True)
+
+    def test_both_allowlists_accept_the_action_lockfile(self):
+        for job in self.RUNS:
+            with self.subTest(job=job):
+                self.assertTrue(self._allowed(job, ".github/workflows/actions.lock"))
+                self.assertTrue(self._allowed(job, ".github/workflows/ci.yml"))
+
+    def test_both_allowlists_still_refuse_other_paths(self):
+        for job in self.RUNS:
+            for path in (".github/workflows/actions.lock.bak", ".github/workflows/notes.txt",
+                         "actions.lock", "README.md"):
+                with self.subTest(job=job, path=path):
+                    self.assertFalse(self._allowed(job, path))
+
+    def test_every_git_diff_disables_rename_detection(self):
+        # With rename detection on, `--name-only` prints only a rename's new
+        # name, so a non-manifest file renamed into an allowed path would be
+        # deleted from its old path without the allowlist ever seeing it.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        diffs = [line.strip() for job in doc["jobs"].values()
+                 for step in job.get("steps", []) if isinstance(step.get("run"), str)
+                 for line in step["run"].split("\n") if "git diff" in line]
+        self.assertEqual(len(diffs), 2, diffs)
+        for line in diffs:
+            with self.subTest(line=line):
+                self.assertIn("--no-renames", line.split())
+
+    def test_both_jobs_refuse_a_rename_into_a_workflow_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def git(*args):
+                subprocess.run(["git", *args], cwd=tmp, check=True, capture_output=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test")
+            git("config", "diff.renames", "true")  # git's default, made explicit
+            (Path(tmp) / "docs").mkdir()
+            (Path(tmp) / "docs" / "notes.md").write_text("on: push\njobs: {}\n" * 20,
+                                                          encoding="utf-8")
+            git("add", ".")
+            git("commit", "-q", "-m", "base")
+            git("update-ref", "refs/remotes/origin/main", "HEAD")
+            git("checkout", "-q", "-b", "dependabot-sweep/pr-1")
+            (Path(tmp) / ".github" / "workflows").mkdir(parents=True)
+            git("mv", "docs/notes.md", ".github/workflows/x.yml")
+            git("commit", "-q", "-m", "rename")
+            rev = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+            for job in self.RUNS:
+                with self.subTest(job=job):
+                    result = self._run_diff_and_case(job, tmp, rev)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("docs/notes.md", result.stdout)
+                    self.assertEqual(result.stdout.strip().splitlines()[-1], "REJECT=1")
 
 
 class EndToEndTests(unittest.TestCase):
@@ -6546,18 +6769,18 @@ class TestIssue67(unittest.TestCase):
                                  "run: block; read inputs from $GITHUB_EVENT_PATH")
                 uses = step.get("uses")
                 if uses:
-                    self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
-                                     "every uses: is a bare 40-hex SHA, no comment")
+                    self.assertIsNone(lock_problem(uses, "eval.yml"),
+                                      "every uses: is a tag locked in actions.lock")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
-        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # The bare-pin rule is LEXICAL and yaml.safe_load strips comments, so
         # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
         # (mutation-proven). Re-assert it on the raw text, where the comment
         # still exists. TestIssue67Review carries the same rule; the
         # duplication is deliberate — this is the test nobody may delete.
         for line in raw.splitlines():
             if re.match(r"^\s*(?:-\s+)?uses:", line):
-                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$",
                                  "a `uses:` pin carries a trailing comment")
         # B1 (round 3 on #209): the `roster` job now checks out
         # skills-evals too, so this scans every job, not just `eval`.
@@ -7619,14 +7842,14 @@ exec {GIT} "$@"
         comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
         A trailing version comment is a LEXICAL property of the file, and a
         regex over the raw text is the right tool for a lexical property."""
-        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$")
         raw = self.WORKFLOW.read_text(encoding="utf-8")
         lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
         self.assertTrue(lines, "no `uses:` lines found — the check is inert")
         for line in lines:
             with self.subTest(line=line.strip()):
                 self.assertRegex(line, bare,
-                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "every `uses:` is a bare owner/repo@<tag> with no "
                                  "trailing version/date comment")
 
     def test_every_checkout_disables_persist_credentials(self):

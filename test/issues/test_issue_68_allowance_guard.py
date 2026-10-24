@@ -55,6 +55,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(TEST_DIR))
 
 import allowance_guard as guard  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
 import budget  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import plan_scheduled_evals as planner  # noqa: E402
@@ -859,8 +860,9 @@ class WorkflowTests(unittest.TestCase):
     RESULTS_CHECKOUT = {"ref": "persistent/eval-results", "path": "eval-results-branch",
                         "persist-credentials": False, "sparse-checkout": "routine-results"}
 
-    def assert_results_checkout(self, step) -> None:
-        self.assertRegex(step["uses"], r"^actions/checkout@[0-9a-f]{40}$")
+    def assert_results_checkout(self, step, workflow: str) -> None:
+        self.assertTrue(step["uses"].startswith("actions/checkout@"))
+        self.assertIsNone(lock_problem(step["uses"], workflow))
         self.assertEqual(step["with"], self.RESULTS_CHECKOUT)
 
     def test_the_fire_workflow_checks_the_allowance_before_it_fires(self):
@@ -881,7 +883,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(at, names.index("Fire the eval routine"))
         checkout = names.index("Check out persistent/eval-results (the ingested runs)")
         self.assertLess(checkout, at)
-        self.assert_results_checkout(steps[checkout])
+        self.assert_results_checkout(steps[checkout], "routine-eval-fire.yml")
         # The SHA this file already pins for its default-branch checkout.
         self.assertEqual(steps[checkout]["uses"], steps[0]["uses"])
 
@@ -893,7 +895,7 @@ class WorkflowTests(unittest.TestCase):
         names = [s.get("name") for s in steps]
         checkout = names.index("Check out persistent/eval-results (the ingested runs)")
         self.assertLess(checkout, ids.index("plan"))
-        self.assert_results_checkout(steps[checkout])
+        self.assert_results_checkout(steps[checkout], "routine-eval-weekly.yml")
         self.assertEqual(steps[checkout]["uses"], steps[0]["uses"])
         plan = steps[ids.index("plan")]
         self.assertIn("--allowance-tree eval-results-branch", plan["run"])

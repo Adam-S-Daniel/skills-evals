@@ -72,6 +72,8 @@ TEST_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = TEST_DIR.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 WORKFLOW = WORKFLOWS / "routine-eval-fire.yml"
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
 
 SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
@@ -174,7 +176,7 @@ class WorkflowShapeTests(unittest.TestCase):
             "github.ref == format('refs/heads/{0}', "
             "github.event.repository.default_branch)")
 
-    def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
+    def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned_elsewhere = set()
         for other in WORKFLOWS.glob("*.yml"):
             if other == WORKFLOW:
@@ -186,13 +188,13 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertTrue(nodes, "expected at least one uses:")
         for node in nodes:
             with self.subTest(uses=node.value):
-                self.assertRegex(node.value, r"^[^@\s]+@[0-9a-f]{40}$")
+                self.assertIsNone(lock_problem(node.value, WORKFLOW))
                 self.assertEqual(node.start_mark.line, node.end_mark.line)
                 rest = lines[node.end_mark.line][node.end_mark.column:]
                 self.assertEqual(rest.strip(), "",
                                  "a pin carries no trailing version comment")
                 self.assertIn(node.value, pinned_elsewhere,
-                              "reuse an action at the SHA this repo already pins")
+                              "reuse an action at the tag this repo already pins")
 
     def test_no_inputs_or_event_expressions_in_run_blocks(self):
         runs = [(p, v) for p, v in scalars(self.doc) if p and p[-1] == "run"]

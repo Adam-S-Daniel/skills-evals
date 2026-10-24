@@ -15,7 +15,11 @@ name: CI
 # test_issue_routine_improve.py parses; propagation.yml, which test_issue_64.py
 # parses for coverage publication gates; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
 # parses to check it covers every seed manifest. Plus this file itself, so a change to
-# the filter is always exercised by the filter. README.md and DESIGN.md are
+# the filter is always exercised by the filter. .github/workflows/actions.lock,
+# .github/workflows/** and .github/actions/** are here for the "Verify action
+# lockfile" step: any change to a workflow, a local action or the lockfile
+# must re-verify the pins (ADR 0024), so this list also names files no test
+# reads. README.md and DESIGN.md are
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
 # reads the former and test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate
 # reads the latter, so a change that drops the README's writing-adrs/ line or
@@ -62,6 +66,9 @@ on:
       - .github/workflows/routine-scaffold-gate.yml
       - .github/workflows/routine-scaffold-pushed.yml
       - .github/workflows/skill-coverage.yml
+      - .github/workflows/actions.lock
+      - .github/workflows/**
+      - .github/actions/**
       - .github/dependabot.yml
       - evals/**
       - harness/**
@@ -94,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 2
           path: skills-evals
@@ -118,6 +125,9 @@ jobs:
             .github/workflows/routine-scaffold-gate.yml
             .github/workflows/routine-scaffold-pushed.yml
             .github/workflows/skill-coverage.yml
+            .github/workflows/actions.lock
+            .github/workflows/**
+            .github/actions/**
             .github/dependabot.yml
             evals/**
             harness/**
@@ -168,8 +178,9 @@ jobs:
           # The checkout above is GitHub's synthetic merge commit for the PR
           # (actions/checkout's default ref for a pull_request event), whose
           # first parent is the base branch tip — so HEAD^1..HEAD is exactly
-          # the PR's changeset.
-          if ! changed=$(git diff --name-only HEAD^1 HEAD 2>&1); then
+          # the PR's changeset. --no-renames lists both sides of a rename, so
+          # moving a file out of a salient path still counts as touching it.
+          if ! changed=$(git diff --no-renames --name-only HEAD^1 HEAD 2>&1); then
             echo "::warning::$(head -n1 <<<"$changed") -- could not diff against HEAD^1; running the suite rather than risking a false skip"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -209,6 +220,11 @@ jobs:
             echo "no salient path changed — skipping the suite; \`test\` still reports success so the required context is present"
           fi
 
+      - name: Verify action lockfile
+        uses: Adam-S-Daniel/verify-actions-lock@v1.1.0
+        with:
+          working-directory: skills-evals
+
       # Side-by-side, same convention as eval.yml and propagation.yml: this
       # is what makes the harness's sibling-directory default
       # (`../adam-agentskills` next to a skills-evals checkout) resolve to
@@ -217,7 +233,7 @@ jobs:
       # run in CI instead of skipping every time.
       - name: Check out adam-agentskills registry (side-by-side)
         if: steps.salient.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: adam-agentskills
@@ -229,7 +245,7 @@ jobs:
       # reason and CI never exercises the delivery path at all.
       - name: Check out _agent-guidance (side-by-side)
         if: steps.salient.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
@@ -241,7 +257,7 @@ jobs:
       # eval.yml and propagation.yml already run.
       - name: Set up Python
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -260,7 +276,7 @@ jobs:
         run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0
       - name: Set up Node for the browser-testing AST fixture
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
       - name: Install browser-testing parser dependencies

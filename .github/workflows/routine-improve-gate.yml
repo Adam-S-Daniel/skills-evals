@@ -93,7 +93,7 @@ jobs:
       target_branch: ${{ steps.gate.outputs.target_branch }}
     steps:
       - name: Check out the default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: skills-evals
@@ -101,7 +101,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -179,7 +179,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the default branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: skills-evals
@@ -187,7 +187,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -218,7 +218,7 @@ jobs:
       # adam-agentskills alone, with contents and pull-requests write only.
       - name: Mint the GitHub App token for adam-agentskills
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        uses: actions/create-github-app-token@v3.2.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
