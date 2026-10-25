@@ -17,9 +17,10 @@ or fleet marker remains, so the strip is verified on every run rather than
 trusted.
 
 `deps:` installs a fixture's dependencies during setup, pinned, with network
-(Adam, 2026-10-06: "Fetch in setup (Recommended)"). npm uses the repository's
-committed lockfile; Python uses complete exact pins from fixture YAML and a
-fresh isolated venv. Installation failures are named `deps_failed` errors.
+(Adam, 2026-10-06: "Fetch in setup (Recommended)"). npm and bundler use the
+repository's committed lockfile; Python uses complete exact pins from fixture
+YAML and a fresh isolated venv. Installation failures are named `deps_failed`
+errors.
 """
 
 from __future__ import annotations
@@ -57,13 +58,24 @@ FLEET_MARKERS = (
 BRIDGE_IMPORT = "@AGENTS.md"
 
 MAX_DEPS = 4
-DEPS_MANAGERS = ("npm", "pip")
+DEPS_MANAGERS = ("npm", "pip", "bundler")
 PYTHON_DIR = ".fixture-python"
 MAX_REQUIREMENTS = 64
 # Lexical requirement tokens only: pip options, URLs and markers are forbidden.
 PINNED_REQUIREMENT = re.compile(
     r"([A-Za-z0-9][A-Za-z0-9._-]*)==([0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+|\.post[0-9]+|\.dev[0-9]+)?)\Z")
 NPM_LOCKFILES = ("package-lock.json", "npm-shrinkwrap.json")
+# A bundler entry installs the gems `Gemfile.lock` names into `vendor/bundle`
+# beside that Gemfile (what `--deployment` installs to). The scorer runs the
+# checker with `GEM_HOME` at that install (`bundler_environment`), so a plain
+# `ruby` sees those gems first, beside Ruby's own bundled gems (minitest,
+# rexml), the way the repository's CI runs the same spec against globally
+# installed gems; `-rbundler/setup` would hide the bundled gems. The
+# `BUNDLE_*` variables let `bundle exec` work too. `BUNDLE_GEMFILE` is one
+# path, so a fixture may name only one bundler entry.
+BUNDLER_GEMFILE = "Gemfile"
+BUNDLER_LOCKFILE = "Gemfile.lock"
+BUNDLE_PATH = "vendor/bundle"
 DEPS_DETAIL_CHARS = 400
 
 
@@ -264,8 +276,73 @@ def _deps_entries(value) -> list[dict]:
                 or ".." in Path(directory).parts):
             raise guidance.GuidanceError(
                 f"{where} `dir:` must be a relative path inside the workspace")
+        if manager == "bundler" and any(item["manager"] == "bundler" for item in entries):
+            raise guidance.GuidanceError("`deps:` may contain only one bundler entry")
         entries.append({"manager": manager, "dir": directory})
     return entries
+
+
+def bundler_environment(workspace: Path, fixture: dict) -> dict[str, str]:
+    """The variables that make Ruby load a bundler entry's installed gems:
+    `GEM_HOME` at the one `vendor/bundle/ruby/<api version>` directory the
+    install made (absent until it has run), and for `bundle exec` the
+    Gemfile, the `vendor/bundle` path beside it (relative, as bundler
+    resolves `BUNDLE_PATH` against the Gemfile's directory), frozen to the
+    lockfile and shut off from the host's gems. Empty without an entry."""
+    try:
+        entries = _deps_entries(fixture.get(DEPS_KEY))
+    except guidance.GuidanceError:
+        return {}
+    for entry in entries:
+        if entry["manager"] != "bundler":
+            continue
+        directory = Path(workspace).resolve() / entry["dir"]
+        env = {"BUNDLE_GEMFILE": str(directory / BUNDLER_GEMFILE),
+               "BUNDLE_PATH": BUNDLE_PATH, "BUNDLE_FROZEN": "true",
+               "BUNDLE_DISABLE_SHARED_GEMS": "true"}
+        installed = [p for p in (directory / BUNDLE_PATH / "ruby").glob("*")
+                     if p.is_dir() and not p.is_symlink()]
+        if len(installed) == 1:
+            env["GEM_HOME"] = str(installed[0])
+        return env
+    return {}
+
+
+def _install_bundler(workspace: Path, directory: Path, index: int, entry: dict,
+                     env: dict, timeout) -> dict | None:
+    """`bundle install` from the directory's committed Gemfile.lock into
+    `vendor/bundle` beside it, frozen (the lockfile is never rewritten) and
+    without the host's gems. Bundler's own config and cache go to a
+    temporary home, so the workspace gains only the installed gems."""
+    for name in (BUNDLER_GEMFILE, BUNDLER_LOCKFILE):
+        if not (directory / name).is_file() or (directory / name).is_symlink():
+            return _deps_error(index, entry, f"no {name}: dependencies install only "
+                               "from the repository's committed lockfile, pinned")
+    if os.path.lexists(directory / BUNDLE_PATH):
+        return _deps_error(index, entry, f"reserved {BUNDLE_PATH} path already exists")
+    bundle = shutil.which("bundle", path=env.get("PATH", ""))
+    if bundle is None:
+        return _deps_error(index, entry, "bundle is not on the arm's PATH")
+    argv = [bundle, "install", "--quiet"]
+    with tempfile.TemporaryDirectory(prefix="deps-bundler-") as temporary, \
+            tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        root = Path(temporary)
+        child_env = dict(env, **bundler_environment(workspace, {DEPS_KEY: [entry]}),
+                         BUNDLE_APP_CONFIG=str(root / "app-config"),
+                         BUNDLE_USER_HOME=str(root / "user-home"),
+                         BUNDLE_SILENCE_ROOT_WARNING="true", BUNDLE_JOBS="4")
+        try:
+            code = commands._run_command(argv, directory, child_env, stdout, stderr, timeout)
+        except OSError:
+            return _deps_error(index, entry, "bundle could not be started")
+        except subprocess.TimeoutExpired:
+            return _deps_error(index, entry, f"bundle install timed out after {timeout}s")
+        if code != 0:
+            stderr.seek(0)
+            tail = stderr.read()[-DEPS_DETAIL_CHARS:].decode("utf-8", "replace")
+            return _deps_error(index, entry,
+                               f"bundle install exited {code} using {BUNDLER_LOCKFILE}: {tail.strip()}")
+    return None
 
 
 def _deps_error(index: int, entry: dict, message: str) -> dict:
@@ -316,7 +393,8 @@ def install_deps(workspace: Path, fixture: dict, env: dict, timeout) -> dict | N
     npm runs `npm ci`, which installs exactly the versions and integrity
     hashes the committed lockfile names and refuses a lockfile out of step
     with package.json; `--ignore-scripts` keeps dependency lifecycle scripts
-    from running. Network is allowed here and only here.
+    from running. bundler runs a frozen `bundle install` from Gemfile.lock
+    (`_install_bundler`). Network is allowed here and only here.
     """
     try:
         entries = _deps_entries(fixture.get(DEPS_KEY))
@@ -332,6 +410,11 @@ def install_deps(workspace: Path, fixture: dict, env: dict, timeout) -> dict | N
         directory = (workspace / entry["dir"]).resolve()
         if not directory.is_relative_to(workspace) or not directory.is_dir():
             return _deps_error(index, entry, "the directory does not exist in the workspace")
+        if entry["manager"] == "bundler":
+            error = _install_bundler(workspace, directory, index, entry, env, timeout)
+            if error is not None:
+                return error
+            continue
         lockfile = next((name for name in NPM_LOCKFILES
                          if (directory / name).is_file()
                          and not (directory / name).is_symlink()), None)

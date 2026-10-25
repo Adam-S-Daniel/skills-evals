@@ -4038,6 +4038,8 @@ def _run_checks(fixture: dict, workspace: str, seed: str, compare_seed: str,
                 kwargs["_python_deps"] = any(
                     entry["manager"] == "pip"
                     for entry in seed_prep._deps_entries(fixture.get("deps")))
+                kwargs["_bundler_env"] = seed_prep.bundler_environment(
+                    Path(workspace), fixture)
         elif check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
             kwargs["seed"] = compare_seed
         elif check["type"] == "shell_capture_safe":

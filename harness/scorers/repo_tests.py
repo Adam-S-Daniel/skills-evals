@@ -195,8 +195,14 @@ def _lay_overlay(scratch: Path, files: list[tuple[Path, str]]) -> None:
         target.chmod(stat.S_IMODE(os.lstat(source).st_mode) & 0o755 | 0o600)
 
 
+# The bundler variables that name a path inside the workspace (the others
+# are flags or a path relative to the Gemfile).
+BUNDLER_WORKSPACE_PATHS = ("BUNDLE_GEMFILE", "GEM_HOME")
+
+
 def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
-             timeout_s, read_denied, python_deps: bool = False) -> tuple[str, str]:
+             timeout_s, read_denied, python_deps: bool = False,
+             bundler_env: dict | None = None) -> tuple[str, str]:
     """One selected test in a mandatory sandbox and fresh environment."""
     env_root = root / f"env-{index}"
     env_root.mkdir(mode=0o700)
@@ -204,6 +210,11 @@ def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
     if python_deps:
         private_bin, rest = env["PATH"].split(os.pathsep, 1)
         env["PATH"] = os.pathsep.join((private_bin, str(scratch / ".fixture-python" / "bin"), rest))
+    if bundler_env:
+        # The bundle was installed into the final workspace and copied with
+        # it; the paths here are workspace-relative, re-rooted at the copy.
+        env.update({name: str(scratch / value) if name in BUNDLER_WORKSPACE_PATHS else value
+                    for name, value in bundler_env.items()})
     prefix, network = commands._sandbox_prefix(scratch, env_root, env, read_denied)
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
@@ -219,7 +230,7 @@ def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
 def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
                fail_to_pass=None, pass_to_pass=None,
                timeout_s=DEFAULT_TIMEOUT_S, seed=None, _python_deps=False,
-               *, read_denied=None) -> tuple[bool, str]:
+               _bundler_env=None, *, read_denied=None) -> tuple[bool, str]:
     """Pass only when every selected hidden test exits 0 over the final workspace.
 
     `seed` is the fixture's seed directory, injected by `run_checks`; the
@@ -261,6 +272,18 @@ def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
             return False, "repo_tests_invalid: argv[0] is not an allowed executable"
         command = [executable, *config["argv"][1:]]
         denied = [*(read_denied or ()), Path(seed).resolve().parent, final]
+        bundler_env = None
+        if _bundler_env:
+            bundler_env = dict(_bundler_env)
+            for name in BUNDLER_WORKSPACE_PATHS:
+                if name not in bundler_env:
+                    continue
+                # Lexically: a test workspace may reach its bundle through a
+                # symlink, as it reaches node_modules, and the copy keeps it.
+                try:
+                    bundler_env[name] = Path(bundler_env[name]).relative_to(final).as_posix()
+                except ValueError:
+                    return False, f"repo_tests_invalid: the bundler {name} is outside the workspace"
         network = "isolated"
         counts, failed, index = {}, [], 0
         for group in ("fail_to_pass", "pass_to_pass"):
@@ -268,7 +291,8 @@ def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
             for test in config[group]:
                 try:
                     status, test_network = _run_one(command + test, scratch, root, index,
-                                                    config["timeout_s"], denied, _python_deps)
+                                                    config["timeout_s"], denied, _python_deps,
+                                                    bundler_env)
                 except commands.ScorerSandboxUnavailable as exc:
                     return False, str(exc)
                 if test_network == "unavailable":

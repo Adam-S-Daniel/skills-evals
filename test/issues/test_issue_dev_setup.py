@@ -72,11 +72,30 @@ class DevSetupMatchesCiTests(unittest.TestCase):
             self.assertTrue((ROOT / d / "package-lock.json").is_file(), d)
 
 
+    def test_bundler_dirs_equal_ci(self):
+        ci_dirs: list[str] = []
+        for step in _test_steps():
+            run = step.get("run")
+            if not isinstance(run, str) or "bundle install" not in run:
+                continue
+            loop = re.search(r"for dir in ([^;]+);\s*do", run)
+            self.assertIsNotNone(loop, run)
+            ci_dirs += [f"{step['working-directory']}/{d}" for d in loop.group(1).split()]
+        ci_dirs = [_strip_prefix(d) for d in ci_dirs]
+        self.assertTrue(ci_dirs)
+        result = _run_script("--print-bundler-dirs")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        listed = result.stdout.split("\n")[:-1]
+        self.assertEqual(listed, ci_dirs)
+        for d in listed:
+            self.assertTrue((ROOT / d / "Gemfile.lock").is_file(), d)
+
+
 class DevSetupScriptTests(unittest.TestCase):
     def test_print_flags_install_nothing(self):
         # Both flags must leave through the print branch: stdout is only the
         # list, stderr is empty (an install would print pip or npm output).
-        for flag in ("--print-pins", "--print-npm-dirs"):
+        for flag in ("--print-pins", "--print-npm-dirs", "--print-bundler-dirs"):
             with self.subTest(flag=flag):
                 result = _run_script(flag)
                 self.assertEqual(result.returncode, 0)

@@ -41,6 +41,8 @@ REAL_WORK = REPO / "evals" / "real-work"
 CHECKER_BLOBS = {
     "cms-platform-693": {
         "e2e/live-url-derive-routable.test.js": "274da0153db0a64b05f25e5ac5e42753c7295a2c"},
+    "cms-platform-760": {
+        "theme/spec/tag_case_variants_build_test.rb": "449db50828e8cde85a01dcedf1cee25ded51e2dc"},
     "cms-platform-761": {
         "e2e/tags-suggest.test.js": "60cf99d5225f6b43546239383ae5b11a927aff4c"},
     "cms-platform-221": {
@@ -72,9 +74,14 @@ def blob_id(path: Path) -> str:
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
+# Installed dependency trees (CI's install steps put them in the seeds), not
+# seed content.
+INSTALLED_DIRS = ("node_modules", "vendor")
+
+
 def seed_files(seed: Path):
     for directory, dirnames, filenames in os.walk(seed):
-        dirnames[:] = [d for d in dirnames if d != "node_modules"]
+        dirnames[:] = [d for d in dirnames if d not in INSTALLED_DIRS]
         for name in filenames:
             yield Path(directory) / name
 
@@ -152,9 +159,23 @@ class RealWorkFixtureTests(unittest.TestCase):
         installed = words[3:]
         wanted = sorted(f"{name}/seed" + ("" if entry["dir"] == "." else f"/{entry['dir']}")
                         for name, _, fixture in self.fixtures()
-                        for entry in fixture["deps"])
+                        for entry in fixture["deps"] if entry["manager"] == "npm")
         self.assertEqual(installed, wanted)
         self.assertIn("npm ci --ignore-scripts --no-audit --no-fund", step["run"])
+        [step] = [s for s in workflow["jobs"]["test"]["steps"]
+                  if s.get("name") == "Install real-work fixture gems"]
+        self.assertEqual(step["working-directory"], "skills-evals/evals/real-work")
+        self.assertEqual(step["if"], "steps.salient.outputs.run == 'true'")
+        [loop] = [line.strip() for line in step["run"].splitlines()
+                  if line.strip().startswith("for dir in ")]
+        installed = shlex.split(loop.removesuffix("; do"))[3:]
+        wanted = sorted(f"{name}/seed" + ("" if entry["dir"] == "." else f"/{entry['dir']}")
+                        for name, _, fixture in self.fixtures()
+                        for entry in fixture["deps"] if entry["manager"] == "bundler")
+        self.assertEqual(installed, wanted)
+        for variable in ("BUNDLE_PATH=vendor/bundle", "BUNDLE_FROZEN=true",
+                         "BUNDLE_DISABLE_SHARED_GEMS=true"):
+            self.assertIn(variable, step["run"])
 
     def test_cms_seeds_keep_only_the_checkers_own_spec(self):
         # Adam, 2026-10-06: "Trim other e2e specs". The e2e helpers and
@@ -166,7 +187,8 @@ class RealWorkFixtureTests(unittest.TestCase):
             with self.subTest(fixture=name):
                 specs = sorted(p.name for p in e2e.iterdir()
                                if p.name.endswith((".spec.js", ".test.js", ".spec.js-snapshots")))
-                self.assertEqual(specs, [Path(path).name for path in CHECKER_BLOBS[name]])
+                self.assertEqual(specs, [Path(path).name for path in CHECKER_BLOBS[name]
+                                         if Path(path).parts[0] == "e2e"])
 
     def test_no_task_text_quotes_the_merged_diff(self):
         # The answer is every line the pull request added: its fix
@@ -231,17 +253,22 @@ class RealWorkFixtureTests(unittest.TestCase):
         installed (symlinked from the seed), and for `fixed` the pull
         request's own fix applied."""
         seed = directory / "seed"
+        installed = {"npm": ("node_modules", "npm ci"),
+                     "bundler": (seed_prep.BUNDLE_PATH, "bundle install")}
         for entry in fixture["deps"]:
-            modules = seed / entry["dir"] / "node_modules"
+            tree, command = installed[entry["manager"]]
+            modules = seed / entry["dir"] / tree
             self.assertTrue(modules.is_dir(),
-                            f"Install {modules.parent} with npm ci before running the suite")
+                            f"Install {modules.parent} with {command} before running the suite")
         owned = tempfile.TemporaryDirectory(prefix="real-work-")
         self.addCleanup(owned.cleanup)
         workspace = Path(owned.name) / "ws"
-        shutil.copytree(seed, workspace, ignore=shutil.ignore_patterns("node_modules"))
+        shutil.copytree(seed, workspace, ignore=shutil.ignore_patterns(*INSTALLED_DIRS))
         for entry in fixture["deps"]:
-            (workspace / entry["dir"] / "node_modules").symlink_to(
-                seed / entry["dir"] / "node_modules", target_is_directory=True)
+            tree = installed[entry["manager"]][0]
+            (workspace / entry["dir"] / tree).parent.mkdir(parents=True, exist_ok=True)
+            (workspace / entry["dir"] / tree).symlink_to(
+                seed / entry["dir"] / tree, target_is_directory=True)
         seed_prep.prepare_seed(workspace, fixture)
         self.assertIsNone(seed_prep.seed_guard(workspace, fixture))
         if fixed:

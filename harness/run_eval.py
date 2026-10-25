@@ -1711,7 +1711,7 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
 # concurrent one, are denied.
 HARNESS_TEMP_PREFIXES = (
     "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
-    "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
+    "scoring-seed-", "deps-python-", "deps-bundler-", "deps-cache-", "objective-repo-tests-",
     "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
     "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
     "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",

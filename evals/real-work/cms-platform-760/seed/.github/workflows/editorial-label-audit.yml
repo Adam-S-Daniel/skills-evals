@@ -1,0 +1,59 @@
+# Editorial-workflow label audit (reusable).
+#
+# Detects the condition behind Decap's persistent "Decap CMS is adding labels to
+# N of your Editorial Workflow entries" dialog: an open editorial-workflow PR
+# (a `cms/*` branch) missing its `decap-cms/<status>` label. Decap re-runs the
+# label migration on EVERY /admin load until that PR is labeled or closed — so
+# the dialog never clears, on production AND on every preview-* deploy (the
+# editorial state is repo-wide). A consumer wires this to a daily schedule via
+# examples/site. With `fix: true` (the default) the audit SELF-HEALS: it
+# applies the missing `decap-cms/<status>` label itself (`pending_publish`
+# when the PR carries `cms/ready`, else `draft`) and only fails when a fix
+# didn't stick — a red run therefore means "needs a human", not "needs a
+# label". `fix: false` restores the old flag-only behaviour. Self-healing
+# needs `pull-requests: write` from the CALLER (reusable-workflow permissions
+# are capped by the caller's grant); with only `read` the fix attempt 403s
+# and the job falls back to failing loud with a grant-the-permission hint.
+name: Editorial label audit (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      platform_repo: { type: string, default: Adam-S-Daniel/cms-platform }
+      platform_ref:  { type: string, default: main }
+      branch_prefix: { type: string, default: "cms/" }
+      label_prefix:  { type: string, default: "decap-cms" }
+      fix:           { type: boolean, default: true }
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch the audit script from the platform
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.platform_repo }}
+          ref: ${{ inputs.platform_ref }}
+          sparse-checkout: scripts/audit-editorial-labels.js
+          sparse-checkout-cone-mode: false
+          path: .cms-platform
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+      - name: Audit editorial-workflow label consistency
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pass the caller's repo explicitly: the reusable only SPARSE-checks-out
+          # the audit script (no consumer checkout), so github.workspace is not a
+          # git repo and a bare `gh pr list` would fail "not a git repository".
+          node .cms-platform/scripts/audit-editorial-labels.js \
+            --repo "${{ github.repository }}" \
+            --branch-prefix "${{ inputs.branch_prefix }}" \
+            --label-prefix "${{ inputs.label_prefix }}" \
+            ${{ inputs.fix && '--fix' || '' }}
