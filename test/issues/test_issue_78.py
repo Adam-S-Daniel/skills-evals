@@ -269,8 +269,8 @@ class TestIssue78(unittest.TestCase):
             "repository": "Adam-S-Daniel/skills-evals",
             "revision": "9db7bb3956453f32705d3f9db672900714b3c216",
             "guidance_revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
-            "budget": {"guidance_bytes": 31374, "skill_catalog_bytes": 1,
-                       "skill_payload_bytes": 1},
+            "budget": {"guidance_bytes": 31374, "skill_catalog_bytes": 954,
+                       "skill_payload_bytes": 15565},
         }
         self.assertEqual(parsed["context"], expected)
         self.assertEqual(self.fixture["context"], expected)
