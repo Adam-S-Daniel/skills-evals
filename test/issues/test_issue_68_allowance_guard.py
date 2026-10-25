@@ -806,6 +806,186 @@ class FireCountTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # The weekly planner plans only what fits
 
+def snapshot(week, *, at=NOW - timedelta(hours=1), resets_in=timedelta(days=1)):
+    """One `usage.measured.meter.snapshots` entry, `at` as the harness writes it."""
+    resets = int((NOW + resets_in).timestamp())
+    return {"at": at.strftime("%Y-%m-%dT%H:%M:%S.123Z"), "at_source": "cli_message",
+            "info": meter(week, resets)}
+
+
+class PaceRoomTests(unittest.TestCase):
+    """Adam, 2026-10-25: "The percentage of weekly should allow for more
+    usage if I'm approaching end of week and under pace". The newest meter
+    snapshot releases max(0, stop - utilization) * week elapsed; the fixed cap
+    left stays a floor."""
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    def metered(self, snapshots, stamp="20261020T100000Z", suffix="a1b2c3") -> Path:
+        run = self.tree / "routine-results" / f"{stamp}-{suffix}"
+        path = run / "k" / stamp / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        block = usage_block(0.02)
+        block["measured"]["meter"] = {"snapshots": snapshots, "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+        return path
+
+    def state(self, fires=(8, 8)) -> dict:
+        return guard.account(self.tree, LIMITS, NOW, fires)
+
+    def test_no_snapshot_leaves_the_fixed_cap_alone(self):
+        run = self.tree / "routine-results" / "20261020T100000Z-a1b2c3" / "summary.json"
+        run.parent.mkdir(parents=True)
+        run.write_text(json.dumps({"arm": "x", "usage": usage_block(0.02)}),
+                       encoding="utf-8")
+        state = self.state()
+        self.assertEqual((state["pace_room"], state["account_used"],
+                          state["week_elapsed"]), (0.0, None, None))
+        self.assertEqual(guard.fits(state), 0)
+        self.assertEqual(guard.fits(self.state((0, 0))), 7)
+
+    def test_under_pace_late_in_the_week_allows_more_than_the_cap(self):
+        self.metered([snapshot(0.36)])
+        state = self.state((1, 1))
+        # Spent 0.025, nothing pending: the cap alone leaves 0.275, 7 fires.
+        # One day of seven left at 36%: (0.80 - 0.36) * 6/7 = 0.377, 10 fires.
+        self.assertEqual(state["pending"], 0)
+        self.assertAlmostEqual(state["pace_room"], 0.44 * 6 / 7, places=12)
+        self.assertAlmostEqual(state["account_used"], 0.36, places=12)
+        self.assertAlmostEqual(state["week_elapsed"], 6 / 7, places=12)
+        self.assertEqual(guard.fits(state), 10)
+        self.assertTrue(guard.check(state))
+        self.assertEqual(guard.fires_that_fit(self.tree, LIMITS, NOW, (1, 1)), 10)
+
+    def test_fires_without_results_come_off_the_pace_room(self):
+        # The snapshot may predate them, so each pending fire (3.5 points)
+        # costs one fire of pace room; otherwise every fire would fit until
+        # the next snapshot is ingested.
+        self.metered([snapshot(0.36)])
+        for extra in range(12):
+            with self.subTest(pending_fires=extra):
+                state = self.state((1 + extra, 1 + extra))
+                self.assertAlmostEqual(state["pending"], extra * RESERVE, places=12)
+                self.assertEqual(guard.fits(state), max(0, 10 - extra))
+
+    def test_the_fixed_cap_stays_the_floor_as_fires_pend(self):
+        # At 60% the pace room, 0.20 * 6/7 = 0.171, is under the 0.275 the
+        # cap leaves, so the cap's count holds as fires pend.
+        self.metered([snapshot(0.60)])
+        for extra in range(9):
+            with self.subTest(pending_fires=extra):
+                state = self.state((1 + extra, 1 + extra))
+                self.assertEqual(guard.fits(state), max(0, 7 - extra))
+
+    def test_early_in_the_week_the_fixed_cap_rules(self):
+        self.metered([snapshot(0.05, resets_in=timedelta(days=7, hours=-1))])
+        state = self.state()
+        self.assertAlmostEqual(state["week_elapsed"], 1 / 168, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.75 / 168, places=12)
+        self.assertEqual(guard.fits(state), 0)
+        self.assertEqual(guard.fits(self.state((0, 0))), 7)
+
+    def test_at_or_over_pace_there_is_no_pace_room(self):
+        for week in (0.80, 0.95, 1.0):
+            with self.subTest(utilization=week):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                self.metered([snapshot(week)])
+                state = self.state()
+                self.assertEqual(state["pace_room"], 0)
+                self.assertAlmostEqual(state["account_used"], week, places=12)
+                self.assertEqual(guard.fits(state), 0)
+
+    def test_an_unusable_snapshot_gives_no_pace_room(self):
+        def week(**window):
+            snap = snapshot(0.36)
+            snap["info"]["unifiedWindows"]["seven_day"].update(window)
+            return [snap]
+        resets = int((NOW + timedelta(days=1)).timestamp())
+        cases = {
+            "stale": [snapshot(0.36, at=NOW - timedelta(hours=12, seconds=1))],
+            "ahead of the clock": [snapshot(0.36, at=NOW + timedelta(minutes=6))],
+            "reset past": [snapshot(0.36, resets_in=timedelta(seconds=-1))],
+            "reset now": [snapshot(0.36, resets_in=timedelta(0))],
+            "reset over a week after the reading": [
+                snapshot(0.36, resets_in=timedelta(days=7))],
+            "above one": week(utilization=1.5),
+            "negative": week(utilization=-0.1),
+            "bool utilization": week(utilization=True),
+            "string utilization": week(utilization="0.36"),
+            "nan utilization": week(utilization=float("nan")),
+            "missing utilization": week(utilization=None),
+            "bool reset": week(resetsAt=True),
+            "string reset": week(resetsAt=str(resets)),
+            "infinite reset": week(resetsAt=float("inf")),
+            "no seven-day window": [{**snapshot(0.36), "info": {"unifiedWindows": {}}}],
+            "info not an object": [{**snapshot(0.36), "info": "x"}],
+            "malformed entries only": ["x", 5, None, {"at": 5}, {"at": "yesterday"},
+                                       {"at": "2026-10-20T14:30:00"}],
+            "snapshots not a list": {"at": "2026-10-20T14:30:00Z"},
+        }
+        for name, snapshots in cases.items():
+            with self.subTest(case=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                self.metered(snapshots)
+                state = self.state()
+                self.assertEqual(state["pace_room"], 0)
+                self.assertIsNone(state["account_used"])
+                self.assertEqual(guard.fits(state), 0)
+
+    def test_an_untrusted_summary_gives_no_pace_room(self):
+        outside = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        for name in ("symlink", "oversize", "unparseable"):
+            with self.subTest(case=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                path = self.metered([snapshot(0.36)])
+                if name == "symlink":
+                    target = outside / "summary.json"
+                    shutil.move(path, target)
+                    path.symlink_to(target)
+                elif name == "oversize":
+                    doc = json.loads(path.read_text(encoding="utf-8"))
+                    doc["pad"] = "x" * guard.SUMMARY_MAX_BYTES
+                    path.write_text(json.dumps(doc), encoding="utf-8")
+                else:
+                    path.write_text(path.read_text(encoding="utf-8")[:-1],
+                                    encoding="utf-8")
+                state = self.state()
+                self.assertEqual(state["pace_room"], 0)
+                self.assertIsNone(state["account_used"])
+
+    def test_the_newest_snapshot_wins(self):
+        # The newest sits in the earlier run directory and between two older
+        # readings, so neither file nor list order decides.
+        self.metered([snapshot(0.10, at=NOW - timedelta(hours=3)),
+                      snapshot(0.50, at=NOW - timedelta(minutes=30)),
+                      snapshot(0.20, at=NOW - timedelta(hours=2))])
+        self.metered([snapshot(0.05, at=NOW - timedelta(hours=1))],
+                     stamp="20261020T120000Z", suffix="d4e5f6")
+        state = self.state()
+        self.assertAlmostEqual(state["account_used"], 0.50, places=12)
+        self.assertAlmostEqual(state["pace_room"], 0.30 * 6 / 7, places=12)
+
+    def test_a_newest_snapshot_that_is_unusable_is_not_passed_over(self):
+        # A fresh reading that cannot be read never falls back to an older,
+        # lower one: the safe direction.
+        bad = snapshot(0.50)
+        bad["info"]["unifiedWindows"]["seven_day"]["utilization"] = "0.5"
+        self.metered([snapshot(0.10, at=NOW - timedelta(hours=3)), bad])
+        self.assertEqual(self.state()["pace_room"], 0)
+
+    def test_describe_names_the_pace_numbers_only(self):
+        self.metered([snapshot(0.36)])
+        line = guard.describe(self.state())
+        self.assertIn("; account at 36.0% with 85.7% of its week gone, so pace "
+                      "allows 37.7 points", line)
+        shutil.rmtree(self.tree / "routine-results")
+        self.assertTrue(guard.describe(self.state()).endswith(
+            "; no recent account reading, so no pace room"))
+
+
 class PlannerTests(unittest.TestCase):
 
     def run_planner(self, include: int, fires, tree=None):
