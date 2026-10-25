@@ -1985,8 +1985,8 @@ and a peer family in the same rung keeps rules 1 to 3. A
 superseded model gets no usage seat; a superseded previous arm is retired once
 `superseded_exit_weeks` complete ISO weeks have passed since the default's
 `created_at` and its share over the most recent such weeks is under the exit
-bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
-applies to it). A model newer than the default earns no new seat, and a
+bar (a stale or too-thin census holds it, and the exit-window rule no longer
+applies to it; the shipped buffer has been 0 since 2026-10-25, so it retires at once). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
 sight — held under its dated id too (#203 probe round 5, R5-3): a previous
 arm published under `<base>-YYYYMMDD` is still a previous arm once `<base>`

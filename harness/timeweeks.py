@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ISO-week arithmetic and RFC 3339 parsing, shared by the roster and the census.
 
-`harness/roster.py` decides on 4- and 8-week windows; `scripts/model_usage
+`harness/roster.py` decides on enter and exit windows (2 weeks each as shipped); `scripts/model_usage
 _census.py` buckets transcripts into the same weeks. They ran two copies of
 this arithmetic and had to agree byte-for-byte on the week LABEL — a
 disagreement would not raise, it would silently zero every usage share, which
