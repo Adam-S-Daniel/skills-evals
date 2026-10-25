@@ -20,7 +20,8 @@ September pause, and is not updated any more.
   the weekly allowance, at most 3% per run, and nothing fires once the
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
-  From 2026-10-24 to 2026-10-26 only, the cap is 60%.
+  Until the 2026-10-26 reset only, the cap and the account stop are both
+  95%.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in
