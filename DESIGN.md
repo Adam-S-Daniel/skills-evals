@@ -2309,7 +2309,7 @@ arm's own workspace. The inventory includes explicit parent directories:
 | `skills-evals-` | [harness/run_eval.py](harness/run_eval.py) guidance arms (`ARM_WORKSPACE_PREFIX`) |
 | `guidance-bridge-canary-` | [harness/run_canary.py](harness/run_canary.py) |
 | `propagation-` | [harness/run_propagation.py](harness/run_propagation.py), including `propagation-selftest-` |
-| `scoring-seed-`, `deps-python-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
+| `scoring-seed-`, `deps-python-`, `deps-bundler-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
 | `objective-repo-tests-` | [harness/scorers/repo_tests.py](harness/scorers/repo_tests.py) |
 | `objective-command-` | [harness/scorers/commands.py](harness/scorers/commands.py) |
 | `local-eval-guard-` | [scripts/local_eval.py](scripts/local_eval.py) |

@@ -176,6 +176,9 @@ def _ruby_prefix(binary: Path, workspace: Path, denied) -> Path | None:
     second real directory beside `/opt/rbenv/versions/<v>`) keeps its
     compiled-in prefix in RUNPATH and `$LOAD_PATH`, so the sandbox must bind
     that prefix too or the loader finds no `libruby` and no stdlib."""
+    import guidance
+    guidance.check_timeout(PROBE_TIMEOUT_S, "_ruby_prefix timeout",
+                           guidance.SINK_TIMEOUT_REMEDY)
     env = {"PATH": os.pathsep.join(SYSTEM_PATH), "LANG": "C", "LC_ALL": "C"}
     try:
         with subprocess.Popen([str(binary), "--disable-gems", "-rrbconfig", "-e",
