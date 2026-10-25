@@ -1,0 +1,541 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XuWLj9DPpw2ukaHjLsoTcm",
+      "name": "Bash",
+      "input": "git remote -v && echo \"---\" && ls .github/workflows/ 2><path> && echo \"---\" && cat AGENTS.md 2><path> | head -100",
+      "input_chars": 119,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XuWLj9DPpw2ukaHjLsoTcm",
+      "is_error": false,
+      "output": "---\ndeploy.yml\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\ntriage.yml\n---",
+      "output_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01US1zyn8A6GcoJkFu8Nf4LX",
+      "name": "Bash",
+      "input": "echo \"=== repo root ===\" && ls -la && echo \"=== tree (depth 2) ===\" && find . -maxdepth 2 -not -path './.git*' | sort",
+      "input_chars": 117,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01US1zyn8A6GcoJkFu8Nf4LX",
+      "is_error": false,
+      "output": "=== repo root ===\ntotal 60\ndrwxr-xr-x 9 root root 4096 Oct 24 23:55 .\ndrwx------ 6 root root 4096 Oct 24 23:55 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:02 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:02 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 24 23:55 .claude\n-rw-r--r-- 1 root root  115 Oct 2...",
+      "output_chars": 1720,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016TNZd6v5AaCDqGki9siAX4",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 46,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016TNZd6v5AaCDqGki9siAX4",
+      "is_error": false,
+      "output": "1\t{\n2\t  \"name\": \"example-service\",\n3\t  \"version\": \"0.1.0\",\n4\t  \"private\": true,\n5\t  \"description\": \"Seed workspace for the workflow-path-audit eval.\",\n6\t  \"main\": \"src/index.js\",\n7\t  \"scripts\": {\n8\t    \"start\": \"node src/index.js\",\n9\t    \"test\": \"node --test test/\"\n10\t  }\n11\t}\n12\t",
+      "output_chars": 281,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XG6ugy3ytGtrWiznvjopze",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XG6ugy3ytGtrWiznvjopze",
+      "is_error": false,
+      "output": "1\tname: Deploy\n2\t\n3\ton:\n4\t  push:\n5\t    branches: [main]\n6\t  workflow_dispatch:\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  deploy:\n13\t    runs-on: ubuntu-latest\n14\t    steps:\n15\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n16\t      - uses: actions/setup-node@20...",
+      "output_chars": 582,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MWcrFACLMzvCTWyxgfA7q9",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 65,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MWcrFACLMzvCTWyxgfA7q9",
+      "is_error": false,
+      "output": "1\tname: Docs site\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  build-docs:\n13\t    runs-on: ubuntu-latest\n14\t    steps:\n15\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n16\t      - uses: actions/setup-pytho...",
+      "output_chars": 542,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FBWAwBkVmX6h7diTKPGVHk",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FBWAwBkVmX6h7diTKPGVHk",
+      "is_error": false,
+      "output": "1\tname: Nightly sweep\n2\t\n3\ton:\n4\t  schedule:\n5\t    - cron: \"0 3 * * *\"\n6\t  workflow_dispatch:\n7\t\n8\tpermissions:\n9\t  issues: write\n10\t\n11\tjobs:\n12\t  sweep:\n13\t    runs-on: ubuntu-latest\n14\t    steps:\n15\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n16\t      - name: Close sta...",
+      "output_chars": 416,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012XZkyXKjRWh4VNSn8WpBoY",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 61,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012XZkyXKjRWh4VNSn8WpBoY",
+      "is_error": false,
+      "output": "1\tname: Tests\n2\t\n3\t# NOTE: `unit-tests` is a REQUIRED status check (see .github/rulesets/main.json).\n4\ton:\n5\t  pull_request:\n6\t    branches: [main]\n7\t  push:\n8\t    branches: [main]\n9\t\n10\tpermissions:\n11\t  contents: read\n12\t\n13\tjobs:\n14\t  unit-tests:\n15\t    name: unit-tests\n16\t    runs-on: ubuntu-lat...",
+      "output_chars": 568,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018QkwjPVin2ADKRt3v5vFdF",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018QkwjPVin2ADKRt3v5vFdF",
+      "is_error": false,
+      "output": "1\tname: Issue triage\n2\t\n3\ton:\n4\t  issues:\n5\t    types: [opened, reopened]\n6\t  issue_comment:\n7\t    types: [created]\n8\t\n9\tpermissions:\n10\t  issues: write\n11\t\n12\tjobs:\n13\t  label:\n14\t    runs-on: ubuntu-latest\n15\t    steps:\n16\t      - name: Apply the triage label\n17\t        env:\n18\t          GH_TOKEN:...",
+      "output_chars": 455,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SZSrWWGoh6RGUN2e7NezQP",
+      "name": "Bash",
+      "input": "find .github -type f | sort && echo \"---ruleset---\" && cat .github/rulesets/*.json 2><path>",
+      "input_chars": 94,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HXtUdEHcRo8Ke57nTzv166",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HXtUdEHcRo8Ke57nTzv166",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Ship src/ and the production dependency set to the runtime host.\n3\tset -euo pipefail\n4\t\n5\tTARGET=\"${DEPLOY_TARGET:<email>}\"\n6\t\n7\techo \"packaging src/ + node_modules\"\n8\ttar -czf service.tgz src node_modules package.json\n9\t\n10\techo \"shipping to ${TARGET}\"\n11\t# Placeholder for the r...",
+      "output_chars": 428,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TCAimjN8TutjShNa7XhFu9",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 56,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TCAimjN8TutjShNa7XhFu9",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Close issues with no activity for 60 days. Runs on the nightly schedule only.\n3\tset -euo pipefail\n4\t\n5\techo \"sweeping stale issues\"\n6\t# Placeholder for the real sweep; the eval never executes this script.\n7\techo \"would close issues idle for 60 days\"\n8\t",
+      "output_chars": 278,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Eow5meL19C7UGSa3h9Jvbr",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 46,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Eow5meL19C7UGSa3h9Jvbr",
+      "is_error": false,
+      "output": "1\t\"use strict\";\n2\t\n3\tconst http = require(\"node:http\");\n4\tconst { greeting } = require(\"./util\");\n5\t\n6\tconst PORT = Number(process.env.PORT || 8080);\n7\t\n8\tconst server = http.createServer((req, res) => {\n9\t  res.writeHead(200, { \"content-type\": \"text/plain\" });\n10\t  res.end(greeting(req.url));\n11\t})...",
+      "output_chars": 410,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018d1hh3xVU61kjx3sr9wvgB",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018d1hh3xVU61kjx3sr9wvgB",
+      "is_error": false,
+      "output": "1\t\"use strict\";\n2\t\n3\t/** Greeting for a request path; \"<path>\" gets the generic form. */\n4\tfunction greeting(path) {\n5\t  const name = (path || \"<path>\").replace(/^\\//, \"\").trim();\n6\t  return name ? `hello, ${name}\\n` : \"hello\\n\";\n7\t}\n8\t\n9\tmodule.exports = { greeting };\n10\t",
+      "output_chars": 263,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dtv2XYR9yrqJFUjFx1ayBS",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dtv2XYR9yrqJFUjFx1ayBS",
+      "is_error": false,
+      "output": "1\t\"use strict\";\n2\t\n3\tconst assert = require(\"node:assert\");\n4\tconst { test } = require(\"node:test\");\n5\tconst { greeting } = require(\"../src/util\");\n6\t\n7\ttest(\"root path gets the generic greeting\", () => {\n8\t  assert.strictEqual(greeting(\"<path>\"), \"hello\\n\");\n9\t});\n10\t\n11\ttest(\"a named path is echoe...",
+      "output_chars": 385,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013oLe4TqtSnQ2k9RYDDYkPr",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 44,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013oLe4TqtSnQ2k9RYDDYkPr",
+      "is_error": false,
+      "output": "1\tsite_name: Example Service\n2\tsite_url: https://docs.example.com/\n3\tdocs_dir: docs\n4\t\n5\tnav:\n6\t  - Home: index.md\n7\t  - Guide: guide.md\n8\t",
+      "output_chars": 139,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SZSrWWGoh6RGUN2e7NezQP",
+      "is_error": false,
+      "output": ".github/rulesets/main.json\n.github/workflows/deploy.yml\n.github/workflows/docs-site.yml\n.github/workflows/nightly-sweep.yml\n.github/workflows/tests.yml\n.github/workflows/triage.yml\n---ruleset---\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n...",
+      "output_chars": 816,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0182sbyJvtmQ6vKK1p9kaeD7",
+      "name": "Bash",
+      "input": "find . -iname \"AGENTS.md\" -not -path \"./.git/*\" && echo \"---\" && git status --short && git log --oneline -5",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0182sbyJvtmQ6vKK1p9kaeD7",
+      "is_error": false,
+      "output": "---\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nfd850e1 initial commit",
+      "output_chars": 165,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GkQNEDEDJsTkshQKGQCZUS",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GkQNEDEDJsTkshQKGQCZUS",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 168,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XTeJsiTY9htasTDCPwfPzS",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 65,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XTeJsiTY9htasTDCPwfPzS",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0194tbeB6aFqsFmyfLgTTYPd",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 61,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0194tbeB6aFqsFmyfLgTTYPd",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 167,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YAEmNjB5CnQJFZ3botUmot",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml; do python3 -c \"\nimport sys, yaml\nwith open('$f') as fh:\n    yaml.safe_load(fh)\nprint('$f OK')\n\" 2>&1 || echo \"$f FAILED\"; done",
+      "input_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YAEmNjB5CnQJFZ3botUmot",
+      "is_error": false,
+      "output": ".github/workflows/deploy.yml OK\n.github/workflows/docs-site.yml OK\n.github/workflows/nightly-sweep.yml OK\n.github/workflows/tests.yml OK\n.github/workflows/triage.yml OK",
+      "output_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DHphJ9gmYDYW3ftDjkppaX",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DHphJ9gmYDYW3ftDjkppaX",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 139,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V1brhvwipJcS6GQmtnnNh2",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V1brhvwipJcS6GQmtnnNh2",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 149,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GHVxjXbLJSqLYTawS4aiEF",
+      "name": "Bash",
+      "input": "npm test",
+      "input_chars": 8,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GHVxjXbLJSqLYTawS4aiEF",
+      "is_error": true,
+      "output": "Exit code 1\n\n> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1386\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)\n#     at defaultResolveImpl (node:internal/mod...",
+      "output_chars": 1324,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016VqWY5UZLhuth5QxAqbwH8",
+      "name": "Bash",
+      "input": "node --version && ls -la test/ && node --test test/*.test.js",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016VqWY5UZLhuth5QxAqbwH8",
+      "is_error": false,
+      "output": "v22.22.0\ntotal 12\ndrwxr-xr-x 2 root root 4096 Oct 24 19:13 .\ndrwxr-xr-x 9 root root 4096 Oct 24 23:57 ..\n-rw-r--r-- 1 root root  352 Oct 24 19:13 index.test.js\nTAP version 13\n# Subtest: root path gets the generic greeting\nok 1 - root path gets the generic greeting\n  ---\n  duration_ms: 1.38982\n  type...",
+      "output_chars": 543,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011oRKNP4E49X3dNhV7hPNF7",
+      "name": "Bash",
+      "input": "node --test test/; echo \"exit: $?\"",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011oRKNP4E49X3dNhV7hPNF7",
+      "is_error": false,
+      "output": "TAP version 13\n# node:internal/modules/cjs/loader:1386\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)\n#     at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)\n#     at resolveForCJSWithHooks (node:...",
+      "output_chars": 1148,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DAi6P6CvRxumCjABcnREp6",
+      "name": "Bash",
+      "input": "git diff --stat && git status --short",
+      "input_chars": 37,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DAi6P6CvRxumCjABcnREp6",
+      "is_error": false,
+      "output": " .github/workflows/deploy.yml    |  5 +++++\n .github/workflows/docs-site.yml |  6 ++++++\n .github/workflows/tests.yml     | 37 ++++++++++++++++++++++++++++++++++++-\n 3 files changed, 47 insertions(+), 1 deletion(-)\n M .github/workflows/deploy.yml\n M .github/workflows/docs-site.yml\n M .github/workflo...",
+      "output_chars": 464,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HyY94KUnotxSQKFGRKLgPu",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 61,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HyY94KUnotxSQKFGRKLgPu",
+      "is_error": false,
+      "output": "1\tname: Tests\n2\t\n3\t# NOTE: `unit-tests` is a REQUIRED status check (see .github/rulesets/main.json),\n4\t# so this can't use `on.paths` \u2014 a PR that didn't touch a matching path would\n5\t# never get the context posted and would block merge forever. The trigger\n6\t# stays broad; a path-detection step deci...",
+      "output_chars": 2195,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
