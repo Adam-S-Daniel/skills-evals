@@ -26,12 +26,12 @@
 # rolling window keeps every allowance week under it, wherever the account's
 # own week starts.
 #
-# TEMPORARY: 60 points until the allowance week resets on 2026-10-26 around
-# 17:00 UTC (Adam's decision of 2026-10-24: raise the eval cap from 30% to 60%
-# for this week, keeping the per-run and 80% stops). Set it back to 0.30 after
-# that reset. Fires made under 0.60 stay in the rolling window for seven days,
-# so fires may be refused for a while after the revert.
-weekly_cap: 0.60
+# TEMPORARY: 95 points until the allowance week resets on 2026-10-26 around
+# 17:00 UTC (Adam's decisions of 2026-10-24, 30% to 60%, and 2026-10-25,
+# "Go to 95% this week"; the per-run stop is unchanged). Set it back to 0.30
+# after that reset. Fires made under the raised cap stay in the rolling window
+# for seven days, so fires may be refused for a while after the revert.
+weekly_cap: 0.95
 
 # 3 points: one run stops starting new work once the meter has moved this
 # much since the run's first reading.
@@ -45,4 +45,7 @@ per_run_overrun: 0.005
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of
 # the allowance from Adam's own work.
-stop_when_account_above: 0.80
+#
+# TEMPORARY: 95 points until the same 2026-10-26 reset (Adam, 2026-10-25:
+# "Go to 95% this week"). Set it back to 0.80 with `weekly_cap`.
+stop_when_account_above: 0.95
