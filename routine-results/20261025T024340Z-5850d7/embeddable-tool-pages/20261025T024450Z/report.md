@@ -1,0 +1,39 @@
+# Eval report: embeddable-tool-pages
+
+- Timestamp: 20261025T024450Z
+- Trials per arm: 3
+- Run: billing subscription, runner routine, location cloud, id 20261025T024340Z-5850d7; started 2026-10-25T02:44:50Z, ended 2026-10-25T02:50:44Z
+- Account meter (account-wide, so anything else the account ran is in it; read as each agent call starts, so the 1 call(s) from the last reading on are not in it): five_hour 0.13 to 0.14, seven_day 0.38 to 0.38, from 6 snapshots
+
+## Fixture: embeddable-tool-pages (n=3)
+
+- Prompt: Publish seed/new-tool as a Tools page at /tools/unit-converter/ and embed it in the post _posts/2026-01-01-example.md below the intro.
+- Harness: Claude Code `2.1.310 (Claude Code)`; models used: with_skill=claude-haiku-5-5, claude-opus-5-5; without_skill=claude-haiku-5-5, claude-opus-5-5
+
+| Arm | n | Errors | Objective (mean) | Judge overall (mean, min to max) | Cost USD (mean / sum) |
+| --- | --- | --- | --- | --- | --- |
+| with_skill | 3 | 0 | 7/7 | skipped (objective-decided) | 0.3161 / 0.9482 |
+| without_skill | 3 | 0 | 5/7 | skipped (objective-decided) | 0.3019 / 0.9057 |
+
+Efficiency per trial (a trial that did not report a metric is left out and the cell says how many did; delta is with_skill minus without_skill):
+
+| Metric (mean / median) | with_skill | without_skill | Delta mean | Delta median |
+| --- | --- | --- | --- | --- |
+| cost_usd | 0.3161 / 0.2826 | 0.3019 / 0.2847 | +0.0142 | -0.0021 |
+| num_turns | 9.3 / 9 | 8 / 8 | +1.3 | +1 |
+| duration_ms | 49104.3 / 48704 | 65263.7 / 58924 | -16159.3 | -10220 |
+| input_tokens | 14.7 / 14 | 16 / 16 | -1.3 | -2 |
+| output_tokens | 2889.7 / 2884 | 3591 / 3432 | -701.3 | -548 |
+| cache_creation_input_tokens | 24759.3 / 21107 | 20369.7 / 19722 | +4389.7 | +1385 |
+| cache_read_input_tokens | 289358 / 280113 | 316592.7 / 311695 | -27234.7 | -31582 |
+| tool_errors | 1.3 / 2 | 1.3 / 0 | 0 | +2 |
+
+| Check (passed / scored) | with_skill | without_skill |
+| --- | --- | --- |
+| asset-copy | 3/3 | 3/3 |
+| tool-front-matter | 3/3 | 3/3 |
+| tool-entry-listing | 3/3 | 3/3 |
+| post-embed | 3/3 | 0/3 |
+| source-unchanged | 3/3 | 0/3 |
+| existing-tool-unchanged | 3/3 | 3/3 |
+| site-wiring-unchanged | 3/3 | 3/3 |
