@@ -41,6 +41,8 @@ REAL_WORK = REPO / "evals" / "real-work"
 CHECKER_BLOBS = {
     "cms-platform-693": {
         "e2e/live-url-derive-routable.test.js": "274da0153db0a64b05f25e5ac5e42753c7295a2c"},
+    "cms-platform-761": {
+        "e2e/tags-suggest.test.js": "60cf99d5225f6b43546239383ae5b11a927aff4c"},
     "cms-platform-221": {
         "e2e/check-platform-pin-consistency.test.js": "e0235030215025986b023fdf56045ab4056a1d1b"},
     "_agent-guidance-196": {

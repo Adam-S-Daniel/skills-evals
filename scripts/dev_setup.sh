@@ -23,6 +23,7 @@ NPM_DIRS=(
   evals/real-work/_agent-guidance-196/seed
   evals/real-work/cms-platform-221/seed/e2e
   evals/real-work/cms-platform-693/seed/e2e
+  evals/real-work/cms-platform-761/seed/e2e
 )
 
 if [ "$#" -gt 1 ]; then
