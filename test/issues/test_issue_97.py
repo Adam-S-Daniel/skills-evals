@@ -74,6 +74,7 @@ _MEMORY_BEFORE: str | None = None
 
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
 
 
 def _watched_user_memory() -> Path:
@@ -966,6 +967,28 @@ class TestIssue97(unittest.TestCase):
         # suite widens this to let the fake CLI's mode variable through, and a
         # widening left behind would silently un-scrub every arm.
         self.assertEqual(guidance.EXTRA_PASSTHROUGH, ())
+
+    def test_hosted_passthrough_is_exactly_the_remote_flag(self):
+        # Same floor as PASSTHROUGH: a name added here reaches every guidance
+        # arm, so the exact tuple is the assertion.
+        self.assertEqual(guidance.HOSTED_PASSTHROUGH, ("CLAUDE_CODE_REMOTE",))
+
+    def test_remote_flag_reaches_the_arm_only_when_the_host_sets_it(self):
+        # CLI 2.1.305 refuses a hosted arm without CLAUDE_CODE_REMOTE ("Not
+        # logged in"); the rest of the host's CLAUDE_* names stay out.
+        scratch = Path(tempfile.mkdtemp(prefix="hosted-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        kwargs = dict(workspace=scratch / "ws", home=scratch / "home",
+                      tmpdir=scratch / "tmp", config_dir=scratch / "config")
+        hosted = {"CLAUDE_CODE_REMOTE": "true",
+                  "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/example/token"}
+        with mock.patch.dict(os.environ, hosted):
+            env = guidance.agent_env(**kwargs)
+        self.assertEqual(env["CLAUDE_CODE_REMOTE"], "true")
+        self.assertNotIn("CLAUDE_SESSION_INGRESS_TOKEN_FILE", env)
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop("CLAUDE_CODE_REMOTE", None)
+            self.assertNotIn("CLAUDE_CODE_REMOTE", guidance.agent_env(**kwargs))
 
     # ------------------------------------------------------------------
     # Items 3-6 — a whole guidance run through the fake CLI
@@ -3261,6 +3284,10 @@ class TestIssue97(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         shutil.copytree(HARNESS_DIR, tmp / "harness",
                         ignore=shutil.ignore_patterns("__pycache__"))
+        # The copy reads its budget from its own root's evals/ (#68);
+        # without one it stops at a configuration error before any sink.
+        (tmp / "evals").mkdir()
+        shutil.copy2(REPO_ROOT / "evals" / "budget.yml", tmp / "evals" / "budget.yml")
         for rel, old, new in replacements:
             path = tmp / "harness" / rel
             source = path.read_text(encoding="utf-8")
@@ -4343,7 +4370,7 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "_agent-guidance",
                          "side by side, so the harness's sibling default resolves")
         self.assertIs(with_block.get("persist-credentials"), False)
-        self.assertRegex(checkout["uses"], r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(checkout["uses"], EVAL_WORKFLOW))
         run = self._step_named("Run the eval")["run"]
         self.assertNotIn("--registry _agent-guidance", run,
                          "_agent-guidance is not a skill registry")
@@ -4625,8 +4652,7 @@ class TestIssue97(unittest.TestCase):
                          "_agent-guidance")
         self.assertIs((guidance_checkout["with"] or {}).get("persist-credentials"),
                       False)
-        self.assertRegex(guidance_checkout["uses"],
-                         r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(guidance_checkout["uses"], CI_WORKFLOW))
 
     # ------------------------------------------------------------------
     # A5 — an EMPTY `arms:` is a fixture error, not the default pair
@@ -4771,8 +4797,9 @@ class TestIssue97(unittest.TestCase):
     DEFAULT_GUARD_BUDGET_S = _harness_default(
         _RUN_EVAL, ("_run_guidance_arm",), "fixture.get('guard') or {}",
         "timeout_s")
+    # Both arm functions judge through `_call_judge` (#371), the one site.
     DEFAULT_JUDGE_BUDGET_S = _harness_default(
-        _RUN_EVAL, _ARM_FNS, "judge_cfg", "timeout_s")
+        _RUN_EVAL, ("_call_judge",), "judge_cfg", "timeout_s")
     # The per-arm `setup:` hook (`run_setup`, skill arms only).
     DEFAULT_SETUP_BUDGET_S = _harness_default(
         _RUN_EVAL, ("run_setup",), "fixture", "setup_timeout_s")

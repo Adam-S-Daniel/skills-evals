@@ -345,6 +345,89 @@ class GuidanceProfileTests(_StandIn):
         self.assertEqual(out["error"], "agent_wrote_agent_config")
         self.assertIn(".claude/fleet-delivery.jsonl", out["detail"])
 
+    # CLI 2.1.304 startup writes in a fresh profile, by size cap.
+    STARTUP_MARKERS = {".last-cleanup": 4096, "plugins/.last_inuse_sweep": 4096,
+                       "policy-limits.json": 65536,
+                       "policy-limits.json.signature.json": 65536,
+                       "policy-limits.json.stamp.json": 4096,
+                       "remote-settings.json.synced-at": 4096,
+                       "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024}
+
+    def _remove(self, path: Path) -> None:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+    def test_cli_startup_markers_are_exempt_as_small_regular_files(self):
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        for rel, limit in self.STARTUP_MARKERS.items():
+            with self.subTest(rel=rel):
+                marker = self.config / rel
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_bytes(b"x" * limit)
+                self.assertIsNone(run_eval._agent_config_written(
+                    self.ws, before, self.config))
+                marker.unlink()
+
+    def test_cli_startup_markers_unsafe_shapes_are_watched(self):
+        outside = self.root / "outside.json"
+        outside.write_text("{}", encoding="utf-8")
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        for rel, limit in self.STARTUP_MARKERS.items():
+            for shape in ("symlink", "directory", "oversized"):
+                with self.subTest(rel=rel, shape=shape):
+                    marker = self.config / rel
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    if shape == "symlink":
+                        marker.symlink_to(outside)
+                    elif shape == "directory":
+                        (marker / "hooks").mkdir(parents=True)
+                        (marker / "hooks" / "hooks.json").write_text(
+                            "{}", encoding="utf-8")
+                    else:
+                        marker.write_bytes(b"x" * (limit + 1))
+                    self.assertIn(f"$CLAUDE_CONFIG_DIR/{rel}",
+                                  run_eval._agent_config_written(
+                                      self.ws, before, self.config))
+                    self._remove(marker)
+
+    def test_remote_settings_are_exempt_only_as_an_empty_object(self):
+        settings = self.config / "remote-settings.json"
+        outside = self.root / "outside.json"
+        outside.write_text("{}", encoding="utf-8")
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        for content in ("{}", "{ }\n"):
+            with self.subTest(content=content):
+                settings.write_text(content, encoding="utf-8")
+                self.assertIsNone(run_eval._agent_config_written(
+                    self.ws, before, self.config))
+                settings.unlink()
+        for shape in ('{"hooks": {}}', "[]", "{", "\xff", "symlink", "directory",
+                      "oversized"):
+            with self.subTest(shape=shape):
+                if shape == "symlink":
+                    settings.symlink_to(outside)
+                elif shape == "directory":
+                    (settings / "hooks").mkdir(parents=True)
+                    (settings / "hooks" / "hooks.json").write_text("{}", encoding="utf-8")
+                elif shape == "oversized":
+                    settings.write_bytes(b"{" + b" " * 4096 + b"}")
+                elif shape == "\xff":
+                    settings.write_bytes(b"\xff")
+                else:
+                    settings.write_text(shape, encoding="utf-8")
+                self.assertIn("$CLAUDE_CONFIG_DIR/remote-settings.json",
+                              run_eval._agent_config_written(
+                                  self.ws, before, self.config))
+                self._remove(settings)
+        # An empty object at the start of the turn that then gains settings.
+        settings.write_text("{}", encoding="utf-8")
+        before = run_eval._agent_config_snapshot(self.ws, self.config)
+        settings.write_text('{"permissions": {"allow": ["Bash"]}}', encoding="utf-8")
+        self.assertEqual(run_eval._agent_config_written(self.ws, before, self.config),
+                         "$CLAUDE_CONFIG_DIR/remote-settings.json")
+
     def test_what_the_cli_writes_into_the_profile_passes(self):
         for rel in ("projects/-tmp-x/s.jsonl", "sessions/12.json", ".claude.json",
                     "shell-snapshots/s.sh", "backups/b", "session-env/u/x"):
@@ -376,8 +459,9 @@ class SharedProfileTests(_StandIn):
     def test_other_sessions_and_the_cli_writing_elsewhere_pass(self):
         for rel in ("projects/-tmp-other/s.jsonl", "skills/synced/u/SKILL.md",
                     "todos/t.json",
-                    # The one write measured under plugins/: a small marker.
-                    "plugins/cache/m/p/1/.orphaned_at"):
+                    # The writes measured under plugins/: small markers.
+                    "plugins/cache/m/p/1/.orphaned_at", "plugins/.last_inuse_sweep",
+                    "plugins/plugin-directory-cache-v2.json"):
             with self.subTest(rel=rel):
                 self.log.unlink(missing_ok=True)
                 out = self.run_arm("write_config",

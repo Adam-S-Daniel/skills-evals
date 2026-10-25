@@ -15,6 +15,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "test"))
+from lockfile_pins import lock_problem  # noqa: E402
 import scaffold_skill_gaps as gaps  # noqa: E402
 
 
@@ -603,14 +605,36 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(checkouts), 6)
         self.assertTrue(all(step["with"]["persist-credentials"] == "false"
                             for step in checkouts))
-        self.assertIn("SKILL_COVERAGE_READ_TOKEN", json.dumps(census_steps))
+        names = [step.get("name") for step in census_steps]
+        mint = next(step for step in census_steps if step.get("id") == "registry-token")
+        private = next(step for step in checkouts
+                       if step["with"].get("repository", "").endswith("-private"))
+        self.assertLess(census_steps.index(mint), census_steps.index(private))
+        self.assertEqual(mint["uses"],
+                         "actions/create-github-app-token@v3.2.0")
+        self.assertEqual(mint["with"], {
+            "client-id": "${{ vars.REGISTRY_READ_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.REGISTRY_READ_APP_PEM }}",
+            "owner": "Adam-S-Daniel",
+            "repositories": "adam-agentskills-private",
+            "permission-contents": "read"})
+        self.assertEqual(private["with"]["token"],
+                         "${{ steps.registry-token.outputs.token }}")
+        self.assertTrue(all("token" not in step["with"] for step in checkouts
+                            if step is not private))
+        require = next(step for step in census_steps
+                       if step.get("name") == "Require the private registry read credential")
+        self.assertLess(names.index(require["name"]), census_steps.index(mint))
+        self.assertEqual(require["env"], {
+            "APP_CLIENT_ID": "${{ vars.REGISTRY_READ_APP_CLIENT_ID }}",
+            "APP_PEM": "${{ secrets.REGISTRY_READ_APP_PEM }}"})
+        self.assertIn("exit 1", require["run"])
+        self.assertNotIn("${{", require["run"])
+        self.assertNotIn("SKILL_COVERAGE_READ_TOKEN", json.dumps(self.workflow))
         for job in self.workflow["jobs"].values():
             for step in job["steps"]:
                 if "uses" in step:
-                    action = step["uses"]
-                    self.assertEqual(len(action.rsplit("@", 1)[-1]), 40)
-                    self.assertTrue(all(c in "0123456789abcdef" for c in
-                                        action.rsplit("@", 1)[-1]))
+                    self.assertIsNone(lock_problem(step["uses"], "skill-coverage.yml"))
                 if "run" in step:
                     self.assertNotIn("${{ github.event.", step["run"])
                     self.assertNotIn("${{ inputs.", step["run"])

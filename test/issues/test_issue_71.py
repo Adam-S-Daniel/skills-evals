@@ -994,6 +994,31 @@ class DiffTargetTests(unittest.TestCase):
         pse.check_diff_targets(BODY_DIFF)
 
 
+class ApplyBodyDiffTests(unittest.TestCase):
+    TEXT = "---\nname: x\ndescription: d\n---\n" + "".join(f"line {i}\n" for i in range(1, 9))
+
+    def apply(self, diff):
+        with tempfile.TemporaryDirectory() as tmp:
+            return pse.apply_body_diff(self.TEXT, diff, Path(tmp))
+
+    def test_wrong_hunk_header_counts_still_apply(self):
+        # The header claims 7 old and 9 new lines; the body has 5 and 6.
+        diff = ("--- a/SKILL.md\n+++ b/SKILL.md\n@@ -3,7 +3,9 @@\n"
+                " line 1\n line 2\n-line 3\n+line three\n+line 3b\n line 4\n line 5\n")
+        new = self.apply(diff)
+        self.assertEqual(new, self.TEXT.replace("line 3\n", "line three\nline 3b\n"))
+
+    def test_mismatched_context_names_the_reason(self):
+        diff = ("--- a/SKILL.md\n+++ b/SKILL.md\n@@ -5,3 +5,3 @@\n"
+                " no such line\n-line 2\n+line two\n another missing\n")
+        with self.assertRaises(pse.InvalidProposal) as ctx:
+            self.apply(diff)
+        message = str(ctx.exception)
+        self.assertTrue(message.startswith("diff does not apply to SKILL.md:"), message)
+        self.assertIn("patch failed", message)
+        self.assertLessEqual(len(message), len("diff does not apply to SKILL.md: ") + 200)
+
+
 class DescriptionRewriteTests(unittest.TestCase):
 
     def test_only_the_description_changes(self):

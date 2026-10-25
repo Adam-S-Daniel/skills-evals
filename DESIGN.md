@@ -41,7 +41,40 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     `workflow-path-audit`: replay a changeset through each workflow's `on:`
     filters and assert exactly which workflows fire, and that they parse).
   - *judge* — an LLM grades the transcript/result against the fixture's rubric,
-    emitting JSON (scores + reasons), temperature 0.
+    emitting JSON (scores + reasons), temperature 0. For a with/without pair
+    it is conditional (#371): no judge call is made while trials run, and
+    once every trial of both arms is scored the arms' objective pass rates
+    (checks passed over checks scored, over the trials that did not error)
+    are compared exactly. `with` strictly ahead decides the pair, so no trial
+    of it is judged and each scored trial's `summary.json` records
+    `"judge": {"status": "skipped", "reason": "objective-decided"}` (an arm
+    aggregate's `aggregate.judge` carries it with `n` and `errors` 0, and
+    reports print `skipped (objective-decided)`); a tie, a loss or a rate
+    that is undefined (an arm with no scored check) judges every scored trial
+    of both arms, never some trials of a pair and not others. A single-arm
+    run, `--judge always`, and a fixture whose `judge.mode` is not absolute
+    (pairwise) judge each trial inside the trial as before; `--no-judge`
+    judges nothing and records `null`, not a skip. Which model judges is
+    chosen for the arm
+    ([ADR 0013](docs/decisions/0013-judge-policy.md)): a fixture's
+    `judge.model` pin if it has one; else, for an arm model in tier T, the
+    newest roster arm in the lowest tier above T, and the roster's `judge`
+    when no roster arm sits above T (so Sonnet arms are judged by the newest
+    Opus arm and an Opus arm by the roster's judge). A `pairwise` fixture
+    always gets the roster's `judge`. A judge is never the model it grades
+    nor in its tier, on either path: a roster that cannot give one is a
+    selection error and nothing runs. Tiers are the roster module's reading
+    of a model id against the ladder in `roster-policy.yml`. "Newest" is
+    read from the ids, which orders two only when their names differ in
+    nothing but numbers; peer families on one rung, or an older id shape
+    beside a newer one, leave no newest and are a selection error too. Each
+    summary of a skill
+    run records the choice as `judge_selection` (`model`, `rule`:
+    `tier-above-arm`, `roster-judge` or `fixture-pin`, `arm_tier`,
+    `judge_tier`), on a skipped pair too, and `null` under `--no-judge` or
+    after a selection error. A guidance run is unchanged: its judge is the
+    fixture's pin, else the CLI's default, and it records no
+    `judge_selection`.
 - **Report** — per-skill table of with vs. without across success %, judge
   score, and cost; a summary; and a regression line vs. the last run.
 
@@ -404,6 +437,12 @@ design, recorded verbatim:
 
 Q3, Q4, Q6 and Q8 are recorded in "Real-work fixtures from merged pull
 requests (2026-10-06)" below.
+
+A seed is frozen at its fixture's `context.revision`: the repository-specific
+text Q5 keeps is that commit's, and a seed is never edited to match a later
+fleet rule, even where it contradicts one. `cms-platform-221`'s seed still
+asks for a `# vX.Y.Z (date)` comment beside each pin, as cms-platform did at
+`3d7ca3e`. A fix to such a rule belongs in the live repository, not the seed.
 
 #### The answer-leak lint ([`harness/answer_leak.py`](harness/answer_leak.py))
 
@@ -997,6 +1036,123 @@ is objectively decidable from the resulting files alone.
   share against it, `canonical_model` is the arm model's canonical id, and
   the share is the one the counts give. Summaries without the fields still
   ingest.
+- **Run and usage ([#370](https://github.com/Adam-S-Daniel/skills-evals/issues/370)
+  item 1):** every `summary.json`, error paths and arm aggregates included,
+  carries a `run` block and a `usage` block. A value that could not be read
+  is `null` with an entry in its block's `reasons`, never omitted and never
+  guessed; nothing reads either block to weight or filter a result.
+  `run: {schema_version, billing, runner, location, id, session_id,
+  harness_commit, cli_version, source, reasons}`. `billing`, `runner`,
+  `location` and `id` are the run's `--run-billing {api,subscription}`,
+  `--run-runner {actions,routine,workstation}`, `--run-location {cloud,local}`
+  and `--run-id` when passed, else what the environment observes
+  (`run_eval.RUN_ENV`: `GITHUB_ACTIONS=true` is the `actions` runner,
+  `GITHUB_RUN_ID` its id, `CLAUDE_CODE_REMOTE_SESSION_ID` a `cloud` location
+  and the `session_id`), else `null`; `source` records `flag`, `env:<NAME>`
+  or `null` per field. Billing is never read from the environment, and a
+  hosted session does not say a routine started it. `eval.yml` passes
+  `api` / `actions` / `cloud`, and `scripts/local_eval.py` passes
+  `subscription` / `workstation` / `local` with one run id for all its
+  trials. `harness_commit` is the harness checkout's `HEAD`, read from its
+  git metadata files with no git command.
+  `usage` has a half the whole run shares and a half that is this summary's
+  own. The shared half: `started_at` and `ended_at` (UTC), `meter`,
+  `meter_delta`, `concurrent_runs` (`null`: not knowable inside one run,
+  computed at ingest), `other_account_activity` (`unknown`, or
+  `asserted_quiet` with `asserted_quiet_by` when `--asserted-quiet <who>` was
+  passed), `outer_session: {id, usage: null, note: "not measured"}`,
+  `limit_promotion` and `price_table_version` (both `null`: the CLI names a
+  cost basis, not a price table). It is written into each summary as it
+  stood at that moment, and when the run ends every summary the run wrote is
+  rewritten with the final one, so all of a run's summaries agree; a run that
+  is killed leaves `ended_at: null` with its reason.
+  A meter snapshot is the CLI's own `rate_limit_event`: with `--verbose`
+  the agent call's message array carries one (CLI 2.1.296, measured
+  2026-10-10), so reading the account meter adds no model call. Each
+  snapshot is stored once, in the summary of the trial whose call printed
+  it, under `usage.measured.meter: {snapshots, omitted}`: the first and the
+  last event of each of that trial's agent CLI calls, each as `{at,
+  at_source, call: {role, index}, info}` with `info` the event's
+  `rate_limit_info` verbatim (whatever windows it names), `at` the timestamp
+  of the message before it (`cli_message`), else the call's start
+  (`call_start`: only an event before the call's first timestamped message
+  has none), and `call` naming the entry of the same trial's `calls`. A
+  trial keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its first six and
+  last six, and `omitted` counts the rest; an arm aggregate lists none. A
+  run's meter series is therefore the union of its trial summaries. The
+  run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
+  how many snapshots the run recorded, how many events were not kept for
+  their shape or size, and why the judge call, the guard call and the end of
+  the run are not sampled (the judge and the guard are called without
+  `--verbose`, so they print no meter event, and no call is added to read
+  the meter). The meter is read when an agent call starts and at no other
+  time: the one real call observed (two API requests) printed one event,
+  as it began. That is one observation, and a longer call may print more;
+  the first and last of each call are kept either way. So there is no
+  snapshot at run end, and the run's last snapshot is the start of its
+  last agent call. `meter_delta` is the run's first snapshot against its
+  last, per window both name, whatever a trial's own list dropped. It
+  therefore leaves out the call that printed the last snapshot and every
+  call after it (that agent call's own spend, and the judge and guard calls
+  that follow), and any call before the first snapshot. Conditional judging
+  (#371) widens that: a pair's judge calls are all made after its last agent
+  call, so on a judged pair the delta covers none of the judging, where a
+  judge inside each trial (`--judge always`, a single arm) leaves out only
+  the last trial's. Measured on one fixture, two trials, a tie: 5 calls
+  after the last snapshot by default (the last agent call and all four judge
+  calls), 2 under `--judge always`. Such a held judge call is added to the
+  summary of the trial it judges after that summary was written
+  (`_RunTelemetry.amend`), so that trial's `usage.measured.started_at` to
+  `ended_at` spans the trials that ran in between and trial windows of a
+  judged pair overlap;
+  `meter_delta.uncovered: {calls_before_first_snapshot,
+  calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
+  the second, and a run of one agent call has no delta at all. Each window
+  is `{from, to, delta, window_reset}`, at most 16 of them, `delta`
+  `null` when the window's reset time changed between them. It is
+  account-wide, so it is this run's cost only if nothing else used the
+  account, and it is labeled, never corrected. A run billed `api` has
+  `meter: null`, `meter_delta: null` and `measured.meter: null` with the
+  reason.
+  `usage.measured` is `{scope, started_at, ended_at, calls, meter, agent,
+  judge, guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
+  call with its role, start, end, wall-clock `duration_ms` and outcome, and
+  each role has `{calls, duration_ms, num_turns, cost_usd, cost_basis,
+  models, cache_creation, reasons}`: `models` per model id with the four
+  token counts and `cost_usd` from `modelUsage`, `cost_usd` the CLI's own
+  list-price figure, and `cache_creation` the 5-minute and 1-hour cache-write
+  split, which the CLI reports for the main loop only. `models` is whole or
+  `null`: a result with no `modelUsage`, or with an entry that could not be
+  read, leaves it `null` and never the models that happened to be readable.
+  The judge's and the guard's results are read like the agent's: the judge's
+  sink (`judge.collecting_models`) and the guard's (`run_canary.
+  collecting_results`) keep `modelUsage`, `num_turns`, `usage` and
+  `total_cost_usd` of each result, raw, whichever the result has. A figure a
+  result lacks is `null` with the reason "the <role>'s CLI result does not
+  carry it"; a call that ended without a result says so. A role with no call
+  records zeros. An arm aggregate (`scope: arm`)
+  sums its trials role by role, a `null` in any trial making that sum
+  `null`, `models` included, and lists no calls. A trial with more than
+  `run_eval.USAGE_MAX_CALLS` (32) calls keeps the role totals and
+  `calls: null`. Calls queued by a trial that wrote no summary are dropped
+  when the next trial starts, not given to it.
+  The counts above bound how many entries a summary lists, not how large a
+  snapshot's verbatim `info` is once indented, so `usage.measured` is also
+  held to `run_eval.USAGE_MAX_BYTES` (32 KiB) as written: past it the trial
+  keeps its first and last snapshot, then none (`omitted` counts them), then
+  no call list. `meter_delta` is computed from the run's own record and is
+  unaffected. `scripts/ingest_routine_results.py` accepts both blocks
+  (together or not at all, so earlier summaries still ingest) and checks
+  every value, not only every key: times are real and in order, a `source`
+  is the flag or an environment variable the harness reads for that field
+  with the value it implies, a role's `calls` matches the calls listed, a
+  window's `delta` is its change, and a field the harness only ever writes
+  as `null` must be `null`. The one free-form value is a snapshot's `info`,
+  which is bounded. With every snapshot and call slot taken the two blocks
+  measured 26,347 bytes pretty-printed, against the ingester's 64 KiB cap on
+  a summary, which is unchanged. Over a both-arms, three-trial run (eight
+  summaries, one event per call) they measured 38,840 bytes in all, 4,192
+  to 5,076 each.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work
@@ -1018,7 +1174,19 @@ is objectively decidable from the resulting files alone.
   `git-push-does-not-mean-commit-exists`, respectively. YAML is parsed with
   PyYAML nodes: workflow job-level reusable `uses`, workflow step `uses`
   and `run`, and composite-action step `uses` and `run`. Remote actions
-  require a full 40-character hexadecimal SHA; local `./` and `docker://`
+  require a full 40-character hexadecimal SHA, or the lockfile form (ADR
+  0021 in `_agent-guidance`): a step ref is also credited when
+  `.github/workflows/actions.lock` keys it by the exact `uses` string with
+  a `sha1-<40 lowercase hex>` commit and a `ref` equal to the tag after
+  `@`, and that workflow's `workflows` list names it. A tag inside a local
+  composite action is credited only when every workflow that reaches the
+  composite through `$/<dir>` steps, directly or through other composites
+  (cycles included), lists it; a reaching workflow absent from the
+  lockfile's `workflows` map locks nothing, and a composite no workflow
+  reaches gets no credit. Job-level reusable workflow refs never take
+  lockfile credit. An unreadable, invalid or symlinked lockfile makes
+  `unpinned_actions` unknown; the interpolation counter, which does not
+  read it, stays known. Local `./`, `$/` and `docker://`
   references are exempt, and this account's `cms-platform/.github/actions/`
   and `cms-platform/.github/workflows/` references accept
   `vMAJOR.MINOR.PATCH` release tags. The interpolation
@@ -1488,8 +1656,11 @@ runs that loader.
 The `workflow-path-audit` fixture learned these the hard way; they are policy
 for every fixture, not folklore in one file's comments:
 
-- **Arms on a pinned mid-tier model, judge pinned strong.** A ceiling-effect
-  arm is signal-free.
+- **Arms follow the roster, and the judge follows the arm.** A fixture pins
+  neither model without a stated reason; the judge is one tier above the arm
+  it grades ([ADR 0013](docs/decisions/0013-judge-policy.md), which
+  supersedes "arms on a pinned mid-tier model, judge pinned strong"). A
+  ceiling-effect arm is still signal-free.
 - **Anything a script can decide is never left to the judge**, and the
   rubric caps a dimension when a decidable fact fails (the judge once scored
   a 9 on an arm the objective column failed).
@@ -1548,7 +1719,6 @@ yet" must stay distinguishable.)
 | Skill | Decision | Reason |
 |---|---|---|
 | `test-canary` | no A/B | internal canary; no propagation arm loads it, so its delivery probe is not built and no open issue tracks it (closed [#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17) built the adam-agentskills arms only) |
-| `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
@@ -1580,9 +1750,12 @@ One manual API dispatch selects one fixture. At the workflow's estimate of
 $0.30–0.90 per skill fixture, that is its estimated cost; actual usage varies,
 and the API workspace spend limit is the hard ceiling for this path. Adding a
 fixture to the weekly routine's reviewed list is a subscription-usage
-decision, not an API-spend estimate. Rotation, monthly sweeps, model
-products, trial changes, and automated budget enforcement remain deferred under
-[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
+decision, not an API-spend estimate. Automated budget enforcement is the
+weekly allowance guard: [`evals/budget.yml`](evals/budget.yml) holds Adam's
+30% cap, enforced in the run, before each fire and in the weekly plan
+([docs/how-it-works.md](docs/how-it-works.md#the-weekly-allowance-guard)).
+Rotation, monthly sweeps, model products and trial changes remain deferred
+under [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 
@@ -1685,7 +1858,9 @@ only, so an arm, the judge, the preflight model or a `catalogue_seen` entry
 cannot appear there or vanish from there without a reviewed commit.
 `run_eval.select_models` reads that file and nothing else for the roster rung
 of its precedence (`--model` > the fixture's own pin > `evals/roster.yml` >
-error).
+error). Since [ADR 0013](docs/decisions/0013-judge-policy.md) the judge it
+picks from that file also depends on the tier ladder in
+`evals/roster-policy.yml`, committed and pull-request-only like the roster.
 
 **`harness/roster.py` computes a PROPOSAL, not the running set.** It is still
 **a pure function over files** — already-parsed documents and a frozen `now`

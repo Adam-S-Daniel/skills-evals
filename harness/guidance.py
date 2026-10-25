@@ -206,6 +206,16 @@ PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "SHELL", "USER", "NODE_PATH")
 # it empty and a test asserts the committed value.
 EXTRA_PASSTHROUGH = ()
 
+# Forwarded only when the harness's own environment sets it. A hosted Claude
+# Code session (the eval routine, ADR 0010) authenticates through a host proxy
+# at ANTHROPIC_BASE_URL and holds no credential of its own; from CLI 2.1.305
+# the CLI refuses to start ("Not logged in") unless this flag says the host
+# provides auth, where 2.1.304 started without it (measured 2026-10-20 with
+# `env -i`: this one name added, and nothing else, turns the refusal into an
+# answer). It is a mode flag, not a credential, and outside a hosted session
+# it is absent and nothing changes.
+HOSTED_PASSTHROUGH = ("CLAUDE_CODE_REMOTE",)
+
 
 class GuidanceError(ValueError):
     """A configuration problem the operator must fix: a missing checkout, an
@@ -859,7 +869,8 @@ def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
     run_eval.agent_env.
     """
     env = {name: os.environ[name]
-           for name in (*PASSTHROUGH, *EXTRA_PASSTHROUGH) if name in os.environ}
+           for name in (*PASSTHROUGH, *EXTRA_PASSTHROUGH, *HOSTED_PASSTHROUGH)
+           if name in os.environ}
     env.update({name: value for name, value in os.environ.items()
                 if name.startswith("ANTHROPIC_")})
     env["HOME"] = str(home)

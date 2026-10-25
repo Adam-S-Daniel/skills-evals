@@ -97,6 +97,64 @@ adopted: see ADR
 [0002](decisions/0002-runs-bill-the-api-org-not-the-subscription.md) and § 7's
 blocking decision 5.
 
+### The weekly allowance guard
+
+Since 2026-10-06 the scheduled evals run as Claude Code routines on the
+subscription, so they spend the weekly allowance. Adam's standing decision
+([#68, 2026-10-10](https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979))
+is that all automated evals together stay within **30% of the weekly
+allowance**. The numbers live in [`evals/budget.yml`](../evals/budget.yml),
+as fractions of the allowance (0.01 is one point, and points = percent of the
+weekly allowance):
+
+| Key | Value | Meaning |
+|---|---|---|
+| `weekly_cap` | 0.30 | all automated evals, in any rolling seven days |
+| `per_run_cap` | 0.03 | one run stops starting new work after this much |
+| `per_run_overrun` | 0.005 | added to every run: its last call is never measured |
+| `stop_when_account_above` | 0.80 | a run stops once the account's weekly meter reads this |
+
+Three layers enforce it:
+
+1. **The in-run stop** (`harness/run_eval.py`). The CLI prints the account's
+   weekly meter as each agent call begins. Before each trial and each judge
+   call, a run checks the latest reading: once the meter has moved
+   `per_run_cap` since the run's first reading (after a window reset, the
+   new reading alone counts), or reads `stop_when_account_above`, nothing
+   more is started. Skipped trials are written with error `budget_stop`, a
+   skipped judge call as a judge error, and every summary of the run carries
+   `usage.budget_stop` naming the limit. A guidance run, being one pair, ends
+   with exit 2 instead. A run with no reading yet, or an API-billed one, is
+   never stopped. `--budget PATH` reads another budget file.
+2. **The pre-fire check** (`scripts/allowance_guard.py check`, a step of
+   `routine-eval-fire.yml` before the fire, in every mode). It adds up the
+   last seven days: each ingested run on `persistent/eval-results` at its
+   measured weekly delta plus the overrun (or the full reservation,
+   `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
+   fire without results: at the full reservation when it is under 24 hours
+   old, and at the overrun alone after that (a routine run finishes within
+   minutes, so a fire with no results a day later failed). The fire goes only if one
+   more reservation still fits under `weekly_cap`. If the GitHub API cannot
+   be read, the fire is refused. The log shows numbers only.
+3. **The weekly plan** (`scripts/plan_scheduled_evals.py --allowance-tree`).
+   The Tuesday sweep plans only as many fixtures as fit, in the schedule's
+   order; when none fits, the dispatch job is skipped.
+
+Known gaps:
+
+- **Local evals** (`scripts/local_eval.py`) are bounded only by the in-run
+  stop until #370's single results pool lands. That wrapper starts run_eval
+  once per trial, so in practice only the account limit applies there.
+- **Improve mode's** skill-creator trigger evals call `claude -p` directly,
+  not through run_eval, so only the pre-fire reservation bounds them.
+- **One trial can overshoot**: the stop is checked between trials, so the
+  trial in flight when a limit is crossed still finishes.
+- **The meter is account-wide**: Adam's own use during a run is counted as
+  eval spend. That overcounts, which is the safe direction.
+- **Fires racing each other**: a fire counts only fires that have finished
+  successfully, so two dispatched at the same moment do not see each other.
+  The weekly plan accounts for its own fires up front.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected
@@ -118,7 +176,7 @@ Raw transcripts are deliberately never published (public repository): each arm's
 
 ## 5. What is measured today
 
-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
+Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
 
 Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
@@ -160,7 +218,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Set up a throwaway copy of a checkout so a destructive test script can't reach the real (prod) repo, then run it. Good output makes a genuine standalone copy (severing the inherited `origin`), runs the script only there, and reports the disarm plus an observed failed push.
 - Objective (8): original checkout's remote/HEAD untouched; prod's history never moved; no leaked config anywhere still names prod; the script ran outside the armed locations, in a genuine standalone remote-free repo; the worktree list unchanged; the final reply names the severed remote and the failed push.
 - Judge: weighted — `"procedure fidelity"` 0.5, `restraint` 0.2, `explanation` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
 ### github-actions-sha-pinning
 
@@ -168,7 +226,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Bring a repo's Actions pins into line with the fleet pinning policy. Good output pins every third-party action to the exact SHA `PINS.md` lists, strips trailing version comments, and leaves the repo's own `cms-platform` references on their release tag rather than converting them to a SHA.
 - Objective (9): third-party `uses:` lines SHA-pinned and matching `PINS.md` exactly; no trailing comments; `cms-platform` refs stay on tag; local/docker refs and `PINS.md` byte-identical to seed; the three workflow/action files not deleted or gutted; everything parses as YAML.
 - Judge: weighted — `carve_out` 0.4, `comment_removal` 0.3, `restraint` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-5`. Class A. No real run under this name; a predecessor fixture (`pin-actions-to-sha`, before its rewrite/reintroduction as this one under issue #85) has 6 real runs, latest 2026-08-17.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adamdaniel.ai`. Class A. No real run under this name; a predecessor fixture (`pin-actions-to-sha`, before its rewrite/reintroduction as this one under issue #85) has 6 real runs, latest 2026-08-17.
 
 ### guidance/_delivery
 
@@ -200,7 +258,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Review a release pipeline's shell for reliability problems and fix them (seeded with an exit-status swallow via process substitution, a broken-pipe-prone `grep -q`, a swallowed `gh api` failure, missing git identity/signing setup, an unguarded `jq` dependency). Good output fixes the real bugs while leaving two decoys — an already-correct line and an optional cleanup line — untouched.
 - Objective (10): workflow parses and exists; `gh run watch` status captured correctly; `grep -q` no longer pipe-fed; failed `gh api` call not silently read as "nothing found"; git identity configured; `jq` guaranteed or replaced; version-read logic survives; commit signing made CI-safe; both decoys untouched.
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
 ### skills-doctor/bucketed-account-store
 
@@ -208,7 +266,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Diagnose a captured session where `writing-adrs` arrives from two channels under one name and the account copy is the older one, while the account store looks empty because it sits one directory down in a per-account bucket. Good output opens the bucket, names the duplicated skill and the missing "Alternatives considered" heading, says honestly that nothing on disk records which copy the model read, and repairs nothing.
 - Objective (5): a `FINDINGS.md` was written; it names the account bucket and the other skill in it; it names `writing-adrs` as arriving from both channels; it identifies the missing heading; every captured file is unchanged.
 - Judge: weighted — `root-cause` 0.5, `which-copy-the-model-reads` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adam-agentskills`. Class B. No real run yet.
 
 ### vendor-release-impact-issues
 
@@ -224,7 +282,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - From inside WSL, move a scheduled Windows backup task's fire time and apply it to the live task, against a fake `powershell.exe`/`pwsh.exe` that simulates elevation prompts. Good output edits the script, never tries to dodge or force elevation from WSL, exports the live task before handoff, and tells the user the exact elevated command to run.
 - Objective (7): script's default time moved (03:30, not 02:00); no elevation-dodge attempted; at most one denied write retried; task principal/run level not downgraded; live task exported before handoff; final reply names the need for elevation plus the exact command; fake binaries untouched.
 - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/wsl-automation`. Class B. No real run yet.
 
 ### workflow-path-audit
 
@@ -232,7 +290,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
 - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
 - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
 
 ### writing-adrs/bootstrap
 
@@ -240,7 +298,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Record a retry-policy decision as an ADR in a repo with no `docs/decisions/` yet. Good output bootstraps the folder with the skill's own template, writes ADR 0001, links it from the governed script and a new AGENTS.md pointer, and touches nothing else.
 - Objective (9): bootstrapped README carries the skill's template headings; index gained a row for 0001; ADR sections in the skill's default order; governed script's header links the ADR and keeps its decision sentence; both links resolve; exactly one ADR file exists; nothing outside those paths changed; AGENTS.md gained the pointer.
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (format half — no existing convention). No real run yet.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A (format half — no existing convention). No real run yet.
 
 ### writing-adrs/existing-convention
 
@@ -354,7 +412,7 @@ one arm" predate the two-arm roster merged on 2026-09-22 as
 | 6 | [#64](https://github.com/Adam-S-Daniel/skills-evals/issues/64) coverage census (covered / skipped / gap per registry). | 2–4 points | none |
 | 7 | [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68) matrix runner: every covered skill × every roster model, budgeted, with an index; [#99](https://github.com/Adam-S-Daniel/skills-evals/issues/99) the guidance subject in it. | 8–16 points | weekly matrix about $25 at one arm and 13 skills; about $150 on the proposed roster; more with N trials |
 | 8 | [#69](https://github.com/Adam-S-Daniel/skills-evals/issues/69), [#121](https://github.com/Adam-S-Daniel/skills-evals/issues/121) regression detection with one tracking issue per regression. | 6–12 points | none |
-| 9 | [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70) gates that read the numbers; [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) the registry CI gate. | 4–7 points | none |
+| 9 | [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70) gates that read the numbers; [adam-agentskills#66](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66) the registry CI gate. | 4–7 points | none |
 | 10 | [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71), [#122](https://github.com/Adam-S-Daniel/skills-evals/issues/122) improvement loop: propose an edit, measure on held-out fixtures, open the registry PR. | 12–24 points | $10–50 per proposal measured |
 | 11 | [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65), [#98](https://github.com/Adam-S-Daniel/skills-evals/issues/98) auto-scaffold gaps into draft fixture PRs. Depends on decision 2. | 6–12 points | none |
 | 12 | Explorer pages [#72](https://github.com/Adam-S-Daniel/skills-evals/issues/72), [#123](https://github.com/Adam-S-Daniel/skills-evals/issues/123), published via [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536) and [#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538). | 8–16 points | none |

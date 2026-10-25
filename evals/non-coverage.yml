@@ -37,10 +37,6 @@ skips:
     reason: >-
       internal canary; carries no guidance; no probe asserts its delivery (not
       built, untracked; closed issue #17 built other propagation arms)
-  - registry: cms-platform
-    skill: sveltia-cms-playwright-demo
-    decision: skip
-    reason: historical reference to retired tech
   - registry: adam-agentskills
     skill: launch-top-level-claude-session
     decision: defer
