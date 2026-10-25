@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015WQKkApTQsCyjUW4oiw6ox",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md && ls docs/decisions",
+      "input_chars": 143,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015WQKkApTQsCyjUW4oiw6ox",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n68018d...",
+      "output_chars": 2086,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XtQcwcRDMc86n5i3qDMPr1",
+      "name": "Bash",
+      "input": "for f in docs/decisions/000*.md scripts/prune-snapshots.sh CHANGELOG.md README.md; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XtQcwcRDMc86n5i3qDMPr1",
+      "is_error": false,
+      "output": "=== docs/decisions/0001-take-snapshots-with-pg-basebackup.md\n# 0001. Take snapshots with pg_basebackup, not pg_dump\n\n- **Status:** Accepted\n- **Date:** 2025-11-04\n\n## Context\n\nThe application database is about 40 GB. A logical dump of it takes over\ntwo hours and holds a long-running transaction open...",
+      "output_chars": 4385,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018d1ZwKe12NkAyTLcCyqfNB",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots, not 30 days of them\n\n- **Status:** Accepted\n- **Date:** 2026-10-25\n\n## Context\n\n[0002](0002-prun...",
+      "input_chars": 2149,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018d1ZwKe12NkAyTLcCyqfNB",
+      "is_error": false,
+      "output": " docs/decisions/0002-prune-snapshots-older-than-30-days.md | 2 +-\n docs/decisions/README.md                                  | 3 ++-\n 2 files changed, 3 insertions(+), 2 deletions(-)\n|-----|-------|--------|\n| [0001](0001-take-snapshots-with-pg-basebackup.md) | Take snapshots with pg_basebackup, not...",
+      "output_chars": 753,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GjuQJH6rW8QdZ9PYJK2RL3",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/prune-snapshots.sh'\ns=open(p).read()\nstart=s.index('#\\n# Changed after'); end=s.index('set -euo pipefail')\ns=s[:start]+'#\\n# Counting snapshots instead of days means a sta...",
+      "input_chars": 576,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GjuQJH6rW8QdZ9PYJK2RL3",
+      "is_error": false,
+      "output": "#!<path> bash\n# prune-snapshots.sh: keep the newest 14 snapshots and delete the rest.\n#\n# Counting snapshots instead of days means a stalled snapshot job can no\n# longer prune its way down to nothing. See docs/decisions/0004.\nset -euo pipefail\n\nsnapshot_dir=\"${SNAPSHOT_DIR:-/var/backups/snapshots}\"\n...",
+      "output_chars": 390,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019X2Uf3gwhhuw8herhSB6GJ",
+      "name": "Bash",
+      "input": "sed -i 's/^# longer prune its way down to nothing. See docs\\/decisions\\/0004.$/# longer prune its way down to nothing./' scripts/prune-snapshots.sh && sed -n 4,5p scripts/prune-snapshots.sh && git sta...",
+      "input_chars": 224,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019X2Uf3gwhhuw8herhSB6GJ",
+      "is_error": false,
+      "output": "# Counting snapshots instead of days means a stalled snapshot job can no\n# longer prune its way down to nothing.\n M docs/decisions/0002-prune-snapshots-older-than-30-days.md\n M docs/decisions/README.md\n M scripts/prune-snapshots.sh\n?? docs/decisions/0004-keep-the-newest-14-snapshots.md",
+      "output_chars": 286,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

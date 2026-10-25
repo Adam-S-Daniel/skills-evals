@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RBhgkWKtaZXN1jZqZ96RdL",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RBhgkWKtaZXN1jZqZ96RdL",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S32vA5gv6JG8N9UiCRJHhP",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md; ls docs/decisions; cat scripts/*.sh CHANGELOG.md",
+      "input_chars": 158,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S32vA5gv6JG8N9UiCRJHhP",
+      "is_error": false,
+      "output": "2084391 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 3315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SnJ6iu5914YWW9fS6HMcpf",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-*.md; echo ----; cat docs/decisions/0003-*.md; git status --short",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SnJ6iu5914YWW9fS6HMcpf",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 1768,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XgCCXNhRN1fFoGnvDfbgFD",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Uwh2AYKN9mvQgydF4CFipp",
+      "name": "Bash",
+      "input": "sed -i 's/^- \\*\\*Status:\\*\\* Accepted$/- **Status:** Superseded by 0004/' docs/decisions/0002-*.md && sed -i 's/| Prune snapshots older than 30 days | Accepted |/| Prune snapshots older than 30 days |...",
+      "input_chars": 925,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XgCCXNhRN1fFoGnvDfbgFD",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Uwh2AYKN9mvQgydF4CFipp",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2999,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
