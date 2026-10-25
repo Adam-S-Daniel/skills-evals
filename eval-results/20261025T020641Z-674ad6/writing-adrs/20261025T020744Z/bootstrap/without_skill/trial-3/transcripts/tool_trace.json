@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0164bLR5bdjhy9ExUubUQcp8",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -10 && find . -path ./.git -prune -o -type f -print | head -50 && cat CHANGELOG.md scripts/retry.sh 2><path>; ls docs 2><path>; grep -rni \"retry\\|decision\\|adr\"...",
+      "input_chars": 238,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0164bLR5bdjhy9ExUubUQcp8",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n09c3092 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 2543,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Bb2zUc5hj99cFyVdtDq4y1",
+      "name": "Bash",
+      "input": "cat README.md AGENTS.md; git remote -v; git log -1 --format='%an %ae %ad'",
+      "input_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Bb2zUc5hj99cFyVdtDq4y1",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\n# AGENTS.md\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database.\n\n## Con...",
+      "output_chars": 536,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014J8n7M9aF5sJa3EqtW1iDn",
+      "name": "Bash",
+      "input": "mkdir -p docs/adr && cat > docs/adr/0001-retry-policy.md <<'EOF'\n# ADR 0001: Capped exponential backoff for transient upstream failures\n\n- Status: Accepted\n- Introduced by: PR #41, after the 2026-03 o...",
+      "input_chars": 1952,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014J8n7M9aF5sJa3EqtW1iDn",
+      "is_error": false,
+      "output": "diff --git a/AGENTS.md b/AGENTS.md\nindex 83b18ac..2568641 100644\n--- a/AGENTS.md\n+++ b/AGENTS.md\n@@ -6,5 +6,6 @@ into the local database.\n ## Conventions\n \n - Keep `scripts/retry.sh` as the one retry helper for transient upstream\n-  failures; do not reimplement backoff logic elsewhere.\n+  failures; ...",
+      "output_chars": 1509,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011QYbJpyaa59d3TGCt2BGqv",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='AGENTS.md'\ns=open(p).read()\ns=s.replace(\"\"\"  failures; do not reimplement backoff logic elsewhere. The policy and its rationale are\n  in `docs/adr/0001-retry-policy.md`; change bo...",
+      "input_chars": 425,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011QYbJpyaa59d3TGCt2BGqv",
+      "is_error": false,
+      "output": "-  failures; do not reimplement backoff logic elsewhere.\n+  failures; do not reimplement backoff logic elsewhere. The policy and its\n+  rationale are in `docs/adr/0001-retry-policy.md`; change both together.\n - Record user-visible changes in `CHANGELOG.md`.",
+      "output_chars": 257,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

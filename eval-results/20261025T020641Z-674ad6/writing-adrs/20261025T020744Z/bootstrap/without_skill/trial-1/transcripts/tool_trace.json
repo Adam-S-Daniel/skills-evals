@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TCLXWo7LzYSKyRV6tmnPVh",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -10 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TCLXWo7LzYSKyRV6tmnPVh",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n926e160 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BxjhJ1W622CbQRGdwZDz7E",
+      "name": "Bash",
+      "input": "for f in README.md CHANGELOG.md scripts/retry.sh; do echo \"=== $f\"; cat \"$f\"; done; ls -la docs 2><path>",
+      "input_chars": 107,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BxjhJ1W622CbQRGdwZDz7E",
+      "is_error": true,
+      "output": "Exit code 2\n=== README.md\n# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\n=== CHANGELOG.md\n# Changelog\n\n## 1.3.0 - 2026-08-11\n\n- Removed the unused `moment` dependency ...",
+      "output_chars": 1382,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NPWGoW3vMH5rWRUvFXWRbx",
+      "name": "Bash",
+      "input": "git remote -v; git branch --show-current",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NPWGoW3vMH5rWRUvFXWRbx",
+      "is_error": false,
+      "output": "master",
+      "output_chars": 6,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QnhQ3zXbRdVRQ8W69MwhSz",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GYhZKBHsjSU9mvnDPEUE4q",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QnhQ3zXbRdVRQ8W69MwhSz",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GYhZKBHsjSU9mvnDPEUE4q",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G4iLQWRbyunydVSn71NTMX",
+      "name": "Bash",
+      "input": "bash -n scripts/retry.sh && echo syntax-ok; d=$TMPDIR/rt; mkdir -p $d; printf '#!<path>\\necho \"sleep $1\" >>%s/log\\n' \"$d\" > $d/sleep; chmod +x $d/sleep; : > $d/log; PATH=\"$d:$PATH\" bash scripts/retry....",
+      "input_chars": 237,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G4iLQWRbyunydVSn71NTMX",
+      "is_error": false,
+      "output": "syntax-ok\nretry.sh: giving up after 5 attempts: false\nexit=1\nsleep 1\nsleep 2\nsleep 4\nsleep 8",
+      "output_chars": 92,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

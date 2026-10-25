@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GfWueTrbtLM8JUBkxTdKMF",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -10 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GfWueTrbtLM8JUBkxTdKMF",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n7e25c34 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y3tuVg5yf3qk5XGfpzeMT8",
+      "name": "Bash",
+      "input": "for f in README.md scripts/retry.sh CHANGELOG.md; do echo \"=== $f\"; cat \"$f\"; done; git show --stat HEAD | head -20",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y3tuVg5yf3qk5XGfpzeMT8",
+      "is_error": false,
+      "output": "=== README.md\n# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\n=== scripts/retry.sh\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential b...",
+      "output_chars": 1687,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015Ttb8cHYGZP2mB1eSoH2f4",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015Ttb8cHYGZP2mB1eSoH2f4",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011mxxfTSACa2HxLqwDmbEGg",
+      "name": "Bash",
+      "input": "cat <path>",
+      "input_chars": 175,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011mxxfTSACa2HxLqwDmbEGg",
+      "is_error": false,
+      "output": "# Architecture Decision Records\n\nThis folder captures **why** non-obvious decisions were made in this repo \u2014\ncontext that isn't in the code, that `git blame` won't surface, and that a\ncontributor a year from now would otherwise re-derive (badly).\n\nEach ADR is one Markdown file, `NNNN-kebab-title.md`...",
+      "output_chars": 3403,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AwVp6iwGkwZsDuRCUovP7h",
+      "name": "Bash",
+      "input": "git branch --show-current && git remote -v; grep -rn \"retry\" --include=* -I . 2><path> | grep -v '^./.git/' | head",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AwVp6iwGkwZsDuRCUovP7h",
+      "is_error": false,
+      "output": "master\n./README.md:4:into the local database. See `scripts/retry.sh` for the retry helper used by\n./scripts/retry.sh:2:# retry.sh: retry a transient command failure with capped exponential backoff.\n./scripts/retry.sh:8:# the same runaway-retry failure again, just slower. Failing fast with no\n./scrip...",
+      "output_chars": 564,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BLZXoxXKPUGtpiGHEMm5PJ",
+      "name": "Bash",
+      "input": "mkdir -p docs/decisions && sed -e '<path>' -e 's/artefacts/artifacts/' -e 's/^| _none yet_ | | |$/| [0001](0001-cap-retries-with-exponential-backoff.md) | Cap upstream retries at 5 attempts with expon...",
+      "input_chars": 3498,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BLZXoxXKPUGtpiGHEMm5PJ",
+      "is_error": false,
+      "output": "syntax-ok\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# See docs/decisions/0001-cap-retries-with-exponential-backoff.md for why\n# attempts are capped at 5 and delays double (1s, 2s, 4s, 8s).\nset -euo pipefail\n\nmax_attempts=5\n## Index\n\n| ADR | Title ...",
+      "output_chars": 513,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
