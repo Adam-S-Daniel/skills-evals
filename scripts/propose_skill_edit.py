@@ -724,11 +724,13 @@ def apply_body_diff(text: str, diff: str, scratch: Path) -> str:
     env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(scratch))
     # Raw git is fine here (#343): a fresh scratch directory with no .git, behind a ceiling, never an agent-touched
     # workspace, so harness/workspace_git.py does not apply.
-    proc = subprocess.run(["git", "apply", "-p1", "--whitespace=nowarn", "-"],
+    proc = subprocess.run(["git", "apply", "-p1", "--recount", "--whitespace=nowarn", "-"],
                           cwd=work, input=diff if diff.endswith("\n") else diff + "\n",
                           capture_output=True, text=True, env=env, check=False)
     if proc.returncode != 0:
-        raise InvalidProposal("diff does not apply to SKILL.md")
+        # Git's first stderr line says why (e.g. "error: patch failed: SKILL.md:12"), which the record keeps.
+        reason = (proc.stderr.strip().splitlines() or [""])[0].strip()[:200]
+        raise InvalidProposal("diff does not apply to SKILL.md" + (f": {reason}" if reason else ""))
     unexpected = sorted(p.name for p in work.iterdir() if p.name != "SKILL.md")
     if unexpected:
         raise InvalidProposal(f"diff created {unexpected}; only SKILL.md may change")
