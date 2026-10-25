@@ -1,5 +1,36 @@
 # Evals programme: handoff and current state
 
+## Current state (2026-10-25)
+
+**This section is current. Everything below it is history**, written for the
+September pause, and is not updated any more.
+
+- **Strategy:** the programme now runs under the Projects-era strategy that
+  Adam accepted on 2026-10-24, recorded in `_agent-guidance`'s
+  [ADR 0023](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0023-pro-max-only-claude-code-tested-codex-best-effort.md).
+  Its gate: **build nothing new** until the improvement loop has had one
+  improvement PR merged or rejected on its numbers, and two sweeps have run
+  inside the allowance cap. Tests run in Claude Code only, and Codex support
+  is best effort.
+- **Runs:** AI steps run in the routine that
+  [ADR 0010](docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
+  describes, fired by `routine-eval-fire.yml`. Results land under
+  `routine-results/` on `persistent/eval-results`. `scripts/allowance_guard.py`
+  holds every fire to the weekly cap in `evals/budget.yml`. The cap is 30% of
+  the weekly allowance, at most 3% per run, and nothing fires once the
+  account reaches 80%. When the account is under pace late in the week, the
+  guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
+  From 2026-10-24 to 2026-10-26 only, the cap is 60%.
+- **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
+  per arm. The skill raised the checks passed by 10.9 to 16.8 points on
+  average, depending on the model. Numbers and per-fixture results are in
+  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372).
+- **Improvement loop:** a writing-adrs pass with 1 trial on 2026-10-25
+  proposed no edit. A pass with 3 trials is running.
+- **Status board:** [#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
+  holds its 2026-10-10 state. Live progress is in #372 and the open PRs.
+
+
 **Read this first.** This is the one place that describes the whole
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
