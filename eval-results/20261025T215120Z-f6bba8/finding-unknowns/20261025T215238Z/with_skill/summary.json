@@ -1,0 +1,380 @@
+{
+  "skill": "finding-unknowns",
+  "arm": "with_skill",
+  "timestamp": "20261025T215238Z",
+  "error": null,
+  "agent": null,
+  "objective_checks": null,
+  "judge": null,
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 36,
+      "output_tokens": 8197,
+      "cache_read_input_tokens": 611418,
+      "cache_creation_input_tokens": 55388,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 3,
+  "errors": 0,
+  "scored": 3,
+  "trial_errors": [],
+  "aggregate": {
+    "objective": {
+      "n": 3,
+      "passed": 12,
+      "total": 12,
+      "mean_passed": 4.0,
+      "mean_total": 4.0,
+      "checks": [
+        {
+          "id": "cites-export-module",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "cites-acceptance-test",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "cites-design-decision",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "source-unchanged",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        }
+      ]
+    },
+    "judge": null,
+    "cost_usd": {
+      "n": 3,
+      "mean": 0.24315720000000005,
+      "min": 0.2148506,
+      "max": 0.29651840000000007,
+      "sum": 0.7294716000000001
+    },
+    "cost_unknown_trials": 0,
+    "efficiency": {
+      "cost_usd": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.24315720000000005,
+        "median": 0.2181026,
+        "min": 0.2148506,
+        "max": 0.29651840000000007,
+        "sum": 0.7294716000000001
+      },
+      "num_turns": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 8.0,
+        "median": 8,
+        "min": 8,
+        "max": 8,
+        "sum": 24
+      },
+      "duration_ms": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 47303.333333333336,
+        "median": 49190,
+        "min": 40039,
+        "max": 52681,
+        "sum": 141910
+      },
+      "input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 12.0,
+        "median": 12,
+        "min": 12,
+        "max": 12,
+        "sum": 36
+      },
+      "output_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 2732.3333333333335,
+        "median": 2706,
+        "min": 2586,
+        "max": 2905,
+        "sum": 8197
+      },
+      "cache_creation_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 18462.666666666668,
+        "median": 14901,
+        "min": 14859,
+        "max": 25628,
+        "sum": 55388
+      },
+      "cache_read_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 203806.0,
+        "median": 205413,
+        "min": 198632,
+        "max": 207373,
+        "sum": 611418
+      },
+      "tool_errors": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.3333333333333333,
+        "median": 0,
+        "min": 0,
+        "max": 1,
+        "sum": 1
+      }
+    },
+    "model_tokens": {
+      "claude-opus-5-5": {
+        "input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 12.0,
+          "median": 12,
+          "min": 12,
+          "max": 12,
+          "sum": 36
+        },
+        "output_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 2732.3333333333335,
+          "median": 2706,
+          "min": 2586,
+          "max": 2905,
+          "sum": 8197
+        },
+        "cache_read_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 203806.0,
+          "median": 205413,
+          "min": 198632,
+          "max": 207373,
+          "sum": 611418
+        },
+        "cache_creation_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 18462.666666666668,
+          "median": 14901,
+          "min": 14859,
+          "max": 25628,
+          "sum": 55388
+        }
+      }
+    },
+    "cross_model": {
+      "model": "claude-opus-5-5",
+      "threshold": 0.5,
+      "n": 3,
+      "n_unknown": 0,
+      "flagged_trials": 0,
+      "other_share": 0.0,
+      "flagged": false
+    }
+  },
+  "judge_selection": null,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/skills-evals",
+    "revision": "9db7bb3956453f32705d3f9db672900714b3c216",
+    "digest": "c248b301c4238b8ed70e14ceba9a6ca4ba14c96581cdaeb0a168bb4a1c30334b",
+    "lock_digest": null,
+    "sources": [],
+    "guidance": {
+      "revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
+      "digest": "47f05f722cfdb237317c4b214181f05a164a6e67cb0aa1b314d80cfdd19b7529",
+      "bytes": 25099,
+      "sections": [],
+      "hook_digest": "a7fef5a37aa7fc6bf5f62654348829520a5f9c1063180019dd69e5ff680e93df"
+    },
+    "measurements": {
+      "guidance_bytes": 25099,
+      "skill_catalog_bytes": 0,
+      "skill_payload_bytes": 0
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-anything-anywhere",
+    "skill": "finding-unknowns",
+    "action": "added",
+    "deployed_digest": null,
+    "tested_digest": "a67b7663b5b44d07cfddeb923ce19f3cf79447e052658a69cf7fcb985fc0130d",
+    "bytes": 12452
+  },
+  "arm_context": {
+    "skills": 1,
+    "skills_digest": "9ba768f87b57e4a702b58455b6d6f406ec025a8299b778fc395ed85b42659981",
+    "guidance_bytes": 25099,
+    "guidance_digest": "47f05f722cfdb237317c4b214181f05a164a6e67cb0aa1b314d80cfdd19b7529",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261025T215120Z-f6bba8",
+    "session_id": "cse_011LtHdi9NEPGRwhc8raFdoC",
+    "harness_commit": "4f943045abb4fe5730bdeecac10ffa3eb0dd22ed",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-25T21:52:38Z",
+    "ended_at": "2026-10-25T21:57:23Z",
+    "meter": {
+      "snapshot_count": 8,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-25T21:52:43.810Z",
+      "to_at": "2026-10-25T21:56:38.968Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.22,
+          "to": 0.24,
+          "delta": 0.02,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.46,
+          "to": 0.47,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_011LtHdi9NEPGRwhc8raFdoC",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "arm",
+      "calls": null,
+      "meter": null,
+      "started_at": "2026-10-25T21:52:38Z",
+      "ended_at": "2026-10-25T21:55:04Z",
+      "agent": {
+        "calls": 3,
+        "duration_ms": 145662,
+        "num_turns": 24,
+        "cost_usd": 0.7294716000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 36,
+            "output_tokens": 8197,
+            "cache_read_input_tokens": 611418,
+            "cache_creation_input_tokens": 55388,
+            "cost_usd": 0.7294716000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 55388
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {
+        "calls": "listed in each trial's own summary",
+        "meter": "listed in each trial's own summary"
+      }
+    }
+  }
+}
