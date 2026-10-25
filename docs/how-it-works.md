@@ -49,7 +49,7 @@ workstation as `usage/latest.json` on the results branch by
 
 **How a model earns an arm's seat** (Adam decided this on 2026-09-22). A
 model is an arm if the fleet actually runs on it — at least 10% of the
-countable turns of the last four weeks. On top of that, the *newest* model
+countable turns of the last two weeks. On top of that, the *newest* model
 in a tier gets a seat too, but **only in a tier where some model already
 earned one on usage**, and only once it is a week old. So the newest Opus
 comes in because the fleet runs Opus; the newest Haiku does not, because it

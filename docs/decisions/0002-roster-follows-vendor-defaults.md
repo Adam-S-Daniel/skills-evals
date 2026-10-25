@@ -5,6 +5,11 @@
 - **Issue:** [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202);
   revision in [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)
 - **Deciders:** Adam, 2026-09-27 and 2026-09-28
+- **Amended 2026-10-25:** the superseded-model buffer
+  (`superseded_exit_weeks`) is now 0 and the arm enter/exit windows are 2/2
+  weeks (were 1, 4 and 8), the owner's decision: a roster seating a replaced
+  model is "entirely backward-looking". The text below records the original
+  decision.
 
 ## Context
 
