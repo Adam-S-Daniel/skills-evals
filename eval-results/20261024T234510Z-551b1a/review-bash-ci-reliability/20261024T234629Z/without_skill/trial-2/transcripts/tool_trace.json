@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KmVXCZwy3eX31EPWZV6C3o",
+      "name": "Bash",
+      "input": "find .github/workflows -type f 2><path> | sort && echo \"---\" && git log --oneline -5 && echo \"---\" && ls",
+      "input_chars": 107,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KmVXCZwy3eX31EPWZV6C3o",
+      "is_error": false,
+      "output": ".github/workflows/release.yml\n---\n4295442 initial commit\n---\nREADME.md\npackage.json\nscripts",
+      "output_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015tvqEW8n2vQrA8VwoSaVC9",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 63,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015tvqEW8n2vQrA8VwoSaVC9",
+      "is_error": false,
+      "output": "1\tname: Release\n2\t\n3\ton:\n4\t  push:\n5\t    branches: [main]\n6\t  workflow_dispatch:\n7\t\n8\tpermissions:\n9\t  contents: write\n10\t\n11\tjobs:\n12\t  release:\n13\t    runs-on: ubuntu-latest\n14\t    steps:\n15\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n16\t      - name: Collect changed pa...",
+      "output_chars": 482,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FzcY7gbqrTdYdTfbMaqQ9w",
+      "name": "Bash",
+      "input": "ls scripts && echo \"---collect---\" && cat scripts/collect.sh && echo \"---publish---\" && cat scripts/publish.sh && echo \"---bump---\" && cat scripts/bump.sh",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FzcY7gbqrTdYdTfbMaqQ9w",
+      "is_error": false,
+      "output": "bump.sh\ncollect.sh\npublish.sh\n---collect---\n#!<path> bash\n# Collect the packages changed since the last release, via the GitHub API.\nset -euo pipefail\n\nREPO=\"example-org/example-repo\"\n\nout=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || true\n\nif [[ -z \"$out\" ]]; then\n    echo \"No me...",
+      "output_chars": 1357,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015TFUvHccPq3wUwHSdodfrG",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015TFUvHccPq3wUwHSdodfrG",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 92,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FiKvEiGZyZXuYWgFtEtZhe",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FiKvEiGZyZXuYWgFtEtZhe",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 92,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013ojBZUELtP837E8T3XZ2m1",
+      "name": "Bash",
+      "input": "cat scripts/collect.sh && echo \"===\" && cat scripts/publish.sh && echo \"===\" && which shellcheck ><path> 2>&1 && shellcheck scripts/*.sh || echo \"shellcheck not available\"",
+      "input_chars": 174,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013ojBZUELtP837E8T3XZ2m1",
+      "is_error": false,
+      "output": "#!<path> bash\n# Collect the packages changed since the last release, via the GitHub API.\nset -euo pipefail\n\nREPO=\"example-org/example-repo\"\n\nif ! out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title'); then\n    echo \"gh api request for merged PRs failed\" >&2\n    exit 1\nfi\n\nif [[ -z \"$out\"...",
+      "output_chars": 903,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

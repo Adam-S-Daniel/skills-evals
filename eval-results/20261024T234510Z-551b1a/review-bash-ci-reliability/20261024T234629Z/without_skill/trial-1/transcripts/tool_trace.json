@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019tKCNsKXuG5Spf3ptyr614",
+      "name": "Bash",
+      "input": "git status && echo --- && find .github/workflows -type f 2><path>",
+      "input_chars": 68,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019tKCNsKXuG5Spf3ptyr614",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n---\n.g...",
+      "output_chars": 327,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QwTfCAbqyFvyey9T5aEPJP",
+      "name": "Bash",
+      "input": "pwd && ls -la && echo --- && git log --oneline -10 && echo --- && git remote -v",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QwTfCAbqyFvyey9T5aEPJP",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 24 23:52 .\ndrwx------ 6 root root 4096 Oct 24 23:51 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 04:04 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 04:04 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 24 23:52 .claude\ndrwxr-xr-x 8 root root 4096 Oct 24 23:52 .gi...",
+      "output_chars": 1015,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014zaLseYDkwfgvWhnC3jbhT",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 63,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014zaLseYDkwfgvWhnC3jbhT",
+      "is_error": false,
+      "output": "1\tname: Release\n2\t\n3\ton:\n4\t  push:\n5\t    branches: [main]\n6\t  workflow_dispatch:\n7\t\n8\tpermissions:\n9\t  contents: write\n10\t\n11\tjobs:\n12\t  release:\n13\t    runs-on: ubuntu-latest\n14\t    steps:\n15\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n16\t      - name: Collect changed pa...",
+      "output_chars": 482,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A4XNjMtdA2Lwq8j8ubKYFg",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A4XNjMtdA2Lwq8j8ubKYFg",
+      "is_error": false,
+      "output": "1\t# example-repo\n2\t\n3\tA small release pipeline. `.github/workflows/release.yml` runs three shell\n4\tscripts on push to `main`: `scripts/collect.sh` collects the packages\n5\tchanged since the last release via the GitHub API, `scripts/publish.sh`\n6\ttriggers the downstream publish workflow and waits for ...",
+      "output_chars": 380,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R86yJc9LnuX7w5V5SQNnbW",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 46,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R86yJc9LnuX7w5V5SQNnbW",
+      "is_error": false,
+      "output": "1\t{\n2\t  \"name\": \"example-repo\",\n3\t  \"version\": \"1.4.2\"\n4\t}\n5\t",
+      "output_chars": 61,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JsdCCby17h7YqxAYeRo8AN",
+      "name": "Bash",
+      "input": "ls -la scripts && echo --- && for f in scripts/*; do echo \"== $f ==\"; cat \"$f\"; echo; done",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JsdCCby17h7YqxAYeRo8AN",
+      "is_error": false,
+      "output": "total 20\ndrwxr-xr-x 2 root root 4096 Oct 24 19:13 .\ndrwxr-xr-x 6 root root 4096 Oct 24 23:52 ..\n-rw-r--r-- 1 root root  375 Oct 24 19:13 bump.sh\n-rw-r--r-- 1 root root  509 Oct 24 19:13 collect.sh\n-rw-r--r-- 1 root root  405 Oct 24 19:13 publish.sh\n---\n== scripts/bump.sh ==\n#!<path> bash\n# Bump the ...",
+      "output_chars": 1615,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RvQiNsx8mVygPzj4c1Bd8n",
+      "name": "Bash",
+      "input": "cat -A scripts/collect.sh | head -5",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RvQiNsx8mVygPzj4c1Bd8n",
+      "is_error": false,
+      "output": "#!<path> bash$\n# Collect the packages changed since the last release, via the GitHub API.$\nset -euo pipefail$\n$\nREPO=\"example-org/example-repo\"$",
+      "output_chars": 150,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RYgNBASmABsGDyKM6V8ycF",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RYgNBASmABsGDyKM6V8ycF",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Collect the packages changed since the last release, via the GitHub API.\n3\tset -euo pipefail\n4\t\n5\tREPO=\"example-org/example-repo\"\n6\t\n7\tout=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || true\n8\t\n9\tif [[ -z \"$out\" ]]; then\n10\t    echo \"No merged PRs found; nothing...",
+      "output_chars": 557,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0126epe6zn44uHSeRkJZXfrm",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0126epe6zn44uHSeRkJZXfrm",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 158,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014ZRiMorZMgFGtAxmQ7oJ4a",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014ZRiMorZMgFGtAxmQ7oJ4a",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 92,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013AA2v6Qoj7fiALFbNZtjfr",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 52,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013AA2v6Qoj7fiALFbNZtjfr",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 92,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BPwcf4jrxLWSmkXwWCrbpQ",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BPwcf4jrxLWSmkXwWCrbpQ",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Bump the package version and commit the change.\n3\tset -euo pipefail\n4\t\n5\tVERSION=$(jq -r '.version' package.json)\n6\tNEXT_VERSION=\"${VERSION%.*}.$(( ${VERSION##*.} + 1 ))\"\n7\t\n8\tsed -i \"s/\\\"version\\\": \\\"${VERSION}\\\"<path>\"version\\\": \\\"${NEXT_VERSION}\\\"<path>\" package.json\n9\t\n10\tgit...",
+      "output_chars": 405,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XqDo713cMf2T8qeUWzNYPR",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XqDo713cMf2T8qeUWzNYPR",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ab4bi1M2x8yU5ZpQojXAvD",
+      "name": "Bash",
+      "input": "for f in scripts/*.sh; do echo \"== $f ==\"; bash -n \"$f\" && echo OK; done\necho ---\ncommand -v shellcheck && shellcheck scripts/*.sh || echo \"shellcheck not available\"",
+      "input_chars": 165,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ab4bi1M2x8yU5ZpQojXAvD",
+      "is_error": false,
+      "output": "== scripts/bump.sh ==\nOK\n== scripts/collect.sh ==\nOK\n== scripts/publish.sh ==\nOK\n---\nshellcheck not available",
+      "output_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GKpXBhWVkze4UUsFtUyPJa",
+      "name": "Bash",
+      "input": "git diff --no-index <path> scripts/collect.sh 2><path>; echo \"=== collect.sh ===\"; cat scripts/collect.sh; echo \"=== publish.sh ===\"; cat scripts/publish.sh; echo \"=== bump.sh ===\"; cat scripts/bump.s...",
+      "input_chars": 207,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GKpXBhWVkze4UUsFtUyPJa",
+      "is_error": false,
+      "output": "diff --git a/scripts/collect.sh b/scripts/collect.sh\nnew file mode 100644\nindex 0000000..6ac9e5a\n--- <path>\n+++ b/scripts/collect.sh\n@@ -0,0 +1,14 @@\n+#!<path> bash\n+# Collect the packages changed since the last release, via the GitHub API.\n+set -euo pipefail\n+\n+REPO=\"example-org/example-repo\"\n+\n+ou...",
+      "output_chars": 1696,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013SpJPncZ4kJEs74Rm4TFK3",
+      "name": "Bash",
+      "input": "find . -iname \"*test*\" -not -path \"./.git/*\" 2><path>; echo ---; cat package.json",
+      "input_chars": 84,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013SpJPncZ4kJEs74Rm4TFK3",
+      "is_error": false,
+      "output": "---\n{\n  \"name\": \"example-repo\",\n  \"version\": \"1.4.2\"\n}",
+      "output_chars": 54,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
