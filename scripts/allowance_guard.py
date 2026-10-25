@@ -33,8 +33,9 @@ under the cap wherever the account's own week starts):
     results a day later failed (or is a scaffold or improve run, which never
     lands in routine-results/), and the in-run stops (`per_run_cap`,
     `stop_when_account_above` in harness/run_eval.py) still bound what it
-    could have spent. Ingested runs are assumed to belong to the old fires,
-    so the recent ones stay held in full: the safe direction.
+    could have spent. An ingested run is matched to a fire by its run id's
+    timestamp (the fire workflow stamps it at fire time), so a run from the
+    last 24 hours frees one recent fire; runs older than that free old fires.
 
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
@@ -257,9 +258,11 @@ def account(tree: Path, limits: dict, now: datetime,
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed} for the seven days up to `now`, given
     `fires`, a pair: the successful fires of the last seven days and of the
-    last `PENDING_FULL_HOLD`. Ingested runs are assumed to belong to the old
-    fires, so the unresulted recent ones are held in full and the rest are
-    charged `per_run_overrun`. `pace_room` is `pace` of the same runs'
+    last `PENDING_FULL_HOLD`. An ingested run is matched to a fire by its run
+    id's timestamp (the fire workflow stamps it at fire time), so a run from
+    the last `PENDING_FULL_HOLD` frees one recent fire and runs older than
+    that free old fires; the unresulted recent fires are held in full and the
+    rest are charged `per_run_overrun`. `pace_room` is `pace` of the same runs'
     newest meter snapshot; `account_used` and `week_elapsed` are None when
     there is no usable one."""
     try:
@@ -273,7 +276,15 @@ def account(tree: Path, limits: dict, now: datetime,
     reserve = budget_file.run_reservation(limits)
     spent = sum(run_cost(run_dir, limits) for run_dir in runs)
     unresulted = max(0, fires_7d - len(runs))
-    recent = min(fires_24h, unresulted)
+    # A run id stamped after `now` (a clock ahead) counts as recent too, as
+    # in ingested_runs. More recent runs than recent fires (a manual run)
+    # leave no recent fire unresulted, never a negative count.
+    held_since = now - PENDING_FULL_HOLD
+    recent_runs = sum(
+        1 for run_dir in runs
+        if _parse_stamp(RUN_ID_RE.fullmatch(run_dir.name).group("stamp"))
+        >= held_since)
+    recent = max(0, min(fires_24h - recent_runs, unresulted))
     pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
     room, used, elapsed = pace(runs, limits, now)
     return {"spent": spent, "pending": pending, "runs": len(runs),

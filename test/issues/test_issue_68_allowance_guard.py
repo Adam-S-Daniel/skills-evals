@@ -586,22 +586,79 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(state["recent"], 3)
 
     def test_old_and_recent_fires_are_charged_apart(self):
-        # 5 fires, 2 of them recent, 1 ingested run assumed to be an old one:
-        # 4 unresulted = 2 recent in full + 2 old at the overrun.
+        # 5 fires, 2 of them recent, 1 ingested run whose id is a day old (an
+        # old fire's): 4 unresulted = 2 recent in full + 2 old at the overrun.
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
         state = self.spent(fires=(5, 2))
         self.assertAlmostEqual(state["pending"], 2 * 0.035 + 2 * 0.005, places=12)
         self.assertEqual(state["recent"], 2)
 
-    def test_ingested_runs_are_assumed_old_so_recent_fires_stay_held(self):
+    def test_an_old_ingested_run_frees_an_old_fire_not_a_recent_one(self):
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
-        # Two fires, both recent, one ingested: one unresulted, held in full.
+        # Two fires, both recent, one ingested run stamped a day before now:
+        # one unresulted, held in full.
         self.assertAlmostEqual(self.spent(fires=(2, 2))["pending"], RESERVE, places=12)
         # A 24h count above the 7d count (a fire landed between the two API
         # calls) cannot hold more than the unresulted fires.
         self.assertAlmostEqual(self.spent(fires=(1, 3))["pending"], 0, places=12)
+
+    def recent_run(self, hours_ago: float, suffix: str) -> Path:
+        stamp = (NOW - timedelta(hours=hours_ago)).strftime("%Y%m%dT%H%M%SZ")
+        run = self.run_dir(stamp, suffix)
+        self.summary(run, f"k/{stamp}/with_skill", usage_block(0.02))
+        return run
+
+    def test_recent_ingested_runs_free_the_recent_fires(self):
+        # The run id is stamped at fire time, so a run from the last day is
+        # one of the last day's fires: three fired, three ingested, none held.
+        for index, hours in enumerate((1, 6, 23)):
+            self.recent_run(hours, f"a1b2c{index}")
+        state = self.spent(fires=(3, 3))
+        self.assertEqual(state["recent"], 0)
+        self.assertEqual(state["pending"], 0)
+        # With one old fire too, the unresulted fire is that old one: charged
+        # the overrun, not held in full.
+        state = self.spent(fires=(4, 3))
+        self.assertEqual(state["recent"], 0)
+        self.assertAlmostEqual(state["pending"], 0.005, places=12)
+
+    def test_old_ingested_runs_leave_the_recent_fires_held(self):
+        # 3 recent fires and 2 old ones; the 2 ingested runs are old ones, so
+        # the 3 recent fires are still held in full.
+        for index in range(2):
+            run = self.run_dir("20261018T100000Z", f"a1b2c{index}")
+            self.summary(run, "k/20261018T100000Z/with_skill", usage_block(0.02))
+        state = self.spent(fires=(5, 3))
+        self.assertEqual(state["recent"], 3)
+        self.assertAlmostEqual(state["pending"], 3 * RESERVE, places=12)
+
+    def test_more_recent_runs_than_recent_fires_hold_nothing(self):
+        # A manual run, or one stamped ahead of this clock, can leave more
+        # recent results than recent fires: no recent fire is held, and the
+        # count is never negative.
+        self.recent_run(2, "a1b2c0")
+        self.recent_run(3, "a1b2c1")
+        ahead = (NOW + timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
+        self.summary(self.run_dir(ahead, "a1b2c2"), f"k/{ahead}/with_skill",
+                     usage_block(0.02))
+        state = self.spent(fires=(4, 1))
+        self.assertEqual(state["recent"], 0)
+        # 4 fires, 3 runs: the one unresulted fire is an old one, at the overrun.
+        self.assertAlmostEqual(state["pending"], 0.005, places=12)
+
+    def test_recent_and_old_runs_are_matched_to_their_own_fires(self):
+        # 8 fires, 4 of them recent; 2 recent runs and 1 old run ingested.
+        # 5 unresulted: 4 - 2 = 2 recent in full, 3 old at the overrun.
+        self.recent_run(4, "a1b2c0")
+        self.recent_run(24, "a1b2c1")  # exactly PENDING_FULL_HOLD old: recent
+        old = self.run_dir("20261019T100000Z", "a1b2c2")
+        self.summary(old, "k/20261019T100000Z/with_skill", usage_block(0.02))
+        state = self.spent(fires=(8, 4))
+        self.assertEqual(state["runs"], 3)
+        self.assertEqual(state["recent"], 2)
+        self.assertAlmostEqual(state["pending"], 2 * RESERVE + 3 * 0.005, places=12)
 
     def test_the_check_is_spent_plus_pending_plus_one_reservation(self):
         # Seven fires reserved (0.245) leave room for one more (0.28 <= 0.30);
