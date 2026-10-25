@@ -20,6 +20,26 @@ import run_eval
 from scorers import commands, objective, repo_tests
 
 
+class FakeProbe:
+    """A `subprocess.Popen` stand-in that prints one line and exits 0."""
+
+    def __init__(self, out: bytes):
+        self.out = out
+        self.returncode = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def communicate(self, timeout=None):
+        return self.out, b""
+
+    def kill(self):
+        pass
+
+
 class SandboxTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="scorer-sandbox-test-")
@@ -75,6 +95,54 @@ class SandboxTests(unittest.TestCase):
         with mock.patch.object(commands.sys, "executable", str(binary)), \
                 mock.patch.object(commands, "_harness_runtime", return_value=None):
             self.assertEqual(commands._runtime_mounts(self.ws, [prefix]), [])
+
+    def test_external_ruby_mounts_its_library_symlinks_and_compiled_prefix(self):
+        # A relocated Ruby (the cloud image's /opt/ruby-<v>) asks the loader
+        # for `libruby.so.3.3`, a symlink, and keeps its compiled-in prefix
+        # (a second directory) in RUNPATH and $LOAD_PATH: both must be bound
+        # by name, or `ruby` exits 127 inside the sandbox.
+        prefix = self.root / "ruby-install"
+        binary = prefix / "bin" / "ruby"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("runtime")
+        (prefix / "lib" / "ruby").mkdir(parents=True)
+        shared = prefix / "lib" / "libruby.so.3.3.6"
+        shared.write_text("runtime")
+        (prefix / "lib" / "libruby.so.3.3").symlink_to("libruby.so.3.3.6")
+        compiled = self.root / "ruby-compiled"
+        (compiled / "bin").mkdir(parents=True)
+        (compiled / "bin" / "ruby").write_text("runtime")
+        (compiled / "lib" / "ruby").mkdir(parents=True)
+        (compiled / "lib" / "libruby.so.3.3").write_text("runtime")
+        with mock.patch.object(commands.sys, "executable", "/usr/bin/python3"), \
+                mock.patch.object(commands, "_harness_runtime",
+                                  side_effect=lambda name, *a: str(binary) if name == "ruby" else None), \
+                mock.patch.object(commands, "_ruby_prefix", return_value=compiled):
+            paths = commands._runtime_mounts(self.ws, [])
+            mounts = commands._sandbox_mounts(self.ws, self.env_root, [])
+        self.assertEqual(set(paths), {binary, prefix / "lib" / "ruby", shared,
+                                      prefix / "lib" / "libruby.so.3.3",
+                                      compiled / "bin" / "ruby", compiled / "lib" / "ruby",
+                                      compiled / "lib" / "libruby.so.3.3"})
+        triples = [mounts[i:i + 3] for i in range(len(mounts))]
+        self.assertIn(["--ro-bind", str(shared), str(prefix / "lib" / "libruby.so.3.3")], triples)
+
+    def test_ruby_prefix_probe_fails_closed(self):
+        binary = self.root / "ruby"
+        binary.write_text("#!/bin/sh\nprintf '%s' \"$RUBY_PREFIX_OUT\"\n")
+        binary.chmod(0o700)
+        with mock.patch.object(commands, "SYSTEM_PATH", ("/usr/bin", "/bin")):
+            # Not a prefix with a ruby in it, a relative path, and a denied root.
+            for value in ("/nonexistent-prefix", "relative/prefix"):
+                with mock.patch.dict(os.environ, {"RUBY_PREFIX_OUT": value}):
+                    self.assertIsNone(commands._ruby_prefix(binary, self.ws, []))
+        compiled = self.root / "compiled"
+        (compiled / "bin").mkdir(parents=True)
+        (compiled / "bin" / "ruby").write_text("runtime")
+        with mock.patch.object(commands.subprocess, "Popen",
+                               side_effect=lambda *a, **k: FakeProbe(str(compiled).encode())):
+            self.assertEqual(commands._ruby_prefix(binary, self.ws, []), compiled)
+            self.assertIsNone(commands._ruby_prefix(binary, self.ws, [compiled]))
 
     def test_successful_prefix_contains_every_mandatory_namespace_flag(self):
         with mock.patch.object(commands, "_bubblewrap", return_value="/usr/bin/bwrap"), \

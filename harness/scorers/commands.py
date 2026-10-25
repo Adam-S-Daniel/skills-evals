@@ -170,6 +170,38 @@ SYSTEM_MOUNTS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/lib32")
 ETC_MOUNTS = ("/etc/ld.so.cache",)
 
 
+def _ruby_prefix(binary: Path, workspace: Path, denied) -> Path | None:
+    """The install prefix a Ruby outside /usr was built for, asked of the
+    binary itself. A relocated copy (the cloud image's `/opt/ruby-<v>`, a
+    second real directory beside `/opt/rbenv/versions/<v>`) keeps its
+    compiled-in prefix in RUNPATH and `$LOAD_PATH`, so the sandbox must bind
+    that prefix too or the loader finds no `libruby` and no stdlib."""
+    env = {"PATH": os.pathsep.join(SYSTEM_PATH), "LANG": "C", "LC_ALL": "C"}
+    try:
+        with subprocess.Popen([str(binary), "--disable-gems", "-rrbconfig", "-e",
+                               "print RbConfig::CONFIG['prefix']"],
+                              env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL) as probe:
+            try:
+                out, _ = probe.communicate(timeout=PROBE_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                probe.kill()
+                return None
+            if probe.returncode:
+                return None
+    except OSError:
+        return None
+    try:
+        prefix = Path(out.decode("utf-8", "strict"))
+        if not prefix.is_absolute() or not (prefix / "bin" / "ruby").is_file():
+            return None
+        if not _runtime_allowed(prefix.resolve(), workspace, denied):
+            return None
+    except (OSError, RuntimeError, ValueError, UnicodeDecodeError):
+        return None
+    return prefix
+
+
 def _runtime_mounts(workspace: Path, denied) -> list[Path]:
     """Executable files and language libraries, never an entire tool cache."""
     candidates = [sys.executable]
@@ -191,9 +223,18 @@ def _runtime_mounts(workspace: Path, denied) -> list[Path]:
                 paths.extend(lib.glob("python[0-9]*"))
                 paths.extend(lib.glob("libpython*.so*"))
             elif binary.name.startswith("ruby"):
-                paths.append(lib / "ruby")
-                paths.extend(lib.glob("libruby*.so*"))
-    return list(dict.fromkeys(path.resolve() for path in paths if path.exists()
+                prefixes = [binary.parent.parent]
+                compiled = _ruby_prefix(binary, workspace, denied)
+                if compiled is not None and compiled not in prefixes:
+                    prefixes.append(compiled)
+                for prefix in prefixes:
+                    paths.append(prefix / "bin" / "ruby")
+                    paths.append(prefix / "lib" / "ruby")
+                    paths.extend((prefix / "lib").glob("libruby*.so*"))
+    # Keep each path by its own name, not its target: the loader asks for
+    # `libruby.so.3.3`, a symlink to `libruby.so.3.3.6`, so a Ruby outside
+    # /usr needs both bound, and `_sandbox_mounts` binds each to its target.
+    return list(dict.fromkeys(path for path in paths if path.exists()
                              and _runtime_allowed(path.resolve(), workspace, denied)))
 
 

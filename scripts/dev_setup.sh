@@ -7,6 +7,7 @@
 #   bash scripts/dev_setup.sh                  install everything
 #   bash scripts/dev_setup.sh --print-pins     list the pip pins, install nothing
 #   bash scripts/dev_setup.sh --print-npm-dirs list the npm dirs, install nothing
+#   bash scripts/dev_setup.sh --print-bundler-dirs list the Gemfile dirs, install nothing
 set -euo pipefail
 
 PIP_PINS=(
@@ -25,15 +26,23 @@ NPM_DIRS=(
   evals/real-work/cms-platform-693/seed/e2e
 )
 
+# Gemfile directories installed frozen into vendor/bundle beside the
+# Gemfile, as ci.yml's "Install real-work fixture gems" step does.
+BUNDLER_DIRS=(
+  evals/real-work/cms-platform-760/seed/e2e/fixture-site
+)
+
+USAGE="usage: dev_setup.sh [--print-pins | --print-npm-dirs | --print-bundler-dirs]"
 if [ "$#" -gt 1 ]; then
-  echo "usage: dev_setup.sh [--print-pins | --print-npm-dirs]" >&2
+  echo "$USAGE" >&2
   exit 2
 fi
 if [ "$#" -eq 1 ]; then
   case "$1" in
     --print-pins) printf '%s\n' "${PIP_PINS[@]}"; exit 0 ;;
     --print-npm-dirs) printf '%s\n' "${NPM_DIRS[@]}"; exit 0 ;;
-    *) echo "usage: dev_setup.sh [--print-pins | --print-npm-dirs]" >&2; exit 2 ;;
+    --print-bundler-dirs) printf '%s\n' "${BUNDLER_DIRS[@]}"; exit 0 ;;
+    *) echo "$USAGE" >&2; exit 2 ;;
   esac
 fi
 
@@ -46,6 +55,10 @@ fi
 
 for dir in "${NPM_DIRS[@]}"; do
   (cd "$REPO_ROOT/$dir" && npm ci --ignore-scripts --no-audit --no-fund)
+done
+
+for dir in "${BUNDLER_DIRS[@]}"; do
+  (cd "$REPO_ROOT/$dir" && BUNDLE_PATH=vendor/bundle BUNDLE_FROZEN=true BUNDLE_DISABLE_SHARED_GEMS=true BUNDLE_APP_CONFIG="$(mktemp -d)" BUNDLE_SILENCE_ROOT_WARNING=true bundle install --quiet)
 done
 
 if ! command -v bwrap >/dev/null 2>&1; then

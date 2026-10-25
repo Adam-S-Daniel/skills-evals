@@ -554,6 +554,101 @@ class DepsTests(_Base):
             self.fixture_dir)
 
 
+class BundlerDepsTests(_Base):
+    """A bundler entry installs the directory's Gemfile.lock, frozen, into
+    vendor/bundle beside it, and the scorer reads the install through GEM_HOME."""
+
+    def fake_bundle(self, exit_code=0):
+        bin_dir = self.root / "fake-bin"
+        bin_dir.mkdir(exist_ok=True)
+        bundle = bin_dir / "bundle"
+        bundle.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$WORKSPACE/bundle-argv\"\n"
+            "env | grep -E '^(BUNDLE_|GEM_HOME)' | sort > \"$WORKSPACE/bundle-env\"\n"
+            f"exit {exit_code}\n", encoding="utf-8")
+        bundle.chmod(0o700)
+        return {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+
+    def gemfiles(self, ws: Path, directory: str = "site") -> Path:
+        site = ws / directory
+        site.mkdir(parents=True, exist_ok=True)
+        (site / "Gemfile").write_text('source "https://rubygems.org"\n', encoding="utf-8")
+        (site / "Gemfile.lock").write_text("GEM\n", encoding="utf-8")
+        return site
+
+    def test_bundle_install_is_frozen_into_vendor_bundle_beside_the_gemfile(self):
+        ws = self.workspace(FIXED)
+        site = self.gemfiles(ws)
+        error = run_eval.run_setup(ws, {"deps": [{"manager": "bundler", "dir": "site"}],
+                                        "env": self.fake_bundle()})
+        self.assertIsNone(error)
+        lines = (ws / "bundle-argv").read_text(encoding="utf-8").split()
+        self.assertEqual(Path(lines[0]).resolve(), site.resolve())
+        self.assertEqual(lines[1:], ["install", "--quiet"])
+        env = dict(line.split("=", 1) for line in
+                   (ws / "bundle-env").read_text(encoding="utf-8").splitlines())
+        self.assertEqual(env["BUNDLE_GEMFILE"], str(site.resolve() / "Gemfile"))
+        self.assertEqual(env["BUNDLE_PATH"], "vendor/bundle")
+        self.assertEqual(env["BUNDLE_FROZEN"], "true")
+        self.assertEqual(env["BUNDLE_DISABLE_SHARED_GEMS"], "true")
+        self.assertNotIn("GEM_HOME", env)
+        # Bundler's own config and cache never land in the workspace.
+        self.assertFalse(Path(env["BUNDLE_APP_CONFIG"]).is_relative_to(ws.resolve()))
+        self.assertFalse((site / ".bundle").exists())
+
+    def test_a_missing_gemfile_lock_is_a_named_failure_and_bundle_never_runs(self):
+        ws = self.workspace(FIXED)
+        (ws / "site").mkdir()
+        (ws / "site" / "Gemfile").write_text("", encoding="utf-8")
+        error = run_eval.run_setup(ws, {"deps": [{"manager": "bundler", "dir": "site"}],
+                                        "env": self.fake_bundle()})
+        self.assertEqual(error["error"], "deps_failed")
+        self.assertIn("Gemfile.lock", error["detail"])
+        self.assertFalse((ws / "bundle-argv").exists())
+
+    def test_a_bundle_failure_and_a_preexisting_bundle_path_fail_by_name(self):
+        ws = self.workspace(FIXED)
+        self.gemfiles(ws)
+        error = run_eval.run_setup(ws, {"deps": [{"manager": "bundler", "dir": "site"}],
+                                        "env": self.fake_bundle(exit_code=5)})
+        self.assertEqual(error["error"], "deps_failed")
+        self.assertIn("bundle install exited 5", error["detail"])
+        (ws / "site" / "vendor" / "bundle").mkdir(parents=True)
+        error = run_eval.run_setup(ws, {"deps": [{"manager": "bundler", "dir": "site"}],
+                                        "env": self.fake_bundle()})
+        self.assertEqual(error["error"], "deps_failed")
+        self.assertIn("reserved vendor/bundle path", error["detail"])
+
+    def test_only_one_bundler_entry_is_accepted(self):
+        with self.assertRaisesRegex(guidance.GuidanceError, "only one bundler entry"):
+            seed_prep._deps_entries([{"manager": "bundler", "dir": "a"},
+                                     {"manager": "bundler", "dir": "b"}])
+        self.assertEqual(seed_prep._deps_entries([{"manager": "bundler"}]),
+                         [{"manager": "bundler", "dir": "."}])
+
+    def test_bundler_environment_names_the_one_installed_gem_home(self):
+        ws = self.workspace(FIXED)
+        site = self.gemfiles(ws)
+        fixture = {"deps": [{"manager": "bundler", "dir": "site"}]}
+        env = seed_prep.bundler_environment(ws, fixture)
+        self.assertEqual(env["BUNDLE_GEMFILE"], str(site.resolve() / "Gemfile"))
+        self.assertNotIn("GEM_HOME", env, "no install yet")
+        (site / "vendor" / "bundle" / "ruby" / "3.3.0").mkdir(parents=True)
+        env = seed_prep.bundler_environment(ws, fixture)
+        self.assertEqual(env["GEM_HOME"], str(site.resolve() / "vendor" / "bundle" / "ruby" / "3.3.0"))
+        self.assertEqual(seed_prep.bundler_environment(ws, {"deps": [{"manager": "npm"}]}), {})
+
+    def test_the_scorer_rejects_a_gem_home_outside_the_workspace(self):
+        ws = self.workspace(FIXED)
+        self.gemfiles(ws)
+        passed, detail = repo_tests.repo_tests(
+            str(ws), [], overlay="checker", argv=["ruby", "spec.rb"], fail_to_pass=[["-n", "x"]],
+            seed=str(self.seed), _bundler_env={"GEM_HOME": str(self.root / "elsewhere"),
+                                               "BUNDLE_GEMFILE": str(ws / "site" / "Gemfile")})
+        self.assertFalse(passed)
+        self.assertEqual(detail, "repo_tests_invalid: the bundler GEM_HOME is outside the workspace")
+
+
 class PythonDepsTests(_Base):
     PINS = ["pytest==9.0.3", "pluggy==1.6.0"]
 

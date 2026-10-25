@@ -13,6 +13,13 @@
 subject: any
 draft: true
 strip_agent_context: true
+# The checker builds a real Jekyll site, so it needs the jekyll gems. The seed
+# has no root Gemfile; its e2e/fixture-site/Gemfile.lock pins jekyll 4.4.1
+# and pulls the theme from ../../theme, so the bundle is installed there and
+# the checker runs with GEM_HOME at it (cms-platform's own CI does a global
+# `gem install jekyll --version 4.4.1` instead; the spec is invoked the same way).
+deps:
+- {manager: bundler, dir: e2e/fixture-site}
 prompt: |-
   Tags that differ only by case (quotes / Quotes) show as two identical cards and one tag page drops the other's posts
 
