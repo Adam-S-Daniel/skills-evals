@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KrRSgumw2MuReZKEeY3nAR",
+      "name": "Skill",
+      "input": "cms-platform:platform-release-and-bump",
+      "input_chars": 38,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KrRSgumw2MuReZKEeY3nAR",
+      "is_error": false,
+      "output": "Launching skill: cms-platform:platform-release-and-bump",
+      "output_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RsqEtCYope3CXPZadrkgqR",
+      "name": "Bash",
+      "input": "git status --short && git branch -a && git log --oneline -5 && git remote -v && ls -a && cat platform.lock 2><path>",
+      "input_chars": 118,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RsqEtCYope3CXPZadrkgqR",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n* master\nfc9f4d0 initial commit\n.\n..\n.bash_profile\n.bashrc\n.claude\n.cms-platform\n.gh\n.gh-invocations.log\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.pro...",
+      "output_chars": 474,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013xQ7i5D4aimgq3iwY4X28A",
+      "name": "Bash",
+      "input": "cat README.md PLATFORM_REF Gemfile Gemfile.lock; ls -la .cms-platform .gh bin .github .github/* .claude; cat .gh-invocations.log | tail -20; cat .gitmodules",
+      "input_chars": 156,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013xQ7i5D4aimgq3iwY4X28A",
+      "is_error": true,
+      "output": "Exit code 1\nExample site checkout. The deployment workflow uses the shared platform release.\nA changelog entry for v0.1.99 is historical context, not a current pin.\ntag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nsource \"https://example.com/gems\"\ngem \"cms-platform-theme\", git: \"https:...",
+      "output_chars": 2609,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Awik3Bo7zrWFKqAba7Tx6p",
+      "name": "Bash",
+      "input": "find .cms-platform .gh .github/actions -type f | head -50; git ls-files | head -50; grep -rn \"cms-platform\" .github | head -40",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Awik3Bo7zrWFKqAba7Tx6p",
+      "is_error": false,
+      "output": ".cms-platform/scripts/stale-platform-refs.js\n.cms-platform/scripts/verify-consumer-pins.sh\n.cms-platform/scripts/check-platform-pin-consistency.js\n.cms-platform/examples/site/.github/workflows/cms-scheduled-publish-loop.yml\n.cms-platform/examples/site/.github/workflows/deploy-preview.yml\n.cms-platfo...",
+      "output_chars": 8418,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M6HKextr1tjw25FgYUjuAF",
+      "name": "Bash",
+      "input": "grep -rn \"0\\.1\\.10[0-9]\\|platform_ref\" --exclude-dir=node_modules --exclude-dir=.git . | grep -v \"^./.cms-platform/e2e\"; find .gh -type f | head; head -60 .cms-platform/scripts/verify-consumer-pins.sh...",
+      "input_chars": 255,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M6HKextr1tjw25FgYUjuAF",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile./platform.lock:2:platform_ref: v0.1.103\n./Gemfile:2:gem \"cms-platform-theme\", git: \"https://github.com...",
+      "output_chars": 23591,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013HyvL49vQBtpgPydSQf19Z",
+      "name": "Bash",
+      "input": "for f in $(find .gh -type f); do echo \"== $f\"; cat \"$f\"; done; cat .gh-invocations.log; diff <(ls .github/workflows) <(ls .cms-platform/examples/site/.github/workflows)",
+      "input_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013HyvL49vQBtpgPydSQf19Z",
+      "is_error": false,
+      "output": "== .gh/replay/release-view-v0.1.104.json\n{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\n== .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/refs/tags/v0.1.104.json\n{\n  \"ref\": \"refs/tags/v0.1.104\",\n  \"object...",
+      "output_chars": 689,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KMFfa8UDRwxVYnUCzKsqfY",
+      "name": "Bash",
+      "input": "git checkout -q -b chore/bump-platform-v0.1.104 && \\\nsed -i -E '<path>' .github/workflows/*.yml .github/actions/local/action.yml && \\\nsed -i 's/^platform_ref: v0\\.1\\.103$/platform_ref: v0.1.104/' plat...",
+      "input_chars": 683,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KMFfa8UDRwxVYnUCzKsqfY",
+      "is_error": false,
+      "output": " .github/actions/local/action.yml                 | 2 +-\n .github/workflows/cms-editorial-workflow.yml     | 4 ++--\n .github/workflows/cms-media-roundtrip.yml        | 4 ++--\n .github/workflows/cms-preview-loops.yml          | 4 ++--\n .github/workflows/cms-publish-loop-host.yml      | 4 ++--\n .githu...",
+      "output_chars": 1110,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0142r5vUEBrCpVJF5eSUfYQC",
+      "name": "Bash",
+      "input": "bash .cms-platform/scripts/verify-consumer-pins.sh --platform-dir .cms-platform; echo \"exit=$?\"",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0142r5vUEBrCpVJF5eSUfYQC",
+      "is_error": false,
+      "output": "ok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok: no stale platform ref in platform.lock / Gemfile* / .github/workflows (canonical v0.1.104)\nok: all 12 workflow file(s) parse as YAML\nplatform-pin-consistency: FAIL \u2014 2 consistency check(s) failed against t...",
+      "output_chars": 1507,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PAaAF8KETJu11VuNLvmd2w",
+      "name": "Bash",
+      "input": "cat .github/workflows/old-preview-cleanup.yml; echo ======; cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml",
+      "input_chars": 142,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PAaAF8KETJu11VuNLvmd2w",
+      "is_error": false,
+      "output": "# Thin caller \u2014 copied into a site repo as\n# `.github/workflows/auto-resolve-newline-conflict.yml`. Owns the\n# `workflow_run` + `workflow_dispatch` triggers + run-name; delegates the\n# newline-conflict resolution to the platform's reusable workflow. The\n# resolver script lives in the platform repo \u2014...",
+      "output_chars": 3349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RMwKGwpQdbfVMbH5F2Utzf",
+      "name": "Bash",
+      "input": "grep -rn \"apex:\" .github/workflows; cp .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml .github/workflows/ && bash .cms-platform/scripts/verify-consumer-pins.sh --platfor...",
+      "input_chars": 235,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RMwKGwpQdbfVMbH5F2Utzf",
+      "is_error": false,
+      "output": ".github/workflows/cms-publish-loop-preview.yml:28:      apex: example.com\n.github/workflows/cms-preview-loops.yml:27:      apex: example.com\nok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok: no stale platform ref in platform.lock / Gemfile* / .github/work...",
+      "output_chars": 1360,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
