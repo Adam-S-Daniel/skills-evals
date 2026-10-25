@@ -69,6 +69,19 @@ from propagation import arms, init_probe  # noqa: E402
 # 1. model cooling-off -> 0
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class TestShippedCoolingOff(unittest.TestCase):
 
     def test_the_shipped_policy_sets_zero_and_says_why(self):
@@ -494,12 +507,32 @@ class _RunEvalEndToEnd(unittest.TestCase):
         return runs[0]
 
 
+def _roster_models():
+    """The models an unpinned fixture runs on: the committed roster's first
+    arm and the judge chosen for it, a tier above (#371, ADR 0013). EVAL_DIR
+    pins neither (#371 item 5). The judge is worked out here from the ladder,
+    not by `judge_policy.judge_for_arm`, which this expectation checks."""
+    committed = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+    arm_ids = [arm["id"] for arm in committed["arms"]]
+    rungs = roster.tier_rungs(roster.load_policy(
+        REPO_ROOT / "evals" / "roster-policy.yml"))
+    tier = roster.rung_of(arm_ids[0], rungs)
+    placed = [(roster.rung_of(arm, rungs), arm) for arm in arm_ids]
+    above = sorted((rung, arm) for rung, arm in placed
+                   if rung is not None and rung > tier)
+    lowest = [arm for rung, arm in above if rung == above[0][0]]
+    # One arm in the tier above (or none): nothing here works out "newest".
+    assert len(lowest) <= 1, lowest
+    judge = lowest[0] if lowest else committed["judge"]["id"]
+    assert roster.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
+    return arm_ids[0], judge
+
+
 class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
 
     def test_both_arms_record_harness_and_models(self):
         skill = run_eval.load_fixture(EVAL_DIR)["skill"]
-        pinned = run_eval.load_fixture(EVAL_DIR)["model"]
-        judge_model = run_eval.load_fixture(EVAL_DIR)["judge"]["model"]
+        pinned, judge_model = _roster_models()
         proc = self._run(EVAL_DIR, "--arm", "both",
                          env_extra={"AGENTSKILLS_DIR": str(self._registry(skill))})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -585,7 +618,7 @@ class TestJudgeModelsOnTheExceptionPath(_RunEvalEndToEnd):
 
     def test_a_judge_that_answers_junk_still_records_its_model(self):
         skill = run_eval.load_fixture(EVAL_DIR)["skill"]
-        judge_model = run_eval.load_fixture(EVAL_DIR)["judge"]["model"]
+        _, judge_model = _roster_models()
         # Prose for every call: a fine transcript for the agent, and an
         # answer judge.score cannot parse, AFTER the CLI call completed.
         wrapper = _write_script(self.tmp / "cli", (

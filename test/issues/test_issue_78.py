@@ -263,6 +263,55 @@ class TestIssue78(unittest.TestCase):
         self.assertTrue(judge_model)
         self.assertNotEqual(agent_model, judge_model)
 
+    def test_context_matches_the_proven_representative_repository(self):
+        parsed = yaml.safe_load((EVAL / "fixture.yaml").read_text(encoding="utf-8"))
+        expected = {
+            "repository": "Adam-S-Daniel/skills-evals",
+            "revision": "9db7bb3956453f32705d3f9db672900714b3c216",
+            "guidance_revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
+            "budget": {"guidance_bytes": 31374, "skill_catalog_bytes": 1,
+                       "skill_payload_bytes": 1},
+        }
+        self.assertEqual(parsed["context"], expected)
+        self.assertEqual(self.fixture["context"], expected)
+
+    def test_context_schema_refuses_invalid_metadata_in_payload_copies(self):
+        # No Git metadata is copied; loading these YAML payloads does not
+        # resolve sibling checkouts, execute hooks, or launch either arm.
+        cases = (
+            ("missing repository", lambda c: c.pop("repository")),
+            ("short revision", lambda c: c.update(revision="9db7bb3")),
+            ("short guidance", lambda c: c.update(guidance_revision="b0abbe7")),
+            ("zero budget", lambda c: c["budget"].update(guidance_bytes=0)),
+            ("boolean budget", lambda c: c["budget"].update(skill_payload_bytes=True)),
+            ("unknown budget", lambda c: c["budget"].update(unrecognized=1)),
+        )
+        source = (EVAL / "fixture.yaml").read_text(encoding="utf-8")
+        for index, (label, mutate) in enumerate(cases):
+            with self.subTest(label=label):
+                fixture = yaml.safe_load(source)
+                mutate(fixture["context"])
+                payload = self.root / f"context-{index}"
+                payload.mkdir()
+                self.assertFalse((payload / ".git").exists())
+                (payload / "fixture.yaml").write_text(yaml.safe_dump(fixture),
+                                                      encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "invalid_context"):
+                    run_eval.load_fixture(payload)
+
+    def test_readme_preserves_delivery_and_paid_run_authorization_boundaries(self):
+        readme = (EVAL / "README.md").read_text(encoding="utf-8")
+        for fact in (
+            "resolver-only metadata",
+            "future delivery would add the subject only to the `with` arm",
+            "judge_mode_unsupported", "HANDOFF.md decision 8",
+            "no dispatch on [issue #78](https://github.com/Adam-S-Daniel/skills-evals/issues/78)",
+            "new owner authorization is required",
+            "No paid comparison was run here", "no impact",
+        ):
+            with self.subTest(fact=fact):
+                self.assertIn(fact, readme)
+
     def test_coverage_census_discovers_fixture_from_registry_metadata(self):
         catalog = yaml.safe_load((ROOT / "harness/registries.yml").read_text())
         resolved = {entry["name"]: entry for entry in catalog["registries"]}

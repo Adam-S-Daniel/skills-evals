@@ -106,6 +106,12 @@ elif (tail == "/pulls" and not flags
 elif re.fullmatch(r"/pulls/\d+/files", tail) and listing and query == "per_page=100":
     key = repo + "#" + tail.split("/")[2]
     lines(data["files"][key])
+elif re.fullmatch(r"/pulls/\d+", tail) and not flags:
+    number = int(tail.split("/")[2])
+    row = next((r for r in data["prs"].get(repo, []) if r["number"] == number), None)
+    if row is None:
+        not_found()
+    print(json.dumps(row))
 elif re.fullmatch(r"/pulls/\d+", tail) and diff:
     key = repo + "#" + tail.split("/")[2]
     if key in data.get("diff_errors", {}):
@@ -499,6 +505,95 @@ class TestCandidateFilters(_MinerCase):
         # The REST listing pages past `gh pr list`'s 100-file cap.
         self.assertEqual(len(cand[2]["source_files"]), 150)
         self.assertFalse(cand[2]["files_truncated"])
+
+
+class TestSingleCandidate(_MinerCase):
+    KEY = f"{ADAM}__cms-platform__760"
+
+    def _world(self, prs=None, repos=None):
+        self.gh_data(repos=repos or {f"{ADAM}/cms-platform": _view(ADAM, "cms-platform"),
+                                     f"{ADAM}/other": _view(ADAM, "other"),
+                                     f"{JODI}/cms-platform": _view(ADAM, "cms-platform")},
+                     prs={f"{ADAM}/cms-platform": prs or [_pr(759), _pr(760)],
+                          f"{ADAM}/other": [_pr(1)]})
+        return self.registry(["cms-platform", "other"])
+
+    def _run(self, registry, key=None):
+        rc, err = self.run_main("mine", "--registry", str(registry), "--out", str(self.out),
+                                "--candidate", key or self.KEY)
+        return rc, err
+
+    def _refused(self, registry, fragment, key=None):
+        rc, err = self._run(registry, key)
+        self.assertEqual(rc, 2, err)
+        self.assertIn(fragment, err)
+        self.assertFalse(self.out.exists())
+
+    def test_a_valid_key_yields_exactly_that_candidate_as_full_mining_would(self):
+        registry = self._world()
+        rc, err = self._run(registry)
+        self.assertEqual(rc, 0, err)
+        doc = json.loads(self.out.read_text(encoding="utf-8"))
+        full = self.mine(registry)
+        want = next(c for c in full["candidates"] if c["key"] == self.KEY)
+        self.assertEqual(doc["candidates"], [want])
+        self.assertEqual(doc["owners"], [ADAM, JODI])
+        self.assertEqual(doc["skipped"], [])
+        self.assertEqual(doc["summary"][0]["merged"], 1)
+        self.assertEqual(doc["summary"][0]["candidates"], 1)
+
+    def test_only_the_candidates_repository_is_read(self):
+        rc, err = self._run(self._world())
+        self.assertEqual(rc, 0, err)
+        repo_calls = {a for c in self.calls() for a in c if a.startswith("repos/")}
+        self.assertEqual(repo_calls, {
+            f"repos/{ADAM}/cms-platform",
+            f"repos/{ADAM}/cms-platform/pulls/760",
+            f"repos/{ADAM}/cms-platform/pulls/760/files?per_page=100",
+            f"repos/{ADAM}/cms-platform/commits/{760:040x}",
+            f"repos/{ADAM}/cms-platform/issues/7"})
+        self.assertFalse(any("other" in " ".join(c) or JODI in " ".join(c)
+                             for c in self.calls()))
+
+    def test_an_owner_outside_sync_owners_is_refused_before_any_gh_call(self):
+        registry = self._world()
+        self._refused(registry, "is not in SYNC_OWNERS", key="stranger__cms-platform__760")
+        self.assertFalse(self.log.exists())
+
+    def test_a_name_outside_the_fleet_is_refused_before_any_gh_call(self):
+        registry = self._world()
+        self._refused(registry, "is not in the fleet", key=f"{ADAM}__unlisted__760")
+        self.assertFalse(self.log.exists())
+
+    def test_a_malformed_key_is_refused(self):
+        registry = self._world()
+        for key in ("cms-platform", f"{ADAM}__cms-platform__0", f"{ADAM}__cms-platform__x"):
+            self._refused(registry, "is not a miner key", key=key)
+
+    def test_a_redirected_repository_is_refused(self):
+        registry = self._world(repos={f"{ADAM}/cms-platform": _view(JODI, "renamed")})
+        self._refused(registry, "renamed or redirected")
+
+    def test_a_private_repository_is_refused(self):
+        registry = self._world(repos={f"{ADAM}/cms-platform":
+                                      _view(ADAM, "cms-platform", "PRIVATE")})
+        self._refused(registry, "is not public")
+
+    def test_an_unmerged_pull_request_is_refused(self):
+        registry = self._world(prs=[_pr(760, merged=None)])
+        self._refused(registry, "is not merged")
+
+    def test_a_missing_pull_request_is_refused(self):
+        registry = self._world(prs=[_pr(759)])
+        self._refused(registry, "760 not found")
+
+    def test_a_filtered_pull_request_yields_no_candidate_and_exit_zero(self):
+        registry = self._world(prs=[_pr(760, login="renovate[bot]")])
+        rc, err = self._run(registry)
+        self.assertEqual(rc, 0, err)
+        doc = json.loads(self.out.read_text(encoding="utf-8"))
+        self.assertEqual(doc["candidates"], [])
+        self.assertEqual(doc["summary"][0]["bot"], 1)
 
 
 class TestClosingIssues(_MinerCase):

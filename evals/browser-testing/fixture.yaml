@@ -4,6 +4,14 @@
 # A separate digest check pins that executable; the verifier pins spec-ast.js.
 skill: browser-testing
 registry: https://github.com/Adam-S-Daniel/cms-platform
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 381824060a448677eb78dc7cda5bf2889271d60f
+  guidance_revision: aafdc10dec68b21e6612fc5b455225e1e7acde32
+  budget:
+    guidance_bytes: 31588
+    skill_catalog_bytes: 7634
+    skill_payload_bytes: 840930
 prompt: >
   Add an e2e spec that proves the posts-list dashboard shows a draft's preview
   link, in the admin-read lane. Work within the supplied e2e harness.

@@ -124,6 +124,19 @@ def _plant_skill(skills_dir: Path, name: str) -> None:
         encoding="utf-8")
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 @unittest.skipUnless(HAVE_GIT, "git is required")
 class TestLocalEval(unittest.TestCase):
 
@@ -179,7 +192,8 @@ class TestLocalEval(unittest.TestCase):
     def _env(self, dispatcher: Path, **extra) -> dict:
         path = [str(Path(sys.executable).parent),
                 str(Path(shutil.which("git")).parent), "/usr/bin", "/bin"]
-        env = {"PATH": os.pathsep.join(dict.fromkeys(path)),
+        env = {**arm_test_environment(),
+               "PATH": os.pathsep.join(dict.fromkeys(path)),
                "HOME": str(self.home), "TMPDIR": str(self.root / "tmp"),
                "LANG": "C.UTF-8", "CLAUDE_BIN": str(dispatcher)}
         env.update(extra)
@@ -544,13 +558,30 @@ class TestLocalEval(unittest.TestCase):
                                  capture_output=True, text=True).stdout
         self.assertEqual(manifest["harness"]["claude_version"],
                          version.splitlines()[0].strip())
-        fixture = yaml.safe_load((EVAL_DIR / "fixture.yaml").read_text(encoding="utf-8"))
+        # EVAL_DIR pins neither model (#371 item 5): the committed roster's
+        # first arm and the judge chosen for it, a tier above (ADR 0013),
+        # are what the run selects. The judge is worked out here from the
+        # ladder, not by `judge_policy.judge_for_arm`, which this checks.
+        roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+        arm_ids = [arm["id"] for arm in roster["arms"]]
+        sys.path.insert(0, str(REPO_ROOT / "harness"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "harness"))
+        import roster as tiers
+        rungs = tiers.tier_rungs(tiers.load_policy(
+            REPO_ROOT / "evals" / "roster-policy.yml"))
+        tier = tiers.rung_of(arm_ids[0], rungs)
+        placed = [(tiers.rung_of(arm, rungs), arm) for arm in arm_ids]
+        above = sorted((rung, arm) for rung, arm in placed
+                       if rung is not None and rung > tier)
+        lowest = [arm for rung, arm in above if rung == above[0][0]]
+        # One arm in the tier above (or none): nothing here works out "newest".
+        assert len(lowest) <= 1, lowest
+        judge = lowest[0] if lowest else roster["judge"]["id"]
+        assert tiers.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
         self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
-                         {"model": fixture["model"],
-                          "judge_model": fixture["judge"]["model"]})
+                         {"model": None, "judge_model": None})
         self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
-                         {"agent": fixture["model"],
-                          "judge": fixture["judge"]["model"]})
+                         {"agent": arm_ids[0], "judge": judge})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",
@@ -1092,9 +1123,25 @@ class TestLocalEval(unittest.TestCase):
                                  if a == "--permission-mode"]
                     self.assertEqual(len(positions), 1, argv)
                     self.assertEqual(argv[positions[0] + 1], mode, argv)
+                    # The whole results dir, so trial 2's arms cannot read
+                    # trial 1's transcripts and tool traces.
+                    denied = [argv[i + 1] for i, a in enumerate(argv)
+                              if a == "--read-deny"]
+                    self.assertEqual(denied, [os.path.abspath(out)], argv)
+                    # What kind of run this is (#370): a workstation, under
+                    # the operator's own login, on this machine.
+                    for name, value in (("--run-billing", "subscription"),
+                                        ("--run-runner", "workstation"),
+                                        ("--run-location", "local")):
+                        self.assertEqual(argv[argv.index(name) + 1], value, argv)
                 manifest = json.loads(
                     (out / "manifest.json").read_text(encoding="utf-8"))
                 self.assertEqual(manifest["harness"]["permission_mode"], mode)
+                # One run id for the whole invocation, shared by its trials.
+                ids = {argv[argv.index("--run-id") + 1] for argv in launches}
+                self.assertEqual(ids, {manifest["run_id"]})
+                self.assertRegex(manifest["run_id"],
+                                 r"\A[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\Z")
 
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 
@@ -1332,10 +1379,12 @@ class TestLocalEval(unittest.TestCase):
         self.assertFalse((self.out / "t2").exists(), "no further trial")
         self.assertFalse((self.out / "aggregate.json").exists())
 
-    def test_a_credential_written_after_the_arm_stops_the_run_at_the_judge(self):
+    def test_a_credential_written_by_the_arm_fails_its_trial_and_the_next_launch(self):
         # The fake CLI plants user-level settings while the ARM runs (what a
-        # fixture's setup or the agent could do); the judge then launches,
-        # and the launcher's complete pre-flight refuses it.
+        # fixture's setup or the agent could do). The arm's own check after
+        # the turn fails trial 1 with `agent_wrote_agent_config` (the judge is
+        # never launched), and the launcher's complete pre-flight refuses
+        # trial 2's launch.
         target = self.home / ".claude" / "settings.json"
         self.assertIn(self.root, target.parents)
         proc = self._run(
@@ -1345,11 +1394,18 @@ class TestLocalEval(unittest.TestCase):
         roles = [c["role"] for c in self._calls()]
         self.assertIn("agent", roles)
         self.assertNotIn("judge", roles, "the judge never reached the CLI")
-        self.assertIn("trial 1", proc.stderr)
+        # The arm's own check sees the write first (the profile's settings
+        # are watched after every turn, ADR 0011): trial 1 fails without a
+        # judge call, and the launch guard refuses the next launch.
+        (summary,) = self._summaries("without_skill", 1)
+        self.assertEqual(summary["error"]["type"], "agent_wrote_agent_config")
+        self.assertIn("trial 2", proc.stderr)
         self.assertIn(str(target), proc.stderr)
         self.assertIn("apiKeyHelper", proc.stderr)
         self.assertNotIn("sentinel-helper", proc.stderr)
-        self.assertFalse((self.out / "t2").exists())
+        # Trial 2 was refused at its launch: it records an error, no score.
+        for path in (self.out / "t2").rglob("summary.json"):
+            self.assertIsNotNone(json.loads(path.read_text(encoding="utf-8"))["error"])
 
     def test_user_settings_written_by_setup_are_caught_at_the_next_launch(self):
         target = self.home / ".claude" / "settings.json"
@@ -1412,7 +1468,24 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(direct.returncode, 0, direct.stdout + direct.stderr)
         unguarded = [c["argv"] for c in self._calls() if c["role"] == "agent"]
         self.assertEqual(len(guarded), 1)
-        self.assertEqual(guarded, unguarded)
+
+        # Each run has its own mkdtemp workspace, which the arm's settings
+        # spell out (its `.claude/` and session directory), so the settings
+        # are compared by their workspace-independent part; nothing else in
+        # argv may differ.
+        def same_workspace(calls):
+            out = []
+            for argv in calls:
+                argv = list(argv)
+                index = argv.index("--settings")
+                settings = json.loads(argv[index + 1])
+                argv[index + 1] = json.dumps(
+                    {"sandbox.network": settings["sandbox"]["network"],
+                     "keys": sorted(settings)}, sort_keys=True)
+                out.append([re.sub(r"workspace-[A-Za-z0-9_-]{8}", "workspace-<ws>", arg)
+                            for arg in argv])
+            return out
+        self.assertEqual(same_workspace(guarded), same_workspace(unguarded))
 
     def test_proxy_userinfo_is_read_from_the_url_not_from_any_at_sign(self):
         sys.path.insert(0, str(REPO_ROOT / "scripts"))

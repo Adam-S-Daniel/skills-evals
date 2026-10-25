@@ -65,6 +65,13 @@ print(json.dumps({{"type": "result", "is_error": False, "result": "{{}}",
 """
 
 
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
+
+
 def pairs(argv):
     return list(zip(argv, argv[1:]))
 
@@ -82,9 +89,12 @@ class IsolationFlagsTests(unittest.TestCase):
         stand_in = self.root / "claude"
         stand_in.write_text(STAND_IN, encoding="utf-8")
         stand_in.chmod(0o755)
+        mountinfo = self.root / "mountinfo"
+        mountinfo.write_text("", encoding="utf-8")
         patcher = mock.patch.dict(os.environ, {
             "HOME": str(self.home), "XDG_STATE_HOME": str(self.state),
-            "CLAUDE_BIN": str(stand_in), "ISO_LOG": str(self.log)})
+            "CLAUDE_BIN": str(stand_in), "ISO_LOG": str(self.log),
+            "PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo)})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.projects = self.home / ".claude" / "projects"

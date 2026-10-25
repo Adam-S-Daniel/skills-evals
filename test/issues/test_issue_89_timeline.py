@@ -194,7 +194,8 @@ class TestGhTimeline(unittest.TestCase):
         names = ("cms-stuck-pr-triage", "github-actions-repo-settings", "consumer-repo-provisioning")
         expected_count = 0
         for name in names:
-            replay = REPO_ROOT / "evals" / name / "seed/.gh/replay"
+            fixture = "github-actions-repo-settings/drift-diagnosis" if name == "github-actions-repo-settings" else name
+            replay = REPO_ROOT / "evals" / fixture / "seed/.gh/replay"
             self.assertTrue(replay.is_dir())
             self.assertTrue(any(path.is_file() for path in replay.rglob("*")))
             for path in sorted(replay.rglob("*")):

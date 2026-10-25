@@ -4,6 +4,21 @@
 skill: finding-unknowns
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
+# Representative Python consumer, frozen under ADR 0012. Resolver measurements
+# were 25099 guidance bytes and zero adopted catalog/payload bytes; limits allow
+# 25% headroom (rounded up), with 1 as the schema minimum for empty payloads.
+# Nine eligible guidance ancestors matched the deployed bytes exactly. The
+# selected match has the greatest committer timestamp, breaking ties by the
+# lexicographically smallest SHA.
+context:
+  repository: Adam-S-Daniel/skills-evals
+  revision: 9db7bb3956453f32705d3f9db672900714b3c216
+  guidance_revision: b0abbe7dc97eca0a2624bfa9695b0d98b774cef2
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 1
+    skill_payload_bytes: 1
+
 judge:
   mode: pairwise
   references:

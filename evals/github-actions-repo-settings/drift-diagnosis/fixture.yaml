@@ -12,6 +12,17 @@ skill: github-actions-repo-settings
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 model: claude-sonnet-5
 
+# Exact deployed bytes: two eligible guidance revisions match; the resolver
+# selected the newest eligible commit (then the lexical SHA tie-breaker).
+context:
+  repository: Adam-S-Daniel/repo-settings
+  revision: 19378e8ddd8fa291cd74b4a24cd6389734cba747
+  guidance_revision: 5d2ed452358dd2eb215d27c80760a0e6b09c13b7
+  budget:
+    guidance_bytes: 30598
+    skill_catalog_bytes: 7634
+    skill_payload_bytes: 840212
+
 judge:
   model: claude-opus-4-8
   weights:

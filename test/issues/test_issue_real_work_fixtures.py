@@ -31,6 +31,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "harness"))
 import answer_leak  # noqa: E402
 import run_eval  # noqa: E402
+from scorers import commands  # noqa: E402
 import seed_prep  # noqa: E402
 
 REAL_WORK = REPO / "evals" / "real-work"
@@ -78,9 +79,13 @@ def seed_files(seed: Path):
 
 class RealWorkFixtureTests(unittest.TestCase):
     def setUp(self):
-        patcher = mock.patch("scorers.commands._network_prefix", return_value=[])
+        patcher = mock.patch("scorers.commands._sandbox_prefix", return_value=([], "unavailable"))
         patcher.start()
         self.addCleanup(patcher.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def fixtures(self):
         names = sorted(p.name for p in REAL_WORK.iterdir() if (p / "fixture.yaml").is_file())

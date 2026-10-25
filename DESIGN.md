@@ -41,7 +41,40 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     `workflow-path-audit`: replay a changeset through each workflow's `on:`
     filters and assert exactly which workflows fire, and that they parse).
   - *judge* — an LLM grades the transcript/result against the fixture's rubric,
-    emitting JSON (scores + reasons), temperature 0.
+    emitting JSON (scores + reasons), temperature 0. For a with/without pair
+    it is conditional (#371): no judge call is made while trials run, and
+    once every trial of both arms is scored the arms' objective pass rates
+    (checks passed over checks scored, over the trials that did not error)
+    are compared exactly. `with` strictly ahead decides the pair, so no trial
+    of it is judged and each scored trial's `summary.json` records
+    `"judge": {"status": "skipped", "reason": "objective-decided"}` (an arm
+    aggregate's `aggregate.judge` carries it with `n` and `errors` 0, and
+    reports print `skipped (objective-decided)`); a tie, a loss or a rate
+    that is undefined (an arm with no scored check) judges every scored trial
+    of both arms, never some trials of a pair and not others. A single-arm
+    run, `--judge always`, and a fixture whose `judge.mode` is not absolute
+    (pairwise) judge each trial inside the trial as before; `--no-judge`
+    judges nothing and records `null`, not a skip. Which model judges is
+    chosen for the arm
+    ([ADR 0013](docs/decisions/0013-judge-policy.md)): a fixture's
+    `judge.model` pin if it has one; else, for an arm model in tier T, the
+    newest roster arm in the lowest tier above T, and the roster's `judge`
+    when no roster arm sits above T (so Sonnet arms are judged by the newest
+    Opus arm and an Opus arm by the roster's judge). A `pairwise` fixture
+    always gets the roster's `judge`. A judge is never the model it grades
+    nor in its tier, on either path: a roster that cannot give one is a
+    selection error and nothing runs. Tiers are the roster module's reading
+    of a model id against the ladder in `roster-policy.yml`. "Newest" is
+    read from the ids, which orders two only when their names differ in
+    nothing but numbers; peer families on one rung, or an older id shape
+    beside a newer one, leave no newest and are a selection error too. Each
+    summary of a skill
+    run records the choice as `judge_selection` (`model`, `rule`:
+    `tier-above-arm`, `roster-judge` or `fixture-pin`, `arm_tier`,
+    `judge_tier`), on a skipped pair too, and `null` under `--no-judge` or
+    after a selection error. A guidance run is unchanged: its judge is the
+    fixture's pin, else the CLI's default, and it records no
+    `judge_selection`.
 - **Report** — per-skill table of with vs. without across success %, judge
   score, and cost; a summary; and a regression line vs. the last run.
 
@@ -242,20 +275,31 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   and places its bin directory after the Claude refusal stub on the clean
   per-test PATH. Missing venv files fail closed. Other fixtures retain the
   trusted system interpreter. Scoring performs no dependency installation;
-  optional network isolation remains best-effort as described in ADR 0006.
+  network isolation is mandatory as described in ADR 0006's addendum.
   Installed dependencies are part of the workspace the agent can edit;
   ADR 0006's threat model (the agent may modify code a check runs) applies.
 
 ### Deployed context (ADR 0012)
 
-**part 1 of 4: resolution only, nothing delivered yet.** A fixture may name
-the deployed context it will eventually evaluate in, using `context:`:
+**Part 2 of 4: frozen resolution and delivery.** `--pairing isolation`
+remains the default. `--pairing in_place` is cloud-only and delivers the
+frozen skills and guidance into both arms' scratch user profiles; a local
+run fails with `in_place_local_unsupported`. No credential adapter exists.
+The model-call catalog and marker guard remain part 3 of
+[ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md).
+
+A bare skill name must resolve uniquely; `--skill-registry OWNER/REPO` and
+`--skill-bundle BUNDLE` qualify its source and bundle. Keep-or-remove runs
+test the deployed bytes by default. `--subject-candidate PATH` explicitly
+supplies a skill directory or a guidance file; only that skill or the pinned
+section's exact extent replaces the subject in `with`. Summaries retain both
+deployed and tested digests. A fixture names its deployed context using `context:`:
 
 ```yaml
 context:
   repository: Adam-S-Daniel/cms-platform
   revision: 5e66f6e3ced3e619e0fac869cff11c37c3877e2d
-  guidance_revision: 98a00535adb7fc8ebf03d4d5d4cadbfaf7321f10
+  guidance_revision: 35f62ec4d9ab7fd8b9d9fe2e3a547c7d5926c3f9
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 7603
@@ -304,8 +348,11 @@ context commit's committer timestamp. Exact bytes establish each match;
 timestamps only constrain eligibility. It counts all matches and chooses
 the greatest committer timestamp, then the lexicographically smallest full
 SHA for a tie. A missing `origin/main` fails closed. Scaffolds record the
-count and selection rule in a comment. Existing valid committed pins are
-preserved even when this deterministic selection finds another match.
+count and selection rule in a comment. Every committed pin is this
+deterministic selection, so one rule reproduces each of them, and
+`resolve_context` applies the same eligibility rule as
+`validate_guidance_revision` (a default-branch ancestor no newer than the
+context commit) before the byte proof.
 Historical base-only guidance may predate the section
 manifest or delivery hook: their absence is recorded, while the deployed
 base still requires exact proof. Missing evidence for an adopted section
@@ -566,8 +613,10 @@ must resolve inside the final workspace, including symlink resolution. Direct
 Each process receives a new constant-built environment with temporary HOME,
 XDG/config/runtime/temp directories and a fixed PATH headed by a private
 `claude` refusal stub, then `/usr/bin:/bin`. Only when neither holds `node`
-is a directory containing just a symlink to the harness's own `node` (never
-one inside the workspace) appended, so PATH lookups of `node` work on hosts
+is a private directory containing just a symlink to the harness's own `node`
+appended. Python and Ruby get equivalent single-executable aliases when
+missing from fixed system locations. HOME, workspace and trusted denied
+roots cannot supply these runtimes. PATH lookups of `node` work on hosts
 such as GitHub runners that install it in `/usr/local/bin`. It inherits no
 credentials or `CLAUDE_BIN`, including the local harness's guard launcher. Both CI and local scoring use the same
 registry entry. Printed `PASS` has no bearing on the result: nonzero exit,
@@ -575,20 +624,43 @@ spawn failure, timeout, and invalid arguments yield distinct named failures.
 On POSIX, cleanup terminates the process's own group and reaps its direct child
 with a bounded wait.
 
-Linux network namespaces are attempted using fixed `unshare --net` after a
-bounded harmless probe. The detail says `network=isolated` or
-`network=unavailable`; the latter means network access is not blocked.
-Diagnostics suppress arbitrary program/exception text and expose only status,
-exit code, and capped stdout/stderr byte counts (4096 each, with a truncation
-marker), so published details cannot contain program-supplied home paths or
-environment values. Capture uses temporary files rather than unbounded RAM.
+Both executing checks use a trusted fixed `bubblewrap` executable (system
+paths, or the harness's precomputed `~/.local/bin/bwrap` fallback), never a
+workspace or PATH-provided runner. A bounded harmless `/usr/bin/true` probe
+must establish the same mandatory filesystem and PID sandbox before code
+runs. An empty root contains read-only system program/library binds (`/usr`,
+`/bin`, `/sbin`, `/lib`, `/lib64`, `/lib32` when present), the dynamic loader's
+`/etc/ld.so.cache`, and narrowly resolved external Python/node/Ruby
+executables and language libraries. Denied descendants of an allowed bind
+are masked, including paths reached through system bind aliases. The host's
+`/run`, `/var/run`, `/mnt`, `/media`, `/srv`, HOME and root's home are not
+mounted broadly, excluding host sockets and WSL filesystem/interop aliases.
+Only the execution workspace and its fresh environment scratch directory
+are writable host binds, installed after fresh temporary `/tmp`. A writable
+root equal to or containing a denied root is refused. The child receives
+separate PID, network, IPC and UTS namespaces, fresh `/proc` and minimal
+`/dev`, `--die-with-parent` and `--new-session`; actual startup is confirmed
+by an isolated
+system Python bootstrap (`-I -S`) that writes a fixed readiness marker, closes
+the descriptor, and then executes the scoring command. Missing or unstartable bubblewrap fails closed
+as `scorer_sandbox_unavailable` with a sanitized exit code.
 
-[ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md)
-records the threat model: the agent may have modified the code this check
-runs. This isolation does not prevent reading host files, absolute binary
-invocation, deliberate PATH evasion (including an absolute CLI invocation),
-new-session descendants, or disk/CPU exhaustion. It is not a full sandbox.
-No fixture is added; existing fixture scoring is unchanged.
+Network isolation uses mandatory `--unshare-net`. A failure names
+`scorer_sandbox_unavailable` without retrying with host networking. Diagnostics suppress arbitrary
+program/exception text and expose only status, exit code, and capped
+stdout/stderr byte counts (4096 each, with a truncation marker). Capture uses
+temporary files rather than unbounded RAM.
+
+The trusted harness injects read-denied roots separately from fixture YAML:
+the harness checkout, its original clone's parent (derived from Git's common
+directory for worktrees), registry/guidance checkout overrides, real HOME,
+Claude profiles, results, wrapper read-deny outputs, session archives and
+the fixture directory. Direct scorer calls protect the harness and HOME by
+default. An execution workspace beneath a denied ancestor gets only its own
+narrow carve-out. The
+[2026-10-07 addendum to ADR 0006](docs/decisions/0006-run-objective-commands-with-isolated-process-state.md#2026-10-07-addendum-mandatory-scorer-filesystem-and-pid-isolation)
+supersedes the earlier process-state-only boundary. Disk and CPU consumption
+remain uncapped.
 
 ### Hidden repository tests objective check
 
@@ -610,11 +682,15 @@ strings, appended to `argv`, for example
 `fail_to_pass` and `pass_to_pass` test must exit 0. One process per test is
 what keeps each one under the 60 s cap (decision Q1 above) and decides each
 test by its own exit code, never by parsing a runner's output. The agent's
-own workspace is never written.
+own workspace is never written. The original fixture directory (including
+its checker and solution patch) and original final workspace are hidden from
+every selected test; only the scoring copy contains the installed overlay,
+`node_modules`, and `.fixture-python`.
 
 Each process gets `command_succeeds`' isolation: fixed interpreters or a
 workspace entrypoint (resolved inside the scratch copy), no shell, a fresh
-constant environment per test, best-effort `unshare --net`, and a detail
+constant environment per test, the mandatory bubblewrap filesystem/PID
+sandbox and mandatory network isolation described above, and a detail
 that names the counts, the network state and each failed test with its exit
 status (`exit=<n>`, `timeout`, `spawn_failed`), never program output.
 
@@ -873,8 +949,20 @@ is objectively decidable from the resulting files alone.
   files, symlinks, directories) into a private tree, skipping FIFOs, sockets,
   devices, ignored paths and nested Git directories, then installs gitlinks
   from independently validated standalone HEAD refs, so `git add` never
-  discovers nested agent configuration. An unreadable file or a timeout is the
-  recorded trial error `workspace_git_collection_failed`, not a crash.
+  discovers nested agent configuration. Ignore and attribute controls are
+  copied safely once before ignore evaluation; Git reads only that private
+  view for every command that can read work-tree controls. Only `worktree list`
+  shares the exemption for commands that cannot read those controls.
+  An unreadable file or a timeout is the
+  recorded trial error `workspace_git_collection_failed`, not a crash; so
+  ([issue #350](https://github.com/Adam-S-Daniel/skills-evals/issues/350)) is
+  a Git command that exits non-zero (a bogus `working-tree-encoding`), a
+  `.gitignore` or `.gitattributes` that is a FIFO, socket or device (refused
+  before Git runs, since Git's open() would block), and a staging view over
+  `MAX_STAGED_BYTES` (2 GiB) or `MAX_STAGED_FILES` (200,000). Apparent size
+  rejects sparse oversized files before copying, and a cumulative streaming
+  budget stops growing files at the remaining byte bound. The separate
+  baseline snapshot in `seal()` also sanitizes a checked Git exit.
   Bookkeeping Git uses the sink ceiling (`guidance.MAX_TIMEOUT_S`) as its
   timeout: its cost grows with the workspace, so it is a hang guard only.
   Nested linked worktrees receive a structural report with their patch marked
@@ -948,6 +1036,123 @@ is objectively decidable from the resulting files alone.
   share against it, `canonical_model` is the arm model's canonical id, and
   the share is the one the counts give. Summaries without the fields still
   ingest.
+- **Run and usage ([#370](https://github.com/Adam-S-Daniel/skills-evals/issues/370)
+  item 1):** every `summary.json`, error paths and arm aggregates included,
+  carries a `run` block and a `usage` block. A value that could not be read
+  is `null` with an entry in its block's `reasons`, never omitted and never
+  guessed; nothing reads either block to weight or filter a result.
+  `run: {schema_version, billing, runner, location, id, session_id,
+  harness_commit, cli_version, source, reasons}`. `billing`, `runner`,
+  `location` and `id` are the run's `--run-billing {api,subscription}`,
+  `--run-runner {actions,routine,workstation}`, `--run-location {cloud,local}`
+  and `--run-id` when passed, else what the environment observes
+  (`run_eval.RUN_ENV`: `GITHUB_ACTIONS=true` is the `actions` runner,
+  `GITHUB_RUN_ID` its id, `CLAUDE_CODE_REMOTE_SESSION_ID` a `cloud` location
+  and the `session_id`), else `null`; `source` records `flag`, `env:<NAME>`
+  or `null` per field. Billing is never read from the environment, and a
+  hosted session does not say a routine started it. `eval.yml` passes
+  `api` / `actions` / `cloud`, and `scripts/local_eval.py` passes
+  `subscription` / `workstation` / `local` with one run id for all its
+  trials. `harness_commit` is the harness checkout's `HEAD`, read from its
+  git metadata files with no git command.
+  `usage` has a half the whole run shares and a half that is this summary's
+  own. The shared half: `started_at` and `ended_at` (UTC), `meter`,
+  `meter_delta`, `concurrent_runs` (`null`: not knowable inside one run,
+  computed at ingest), `other_account_activity` (`unknown`, or
+  `asserted_quiet` with `asserted_quiet_by` when `--asserted-quiet <who>` was
+  passed), `outer_session: {id, usage: null, note: "not measured"}`,
+  `limit_promotion` and `price_table_version` (both `null`: the CLI names a
+  cost basis, not a price table). It is written into each summary as it
+  stood at that moment, and when the run ends every summary the run wrote is
+  rewritten with the final one, so all of a run's summaries agree; a run that
+  is killed leaves `ended_at: null` with its reason.
+  A meter snapshot is the CLI's own `rate_limit_event`: with `--verbose`
+  the agent call's message array carries one (CLI 2.1.296, measured
+  2026-10-10), so reading the account meter adds no model call. Each
+  snapshot is stored once, in the summary of the trial whose call printed
+  it, under `usage.measured.meter: {snapshots, omitted}`: the first and the
+  last event of each of that trial's agent CLI calls, each as `{at,
+  at_source, call: {role, index}, info}` with `info` the event's
+  `rate_limit_info` verbatim (whatever windows it names), `at` the timestamp
+  of the message before it (`cli_message`), else the call's start
+  (`call_start`: only an event before the call's first timestamped message
+  has none), and `call` naming the entry of the same trial's `calls`. A
+  trial keeps at most `run_eval.METER_MAX_SNAPSHOTS` (12), its first six and
+  last six, and `omitted` counts the rest; an arm aggregate lists none. A
+  run's meter series is therefore the union of its trial summaries. The
+  run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
+  how many snapshots the run recorded, how many events were not kept for
+  their shape or size, and why the judge call, the guard call and the end of
+  the run are not sampled (the judge and the guard are called without
+  `--verbose`, so they print no meter event, and no call is added to read
+  the meter). The meter is read when an agent call starts and at no other
+  time: the one real call observed (two API requests) printed one event,
+  as it began. That is one observation, and a longer call may print more;
+  the first and last of each call are kept either way. So there is no
+  snapshot at run end, and the run's last snapshot is the start of its
+  last agent call. `meter_delta` is the run's first snapshot against its
+  last, per window both name, whatever a trial's own list dropped. It
+  therefore leaves out the call that printed the last snapshot and every
+  call after it (that agent call's own spend, and the judge and guard calls
+  that follow), and any call before the first snapshot. Conditional judging
+  (#371) widens that: a pair's judge calls are all made after its last agent
+  call, so on a judged pair the delta covers none of the judging, where a
+  judge inside each trial (`--judge always`, a single arm) leaves out only
+  the last trial's. Measured on one fixture, two trials, a tie: 5 calls
+  after the last snapshot by default (the last agent call and all four judge
+  calls), 2 under `--judge always`. Such a held judge call is added to the
+  summary of the trial it judges after that summary was written
+  (`_RunTelemetry.amend`), so that trial's `usage.measured.started_at` to
+  `ended_at` spans the trials that ran in between and trial windows of a
+  judged pair overlap;
+  `meter_delta.uncovered: {calls_before_first_snapshot,
+  calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
+  the second, and a run of one agent call has no delta at all. Each window
+  is `{from, to, delta, window_reset}`, at most 16 of them, `delta`
+  `null` when the window's reset time changed between them. It is
+  account-wide, so it is this run's cost only if nothing else used the
+  account, and it is labeled, never corrected. A run billed `api` has
+  `meter: null`, `meter_delta: null` and `measured.meter: null` with the
+  reason.
+  `usage.measured` is `{scope, started_at, ended_at, calls, meter, agent,
+  judge, guard, reasons}`. For one trial (`scope: trial`), `calls` lists each CLI
+  call with its role, start, end, wall-clock `duration_ms` and outcome, and
+  each role has `{calls, duration_ms, num_turns, cost_usd, cost_basis,
+  models, cache_creation, reasons}`: `models` per model id with the four
+  token counts and `cost_usd` from `modelUsage`, `cost_usd` the CLI's own
+  list-price figure, and `cache_creation` the 5-minute and 1-hour cache-write
+  split, which the CLI reports for the main loop only. `models` is whole or
+  `null`: a result with no `modelUsage`, or with an entry that could not be
+  read, leaves it `null` and never the models that happened to be readable.
+  The judge's and the guard's results are read like the agent's: the judge's
+  sink (`judge.collecting_models`) and the guard's (`run_canary.
+  collecting_results`) keep `modelUsage`, `num_turns`, `usage` and
+  `total_cost_usd` of each result, raw, whichever the result has. A figure a
+  result lacks is `null` with the reason "the <role>'s CLI result does not
+  carry it"; a call that ended without a result says so. A role with no call
+  records zeros. An arm aggregate (`scope: arm`)
+  sums its trials role by role, a `null` in any trial making that sum
+  `null`, `models` included, and lists no calls. A trial with more than
+  `run_eval.USAGE_MAX_CALLS` (32) calls keeps the role totals and
+  `calls: null`. Calls queued by a trial that wrote no summary are dropped
+  when the next trial starts, not given to it.
+  The counts above bound how many entries a summary lists, not how large a
+  snapshot's verbatim `info` is once indented, so `usage.measured` is also
+  held to `run_eval.USAGE_MAX_BYTES` (32 KiB) as written: past it the trial
+  keeps its first and last snapshot, then none (`omitted` counts them), then
+  no call list. `meter_delta` is computed from the run's own record and is
+  unaffected. `scripts/ingest_routine_results.py` accepts both blocks
+  (together or not at all, so earlier summaries still ingest) and checks
+  every value, not only every key: times are real and in order, a `source`
+  is the flag or an environment variable the harness reads for that field
+  with the value it implies, a role's `calls` matches the calls listed, a
+  window's `delta` is its change, and a field the harness only ever writes
+  as `null` must be `null`. The one free-form value is a snapshot's `info`,
+  which is bounded. With every snapshot and call slot taken the two blocks
+  measured 26,347 bytes pretty-printed, against the ingester's 64 KiB cap on
+  a summary, which is unchanged. Over a both-arms, three-trial run (eight
+  summaries, one event per call) they measured 38,840 bytes in all, 4,192
+  to 5,076 each.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
 - **Passive fleet-guidance counters:** every attempted real-work
@@ -969,7 +1174,19 @@ is objectively decidable from the resulting files alone.
   `git-push-does-not-mean-commit-exists`, respectively. YAML is parsed with
   PyYAML nodes: workflow job-level reusable `uses`, workflow step `uses`
   and `run`, and composite-action step `uses` and `run`. Remote actions
-  require a full 40-character hexadecimal SHA; local `./` and `docker://`
+  require a full 40-character hexadecimal SHA, or the lockfile form (ADR
+  0021 in `_agent-guidance`): a step ref is also credited when
+  `.github/workflows/actions.lock` keys it by the exact `uses` string with
+  a `sha1-<40 lowercase hex>` commit and a `ref` equal to the tag after
+  `@`, and that workflow's `workflows` list names it. A tag inside a local
+  composite action is credited only when every workflow that reaches the
+  composite through `$/<dir>` steps, directly or through other composites
+  (cycles included), lists it; a reaching workflow absent from the
+  lockfile's `workflows` map locks nothing, and a composite no workflow
+  reaches gets no credit. Job-level reusable workflow refs never take
+  lockfile credit. An unreadable, invalid or symlinked lockfile makes
+  `unpinned_actions` unknown; the interpolation counter, which does not
+  read it, stays known. Local `./`, `$/` and `docker://`
   references are exempt, and this account's `cms-platform/.github/actions/`
   and `cms-platform/.github/workflows/` references accept
   `vMAJOR.MINOR.PATCH` release tags. The interpolation
@@ -1302,8 +1519,14 @@ decisions (Adam, 2026-10-06)".
 Q6 puts the scaffolder's model call in the ADR 0010 routine and gives
 scaffold pull requests their own gate. The model writes only what needs
 judgment: the task text (the issue minus the sections that describe the
-fix), `interface_strings:` and the checker selection (`argv`,
-`fail_to_pass`, `pass_to_pass`, `deps:`), as a JSON spec. Everything else is
+fix, and minus its dates and version numbers),
+`interface_strings:` and the checker selection (`argv`,
+`fail_to_pass`, `pass_to_pass`, `deps:`), as a JSON spec. A date or version
+number stays only where dropping it would very significantly disadvantage
+the agent relative to the one that did the original work (Adam,
+2026-10-08: "Omit dates and version numbers from eval prompts unless doing
+so will very significantly disadvantage the agent relative to the agent
+that performed the work on which the eval is based"). Everything else is
 deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py):
 
 - **build** turns one miner candidate and the spec into
@@ -1433,8 +1656,11 @@ runs that loader.
 The `workflow-path-audit` fixture learned these the hard way; they are policy
 for every fixture, not folklore in one file's comments:
 
-- **Arms on a pinned mid-tier model, judge pinned strong.** A ceiling-effect
-  arm is signal-free.
+- **Arms follow the roster, and the judge follows the arm.** A fixture pins
+  neither model without a stated reason; the judge is one tier above the arm
+  it grades ([ADR 0013](docs/decisions/0013-judge-policy.md), which
+  supersedes "arms on a pinned mid-tier model, judge pinned strong"). A
+  ceiling-effect arm is still signal-free.
 - **Anything a script can decide is never left to the judge**, and the
   rubric caps a dimension when a decidable fact fails (the judge once scored
   a 9 on an arm the objective column failed).
@@ -1525,9 +1751,12 @@ One manual API dispatch selects one fixture. At the workflow's estimate of
 $0.30–0.90 per skill fixture, that is its estimated cost; actual usage varies,
 and the API workspace spend limit is the hard ceiling for this path. Adding a
 fixture to the weekly routine's reviewed list is a subscription-usage
-decision, not an API-spend estimate. Rotation, monthly sweeps, model
-products, trial changes, and automated budget enforcement remain deferred under
-[#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
+decision, not an API-spend estimate. Automated budget enforcement is the
+weekly allowance guard: [`evals/budget.yml`](evals/budget.yml) holds Adam's
+30% cap, enforced in the run, before each fire and in the weekly plan
+([docs/how-it-works.md](docs/how-it-works.md#the-weekly-allowance-guard)).
+Rotation, monthly sweeps, model products and trial changes remain deferred
+under [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68).
 
 ### `claude plugin eval` (assessed 2026-08-30)
 
@@ -1630,7 +1859,9 @@ only, so an arm, the judge, the preflight model or a `catalogue_seen` entry
 cannot appear there or vanish from there without a reviewed commit.
 `run_eval.select_models` reads that file and nothing else for the roster rung
 of its precedence (`--model` > the fixture's own pin > `evals/roster.yml` >
-error).
+error). Since [ADR 0013](docs/decisions/0013-judge-policy.md) the judge it
+picks from that file also depends on the tier ladder in
+`evals/roster-policy.yml`, committed and pull-request-only like the roster.
 
 **`harness/roster.py` computes a PROPOSAL, not the running set.** It is still
 **a pure function over files** — already-parsed documents and a frozen `now`
@@ -1965,7 +2196,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 
 | Spawn | Flags beyond its own |
 |---|---|
-| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox JSON>` and `--disallowedTools WebFetch,WebSearch` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
+| arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox, read-deny and agent-config-deny JSON>`, `--disallowedTools WebFetch,WebSearch` and `--no-chrome` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
 | judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
@@ -1979,9 +2210,9 @@ arm, one past the CLI's 200-character truncation, and one inside a guidance
 arm's own scratch are never touched. The judge's empty setting source means
 the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
 fleet-memory SessionStart hook: that is the isolation, not a regression.
-What none of this stops: managed settings, the CLI's bundled skills, writes
-to `~/.claude.json`, and a `bypassPermissions` arm reading the credential
-file under the real HOME.
+What none of this stops: managed settings, the CLI's bundled skills and
+writes to `~/.claude.json`. An arm's own reads of the real HOME are fenced
+in separately (below).
 
 **Agent arms have no route to GitHub** ([ADR 0011](docs/decisions/0011-sandbox-agent-arm-network.md)).
 A real-work seed is a public repository's pre-fix tree, and the merged fix is
@@ -1998,9 +2229,139 @@ and `cdn.jsdelivr.net`. The sandbox covers Bash and its children only, so
 `--disallowedTools WebFetch,WebSearch` removes the two web tools. Nothing is
 written into the workspace: `seed_guard` still refuses any `.claude/`, and
 no scoring check sees a harness file. The judge, the guard and canary probes,
-`deps:`/`setup:` and objective commands are not sandboxed this way. Reads are
-not restricted: a sandboxed command and the Read tool can still read this
-checkout, `evals/real-work/*/checker/` and `solution.patch` included.
+`deps:`/`setup:` and objective commands are not sandboxed this way.
+
+**Agent arms cannot read the answer key on disk either** (ADR 0011's reads
+addendum). The same `--settings` denies reads of this checkout (a worktree
+resolves, through `git rev-parse --git-common-dir`, to its main clone), the
+directory holding that clone and its siblings (`~/repos` on a workstation,
+where cms-platform `main` holds the merged fixes), every registry and
+guidance checkout the run was given (`run_eval.run_checkouts`), the run's
+results directory, every `--read-deny` directory (a wrapper's whole output
+tree: local_eval's earlier trials, propose_skill_edit's baseline run and
+patch) and the harness's session archive, the harness's other
+directories under TMPDIR (other arms' workspaces and scratch profiles, and
+`workspace_git`'s private `trusted-git-` metadata copies), and
+the real HOME and Claude Code profiles (`~/.claude`, an inherited `CLAUDE_CONFIG_DIR`):
+`sandbox.filesystem.denyRead` for Bash and its children, and the same paths
+as `Read(//<abs>/**)` deny rules for the Read tool. For commands,
+`allowRead` re-opens only git's global configuration (so `git commit` keeps
+its identity) and PATH directories under HOME with a `bin`'s sibling `lib`
+(toolchains such as `~/.local/bin`), never one at or around a checkout. For
+the Read tool, a skill arm's HOME and profile are denied structurally around
+its own `~/.claude/projects/<munged workspace>`, where the CLI saves large
+tool outputs the agent reads back: complement patterns deny every other
+name at each level, sessions created after the settings included; a
+symlink there leading out to a system or PATH directory (a GitHub runner's
+`~/.ghcup`) is left out of those patterns rather than denied, and one that
+also leads to a denied path fails the arm with `read_rules_unsafe`. A workspace under a denied path (TMPDIR inside
+HOME, say) fails the arm with `workspace_read_denied` before the CLI starts.
+
+On Linux the read fences also cover alternate mounts of the root or HOME
+filesystem, discovered from `/proc/self/mountinfo` by device number,
+filesystem type, mount root and the longest HOME mount prefix. WSL drive
+mounts and root/HOME aliases under `/mnt` deny `/mnt` whole, closing WSLg's
+second view of Linux and Windows-side sibling clones. Other aliases, including
+custom drive mountpoints, are denied at their mount roots. Canonical self-binds
+such as `/tmp` on `/tmp` and HOME on itself stay available; malformed or
+unreadable Linux mount metadata refuses the arm with `read_rules_unsafe`.
+Other platforms add no mount fences.
+
+Every alias is denied **whole**: one `denyRead` entry and the
+`Read(//<alias>)`/`Read(//<alias>/**)` pair, with no rule and no `allowRead`
+carve-out inside it. A carve-out per Windows PATH directory made a skill
+arm's `--settings` 60,680 bytes on a WSL workstation, against the 64 KiB cap.
+Instead the arm never needs a Windows-side executable: `run_agent` drops
+every PATH entry under an alias (spelled there, or reached through a
+symlink) from the arm's environment, a skill arm's and a guidance arm's
+`env_override` alike (`path_without_aliases`), and builds the settings from
+that PATH. An arm whose `bash` or `git` is found only under an alias fails
+with `toolchain_under_alias` rather than reopen it. The Linux carve-outs
+under HOME refuse any directory that is, holds or lies inside a denied path
+other than HOME itself: a checkout or the directory holding the clone, the
+results, the archive, a profile, an alias. On this WSL workstation a skill
+arm's settings are now 12,695 bytes.
+
+The named temporary-store inventory under `TMPDIR` is explicit in
+[`HARNESS_TEMP_PREFIXES`](harness/run_eval.py). Both existing stores (`sandbox.filesystem.denyRead`)
+and later allocations (`Read` prefix rules) are denied, preserving only the
+arm's own workspace. The inventory includes explicit parent directories:
+`dest`, an output parent, or a fake CLI's `LOG_DIR` can itself be `TMPDIR`.
+
+| Denied prefix | Allocator |
+|---|---|
+| `workspace-` | [harness/run_eval.py](harness/run_eval.py) materialization and [scripts/local_eval.py](scripts/local_eval.py) |
+| `skills-evals-` | [harness/run_eval.py](harness/run_eval.py) guidance arms (`ARM_WORKSPACE_PREFIX`) |
+| `guidance-bridge-canary-` | [harness/run_canary.py](harness/run_canary.py) |
+| `propagation-` | [harness/run_propagation.py](harness/run_propagation.py), including `propagation-selftest-` |
+| `scoring-seed-`, `deps-python-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
+| `objective-repo-tests-` | [harness/scorers/repo_tests.py](harness/scorers/repo_tests.py) |
+| `objective-command-` | [harness/scorers/commands.py](harness/scorers/commands.py) |
+| `local-eval-guard-` | [scripts/local_eval.py](scripts/local_eval.py) |
+| `sink-mutation-` | Reserved existing sink-mutation scratch prefix |
+| `trusted-git-` | [harness/workspace_git.py](harness/workspace_git.py) private metadata, allocated with `mkdir` |
+| `scaffold-`, `scaffold-context-`, `.scaffold-` | [scripts/scaffold_real_work.py](scripts/scaffold_real_work.py) candidate, context Git stores, and destination staging |
+| `claude-probe-home-` | [scripts/probe_model_defaults.py](scripts/probe_model_defaults.py) isolated CLI profile |
+| `skill-edit-guard-`, `propose-skill-edit-` | [scripts/propose_skill_edit.py](scripts/propose_skill_edit.py) |
+| `scoring-guidance-`, `scoring-skill-` | [harness/run_eval.py](harness/run_eval.py) objective-only scoring copies |
+| `mine-real-work-` | [scripts/mine_real_work.py](scripts/mine_real_work.py) atomic output staging file |
+| `.gh-label-`, `.gh-timeline-` | [harness/fakes/gh](harness/fakes/gh) atomic local state files |
+| `usage-census-` | [scripts/publish_usage_census.sh](scripts/publish_usage_census.sh) scratch repositories |
+
+The only tempfile allocations without a prefix in this inventory are
+`TemporaryFile` handles, which have no named store an arm can open, and
+[`run_eval._archive_session_dir`](harness/run_eval.py)'s dynamic session-name prefix beneath the
+already-denied session archive. A Python AST regression inventories named
+allocations, including the extensionless fake CLI and explicit parents;
+a Bash AST regression checks the census allocation. The prefix coverage
+regression checks command denies for existing stores and file-tool denies
+for future names.
+
+Alias classification wins when deduplication finds that a profile or HOME
+also names an alias: that mountpoint remains denied whole, with no profile
+exception or HOME carve-out. PATH's physical alias check resolves each
+original spelling before interpreting `..` after a symlink. Mount-table
+read and decode errors refuse the arm as `read_rules_unsafe`.
+
+The mount table and PATH are parameters (`mountinfo=`, `path_env=`),
+defaulting to `host_mountinfo()` and `os.environ` only at the outermost
+call. `SKILLS_EVALS_MOUNTINFO` names a mountinfo-format file that stands in
+for `/proc/self/mountinfo` (an empty one names no alias): every test that
+runs an arm sets it and an explicit PATH, so no result depends on the host's
+mounts or PATH. The shared [test/arm_test_env.py](test/arm_test_env.py) module fixture covers the
+legacy runner and remaining arm-running issue modules; install helpers also
+set both locally, so a poisoned parent inside a test cannot override them.
+Tests measuring particular mounts keep their own mountinfo fixtures, and
+explicit child environment mappings carry the fixture too. See the
+[reads addendum and live evidence](docs/decisions/0011-sandbox-agent-arm-network.md#addendum-reads-2026-10-07)
+and [mount fixture regressions](test/issues/test_issue_arm_read_isolation.py).
+
+A live WSL probe with CLI 2.1.293 read an answer-key patch through WSLg
+using both Bash and Read before these fences. With the whole-alias deny,
+Bash got `No such file or directory` and Read refused it; the arm's PATH
+held no `/mnt` entry, and workspace, Python, Node and git still worked.
+Unix sockets were blocked in both runs by the existing
+`allowAllUnixSockets: false`, `allowUnixSockets: []` settings: Linux seccomp
+refused `AF_UNIX` socket creation with `EPERM` before connection, closing
+Docker and WSL interop. No additional `/run` fence was needed.
+
+**Nothing else outside the sandbox runs for an arm** (ADR 0011's hardening
+addendum). Hooks run unconfined, so the agent may not write its workspace's
+`.claude/` (settings, hooks, skills, agents, commands) or the profile it
+loads as user settings: `Edit(...)` deny rules for the file tools and
+`denyWrite` for Bash, in the same `--settings`.
+Trusted hooks (a plugin's or a skill's under test) keep running. A trial in
+which anything under `.claude/` or a guidance arm's scratch profile, or a
+configuration path of the shared `~/.claude` a skill arm uses, changed
+during a turn, beyond what was there before and the CLI's own measured
+writes, fails after that turn with `agent_wrote_agent_config`.
+Every turn passes `--no-chrome` and never receives `CLAUDE_CODE_ENABLE_CFC`.
+A managed policy with any `sandbox` or `permissions` key, nested object or
+value outside the allowlist `run_eval._MANAGED_ACCEPTED` documents (a
+widening key passes only at the arm's own restrictive value), or with
+`allowManagedPermissionRulesOnly` other than `false`, refuses the run with
+`managed_sandbox_policy`. The CLI's `Sandbox Error:` and `Sandbox disabled:`
+lines fail the arm as `sandbox_unavailable`, the latter even at exit 0.
 
 **The contamination trap, and why a guard is not optional.** On any machine or
 hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already

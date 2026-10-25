@@ -162,6 +162,61 @@ records. Merge this change BEFORE that ruleset, and verify it with a
 `roster_only` dispatch. Without the App token nothing is published and the
 tracking issue carries the rendered file.
 
+## 0C. Decisions of 2026-10-10 — read before § 0B
+
+Adam made these design decisions on 2026-10-10 in a planning session. They
+are recorded in issues; **none is built yet**, and nothing below changes what
+`main` does today. Where an issue and an older section of this file disagree,
+the issue is the later word.
+
+- **Retirement is automatic, for skills and for guidance sections.** A subject
+  that shows no benefit on every roster model across its last four weekly
+  sweeps is removed by a bot-authored pull request that merges once checks
+  pass, with no human approval. The rules, including the ceiling check that
+  keeps an easy fixture from deleting a skill, are in
+  [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70) item 3 and
+  [#124](https://github.com/Adam-S-Daniel/skills-evals/issues/124); the epics
+  [#61](https://github.com/Adam-S-Daniel/skills-evals/issues/61) and
+  [#95](https://github.com/Adam-S-Daniel/skills-evals/issues/95) carry the
+  changed definition of done. This reverses "removal stays a human decision".
+- **One results pool.** How a run was billed (API or subscription), what ran
+  it (Actions, a routine, a workstation) and where (cloud or local) stop
+  changing how much it counts and become run metadata, with cost, usage and
+  account-meter readings recorded on every run:
+  [#370](https://github.com/Adam-S-Daniel/skills-evals/issues/370). Until it
+  is built, routine and local results are still the exhibits ADRs 0002, 0008
+  and 0010 describe.
+- **Judge policy.** Judge only when the objective checks do not already show a
+  gain; judge with a model one tier above the arm; keep the top judge for
+  judge-carried fixtures:
+  [#371](https://github.com/Adam-S-Daniel/skills-evals/issues/371). Seven of
+  the eight scheduled fixtures pin `claude-sonnet-5` and an Opus 4.8 or Opus 5
+  judge today; that issue removes the pins.
+- **Cadence and budget.** One rolling weekly sweep replaces "weekly rotating
+  subset, monthly full sweep", held to 30% of the weekly Claude subscription
+  allowance: the
+  [2026-10-10 comment on #68](https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979).
+- **Decision 8 is lifted for three guidance sections only**
+  ([#102](https://github.com/Adam-S-Daniel/skills-evals/issues/102),
+  [#111](https://github.com/Adam-S-Daniel/skills-evals/issues/111),
+  [#115](https://github.com/Adam-S-Daniel/skills-evals/issues/115)), the
+  guidance pilot. Every other fixture lane stays stopped: the
+  [note on #96](https://github.com/Adam-S-Daniel/skills-evals/issues/96#issuecomment-6097946205).
+- **The registry-side gate has a live issue again:**
+  [adam-agentskills#66](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66).
+  It replaces `agentskills#153`, which did not survive the registry's move to
+  `adam-agentskills`; links to the old number in this file now point there.
+- **A calibration sweep is planned** as the pilot's first sweep, to measure
+  what a sweep costs against the weekly allowance:
+  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372). Its
+  pre-run work is listed there and waits for Adam's approval.
+
+Measured the same day: the weekly routine had not yet fired on schedule (first
+run 2026-10-13 07:00 UTC), and a Claude Code session can read the account
+meter from the CLI's `rate_limit_event` (`unifiedWindows.seven_day.utilization`).
+§ 4's calibration of dollars to allowance predates a plan change on 2026-10-03
+and should not be reused; #372 replaces it.
+
 ## 0B. Session of 2026-09-21 — RESUME HERE
 
 This section supersedes § 0A where the two differ. Adam asked to proceed from
@@ -722,7 +777,7 @@ hermetic and its issue stays open until a real run exists.
 
 | Epic | Scope | Sub-issues |
 |---|---|---|
-| [skills-evals#60](https://github.com/Adam-S-Daniel/skills-evals/issues/60) | Coverage: harness resolves any registry, census, gate, scaffold | #63 (closed), #64, [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153), #65 |
+| [skills-evals#60](https://github.com/Adam-S-Daniel/skills-evals/issues/60) | Coverage: harness resolves any registry, census, gate, scaffold | #63 (closed), #64, [adam-agentskills#66](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66), #65 |
 | [skills-evals#61](https://github.com/Adam-S-Daniel/skills-evals/issues/61) | Systematic runs: multi-fixture N trials, model roster, matrix, regression, gates, improvement loop, explorer, docs | #66, #67, #68, #69, #70, #71, #72, [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536), #73 |
 | [skills-evals#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62) | One fixture per skill (21) plus [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408) | #74 to #94, [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408) — **STOPPED by decision 8** |
 | [_agent-guidance#118](https://github.com/Adam-S-Daniel/_agent-guidance/issues/118) | Guidance subject: manifest, harness, touch gate, scaffold, InstructionsLoaded receipts | _agent-guidance#119 (closed), #97, _agent-guidance#120 (closed), #98, _agent-guidance#123, #139 |
@@ -743,7 +798,7 @@ verifier and its dependencies. Unqualified `#n` above means skills-evals.
   #74 to #94 in the order #62 gives (#84 first, it builds the shared fake `gh`);
   guidance #100 to #120 in the order #96 gives (#112 first). A guidance
   fixture's real N=3 run waits for #97.
-- **Gates**: _agent-guidance#119 → #120 (both merged); [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) after #64.
+- **Gates**: _agent-guidance#119 → #120 (both merged); [adam-agentskills#66](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66) after #64.
 - **Explorer and site**: #72 → [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536) → #123 → [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538);
   the site PRs park on Adam's approval of the regression-review environment gate.
 - **Docs last**: #73, #125.
@@ -1007,7 +1062,7 @@ be built and tested hermetically but have nothing real to run against.
   [#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147), the trusted-
   history redesign, which is where BLOCKERS 1, 2 and 3, round 13's BLOCKER B and
   the declared open cell all close together.
-- Gates: [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) (after #64).
+- Gates: [adam-agentskills#66](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66) (after #64).
 - Explorer and site: #72, [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536), #123, [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538).
 - Docs: #73, #125.
 

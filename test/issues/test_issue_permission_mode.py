@@ -49,6 +49,19 @@ def agent_reply() -> dict:
             "session_id": "sess-1"}
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class Recorder:
     """Stands in for subprocess.run and records every argv."""
 

@@ -61,6 +61,20 @@ RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 PDF_OCR_DIR = REPO_ROOT / "evals" / "pdf-ocr-audit"
 VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
+sys.path.insert(0, str(TEST_DIR))
+from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
 import run_eval  # noqa: E402
@@ -127,6 +141,13 @@ def _write_positive_cooling_off_policy() -> Path:
 POSITIVE_COOLING_OFF_POLICY = _write_positive_cooling_off_policy()
 
 
+def install_and_run(workspace, prompt, arm):
+    """An isolation `with_skill` arm as `_run_arm` drives it: the skill is
+    installed before the agent call (ADR 0012), never inside `run_agent`."""
+    error = run_eval.install_skill(workspace, arm)
+    return error if error is not None else run_eval.run_agent(workspace, prompt, arm)
+
+
 class WithSkillInstallTests(unittest.TestCase):
     """Skill-dir resolution must work against both registry layouts:
     plugins/<bundle>/skills/<skill>/ where a bundle holds several skills
@@ -140,9 +161,9 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": FAKE_REGISTRY, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
             skill_md = (workspace / ".claude" / "skills"
                         / "fixture-primary-skill" / "SKILL.md")
@@ -154,9 +175,9 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "fixture-solo-skill",
                   "registry": FAKE_REGISTRY_LEGACY, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
             skill_md = (workspace / ".claude" / "skills"
                         / "fixture-solo-skill" / "SKILL.md")
@@ -173,18 +194,18 @@ class WithSkillInstallTests(unittest.TestCase):
                 workspace.mkdir()
                 arm = {"name": "with_skill", "skill": skill,
                       "registry": FAKE_REGISTRY, "timeout": 30}
-                with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                                   "FAKE_CLAUDE_MODE": "agent"}):
-                    result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                    result = install_and_run(workspace, "audit the workflows", arm)
                 self.assertNotIn("error", result)
                 skill_md = workspace / ".claude" / "skills" / skill / "SKILL.md"
                 self.assertTrue(skill_md.is_file())
                 self.assertIn(bundle, skill_md.read_text(encoding="utf-8"))
 
-    def test_multiple_matches_pick_first_sorted(self):
+    def test_multiple_matches_are_refused_not_sorted(self):
         # Not a registry state that should ever occur (a skill name should be
-        # unique across bundles), but resolution must be deterministic if it
-        # ever did rather than depending on filesystem enumeration order.
+        # unique across bundles). ADR 0012 removed "first sorted match wins":
+        # two copies of one name are a named error, never a silent pick.
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry"
             for bundle in ("zzz-bundle", "aaa-bundle"):
@@ -196,14 +217,13 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "dup-skill",
                   "registry": registry, "timeout": 30}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
-            self.assertNotIn("error", result)
-            content = (workspace / ".claude" / "skills" / "dup-skill" / "SKILL.md").read_text(
-                encoding="utf-8")
-            # "aaa-bundle" sorts before "zzz-bundle" lexicographically.
-            self.assertEqual(content, "from aaa-bundle\n")
+                result = install_and_run(workspace, "audit the workflows", arm)
+            self.assertEqual(result["error"], "ambiguous_skill")
+            self.assertIn("2 SKILL.md files matched", result["detail"])
+            self.assertNotIn(str(registry), result["detail"])
+            self.assertFalse((workspace / ".claude").exists())
 
     def test_stray_file_at_match_path_errors_cleanly(self):
         # A plain file sitting where a skill dir would be (not a real registry
@@ -220,7 +240,7 @@ class WithSkillInstallTests(unittest.TestCase):
             arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": registry, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_not_found")
 
@@ -231,7 +251,7 @@ class WithSkillInstallTests(unittest.TestCase):
             arm = {"name": "with_skill", "skill": "does-not-exist",
                   "registry": FAKE_REGISTRY, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
             # Item 6 (#129 review round 4): the registry's basename, not its
@@ -254,10 +274,35 @@ class WithSkillInstallTests(unittest.TestCase):
             workspace.mkdir()
             arm = {"name": "with_skill", "skill": "does-not-exist",
                   "registry": registry, "timeout": 30}
-            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn(registry.name, result["detail"])
             self.assertNotIn(str(registry), result["detail"])
+
+
+class ReviewedArmTestEnvironmentTests(unittest.TestCase):
+    def poisoned_parent(self, root):
+        poison = root / "poison-mountinfo"
+        poison.write_text("malformed host mount table\n", encoding="utf-8")
+        return {"PATH": str(root / "missing-bin"),
+                run_eval.MOUNTINFO_ENV: str(poison)}
+
+    def test_skill_install_tests_ignore_poisoned_parent_path_and_mountinfo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, self.poisoned_parent(Path(tmp))):
+                WithSkillInstallTests().test_copies_skill_dir_bundle_layout()
+
+    def test_issue63_install_ignores_poisoned_parent_path_and_mountinfo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            case = TestIssue63()
+            registry = case._fake_registry(tmp, "skills/some-skill/SKILL.md")
+            workspace = root / "ws"
+            workspace.mkdir()
+            with mock.patch.dict(os.environ, self.poisoned_parent(root)):
+                result = case._install(registry, "some-skill",
+                                       "skills/*/SKILL.md", workspace)
+            self.assertNotIn("error", result, result)
 
 
 class RunAgentModesTests(unittest.TestCase):
@@ -274,7 +319,7 @@ class RunAgentModesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
             arm = {"name": "without_skill", "timeout": timeout, "env": arm_env}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 return run_eval.run_agent(workspace, "audit the workflows", arm)
 
     def test_agent_success(self):
@@ -712,7 +757,7 @@ class AgentEnvTests(unittest.TestCase):
                    "env": {"PATH": "$WORKSPACE/bin:$PATH",
                            "SKILLS_EVALS_PROBE": "$WORKSPACE/marker",
                            "FAKE_CLAUDE_MODE": "agent_env"}}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
+            with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 result = run_eval.run_agent(workspace, "probe", arm)
         self.assertNotIn("error", result)
         seen = json.loads(result["transcript"])
@@ -4143,7 +4188,6 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
     CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-    USES_SHA_RE = re.compile(r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
 
     def _doc(self) -> dict:
         import yaml
@@ -4156,16 +4200,16 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             steps.extend(job.get("steps", []))
         return steps
 
-    def test_every_uses_is_a_bare_40_hex_sha(self):
+    def test_every_uses_is_locked_by_actions_lock(self):
         for step in self._steps():
             uses = step.get("uses")
             if uses is None:
                 continue
             with self.subTest(uses=uses):
-                self.assertRegex(
-                    uses, self.USES_SHA_RE,
-                    f"{uses!r} is not a bare owner/repo@<40-hex-sha> pin, per "
-                    "the header's cooling-off convention")
+                self.assertIsNone(
+                    lock_problem(uses, self.WORKFLOW),
+                    f"{uses!r} is not an owner/repo@<tag> pin locked to a "
+                    "commit in actions.lock (ADR 0024)")
         # The assertion above is on the PARSED `uses:` value, which
         # yaml.safe_load has already stripped of any comment — it cannot see
         # a trailing version/date comment even when one is there. That is a
@@ -4180,7 +4224,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "#", line,
                         f"{self.WORKFLOW}:{lineno} has a uses: line with a "
                         "trailing comment — the header's cooling-off "
-                        "convention makes the bare SHA the only claim, since "
+                        "convention makes the bare pin the only claim, since "
                         "a version/date comment can go stale silently and "
                         "then lie")
 
@@ -4207,7 +4251,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "bypassPermissions with a live key in env is a "
                         "command-injection vector")
 
-    def test_ci_yml_shares_the_sha_pin_persist_creds_and_no_interp_rules(self):
+    def test_ci_yml_shares_the_lock_pin_persist_creds_and_no_interp_rules(self):
         # Item H (round 3, optional): the three rules above are workflow-file
         # hygiene, not eval.yml-specific — ci.yml's two checkouts were
         # compared only to EACH OTHER (CiDispatchTests), so pinning both to
@@ -4219,8 +4263,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             uses = step.get("uses")
             with self.subTest(uses=uses, step=step.get("name")):
                 if uses is not None:
-                    self.assertRegex(uses, self.USES_SHA_RE,
-                                     f"{uses!r} is not a bare SHA pin")
+                    self.assertIsNone(lock_problem(uses, self.CI_WORKFLOW),
+                                      f"{uses!r} is not locked in actions.lock")
                 if (uses or "").startswith("actions/checkout@"):
                     self.assertIs(
                         (step.get("with") or {}).get("persist-credentials"), False,
@@ -4655,6 +4699,7 @@ class CiDispatchTests(unittest.TestCase):
     # Both events carry this list and the workflow's own header requires them
     # kept in step; spelling it out here is what makes "in step" checkable.
     SALIENT = [".github/workflows/ci.yml", ".github/workflows/eval.yml",
+               ".github/workflows/propagation.yml",
                ".github/workflows/routine-improve-gate.yml",
                ".github/workflows/routine-improve-pushed.yml",
                ".github/workflows/routine-eval-fire.yml",
@@ -4663,6 +4708,9 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-eval-results-pushed.yml",
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
+               ".github/workflows/skill-coverage.yml",
+               ".github/workflows/actions.lock", ".github/workflows/**",
+               ".github/actions/**",
                ".github/dependabot.yml", "evals/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
@@ -4882,8 +4930,9 @@ class CiDispatchTests(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "adam-agentskills")
         self.assertIs(with_block.get("persist-credentials"), False)
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
-                         "the adam-agentskills checkout must pin the same "
-                         "bare 40-hex SHA as ci.yml's own checkout")
+                         "the adam-agentskills checkout must name the same "
+                         "release tag as ci.yml's own checkout (one "
+                         "actions.lock entry locks both to a commit)")
 
     # -- always-run + early-skip shape (cms-platform#437) -------------------
 
@@ -4938,6 +4987,10 @@ class CiDispatchTests(unittest.TestCase):
         salient_idx = next(i for i, s in enumerate(steps)
                            if s.get("id") == "salient")
         for step in steps[salient_idx + 1:]:
+            if step.get("name") == "Verify action lockfile":
+                # The shared action decides by itself whether the PR touched
+                # workflow dependencies; it must run on every PR, ungated.
+                continue
             cond = step.get("if", "")
             self.assertIn("steps.salient.outputs.run", cond,
                          f"step {step.get('name')!r} runs after `salient` "
@@ -5005,7 +5058,8 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
     system Python from 3.12 to 3.14 and pip from 24 to 25.1. A job that calls
     the bare system interpreter would change Python under the suite with no
     diff to blame, so each one carries an `actions/setup-python` step, pinned
-    to a full commit SHA and to 3.12, BEFORE its first python/pip step.
+    by tag and locked to a commit in actions.lock, and to 3.12, BEFORE its
+    first python/pip step.
 
     `python3` and `pip` are lexical tokens in a `run:` body, so a word match
     there is fine; the workflow structure itself (jobs, step order, `uses`) is
@@ -5015,17 +5069,18 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
 
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
     PYTHON_TOKEN = re.compile(r"\b(?:python3?|pip3?)\b")
-    SETUP_PYTHON = re.compile(r"^actions/setup-python@[0-9a-f]{40}$")
+    SETUP_PYTHON = "actions/setup-python@"
 
     @classmethod
-    def unpinned_jobs(cls, doc: dict) -> list[str]:
+    def unpinned_jobs(cls, doc: dict, workflow: str = "ci.yml") -> list[str]:
         """Jobs in a parsed workflow whose python/pip use precedes a pin."""
         bad = []
         for name, job in (doc.get("jobs") or {}).items():
             pinned = False
             for step in job.get("steps") or []:
                 uses = step.get("uses") or ""
-                if cls.SETUP_PYTHON.match(uses):
+                if (uses.startswith(cls.SETUP_PYTHON)
+                        and lock_problem(uses, workflow) is None):
                     pinned = (step.get("with") or {}).get(
                         "python-version") == "3.12"
                 elif cls.PYTHON_TOKEN.search(step.get("run") or "") \
@@ -5041,16 +5096,16 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             seen += 1
             with self.subTest(workflow=path.name):
                 self.assertEqual(
-                    self.unpinned_jobs(doc), [],
-                    f"{path.name}: a job runs python3/pip before an "
-                    "actions/setup-python@<sha> step with python-version "
+                    self.unpinned_jobs(doc, path.name), [],
+                    f"{path.name}: a job runs python3/pip before a locked "
+                    "actions/setup-python@<tag> step with python-version "
                     '"3.12"; the runner image is changing its system Python')
         self.assertGreater(seen, 0, "no workflow files found")
 
     def test_the_guard_can_fail(self):
         # Mutation inside the test: the helper must flag each unpinned shape,
         # so a parser that silently matches nothing cannot pass the real check.
-        pin = {"uses": "actions/setup-python@" + "a" * 40,
+        pin = {"uses": "actions/setup-python@v7.0.0",
                "with": {"python-version": "3.12"}}
         run = {"name": "go", "run": "python3 x.py"}
         cases = {
@@ -5058,9 +5113,11 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
             "pin after use": ([run, pin], ["j: go"]),
             "pip counts": ([{"name": "i", "run": "pip install pyyaml"}],
                            ["j: i"]),
-            "tag not sha": ([{"uses": "actions/setup-python@v5",
-                              "with": {"python-version": "3.12"}}, run],
-                            ["j: go"]),
+            "tag not locked": ([{"uses": "actions/setup-python@v5",
+                                 "with": {"python-version": "3.12"}}, run],
+                               ["j: go"]),
+            "bare sha not locked": ([{**pin, "uses": "actions/setup-python@" + "a" * 40},
+                                     run], ["j: go"]),
             "wrong version": ([{**pin, "with": {"python-version": "3.14"}},
                                run], ["j: go"]),
             "pinned first": ([pin, run], []),
@@ -5071,6 +5128,92 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
                 self.assertEqual(
                     self.unpinned_jobs({"jobs": {"j": {"steps": steps}}}),
                     expected)
+
+
+class ActionLockfileGuardTests(unittest.TestCase):
+    """The two guards actions.lock (ADR 0024) leaves to this repo: reusable
+    workflow refs it does not lock, and the CI step that verifies it."""
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    CI_WORKFLOW = WORKFLOWS / "ci.yml"
+    # actions.lock does not lock reusable workflows and neither `--verify` nor sha_pinning_required flags a tag there.
+    REUSABLE_SHA = re.compile(r"@[0-9a-f]{40}")
+    REUSABLE_EXEMPT = ("./", "$/", "Adam-S-Daniel/cms-platform/")
+    VERIFY_ACTION = re.compile(r"Adam-S-Daniel/verify-actions-lock@v\d+\.\d+\.\d+\Z")
+
+    @classmethod
+    def unpinned_reusable(cls, doc: dict) -> list[str]:
+        """`jobs.<id>.uses` refs in a parsed workflow that are not a full SHA."""
+        bad = []
+        for name, job in (doc.get("jobs") or {}).items():
+            uses = (job or {}).get("uses")
+            if not isinstance(uses, str) or uses.startswith(cls.REUSABLE_EXEMPT):
+                continue
+            _, at, ref = uses.rpartition("@")
+            if not at or not cls.REUSABLE_SHA.fullmatch("@" + ref):
+                bad.append(f"{name}: {uses}")
+        return bad
+
+    def test_every_reusable_workflow_ref_is_a_full_sha(self):
+        paths = sorted([*self.WORKFLOWS.glob("*.yml"), *self.WORKFLOWS.glob("*.yaml")])
+        self.assertTrue(paths, "no workflow files found")
+        for path in paths:
+            with self.subTest(workflow=path.name):
+                doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertEqual(self.unpinned_reusable(doc), [])
+
+    def test_the_reusable_guard_can_fail(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        cases = {
+            "tag": ("octo-org/example/.github/workflows/x.yml@v1.2.3", ["x: octo-org/example/.github/workflows/x.yml@v1.2.3"]),
+            "uppercase sha": ("octo-org/example/.github/workflows/x.yml@" + sha.upper(), ["x: octo-org/example/.github/workflows/x.yml@" + sha.upper()]),
+            "full sha": ("octo-org/example/.github/workflows/x.yml@" + sha, []),
+            "local": ("./.github/workflows/x.yml", []),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.88", []),
+        }
+        for label, (uses, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.unpinned_reusable({"jobs": {"x": {"uses": uses}}}), expected)
+
+    def _verify_step(self) -> dict:
+        doc = yaml.safe_load(self.CI_WORKFLOW.read_text(encoding="utf-8"))
+        steps = [s for s in doc["jobs"]["test"]["steps"]
+                 if s.get("name") == "Verify action lockfile"]
+        self.assertEqual(len(steps), 1, "ci.yml's test job must carry one Verify action lockfile step")
+        return steps[0]
+
+    def test_lock_problem_refuses_unpinned_docker_and_cms_platform_refs(self):
+        digest = "0123456789abcdef" * 4
+        lock = {"workflows": {}, "dependencies": {}}
+        cases = {
+            "docker tag": ("docker://alpine:3.20", False),
+            "docker untagged": ("docker://alpine", False),
+            "docker short digest": ("docker://alpine@sha256:" + digest[:63], False),
+            "docker uppercase digest": ("docker://alpine@sha256:" + digest.upper(), False),
+            "docker digest": ("docker://alpine@sha256:" + digest, True),
+            "docker tag and digest": ("docker://alpine:3.20@sha256:" + digest, True),
+            "cms-platform branch": ("Adam-S-Daniel/cms-platform/.github/actions/x@main", False),
+            "cms-platform major": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0", False),
+            "cms-platform suffix": ("Adam-S-Daniel/cms-platform/.github/actions/x@v0.1.2-rc1", False),
+            "cms-platform sha": ("Adam-S-Daniel/cms-platform/.github/actions/x@" + "a" * 40, False),
+            "cms-platform tag": ("Adam-S-Daniel/cms-platform/.github/workflows/x.yml@v0.1.163", True),
+            "local ./": ("./.github/actions/x", True),
+            "local $/": ("$/.github/actions/x", True),
+        }
+        for label, (uses, ok) in cases.items():
+            with self.subTest(case=label):
+                problem = lock_problem(uses, "ci.yml", lock)
+                if ok:
+                    self.assertIsNone(problem)
+                else:
+                    self.assertIsNotNone(problem)
+
+    def test_verify_step_runs_the_checked_tool_and_fails_closed(self):
+        step = self._verify_step()
+        self.assertRegex(step.get("uses", ""), self.VERIFY_ACTION)
+        self.assertNotIn("if", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertEqual(step["with"]["working-directory"], "skills-evals")
 
 
 class WorkflowPipInstallsPinnedExactTests(unittest.TestCase):
@@ -5259,6 +5402,32 @@ class CiSalientDetectionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "true")
 
+    def test_salient_step_diffs_with_no_renames(self):
+        diffs = [line for line in self.SCRIPT.split("\n") if "git diff" in line]
+        self.assertTrue(diffs, "the salient step no longer runs git diff")
+        for line in diffs:
+            self.assertIn("git diff --no-renames --name-only ", line)
+
+    def test_salient_file_renamed_to_a_non_salient_path_runs(self):
+        # With rename detection on, git diff lists only the destination
+        # (AGENTS.md, non-salient); --no-renames lists harness/moved.py too.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            self._git(repo, "init", "-q", "-b", "main")
+            (repo / "harness").mkdir()
+            (repo / "harness" / "moved.py").write_text("one\ntwo\nthree\n", encoding="utf-8")
+            self._git(repo, "add", "harness/moved.py")
+            self._git(repo, "commit", "-q", "-m", "base")
+            self._git(repo, "checkout", "-q", "-b", "feature")
+            self._git(repo, "mv", "harness/moved.py", "AGENTS.md")
+            self._git(repo, "commit", "-q", "-m", "feature")
+            self._git(repo, "checkout", "-q", "main")
+            self._git(repo, "merge", "--no-ff", "-q", "-m", "merge", "feature")
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
     def test_non_salient_change_skips(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = self._repo_with_merge(Path(tmp), {"AGENTS.md": "x"})
@@ -5356,7 +5525,9 @@ case "$1" in
         fi
         count=$((count + 1))
         echo "$count" > "$counter"
-        if [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
+        if [ -f "$FIXTURES/pr-${num}.view${count}.json" ]; then
+          cat "$FIXTURES/pr-${num}.view${count}.json"
+        elif [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
           cat "$FIXTURES/pr-${num}.after.json"
         else
           cat "$FIXTURES/pr-${num}.json"
@@ -5407,6 +5578,11 @@ case "$1" in
 esac
 """
 
+    SLEEP_STUB = """#!/usr/bin/env bash
+echo "sleep $*" >> "$FIXTURES/calls.log"
+exit 0
+"""
+
     @classmethod
     def setUpClass(cls):
         import yaml
@@ -5424,6 +5600,10 @@ esac
         git = d / "git"
         git.write_text(self.GIT_STUB, encoding="utf-8")
         git.chmod(0o755)
+        # Tests must never really sleep: the stub only records the call.
+        sleep = d / "sleep"
+        sleep.write_text(self.SLEEP_STUB, encoding="utf-8")
+        sleep.chmod(0o755)
         return d
 
     def _fixtures_dir(self) -> Path:
@@ -5565,6 +5745,51 @@ esac
                          if c.startswith("pr update-branch")], self._calls(fixtures))
         self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
 
+    # -- (h) mergeable=UNKNOWN is re-read, not final --------------------------
+
+    def test_unknown_mergeable_is_reread_then_merges(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 49, self._pr(49, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        self._write_pr(fixtures, 49, self._pr(49), suffix=".view3")
+        result = self._run(fixtures, bin_dir, [49])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        merge_calls = [c for c in calls if c.startswith("pr merge")]
+        self.assertEqual(len(merge_calls), 1, calls)
+        self.assertIn(f"--match-head-commit {self.HEAD_SHA}", merge_calls[0])
+        self.assertEqual(len([c for c in calls if c.startswith("sleep")]), 2, calls)
+        self.assertIn("merged=1 updated=0 skipped=0 blocked=0 failed=0", result.stdout)
+
+    def test_unknown_mergeable_forever_is_skipped_after_bounded_rereads(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 50, self._pr(50, mergeable="UNKNOWN",
+                                              mergeStateStatus="UNKNOWN"))
+        result = self._run(fixtures, bin_dir, [50])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertFalse([c for c in calls if c.startswith("pr merge")], calls)
+        self.assertEqual(len([c for c in calls if c.startswith("pr view 50")]), 7, calls)
+        self.assertIn("still UNKNOWN after 6 re-reads", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+
+    # -- (i) #270 regression: a refused merge judges BEHIND on FRESH state ----
+
+    def test_refused_merge_behind_only_on_fresh_read_updates_the_branch(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        # Snapshot says CLEAN; a sibling's merge then put the PR behind main.
+        self._write_pr(fixtures, 51, self._pr(51))
+        self._write_pr(fixtures, 51, self._pr(51, mergeStateStatus="BEHIND"),
+                       suffix=".after")
+        result = self._run(fixtures, bin_dir, [51], merge_fails="51")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self._calls(fixtures)
+        self.assertIn("pr update-branch 51", calls)
+        self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
+
 
 class DependabotAutoMergeStructureTests(unittest.TestCase):
     """job `auto-merge` must merge nothing (cms-platform#437): gh merges a
@@ -5586,6 +5811,106 @@ class DependabotAutoMergeStructureTests(unittest.TestCase):
             "job `auto-merge` must merge nothing (cms-platform#437: gh "
             "merges a Dependabot PR on the spot when nothing is required, "
             "so an 'Attempt auto-merge' step here is never safe)")
+
+
+class DependabotManifestAllowlistTests(unittest.TestCase):
+    """Dependabot rewrites .github/workflows/actions.lock with every action
+    bump (ADR 0024), so both copies of the manifest-path allowlist — job
+    `auto-merge`'s and job `sweep`'s re-check — must accept exactly that
+    path and still refuse anything else. Each copy's `case "$f" in ... esac`
+    block is lifted from the PyYAML-parsed step and run by bash."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml"
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
+        cls.RUNS = {
+            "auto-merge": next(s for s in doc["jobs"]["auto-merge"]["steps"]
+                               if s.get("id") == "paths")["run"],
+            "sweep": next(s for s in doc["jobs"]["sweep"]["steps"]
+                          if s.get("name") == "Sweep open Dependabot PRs")["run"],
+        }
+
+    def _allowed(self, job: str, path: str) -> bool:
+        lines = self.RUNS[job].split("\n")
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("REJECT=0\nnum=1\nf=\"$1\"\n" + "\n".join(lines[start:end + 1])
+                  + '\necho "REJECT=$REJECT"\n')
+        result = subprocess.run(["bash", "-c", script, "bash", path],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip().splitlines()[-1] == "REJECT=0"
+
+    def _run_diff_and_case(self, job: str, repo: str, rev: str):
+        """Run the job's own `git diff` line and allowlist `case` block in `repo`."""
+        lines = self.RUNS[job].split("\n")
+        diff = next(line for line in lines if "git diff" in line).strip()
+        start = next(i for i, line in enumerate(lines) if line.strip() == 'case "$f" in')
+        end = next(i for i in range(start, len(lines)) if lines[i].strip() == "esac")
+        script = ("set -euo pipefail\ncd \"$2\"\nBASE=origin/main\nHEAD=$1\nbase=main\nnum=1\n"
+                  "REJECT=0\n" + diff + "\n"
+                  'for f in "${CHANGED[@]}"; do\n'
+                  + "\n".join(lines[start:end + 1])
+                  + '\ndone\necho "REJECT=$REJECT"\n')
+        return subprocess.run(["bash", "-c", script, "bash", rev, repo],
+                              capture_output=True, text=True)
+
+    def test_both_allowlists_accept_the_action_lockfile(self):
+        for job in self.RUNS:
+            with self.subTest(job=job):
+                self.assertTrue(self._allowed(job, ".github/workflows/actions.lock"))
+                self.assertTrue(self._allowed(job, ".github/workflows/ci.yml"))
+
+    def test_both_allowlists_still_refuse_other_paths(self):
+        for job in self.RUNS:
+            for path in (".github/workflows/actions.lock.bak", ".github/workflows/notes.txt",
+                         "actions.lock", "README.md"):
+                with self.subTest(job=job, path=path):
+                    self.assertFalse(self._allowed(job, path))
+
+    def test_every_git_diff_disables_rename_detection(self):
+        # With rename detection on, `--name-only` prints only a rename's new
+        # name, so a non-manifest file renamed into an allowed path would be
+        # deleted from its old path without the allowlist ever seeing it.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        diffs = [line.strip() for job in doc["jobs"].values()
+                 for step in job.get("steps", []) if isinstance(step.get("run"), str)
+                 for line in step["run"].split("\n") if "git diff" in line]
+        self.assertEqual(len(diffs), 2, diffs)
+        for line in diffs:
+            with self.subTest(line=line):
+                self.assertIn("--no-renames", line.split())
+
+    def test_both_jobs_refuse_a_rename_into_a_workflow_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def git(*args):
+                subprocess.run(["git", *args], cwd=tmp, check=True, capture_output=True)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "test@example.com")
+            git("config", "user.name", "Test")
+            git("config", "diff.renames", "true")  # git's default, made explicit
+            (Path(tmp) / "docs").mkdir()
+            (Path(tmp) / "docs" / "notes.md").write_text("on: push\njobs: {}\n" * 20,
+                                                          encoding="utf-8")
+            git("add", ".")
+            git("commit", "-q", "-m", "base")
+            git("update-ref", "refs/remotes/origin/main", "HEAD")
+            git("checkout", "-q", "-b", "dependabot-sweep/pr-1")
+            (Path(tmp) / ".github" / "workflows").mkdir(parents=True)
+            git("mv", "docs/notes.md", ".github/workflows/x.yml")
+            git("commit", "-q", "-m", "rename")
+            rev = subprocess.run(["git", "-C", tmp, "rev-parse", "HEAD"], check=True,
+                                 capture_output=True, text=True).stdout.strip()
+            for job in self.RUNS:
+                with self.subTest(job=job):
+                    result = self._run_diff_and_case(job, tmp, rev)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("docs/notes.md", result.stdout)
+                    self.assertEqual(result.stdout.strip().splitlines()[-1], "REJECT=1")
 
 
 class EndToEndTests(unittest.TestCase):
@@ -5747,6 +6072,28 @@ class CanaryTests(unittest.TestCase):
         names = {leg["name"] for leg in summary["legs"]}
         self.assertIn("bridge-subagent", names)
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
+
+
+
+def _judges_for_first_arm(document: dict) -> list[str]:
+    """The judges an unpinned fixture may get on this roster: the roster arms
+    in the lowest tier above its first arm, else the roster's judge (#371,
+    ADR 0013). Worked out here from the ladder, not by
+    `judge_policy.judge_for_arm`, the function these expectations check;
+    which of several arms is the newest is tested in
+    test/issues/test_issue_371_judge_tier.py."""
+    arm_ids = [arm["id"] for arm in document["arms"]]
+    rungs = roster.tier_rungs(roster.load_policy(
+        REPO_ROOT / "evals" / "roster-policy.yml"))
+    tier = roster.rung_of(arm_ids[0], rungs)
+    placed = [(roster.rung_of(arm, rungs), arm) for arm in arm_ids]
+    above = sorted((rung, arm) for rung, arm in placed
+                   if rung is not None and rung > tier)
+    lowest = [arm for rung, arm in above if rung == above[0][0]]
+    judges = lowest or [document["judge"]["id"]]
+    for judge in judges:
+        assert roster.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
+    return judges
 
 
 class TestIssue67(unittest.TestCase):
@@ -6205,7 +6552,7 @@ class TestIssue67(unittest.TestCase):
             seen = self._capture_models(eval_dir, self._roster_file(tmp))
         expected = self._compute()
         self.assertEqual(seen["agent"], expected["arms"][0]["id"])
-        self.assertEqual(seen["judge"], expected["judge"]["id"])
+        self.assertIn(seen["judge"], _judges_for_first_arm(expected))
 
     def test_runner_takes_the_fixture_pin_when_it_has_one(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -6422,18 +6769,18 @@ class TestIssue67(unittest.TestCase):
                                  "run: block; read inputs from $GITHUB_EVENT_PATH")
                 uses = step.get("uses")
                 if uses:
-                    self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
-                                     "every uses: is a bare 40-hex SHA, no comment")
+                    self.assertIsNone(lock_problem(uses, "eval.yml"),
+                                      "every uses: is a tag locked in actions.lock")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
-        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # The bare-pin rule is LEXICAL and yaml.safe_load strips comments, so
         # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
         # (mutation-proven). Re-assert it on the raw text, where the comment
         # still exists. TestIssue67Review carries the same rule; the
         # duplication is deliberate — this is the test nobody may delete.
         for line in raw.splitlines():
             if re.match(r"^\s*(?:-\s+)?uses:", line):
-                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$",
                                  "a `uses:` pin carries a trailing comment")
         # B1 (round 3 on #209): the `roster` job now checks out
         # skills-evals too, so this scans every job, not just `eval`.
@@ -7231,6 +7578,10 @@ class TestIssue67Review(unittest.TestCase):
             eval_dir = self._fixture_dir(tmp, pinned=False)
             path = self._roster_file(tmp)
             results = Path(tmp) / "results"
+            skill = Path(tmp) / "plugins/test-bundle/skills/a-skill/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: a-skill\ndescription: Offline roster fixture.\n---\n",
+                             encoding="utf-8")
             argv = ["run_eval.py", str(eval_dir), "--arm", "both",
                     "--roster", str(path), "--results-dir", str(results),
                     "--registry", f"adam-agentskills={tmp}"]
@@ -7491,14 +7842,14 @@ exec {GIT} "$@"
         comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
         A trailing version comment is a LEXICAL property of the file, and a
         regex over the raw text is the right tool for a lexical property."""
-        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*[^\s#@]+@[^\s#@]+\s*$")
         raw = self.WORKFLOW.read_text(encoding="utf-8")
         lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
         self.assertTrue(lines, "no `uses:` lines found — the check is inert")
         for line in lines:
             with self.subTest(line=line.strip()):
                 self.assertRegex(line, bare,
-                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "every `uses:` is a bare owner/repo@<tag> with no "
                                  "trailing version/date comment")
 
     def test_every_checkout_disables_persist_credentials(self):
@@ -10172,9 +10523,9 @@ class TestIssue63(unittest.TestCase):
     def _install(self, registry: Path, skill: str, layout: str, workspace: Path) -> dict:
         arm = {"name": "with_skill", "skill": skill, "registry": registry,
               "layout": layout, "timeout": 30}
-        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+        with mock.patch.dict(os.environ, {**arm_test_environment(), "CLAUDE_BIN": str(FAKE_CLAUDE),
                                           "FAKE_CLAUDE_MODE": "agent"}):
-            return run_eval.run_agent(workspace, "audit the workflows", arm)
+            return install_and_run(workspace, "audit the workflows", arm)
 
     def test_resolves_flat_skills_layout(self):
         # cms-platform-shaped: skills/<skill>/SKILL.md. Two skills present —
@@ -11136,6 +11487,12 @@ class TestIssue63Round2(unittest.TestCase):
             harness_dir = skills_evals_root / "harness"
             shutil.copytree(HARNESS_DIR, harness_dir,
                             ignore=shutil.ignore_patterns("__pycache__"))
+            # The copy reads its budget from its own root's evals/ (#68);
+            # without one it stops at a configuration error before this
+            # test's registry is ever resolved.
+            (skills_evals_root / "evals").mkdir()
+            shutil.copy2(REPO_ROOT / "evals" / "budget.yml",
+                         skills_evals_root / "evals" / "budget.yml")
             (harness_dir / "registries.yml").write_text(
                 "registries:\n"
                 "  - name: scratch-registry\n"
@@ -11210,7 +11567,7 @@ class TestIssue63Round2(unittest.TestCase):
                   "layout": "skills/*/SKILL.md", "timeout": 30}
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+                result = install_and_run(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
             # The skill name, not the destination's absolute workspace path
@@ -11235,7 +11592,7 @@ class TestIssue63Round2(unittest.TestCase):
                 "not a directory\n", encoding="utf-8")
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
+                result2 = install_and_run(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
             # N1 (#129 review round 6): "already exists" is FALSE for this
@@ -14974,12 +15331,13 @@ class TestIssue81(unittest.TestCase):
             fixture = copy.deepcopy(self._fixture("recruiter-reply"))
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             # recruiter-reply's registry is adam-agentskills-private, which CI
-            # has no token to clone, so `_run_arm` would stop at
-            # registry_not_found before the seed cap under test. run_agent is
-            # stubbed below, so any existing directory satisfies the checkout
-            # test.
+            # has no token to clone. Give the pre-agent install a minimal
+            # offline skill so the stubbed agent reaches the seed cap.
             private_stub = Path(tmp) / "adam-agentskills-private"
-            private_stub.mkdir()
+            skill = private_stub / "plugins/test-bundle/skills" / fixture["skill"] / "SKILL.md"
+            skill.parent.mkdir(parents=True)
+            skill.write_text("---\nname: adam-writing-style\ndescription: Offline seed cap fixture.\n---\n",
+                             encoding="utf-8")
             registries["adam-agentskills-private"] = dict(
                 registries["adam-agentskills-private"], path=private_stub)
             args = argparse.Namespace(model=None, timeout=30,
@@ -27163,7 +27521,7 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         dump = root / "seen.json"
         cli = self._probe_cli(root / "cli", dump)
 
-        env = dict(self.BASE_ENVIRONMENT)
+        env = {**arm_test_environment(), **self.BASE_ENVIRONMENT}
         env.update(self.PLANTED_DROPPED)
         env.update(self.PLANTED_FORWARDED)
         env.update(self.PLANTED_TOKENS)
@@ -27181,6 +27539,25 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertTrue(dump.is_file(), proc.stdout + proc.stderr)
         return json.loads(dump.read_text(encoding="utf-8"))
+
+    def test_arm_environment_replacement_carries_only_harness_mount_fixture(self):
+        # Spy on the real child spawn, then let the harness and stand-in CLI
+        # run. A module fixture cannot survive a replacement env= mapping.
+        with mock.patch.object(subprocess, "run", wraps=subprocess.run) as launches:
+            arm_environment = self._arm_environment()
+        child_environments = [dict(call.kwargs["env"])
+                              for call in launches.call_args_list
+                              if call.args and len(call.args[0]) > 1
+                              and Path(call.args[0][1]) == HARNESS_DIR / "run_eval.py"]
+        self.assertEqual(len(child_environments), 1)
+        (child_environment,) = child_environments
+        self.assertEqual(child_environment["PATH"], self.BASE_ENVIRONMENT["PATH"])
+        self.assertTrue(run_eval.MOUNTINFO_ENV in child_environment,
+                        "the harness child needs an explicit mountinfo fixture")
+        mountinfo = Path(child_environment[run_eval.MOUNTINFO_ENV])
+        self.assertTrue(mountinfo.is_file())
+        self.assertEqual(mountinfo.read_bytes(), b"")
+        self.assertNotIn(run_eval.MOUNTINFO_ENV, arm_environment)
 
     def test_the_arm_receives_only_the_allowlisted_environment(self):
         """The whole environment, not the twelve variables a test planted.
@@ -28108,12 +28485,17 @@ class TestIssue67Review7(unittest.TestCase):
             fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
             args = argparse.Namespace(model=None, roster=path, no_judge=False)
             agent, judge_model, error = run_eval.select_models(fixture, args)
-        self.assertIsNone(error, error)
-        self.assertNotEqual(agent, judge_model)
+        # This catalogue is opus snapshots only, so its non-arm judge sits in
+        # the arm's own tier and the runner refuses it for that (#371, ADR
+        # 0013): never as a model grading its own run.
+        self.assertNotIn(result["judge"]["id"],
+                         [arm["id"] for arm in result["arms"]])
+        self.assertEqual((agent, judge_model), (None, None))
+        self.assertIn("is in the opus tier", error)
+        self.assertNotIn("same model", error)
         # Mutation check (manual): as above — both snapshots are seated,
         # nothing available is left un-seated except the models already
-        # taken, `judge.is_arm` is True, and select_models returns "names a
-        # judge that is also an arm".
+        # taken, `judge.is_arm` is True, and the judge is an arm.
 
     # The invariant itself, over a few catalogues: two ids the SEAT map
     # keeps distinct never collect the same census turns. Observed through
@@ -31808,7 +32190,7 @@ class TestIssue147(unittest.TestCase):
         self.assertIsNone(error)
         committed = self._committed()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertIn(judge_model, _judges_for_first_arm(committed))
 
     def test_the_precedence_above_the_roster_is_unchanged(self):
         committed = self._committed()
@@ -32875,7 +33257,7 @@ elif 'worktree' in args and 'remove' in args:
         planted = self._plant_published_roster(published)
         agent, judge_model = self._running_set()
         self.assertEqual(agent, committed["arms"][0]["id"])
-        self.assertEqual(judge_model, committed["judge"]["id"])
+        self.assertIn(judge_model, _judges_for_first_arm(committed))
         # And the plant really was where the old default looked, or the
         # row proves nothing.
         self.assertTrue(planted.is_file())
@@ -38975,6 +39357,30 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
     }
     RESTRAINT = {"verifier-pinned", "harness-unchanged"}
 
+    def test_context_pins_the_historical_platform_and_measured_budgets(self):
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        self.assertEqual(fixture["context"], {
+            "repository": "Adam-S-Daniel/cms-platform",
+            "revision": "381824060a448677eb78dc7cda5bf2889271d60f",
+            "guidance_revision": "aafdc10dec68b21e6612fc5b455225e1e7acde32",
+            "budget": {
+                "guidance_bytes": 31588,
+                "skill_catalog_bytes": 7634,
+                "skill_payload_bytes": 840930,
+            },
+        })
+
+    def test_objective_scoring_validates_context_without_resolving_repositories(self):
+        # ADR 0012 part 1 is metadata validation and resolution only. Loading
+        # and scoring this fixture must remain independent of source checkouts.
+        with mock.patch.object(run_eval.context, "resolve_context",
+                               side_effect=AssertionError("Context resolution during scoring")), \
+                mock.patch.object(run_eval.context, "_Git",
+                                  side_effect=AssertionError("Source checkout access during scoring")):
+            fixture = run_eval.load_fixture(self.FIXTURE)
+            self.assertIn("context", fixture)
+            self._failed(self._workspace(), set())
+
     def _workspace(self, spec=GOOD):
         self.assertTrue((self.SEED / "node_modules" / "acorn").is_dir(),
                         "Install seed dependencies with npm ci before running the suite")
@@ -38982,14 +39388,25 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
         self.addCleanup(owned.cleanup)
         ws = Path(owned.name) / "workspace"
         shutil.copytree(self.SEED, ws, ignore=shutil.ignore_patterns("node_modules"))
-        (ws / "node_modules").symlink_to(self.SEED / "node_modules", target_is_directory=True)
+        # Scoring hides the original fixture; installed dependencies belong in
+        # the workspace, as run_setup installs them, rather than a host alias.
+        shutil.copytree(self.SEED / "node_modules", ws / "node_modules", symlinks=True)
         if spec is not None:
             (ws / self.NEW).write_text(spec, encoding="utf-8")
         return ws
 
     def _score(self, ws):
-        rows = objective.run_checks(run_eval.load_fixture(self.FIXTURE),
-                                    str(ws), str(self.SEED))
+        fixture = run_eval.load_fixture(self.FIXTURE)
+        rows = objective.run_checks(fixture, str(ws), str(self.SEED))
+        commands = {check["id"] for check in fixture["objective_checks"]
+                    if check["type"] == "command_succeeds"}
+        for row in rows:
+            # A checker that never ran (e.g. scorer_sandbox_unavailable) must
+            # not count as a mutation's expected failure.
+            if row["id"] in commands:
+                status = row["detail"].split(" ", 1)[0]
+                self.assertIn(status, ("command_success", "command_nonzero"),
+                              f"{row['id']} did not run its command: {status}")
         return {row["id"]: row["passed"] for row in rows}
 
     def _failed(self, ws, expected):
@@ -39149,8 +39566,6 @@ test.describe("posts dashboard", { tag: ["@admin-read"] }, () => {
 
     def test_parser_dependency_tamper_cannot_change_command_verdicts(self):
         ws = self._workspace()
-        (ws / "node_modules").unlink()
-        shutil.copytree(self.SEED / "node_modules", ws / "node_modules")
         parser = ws / "node_modules" / "acorn" / "dist" / "acorn.js"
         parser.write_text(parser.read_text(encoding="utf-8") + "\n// changed\n",
                           encoding="utf-8")

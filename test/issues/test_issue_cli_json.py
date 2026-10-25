@@ -56,6 +56,19 @@ def cli_reply(payload: object) -> subprocess.CompletedProcess:
                                        stdout=json.dumps(payload), stderr="")
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+
+
+@install_arm_test_environment
+def setUpModule() -> None:
+    pass
+
+
+def tearDownModule() -> None:
+    unittest.doModuleCleanups()
+
+
 class CliJsonShapeTests(unittest.TestCase):
     def test_dict_is_the_same_object(self):
         legacy = {"result": "done", "is_error": False, "usage": {"input_tokens": 2}}
@@ -308,7 +321,9 @@ class CliJsonConsumersTests(unittest.TestCase):
     def test_judge_reads_array_and_records_result_model_usage(self):
         text, models = self._judge([MESSAGE, RESULT])
         self.assertEqual(text, "done")
-        self.assertEqual(models, [{"modelUsage": RESULT["modelUsage"]}])
+        self.assertEqual(models, [{
+            "modelUsage": RESULT["modelUsage"], "num_turns": 1,
+            "usage": RESULT["usage"], "total_cost_usd": 0.25}])
         self.assertEqual(self._judge([RESULT, MESSAGE])[0], "done")
         with self.assertRaisesRegex(RuntimeError, "invalid JSON") as caught:
             self._judge(["private payload", RESULT])

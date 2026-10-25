@@ -134,7 +134,9 @@ def workspace(good=False):
 
 
 def scores(ws):
-    with mock.patch.object(commands, "_network_prefix", return_value=[]):
+    with mock.patch.object(commands, "_sandbox_prefix", return_value=([], "unavailable")), \
+            mock.patch.object(commands, "_run_sandboxed",
+                              side_effect=lambda prefix, *args: commands._run_command(*args)):
         return {row["id"]: row["passed"]
                 for row in objective.run_checks(fixture(), str(ws), str(SEED))}
 
@@ -469,7 +471,9 @@ have golangci-lint || exit 0
     def test_probe_rejects_an_unknown_scenario(self):
         script = fixture()["objective_checks"][2]["argv"][2]
         with workspace(good=True) as ws, \
-                mock.patch.object(commands, "_network_prefix", return_value=[]):
+                mock.patch.object(commands, "_sandbox_prefix", return_value=([], "unavailable")), \
+                mock.patch.object(commands, "_run_sandboxed",
+                                  side_effect=lambda prefix, *args: commands._run_command(*args)):
             ok, detail = commands.command_succeeds(
                 str(ws), [], argv=["bash", "-c", script, "hook-probe", "bogus"], timeout_s=60)
             self.assertFalse(ok)

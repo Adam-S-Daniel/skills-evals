@@ -113,9 +113,13 @@ evals/
   consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
     fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
     seed/                  # shared fake gh, startup-failure metadata, denied secret listing
-  github-actions-repo-settings/  # A/B eval, Class B: diagnose settings drift
-    fixture.yaml           # read-only two-repo diagnosis and objective checks
-    seed/                  # declared baseline, shared gh, and canned API responses
+  github-actions-repo-settings/  # A/B eval, Class A+B: onboard and diagnose settings
+    drift-diagnosis/
+      fixture.yaml         # read-only two-repo diagnosis and objective checks
+      seed/                # declared baseline, shared gh, and canned API responses
+    onboarding/
+      fixture.yaml         # draft: append a repo with inherited fleet defaults
+      seed/                # baseline, shared fake gh, canned API responses, README
   disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
     fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
     seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
@@ -172,6 +176,25 @@ test/
   fake-claude              # stand-in CLI used by the eval tests
   fake-claude-init         # stand-in CLI for the propagation probes (a simulator)
 ```
+
+## Skill coverage
+
+The [daily skill coverage workflow](.github/workflows/skill-coverage.yml) reads
+all four [registry layouts](harness/registries.yml) and publishes a redacted
+[latest census](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/coverage/latest.json)
+and [coverage badge data](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/badges/coverage.json)
+on `persistent/eval-results`. A missing private registry read credential fails
+the census before publication. Dispatch defaults to a dry run that uploads the
+redacted census artifact without writing to GitHub.
+
+Each scheduled run proposes up to three public GAPs as draft fixture PRs and
+tracking sub-issues under [the coverage backfill](https://github.com/Adam-S-Daniel/skills-evals/issues/62).
+These are TODO skeletons, not evaluated fixtures; drafts remain GAPs in the
+census until an incident, measured context limits, objective checks, and
+red/green evidence have been reviewed. A backlog above three gaps can take
+multiple daily runs. The [registry-side graduation and touch gate](https://github.com/Adam-S-Daniel/adam-agentskills/issues/66)
+is a separate dependency before [automatic coverage](https://github.com/Adam-S-Daniel/skills-evals/issues/60)
+can be considered complete.
 
 ## Board snapshot
 
@@ -942,6 +965,32 @@ roster that is present and unreadable is a defect in this repository rather
 than a fact about an unprotected branch — the run exits 5 and publishes
 nothing.
 
+## Coverage census
+
+The [coverage job](https://github.com/Adam-S-Daniel/skills-evals/blob/main/.github/workflows/propagation.yml)
+reads each configured registry and the committed fixtures daily. Its badge
+shows `N covered · M skipped · K gap · date`. A skill is covered when a fixture
+names it; that count does not assert the fixture is runnable or that paired
+context was delivered. The report also counts draft fixtures, declarations of
+`context:`, missing context, and unproven guidance revisions. Context delivery
+is not yet verified by the harness.
+
+Scheduled runs publish a complete census to `persistent/eval-results` as
+[latest JSON](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json),
+[timestamped JSON](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/eval-results/coverage),
+and the [markdown summary](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.md),
+with the [Shields endpoint](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/badges/coverage.json).
+A GAP remains visible in
+those files and does not block publication. If any registry is missing or
+empty, the job uploads an unresolved report and fails the scheduled run;
+it publishes no fleet totals or numeric badge. Pull requests, pushes, and manual dispatches get
+the same safe report and a warning when a checkout is unavailable. The private
+registry is checked out only on schedule with the optional
+read-only GitHub App (repository variable `REGISTRY_READ_APP_CLIENT_ID`, secret `REGISTRY_READ_APP_PEM`); its skill names, bundle names,
+skip reasons, and paths never appear in the public report.
+
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fcoverage.json)](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json)
+
 ## Quality badge (real weekly run)
 
 `.github/workflows/eval.yml` runs the full `workflow-path-audit` A/B eval every
@@ -994,7 +1043,12 @@ actually ran:
 | `model_tokens` | per model id in the agent result's `modelUsage` (subagents' models included), its `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` and `canonical_model`; `{}` when the agent call never produced a result |
 | `cross_model` | `{"model", "canonical_model", "complete", "dropped", "other_share", "threshold", "flagged"}` — whether that accounting is complete, and the share of its tokens spent on models other than the arm's own `--model`, flagged above 0.5; `null` when unknown (see DESIGN.md, "Per-model tokens") |
 
-`report.md` carries one `- Harness:` line naming the version and each arm's
+| `run` | how the run was paid for and where it ran: `billing` (`api`, `subscription`), `runner` (`actions`, `routine`, `workstation`), `location` (`cloud`, `local`), `id`, `session_id`, `harness_commit`, `cli_version`. Each of the first five comes from `--run-billing`, `--run-runner`, `--run-location` or `--run-id` when passed, else from what the environment observes, and `source` says which (`flag`, `env:<NAME>`, `null`). A field that could not be read is `null` with an entry in `reasons` (see DESIGN.md, "Run and usage") |
+| `usage` | what the run cost: its start and end, how far the account meter moved over the run (`meter_delta`, labeled `"confounded": true, "scope": "account-wide"`, with `meter` counting the snapshots behind it), what else was running (`concurrent_runs`, `other_account_activity`, `outer_session`), and under `measured` this summary's own calls with tokens and cost split into `agent`, `judge` and `guard`, plus the meter snapshots those calls printed (`measured.meter`, each stored once, in its trial's summary) |
+
+`report.md` carries one `- Run:` line (billing, runner, location, id, start
+and end), one `- Account meter` line (which says how many calls at the end of the run it does not
+cover), and one `- Harness:` line naming the version and each arm's
 models. The propagation probe's `--json` run record carries, per arm,
 `harness_version` and `model` from that arm's init event.
 

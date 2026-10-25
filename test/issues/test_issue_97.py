@@ -72,6 +72,10 @@ DISCOVERY_ENV = "SKILLS_EVALS_DISCOVERY_DIR"
 
 _MEMORY_BEFORE: str | None = None
 
+sys.path.insert(0, str(TEST_DIR))
+from arm_test_env import install_arm_test_environment  # noqa: E402
+from lockfile_pins import lock_problem  # noqa: E402
+
 
 def _watched_user_memory() -> Path:
     override = os.environ.get(MEMORY_ENV)
@@ -92,6 +96,7 @@ def _memory_fingerprint(path: Path) -> str:
         return f"unreadable: {type(exc).__name__}"
 
 
+@install_arm_test_environment
 def setUpModule() -> None:
     """Second net under test/run_tests.py's run-wide guard.
 
@@ -107,13 +112,16 @@ def setUpModule() -> None:
 
 
 def tearDownModule() -> None:
-    path = _watched_user_memory()
-    after = _memory_fingerprint(path)
-    if after != _MEMORY_BEFORE:
-        raise AssertionError(
-            f"{path} changed while this module ran ({_MEMORY_BEFORE} -> "
-            f"{after}) — no test in this file may write the fleet's user "
-            "memory; every arm gets a scratch config dir")
+    try:
+        path = _watched_user_memory()
+        after = _memory_fingerprint(path)
+        if after != _MEMORY_BEFORE:
+            raise AssertionError(
+                f"{path} changed while this module ran ({_MEMORY_BEFORE} -> "
+                f"{after}) — no test in this file may write the fleet's user "
+                "memory; every arm gets a scratch config dir")
+    finally:
+        unittest.doModuleCleanups()
 
 
 # A guidance checkout the payload tests build from scratch: base.md with a
@@ -959,6 +967,28 @@ class TestIssue97(unittest.TestCase):
         # suite widens this to let the fake CLI's mode variable through, and a
         # widening left behind would silently un-scrub every arm.
         self.assertEqual(guidance.EXTRA_PASSTHROUGH, ())
+
+    def test_hosted_passthrough_is_exactly_the_remote_flag(self):
+        # Same floor as PASSTHROUGH: a name added here reaches every guidance
+        # arm, so the exact tuple is the assertion.
+        self.assertEqual(guidance.HOSTED_PASSTHROUGH, ("CLAUDE_CODE_REMOTE",))
+
+    def test_remote_flag_reaches_the_arm_only_when_the_host_sets_it(self):
+        # CLI 2.1.305 refuses a hosted arm without CLAUDE_CODE_REMOTE ("Not
+        # logged in"); the rest of the host's CLAUDE_* names stay out.
+        scratch = Path(tempfile.mkdtemp(prefix="hosted-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        kwargs = dict(workspace=scratch / "ws", home=scratch / "home",
+                      tmpdir=scratch / "tmp", config_dir=scratch / "config")
+        hosted = {"CLAUDE_CODE_REMOTE": "true",
+                  "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/example/token"}
+        with mock.patch.dict(os.environ, hosted):
+            env = guidance.agent_env(**kwargs)
+        self.assertEqual(env["CLAUDE_CODE_REMOTE"], "true")
+        self.assertNotIn("CLAUDE_SESSION_INGRESS_TOKEN_FILE", env)
+        with mock.patch.dict(os.environ, {}):
+            os.environ.pop("CLAUDE_CODE_REMOTE", None)
+            self.assertNotIn("CLAUDE_CODE_REMOTE", guidance.agent_env(**kwargs))
 
     # ------------------------------------------------------------------
     # Items 3-6 — a whole guidance run through the fake CLI
@@ -2413,7 +2443,7 @@ class TestIssue97(unittest.TestCase):
     # Every source listed for a site must verify, so dropping any one of the
     # three predicates turns this test red and names the site.
     HARNESS_TIMEOUT_SINKS = {
-        ("harness/scorers/commands.py", "_network_prefix", "subprocess.run",
+        ("harness/scorers/commands.py", "_sandbox_prefix", "subprocess.run",
          "PROBE_TIMEOUT_S"): (1, (("constant", "PROBE_TIMEOUT_S"),)),
         ("harness/scorers/commands.py", "_stop_process", "<popen>.wait",
          "CLEANUP_TIMEOUT_S"): (1, (("constant", "CLEANUP_TIMEOUT_S"),)),
@@ -2454,6 +2484,8 @@ class TestIssue97(unittest.TestCase):
         # #343: all workspace Git commands and config parsing share this
         # process sink. Its parameter is checked here before any Git spawn.
         ("harness/workspace_git.py", "_invoke", "subprocess.run", "timeout"):
+            (1, (("sink", "timeout"),)),
+        ("harness/workspace_git.py", "_wait", "<popen>.wait", "timeout"):
             (1, (("sink", "timeout"),)),
     }
 
@@ -2961,7 +2993,7 @@ class TestIssue97(unittest.TestCase):
     # test refuses any sink the walk finds that has no driver, so a new sink
     # cannot arrive with no direct-call coverage.
     SINK_DRIVERS = {
-        ("harness/scorers/commands.py", "_network_prefix"):
+        ("harness/scorers/commands.py", "_sandbox_prefix"):
             ("const", "PROBE_TIMEOUT_S"),
         ("harness/scorers/commands.py", "_stop_process"):
             ("const", "CLEANUP_TIMEOUT_S"),
@@ -2981,6 +3013,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
         ("harness/workspace_git.py", "_invoke"): ("param", "timeout"),
+        ("harness/workspace_git.py", "_wait"): ("param", "timeout"),
     }
 
     # These former process sinks now call the trusted Git boundary. Keep
@@ -3043,8 +3076,8 @@ class TestIssue97(unittest.TestCase):
                 kwargs["fixture"] = {knob: value, "setup": "true"}
             elif kind == "arm":
                 kwargs["arm"] = {"name": "without_skill", knob: value}
-        if name == "_network_prefix":
-            return fn({})
+        if name == "_sandbox_prefix":
+            return fn(tmp, tmp, {})
         if name == "_stop_process":
             # Never signal a real process in this direct-call driver.
             with mock.patch("os.killpg"):
@@ -3072,6 +3105,8 @@ class TestIssue97(unittest.TestCase):
             return fn(tmp, "p", kwargs["arm"])
         if rel == "harness/workspace_git.py" and name == "_invoke":
             return fn(["version"], cwd=tmp, home=tmp, **kwargs)
+        if rel == "harness/workspace_git.py" and name == "_wait":
+            return fn(mock.MagicMock(), **kwargs)
         if name == "_nested_repo_diff":
             return fn(tmp, [])
         if name == "_run_judge_cli":
@@ -3249,6 +3284,10 @@ class TestIssue97(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         shutil.copytree(HARNESS_DIR, tmp / "harness",
                         ignore=shutil.ignore_patterns("__pycache__"))
+        # The copy reads its budget from its own root's evals/ (#68);
+        # without one it stops at a configuration error before any sink.
+        (tmp / "evals").mkdir()
+        shutil.copy2(REPO_ROOT / "evals" / "budget.yml", tmp / "evals" / "budget.yml")
         for rel, old, new in replacements:
             path = tmp / "harness" / rel
             source = path.read_text(encoding="utf-8")
@@ -3309,8 +3348,8 @@ class TestIssue97(unittest.TestCase):
         # zero-CLI-calls.
         ("deliver via an unvalidated deliver_timeout_s", "guidance",
          ("run_eval.py",
-          'dest_dir=config if delivery == "user" else workspace)',
-          'dest_dir=config if delivery == "user" else workspace,\n'
+          'dest_dir=config if channel == "user" else workspace)',
+          'dest_dir=config if channel == "user" else workspace,\n'
           '            timeout=fixture.get("deliver_timeout_s", 2200000))'),
          "deliver_timeout_s", "deliver"),
     )
@@ -4331,7 +4370,7 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(with_block.get("path"), "_agent-guidance",
                          "side by side, so the harness's sibling default resolves")
         self.assertIs(with_block.get("persist-credentials"), False)
-        self.assertRegex(checkout["uses"], r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(checkout["uses"], EVAL_WORKFLOW))
         run = self._step_named("Run the eval")["run"]
         self.assertNotIn("--registry _agent-guidance", run,
                          "_agent-guidance is not a skill registry")
@@ -4613,8 +4652,7 @@ class TestIssue97(unittest.TestCase):
                          "_agent-guidance")
         self.assertIs((guidance_checkout["with"] or {}).get("persist-credentials"),
                       False)
-        self.assertRegex(guidance_checkout["uses"],
-                         r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        self.assertIsNone(lock_problem(guidance_checkout["uses"], CI_WORKFLOW))
 
     # ------------------------------------------------------------------
     # A5 — an EMPTY `arms:` is a fixture error, not the default pair
@@ -4759,8 +4797,9 @@ class TestIssue97(unittest.TestCase):
     DEFAULT_GUARD_BUDGET_S = _harness_default(
         _RUN_EVAL, ("_run_guidance_arm",), "fixture.get('guard') or {}",
         "timeout_s")
+    # Both arm functions judge through `_call_judge` (#371), the one site.
     DEFAULT_JUDGE_BUDGET_S = _harness_default(
-        _RUN_EVAL, _ARM_FNS, "judge_cfg", "timeout_s")
+        _RUN_EVAL, ("_call_judge",), "judge_cfg", "timeout_s")
     # The per-arm `setup:` hook (`run_setup`, skill arms only).
     DEFAULT_SETUP_BUDGET_S = _harness_default(
         _RUN_EVAL, ("run_setup",), "fixture", "setup_timeout_s")

@@ -6,8 +6,9 @@ so the agent never sees them. At scoring time the final workspace is copied
 to a scratch directory, the overlay is laid over the copy (replacing whatever
 the agent left at those paths), and each selected test runs as its own
 process with `command_succeeds`' isolation (ADR 0006): argv only, no shell, a
-constant environment, a timeout no greater than 60 s, best-effort network
-isolation, and no program output in the detail. The agent's own workspace is
+constant environment, a timeout no greater than 60 s, mandatory filesystem
+and PID isolation, mandatory network isolation, and no program output in the
+detail. The original fixture directory and final workspace stay hidden. The agent's own workspace is
 never written.
 
 Each `fail_to_pass` entry must pass, and so must each `pass_to_pass` entry.
@@ -195,30 +196,30 @@ def _lay_overlay(scratch: Path, files: list[tuple[Path, str]]) -> None:
 
 
 def _run_one(argv: list[str], scratch: Path, root: Path, index: int,
-             timeout_s, prefix: list[str] | None, python_deps: bool = False) -> tuple[str, list[str]]:
-    """One selected test in a fresh constant environment; its status word."""
+             timeout_s, read_denied, python_deps: bool = False) -> tuple[str, str]:
+    """One selected test in a mandatory sandbox and fresh environment."""
     env_root = root / f"env-{index}"
     env_root.mkdir(mode=0o700)
-    env = commands._environment(env_root, scratch)
+    env = commands._environment(env_root, scratch, read_denied)
     if python_deps:
         private_bin, rest = env["PATH"].split(os.pathsep, 1)
         env["PATH"] = os.pathsep.join((private_bin, str(scratch / ".fixture-python" / "bin"), rest))
-    if prefix is None:
-        prefix = commands._network_prefix(env)
+    prefix, network = commands._sandbox_prefix(scratch, env_root, env, read_denied)
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
-            code = commands._run_command(prefix + argv, scratch, env, stdout,
-                                         stderr, timeout_s)
+            code = commands._run_sandboxed(prefix, argv, scratch, env, stdout,
+                                           stderr, timeout_s)
         except OSError:
-            return "spawn_failed", prefix
+            return "spawn_failed", network
         except subprocess.TimeoutExpired:
-            return "timeout", prefix
-    return ("pass" if code == 0 else f"exit={code}"), prefix
+            return "timeout", network
+    return ("pass" if code == 0 else f"exit={code}"), network
 
 
 def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
                fail_to_pass=None, pass_to_pass=None,
-               timeout_s=DEFAULT_TIMEOUT_S, seed=None, _python_deps=False) -> tuple[bool, str]:
+               timeout_s=DEFAULT_TIMEOUT_S, seed=None, _python_deps=False,
+               *, read_denied=None) -> tuple[bool, str]:
     """Pass only when every selected hidden test exits 0 over the final workspace.
 
     `seed` is the fixture's seed directory, injected by `run_checks`; the
@@ -259,20 +260,25 @@ def repo_tests(workspace: str, paths: list[str], overlay=None, argv=None,
         if executable is None:
             return False, "repo_tests_invalid: argv[0] is not an allowed executable"
         command = [executable, *config["argv"][1:]]
-        prefix = None
+        denied = [*(read_denied or ()), Path(seed).resolve().parent, final]
+        network = "isolated"
         counts, failed, index = {}, [], 0
         for group in ("fail_to_pass", "pass_to_pass"):
             passed = 0
             for test in config[group]:
-                status, prefix = _run_one(command + test, scratch, root, index,
-                                          config["timeout_s"], prefix, _python_deps)
+                try:
+                    status, test_network = _run_one(command + test, scratch, root, index,
+                                                    config["timeout_s"], denied, _python_deps)
+                except commands.ScorerSandboxUnavailable as exc:
+                    return False, str(exc)
+                if test_network == "unavailable":
+                    network = "unavailable"
                 index += 1
                 if status == "pass":
                     passed += 1
                 else:
                     failed.append(f"{' '.join(test)} ({status})")
             counts[group] = f"{passed}/{len(config[group])}"
-    network = "isolated" if prefix else "unavailable"
     detail = (f"repo_tests fail_to_pass={counts['fail_to_pass']} "
               f"pass_to_pass={counts['pass_to_pass']} network={network}")
     if failed:

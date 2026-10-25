@@ -121,6 +121,12 @@ class ContextTests(unittest.TestCase):
         self.git(repo, "commit", "-qm", "fixture", "--allow-empty")
         return self.git(repo, "rev-parse", "HEAD")
 
+    def pin_guidance(self, files):
+        """Commit guidance and publish it as origin/main, so the pin is eligible."""
+        sha = self.commit(self.guidance, files)
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", sha)
+        return sha
+
     def resolve(self, metadata=None, repositories=None):
         return self.ctx.resolve_context(metadata or self.metadata,
                                         repositories or self.repositories)
@@ -389,7 +395,7 @@ class ContextTests(unittest.TestCase):
         files = {f"agents-md/sections/{name}.md": data for name, data in sections}
         files["agents-md/eval-coverage.yml"] = yaml.safe_dump([
             {"id": name, "file": f"agents-md/sections/{name}.md"} for name, _ in sections]).encode()
-        self.metadata["guidance_revision"] = self.commit(self.guidance, files)
+        self.metadata["guidance_revision"] = self.pin_guidance(files)
         self.metadata["revision"] = self.commit(self.consumer, {
             "AGENTS.md": managed(BASE, sections),
             ".agents-sync.yml": b"sections: [python, docker]\n"})
@@ -399,12 +405,12 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(len(frozen.manifest["guidance"]["files"]), 3)
 
     def test_guidance_mismatch_is_unproven(self):
-        self.metadata["guidance_revision"] = self.commit(self.guidance, {"agents-md/base.md": b"new"})
+        self.metadata["guidance_revision"] = self.pin_guidance({"agents-md/base.md": b"new"})
         self.error("guidance_unproven", self.resolve)
 
     def test_optin_section_mismatch_with_identical_base_is_unproven(self):
         section = (("python", b"## Python\nShipped section.\n"),)
-        self.metadata["guidance_revision"] = self.commit(self.guidance, {
+        self.metadata["guidance_revision"] = self.pin_guidance({
             "agents-md/sections/python.md": b"## Python\nDifferent section.\n",
             "agents-md/eval-coverage.yml": b"- id: python\n  file: agents-md/sections/python.md\n"})
         self.metadata["revision"] = self.commit(self.consumer, {
@@ -452,7 +458,7 @@ class ContextTests(unittest.TestCase):
 
     def test_historical_full_base_allows_absent_manifest_and_hook_without_optins(self):
         self.git(self.guidance, "rm", "agents-md/eval-coverage.yml", ".claude/hooks/fleet-memory.sh")
-        self.metadata["guidance_revision"] = self.commit(self.guidance, {})
+        self.metadata["guidance_revision"] = self.pin_guidance({})
         self.git(self.consumer, "rm", ".claude/hooks/fleet-guidance.md")
         block = managed(BASE, mode="full").replace(b"<!-- Mode: full -->\n", b"")
         self.metadata["revision"] = self.commit(self.consumer, {"AGENTS.md": block})
@@ -483,7 +489,7 @@ class ContextTests(unittest.TestCase):
         self.error("missing_section", self.resolve)
 
     def test_guidance_manifest_shape_is_named(self):
-        self.metadata["guidance_revision"] = self.commit(self.guidance, {"agents-md/eval-coverage.yml": b"{}"})
+        self.metadata["guidance_revision"] = self.pin_guidance({"agents-md/eval-coverage.yml": b"{}"})
         self.error("invalid_guidance_manifest", self.resolve)
 
     def test_find_guidance_revision_uses_exact_bytes_not_latest(self):
@@ -510,6 +516,26 @@ class ContextTests(unittest.TestCase):
         result = self.ctx.find_guidance_revision(CONSUMER, self.revision, self.repositories)
         self.assertEqual(result.revision, self.guidance_sha)
         self.assertEqual(result.matching_revisions, 1)
+
+    def test_resolve_applies_the_eligibility_rule_not_only_the_byte_check(self):
+        # Identical bytes, but off the default branch or newer than the context
+        # commit: the byte check alone would accept both pins.
+        self.git(self.guidance, "checkout", "-q", "--detach", self.guidance_sha)
+        branch = self.commit(self.guidance, {"branch.txt": b"branch only"})
+        self.error("guidance_unproven", lambda: self.resolve(
+            {**self.metadata, "guidance_revision": branch}))
+        with mock.patch.dict(os.environ, GIT_COMMITTER_DATE="2027-01-01T00:00:00+00:00"):
+            self.env["GIT_COMMITTER_DATE"] = "2027-01-01T00:00:00+00:00"
+            newer = self.commit(self.guidance, {"unrelated.txt": b"new"})
+        self.env["GIT_COMMITTER_DATE"] = "2026-01-01T00:00:00+00:00"
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", newer)
+        self.error("guidance_unproven", lambda: self.resolve(
+            {**self.metadata, "guidance_revision": newer}))
+        self.assertEqual(self.resolve().manifest["guidance"]["revision"], self.guidance_sha)
+
+    def test_resolve_without_a_default_branch_is_unproven(self):
+        self.git(self.guidance, "update-ref", "-d", "refs/remotes/origin/main")
+        self.error("guidance_unproven", self.resolve)
 
     def test_find_guidance_revision_missing_default_branch_is_unproven(self):
         self.git(self.guidance, "update-ref", "-d", "refs/remotes/origin/main")

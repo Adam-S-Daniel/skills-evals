@@ -67,6 +67,11 @@ import run_eval  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 TS = "20260716T070000Z"
+# The PATH and mount table every arm here runs with, explicit: the arm's read
+# fence is built from both, so no result depends on the host's (a WSL PATH
+# under /mnt/c, its mountinfo). An empty mount table names no alias.
+TEST_PATH = os.pathsep.join(dict.fromkeys(
+    (str(Path(sys.executable).parent), "/usr/local/bin", "/usr/bin", "/bin")))
 DATE = "2026-07-16"
 
 # One check that passes on the untouched seed and one that passes only when
@@ -155,17 +160,21 @@ print(json.dumps(payload))
 def _child_env(tmp: Path, **extra: str) -> dict:
     """The WHOLE environment of a child process a test starts.
 
-    Built, not inherited: only `PATH` comes from the operator, so no
+    Built, not inherited: nothing comes from the operator, so no
     `$EVAL_ROSTER`, `$SKILLS_EVALS_REGISTRIES`, `$AGENTSKILLS_DIR` or
-    `$CLAUDE_BIN` of theirs can decide a result. `HOME` and `TMPDIR` are
-    inside `tmp`. Git's auto-maintenance is off: the harness commits in a
+    `$CLAUDE_BIN` of theirs can decide a result. `PATH` is `TEST_PATH` and
+    the mount table an empty fixture, so the arm's read fence does not
+    depend on the host's either. `HOME` and `TMPDIR` are inside `tmp`. Git's auto-maintenance is off: the harness commits in a
     workspace it then deletes, and a detached `git maintenance` would race
     that (test/run_tests.py, `without_git_auto_maintenance`).
     """
     home, scratch = tmp / "home", tmp / "scratch"
     home.mkdir(exist_ok=True)
     scratch.mkdir(exist_ok=True)
-    env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(home),
+    mountinfo = tmp / "mountinfo"
+    mountinfo.write_text("", encoding="utf-8")
+    env = {"PATH": TEST_PATH, run_eval.MOUNTINFO_ENV: str(mountinfo),
+           "HOME": str(home),
            "TMPDIR": str(scratch), "LANG": "C.UTF-8",
            "PYTHONDONTWRITEBYTECODE": "1",
            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto",
@@ -194,6 +203,25 @@ def _tree(root: Path) -> list[str]:
     """Every file under `root`, as sorted relative POSIX paths."""
     return sorted(p.relative_to(root).as_posix()
                   for p in root.rglob("*") if p.is_file())
+
+
+def _stable_bytes(path: Path) -> bytes:
+    """A result file's bytes without what differs from one run to the next
+    whatever the harness does: a summary's `run` and `usage` blocks (#370:
+    the harness commit, wall-clock times) and the report's two lines made
+    from them. Both blocks are a summary's last two keys, so the rest
+    re-serializes to the bytes the harness wrote before them. Also without
+    `judge_selection` (#371), the key before those two, which names the judge
+    chosen and is tested in test_issue_371_judge_tier.py."""
+    if path.name == "summary.json":
+        summary = json.loads(path.read_text(encoding="utf-8"))
+        for block in ("run", "usage", "judge_selection"):
+            summary.pop(block)
+        return json.dumps(summary, indent=2).encode("utf-8")
+    if path.name == "report.md":
+        return b"".join(line for line in path.read_bytes().splitlines(keepends=True)
+                        if not line.startswith((b"- Run: ", b"- Account meter")))
+    return path.read_bytes()
 
 
 class _HarnessCase(unittest.TestCase):
@@ -290,7 +318,9 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
     bake in `n`, which this test appends itself). Per-model token reporting
     and explicit effort later added `"effort": null` to the `harness` block
     and the `model_tokens` and `cross_model` fields, regenerated with the
-    command below and with `n` removed. Its run directory is named for the second that
+    command below and with `n` removed. The `run` and `usage` blocks (#370)
+    are not in it: they name the harness commit and the wall clock, so the
+    comparison leaves them out (`_stable_bytes`). Its run directory is named for the second that
     command ran in, which is the timestamp these tests inject. To regenerate
     it, repeat that command from a checkout of the commit to compare against.
 
@@ -328,7 +358,7 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
         summaries = 0
         for rel in _tree(GOLDEN_RESULTS):
             golden = (GOLDEN_RESULTS / rel).read_bytes()
-            written = (self.results / rel).read_bytes()
+            written = _stable_bytes(self.results / rel)
             with self.subTest(file=rel):
                 if not rel.endswith("/summary.json"):
                     self.assertEqual(written, golden)
@@ -349,8 +379,8 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
         self.assertEqual(_tree(explicit), _tree(default))
         for rel in _tree(default):
             with self.subTest(file=rel):
-                self.assertEqual((explicit / rel).read_bytes(),
-                                 (default / rel).read_bytes())
+                self.assertEqual(_stable_bytes(explicit / rel),
+                                 _stable_bytes(default / rel))
 
     def test_the_documented_objective_only_invocation_still_works(self):
         # The issue's own verifier line, on the fixture the scheduled run
@@ -440,8 +470,8 @@ class TestIssue66NestedFixtures(_HarnessCase):
         self.assertEqual(_tree(by_flag), _tree(by_leaf))
         for rel in _tree(by_leaf):
             with self.subTest(file=rel):
-                self.assertEqual((by_flag / rel).read_bytes(),
-                                 (by_leaf / rel).read_bytes())
+                self.assertEqual(_stable_bytes(by_flag / rel),
+                                 _stable_bytes(by_leaf / rel))
 
     def test_two_fixtures_run_one_at_a_time_keep_separate_results(self):
         # The defect: both wrote results/<skill>/<ts>/<arm>/summary.json, so
@@ -955,8 +985,10 @@ class TestIssue66Trials(_HarnessCase):
     def test_both_arms_are_trialed_and_aggregated_separately(self):
         self._script(agents=[{"write": "marker.txt"}] * 2 + [{}] * 2,
                      judges=[{"overall": 9.0}] * 2 + [{"overall": 4.0}] * 2)
+        # `--judge always`: the arms differ, so the default would skip the
+        # judge (#371); this test is about aggregating its scores.
         proc = self._run(self.fixture_dir, "--arm", "both", "--trials", "2",
-                         "--timestamp", TS, "--registry",
+                         "--judge", "always", "--timestamp", TS, "--registry",
                          f"adam-agentskills={self._registry(self.SKILL)}")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         got = {}

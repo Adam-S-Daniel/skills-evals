@@ -58,6 +58,8 @@ GATE = WORKFLOWS / "routine-improve-gate.yml"
 SIGNAL = WORKFLOWS / "routine-improve-pushed.yml"
 RESULTS_SIGNAL = WORKFLOWS / "routine-eval-results-pushed.yml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
 
 import improve_gate as gate  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
@@ -657,7 +659,6 @@ class PrBodyTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Workflow shape, from the parsed YAML.
 
-PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 PUSH_TARGET = re.compile(r"\bpush\s+(?:[^\n]*?\s)?origin\s+([^\s;]+)")
 
 
@@ -848,7 +849,7 @@ class WorkflowShapeTests(unittest.TestCase):
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
 
-    def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
+    def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
             if other not in (GATE, SIGNAL):
@@ -859,7 +860,7 @@ class WorkflowShapeTests(unittest.TestCase):
             lines = text.splitlines()
             for node in uses_nodes(yaml.compose(text)):
                 with self.subTest(path=path.name, uses=node.value):
-                    self.assertRegex(node.value, PIN)
+                    self.assertIsNone(lock_problem(node.value, path))
                     rest = lines[node.end_mark.line][node.end_mark.column:]
                     self.assertEqual(rest.strip(), "",
                                      "a pin carries no trailing comment")
@@ -884,7 +885,7 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIs(checkouts[0]["with"]["persist-credentials"], False)
 
     def test_the_guards_can_fail(self):
-        self.assertIsNone(PIN.match("actions/checkout@v4"))
+        self.assertIsNotNone(lock_problem("actions/checkout@v4", GATE))
         self.assertEqual(PUSH_TARGET.findall("git -C t push origin HEAD:main"),
                          ["HEAD:main"])
         bad = {"jobs": {"j": {"steps": [{"env": {"T": "${{ secrets.X }}"}}]}}}

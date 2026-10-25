@@ -14,6 +14,19 @@
 # 2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
 # Runtime JS and LICENSE keep upstream bytes; package.json retains only
 # required runtime fields so no unrelated package metadata enters the seed.
+# The deployed context uses a representative adamdaniel.ai consumer revision,
+# because this task models a consumer performing the bump. Its measured
+# guidance/catalog/payload bytes were 25099/14017/882787; limits are each
+# ceil(measured * 1.25). The v0.1.104 instrument above is pinned independently
+# from this deployed-context snapshot.
+context:
+  repository: Adam-S-Daniel/adamdaniel.ai
+  revision: ddf1c9929fb4e9087bc9c9920213a478f8cbdda4
+  guidance_revision: b0abbe7dc97eca0a2624bfa9695b0d98b774cef2
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 17522
+    skill_payload_bytes: 1103484
 # The issue pins an agent model, recorded as fixture data below. Its effort
 # request has no supported fixture key and is therefore not represented.
 skill: platform-release-and-bump

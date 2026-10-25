@@ -1,7 +1,7 @@
 """Hidden repository tests (`repo_tests`), seed agent-context stripping and
 lockfile `deps:` — the fixtures DESIGN's "smallest next PR 2" for real-work
 fixtures. Offline: no network, no real npm, no CLI; the network-namespace
-probe is mocked off so every run is the same on any host.
+sandbox boundary is mocked so behavior checks are the same on any host.
 """
 
 from __future__ import annotations
@@ -80,9 +80,13 @@ class _Base(unittest.TestCase):
         checker = self.fixture_dir / "checker"
         checker.mkdir()
         (checker / "test_calc.py").write_text(HIDDEN_TEST, encoding="utf-8")
-        network = mock.patch.object(commands, "_network_prefix", return_value=[])
+        network = mock.patch.object(commands, "_sandbox_prefix", return_value=([], "unavailable"))
         network.start()
         self.addCleanup(network.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def workspace(self, source: str = BUGGY) -> Path:
         ws = self.root / "final"

@@ -56,13 +56,15 @@ SIGNAL = WORKFLOWS / "routine-scaffold-pushed.yml"
 REAL_WORK = REPO_ROOT / "evals" / "real-work"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
 
 import answer_leak  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import mine_real_work  # noqa: E402
 import scaffold_real_work as scaffold  # noqa: E402
+from scorers import commands  # noqa: E402
 
-PIN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@]+)?@[0-9a-f]{40}$")
 MARKER = "do-not-echo-this-marker"
 
 GIT_ENV = {
@@ -210,9 +212,13 @@ class _Case(unittest.TestCase):
         env = mock.patch.dict(os.environ, GIT_ENV)
         env.start()
         self.addCleanup(env.stop)
-        net = mock.patch("scorers.commands._network_prefix", return_value=[])
+        net = mock.patch("scorers.commands._sandbox_prefix", return_value=([], "unavailable"))
         net.start()
         self.addCleanup(net.stop)
+        sandbox = mock.patch.object(commands, "_run_sandboxed",
+                                    side_effect=lambda prefix, *args: commands._run_command(*args))
+        sandbox.start()
+        self.addCleanup(sandbox.stop)
 
     def git(self, repo: Path, *args) -> str:
         return subprocess.run(["git", "-C", str(repo), *args], check=True,
@@ -1436,7 +1442,7 @@ class WorkflowShapeTests(unittest.TestCase):
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
 
-    def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
+    def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
             if other not in (GATE, SIGNAL):
@@ -1447,7 +1453,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(len(found), 3)
         for node in found:
             with self.subTest(uses=node.value):
-                self.assertRegex(node.value, PIN)
+                self.assertIsNone(lock_problem(node.value, GATE))
                 self.assertEqual(lines[node.end_mark.line][node.end_mark.column:].strip(), "",
                                  "a pin carries no trailing comment")
                 self.assertIn(node.value, pinned)
@@ -1559,7 +1565,7 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_the_guards_can_fail(self):
         # Negative controls on the helpers the shape tests lean on.
-        self.assertIsNone(PIN.match("actions/checkout@v4"))
+        self.assertIsNotNone(lock_problem("actions/checkout@v4", GATE))
         bad = {"jobs": {"j": {"steps": [{"run": "echo ${{ inputs.x }}"}]}}}
         self.assertIn("${{", run_blocks(bad)[0][1])
         self.assertIsNotNone(re.search(r"\bgh\s+pr\s+(merge|review|close|ready)\b",

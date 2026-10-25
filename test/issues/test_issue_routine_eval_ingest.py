@@ -51,8 +51,13 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 INGEST = WORKFLOWS / "routine-eval-ingest.yml"
 SIGNAL = WORKFLOWS / "routine-eval-results-pushed.yml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "harness"))
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
 
+import cli_json  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
+import run_eval  # noqa: E402
 
 RUN_ID = "20261006T194256Z-f944ea"
 BRANCH = f"claude/eval-{RUN_ID}"
@@ -411,6 +416,122 @@ class AcceptTests(GitCase):
                 ingest.parse_result_path(rel)
 
 
+class HarnessWriterTests(GitCase):
+    """The validator accepts what the harness's own writers produce, so a
+    field the harness adds cannot drift past the ingest schema unnoticed
+    (2026-10-20: `complete` and the `*_incomplete` event flags did)."""
+
+    def test_accepts_files_the_harness_writes(self):
+        messages = [
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "toolu_1", "name": "Bash",
+                 "input": {"command": "curl https://example.com/" + "a" * 400}},
+                {"type": "tool_use", "id": "not an id", "name": "Read",
+                 "input": {"file_path": "README.md"}}]}},
+            {"type": "user", "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_1",
+                 "is_error": True, "content": "b" * 500}]}}]
+        tool_trace = cli_json.bounded_tool_trace([cli_json.tool_events(messages)])
+        self.assertIn("complete", tool_trace)
+        flags = {key for event in tool_trace["events"] for key in event}
+        self.assertTrue({"input_incomplete", "output_incomplete"} <= flags)
+        self.assertIn(None, [event["id"] for event in tool_trace["events"]])
+        quiet = {k: v for k, v in os.environ.items()
+                 if k not in ("GITHUB_ACTIONS", "GITHUB_RUN_ID",
+                              "CLAUDE_CODE_REMOTE_SESSION_ID")}
+        results = self.repo / ingest.SOURCE_ROOT / RUN_ID
+        with mock.patch.dict(os.environ, quiet, clear=True):
+            for arm in ("with_skill", "without_skill"):
+                run_eval._write_summary(
+                    results, "writing-adrs", arm, STAMP, None, None, None, None,
+                    None, extra={"n": 1},
+                    harness_version="2.1.296 (Claude Code)",
+                    tool_trace=tool_trace)
+        self.write({f"{ingest.SOURCE_ROOT}/{RUN_ID}/writing-adrs/{STAMP}/"
+                    "report.md": REPORT.encode()})
+        sha = self.commit({})
+        self.assertEqual(self.validate(expect=sha)["files"], "3")
+
+
+class InPlaceSemanticConsistencyTests(unittest.TestCase):
+    """The trusted ingester checks that arm proofs agree with the frozen context."""
+
+    @staticmethod
+    def record(role="without"):
+        guidance_digest = "a" * 64
+        return {
+            "pairing": "in_place", "role": role,
+            "arm": "with_skill" if role == "with" else "without_skill",
+            "skill": "sample",
+            "context": {
+                "repository": "owner/consumer", "revision": "1" * 40,
+                "digest": "2" * 64, "lock_digest": None, "sources": [],
+                "guidance": {"revision": "3" * 40, "digest": guidance_digest,
+                             "bytes": 100, "sections": [],
+                             "hook_digest": "4" * 64},
+                "measurements": {"guidance_bytes": 100,
+                                 "skill_catalog_bytes": 0,
+                                 "skill_payload_bytes": 0}},
+            "context_subject": {
+                "kind": "skill", "registry": "owner/registry",
+                "bundle": "bundle", "skill": "sample", "action": "added",
+                "deployed_digest": None, "tested_digest": "5" * 64,
+                "bytes": 1},
+            "arm_context": {
+                "skills": 1 if role == "with" else 0,
+                "skills_digest": "6" * 64, "guidance_bytes": 100,
+                "guidance_digest": guidance_digest,
+                "subject_present": role == "with"}}
+
+    def check(self, doc):
+        key = ("guidance/sample" if doc["context_subject"]["kind"] == "guidance"
+               else "sample")
+        ingest.check_in_place(doc, "summary.json", {"key": key})
+
+    @classmethod
+    def guidance_record(cls, role="without"):
+        doc = cls.record(role)
+        doc["arm"] = "with_guidance" if role == "with" else "without_guidance"
+        doc["subject"] = "guidance"
+        doc["section"] = "sample"
+        doc.pop("skill")
+        doc["context_subject"] = {
+            "kind": "guidance", "section": "sample", "file": "AGENTS.md",
+            "heading": "## Sample", "action": "added",
+            "start_char": 0, "end_char": 0, "start_byte": 0, "end_byte": 0,
+            "bytes": 0, "deployed_digest": None, "tested_digest": "5" * 64,
+            "tested_bytes": 10}
+        doc["arm_context"]["guidance_bytes"] = 111 if role == "with" else 100
+        if role == "with":
+            doc["arm_context"]["guidance_digest"] = "7" * 64
+        return doc
+
+    def test_accepts_consistent_added_subject_arms(self):
+        self.check(self.record("with"))
+        self.check(self.record("without"))
+        self.check(self.guidance_record("with"))
+        doc = self.guidance_record("without")
+        self.check(doc)
+
+    def test_rejects_added_subject_without_arm_guidance_change(self):
+        doc = self.guidance_record("without")
+        doc["arm_context"]["guidance_digest"] = "7" * 64
+        with self.assertRaisesRegex(ingest.Rejected, "guidance"):
+            self.check(doc)
+
+    def test_rejects_missing_in_place_hook_digest(self):
+        doc = self.guidance_record()
+        doc["context"]["guidance"]["hook_digest"] = None
+        with self.assertRaisesRegex(ingest.Rejected, "hook digest"):
+            self.check(doc)
+
+    def test_rejects_with_skill_arm_with_no_installed_skills(self):
+        doc = self.record("with")
+        doc["arm_context"]["skills"] = 0
+        with self.assertRaisesRegex(ingest.Rejected, "installed skill"):
+            self.check(doc)
+
+
 class RejectPathTests(GitCase):
 
     def test_rejects_a_modified_main_file(self):
@@ -690,6 +811,16 @@ class RejectContentTests(GitCase):
                 "call": 0, "kind": "tool_result", "id": "t", "is_error": False,
                 "output": "", "output_chars": 0, "subagent": False,
                 "run": "x"}])),
+            ("complete not a bool", trace(complete="yes")),
+            ("complete with omitted", trace(complete=True, omitted_events=1)),
+            ("input_incomplete not true", trace(events=[{
+                "call": 0, "kind": "tool_use", "id": "t", "name": "Bash",
+                "input": "", "input_chars": 0, "input_incomplete": False,
+                "subagent": False}])),
+            ("event: unexpected", trace(events=[{
+                "call": 0, "kind": "tool_use", "id": "t", "name": "Bash",
+                "input": "", "input_chars": 0, "output_incomplete": True,
+                "subagent": False}])),
         ]
         for pattern, doc in cases:
             with self.subTest(pattern=pattern):
@@ -806,7 +937,6 @@ class PlaceTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Workflow shape, from the parsed YAML.
 
-PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 PUSH_TARGET = re.compile(r"\bpush\s+origin\s+([^\s;]+)")
 
 
@@ -878,7 +1008,7 @@ class WorkflowShapeTests(unittest.TestCase):
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
 
-    def test_every_uses_is_a_bare_sha_already_pinned_elsewhere(self):
+    def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
             if other not in (INGEST, SIGNAL):
@@ -889,7 +1019,7 @@ class WorkflowShapeTests(unittest.TestCase):
             lines = text.splitlines()
             for node in uses_nodes(yaml.compose(text)):
                 with self.subTest(path=path.name, uses=node.value):
-                    self.assertRegex(node.value, PIN)
+                    self.assertIsNone(lock_problem(node.value, path))
                     rest = lines[node.end_mark.line][node.end_mark.column:]
                     self.assertEqual(rest.strip(), "",
                                      "a pin carries no trailing comment")
@@ -925,7 +1055,7 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_the_guards_can_fail(self):
         # Negative controls on the helpers the shape tests lean on.
-        self.assertIsNone(PIN.match("actions/checkout@v4"))
+        self.assertIsNotNone(lock_problem("actions/checkout@v4", INGEST))
         self.assertEqual(PUSH_TARGET.findall("git push origin HEAD:main"),
                          ["HEAD:main"])
         bad = {"jobs": {"j": {"steps": [{"run": "echo ${{ inputs.x }}"}]}}}
