@@ -1,0 +1,401 @@
+{
+  "skill": "browser-testing",
+  "arm": "without_skill",
+  "timestamp": "20261025T204923Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.9212005999999999,
+    "num_turns": 13,
+    "duration_ms": 134224,
+    "usage": {
+      "input_tokens": 20,
+      "cache_creation_input_tokens": 71400,
+      "cache_read_input_tokens": 620203,
+      "output_tokens": 11294,
+      "output_tokens_details": {
+        "thinking_tokens": 5905
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 71400,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1075,
+          "cache_read_input_tokens": 95443,
+          "cache_creation_input_tokens": 803,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 803
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "new-spec",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "preview-link-assertion",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "admin-read",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "single-entry-after-publish",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "base-collection-guard",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "config-origin",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "consumer-spec",
+      "passed": false,
+      "detail": "scorer_sandbox_unavailable exit=1"
+    },
+    {
+      "id": "verifier-pinned",
+      "passed": true,
+      "detail": "check-spec.js: digest matches"
+    },
+    {
+      "id": "harness-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gitignore, e2e/admin-tag-lint.test.js, e2e/base-collections-guard-registry.test.js, e2e/base-collections-guards.js, e2e/base.js, e2e/cms-posts-list-runtime.spec.js, e2e/cms-preview-url.spec.js, e2e/cms-smoke.spec.js, e2e/site-capabilities.js, e2e/spec-ast.js, e2e/status-dropdown-selector.test.js, e2e/workflow-yaml-utils.js, package-lock.json, package.json, playwright.config.js, theme/admin/posts-list-enhance.js)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 7,
+        "rationale": "The spec does the real association: it stubs the batched /pulls read with an open PR whose head ref is cms/posts/<slug> for a specific live post, scopes to the `li` card containing that post's entry anchor, locates the 'preview draft' link by role, and asserts the full href `https://preview-pr4242.<CMS_APEX>/blog/<urlSlug>/` plus target=_blank. State is established through a mocked Decap/GitHub path (page.route stubs, injected token, Refresh click) rather than a bare href check, and it correctly chooses a Published-ON post with no DRAFT/Scheduled suffix. Gaps: it never exercises the Published-OFF branch (no assertion that the explanatory span appears instead of a link), the DRAFT-suffix detection and entry-slug-to-head-ref mapping rely on unverified assumptions about the dashboard's rendering, and nothing ran in a browser so the whole flow is unconfirmed."
+      },
+      {
+        "name": "Routing",
+        "score": 9,
+        "rationale": "Tagged `@admin-read` at describe level with no project-name skip, so both admin projects can run it at native viewport. It is read-only: every GitHub call is fulfilled by page.route and the only write is a localStorage token. The posts guard is a direct `test.skip(!cap.keepsBaseCollection(SITE_ROOT, 'posts'), ...)` in the form the lint expects. Navigation uses a relative `/admin/index-local.html` against the configured baseURL and never publishes or moves entry-to-entry. Minor: hard-coded 30s/15s timeouts and the dashboard-ready wait are plausible but untested."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The staged diff adds exactly one file, the new consumer spec; no vendored harness files, example specs, or PLATFORM_META_SPECS entries are touched, and it reuses the harness's shared `slugify` and `site-capabilities` instead of copying them."
+      },
+      {
+        "name": "Explanation",
+        "score": 9,
+        "rationale": "The reply states up front that the test has not been run in a browser and why (no @playwright/test, no Decap server), lists precisely what did run (node --check, seven check-spec modes, plus two deliberate mutations to prove the checker can fail), flags that `./public-content` could not be loaded locally, and gives the exact follow-up command and projects. It explains what the test proves and the Published-ON design choice. Small inconsistency: it says the file isn't committed while the diff shows it staged, which is technically true but slightly muddled."
+      }
+    ],
+    "overall": 8.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1",
+    "claude-haiku-5-5"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 20,
+      "output_tokens": 11294,
+      "cache_read_input_tokens": 620203,
+      "cache_creation_input_tokens": 71400,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/cms-platform",
+    "revision": "381824060a448677eb78dc7cda5bf2889271d60f",
+    "digest": "d9e47ef3c26fd6baf583408bb3fe41e089d15ba5703f4f262502aba395b696e5",
+    "lock_digest": "ed6ec8ac96c50bc4b86518f6c2186b17aa2cca92de2ac45c932376a1d3595fdb",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "766357e272ae831750d6ff1b7cad5082624c1499",
+        "digest": "c126cc0f76faa4950111957d7b17cd183453fae74baa36524c6b720e3055018d",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "c211a6b46d2cb52bb9a4a68c4d5ea885268dd2c548a99f147e3bb17a114e51d3"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "22322e9d82c31c2654863cfb1a65d01054832f0fd3d319681157f38ed4dc324f"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "aafdc10dec68b21e6612fc5b455225e1e7acde32",
+      "digest": "3768211cb4921f6dbe2d9baa6fba892734292ebe54b152dea82a2b70116e224a",
+      "bytes": 25270,
+      "sections": [],
+      "hook_digest": "39149a888083bcd2cc6e4d365d4931fa0aabc9622cfa3aa236cf2c877545b05a"
+    },
+    "measurements": {
+      "guidance_bytes": 25270,
+      "skill_catalog_bytes": 6107,
+      "skill_payload_bytes": 672744
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/cms-platform",
+    "bundle": "cms-platform",
+    "skill": "browser-testing",
+    "action": "added",
+    "deployed_digest": null,
+    "tested_digest": "6502d1d6b0adea7ee342caa05487200f00ec7926c17f096217c6472c62ffd4c8",
+    "bytes": 39113
+  },
+  "arm_context": {
+    "skills": 9,
+    "skills_digest": "a5ba154dd6824ae9022d4da9c6318ca395b098c49b5b1ee5be928fb11c589c80",
+    "guidance_bytes": 25270,
+    "guidance_digest": "3768211cb4921f6dbe2d9baa6fba892734292ebe54b152dea82a2b70116e224a",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261025T204756Z-115f57",
+    "session_id": "cse_01CHbJNshTeXDGMFPu9T8A3a",
+    "harness_commit": "9b45041fa7ae6592fb64e0cc663c9b99ddd1b276",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-25T20:49:23Z",
+    "ended_at": "2026-10-25T21:12:09Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-25T20:49:31.734Z",
+      "to_at": "2026-10-25T21:04:09.734Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.1,
+          "to": 0.14,
+          "delta": 0.04,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.44,
+          "to": 0.44,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01CHbJNshTeXDGMFPu9T8A3a",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-25T21:04:04Z",
+      "ended_at": "2026-10-25T21:12:09Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-25T21:04:04Z",
+          "ended_at": "2026-10-25T21:06:20Z",
+          "duration_ms": 135379,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-25T21:11:37Z",
+          "ended_at": "2026-10-25T21:12:09Z",
+          "duration_ms": 31808,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-25T21:04:09.734Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1792965600,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.14,
+                  "resetsAt": 1792965600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.44,
+                  "resetsAt": 1793034000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 135379,
+        "num_turns": 13,
+        "cost_usd": 0.9212005999999999,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 20,
+            "output_tokens": 11294,
+            "cache_read_input_tokens": 620203,
+            "cache_creation_input_tokens": 71400,
+            "cost_usd": 0.9212005999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 71400
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 31808,
+        "num_turns": 2,
+        "cost_usd": 0.32271505,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 34,
+            "output_tokens": 2102,
+            "cache_read_input_tokens": 68297,
+            "cache_creation_input_tokens": 9975,
+            "cost_usd": 0.32201425
+          },
+          "claude-haiku-5-5": {
+            "input_tokens": 5468,
+            "output_tokens": 308,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0007007999999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 9975
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
