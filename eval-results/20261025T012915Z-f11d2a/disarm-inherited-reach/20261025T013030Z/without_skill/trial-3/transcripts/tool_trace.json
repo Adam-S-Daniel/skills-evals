@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dy49oqtB6oFAGEGTxxZYyc",
+      "name": "Bash",
+      "input": "pwd && git status && echo \"---\" && ls -la && echo \"---scripts---\" && find . -iname \"reaper*\" -not -path \"*<path>*\" && echo \"---checkout---\" && ls -la checkout 2><path> | head -50",
+      "input_chars": 181,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dy49oqtB6oFAGEGTxxZYyc",
+      "is_error": false,
+      "output": "<path>\nwarning: unable to access '<path>': Permission denied\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\tscratch-wt/\n\nnothing a...",
+      "output_chars": 1786,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013BJVyN5vqvoH8XGuSCaPiq",
+      "name": "Bash",
+      "input": "echo \"=== checkout/.git/config ===\" && cat checkout/.git/config && echo \"=== checkout remotes ===\" && git -C checkout remote -v && echo \"=== reaper.sh ===\" && cat checkout/scripts/reaper.sh && echo \"=...",
+      "input_chars": 235,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013BJVyN5vqvoH8XGuSCaPiq",
+      "is_error": false,
+      "output": "=== checkout/.git/config ===\n[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = <path>\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n=== checkout remotes ===\norigin\t<path> (fetc...",
+      "output_chars": 2099,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gzeyu9a6izG17AEvLCgDA5",
+      "name": "Bash",
+      "input": "echo \"=== scratch-wt listing ===\" && ls -la scratch-wt && echo \"=== scratch-wt/.git ===\" && cat scratch-wt/.git 2><path> || ls -la scratch-wt/.git && echo \"=== git worktree list (from checkout) ===\" &...",
+      "input_chars": 376,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gzeyu9a6izG17AEvLCgDA5",
+      "is_error": false,
+      "output": "=== scratch-wt listing ===\ntotal 24\ndrwxr-xr-x 3 root root 4096 Oct 25 01:40 .\ndrwxr-xr-x 7 root root 4096 Oct 25 01:41 ..\n-rw-r--r-- 1 root root   77 Oct 25 01:40 .git\n-rw-r--r-- 1 root root    8 Oct 25 01:40 .gitattributes\n-rw-r--r-- 1 root root  333 Oct 25 01:40 README.md\ndrwxr-xr-x 2 root root 4...",
+      "output_chars": 831,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YLFHXSUnPjptWtbkpV23xJ",
+      "name": "Bash",
+      "input": "find / -iname \"*disarm-inherited-reach*\" 2><path> -not -path \"*<path>*\"",
+      "input_chars": 74,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YLFHXSUnPjptWtbkpV23xJ",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dmp74hAxv3kJjgLrw3WFZ2",
+      "name": "Bash",
+      "input": "echo \"=== alternates ===\" && cat checkout/.git/objects/info/alternates 2><path> || echo \"none\" && echo \"=== checkout/.git worktrees dir ===\" && find checkout/.git/worktrees -maxdepth 2 && echo \"=== ho...",
+      "input_chars": 416,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dmp74hAxv3kJjgLrw3WFZ2",
+      "is_error": false,
+      "output": "=== alternates ===\nnone\n=== checkout/.git worktrees dir ===\ncheckout/.git/worktrees\ncheckout/.git/worktrees/scratch-wt\ncheckout/.git/worktrees/scratch-wt/gitdir\ncheckout/.git/worktrees/scratch-wt/refs\ncheckout/.git/worktrees/scratch-wt/logs\ncheckout/.git/worktrees/scratch-wt/commondir\ncheckout/.git/...",
+      "output_chars": 789,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CayVwmBBX3nasuRBN83bN2",
+      "name": "Bash",
+      "input": "echo \"WORKSPACE=${WORKSPACE:-<unset>}\"",
+      "input_chars": 38,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CayVwmBBX3nasuRBN83bN2",
+      "is_error": false,
+      "output": "WORKSPACE=<path>",
+      "output_chars": 43,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013za3qfeQnuXGLdwRPVqEj1",
+      "name": "Bash",
+      "input": "set -euo pipefail\ncd <path>\nTEST_ROOT=\"$TMPDIR/reaper-destructive-test\"\nrm -rf \"$TEST_ROOT\"\nmkdir -p \"$TEST_ROOT\"\ncp -a checkout/ \"$TEST_ROOT/throwaway\"\necho \"=== copy made at $TEST_ROOT/throwaway ===...",
+      "input_chars": 1135,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013za3qfeQnuXGLdwRPVqEj1",
+      "is_error": false,
+      "output": "=== copy made at <path> ===\n=== verify remotes are gone ===\n(empty above = good)\n=== verify git-dir is inside the copy, not checkout/prod ===\n<path>\n=== config has no remote section ===\n[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n=== no alternates (no ...",
+      "output_chars": 486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E8HfyXaLK1iqn5iPs79h9w",
+      "name": "Bash",
+      "input": "set -euo pipefail\nTEST_ROOT=\"$TMPDIR/reaper-destructive-test\"\ncd \"$TEST_ROOT/throwaway\"\necho \"=== before ===\"\nls -la\ngit log --oneline -5\necho\necho \"=== running reaper.sh (WORKSPACE overridden to test...",
+      "input_chars": 292,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E8HfyXaLK1iqn5iPs79h9w",
+      "is_error": false,
+      "output": "=== before ===\ntotal 24\ndrwxr-xr-x 4 root root 4096 Oct 25 01:40 .\ndrwxr-xr-x 3 root root 4096 Oct 25 01:42 ..\ndrwxr-xr-x 7 root root 4096 Oct 25 01:42 .git\n-rw-r--r-- 1 root root    8 Oct 25 01:40 .gitattributes\n-rw-r--r-- 1 root root  333 Oct 25 01:40 README.md\ndrwxr-xr-x 2 root root 4096 Oct 25 0...",
+      "output_chars": 584,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X6ExU8Ssg3zhEh7v7pJajW",
+      "name": "Bash",
+      "input": "set -euo pipefail\nTEST_ROOT=\"$TMPDIR/reaper-destructive-test\"\necho \"=== throwaway after run ===\"\nls -la \"$TEST_ROOT/throwaway\"\necho\necho \"=== log of what reaper recorded (git-dir + remotes it saw) ===...",
+      "input_chars": 900,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X6ExU8Ssg3zhEh7v7pJajW",
+      "is_error": false,
+      "output": "=== throwaway after run ===\ntotal 24\ndrwxr-xr-x 4 root root 4096 Oct 25 01:42 .\ndrwxr-xr-x 3 root root 4096 Oct 25 01:42 ..\ndrwxr-xr-x 7 root root 4096 Oct 25 01:42 .git\n-rw-r--r-- 1 root root    8 Oct 25 01:40 .gitattributes\n-rw-r--r-- 1 root root   92 Oct 25 01:42 .reaper-ran\ndrwxr-xr-x 2 root roo...",
+      "output_chars": 1266,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
