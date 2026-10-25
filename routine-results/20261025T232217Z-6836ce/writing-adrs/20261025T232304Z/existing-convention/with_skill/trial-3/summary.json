@@ -1,0 +1,348 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261025T232304Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.2498533,
+    "num_turns": 8,
+    "duration_ms": 39326,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 17834,
+      "cache_read_input_tokens": 239533,
+      "output_tokens": 2955,
+      "output_tokens_details": {
+        "thinking_tokens": 467
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 17834,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 512,
+          "cache_read_input_tokens": 44946,
+          "cache_creation_input_tokens": 586,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 586
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "adr-0004-house-format-sections-in-order",
+      "passed": true,
+      "detail": "docs/decisions/0004-cap-upstream-retries-with-exponential-backoff.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": true,
+      "detail": "scripts/retry.sh matches"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/README.md)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": true,
+      "detail": "4 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-cache-order-status-in-redis.md, docs/decisions/0002-poll-fulfillment-service-every-30s.md, docs/decisions/0003-poll-fulfillment-service-every-10s.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 10,
+        "rationale": "Context describes the outage situation and the rejected alternatives (retry forever, fail fast) with reasons, without pre-announcing the decision; Decision states the implemented capped-5-attempts exponential-backoff policy; and Consequences gives honest positive (absorbs blips, bounded damage) and negative (outages surface as failures, added latency) effects."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 10,
+        "rationale": "Both the ADR title and the index row read \"Cap upstream retries at 5 attempts with exponential backoff\" \u2014 an imperative verb + object naming what was decided, not a noun phrase or past-tense narration."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "ADRs 0001-0003 and the existing README index rows are untouched, CHANGELOG.md was left alone, and the agent deliberately declined to write a second ADR for the routine dependency/typo change."
+      }
+    ],
+    "overall": 10.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-4-8"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1177,
+      "output_tokens": 18,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 2955,
+      "cache_read_input_tokens": 239533,
+      "cache_creation_input_tokens": 17834,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0045692829475889865,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "existing-convention",
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "opus",
+    "judge_tier": "opus"
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261025T232217Z-6836ce",
+    "session_id": "cse_01BJtjk4GtsSmK65q5aKw2D3",
+    "harness_commit": "718815e2d0c7cf41c54af3292e9cf3f74a95b246",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-25T23:23:04Z",
+    "ended_at": "2026-10-25T23:28:16Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-25T23:23:05Z",
+      "to_at": "2026-10-25T23:26:13Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.07,
+          "to": 0.08,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.49,
+          "to": 0.49,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01BJtjk4GtsSmK65q5aKw2D3",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-25T23:24:17Z",
+      "ended_at": "2026-10-25T23:27:21Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-25T23:24:17Z",
+          "ended_at": "2026-10-25T23:24:58Z",
+          "duration_ms": 41014,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-25T23:27:14Z",
+          "ended_at": "2026-10-25T23:27:21Z",
+          "duration_ms": 7253,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-25T23:24:17Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1792983600,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.07,
+                  "resetsAt": 1792983600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.49,
+                  "resetsAt": 1793034000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 41014,
+        "num_turns": 8,
+        "cost_usd": 0.2498533,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1177,
+            "output_tokens": 18,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00012670000000000002
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 2955,
+            "cache_read_input_tokens": 239533,
+            "cache_creation_input_tokens": 17834,
+            "cost_usd": 0.24972659999999997
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 17834
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 7253,
+        "num_turns": 1,
+        "cost_usd": 0.09809830000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 3608,
+            "output_tokens": 24,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00037280000000000006
+          },
+          "claude-opus-4-8": {
+            "input_tokens": 2,
+            "output_tokens": 359,
+            "cache_read_input_tokens": 27661,
+            "cache_creation_input_tokens": 7491,
+            "cost_usd": 0.0977255
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7491
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
