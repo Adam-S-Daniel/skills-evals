@@ -1,0 +1,685 @@
+# Reusable ATOMIC down-sync helper. Bumps EVERY cms-platform reference a
+# consumer pins — `platform_ref:` inputs + `platform.lock`, the reusable-workflow
+# `uses:@<tag>` pins, the `cms-platform-theme` Gemfile `tag:`, and `Gemfile.lock`
+# (`tag:` + git `revision:`), plus any TAG-pinned composite-action `uses:@` — to
+# the latest cms-platform release, in ONE PR, and touches nothing but those pins
+# (comments and prose naming a version are left byte-for-byte, #530). So the
+# single-version pin-consistency guard (#29) passes on this PR alone.
+#
+# It ALSO seeds any workflow caller that release newly made platform-dictated:
+# if examples/site/.github/workflows/ gained a file at the new ref that the
+# consumer doesn't yet carry, it's copied in (re-pinned to the new ref) so the
+# workflow-SET-parity half of the same guard (#54) also passes on this PR
+# alone. Previously a newly-dictated caller had to be hand-added AFTER the bump
+# PR's pin-consistency check failed with `workflow-set: MISSING
+# (platform-dictated)` — observed live when v0.1.54 added
+# dependabot-rearm-sweep.yml: both adamdaniel.ai's and jodidaniel.com's bump
+# PRs failed and needed a manual follow-up commit to unblock. A consumer that
+# once deliberately DELETED a dictated caller gets it re-seeded too — the
+# checker has no such opt-out (it fails MISSING unconditionally), so seeding
+# is always the correct move, never a false-positive graft-back. Seeding only
+# ever ADDS a wholly-absent caller; a file that exists but has drifted CONTENT
+# is untouched (that's dev-hooks-sync / the pin rewrite's job — #63
+# content parity catches that class separately).
+#
+# It RETIRES the mirror case (#315): a caller that LEFT the canonical set is
+# deleted, not rewritten to a tag at which its reusable no longer exists. And it
+# RECONCILES one dictated INPUT inside a caller that already exists —
+# `cms-automerge-nudge.yml`'s `required_contexts`, derived from the manifest's
+# ruleset for THIS repo. And it RECONCILES every existing caller's per-job
+# `secrets:` map with the template at the new ref (keys added, dropped or
+# changed; comments kept) — the one call-interface facet the seed pass never
+# reached (v0.1.113's `app_private_key`). All of these have to ride the bump
+# commit, because pin-consistency compares the consumer against the platform
+# at that consumer's OWN pinned ref: split one off into its own PR and it fails
+# in the mirror-image direction instead.
+#
+# (Previously this bumped ONLY `platform_ref:` and left the `uses:@` pins + the
+# theme gem to Dependabot's piecemeal PRs — which breaks the single-version
+# guard until every one lands. Closing that gap is issue #13.)
+name: Platform bump (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      platform_repo: { type: string, default: Adam-S-Daniel/cms-platform }
+    secrets:
+      # The push-back credential, resolved App → PAT → GITHUB_TOKEN (#238):
+      #   app_private_key — the CMS automation GitHub App's private key. With
+      #     `vars.CMS_AUTOMATION_APP_ID` (a reusable reads `vars.*` from the
+      #     CALLER's repo) the mint step below turns it into a ~1 h installation
+      #     token scoped to THIS repo with contents + pull_requests + workflows:
+      #     write. No expiry to rotate, and one App installed on both owners
+      #     serves every consumer.
+      #
+      # There is NO PAT fallback any more. `gh_token` (CMS_PLATFORM_PAT) was
+      # removed in v0.1.103: both consumers deleted that PAT and its repo
+      # secret once the App path was verified, and a fallback nobody holds is
+      # not a fallback — it is a second, dated credential path that has to keep
+      # being documented, rotated and reasoned about. Removing the INPUT (not
+      # just the read) is deliberate: a caller still passing it now fails at
+      # startup, loudly, instead of silently resolving to a secret that does
+      # not exist. The caller's line must therefore be dropped in the SAME
+      # commit as the pin bump — `structuralShape()` compares the caller's
+      # `secrets:` map against the template at that consumer's pinned ref.
+      app_private_key: { required: false }
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Serialise bump runs per consumer repo (#222). Two overlapping runs — a
+    # cron firing while someone dispatches, or a retried dispatch — race: the
+    # loser force-pushes the same branch, finds `gh pr create` fails because the
+    # winner already opened the PR, and falls through to `gh pr edit --body`.
+    # See the idempotency gate in the bump step for why that edit is damaging.
+    # cancel-in-progress: false — the winner is mid-push; cancelling it could
+    # leave a branch pushed with no PR. The loser queues, then no-ops on the
+    # gate below. Serialising is what makes that gate sound: without it both
+    # runs can pass the "is a PR already open?" check before either creates one.
+    concurrency:
+      group: platform-bump-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      # Pinned: the mint step and the bump step both run node/npm, and
+      # ubuntu-latest's default Node moves from 22 to 24 with Ubuntu 26.04
+      # (actions/runner-images#14748). Needs no checkout, so it does not
+      # disturb the mint-before-checkout order below.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+          package-manager-cache: false
+      # The bump rewrites .github/workflows/* (the `uses:@` pins + `platform_ref:`
+      # inputs), so the PUSH needs `workflows` permission. The default Actions
+      # GITHUB_TOKEN's GitHub App lacks it — git rejects the push with "refusing
+      # to allow a GitHub App to create or update workflow ... without 'workflows'
+      # permission". So the checkout below persists a credential that HAS it:
+      # the CMS automation App's installation token when the App is
+      # provisioned, else the caller's PAT (CMS_PLATFORM_PAT — fine-grained
+      # Contents + PR + Workflows: write). (the live half of #13, then #238)
+      #
+      # The mint runs BEFORE checkout because checkout is what persists the
+      # token — and before checkout there is no tree, so the script comes over
+      # the contents API at the release this bump targets (the same shape the
+      # bump step uses for reconcile-nudge-contexts.py), never from `main`.
+      # `${{ github.job_workflow_sha }}` would pin it to THIS file's commit but
+      # reads empty inside a reusable job (actions/runner#2417; see
+      # dependabot-auto-merge.yml). FAILS SOFT at every branch: no App → one
+      # notice naming both knobs, then the PAT path exactly as before; a
+      # present-but-broken key is the script's own loud failure.
+      - name: Mint a GitHub App installation token (when the App is provisioned)
+        id: app
+        env:
+          APP_CLIENT_ID: ${{ vars.CMS_AUTOMATION_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ inputs.platform_repo }}
+        run: |
+          set -euo pipefail
+          # FAIL LOUD, not soft. This credential is load-bearing here: the bump
+          # rewrites `.github/workflows/*`, which needs workflows:write, and
+          # `github.token` does not have it and cannot be granted it. Falling
+          # through would fail anyway — later, as an opaque `refusing to allow
+          # ... without 'workflows' permission` push rejection. Naming the two
+          # knobs here is the clear notice AGENTS.md asks for; continuing to a
+          # confusing failure is the silent no-op it forbids.
+          if [ -z "$APP_CLIENT_ID" ] || [ -z "$APP_PRIVATE_KEY" ]; then
+            echo "::error::No CMS automation App on this repo. platform-bump REQUIRES it since v0.1.103 — set the vars.CMS_AUTOMATION_APP_ID variable and the CMS_AUTOMATION_APP_PRIVATE_KEY secret (see the consumer-repo-provisioning skill). The CMS_PLATFORM_PAT fallback was removed."
+            exit 1
+          fi
+          # `|| LATEST=""` — never a bare `|| true`: on a non-2xx `gh api` prints
+          # the raw error body to STDOUT and skips --jq, so a swallowed exit
+          # code would capture that body as the tag. The bump step re-runs
+          # this lookup with the loud 404-vs-anything-else handling (#244);
+          # here a failure means the mint cannot proceed at all.
+          LATEST=$(gh api "repos/$PLATFORM/releases/latest" --jq .tag_name 2>/dev/null) || LATEST=""
+          if [ -z "$LATEST" ]; then
+            echo "::error::could not resolve the latest $PLATFORM release to fetch mint-app-token.js from, and there is no PAT fallback since v0.1.103. Check GitHub API status and that $PLATFORM has a published release."
+            exit 1
+          fi
+          MINT="$RUNNER_TEMP/mint-app-token.js"
+          if ! gh api "repos/$PLATFORM/contents/scripts/mint-app-token.js?ref=$LATEST" \
+               -H "Accept: application/vnd.github.raw+json" > "$MINT" 2>/dev/null; then
+            echo "::error::scripts/mint-app-token.js is not readable at $PLATFORM@$LATEST, and there is no PAT fallback since v0.1.103."
+            exit 1
+          fi
+          # Scoped DOWN at mint time: this one repo, and only the three
+          # permissions the push + PR + auto-merge below need. The App itself
+          # holds nothing wider (see the consumer-repo-provisioning skill).
+          node "$MINT" --owner "${GITHUB_REPOSITORY%%/*}" --repo "${GITHUB_REPOSITORY#*/}" \
+            --repositories "${GITHUB_REPOSITORY#*/}" \
+            --permissions contents=write,pull_requests=write,workflows=write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          token: ${{ steps.app.outputs.token || github.token }}
+      # reconcile-nudge-contexts.py imports PyYAML and fails soft (a MANUAL
+      # warning in the PR body) without it. The runner's system python3 happened
+      # to carry it; a setup-python interpreter does not, so install the same
+      # pin cross-post.yml uses.
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: python3 -m pip install --user 'pyyaml==6.0.3'
+
+      - name: Bump every cms-platform reference to the latest release (atomic)
+        # `id: bump` is what the lints key on: this step and the mint step above
+        # BOTH read /releases/latest, so "the step that resolves the release" no
+        # longer identifies it.
+        id: bump
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          PLATFORM: ${{ inputs.platform_repo }}
+        run: |
+          set -euo pipefail
+          # Escape workflow-command data before printing repository-controlled text.
+          escape_workflow_data() {
+            local value=$1
+            value=${value//\%/%25}
+            value=${value//$'\r'/%0D}
+            value=${value//$'\n'/%0A}
+            printf '%s' "$value"
+          }
+          # Resolve the latest release. The OLD form here —
+          #   LATEST=$(gh release view --repo "$PLATFORM" --json tagName -q .tagName 2>/dev/null || echo "")
+          #   [ -n "$LATEST" ] || { echo "no release on $PLATFORM yet"; exit 0; }
+          # — folded EVERY failure mode into the SAME green `exit 0`: an
+          # expired or under-scoped CMS_PLATFORM_PAT, a revoked cross-repo
+          # grant, and an actual GitHub API outage all produced the identical
+          # "no release yet" success as the one genuinely benign case (a
+          # brand-new platform repo with nothing tagged). A consumer could
+          # freeze at its current platform version indefinitely while every
+          # scheduled or dispatched run reported success — `scheduled-run-health.yml`
+          # only alerts on RED scheduled runs, so a silent green no-op is
+          # invisible to it.
+          #
+          # This was survivable before #244: Dependabot's github-actions
+          # ecosystem kept opening its own redundant `uses:@` bump PR per
+          # workflow file, which was accidental INDEPENDENT evidence that a
+          # release existed even if this step went quiet. #244 switches that
+          # ecosystem off (each of those PRs skewed the single-version
+          # pin-consistency guard instead of helping — see the
+          # dependabot.yml ignore comment), so this lookup is now the ONLY
+          # thing that can notice a stuck bump, and it has to be loud.
+          #
+          # `gh api repos/<repo>/releases/latest` replaces `gh release view`
+          # because its failure modes are DISTINGUISHABLE: a 404 means "no
+          # published release" and nothing else — cms-platform is a PUBLIC
+          # repo, so a 404 here can never mean "you lack access" the way it
+          # would on a private one. `gh release view` exits non-zero
+          # identically for both "no release" and "can't reach/read the
+          # repo," which is exactly the ambiguity that let the old line
+          # swallow real failures.
+          #
+          # Only the HTTP status code is echoed below, never the response
+          # body — an API error body can quote account/repo detail into this
+          # (public) Actions log (AGENTS.md "Sanitize error output").
+          REL_ERR="${RUNNER_TEMP:-/tmp}/platform-release-lookup.err"
+          if ! LATEST=$(gh api "repos/$PLATFORM/releases/latest" --jq '.tag_name // ""' 2>"$REL_ERR"); then
+            REL_CODE=$(sed -n -E 's/.*\(HTTP ([0-9]{3})\).*/\1/p' "$REL_ERR" | head -1)
+            if [ "$REL_CODE" = "404" ]; then
+              echo "::notice::$PLATFORM has no published release yet — nothing to bump."
+              exit 0
+            fi
+            echo "::error::could not read the latest release of $PLATFORM (HTTP ${REL_CODE:-unknown}) — refusing to exit green. Check the App installation token this run minted (the mint step above fails loudly if it could not) — or GitHub API status. A silent success here would freeze this consumer's platform version indefinitely (cms-platform#244)."
+            exit 1
+          fi
+          if [ -z "$LATEST" ]; then
+            echo "::error::$PLATFORM/releases/latest returned no tag_name — refusing to exit green (cms-platform#244)."
+            exit 1
+          fi
+          # Check before reading CUR or returning early for an already-current lock.
+          if [ -f platform.lock ] && LC_ALL=C grep -q $'\r' platform.lock; then
+            echo "::error::platform.lock contains CRLF line endings — refusing to bump. Convert platform.lock to LF line endings and retry."
+            exit 1
+          fi
+          CUR=$(sed -n -E 's/^platform_ref:[[:space:]]*//p' platform.lock 2>/dev/null || echo "")
+          [ "$LATEST" = "$CUR" ] && { echo "already on $LATEST"; exit 0; }
+          # The rewrite below takes $CUR as the exact ref to move, so it must be a
+          # bare release tag. The sed above does no unquoting and keeps a trailing
+          # comment, so say what was read instead of failing later in the rewrite
+          # with a usage error that never names platform.lock.
+          if [ -n "$CUR" ] && ! [[ "$CUR" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "::error::platform.lock's platform_ref reads as ${CUR@Q}, which is not a bare release tag such as v1.2.3 (a quoted value or a trailing comment is not handled here) — refusing to bump. Write the value as a bare tag."
+            exit 1
+          fi
+
+          # Idempotency gate (#222). The check just above reads platform.lock on
+          # the DEFAULT BRANCH, which only advances when a bump PR MERGES — so it
+          # cannot see a bump PR that is merely OPEN. A second run therefore
+          # sails past it, redoes the whole rewrite, force-pushes the same
+          # branch, finds `gh pr create` fails ("a pull request for branch …
+          # already exists"), and falls through to `|| gh pr edit --body`.
+          #
+          # That edit is not cosmetic: it fires a `pull_request: edited` event,
+          # and every required-check caller carries
+          #   if: github.event.action != 'edited' || github.event.changes.base.ref.from != ''
+          # so its job SKIPS. A skipped caller never invokes the reusable, so no
+          # check-run named `<caller job> / <reusable job>` is produced at all —
+          # the newest run WITHDRAWS a required context that was already green.
+          # GitHub then reports "N of M required status checks are expected" and
+          # the PR is unmergeable until someone pushes a new SHA, which a
+          # finished bump PR never gets. Observed live: adamdaniel.ai#3001 +
+          # jodidaniel.com#115, both hard-blocked with every check visibly green.
+          BRANCH="platform/bump-$LATEST"
+          # --limit 1: existence check only (the repo's `gh pr list` convention —
+          # the default limit of 30 silently truncates, so every call states one).
+          # FAIL-OPEN on a gh/API error: an empty EXISTING proceeds with the bump.
+          # A gate that failed CLOSED would silently skip a legitimate scheduled
+          # bump on a transient blip — worse than the race it guards, which the
+          # job-level `concurrency:` above already covers in the common case.
+          EXISTING=$(gh pr list --state open --head "$BRANCH" --limit 1 --json number --jq '.[0].number // empty' 2>/dev/null) || EXISTING=""
+          if [ -n "$EXISTING" ]; then
+            echo "bump PR #${EXISTING} for $LATEST is already open on $BRANCH — nothing to do"
+            exit 0
+          fi
+
+          # Resolve the release tag -> its COMMIT sha (deref an annotated tag) for
+          # the Gemfile.lock git `revision:`.
+          NEW_SHA=$(gh api "repos/$PLATFORM/git/refs/tags/$LATEST" --jq '.object.sha')
+          if ! [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the release tag object SHA must be exactly 40 lowercase hexadecimal characters — refusing to fetch or bump."
+            exit 1
+          fi
+          if [ "$(gh api "repos/$PLATFORM/git/refs/tags/$LATEST" --jq '.object.type')" = "tag" ]; then
+            NEW_SHA=$(gh api "repos/$PLATFORM/git/tags/$NEW_SHA" --jq '.object.sha')
+          fi
+          if ! [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the release commit SHA must be exactly 40 lowercase hexadecimal characters — refusing to fetch or bump."
+            exit 1
+          fi
+          # Move every PIN from $CUR to $LATEST — and only pins (#530). This used
+          # to be a global `perl s/CUR/LATEST/g` over each pin-bearing file, on
+          # the theory that the current version string appears only as a pin.
+          # Prose names versions too: it re-dated jodidaniel.com's "since
+          # v0.1.103 — the CMS_PLATFORM_PAT fallback is gone" on every bump.
+          # scripts/rewrite-platform-pins.js locates the pins pin-consistency
+          # reads (the `uses:@` refs and `platform_ref:` values via the YAML
+          # parser, platform.lock, the Gemfile `tag:`, the Gemfile.lock platform
+          # GIT block's `tag:` + `revision:`) and splices only the version token,
+          # leaving every other byte alone. It is fetched at the release COMMIT
+          # ($NEW_SHA), not the movable tag, and it is ALL OR NOTHING: on any file it cannot
+          # rewrite safely it writes nothing and exits non-zero, which fails
+          # this step — a bump that moved some pins is worse than none.
+          # A first adoption has no platform.lock, so no $CUR and no pin to move
+          # (the fallback below writes the lock).
+          if [ -n "$CUR" ]; then
+            PIN_TOOLS="${RUNNER_TEMP:-/tmp}/pin-rewrite"
+            rm -rf "$PIN_TOOLS"
+            mkdir -p "$PIN_TOOLS/scripts"
+            if ! gh api "repos/$PLATFORM/contents/scripts/rewrite-platform-pins.js?ref=$NEW_SHA" \
+                 -H "Accept: application/vnd.github.raw+json" \
+                 > "$PIN_TOOLS/scripts/rewrite-platform-pins.js" 2>/dev/null; then
+              echo "::error::scripts/rewrite-platform-pins.js is not readable at $PLATFORM@$NEW_SHA ($LATEST) — refusing to fall back to a text-wide version replace (cms-platform#530)."
+              exit 1
+            fi
+            # Into the tools dir, never the consumer root (see the secrets pass below).
+            if ! npm install --prefix "$PIN_TOOLS" --no-save --no-package-lock --ignore-scripts yaml@2.9.1 >/dev/null 2>&1; then
+              echo "::error::could not install the yaml parser the pin rewrite needs."
+              exit 1
+            fi
+            if ! node "$PIN_TOOLS/scripts/rewrite-platform-pins.js" \
+                 --root . --slug "$PLATFORM" --from "$CUR" --to "$LATEST" --new-sha "$NEW_SHA"; then
+              echo "::error::the pin rewrite could not move every pin from $CUR to $LATEST (see the ERROR lines above); nothing was written."
+              exit 1
+            fi
+          fi
+
+          # First-adoption fallback: a repo with no platform.lock yet.
+          if [ ! -f platform.lock ]; then
+            printf 'platform_repo: %s\nplatform_ref: %s\n' "$PLATFORM" "$LATEST" > platform.lock
+          fi
+
+          # Seed any workflow caller this release newly made platform-dictated
+          # (issue: v0.1.54 added dependabot-rearm-sweep.yml and every consumer's
+          # bump PR failed pin-consistency's workflow-set-parity check until it
+          # was hand-added). The canonical dictated set lives at
+          # examples/site/.github/workflows/ in the platform repo, read AT THE
+          # NEW ref so it reflects exactly what pin-consistency will check for
+          # once this PR's platform.lock lands.
+          mapfile -t DICTATED < <(
+            gh api "repos/$PLATFORM/contents/examples/site/.github/workflows?ref=$LATEST" \
+              --jq '.[] | select(.type=="file") | .name' 2>/dev/null | grep -E '\.ya?ml$' || true
+          )
+          SEEDED=()
+          for name in "${DICTATED[@]}"; do
+            dest=".github/workflows/$name"
+            # Only a wholly-MISSING caller is seeded. A file that already exists
+            # is left alone even if its content has drifted from the canonical
+            # template — that's dev-hooks-sync / content-parity (#63) territory,
+            # not this bump's job. This also covers a consumer that deliberately
+            # deleted a dictated caller: the pin-consistency guard has no
+            # opt-out for that (it fails workflow-set: MISSING unconditionally),
+            # so re-seeding here can never be wrong.
+            [ -f "$dest" ] && continue
+            mkdir -p .github/workflows
+            gh api "repos/$PLATFORM/contents/examples/site/.github/workflows/$name?ref=$LATEST" \
+              --jq '.content' | base64 -d > "$dest"
+            # Stamp the seeded file's platform-ref pin(s) to $LATEST. Can't reuse
+            # the CUR->LATEST pin rewrite above: CUR is the CONSUMER's old ref, which
+            # the example's own embedded pin need not equal — so stamp
+            # unconditionally to whatever version is actually there.
+            #
+            # This used to say the example ALSO lags the release being bumped to
+            # ("examples/site is only re-pinned when THAT file's content changes,
+            # not on every tag — this repo's own examples span v0.1.1..v0.1.52
+            # today"). That premise is dead: e2e/examples-site-pins-current.test.js
+            # now holds every examples/site pin to the platform's canonical
+            # version, so a tag cut under that lint carries a template already at
+            # $LATEST and this stamp is a no-op there. It stays because it is
+            # still load-bearing for what the lint cannot reach BACKWARDS: every
+            # tag cut BEFORE it (v0.1.0..v0.1.84, whose drift is frozen into the
+            # release tree) and any bump targeting one of those.
+            # Covers BOTH ref shapes a seeded example can actually carry: a
+            # reusable `uses:@vX.Y.Z` and the `platform_ref:` INPUT — and the
+            # `uses:@` arm spans `workflows` AND `actions`, so a COMPOSITE is
+            # already carried by it. A composite takes the platform TAG now, the
+            # same carve-out the reusables take, so its version IS the ref and
+            # moves with this one substitution.
+            #
+            # A third substitution used to sit here, stamping a composite's
+            # trailing `# vX.Y.Z` comment. It is gone, and it must NOT be
+            # re-added. The comment is not merely unwritten — it is not READ
+            # anywhere either: check-platform-pin-consistency.js parses the
+            # structural ref and no comments at all (docs/PIN-CONSISTENCY.md),
+            # and e2e/check-platform-pin-consistency.test.js asserts a
+            # SHA-pinned composite FAILS even when its comment is CURRENT. So
+            # re-adding a comment-WRITING substitution here would not restore a
+            # gate; it would stamp a label the checker now rejects — the exact
+            # reverter the 2026-08-20 fleet-wide retirement removed.
+            #
+            # The `platform_ref:` one is not optional (#220). Stamping only `uses:@` seeded
+            # jodidaniel.com's cms-scheduled-publish-loop caller with the example's
+            # own `platform_ref: v0.1.59` while pinning `uses:@v0.1.62`, and the
+            # CUR->LATEST pin rewrite above could never repair it — CUR is the
+            # consumer's ref, which `v0.1.59` never matched again. The reusable's
+            # checkout obeys the INPUT, so that caller ran a v0.1.59 platform tree
+            # for 14 releases until the v0.1.70 composite it lacked failed the job.
+            LATEST="$LATEST" perl -i -pe '
+              s{(\Q$ENV{PLATFORM}\E/\.github/(?:workflows|actions)/[^@[:space:]]+\@)v[0-9]+(?:\.[0-9]+){0,3}}{$1$ENV{LATEST}}g;
+              # \x27 is a literal apostrophe — writing one directly would close
+              # the shell single-quoted perl program around this whole block.
+              s{^(\s*platform_ref:[ \t]*["\x27]?)v[0-9]+(?:\.[0-9]+){0,3}\b}{$1$ENV{LATEST}};
+            ' "$dest"
+            SEEDED+=("$name")
+          done
+          if [ "${#SEEDED[@]}" -gt 0 ]; then
+            printf 'seeded %d newly platform-dictated workflow(s): %s\n' "${#SEEDED[@]}" "${SEEDED[*]}"
+          fi
+
+          # Seed the two DELEGATING deploy wrappers a consumer lacks (#518).
+          # scaffold/create-site.js emits them into every new site, but they
+          # arrived in v0.1.29 and nothing delivered them to a site scaffolded
+          # earlier: jodidaniel.com (scaffolded at v0.1.0) has neither, so its
+          # OAuth proxy could only be deployed from a hand-made platform
+          # checkout, not from the release its platform.lock names. Same rule as
+          # the callers above: only a wholly-MISSING file is seeded. A wrapper
+          # reads platform.lock when it runs, so it has no pin to stamp.
+          SEEDED_WRAPPERS=()
+          for rel in oauth-proxy/deploy.sh infrastructure/bootstrap/deploy.sh; do
+            if [ -e "$rel" ]; then continue; fi
+            if wrapper=$(gh api "repos/$PLATFORM/contents/$rel.delegating?ref=$LATEST" --jq '.content' 2>/dev/null) \
+              && [ -n "$wrapper" ]; then
+              mkdir -p "$(dirname "$rel")"
+              base64 -d <<<"$wrapper" > "$rel"
+              chmod 0755 "$rel"
+              SEEDED_WRAPPERS+=("$rel")
+            else
+              echo "::warning::could not read $rel.delegating at $LATEST; $rel was not seeded"
+            fi
+          done
+
+          # RETIRE a caller that LEFT the canonical set (#315) — the symmetric
+          # counterpart of the seeding above, and the half that was missing.
+          #
+          # It HAS to ride this commit. pin-consistency compares the consumer's
+          # workflow set against the platform at that consumer's OWN
+          # platform.lock ref, so the deletion cannot be split into its own PR:
+          # delete first and the still-old pin reports `workflow-set: MISSING`;
+          # bump first and the new canonical set reports `workflow-set: EXTRA`.
+          # Mirror-image failures, one on each side. v0.1.83 hit exactly this
+          # (docs/VERSION-HISTORY.md says so in as many words) and both
+          # deletions had to be hand-added to the bump PR on both consumers.
+          #
+          # "WAS it dictated?" is answered by the canonical set at the OLD ref —
+          # NOT by "the consumer has a file we don't recognise". A site-authored
+          # workflow that was never platform-dictated is not this bump's to
+          # delete, and that distinction is the one piece of judgement the
+          # seed-only code never had to make. Getting it wrong deletes someone's
+          # work, so the fallback is always "delete nothing".
+          mapfile -t WAS_DICTATED < <(
+            gh api "repos/$PLATFORM/contents/examples/site/.github/workflows?ref=$CUR" \
+              --jq '.[] | select(.type=="file") | .name' 2>/dev/null | grep -E '\.ya?ml$' || true
+          )
+          RETIRED=()
+          if [ "${#DICTATED[@]}" -eq 0 ] || [ "${#WAS_DICTATED[@]}" -eq 0 ]; then
+            # UNKNOWN is never "quietly delete nothing and report success": an
+            # empty listing means the API answer was unusable (a $CUR that
+            # predates examples/site, a transient failure), and "not in the new
+            # set" computed from an unusable old set would retire live callers.
+            echo "::notice::retire pass skipped — could not read both canonical sets (old=${#WAS_DICTATED[@]}, new=${#DICTATED[@]}); nothing deleted."
+          else
+            for name in "${WAS_DICTATED[@]}"; do
+              dest=".github/workflows/$name"
+              if [ ! -f "$dest" ]; then continue; fi
+              # `if` blocks, never `cmd && continue`: GitHub runs `run:` under
+              # `bash -e`, so a false AND-list as a loop body's last command
+              # exits the step.
+              if printf '%s\n' "${DICTATED[@]}" | grep -qxF -- "$name"; then continue; fi
+              git rm -q --ignore-unmatch -- "$dest" || rm -f "$dest"
+              RETIRED+=("$name")
+            done
+          fi
+          if [ "${#RETIRED[@]}" -gt 0 ]; then
+            printf 'retired %d de-dictated workflow caller(s): %s\n' "${#RETIRED[@]}" "${RETIRED[*]}"
+          fi
+
+          # RECONCILE a platform-DICTATED caller INPUT (#315, second half).
+          #
+          # Seeding and retiring both move whole FILES. The other thing a
+          # release can change is an input the platform dictates inside a caller
+          # that already exists — and nothing moved those. When #309 added
+          # `prerelease-guard / prerelease-guard` to `consumer-main`, every
+          # consumer's `cms-automerge-nudge.yml` `required_contexts` went stale
+          # in the very commit that moved the pin, reddening `e2e / e2e` on both.
+          #
+          # That input is not cosmetic: the nudge builds its notion of "green"
+          # from it, so a list SHORTER than the repo's real required set asks for
+          # a merge it has not established (jodidaniel.com#156 passed ONE of six
+          # for months, safe only because pulls.merge() answered 405 on its
+          # behalf).
+          #
+          # The list is DERIVED per consumer, exactly as
+          # e2e/consumer-automerge-nudge-contexts.test.js derives it: the
+          # manifest's ruleset for THIS repo, not the template's list — a
+          # consumer may map `main` to some other library entry, and copying the
+          # template would silently impose the wrong set on it.
+          #
+          # A REAL PARSER reads both sides (house rule; a line scanner is blind
+          # to anchors and aliases). The WRITE is a splice of the block scalar's
+          # own lines, so the caller's comments survive — and it is verified by
+          # RE-PARSING the result before anything is saved, because a text splice
+          # nobody checks is how you ship a mangled workflow.
+          NUDGE=".github/workflows/cms-automerge-nudge.yml"
+          CONTEXT_NOTE=""
+          if [ -f "$NUDGE" ]; then
+            RS_YML="${RUNNER_TEMP:-/tmp}/platform-repo-settings.yml"
+            RECONCILE_PY="${RUNNER_TEMP:-/tmp}/reconcile-nudge-contexts.py"
+            # Both come from the platform AT $LATEST — the manifest so the
+            # derived list is the one the landed pin will be checked against,
+            # and the script so this workflow is not carrying a second copy of
+            # logic that lives (and is reviewed) in scripts/.
+            if gh api "repos/$PLATFORM/contents/repo-settings.yml?ref=$LATEST" \
+                 --jq '.content' 2>/dev/null | base64 -d > "$RS_YML" \
+               && gh api "repos/$PLATFORM/contents/scripts/reconcile-nudge-contexts.py?ref=$LATEST" \
+                 --jq '.content' 2>/dev/null | base64 -d > "$RECONCILE_PY"; then
+              set +e
+              CONTEXT_OUT=$(
+                NUDGE_PATH="$NUDGE" MANIFEST_PATH="$RS_YML" SLUG="$GITHUB_REPOSITORY" \
+                python3 "$RECONCILE_PY"
+              )
+              CONTEXT_RC=$?
+              set -e
+              printf 'Context reconciliation diagnostic: %s\n' "$(escape_workflow_data "$CONTEXT_OUT")"
+              case "$CONTEXT_OUT" in
+                UPDATED*)
+                  CONTEXT_NOTE=" Reconciled \`cms-automerge-nudge.yml\`'s \`required_contexts\` with the platform manifest's ruleset for this repo." ;;
+                MANUAL*)
+                  # Direction 3 of #315, as the fallback for directions 1-2: if
+                  # it cannot be done automatically, the PR must SAY so rather
+                  # than arrive quietly wrong. The e2e guard still catches a
+                  # stale list, so failing soft here moves the signal — it does
+                  # not lose it.
+                  CONTEXT_NOTE=" :warning: \`required_contexts\` in \`cms-automerge-nudge.yml\` could NOT be reconciled automatically and may be stale — check it against the platform manifest's ruleset for this repo before merging."
+                  printf '::warning::could not reconcile required_contexts automatically — %s\n' "$(escape_workflow_data "$CONTEXT_OUT")" ;;
+                *)
+                  if [ "$CONTEXT_RC" -ne 0 ]; then
+                    CONTEXT_NOTE=" :warning: the \`required_contexts\` reconciliation did not run — check that input by hand before merging."
+                    echo "::warning::required_contexts reconciliation exited $CONTEXT_RC"
+                  fi ;;
+              esac
+            else
+              # A $LATEST that predates this script is the ordinary case here,
+              # not an error — say so and move on, with the PR body carrying it.
+              echo "::warning::could not read the platform manifest or the reconcile script at $LATEST — skipping the required_contexts reconciliation"
+              CONTEXT_NOTE=" :warning: the \`required_contexts\` reconciliation was skipped (manifest or script unreadable at $LATEST) — check that input by hand."
+            fi
+          fi
+
+          # RECONCILE each existing caller's per-job `secrets:` map with the
+          # template at $LATEST. v0.1.113 (#467) added `app_private_key` to the
+          # dependabot-rearm-sweep template and nothing moved it: both v0.1.114
+          # bump PRs (adamdaniel.ai#3891, jodidaniel.com#281) failed
+          # `workflow-content: DRIFT ... secrets: map` until it was hand-added.
+          # pin-consistency compares the map whole, against the template at the
+          # consumer's OWN ref, so this rides the bump commit like the passes
+          # above. The script decides drift with the checker's own
+          # structuralShape() (fetched beside it), writes a splice of the
+          # `secrets:` lines only, and re-parses the result before saving.
+          # Seeded callers already match; retired ones are gone.
+          SECRETS_NOTE=""
+          SECRETS_TOOLS="${RUNNER_TEMP:-/tmp}/secrets-reconcile"
+          rm -rf "$SECRETS_TOOLS"
+          mkdir -p "$SECRETS_TOOLS/scripts" "$SECRETS_TOOLS/canonical"
+          SECRETS_READY=1
+          if [ "${#DICTATED[@]}" -eq 0 ]; then SECRETS_READY=0; fi
+          if ! gh api "repos/$PLATFORM/contents/scripts/reconcile-caller-secrets.js?ref=$LATEST" \
+               -H "Accept: application/vnd.github.raw+json" \
+               > "$SECRETS_TOOLS/scripts/reconcile-caller-secrets.js" 2>/dev/null; then
+            SECRETS_READY=0
+          fi
+          if ! gh api "repos/$PLATFORM/contents/scripts/check-platform-pin-consistency.js?ref=$LATEST" \
+               -H "Accept: application/vnd.github.raw+json" \
+               > "$SECRETS_TOOLS/scripts/check-platform-pin-consistency.js" 2>/dev/null; then
+            SECRETS_READY=0
+          fi
+          for name in "${DICTATED[@]}"; do
+            if [ ! -f ".github/workflows/$name" ]; then continue; fi
+            if ! gh api "repos/$PLATFORM/contents/examples/site/.github/workflows/$name?ref=$LATEST" \
+                 -H "Accept: application/vnd.github.raw+json" > "$SECRETS_TOOLS/canonical/$name" 2>/dev/null; then
+              SECRETS_READY=0
+            fi
+          done
+          # Into the tools dir, never the consumer root: npm resolves the whole
+          # tree of whatever package.json sits at its prefix (the same reason
+          # platform-pin-consistency.yml installs into `.cms-platform`).
+          if [ "$SECRETS_READY" = 1 ] \
+             && npm install --prefix "$SECRETS_TOOLS" --no-save --no-package-lock yaml@2.9.1 >/dev/null 2>&1; then
+            set +e
+            SECRETS_OUT=$(node "$SECRETS_TOOLS/scripts/reconcile-caller-secrets.js" \
+              --canonical-dir "$SECRETS_TOOLS/canonical" --workflows-dir .github/workflows)
+            SECRETS_RC=$?
+            set -e
+            printf 'Caller reconciliation diagnostic: %s\n' "$(escape_workflow_data "$SECRETS_OUT")"
+            SECRETS_UPDATED=$(sed -n 's/^UPDATED //p' <<<"$SECRETS_OUT" | paste -sd ';' -)
+            if [ -n "$SECRETS_UPDATED" ]; then
+              SECRETS_NOTE=" Reconciled thin-caller \`secrets:\` maps with the template: ${SECRETS_UPDATED//;/; }."
+            fi
+            if [ "$SECRETS_RC" -ne 0 ]; then
+              # Fail soft, like the required_contexts pass: pin-consistency
+              # still catches a stale map, and the PR body says where to look.
+              SECRETS_NOTE="${SECRETS_NOTE} :warning: some \`secrets:\` maps could NOT be reconciled automatically (see the platform-bump run log) — align them with examples/site at $LATEST before merging."
+              echo "::warning::secrets reconciliation exited $SECRETS_RC — see the MANUAL lines above"
+            fi
+          else
+            echo "::warning::could not fetch the secrets reconciler, its checker, the canonical callers, or the yaml parser at $LATEST — skipping the secrets: reconciliation"
+            SECRETS_NOTE=" :warning: the \`secrets:\` map reconciliation was skipped (inputs unreadable at $LATEST) — check each caller's \`secrets:\` by hand."
+          fi
+
+          # git diff --quiet alone is blind to a brand-new UNTRACKED file (a
+          # seeded caller, or a first-adoption platform.lock) — it only compares
+          # tracked content. Fold in `git status --porcelain` so an add-only
+          # change still trips the "there IS something to bump" path.
+          if git diff --quiet && [ -z "$(git status --porcelain --untracked-files=all)" ]; then
+            echo "no changes"
+            exit 0
+          fi
+          # BRANCH was set by the idempotency gate above.
+          git config user.name  cms-platform-bot
+          git config user.email cms-platform-bot@users.noreply.github.com
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "chore: bump cms-platform to $LATEST"
+          git push -f origin "$BRANCH"
+          SEED_NOTE=""
+          if [ "${#SEEDED[@]}" -gt 0 ]; then
+            SEED_NOTE=" Seeded newly platform-dictated workflow caller(s): ${SEEDED[*]}."
+          fi
+          if [ "${#RETIRED[@]}" -gt 0 ]; then
+            SEED_NOTE="${SEED_NOTE} Retired de-dictated workflow caller(s): ${RETIRED[*]}."
+          fi
+          if [ "${#SEEDED_WRAPPERS[@]}" -gt 0 ]; then
+            SEED_NOTE="${SEED_NOTE} Seeded missing delegating deploy wrapper(s): ${SEEDED_WRAPPERS[*]}."
+          fi
+          SEED_NOTE="${SEED_NOTE}${CONTEXT_NOTE}${SECRETS_NOTE}"
+          gh pr create --base "$GITHUB_REF_NAME" --head "$BRANCH" \
+            --title "Bump cms-platform to $LATEST" \
+            --body "Atomic single-version bump of every cms-platform reference (\`platform_ref:\` + \`platform.lock\`, the \`uses:@\` reusable-workflow pins, the \`cms-platform-theme\` Gemfile \`tag:\`, and \`Gemfile.lock\` \`tag:\` + \`revision:\`) to $LATEST. The pin-consistency guard (#29) passes on this PR alone.${SEED_NOTE}" \
+          || gh pr edit "$BRANCH" --body "Bump cms-platform to $LATEST.${SEED_NOTE}"
+          # Unattended landing: the bump is mechanical and CI-gated, so enable
+          # auto-merge and let the site's required checks decide. Runs on the
+          # resolved push credential (App token, else the caller's PAT) — a
+          # GITHUB_TOKEN-created PR wouldn't even trigger CI; an App- or
+          # PAT-created one does. FAIL-OPEN: if the repo hasn't enabled auto-merge (or a
+          # ruleset forbids it), the PR simply stays open for a human — the
+          # pre-chaining behavior for every bump PR.
+          gh pr merge --auto --squash "$BRANCH" \
+            || echo "::warning::could not enable auto-merge on the bump PR for $LATEST — merge it manually (is 'Allow auto-merge' enabled on this repo?)"
+
+          # Close superseded `platform/bump-*` PRs. Every bump PR is an
+          # ATOMIC absolute rewrite of every pinned reference (see the file
+          # header) — it fully supersedes whatever an OLDER bump PR proposed,
+          # so once THIS run's PR is open (or updated) above, any OTHER open
+          # `platform/bump-*` PR is stale noise, not a stack to reconcile.
+          # Left alone, these pile up every time a release is cut before a
+          # consumer merges the previous bump PR (observed live: a consumer
+          # accrued 4 open bump PRs at once). FAIL-OPEN, same rationale as
+          # the auto-merge line just above: a stale PR left open by mistake
+          # is a cosmetic nuisance, never worth failing the bump. Runs on
+          # the same resolved credential (GH_TOKEN, already set for this
+          # step) as every other `gh` call here — no new token introduced.
+          NEW_PR=$(gh pr view "$BRANCH" --json number --jq .number 2>/dev/null || echo "")
+          if [ -n "$NEW_PR" ]; then
+            mapfile -t OLD_BUMP_PRS < <(
+              gh pr list --state open --json number,headRefName \
+                --jq ".[] | select(.headRefName | startswith(\"platform/bump-\")) | select(.headRefName != \"${BRANCH}\") | .number" \
+              2>/dev/null || true
+            )
+            for old_num in "${OLD_BUMP_PRS[@]}"; do
+              [ -z "$old_num" ] && continue
+              # --delete-branch is safe here: the jq filter above only ever
+              # matches `platform/bump-*` branches, and those branches are
+              # produced exclusively by this bump step, never hand-authored.
+              gh pr close "$old_num" --delete-branch --comment \
+                "Superseded by the bump to $LATEST (#${NEW_PR}) — this older bump PR is a stale absolute-rewrite and is safe to drop." \
+                || echo "::warning::could not close superseded bump PR #${old_num} — close it manually"
+            done
+          else
+            echo "::warning::could not resolve the PR number for $BRANCH — skipping superseded bump-PR cleanup"
+          fi

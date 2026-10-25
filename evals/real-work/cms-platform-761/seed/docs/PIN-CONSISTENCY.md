@@ -1,0 +1,473 @@
+# Platform-pin consistency (anti-skew)
+
+What this is: how `scripts/check-platform-pin-consistency.js` keeps every
+place a consumer references the platform version — reusable `uses:@ref`
+pins, composite `uses:@ref` pins, `Gemfile`/`Gemfile.lock`
+`tag:`, `platform.lock` `platform_ref`, and each caller's `platform_ref:`
+input — in lockstep, plus the workflow-content (call-interface) parity check
+that catches a thin caller whose body drifted from the canonical template.
+Read this before changing the pin-consistency script, `platform-bump.yml`'s
+seeding/retire/reconcile logic, or anything that adds a new "pin shape" a
+consumer can carry.
+See also the `platform-release-and-bump` skill and `docs/SYNC.md`'s
+"Single-version pin invariant".
+
+## Single-version pin consistency guard (anti-skew, #29)
+
+A consumer references the platform version in MANY places (every reusable
+`uses: …/.github/workflows/<n>.yml@<ref>`, every cross-repo composite
+`uses: …/.github/actions/<n>@<ref>`, the `Gemfile`/`Gemfile.lock`
+`tag:`, and `platform.lock` `platform_ref`). Historically Dependabot + `platform-bump`
+landed bumps PIECEMEAL, so consumers drifted (observed live: adamdaniel.ai pinned
+`@v0.1.0` loop/deploy callers, gem `@v0.1.5`, others `@v0.1.3`/`@v0.1.6` at once — a
+`v0.1.0` reusable against a `v0.1.5` gem is a latent bug source). **As of #244 that
+race is fully closed, on both halves.** #242 took the gem `tag:` out of it first —
+Dependabot's `bundler` ecosystem `ignore`s `cms-platform-theme`, so `platform-bump`
+is the gem's only bumper — and #244 did the same for every `uses:@` platform
+ref: Dependabot's `github-actions` ecosystem now `ignore`s every
+`Adam-S-Daniel/cms-platform/*` dependency name too (see `docs/SYNC.md` for the
+evidence and the wildcard-matcher detail). **No Dependabot ecosystem bumps a
+cms-platform reference anymore** — `platform-bump` is the single writer of the
+platform version a consumer carries, which is what makes the single-version
+invariant below structurally maintainable rather than a race this guard merely
+catches after the fact. **`platform-bump.yml`
+rewrites `.github/workflows/*` and pushes, so its credential MUST carry
+`workflows: write`** or GitHub rejects the push (`refusing to allow … to update
+workflow … without 'workflows' permission`) — the live half of #13. That
+credential is the CMS automation App's per-run installation token when the
+consumer has provisioned it, else the `CMS_PLATFORM_PAT` fine-grained PAT
+(#238; the `consumer-repo-provisioning` skill has the provisioning steps).
+It also seeds any workflow caller the release newly made platform-dictated —
+copying the missing caller from `examples/site/.github/workflows/` at the new
+ref, re-pinned to it — so the workflow-set-parity check (introduced v0.1.20,
+#54) also passes on the bump PR alone. Observed live: v0.1.54 added
+`dependabot-rearm-sweep.yml` and both consumers' bump PRs failed pin-consistency
+with `workflow-set: MISSING (platform-dictated)` until hand-fixed.
+It seeds a missing `oauth-proxy/deploy.sh` or `infrastructure/bootstrap/deploy.sh`
+delegating wrapper the same way (#518): the scaffolder emits both, but a site
+scaffolded before v0.1.29 never received them. Nothing checks for them, so
+this is delivery only, never a red.
+
+`scripts/check-platform-pin-consistency.js` (platform-owned, Node, needs only the
+repo's `yaml` lib) makes them all agree:
+
+- **Canonical version = `platform.lock` `platform_ref`** (source of truth; missing/
+  unparseable → hard fail with a clear message).
+- Parses every `.github/workflows/**/*.yml` with the **`yaml` parser** (anchors
+  resolved — NOT regex); collects `uses:@` refs targeting the platform owner/repo
+  (configurable via `--owner/--repo`, defaulting from `platform.lock`
+  `platform_repo`). Reusable refs `.../workflows/*.yml@<ref>`: the `<ref>` must ==
+  `platform_ref`. Composite refs `.../actions/*@<ref>`: **the same rule** — the
+  `<ref>` is a TAG and must == `platform_ref`.
+
+  A composite used to be the exception: SHA-pinned, with its version carried in a
+  trailing `# vX.Y.Z` COMMENT read by a LINE-AWARE pass (the one justified
+  regex/line exception to "parse, don't scan"). That comment went with the
+  2026-08-20 fleet-wide retirement of the action pin comment — it drifted
+  silently and then actively lied, and Dependabot rewrote it inconsistently. The
+  tag ties a composite to `platform.lock`'s `platform_ref` DIRECTLY and is
+  auditable without parsing a comment, so the checker now reads no comments at
+  all and reusables and composites obey one rule. The tag carve-out in AGENTS.md
+  ("a reusable *workflow* from a repo this account owns stays on a tag") extends
+  to these composites for exactly that reason; nothing third-party is ever a
+  tag.
+- **Checks the `platform_ref:` INPUT each caller passes (#220).** The reusable's
+  platform checkout does `ref: ${{ inputs.platform_ref }}`, so this value — not
+  the `uses:@` pin — decides WHICH platform tree the job actually runs. It is
+  canonical by definition, **not** a site-specific `with:` value, which is
+  precisely why the workflow-CONTENT parity check below (it deliberately MASKS
+  `with:` VALUES) is blind to it: the one value that selects the platform tree
+  was the one thing the anti-skew guard didn't check. A `platform_ref` Pair
+  whose value is a MAP is an input DECLARATION, not a pin
+  (`platform_ref: { type: string, default: main }` in the reusables) and is
+  skipped; so is a `${{ … }}` expression (a forwarded parameter, not statically
+  resolvable).
+- Reads `Gemfile` (`gem "cms-platform-theme", …, tag:`) + `Gemfile.lock` (the
+  cms-platform GIT-source `tag:`); both must == `platform_ref`. Tolerates a
+  consumer with NO Gemfile; ignores non-cms-platform `uses:`.
+- **Aggregates ALL** violations (doesn't stop at first); prints a precise per-file
+  report (file + found + expected) + `::error file=` annotations under
+  `GITHUB_ACTIONS`. Exit non-zero iff any mismatch; exit 0 + OK summary otherwise.
+
+Reusable + thin caller: `.github/workflows/platform-pin-consistency.yml`
+(`workflow_call`; it was modelled on the since-deleted `platform-drift-guard`'s
+checkout-consumer + checkout-platform-at-`platform_ref`-into-`.cms-platform/` +
+run-platform-script shape; the reusable `npm install --no-save yaml` before
+running, since the script resolves `yaml` from cwd/node_modules) +
+`examples/site/.github/workflows/...`
+(`pull_request`, NO `paths:` filter — any pin-bearing file can skew). Self-test:
+`e2e/check-platform-pin-consistency.test.js` (`@lane local`, runs in
+node-unit-lints) — consistent fixture → 0; skewed fixture → non-zero, each
+offending file/value named. It **used to be described as complementing**
+`platform-drift-guard` (that one guarded file CONTENT byte-match; this one
+guards VERSION CONSISTENCY) — but that guard was **deleted in v0.1.83** along
+with the transport that vendored the files it compared, so since then this is
+the only cross-repo guard left. See `docs/SYNC.md` "Single-version pin
+invariant".
+
+The same guard also enforces **workflow-content (call-interface) parity**
+(companion to the workflow-SET parity): a consumer's thin caller must match the
+canonical `examples/site` template's CALL INTERFACE — each job's `uses` target +
+`with` KEY-set + `secrets:` map + permissions — modulo version refs, site-specific
+`with` VALUES, and deliberately site-tuned `on:` triggers (all
+normalized/masked/excluded). The version-pin checks compare only the `@ref`
+STRINGS, so they were BLIND to a caller whose BODY drifted — e.g. jodidaniel's
+sweep caller silently dropped the now-required `secrets: CMS_E2E_PAT:` map and
+`startup_failure`'d the reusable for weeks. `checkWorkflowContentParity()` parses
+both callers (comments/formatting drop out), compares the call interface, and
+flags the exact drifting facet. It does NOT fight a legit site difference (e.g.
+adamdaniel TRIMS the host-loop push `paths:` to dodge prod-loop co-arrival
+eviction #1892 — an `on:` change, excluded).
+
+### `platform-bump` reconciles `secrets:` maps in the bump commit
+
+Because the canonical template is read at the consumer's OWN `platform_ref`, a
+release that changes a caller's `secrets:` map fails `workflow-content: DRIFT`
+on the bump PR itself — v0.1.113 (#467) added `app_private_key` to the
+`dependabot-rearm-sweep` template, and both v0.1.114 bump PRs
+(adamdaniel.ai#3891, jodidaniel.com#281) failed until the map was hand-added.
+`platform-bump` now runs `scripts/reconcile-caller-secrets.js` at the new ref
+over every caller the consumer already has, in the same commit as the pin
+rewrite:
+
+- drift is decided with this checker's own `structuralShape()`, so
+  "reconciled" means exactly "this guard agrees";
+- keys the template gained are added (with the template's comments), keys it
+  dropped are removed, changed values take the template's; a map the template
+  no longer has is deleted, and `secrets: inherit` or a flow map is replaced
+  by the template's block;
+- the write is a splice of the `secrets:` lines only (re-serializing the
+  parsed document would reformat most callers), so the consumer's comments
+  and formatting elsewhere survive; the result is re-parsed and must match the
+  template's map and leave everything else unchanged, or the file is left
+  alone and reported `MANUAL`.
+
+A `MANUAL` result (a flow-style job, an anchored or aliased map) or a skipped
+pass (inputs unreadable at the new ref) puts a `:warning:` in the bump PR body;
+this guard still catches the stale map, so fix it by hand in that PR. Tests:
+`e2e/platform-bump-secrets-reconcile.test.js`, which runs the reconciler
+against a synthetic consumer and then this checker over the result.
+
+### Two opt-in `with:` keys are exempt from the key-set compare (media archive)
+
+`checkWorkflowContentParity()`'s `withKeys` compare is an EXACT sorted-set
+match, and the canonical `examples/site` template ships two inputs
+COMMENTED OUT because adopting them is a per-site decision, not something
+every consumer should default into: `deploy-preview.yml`'s
+`media_archive_bucket` and `deploy-production.yml`'s `media_archive_bucket` +
+`platform_ref` (the private media-PDF archive, `docs/MEDIA-ARCHIVE.md`). A
+commented-out line drops out of the YAML parse entirely, so a consumer that
+follows the docs and uncomments them gains a `with:` key the canonical set
+doesn't have — and used to report `workflow-content: DRIFT`, making the
+documented opt-in unshippable by any consumer at all (jodidaniel.com had to
+revert its wiring — commit 07e5c4b).
+
+`OPTIONAL_WITH_KEYS` in `scripts/check-platform-pin-consistency.js` fixes
+that: a small, hand-maintained map from basename to the keys that basename's
+canonical template ships commented out. `structuralShape()` strips those keys
+from BOTH sides (canonical and consumer) before building `withKeys`, so
+adopting the archive no longer drifts. It is a deliberately REVIEWED list, not
+"any key commented out in the example" — deriving it from the comment text
+would let a stale `#`-prefixed line (a debugging aid, a half-finished
+feature) silently retire a real guard for every consumer at once.
+
+Exempting `platform_ref` from the compare on `deploy-production.yml` removed
+the only thing that forced it to be present alongside `media_archive_bucket`,
+so `checkOptionalInputPairing()` re-asserts that pairing directly: any job in
+a consumer's `deploy-production.yml` that sets a non-empty
+`media_archive_bucket` must also set `platform_ref`. The reusable's
+`platform_ref` input defaults to `main` — not a pin — and the
+`media_archive_bucket != ''` steps check the platform out at `platform_ref`
+to run `publish-opted-in-pdfs.sh`, so the unpaired shape would publish PDFs
+to the live site from an unpinned `main` checkout. `deploy-preview.yml`
+already passes `platform_ref` unconditionally (it isn't in that basename's
+optional list), so it needs no equivalent pairing check.
+
+### How a stale `platform_ref` INPUT got there, and why the seeder had to change (#220)
+
+The live instance was not a hand-edit. `platform-bump.yml`'s **seeding** path
+(the workflow-SET-parity feature, v0.1.20/#54) copies a newly-dictated caller
+from `examples/site/.github/workflows/` and re-pins it — but it stamped only the
+`uses:@` pin and the composite ref (then a SHA plus a `# vX.Y.Z` comment),
+because those were "the ref shapes the pin-consistency checker recognizes." So
+jodidaniel.com's
+`cms-scheduled-publish-loop.yml`, seeded by the v0.1.62 bump, landed with
+`uses:@v0.1.62` **and the example template's own `platform_ref: v0.1.59`**. Every
+later bump's `CUR`->`LATEST` rewrite (then a global literal replace, since
+replaced by `scripts/rewrite-platform-pins.js`, which likewise moves only a pin
+whose ref equals `CUR`) could never repair it — `CUR`
+is the CONSUMER's previous ref, which `v0.1.59` never matched again — so the
+input froze for 14 releases while the `uses:` line tracked every bump. At v0.1.70
+the checkout it selected (a v0.1.59 tree) predated the
+`install-playwright-browsers` composite and the job died on `Can't find
+'action.yml'`, silently, on a scheduled workflow. The seeder now stamps
+`platform_ref:` too (bare / `"quoted"` / `'quoted'`), so the guard and the seeder
+recognize the same three shapes. **Note the loop this closes:** the seeder's
+shape list was justified by the checker's shape list, so the checker's blind spot
+propagated into the seeder — keep the two in lockstep, in both directions.
+
+### A bump PR cut in the same minute as another `main` merge carries a stale tree (v0.1.81)
+
+`platform-bump` branches off `main` at the moment it runs. Dispatch it seconds
+after a release while another PR is mid-merge and the bump branch is cut from
+the *pre-merge* `main` — so it silently omits whatever that PR changed. Two
+symptoms, in increasing order of nastiness:
+
+1. **`update-branch` returns `422 merge conflict between base and head`** when
+   the other PR touched a line the bump also rewrites. Annoying but loud.
+2. **The bump PR tests the wrong tree.** If the release being adopted adds a
+   CHECK that reads a file the other PR fixed, that check runs on the bump PR
+   against the unfixed content and fails for a reason that has nothing to do
+   with the bump. Observed live at v0.1.81: both consumers' `platform/bump-v0.1.81`
+   branches were cut ~17s after the release and ~seconds before the #242
+   `dependabot.yml` change merged, so they would have run v0.1.81's new
+   `dependabot-theme-gem-ignored.test.js` against a config that did not yet
+   carry the ignore that lint asserts.
+
+This is not a `platform-bump` bug — a branch cut at time T legitimately contains
+`main` at time T. It is a **sequencing** hazard, and the fix is ordering:
+**let every other `main` merge settle before dispatching `platform-bump`**, or,
+if a bump PR is already open and stale, regenerate it rather than trying to
+`update-branch` through the conflict. Regeneration is deterministic — run
+`scripts/rewrite-platform-pins.js --from <CUR> --to <LATEST> --new-sha <release commit>`
+over `platform.lock`, `Gemfile`, `Gemfile.lock` and `.github/workflows/**` on
+top of current `main` (the workflow's own step: it moves only pins, never
+prose that names the old version, cms-platform#530), then confirm with
+`scripts/verify-consumer-pins.sh --platform-dir <platform>` before force-pushing
+the bump branch. Caller SEEDING only matters if the release newly dictated a
+workflow the consumer lacks; a release that adds none needs no seeding step.
+
+### The bump runs the reusable pinned by the consumer (v0.1.126, #559)
+
+The code that performs a bump comes from the consumer's CURRENT
+`platform-bump.yml` `uses:` pin; `LATEST` is only the release it targets. The
+fix in [PR #559](https://github.com/Adam-S-Daniel/cms-platform/pull/559)
+shipped in v0.1.126, so both bumps TO v0.1.126 still ran the old reusable at
+v0.1.125 (SHA `91392c279896f4eefcdc88343b1590dc013d0dd2`). Those runs used the
+old global version replacement one last time: [adamdaniel.ai run
+37185023596](https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/37185023596)
+and [jodidaniel.com run
+37185025916](https://github.com/jodidaniel/jodidaniel.com/actions/runs/37185025916).
+The first clean bump FROM v0.1.126, targeting v0.1.127 or later, runs the fixed
+rewrite. Historical comments already changed by the old replacement need
+separate repairs in the affected consumer workflow files; the platform bump
+does not repair those comments automatically.
+
+### The consumer gate's stale-pin rule has one home, and two callers
+
+`scripts/verify-consumer-pins.sh`'s check 2 — "no platform version token other
+than the canonical one on any platform-mentioning line" — is the most GENERAL
+pin detector here. Unlike `check-platform-pin-consistency.js`, which walks
+parsed YAML by key, it reads LINES, so it sees a stale version token in a
+LEFTOVER trailing `# vX.Y.Z (date)` comment on a `uses:` or a `platform_ref:` —
+a shape a parser cannot see at all, because the parser drops comments. House
+style carries no such comment since 2026-08-20, which is precisely why this
+check still earns its place: it is what turns a stray surviving one into a
+finding instead of an invisible lie.
+
+It used to be an inline `awk` program. It now lives in
+**`scripts/stale-platform-refs.js`** and is `require`d by
+`e2e/template-pin-rules.js`, which is what the scaffold-template guard
+(`e2e/examples-site-pins-current.test.js`) applies to `examples/site`. That is
+deliberate and load-bearing: two earlier rounds gave the template guard its own
+parse-only approximation of this rule, and each shipped a SPLIT — the guard
+green on a drifted template while a site scaffolded from it exited 1 on its own
+`verify-consumer-pins.sh`. Sharing the code removes the thing that can disagree.
+
+Two consequences to know before changing either:
+
+- **Changing the rule changes both.** Its output format is the awk's, verbatim,
+  so the verifier's report is unchanged; the exit code is three-valued (0 clean,
+  1 stale, 2 could-not-run) so "did not run" can never read as a pass.
+- **`verify-consumer-pins.sh` now hard-FAILs without that file** in the
+  `--platform-dir` tree, as it already did without the checker. Nothing in CI
+  sparse-checks this script out (only `check-platform-pin-consistency.js` is,
+  by `platform-pin-consistency.yml`), so no workflow needs a new path — but a
+  hand-assembled platform dir does.
+- `e2e/examples-site-scaffold-agreement.test.js` holds the line end-to-end: it
+  mutates the template, applies the scaffolder's real `substitute()`, and runs
+  this script on the result, asserting a shape can never red a scaffolded site
+  while the template guard stays green.
+
+## Pin AGREEMENT — the one-file check a fleet repo can actually run (#283)
+
+Everything above is the CONSUMER story, and it stops at the two sites.
+`check-platform-pin-consistency.js` needs a `platform.lock` for its canonical
+ref, a gem `tag:`, and a `platform-pin-consistency` reusable wired into CI.
+**Ten repos call a cms-platform reusable; only two have any of that.** The other
+eight — `_agent-guidance`, `skills-evals`, `fastmail-actions`, `GHA-bench`,
+`repo-settings`, `claude-memory-map`, `agentskills` and this repo's own
+self-caller — carry a single thin caller and nothing else, so every guard on
+this page is structurally unreachable from them.
+
+### The defect
+
+Each of those callers names the platform version TWICE:
+
+```yaml
+jobs:
+  audit:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/scheduled-run-health.yml@v0.1.88
+    with:
+      platform_ref: v0.1.88
+```
+
+Dependabot's `github-actions` ecosystem moves the first (a dependency ref) and
+**structurally cannot** move the second (a `with:` input value). Four of the
+seven carry no cms-platform `ignore`: three of them (`GHA-bench`,
+`repo-settings`, `claude-memory-map`) run the `github-actions` ecosystem and are
+live to the half-bump today, and `agentskills` has no `dependabot.yml` at all,
+so nothing moves its pin in either direction. The skew that results is worse
+than a crash: the NEW reusable runs against the OLD script its stale
+`platform_ref` sparse-checks out; an argv-scanning `flag()` silently ignores a
+flag it does not know; and the job goes **green**, having performed none of the
+detection the new workflow asked for. Measured when #283 was filed: seven of the
+eight sat on `v0.1.85`, a tag whose `scheduled-run-health.yml` has no push lane
+at all, while `skills-evals` accumulated fourteen unreported failing
+default-branch push runs its own health audit structurally could not see.
+
+**#283's announced hand-mitigation has since landed, and the gap has already
+re-opened — which is the whole point.** Re-measured 2026-08-20 by parsing each
+repo's `origin/main` workflow tree: all seven now pin `scheduled-run-health.yml`
+at `v0.1.87` with `platform_ref` agreeing, so the VALUES are consistent. But the
+platform is at `v0.1.88` and both consumers are already there, moved by
+`platform-bump.yml` — which never targets these seven. They are a release behind
+again, one release after the hand-bump, exactly as #283 predicted. The hand-bump
+fixed the values; nothing fixed the mechanism. #283 was nonetheless closed on
+2026-08-20 without a fleet fix: the check below shipped, but no fleet repo
+adopted it, so the half-bump stayed live in every two-ref caller. The mechanism
+was removed only later, by #424, for `scheduled-run-health.yml` — see
+[`docs/FLEET-CALLER-CURRENCY.md`](FLEET-CALLER-CURRENCY.md).
+
+### The check
+
+`scripts/check-pin-agreement.js`: **any mapping carrying both a `uses:@<ref>`
+and a `with.platform_ref` must have the two refs equal.** That is all of it.
+
+Three properties are the point, not incidental:
+
+- **Identity-free.** No repo slug, no canonical version, no lockfile, no
+  manifest — it compares a file against ITSELF. That is what makes it runnable
+  by a repo with none of the machinery this page otherwise assumes. A job-level
+  `uses:` is always a reusable WORKFLOW (steps, not jobs, name actions) and a
+  `platform_ref` input only means anything to a platform reusable, so the
+  pairing needs no configuration to disambiguate.
+- **It parses.** Anchors have been legal in workflows since 2025-09-18, so
+  either half can be an alias whose value is written elsewhere; a regex reads
+  such a file as clean because it cannot see the value at all. `merge: true` is
+  set for the same reason — without it a `<<:` merge key survives as a literal
+  own key and a job assembled that way looks like a job with no `uses:` and no
+  `with:`. Findings are located by KEY PATH (`jobs.audit`), not line number,
+  because an aliased value's line is not the line to edit.
+- **Three-valued exit.** `0` agree, `1` skew, `2` could-not-run — including a
+  scan that examined ZERO files. Folding could-not-run into `0` is the exact
+  silent-green failure this issue is about.
+
+### Where it lives, and why not somewhere else
+
+`.github/workflows/pin-agreement.yml` is a **reusable workflow**, because that
+is the only delivery an adopting fleet repo can take: one thin caller, no Node
+project, no lockfile, no local dependency. It checks the caller's tree out,
+sparse-checks the script out of the platform, installs the `yaml` parser at the
+exact version this repo already vets in `e2e/package.json`, and runs it.
+
+Adopt it by copying the caller snippet in that file's header, triggered on
+`pull_request` + `push` over `.github/workflows/**` — so a half-bump PR goes red
+*before* it merges rather than after. **That also makes Dependabot safe to
+re-enable** on the four repos that currently have no cms-platform `ignore`,
+which is what un-stalls the three that do (their `ignore` was copied from the
+consumers, where `platform-bump.yml` owns the version atomically — but
+`platform-bump` never targets these repos, so nothing else moves the pin and
+they simply stop).
+
+**The caller checks itself, and that is sound in both broken directions.** The
+check reads the CALLER's workflow tree, which is always current, so a half-bump
+is caught even when the stale `platform_ref` hands it the OLD script; and a
+`platform_ref` predating the script leaves nothing to execute, which fails the
+step loudly. There is no arrangement of the two refs in which it quietly passes.
+
+It is deliberately **not** added to `examples/site/.github/workflows/`. That set
+is the consumer-dictated workflow set, so a new file there makes both consumers'
+workflow-set parity report MISSING until they adopt it — and the consumers are
+the two repos this skew already cannot reach.
+
+`e2e/pin-agreement.test.js` (a registered meta-spec) drives the checker over
+synthetic workflows, over `examples/site` and over this repo's own workflows,
+and locks the reusable's shape.
+
+### What this deliberately does NOT do
+
+Two other options were on the table for #283 and are out of scope here:
+
+- **Extending `platform-bump.yml` to these repos.** Atomic and correct, but they
+  have no `platform.lock`, no gem and no pin-consistency gate, so most of what
+  that workflow does would have nothing to act on.
+- **Removing the second reference** — having the reusable resolve its own script
+  from the ref it was called at, so `platform_ref:` need not exist for these
+  callers and the skew class disappears entirely. This has since become
+  reachable and is what #424 chose for `scheduled-run-health.yml`: the job
+  context's `job.workflow_repository`/`job.workflow_sha` name the reusable's
+  own commit. The decision, the evidence and the rejected options are in
+  `docs/FLEET-CALLER-CURRENCY.md`.
+
+This lint makes the skew LOUD. It does not make it impossible, and it was never
+adopted by a fleet repo. #283 was closed without a fix. #424 then chose to
+remove the second reference for `scheduled-run-health.yml` rather than adopt
+this lint, because a lint moves no pin: every Dependabot bump would go red and
+wait for a human. The lint stays shipped as a general check. See
+`docs/FLEET-CALLER-CURRENCY.md`.
+
+## A pin carries no version comment - lint-locked (2026-08-20)
+
+The managed half of `AGENTS.md` states the rule; these two specs stop it
+drifting back. Eleven PRs stripped every trailing `# vX.Y.Z (YYYY-MM-DD)` label
+fleet-wide and deleted the machinery that regenerated them, but nothing then
+ASSERTED the absence - and a convention with no verifier returns the first time
+an agent helpfully labels a SHA it just bumped, which is how the labels drifted
+out of true to begin with.
+
+- `e2e/action-pin-comment-lint.test.js` - the PLATFORM half: this repo's
+  `.github/workflows/`, the `.github/actions/*/action.yml` composites, and the
+  `examples/site` thin-caller templates. Registered in `PLATFORM_META_SPECS`.
+- `e2e/consumer-action-pin-comment-lint.test.js` - the CONSUMER half: a site's
+  own `.github` tree, where most of the fleet's pinned `uses:` lines actually
+  live. Deliberately NOT registered (the #244 lesson - registering it would
+  testIgnore it on the exact lane it exists for). Do not "tidy" it onto the list.
+
+Both drive one detector, `e2e/pin-comment-rules.js`, so they cannot drift apart.
+
+It PARSES, and that is what makes it correct rather than merely house-style
+compliant. YAML comments are outside the data model, so `YAML.parse()` drops
+them - but `YAML.parseDocument()` keeps a same-line trailing comment as
+`node.comment` (verified against `yaml` 2.9.0 for plain, quoted,
+last-line-no-newline, composite-action and flow-mapping shapes), so no lexical
+fallback is needed. A line scan would also be WRONG here: two legal shapes carry
+a version token in the VALUE - `…/e2e-tests.yml@v0.1.88` and
+`docker://alpine:3.20` - and a regex over the line flags both. The detector
+reads only the comment, so a tag-pinned own-account ref, a `./local` path and a
+`docker://` ref are inherently untouched; there is no carve-out to get wrong.
+A trailing comment that is not a version (`# zizmor: ignore[...]`) stays legal.
+
+## platform-bump moves files and one dictated input, not just pins (#315)
+
+A release can require three kinds of consumer-side change, and for a long time
+the bump made only the first: it re-pins, it SEEDS a newly-dictated thin caller,
+it RETIRES one that left the canonical set, and it RECONCILES
+`cms-automerge-nudge.yml`'s `required_contexts` from the manifest's ruleset for
+that repo. The retire and reconcile halves have to ride the bump commit —
+pin-consistency compares the consumer's workflow set against the platform at
+that consumer's OWN pinned ref, so splitting either off fails in the
+mirror-image direction (`MISSING` instead of `EXTRA`).
+
+Two things to keep straight if you touch it: "was this caller ever dictated?" is
+answered by the canonical set at the OLD ref, never by "the consumer has a file
+we don't recognise" — that distinction is what stops it deleting site-authored
+workflows — and the `required_contexts` list is DERIVED per consumer from
+`repo-settings.yml`, never copied from the template, because a consumer may map
+`main` to a different library entry.
+
+Note also that the check reporting `workflow-set: EXTRA` is
+`platform-pin-consistency / pin-consistency`, NOT `parity / parity` (that one is
+`parity-preview.yml`'s preview gate). Only the latter is in `consumer-main`'s
+required set today, so a stale or orphaned caller currently reports on an
+OPTIONAL check.

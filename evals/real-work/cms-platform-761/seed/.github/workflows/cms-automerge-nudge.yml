@@ -1,0 +1,561 @@
+# Reusable CMS auto-merge nudge for platform sites.
+#
+# Re-enables auto-merge on any open CMS canary PR whose required checks
+# all show latest=SUCCESS / NEUTRAL / SKIPPED but whose mergeStateStatus
+# is still BLOCKED.
+#
+# A consuming site calls this from a thin wrapper that owns the schedule
+# / workflow_dispatch triggers + run-name (see
+# examples/site/.github/workflows/cms-automerge-nudge.yml). The site's
+# required-status-check context list is SITE-SPECIFIC (it mirrors that
+# site's `.github/rulesets/main.json`), so it is passed in as the
+# `required_contexts` input rather than hard-coded here — each site
+# provides its own (lint-locked on the SITE by its own copy of
+# e2e/cms-automerge-nudge.test.js).
+#
+# Background — issue #1815 Blocker 1
+# ──────────────────────────────────
+#
+# Observed on PR #1812 (2026-05-28): all 9 required-status-checks were
+# SUCCESS at the latest CheckRun per context, auto-merge was enabled at
+# 02:44:00Z, no review required, strict_required_status_checks_policy is
+# false — yet the PR stayed `mergeStateStatus: BLOCKED` until the daily
+# sweep closed it ~9h later, never merging.
+#
+# Empirical differential vs. its prod-mutate twin #1813 (which merged in
+# ~7 min): #1812 received two distinct auto-merge-triggering labels in
+# the same second (`decap-cms/pending_publish` from Decap, then
+# `cms/ready` from the publish-via-auto-merge shim + the editorial
+# workflow's `opened` handler). Both fired the `auto-merge-when-ready`
+# job; the per-PR concurrency lane serialised them, so the second
+# `enablePullRequestAutoMerge` mutation ran 4s after the first completed.
+# The final `validate-content` SUCCESS landed 2s after the second
+# mutation — and GitHub's merge-state evaluator appears to have cached
+# the BLOCKED snapshot taken during one of the two mutations (when
+# validate-content's latest was still CANCELLED) and not re-evaluated
+# when the SUCCESS arrived. No subsequent state-change event fires
+# between then and the eventual sweep close, so the PR sits BLOCKED with
+# all-green data.
+#
+# A no-op re-call of `enablePullRequestAutoMerge` re-triggers GitHub's
+# merge-state evaluation, but has been OBSERVED NOT to land these (#1965
+# stayed open 6+ h after a re-enable). So the recovery is now an EXPLICIT
+# `pulls.merge` (SQUASH) — a synchronous merge that forces GitHub to
+# re-evaluate mergeability fresh, dislodging the stale BLOCKED snapshot.
+# Branch protection still enforces the required checks at merge time, so
+# this can only land a genuinely-green PR. The re-enable is kept as a
+# fallback when the explicit merge momentarily 405s.
+#
+# Scope — DELIBERATELY narrow
+# ────────────────────────────
+#
+# Only acts on a PR when ALL of the following hold:
+#
+#   1. PR carries the `automated-test` label. `e2e/github-actions-poll.js`
+#      `waitForCmsPullRequest` applies this as the loop opens any cms PR;
+#      a human-authored PR will never carry it. Guarantees we never
+#      touch a real editor's draft or a code PR.
+#   2. PR.autoMergeRequest is already populated — i.e. auto-merge is
+#      already enabled. If a human disabled it, we never act. CARVE-OUT:
+#      this only holds for a main-based PR. A `cms/preview-only` PR (base
+#      != main) can NEVER get `enablePullRequestAutoMerge` to succeed — its
+#      base branch has no required-status-check protection rules for
+#      GitHub's auto-merge to wait on, so the mutation always errors
+#      (observed: PR #2466 / run 28758624761, base `audit/preview-exercise`,
+#      "Pull request is in unstable status" despite all checks green).
+#      `pr.autoMergeRequest` is therefore permanently null for these PRs, so
+#      we additionally evaluate any PR where `baseRefName !== 'main'`
+#      (`basePreviewOnly`) even with auto-merge unarmed. This is the
+#      defense-in-depth backstop for cms-editorial-workflow.yml's own inline
+#      bounded poll (auto-merge-when-ready's ~10-min budget) — the nudge
+#      remains the backstop for the rarer case where checks take longer
+#      than that budget.
+#   3. Every required-status-check (the contexts the site passes in via
+#      `required_contexts`) is green BOTH in the bulk rollup AND on a
+#      FRESH per-PR re-query of the head sha's check-runs, where green =
+#      every run for that context is COMPLETED with conclusion
+#      SUCCESS/NEUTRAL/SKIPPED and NONE is queued/in-progress (so a real
+#      check still running behind a docs-only stub-green can never trick
+#      us into an early merge — the adamdaniel-automerge-fires-on-stub
+#      hazard). BASE-AWARE EXCEPTION: a `basePreviewOnly` PR (base !=
+#      main) is judged by the SELF-CONSISTENT predicate instead — all
+#      check runs PRESENT on its fresh head completed green (excluding
+#      auto-merge-when-ready job-class runs), combined status OK, fresh
+#      pulls.get open/head-unchanged/mergeable — because the site's
+#      required_contexts mirror its MAIN ruleset and most of those
+#      workflows never run on a feature-base PR, so the REQUIRED gate is
+#      structurally unsatisfiable there (PR #2484: fully green with
+#      cms/ready + cms/preview-only, yet the 04:42:33 nudge run
+#      28768313594 dropped it — "Found 1 … Recovered 0"). Mirrors
+#      cms-editorial-workflow.yml's unstable-status fallback predicate.
+#
+#   We do NOT gate on mergeStateStatus: the bulk query returns UNKNOWN for
+#   PRs GitHub hasn't recently re-evaluated, and the old `!== 'BLOCKED' →
+#   skip` dropped every UNKNOWN PR — the exact reason stuck-green canaries
+#   (#1812/#1815) were never recovered. The authoritative signal is the
+#   fresh check state, not the cached merge snapshot.
+#
+# The intersection above is exactly the #1812/#1815 stuck pattern. The
+# caller declares a `*/5` cron, but GitHub throttles scheduled workflows
+# under load — in practice this fires roughly every 45-90 min, not every 5
+# (the same empirical throttle cms-editorial-workflow.yml's inline poll
+# comment documents), so worst-case time-to-merge drops from "until the
+# daily sweep closes it" to that ~45-90 min window.
+#
+# Out of scope:
+#
+#   - Does NOT change the editorial workflow's auto-merge enable path.
+#     The original mutations are unchanged; this is a recovery mechanism
+#     that fires only when they happen to land in the racy state.
+#   - Does NOT act where auto-merge wasn't already armed, UNLESS the PR's
+#     base isn't `main` (see the CARVE-OUT under item 2 above) — a PR with
+#     `autoMergeRequest: null` on a main-based PR is left alone; a
+#     `cms/preview-only` PR (base != main) is evaluated regardless, since
+#     its autoMergeRequest can never populate in the first place.
+#   - Does NOT touch non-CMS PRs (the `automated-test` label gate).
+#
+# PLATFORM PORT NOTES (vs adamdaniel.ai@origin/main): became a
+# `workflow_call`-only reusable — the `schedule` + `workflow_dispatch`
+# triggers and the dynamic run-name now live on the thin caller a site
+# copies in. The site-specific REQUIRED context list (hard-coded inline
+# upstream from that site's `.github/rulesets/main.json`) is now the
+# `required_contexts` input. The recovery PAT generalises to
+# `secrets.CMS_E2E_PAT`, the same secret every other ported reusable
+# uses.
+name: CMS auto-merge nudge (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      required_contexts:
+        description: >-
+          Newline-separated list of required-status-check contexts the
+          site's branch protection enforces (mirror the site's
+          `.github/rulesets/main.json` `required_status_checks`). The
+          nudge only re-enables auto-merge on a BLOCKED PR when EVERY one
+          of these is latest=SUCCESS / NEUTRAL / SKIPPED. Lint-locked on
+          the site by its copy of e2e/cms-automerge-nudge.test.js.
+        required: true
+        type: string
+    secrets:
+      CMS_E2E_PAT:
+        description: >-
+          PAT used for the recovery merge — the recovered merge must push
+          to main as a non-bot identity so deploy-production.yml fires
+          (same reason documented in cms-editorial-workflow.yml).
+        required: true
+
+permissions:
+  # Read PR state via GraphQL; write only via the mutation, which the
+  # PAT below carries its own scope for.
+  contents: read
+  pull-requests: read
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Re-enable auto-merge on stuck CMS PRs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          # Site-specific required-status-check contexts, newline-list.
+          # Parsed into the REQUIRED Set below.
+          REQUIRED_CONTEXTS: ${{ inputs.required_contexts }}
+        with:
+          # CMS_E2E_PAT for the same deploy-production-fires reason
+          # documented in cms-editorial-workflow.yml — the recovered
+          # merge must push to main as a non-bot identity so
+          # deploy-production.yml fires.
+          github-token: ${{ secrets.CMS_E2E_PAT }}
+          script: |
+            // Required-status-checks list, supplied by the caller via the
+            // `required_contexts` input (a newline-separated list mirroring
+            // the SITE's .github/rulesets/main.json required_status_checks
+            // array — lint-locked on the site by its copy of
+            // e2e/cms-automerge-nudge.test.js). Parameterised here so the
+            // reusable carries no hard-coded site identity.
+            const REQUIRED = new Set(
+              (process.env.REQUIRED_CONTEXTS || '')
+                .split('\n')
+                .map((s) => s.trim())
+                .filter(Boolean),
+            );
+            if (REQUIRED.size === 0) {
+              core.setFailed(
+                'required_contexts is empty — pass the site\'s ' +
+                  'required-status-check contexts (one per line).',
+              );
+              return;
+            }
+            core.info(`Required contexts: ${[...REQUIRED].join(', ')}`);
+
+            // Query open PRs carrying `automated-test`; pull their merge
+            // state + status check rollup in one round-trip.
+            const { repository } = await github.graphql(`
+              query($owner:String!, $repo:String!) {
+                repository(owner:$owner, name:$repo) {
+                  pullRequests(states:OPEN, first:50, labels:["automated-test"]) {
+                    nodes {
+                      number
+                      id
+                      mergeStateStatus
+                      baseRefName
+                      autoMergeRequest { enabledAt }
+                      commits(last:1) {
+                        nodes {
+                          commit {
+                            oid
+                            statusCheckRollup {
+                              contexts(first:100) {
+                                nodes {
+                                  __typename
+                                  ... on CheckRun { name conclusion }
+                                  ... on StatusContext { context state }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }`, { owner: context.repo.owner, repo: context.repo.repo });
+
+            const GREEN = (c) => c === 'SUCCESS' || c === 'NEUTRAL' || c === 'SKIPPED';
+
+            // FRESH per-PR authority gate (the bulk rollup can lag, and we must
+            // never merge on a stale/stub snapshot — see the
+            // adamdaniel-automerge-fires-on-stub-checks hazard). Re-query the
+            // HEAD sha's check-runs + legacy statuses directly and require EVERY
+            // required context to be COMPLETED + green AND that NO required
+            // context has a queued/in-progress run hiding behind a green one
+            // (the real e2e still running behind a docs-only stub).
+            async function headIsTrulyGreen(sha) {
+              const checkRuns = await github.paginate(
+                github.rest.checks.listForRef,
+                { owner: context.repo.owner, repo: context.repo.repo, ref: sha, per_page: 100 },
+              );
+              // Group every check-run by name; a required context is green only
+              // if it has ≥1 run, ALL its runs are completed, and the latest
+              // (by started_at) concluded green.
+              const byName = new Map();
+              for (const r of checkRuns) {
+                if (!byName.has(r.name)) byName.set(r.name, []);
+                byName.get(r.name).push(r);
+              }
+              const legacy = new Map();
+              try {
+                const { data } = await github.rest.repos.getCombinedStatusForRef({
+                  owner: context.repo.owner, repo: context.repo.repo, ref: sha, per_page: 100,
+                });
+                for (const s of data.statuses || []) legacy.set(s.context, s.state.toUpperCase());
+              } catch (_) { /* no legacy statuses */ }
+
+              for (const name of REQUIRED) {
+                const runs = byName.get(name);
+                if (runs && runs.length) {
+                  // Pending guard (stub hazard): never merge while a required
+                  // run is still queued/in-progress (the real check running
+                  // behind a docs-only stub-green).
+                  const pending = runs.find((r) => r.status !== 'completed');
+                  if (pending) return { ok: false, why: `${name} still ${pending.status}` };
+                  // Ignore CANCELLED runs: the editorial workflow fires several
+                  // runs on the same head sha (label flips), and a same-sha
+                  // re-run cancellation leaves a cancelled `validate-content`
+                  // check beside the real success. The cancelled is superseded,
+                  // not an authoritative verdict — decide on the latest
+                  // NON-cancelled run (mirrors waitForWorkflowRun's "cancelled
+                  // is transient"). Without this the nudge skipped genuinely
+                  // green PRs (#1815). NB: the editorial-workflow fix removes
+                  // these cancelled runs at the source; this keeps the nudge
+                  // correct for any residual cancelled required check.
+                  const decisive = runs
+                    .filter((r) => (r.conclusion || '').toLowerCase() !== 'cancelled')
+                    .sort((a, b) => new Date(a.started_at || 0) - new Date(b.started_at || 0))
+                    .pop();
+                  if (!decisive) return { ok: false, why: `${name}: all runs cancelled` };
+                  if (!GREEN((decisive.conclusion || '').toUpperCase())) {
+                    return { ok: false, why: `${name}=${decisive.conclusion}` };
+                  }
+                  continue;
+                }
+                // Fall back to a legacy commit status of the same context name.
+                const st = legacy.get(name);
+                if (st === undefined) return { ok: false, why: `${name} missing on head sha` };
+                if (!GREEN(st)) return { ok: false, why: `${name}=${st}` };
+              }
+              return { ok: true };
+            }
+
+            // Base-aware readiness for PREVIEW-ONLY PRs (base != main) — the
+            // LOCKSTEP TWIN of cms-editorial-workflow.yml's unstable-status
+            // fallback predicate (#135); keep the two in sync.
+            //
+            // Why headIsTrulyGreen can't be used here (PR #2484 / nudge run
+            // 28768313594, 04:42:33): `required_contexts` mirrors the SITE's
+            // main-branch ruleset (adamdaniel's six: editorial /
+            // validate-content, scan / scan, parity / parity, preview-media /
+            // preview-media, e2e / e2e, visual-regression /
+            // approve-regression), and most of those workflows only run on
+            // PRs targeting main — they can NEVER all report on a
+            // feature-base PR. So while #2484's prior head b64dde2b sat fully
+            // green with cms/ready + cms/preview-only, the bulk pre-filter
+            // (same REQUIRED keys) silently dropped it ("Found 1 … Recovered
+            // 0", the non-green detail only at core.debug), and had it
+            // passed, headIsTrulyGreen would have rejected it as "<context>
+            // missing on head sha". The v0.1.52 basePreviewOnly carve-out got
+            // these PRs INTO evaluation, but the REQUIRED-contexts gate then
+            // rejected every one, always. Judge them by SELF-consistency
+            // instead: every check run that IS present on the fresh head
+            // must be completed green.
+            //
+            //   1. Check runs on the head sha (paginated), MINUS every
+            //      `auto-merge-when-ready` run (matched by name — the job-
+            //      class exclusion from the editorial fallback; an in-flight
+            //      sibling poll on this PR must not read as "pending"), must
+            //      all be completed success/neutral/skipped. Cancelled runs
+            //      are superseded-not-authoritative, same as headIsTrulyGreen
+            //      above: decide on the latest NON-cancelled run per name.
+            //   2. Legacy commit statuses must be green IF any exist —
+            //      deploy-preview.yml posts a real `deploy/preview` commit
+            //      status on PR head shas. An EMPTY status set reads
+            //      state:"pending" on GitHub's side (total_count 0), so
+            //      emptiness must count as OK, not pending.
+            // (The caller-loop below adds the third leg — a fresh pulls.get
+            // guard for open/head-unchanged/mergeable — before merging.)
+            const AUTO_MERGE_JOB_CLASS = /auto-merge-when-ready/;
+            async function headIsSelfConsistentGreen(sha) {
+              const checkRuns = await github.paginate(
+                github.rest.checks.listForRef,
+                { owner: context.repo.owner, repo: context.repo.repo, ref: sha, per_page: 100 },
+              );
+              const others = checkRuns.filter((c) => !AUTO_MERGE_JOB_CLASS.test(c.name || ''));
+              // Anchor: require at least ONE non-self check run. Zero runs is
+              // NOT vacuous green — right after a force-push GitHub may not
+              // have CREATED the head's check runs yet (webhook lag), and a
+              // cron tick landing in that window must not merge a head no
+              // check ever vetted. cms PRs on these consumers always get at
+              // least `editorial / validate-content`, so a genuinely green
+              // head always has ≥1 run and nothing real is stranded by this.
+              if (others.length === 0) {
+                return { ok: false, why: 'no non-self check runs on head yet' };
+              }
+              const pendingRun = others.find((r) => r.status !== 'completed');
+              if (pendingRun) {
+                return { ok: false, why: `${pendingRun.name} still ${pendingRun.status}` };
+              }
+              const byName = new Map();
+              for (const r of others) {
+                if (!byName.has(r.name)) byName.set(r.name, []);
+                byName.get(r.name).push(r);
+              }
+              for (const [name, runs] of byName) {
+                const decisive = runs
+                  .filter((r) => (r.conclusion || '').toLowerCase() !== 'cancelled')
+                  .sort((a, b) => new Date(a.started_at || 0) - new Date(b.started_at || 0))
+                  .pop();
+                if (!decisive) return { ok: false, why: `${name}: all runs cancelled` };
+                if (!GREEN((decisive.conclusion || '').toUpperCase())) {
+                  return { ok: false, why: `${name}=${decisive.conclusion}` };
+                }
+              }
+              try {
+                const { data } = await github.rest.repos.getCombinedStatusForRef({
+                  owner: context.repo.owner, repo: context.repo.repo, ref: sha, per_page: 100,
+                });
+                if ((data.total_count || 0) > 0 && data.state !== 'success') {
+                  return { ok: false, why: `combined status ${data.state}` };
+                }
+              } catch (e) {
+                // Can't verify the legacy statuses — fail CLOSED (skip this
+                // tick; the next cron retries) rather than merge unvetted.
+                return { ok: false, why: `combined status unreadable (${String((e && e.message) || e).slice(0, 80)})` };
+              }
+              return { ok: true };
+            }
+
+            const prs = repository.pullRequests.nodes;
+            core.info(`Found ${prs.length} open automated-test PR(s)`);
+            let merged = 0;
+            let nudged = 0;
+
+            for (const pr of prs) {
+              // A PR whose auto-merge was never armed usually means a human
+              // disabled it (item 2 above) — but that inference only holds when
+              // the base IS `main`. A `cms/preview-only` PR (base != main, see
+              // cms-editorial-workflow.yml's "Apply draft label on new PR" step)
+              // can NEVER get `enablePullRequestAutoMerge` to succeed — the base
+              // branch has no required-status-check protection rules for
+              // GitHub's auto-merge "wait for checks" to key off, so the
+              // mutation always errors ("Pull request is in clean status" or
+              // "...unstable status", e.g. PR #2466 / run 28758624761 — base
+              // `audit/preview-exercise`, all checks green, "unstable status").
+              // For these PRs `pr.autoMergeRequest` is permanently null, so
+              // `!pr.autoMergeRequest` alone would skip them forever — this is
+              // the defense-in-depth backstop for cms-editorial-workflow.yml's
+              // own inline bounded poll (its ~10-min budget); the rest of this
+              // loop (bulk pre-filter, fresh re-query, explicit squash merge,
+              // idempotent-catch) is UNCHANGED and applies identically once a
+              // PR passes this gate.
+              const basePreviewOnly = pr.baseRefName && pr.baseRefName !== 'main';
+              if (!pr.autoMergeRequest && !basePreviewOnly) continue;
+              if (!pr.commits.nodes.length) continue;
+
+              // NOTE: we deliberately do NOT gate on mergeStateStatus. The bulk
+              // query returns UNKNOWN for any PR GitHub hasn't recently
+              // re-evaluated, and the old `!== 'BLOCKED' → continue` skipped
+              // every UNKNOWN PR — the exact reason stuck-green canaries (the
+              // #1812/#1815 stale-snapshot) were never recovered. We act on the
+              // authoritative signal instead: all required checks green.
+              const commit = pr.commits.nodes[0].commit;
+
+              if (basePreviewOnly) {
+                // PREVIEW-ONLY readiness (PR #2484 / nudge run 28768313594):
+                // the REQUIRED-contexts machinery below is structurally
+                // unsatisfiable on a feature-base PR (most required workflows
+                // only run on PRs to main), so BOTH the bulk pre-filter and
+                // headIsTrulyGreen reject every preview-only PR forever. Use
+                // the base-aware self-consistent predicate instead — and skip
+                // the bulk rollup pre-filter entirely (it is the same
+                // REQUIRED-keyed gate in cheaper clothing). Cost: a couple of
+                // REST reads per preview PR per cron tick; there are at most
+                // a handful of these PRs open at once.
+                const fresh = await headIsSelfConsistentGreen(commit.oid);
+                if (!fresh.ok) {
+                  core.info(
+                    `PR #${pr.number} (preview-only): head not self-consistent green ` +
+                      `(${fresh.why}); skipping this tick.`,
+                  );
+                  continue;
+                }
+                // Third leg of the predicate (mirrors the editorial
+                // fallback): a fresh pulls.get — still open, head UNCHANGED
+                // since the bulk query (never merge a head the predicate
+                // didn't just vet; Decap force-pushes re-saves), and no
+                // computed conflict (mergeable false). mergeable null =
+                // still computing — the merge call adjudicates that itself.
+                let freshPr;
+                try {
+                  ({ data: freshPr } = await github.rest.pulls.get({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: pr.number,
+                  }));
+                } catch (e) {
+                  core.warning(
+                    `PR #${pr.number} (preview-only): pulls.get failed (${String((e && e.message) || e)}); next cron retries.`,
+                  );
+                  continue;
+                }
+                if (freshPr.state !== 'open') {
+                  core.info(`PR #${pr.number} (preview-only) no longer open; nothing to do.`);
+                  continue;
+                }
+                if (freshPr.head.sha !== commit.oid) {
+                  core.info(
+                    `PR #${pr.number} (preview-only): head moved (${commit.oid.slice(0, 8)} → ` +
+                      `${freshPr.head.sha.slice(0, 8)}) since the bulk query; next cron re-evaluates.`,
+                  );
+                  continue;
+                }
+                if (freshPr.mergeable === false) {
+                  core.info(`PR #${pr.number} (preview-only): computed merge conflict; skipping.`);
+                  continue;
+                }
+              } else {
+                const rollup = commit.statusCheckRollup;
+                if (!rollup) continue;
+
+                // Quick bulk pre-filter (cheap) before the per-PR REST re-query.
+                const latest = new Map();
+                for (const c of rollup.contexts.nodes) {
+                  if (c.__typename === 'CheckRun') latest.set(c.name, c.conclusion);
+                  else if (c.__typename === 'StatusContext') latest.set(c.context, c.state);
+                }
+                const bulkGreen = [...REQUIRED].every((name) => GREEN(latest.get(name)));
+                if (!bulkGreen) {
+                  const missing = [...REQUIRED].filter((n) => !GREEN(latest.get(n)));
+                  core.debug(
+                    `PR #${pr.number}: required not all green per bulk rollup ` +
+                      `(non-green: ${missing.join(', ')}); leaving alone`,
+                  );
+                  continue;
+                }
+
+                // Authoritative fresh re-query — never merge on a stale/stub snapshot.
+                const fresh = await headIsTrulyGreen(commit.oid);
+                if (!fresh.ok) {
+                  core.info(
+                    `PR #${pr.number}: bulk-green but fresh head check not clean (${fresh.why}); ` +
+                      `skipping (avoids merging on a stale/stub snapshot).`,
+                  );
+                  continue;
+                }
+              }
+
+              core.info(
+                `PR #${pr.number}: all required checks green on head ${commit.oid.slice(0, 8)} ` +
+                  `(mergeStateStatus=${pr.mergeStateStatus}) — explicit recovery merge`,
+              );
+
+              // STRONG recovery: an explicit merge forces GitHub to re-evaluate
+              // mergeability fresh, dislodging the stale BLOCKED snapshot that a
+              // no-op re-enable of auto-merge does NOT clear. Branch protection
+              // still enforces the required checks at merge time, so this can
+              // only land a genuinely-green PR. SQUASH + the CMS_E2E_PAT identity
+              // so deploy-production.yml fires (the documented non-bot reason).
+              try {
+                await github.rest.pulls.merge({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  merge_method: 'squash',
+                });
+                core.info(`PR #${pr.number}: recovery merge succeeded.`);
+                merged += 1;
+              } catch (err) {
+                const msg = String((err && err.message) || err);
+                if (/already merged/i.test(msg)) {
+                  core.info(`PR #${pr.number} already merged; nothing to do.`);
+                  continue;
+                }
+                // A preview-only base can NEVER arm native auto-merge (the
+                // enablePullRequestAutoMerge mutation always errors "clean
+                // status"/"unstable status" on an unprotected base — PR #2466
+                // / run 28758624761), so the re-arm fallback below would just
+                // add a guaranteed-failure warning on top. Let the next cron
+                // tick retry the explicit merge instead.
+                if (basePreviewOnly) {
+                  core.warning(
+                    `PR #${pr.number} (preview-only): explicit merge failed (${msg}); ` +
+                      `re-arm is impossible on an unprotected base — next cron retries.`,
+                  );
+                  continue;
+                }
+                // GitHub momentarily still disagrees (snapshot catching up, or a
+                // transient 405 "not mergeable"). Fall back to re-arming
+                // auto-merge so the next evaluation lands it, and let the next
+                // cron retry the explicit merge.
+                core.warning(
+                  `PR #${pr.number}: explicit merge failed (${msg}); re-arming auto-merge as fallback.`,
+                );
+                try {
+                  await github.graphql(`
+                    mutation($pullRequestId: ID!) {
+                      enablePullRequestAutoMerge(input: {
+                        pullRequestId: $pullRequestId,
+                        mergeMethod: SQUASH
+                      }) {
+                        pullRequest { autoMergeRequest { enabledAt } }
+                      }
+                    }`, { pullRequestId: pr.id });
+                  nudged += 1;
+                } catch (err2) {
+                  core.warning(`PR #${pr.number}: re-arm fallback also failed: ${String((err2 && err2.message) || err2)}`);
+                }
+              }
+            }
+
+            core.info(`Recovered ${merged} stuck PR(s) by explicit merge; re-armed ${nudged} as fallback.`);
