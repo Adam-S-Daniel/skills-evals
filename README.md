@@ -127,7 +127,7 @@ evals/
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence / agents-only probe workspaces
   real-work/               # subject: any, draft: real pull requests replayed (decision Q4)
-    <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196, cms-platform-761
+    <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196, cms-platform-761, cms-platform-760
       fixture.yaml         # the issue as the prompt, a repo_tests check, interface_strings
       seed/                # the base tree: agent context, subject paths and other specs trimmed
       checker/             # the pull request's own test file, hidden from the agent
