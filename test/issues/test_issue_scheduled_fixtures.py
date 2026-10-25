@@ -21,6 +21,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
+sys.path.insert(0, str(ROOT / "test"))
+from lockfile_pins import lock_problem  # noqa: E402
 EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability",
             "evals/skills-doctor/bucketed-account-store",
@@ -38,6 +40,8 @@ def module(name, path):
 
 
 planner = module("scheduled_plan", ROOT / "scripts/plan_scheduled_evals.py")
+sys.path.insert(0, str(ROOT / "scripts"))
+import allowance_guard  # noqa: E402
 badge = module("scheduled_badge", ROOT / "scripts/make_badge.py")
 
 
@@ -218,9 +222,7 @@ class TestScheduledFixtures(unittest.TestCase):
                 self.assertNotIn("${{", s.get("run", ""))
                 secrets += [(name, key, value) for key, value in {**s.get("env", {}), **s.get("with", {})}.items() if "secrets." in str(value)]
                 if "uses" in s:
-                    ref = s["uses"].rsplit("@", 1)[-1]
-                    self.assertEqual(len(ref), 40)
-                    self.assertTrue(all(char in "0123456789abcdef" for char in ref))
+                    self.assertIsNone(lock_problem(s["uses"], WORKFLOW))
         self.assertEqual(len(secrets), 1)
         self.assertEqual(secrets[0][0], "roster-pr")
 
@@ -443,13 +445,19 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertNotIn("concurrency", workflow)
         jobs = workflow["jobs"]
         self.assertEqual(set(jobs), {"plan", "dispatch"})
-        self.assertEqual(jobs["plan"]["permissions"], {"contents": "read"})
+        # `actions: read`: the allowance cut counts recent fires (#68).
+        self.assertEqual(jobs["plan"]["permissions"],
+                         {"contents": "read", "actions": "read"})
         self.assertEqual(jobs["dispatch"]["permissions"],
                          {"contents": "read", "actions": "write"})
         self.assertEqual(jobs["dispatch"]["needs"], "plan")
-        self.assertEqual(jobs["dispatch"]["if"], jobs["plan"]["if"])
+        # No fire fitting the weekly allowance plans an empty matrix, which
+        # GitHub refuses to expand, so the dispatch job is skipped on 0.
+        self.assertEqual(jobs["dispatch"]["if"],
+                         jobs["plan"]["if"] + " && needs.plan.outputs.count != '0'")
         self.assertEqual(jobs["plan"]["outputs"],
-                         {"matrix": "${{ steps.plan.outputs.matrix }}"})
+                         {"matrix": "${{ steps.plan.outputs.matrix }}",
+                          "count": "${{ steps.plan.outputs.count }}"})
         self.assertEqual(jobs["dispatch"]["strategy"],
                          {"fail-fast": False, "max-parallel": 1,
                           "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})
@@ -457,8 +465,10 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                          "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
         self.assertEqual(plan_step["run"],
-                         "python3 scripts/plan_scheduled_evals.py --max-fixtures 30")
-        self.assertEqual(plan_step["env"], {"GITHUB_EVENT_NAME": "schedule"})
+                         "python3 scripts/plan_scheduled_evals.py --max-fixtures 30 "
+                         "--allowance-tree eval-results-branch")
+        self.assertEqual(plan_step["env"], {"GITHUB_EVENT_NAME": "schedule",
+                                            "GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
         self.assertLess(next(i for i, s in enumerate(steps) if s["name"].startswith("Revalidate")),
                         next(i for i, s in enumerate(steps) if s["name"].startswith("Dispatch")))
@@ -477,12 +487,15 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             for item in job["steps"]:
                 self.assertNotIn("${{", item.get("run", ""))
                 if "uses" in item:
-                    self.assertRegex(item["uses"], r"@[0-9a-f]{40}$")
+                    self.assertIsNone(lock_problem(item["uses"], "routine-eval-weekly.yml"))
                     if "checkout@" in item["uses"]:
                         self.assertEqual(item["with"]["persist-credentials"], False)
-                        self.assertEqual(item["with"]["ref"],
-                                         "${{ github.event.repository.default_branch }}")
-                if item is not fire:
+                        # The default branch, or (for the allowance cut, #68)
+                        # the results branch, read as data.
+                        self.assertIn(item["with"]["ref"],
+                                      ("${{ github.event.repository.default_branch }}",
+                                       "persistent/eval-results"))
+                if item is not fire and item is not plan_step:
                     self.assertNotIn("GH_TOKEN", item.get("env", {}))
                 self.assertNotIn("EVAL_ROUTINE_FIRE_BEARER", str(item))
 
@@ -492,17 +505,27 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         validate_run = jobs["dispatch"]["steps"][-2]["run"]
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            plan_script = base / "plan.sh"
-            plan_script.write_text(plan_run)
             validate_script = base / "validate.sh"
             validate_script.write_text(validate_run)
             output = base / "output"
             env = dict(os.environ, GITHUB_EVENT_NAME="schedule", GITHUB_OUTPUT=str(output),
                        GITHUB_EVENT_PATH="")
-            result = subprocess.run(["bash", str(plan_script)], cwd=ROOT, env=env,
-                                    text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            matrix = json.loads(output.read_text().removeprefix("matrix=").strip())
+            # The step's own command, run in process so the allowance cut's
+            # one API call is a stand-in (no network): an empty results tree
+            # and no recent fire leave room for the whole schedule (#68).
+            argv = plan_run.split()
+            self.assertEqual(argv[:2], ["python3", "scripts/plan_scheduled_evals.py"])
+            argv[argv.index("--allowance-tree") + 1] = str(base / "results-tree")
+            captured = io.StringIO()
+            with mock.patch.object(sys, "argv", argv[1:]), \
+                 mock.patch.dict(os.environ, env), \
+                 mock.patch.object(allowance_guard, "_live_fires", return_value=(0, 0)), \
+                 mock.patch.object(Path, "cwd", return_value=ROOT), \
+                 contextlib.redirect_stdout(captured):
+                self.assertEqual(planner.main(), 0, captured.getvalue())
+            lines = output.read_text().splitlines()
+            self.assertEqual(lines[1], f"count={len(EXPECTED)}")
+            matrix = json.loads(lines[0].removeprefix("matrix="))
             self.assertEqual(matrix, {"include": [
                 {"fixture": path, "eval_key": path[6:], "slot": i}
                 for i, path in enumerate(EXPECTED)]})

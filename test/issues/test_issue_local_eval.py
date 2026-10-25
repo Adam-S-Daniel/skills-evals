@@ -558,13 +558,30 @@ class TestLocalEval(unittest.TestCase):
                                  capture_output=True, text=True).stdout
         self.assertEqual(manifest["harness"]["claude_version"],
                          version.splitlines()[0].strip())
-        fixture = yaml.safe_load((EVAL_DIR / "fixture.yaml").read_text(encoding="utf-8"))
+        # EVAL_DIR pins neither model (#371 item 5): the committed roster's
+        # first arm and the judge chosen for it, a tier above (ADR 0013),
+        # are what the run selects. The judge is worked out here from the
+        # ladder, not by `judge_policy.judge_for_arm`, which this checks.
+        roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+        arm_ids = [arm["id"] for arm in roster["arms"]]
+        sys.path.insert(0, str(REPO_ROOT / "harness"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "harness"))
+        import roster as tiers
+        rungs = tiers.tier_rungs(tiers.load_policy(
+            REPO_ROOT / "evals" / "roster-policy.yml"))
+        tier = tiers.rung_of(arm_ids[0], rungs)
+        placed = [(tiers.rung_of(arm, rungs), arm) for arm in arm_ids]
+        above = sorted((rung, arm) for rung, arm in placed
+                       if rung is not None and rung > tier)
+        lowest = [arm for rung, arm in above if rung == above[0][0]]
+        # One arm in the tier above (or none): nothing here works out "newest".
+        assert len(lowest) <= 1, lowest
+        judge = lowest[0] if lowest else roster["judge"]["id"]
+        assert tiers.rung_of(judge, rungs) > tier, (arm_ids[0], judge)
         self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
-                         {"model": fixture["model"],
-                          "judge_model": fixture["judge"]["model"]})
+                         {"model": None, "judge_model": None})
         self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
-                         {"agent": fixture["model"],
-                          "judge": fixture["judge"]["model"]})
+                         {"agent": arm_ids[0], "judge": judge})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
         self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",
@@ -1111,9 +1128,20 @@ class TestLocalEval(unittest.TestCase):
                     denied = [argv[i + 1] for i, a in enumerate(argv)
                               if a == "--read-deny"]
                     self.assertEqual(denied, [os.path.abspath(out)], argv)
+                    # What kind of run this is (#370): a workstation, under
+                    # the operator's own login, on this machine.
+                    for name, value in (("--run-billing", "subscription"),
+                                        ("--run-runner", "workstation"),
+                                        ("--run-location", "local")):
+                        self.assertEqual(argv[argv.index(name) + 1], value, argv)
                 manifest = json.loads(
                     (out / "manifest.json").read_text(encoding="utf-8"))
                 self.assertEqual(manifest["harness"]["permission_mode"], mode)
+                # One run id for the whole invocation, shared by its trials.
+                ids = {argv[argv.index("--run-id") + 1] for argv in launches}
+                self.assertEqual(ids, {manifest["run_id"]})
+                self.assertRegex(manifest["run_id"],
+                                 r"\A[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}\Z")
 
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 

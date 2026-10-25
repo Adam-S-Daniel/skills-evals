@@ -58,6 +58,9 @@ import timeweeks  # noqa: E402
 sys.path.insert(0, str(SCRIPTS_DIR))
 import render_roster_yaml  # noqa: E402
 
+sys.path.insert(0, str(TEST_DIR))
+from lockfile_pins import lock_problem  # noqa: E402
+
 # A fixed commit time for every throwaway repo's commits: a sha that depends
 # on the wall clock can contain any digit run, so the fixture pins it.
 FIXED_GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00+00:00",
@@ -6772,8 +6775,7 @@ class TestProposalSentenceIsCoupledToRosterPrSed(_WeeklyLoop):
 # --- Round 6: the roster PR is the App's (ADR 0003) ---------------------------
 
 
-APP_TOKEN_ACTION = ("actions/create-github-app-token@"
-                    "bcd2ba49218906704ab6c1aa796996da409d3eb1")
+APP_TOKEN_ACTION = "actions/create-github-app-token@v3.2.0"
 APP_TOKEN_STEP_ID = "roster-app-token"
 
 
@@ -6798,14 +6800,16 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         *setup, step, manage = self.job["steps"]
         self.assertEqual(setup, [
             {"name": "Set up Python",
-             "uses": "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+             "uses": "actions/setup-python@v7.0.0",
              "with": {"python-version": "3.12"}},
             {"name": "Install roster dependency",
              "run": "pip install pyyaml==6.0.3"},
         ])
         self.assertEqual(step.get("id"), APP_TOKEN_STEP_ID)
         self.assertEqual(step.get("uses"), APP_TOKEN_ACTION,
-                         "pinned to v3.2.0's full commit sha, never a tag")
+                         "v3.2.0 by exact tag, locked in actions.lock")
+        for pinned in (setup[0]["uses"], APP_TOKEN_ACTION):
+            self.assertIsNone(lock_problem(pinned, EVAL_WORKFLOW))
         self.assertIs(step.get("continue-on-error"), True,
                       "a missing or broken App must degrade, not fail the job")
         self.assertIsNone(step.get("run"))

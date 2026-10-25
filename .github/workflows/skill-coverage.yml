@@ -4,6 +4,16 @@ name: Publish skill eval coverage and draft public gaps
 # Its artifact contains only the redacted census and public revisions. The
 # writer never checks out or executes registry content. An absent private read
 # credential fails the whole census, so a short denominator is never published.
+#
+# The private registry is read with a short-lived installation token from a
+# dedicated read-only GitHub App (the owner's 2026-10-20 decision, replacing a
+# fine-grained personal access token that was never set and failed this
+# workflow daily, issue #292). Repository variable REGISTRY_READ_APP_CLIENT_ID
+# and repository secret REGISTRY_READ_APP_PEM hold the App's client id and
+# private key; the App has Contents: read only and is installed on
+# adam-agentskills-private alone. The token is minted immediately before the
+# one checkout that uses it, as the other apps in this repo are (see
+# routine-improve-gate.yml).
 on:
   schedule:
     - cron: "19 8 * * *"
@@ -31,57 +41,68 @@ jobs:
     steps:
       - name: Require the private registry read credential
         env:
-          PRIVATE_READ_TOKEN: ${{ secrets.SKILL_COVERAGE_READ_TOKEN }}
+          APP_CLIENT_ID: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          APP_PEM: ${{ secrets.REGISTRY_READ_APP_PEM }}
         run: |
-          if [ -z "$PRIVATE_READ_TOKEN" ]; then
-            echo "::error::Complete coverage census unavailable: private registry read credential is absent"
+          if [ -z "$APP_CLIENT_ID" ] || [ -z "$APP_PEM" ]; then
+            echo "::error::Complete coverage census unavailable: private registry read credential is absent (repository variable REGISTRY_READ_APP_CLIENT_ID and repository secret REGISTRY_READ_APP_PEM must both be set)"
             exit 1
           fi
 
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           persist-credentials: false
 
       - name: Check out adam-agentskills
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: registry-agentskills
           persist-credentials: false
 
       - name: Check out cms-platform
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/cms-platform
           path: registry-cms
           persist-credentials: false
 
       - name: Check out adamdaniel.ai
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adamdaniel.ai
           path: registry-site
           persist-credentials: false
 
+      - name: Mint the GitHub App token for adam-agentskills-private
+        id: registry-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+
       - name: Check out the private registry
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills-private
           path: registry-private
-          token: ${{ secrets.SKILL_COVERAGE_READ_TOKEN }}
+          token: ${{ steps.registry-token.outputs.token }}
           persist-credentials: false
 
       - name: Check out fleet guidance for the context revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: guidance
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -103,7 +124,7 @@ jobs:
         run: cat "$RUNNER_TEMP/skill-coverage/coverage.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload only redacted census files
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: skill-coverage
           path: ${{ runner.temp }}/skill-coverage/
@@ -122,13 +143,13 @@ jobs:
       issues: write
     steps:
       - name: Check out trusted skills-evals code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7.0.1
         with:
           path: skills-evals
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -136,7 +157,7 @@ jobs:
         run: python3 -m pip install pyyaml==6.0.3
 
       - name: Download the redacted census
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@v8.0.1
         with:
           name: skill-coverage
           path: ${{ runner.temp }}/skill-coverage/

@@ -59,6 +59,17 @@ def workflow(steps):
     return "jobs:\n  test:\n    steps:\n" + steps
 
 
+LOCKFILE = ".github/workflows/actions.lock"
+TAG = "actions/checkout@v7.0.1"
+
+
+def lockfile(uses=TAG, commit="sha1-" + SHA, workflow_path=WORKFLOW, listed=TAG, ref=None):
+    ref = uses.rpartition('@')[2] if ref is None else ref
+    return (f"version: 'v0.0.3'\nworkflows:\n  '{workflow_path}':\n    - '{listed}'\n"
+            f"dependencies:\n  '{uses}':\n    ref: '{ref}'\n"
+            f"    commit: '{commit}'\n")
+
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
 
@@ -163,6 +174,258 @@ class GuidanceViolationTests(unittest.TestCase):
                 mock.patch.object(counters, "MAX_FILES", 1):
             bounded = counters.snapshot(self.workspace)
         self.assertEqual(list(bounded["files"]), [".github/workflows/a.yml"])
+
+    def test_actions_lock_pins_a_tagged_step_for_its_own_workflow(self):
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(), LOCKFILE)
+        self.write(workflow(f"      - uses: {TAG}\n      - uses: $/local/action\n"
+                            f"      - uses: actions/setup-node@{SHA}\n"
+                            "      - uses: Adam-S-Daniel/cms-platform/.github/actions/demo@v0.1.88\n"))
+        measured = self.measure(before)
+        self.assertEqual(measured["rules"]["unpinned_actions"],
+                         {"section_id": counters.RULES["unpinned_actions"],
+                          "status": "known", "count": 0, "observed_count": 0})
+        self.assertNotIn("sha1-", json.dumps(measured))
+        self.assertNotIn(TAG, json.dumps(measured))
+
+    def test_a_tag_actions_lock_does_not_lock_still_counts(self):
+        cases = {
+            "no lockfile": None,
+            "uppercase commit": lockfile(commit="sha1-" + SHA.upper()),
+            "bare hex commit": lockfile(commit=SHA),
+            "short commit": lockfile(commit="sha1-" + SHA[:39]),
+            "other key": lockfile(uses="actions/checkout@v7.0.0"),
+            "other workflow": lockfile(workflow_path=".github/workflows/other.yml"),
+            "not listed": lockfile(listed="actions/checkout@v7.0.0"),
+            "ref differs from tag": lockfile(ref="v7.0.0"),
+            "ref missing": lockfile().replace("    ref: 'v7.0.1'\n", ""),
+        }
+        for label, lock in cases.items():
+            with self.subTest(case=label):
+                (self.workspace / LOCKFILE).unlink(missing_ok=True)
+                before = counters.snapshot(self.workspace)
+                if lock is not None:
+                    self.write(lock, LOCKFILE)
+                self.write(workflow(f"      - uses: {TAG}\n"))
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", 1))
+                self.write("jobs: {}")
+
+    def test_actions_lock_key_matches_owner_and_repo_case_insensitively_but_the_ref_exactly(self):
+        mixed = "Adam-S-Daniel/verify-actions-lock@v1.0.0"
+        lower = mixed.lower()
+        cases = {
+            "mixed-case step, lowercase key": (mixed, lockfile(uses=lower, listed=lower), 0),
+            "only the ref's case differs": ("Adam-S-Daniel/verify-actions-lock@V1.0.0",
+                                            lockfile(uses=lower, listed=lower), 1),
+        }
+        for label, (uses, lock, count) in cases.items():
+            with self.subTest(case=label):
+                (self.workspace / LOCKFILE).unlink(missing_ok=True)
+                before = counters.snapshot(self.workspace)
+                self.write(lock, LOCKFILE)
+                self.write(workflow(f"      - uses: {uses}\n"))
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", count))
+                self.write("jobs: {}")
+
+    def test_lock_problem_matches_owner_and_repo_case_insensitively_but_the_ref_exactly(self):
+        from lockfile_pins import lock_problem
+        lower = "adam-s-daniel/verify-actions-lock@v1.0.0"
+        lock = {"workflows": {WORKFLOW: [lower]},
+                "dependencies": {lower: {"ref": "v1.0.0", "commit": "sha1-" + SHA}}}
+        self.assertIsNone(lock_problem("Adam-S-Daniel/verify-actions-lock@v1.0.0", WORKFLOW, lock))
+        self.assertIsNotNone(lock_problem("Adam-S-Daniel/verify-actions-lock@V1.0.0", WORKFLOW, lock))
+
+    def test_actions_lock_never_pins_reusable_workflows_or_uncalled_composite_steps(self):
+        reusable = "owner/repo/.github/workflows/demo.yml@v1.2.3"
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(uses=reusable, listed=reusable), LOCKFILE)
+        self.write(f"jobs: {{reusable: {{uses: {reusable}}}}}\n")
+        self.write("runs:\n  using: composite\n  steps:\n    - uses: " + TAG + "\n",
+                   "nested/action.yml")
+        self.assertEqual(self.measure(before)["rules"]["unpinned_actions"]["count"], 2)
+
+    COMPOSITE = "runs:\n  using: composite\n  steps:\n    - uses: " + TAG + "\n"
+
+    def test_actions_lock_pins_a_composite_step_through_a_calling_workflow(self):
+        # ADR 0024: a `$/` composite's inner actions are locked by the
+        # lockfile list of the workflow that calls it. The composite sorts
+        # before .github/workflows, so this also proves walk order is moot.
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(), LOCKFILE)
+        self.write(workflow("      - uses: $/.github/actions/demo\n"))
+        self.write(self.COMPOSITE, ".github/actions/demo/action.yml")
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        self.assertEqual((entry["status"], entry["count"]), ("known", 0))
+
+    def test_a_composite_step_is_not_pinned_without_a_valid_calling_lock(self):
+        other = ".github/workflows/other.yml"
+        cases = {
+            "no caller": (lockfile(), "      - uses: actions/setup-node@" + SHA + "\n"),
+            "caller names another dir": (lockfile(), "      - uses: $/.github/actions/other\n"),
+            "called as ./ not $/": (lockfile(), "      - uses: ./.github/actions/demo\n"),
+            "called as a job, not a step": (lockfile(), None),
+            "caller's list lacks it": (lockfile(workflow_path=other), "      - uses: $/.github/actions/demo\n"),
+            "uppercase commit": (lockfile(commit="sha1-" + SHA.upper()), "      - uses: $/.github/actions/demo\n"),
+            "ref differs from tag": (lockfile(ref="v7.0.0"), "      - uses: $/.github/actions/demo\n"),
+            "other key": (lockfile(uses="actions/checkout@v7.0.0", listed="actions/checkout@v7.0.0"),
+                          "      - uses: $/.github/actions/demo\n"),
+        }
+        for label, (lock, steps) in cases.items():
+            with self.subTest(case=label):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                self.workspace = Path(temp.name)
+                before = counters.snapshot(self.workspace)
+                self.write(lock, LOCKFILE)
+                self.write(workflow(steps) if steps else "jobs: {call: {uses: $/.github/actions/demo}}\n")
+                self.write(self.COMPOSITE, ".github/actions/demo/action.yml")
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", 1))
+
+    def test_a_composite_step_with_an_unreadable_caller_is_unknown(self):
+        before = counters.snapshot(self.workspace)
+        self.write(lockfile(), LOCKFILE)
+        self.write("jobs: [", WORKFLOW)
+        self.write(self.COMPOSITE, ".github/actions/demo/action.yml")
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        self.assertEqual((entry["status"], entry["count"]), ("unknown", None))
+
+    def test_an_unreadable_actions_lock_is_unknown(self):
+        before = counters.snapshot(self.workspace)
+        self.write(workflow(f"      - uses: {TAG}\n"))
+        for source in ("dependencies: [", "dependencies: {}\ndependencies: {}\n",
+                       "x: &x [*x]\n", "- not a mapping\n"):
+            with self.subTest(source=source):
+                self.write(source, LOCKFILE)
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("unknown", None))
+        lock = self.workspace / LOCKFILE
+        lock.unlink()
+        outside = Path(self.temp.name) / "outside.lock"
+        outside.write_text(lockfile(), encoding="utf-8")
+        lock.symlink_to(outside)
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        self.assertEqual((entry["status"], entry["count"]), ("unknown", None))
+
+    def test_an_unreadable_actions_lock_leaves_event_input_in_run_counted(self):
+        # Only `unpinned_actions` depends on the lockfile; a broken one must
+        # not hide the unrelated interpolation counter.
+        cases = {"malformed": "dependencies: [",
+                 "duplicate key": "dependencies: {}\ndependencies: {}\n",
+                 "symlinked": None}
+        for label, source in cases.items():
+            with self.subTest(case=label):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                self.workspace = Path(temp.name) / "ws"
+                self.workspace.mkdir()
+                before = counters.snapshot(self.workspace)
+                self.write(workflow(f"      - uses: {TAG}\n"
+                                    "      - run: echo ${{ github.event.issue.title }}\n"))
+                if source is None:
+                    outside = Path(temp.name) / "outside.lock"
+                    outside.write_text(lockfile(), encoding="utf-8")
+                    lock = self.workspace / LOCKFILE
+                    lock.symlink_to(outside)
+                else:
+                    self.write(source, LOCKFILE)
+                rules = self.measure(before)["rules"]
+                self.assertEqual((rules["event_input_in_run"]["status"],
+                                  rules["event_input_in_run"]["count"]), ("known", 1))
+                self.assertEqual((rules["unpinned_actions"]["status"],
+                                  rules["unpinned_actions"]["count"]), ("unknown", None))
+
+    @staticmethod
+    def lock_for(lists):
+        """A valid TAG entry, with each workflow path in `lists` mapped to its refs."""
+        body = "".join(f"  '{path}':\n" + "".join(f"    - '{ref}'\n" for ref in refs)
+                       for path, refs in lists.items())
+        return (f"version: 'v0.0.3'\nworkflows:\n{body}"
+                f"dependencies:\n  '{TAG}':\n    ref: 'v7.0.1'\n    commit: 'sha1-{SHA}'\n")
+
+    def test_a_composite_needs_every_calling_workflow_to_lock_it(self):
+        # Credit is the intersection over callers: a second caller that is
+        # not onboarded (absent from `workflows`) or whose list lacks the
+        # key removes it, whichever order the workflows are walked in.
+        other = ".github/workflows/other.yml"
+        cases = {
+            "second caller not onboarded": ({WORKFLOW: [TAG]}, 1),
+            "second caller's list lacks it": ({WORKFLOW: [TAG], other: []}, 1),
+            "first caller not onboarded": ({other: [TAG]}, 1),
+            "both callers lock it": ({WORKFLOW: [TAG], other: [TAG]}, 0),
+        }
+        for label, (lists, expected) in cases.items():
+            with self.subTest(case=label):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                self.workspace = Path(temp.name)
+                before = counters.snapshot(self.workspace)
+                self.write(self.lock_for(lists), LOCKFILE)
+                self.write(workflow("      - uses: $/.github/actions/demo\n"))
+                self.write(workflow("      - uses: $/.github/actions/demo\n"), other)
+                self.write(self.COMPOSITE, ".github/actions/demo/action.yml")
+                entry = self.measure(before)["rules"]["unpinned_actions"]
+                self.assertEqual((entry["status"], entry["count"]), ("known", expected))
+
+    CALLS_B = "runs:\n  using: composite\n  steps:\n    - uses: $/.github/actions/b\n"
+
+    def chain(self, lists, a_source, b_source=None):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.workspace = Path(temp.name)
+        before = counters.snapshot(self.workspace)
+        self.write(self.lock_for(lists), LOCKFILE)
+        self.write(workflow("      - uses: $/.github/actions/a\n"))
+        self.write(a_source, ".github/actions/a/action.yml")
+        self.write(b_source or self.COMPOSITE, ".github/actions/b/action.yml")
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        return entry["status"], entry["count"]
+
+    def test_a_composite_called_through_another_composite_is_credited(self):
+        # ci.yml -> $/a -> $/b -> tag: b's inner tag is locked by ci.yml's list.
+        self.assertEqual(self.chain({WORKFLOW: [TAG]}, self.CALLS_B), ("known", 0))
+
+    def test_a_composite_chain_needs_an_unbroken_listed_path(self):
+        cases = {
+            "chain broken (a calls another dir)":
+                ({WORKFLOW: [TAG]}, self.CALLS_B.replace("actions/b", "actions/c")),
+            "chain broken (a calls b as ./)":
+                ({WORKFLOW: [TAG]}, self.CALLS_B.replace("$/", "./")),
+            "caller's list lacks it": ({WORKFLOW: []}, self.CALLS_B),
+            "caller not onboarded": ({".github/workflows/other.yml": [TAG]}, self.CALLS_B),
+        }
+        for label, (lists, a_source) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self.chain(lists, a_source), ("known", 1))
+
+    def test_a_composite_cycle_terminates_and_credits_only_reached_dirs(self):
+        b_source = self.COMPOSITE + "    - uses: $/.github/actions/a\n"
+        self.assertEqual(self.chain({WORKFLOW: [TAG]}, self.CALLS_B, b_source), ("known", 0))
+        self.assertEqual(self.chain({WORKFLOW: []}, self.CALLS_B, b_source), ("known", 1))
+        # A cycle no workflow reaches is credited by nobody.
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.workspace = Path(temp.name)
+        before = counters.snapshot(self.workspace)
+        self.write(self.lock_for({WORKFLOW: [TAG]}), LOCKFILE)
+        self.write(workflow(f"      - uses: actions/setup-node@{SHA}\n"))
+        self.write(self.CALLS_B, ".github/actions/a/action.yml")
+        self.write(b_source, ".github/actions/b/action.yml")
+        entry = self.measure(before)["rules"]["unpinned_actions"]
+        self.assertEqual((entry["status"], entry["count"]), ("known", 1))
+
+    def test_release_tags_take_ascii_digits_only(self):
+        # `\d` would accept any Unicode decimal digit (here Arabic-Indic).
+        from lockfile_pins import lock_problem
+        for prefix in ("Adam-S-Daniel/cms-platform/.github/actions/demo@",
+                       "Adam-S-Daniel/cms-platform/.github/workflows/demo.yml@"):
+            with self.subTest(prefix=prefix):
+                self.assertTrue(counters._pinned(prefix + "v0.1.88"))
+                self.assertFalse(counters._pinned(prefix + "v١.٢.٣"))
+                self.assertIsNone(lock_problem(prefix + "v0.1.88", WORKFLOW, {}))
+                self.assertIsNotNone(lock_problem(prefix + "v١.٢.٣", WORKFLOW, {}))
 
     def test_failed_pushes_do_not_count_and_typical_successful_push_does(self):
         rules = self.measure(evidence=trace(("git push -u origin feat/demo", True),

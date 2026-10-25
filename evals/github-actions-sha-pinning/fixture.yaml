@@ -46,18 +46,30 @@
 skill: github-actions-sha-pinning
 registry: https://github.com/Adam-S-Daniel/cms-platform
 
-# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
-# Opus-tier agent would likely ace this task WITHOUT the skill, and a ceiling
-# effect leaves the with/without comparison signal-free. Pinning also stops
-# the arms silently tracking Claude Code's default model as it changes across
-# CLI releases, which is what makes week-over-week badge comparisons
-# meaningful. `--model` on the command line overrides this.
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the committed roster
+# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+# (#371 item 5).
 
-# The judge is pinned to a strong model: judgment consistency matters more
-# than agent-arm parity, and two short judge calls per run cost pennies.
+# In-place context (ADR 0012): adamdaniel.ai, a representative consumer. It
+# adopts the skill's bundle (`cms-platform`) in `skills.lock`, and its
+# workflows call cms-platform on a release tag as this seed's do; the same
+# choice as `evals/platform-release-and-bump`. cms-platform's own
+# `skills.lock` does not adopt the bundle.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 14017 and 885455 bytes; each limit is
+# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+# bytes; the pin is the newest (then the smallest SHA). The context adopts
+# the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/adamdaniel.ai
+  revision: 8074d5a38862594ae056651994ad110900d484ec
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 17522
+    skill_payload_bytes: 1106819
+
 judge:
-  model: claude-opus-5
   # Weighted overall — the harness recomputes it from these and ignores the
   # judge's own arithmetic. Carve-out handling carries the correctness axis
   # (the fixture's whole reason for existing is the one shape a naive
