@@ -1,0 +1,1015 @@
+const { defineConfig } = require("@playwright/test");
+const path = require("node:path");
+
+// SITE_ROOT — the consuming SITE's repo root, which the local lane builds
+// + serves. When the harness lives AT the site root (adamdaniel.ai@main,
+// where `e2e/` sits at the repo root) `path.resolve(__dirname, "..")` IS
+// the site, so the env var is unset and this default holds. When the
+// platform is consumed (checked out into `<site>/.cms-platform/` and the
+// harness copied to `<site>/e2e/`, or run in place) the reusable workflow
+// exports `SITE_ROOT=$GITHUB_WORKSPACE` so the local `webServer` builds the
+// SITE, not the platform. This is the SAME invariant `e2e/base.js`'s
+// `REPO_ROOT` (and ~20 specs' own `path.resolve(__dirname, "..")`) rely on
+// for their site-file reads — keep the harness placed so that resolves to
+// the site, and SITE_ROOT here agrees with it.
+const SITE_ROOT = process.env.SITE_ROOT || path.resolve(__dirname, "..");
+
+// CONSUMER mode — true when this harness runs against a consuming SITE
+// (SITE_ROOT is set, the harness placed at the site root, the site built +
+// served). When SITE_ROOT is UNSET we're in the platform's OWN self-CI
+// (cwd == platform repo, `e2e/` at the platform root), and the full suite —
+// including the meta-lints — runs.
+//
+// PLATFORM_META_SPECS are the "meta" specs: they assert the PLATFORM'S OWN
+// source — its GitHub workflows, scripts, infra, harness internals, lint
+// rules, and fixture machinery (workflow-graph, *-lint, select-lane,
+// spec-load-smoke, run-cms-loop, the platform's *.test.js harness unit
+// tests, etc.). They read files that exist only in the platform tree
+// (`.github/workflows/*`, `scripts/*`, the harness's own `e2e/*.js`
+// helpers) and make sense ONLY when run against the platform checkout. A
+// CONSUMER ships the rendered SITE (the harness placed at site root, the
+// gem-rendered admin under `_site/admin/`) and has none of that source, so
+// these specs would ENOENT-fail or assert against the wrong tree. In
+// CONSUMER mode they are testIgnore'd; the consumer runs only SITE specs
+// (the real CMS round-trips + public-page contracts). The names are kept as
+// basenames; the regex below matches them anywhere under the testDir.
+const CONSUMER = !!process.env.SITE_ROOT;
+const PLATFORM_META_SPECS = [
+  // Executes Decap save serialization against the platform-owned posts form.
+  "cms-ui-front-matter.test.js",
+  // Reads the platform's own deploy workflows, bootstrap CloudFormation and
+  // scripts/publish-opted-in-pdfs.sh — none of which a consumer site has, so
+  // it must be testIgnored on the CONSUMER lane. See docs/MEDIA-ARCHIVE.md.
+  "media-archive-publish-gate.test.js",
+  // Executes repository-controlled log text in the platform's workflow steps.
+  "workflow-command-log.test.js",
+  // Platform-internal: admin-JS augmentation + the deploy-preview workflow-shape
+  // assertion; and the exclude-plugin's synthetic-build test. Validated in the
+  // platform's own self-CI (against the platform tree), not a consumer site.
+  "cms-posts-list-enhance.spec.js",
+  // Parses theme/admin/config*.yml in the platform tree (#639 Pages permalink lock).
+  "pages-permalink-no-shared-default.test.js",
+  "e2e-posts-public-exclusion.test.js",
+  // KEEP LISTED. It walks `theme/admin/` in the platform tree, which
+  // admin-spec-source-read-lint.test.js forbids a consumer-lane spec from doing
+  // and platform-meta-spec-registry.test.js's #16 recurrence guard independently
+  // demands registration for — measured 2026-09-04: deleting this line reds both.
+  // The consequence is that the @parity-preview SELECTOR must not name it either;
+  // select-specs.js's PARITY_PREVIEW_SPECS says why, and
+  // e2e/parity-preview-runnable-on-consumer.test.js holds the two in agreement.
+  "admin-bundle-parity.spec.js",
+  // Lints every workflow in THIS repo for `${{ x && '' || y }}` — an expression
+  // that silently returns `y` unconditionally. Platform-internal: a consumer has
+  // no platform workflows to lint.
+  "expression-empty-truthy-branch.test.js",
+  // Its pure-logic unit sibling: the bump-window verdicts + the served-file
+  // exclusion lock. The drift guard reads theme/lib/.../decap_config_hook.rb
+  // + scripts/render-decap-config.rb (platform source absent on a consumer),
+  // so it is platform-internal and must be testIgnored on a CONSUMER lane.
+  "admin-bundle-parity.test.js",
+  "admin-css-banned-patterns.test.js",
+  // #328.4 / #329.6 — reads the platform's theme/admin/admin-mobile.css
+  // SOURCE (the mobile-breakpoint clearance/affordance fixes); meaningless
+  // on a consumer, which ships only the gem-rendered admin CSS.
+  "admin-mobile-clearance-lint.test.js",
+  "admin-reviews-return-lint.test.js",
+  "admin-pin-invariant.test.js",
+  // #161 — the confirm-wrap + autosave shim load-order lint (reads the three
+  // theme/admin shells + the confirm-wrap SOURCE) and the confirm-wrap unit
+  // sandbox test (reads theme/admin/confirm-wrap-local-backup.js). Both read
+  // the platform's theme/admin SOURCE tree (absent on a consumer), so they are
+  // platform-internal and testIgnored on a CONSUMER lane.
+  "admin-shim-load-order.test.js",
+  "confirm-wrap-local-backup.test.js",
+  // #625 item 3 — vm-sandbox unit test reading theme/admin/autosave-on-hide.js
+  // SOURCE (platform theme/admin tree, absent on a consumer), same shape as above.
+  "autosave-on-hide.test.js",
+  // #386 — parses theme/admin/publish-button.js's SOURCE (doPublish()) to
+  // assert its two silent-failure strings stay byte-consistent with the
+  // markers e2e/cms-editor-ui.js's publishViaUi() checks for. Reads the
+  // platform's theme/admin SOURCE tree (absent on a consumer, which ships
+  // only the gem-rendered admin), so it is platform-internal and testIgnored
+  // on a CONSUMER lane, same shape as the two entries above.
+  "publish-error-strings.test.js",
+  // #329 owner-persona fix set — same shape as admin-shim-load-order.test.js
+  // right above: reads the three theme/admin shells + the five shim SOURCE
+  // files (platform theme/admin tree, absent on a consumer's rendered
+  // ${SITE_ROOT}/_site/admin), so it is platform-internal and testIgnored on
+  // a CONSUMER lane.
+  "admin-329-shims.test.js",
+  // The behavioural half of the #329 item 7 shim: drives
+  // theme/admin/single-entry-collection-shortcut.js in a vm sandbox to pin BOTH
+  // directions of its auto-jump (a fresh arrival still skips the one-item list;
+  // an exit from that collection's OWN entry is left alone). Reads the platform
+  // theme/admin SOURCE, so it is platform-internal exactly like the entry above.
+  "single-entry-collection-shortcut.test.js",
+  // Publishing-UX staged plan, phases 2-5 (docs/PUBLISHING-UX.md §4). Reads the
+  // platform's theme/admin SOURCE tree AND both render paths
+  // (scripts/render-decap-config.rb + theme/lib/.../decap_config_hook.rb) —
+  // none of which a consumer has in that position — so it is platform-internal
+  // and testIgnored on a CONSUMER lane, exactly like the two entries above.
+  "admin-publishing-ux.test.js",
+  // Runtime copy/UI checks plus parsed platform Decap config contracts.
+  "editor-publishing-copy.test.js",
+  "site-hostname.test.js",
+  // Pure-Node vm-sandbox unit tests for theme/admin/entry-status-model.js, the
+  // shared four-badge derivation. Reads the platform theme/admin SOURCE.
+  "entry-status-model.test.js",
+  // Sandbox unit tests for the one-door + publish-progress ROUTE matchers.
+  // Reads theme/admin sources; platform-internal for the same reason.
+  "admin-publish-routing.test.js",
+  // #412 — drives theme/admin/branch-binding-banner.js (and the gate banner's
+  // ordering beside it) in a vm sandbox, and runs scripts/patch-preview-config.sh
+  // on the theme/admin/config.base.yml template to prove the shim's reader
+  // parses what the script writes. Reads theme/admin SOURCE and scripts/;
+  // platform-internal for the same reason as every entry around it.
+  "branch-binding-banner.test.js",
+  // #528 — drives theme/admin/site-gate-banner.js with the real
+  // site-hostname.js in a vm sandbox (the gate read at the bound branch).
+  // Reads theme/admin SOURCE; platform-internal like the entry above.
+  "site-gate-banner.test.js",
+  // The collection-list controls trim: reads the theme/admin SOURCE tree (the
+  // shim plus the three shells) and vm-sandboxes the shim's pure sort-label
+  // matcher. Platform-internal for the same reason as the entry above — a
+  // consumer ships only the gem-rendered admin, not this tree.
+  "admin-collection-controls-trim.test.js",
+  "publish-button-refresh.test.js",
+  // vm-sandboxes theme/admin/publish-button.js's Decap-menu interception;
+  // same reason as the entry above.
+  "publish-button-decap-menu.test.js",
+  // #625 item 7 — vm-sandboxes publish-button.js's Unpublish explanation;
+  // same reason as the entry above.
+  "publish-button-unpublish-hint.test.js",
+  "admin-github-fetch-cache.test.js",
+  // adamdaniel.ai#3857 — vm-sandbox the theme/admin SOURCE (publish-progress.js,
+  // posts-list-enhance.js, slug-pin.js + live-url-derive.js), which a consumer
+  // does not have; same reason as the two entries above.
+  "publish-progress-branch-tip.test.js",
+  "publish-progress-post-merge.test.js",
+  "live-url-banner-follows-poller.test.js",
+  "entry-status-model-progress.test.js",
+  "admin-publish-duration-copy.test.js",
+  "posts-list-branch-tip.test.js",
+  "slug-pin.test.js",
+  // cms-platform#735 — vm-sandboxes theme/admin/tags-input.js SOURCE; platform-internal likewise.
+  "tags-suggest.test.js",
+  // cms-platform#730 — vm-sandboxes theme/admin/validation-feedback.js SOURCE.
+  "validation-feedback.test.js",
+  // cms-platform#648 — vm-sandboxes theme/admin/editor-component-image.js SOURCE.
+  "editor-component-image.test.js",
+  // vm-sandboxes theme/admin's model, poller, bar and button SOURCE to check
+  // the run links and the confirmation copy; platform-internal likewise.
+  "publish-status-links.test.js",
+  // #16 — the admin-source-read lint reads the platform's playwright.config.js +
+  // theme/admin SOURCE tree to police consumer-facing specs; it's a harness
+  // self-test, meaningless (and ENOENT-prone) on a consumer.
+  "admin-spec-source-read-lint.test.js",
+  "admin-theme-removed.test.js",
+  // #329.3 — parses the platform's theme/admin/collections.site.yml.example
+  // SOURCE template; meaningless on a consumer, which owns its own
+  // (already-populated) admin/collections.site.yml, not this reference file.
+  "collections-example-sortable-fields.test.js",
+  // #517 — hashes theme/assets/js/aws-rum-web/ and vm-runs the RUM include
+  // from theme/_includes SOURCE; a consumer has the gem, not this tree.
+  "analytics-rum-client-vendored.test.js",
+  // The "a pin carries no version comment" gate (2026-08-20). Reads THIS repo's
+  // .github/workflows + .github/actions composite definitions and the
+  // examples thin-caller TEMPLATES — none of which a consumer ships in that
+  // position — so it is platform-internal and testIgnored on a CONSUMER lane.
+  //
+  // Registering it covers only HALF the surface: the platform tree and the
+  // templates a site copies FROM, never the copies a site actually ships, which
+  // is where most of the fleet's pinned `uses:` lines live. The other half is
+  // "consumer-action-pin-comment-lint.test.js", deliberately absent from this
+  // list for the same cms-platform#244 reason as the three consumer specs named
+  // above. Do not "tidy" it on.
+  "action-pin-comment-lint.test.js",
+  // cms-platform#538 — the byte budget for THIS repo's AGENTS.md. On a
+  // consumer lane `..` is the site root, so it would measure the consumer's
+  // own AGENTS.md against a budget chosen for this one.
+  "agents-md-size.test.js",
+  "auto-merge-uses-queue.test.js",
+  // The 2026-09-08 `catalog:` incident guard — asserts both platform-pin
+  // reusables install the `yaml` parser with `--prefix .cms-platform` rather
+  // than at the consumer root. Reads THIS repo's .github/workflows definitions,
+  // which a consumer does not ship in that position, so it is platform-internal
+  // and testIgnored on a CONSUMER lane.
+  "guard-yaml-install-scope.test.js",
+  // #33 — platform-internal: the base_collections capability helper's unit
+  // test (drives the platform's TWO fixtures) + the build-and-run meta proof
+  // (builds both fixtures, subprocess-runs the guarded specs against each).
+  // Both read the platform's own fixture trees / harness internals — they make
+  // sense only in the platform self-CI, never in a consumer.
+  "site-capabilities.test.js",
+  "base-collections-skip-meta.test.js",
+  // #656 — parses the platform theme's own theme/assets/css/main.css, absent in
+  // a consumer. Runs in self-ci node-unit-lints.
+  "theme-reduced-motion.test.js",
+  // #727 — the same shape for the share row's rules in main.css (idle copy icon
+  // specificity, 44px touch targets). Pure-fs; self-ci node-unit-lints.
+  "theme-share-row-css.test.js",
+  // #729 — same, for the bare Markdown table rules (padding, borders, header).
+  "theme-table-css.test.js",
+  // #753 — the same shape for overflow-wrap on post text, excerpts and inline
+  // code in main.css. Pure-fs; self-ci node-unit-lints.
+  "theme-overflow-wrap-css.test.js",
+  // #737 — the same shape for the hero gap, the current-nav state and the tag
+  // name casing in main.css. Pure-fs; self-ci node-unit-lints.
+  "theme-public-polish-css.test.js",
+  // #33 CONCERN B — the pure-fs guard-registry lint: reads the platform's TWO
+  // fixtures' _config.yml + the harness spec sources + playwright.config.js's
+  // own PLATFORM_META_SPECS. Platform-internal; runs in self-ci node-unit-lints.
+  "base-collections-guard-registry.test.js",
+  // #382 — the AST sibling of the entry above: parses every e2e/*.spec.js with
+  // spec-ast.js and fails any `getByRole(..., { name: /Status:…/ })`, the
+  // selector one-door-publish.js CSS-hid on the production shell (which is how
+  // four write specs timed out an hour into a real prod run). It polices the
+  // PLATFORM's own spec sources and is exercised in self-ci's node-unit-lints,
+  // so it belongs here rather than on the consumer lane, where it would only
+  // re-lint the same harness copy.
+  "status-dropdown-selector.test.js",
+  "blog-slug-literal-lint.test.js",
+  // #16 — these PLATFORM-INTERNAL specs (surfaced by the adamdaniel.ai v0.1.10
+  // reconciliation, where they ran+FAILED on the consumer e2e lane) validate
+  // the platform's OWN machinery against trees a consumer's thin-caller/site
+  // doesn't ship: the loop reusables' branch-cleanup steps (workflow-yaml-utils
+  // / readWorkflow of the platform reusable DEFINITIONS), the OAuth go-live
+  // preflight CLI + the pin-consistency checker under scripts/, the
+  // patch-preview-config.sh delta lock (a platform deploy artifact under
+  // scripts/), the e2e required-check stub mirror (reads examples/site/.github
+  // templates), and the scaffolder output (scaffold/create-site.js + the
+  // platform fixture). They run ONLY in the platform's own self-CI (TARGET=prod),
+  // never on a consumer. The platform-meta-spec-registry.test.js recurrence guard
+  // FAILS in self-CI if any platform-internal spec is left off this list.
+  "check-platform-pin-consistency.test.js",
+  // The parity-preview SITE_ROOT guard reads the PLATFORM reusable
+  // workflow DEFINITION (.github/workflows/parity-preview.yml); a consumer
+  // ships only a thin wrapper, so it is platform-internal (self-CI only).
+  "parity-preview-site-root.test.js",
+  // #383 — same file, same reason: reads BOTH platform reusable DEFINITIONS
+  // (parity-preview.yml and deploy-preview.yml) and asserts parity's
+  // Dependabot skip carries deploy-preview's own actor guard verbatim, so the
+  // two cannot drift back into "wait 20 min for a preview that is never
+  // coming, then hard-fail a required context".
+  "parity-preview-dependabot-skip.test.js",
+  // The GENERAL SITE_ROOT backstop: reads EVERY PLATFORM reusable workflow
+  // DEFINITION and asserts any `.cms-platform/e2e` harness run exports
+  // SITE_ROOT (the realized #1815 host-loop gap). Consumers ship only thin
+  // wrappers, so it is platform-internal (self-CI only).
+  "loop-site-root-lint.test.js",
+  // Reads the editorial-label-audit reusable workflow DEFINITION (consumer
+  // ships only a wrapper) — platform-internal, self-CI only.
+  "editorial-label-audit-repo.test.js",
+  // Reads scripts/content-pr-guard.js and the cms-editorial-workflow.yml
+  // reusable DEFINITION (via readWorkflow) plus the examples/site caller —
+  // platform-internal, self-CI only.
+  "content-pr-guard.test.js",
+  // Reads the scheduled-run-health reusable + caller DEFINITIONS and the
+  // scripts/audit-scheduled-runs.js helpers (consumer ships only a thin
+  // wrapper) — platform-internal, self-CI only.
+  "scheduled-run-health.test.js",
+  // #424 — the self-resolution + currency-lane sibling: reads this repo's own
+  // reusable workflow DEFINITION (readWorkflow/parseYaml) and requires
+  // scripts/check-platform-currency.js directly. A consumer's thin caller has
+  // no scheduled-run-health.yml or scripts/ tree of its own — platform-internal,
+  // self-CI only.
+  "scheduled-run-health-self-resolve.test.js",
+  // #109 — the repo-settings-as-code lints: the manifest lint reads the root
+  // repo-settings.yml + scripts/audit-repo-settings.js (MANAGED_REPO_KEYS
+  // SSOT) + the release.yml DEFINITION; the audit unit test additionally
+  // reads the live-captured e2e/fixtures/repo-settings/*.json by literal
+  // path. Consumers ship none of that — platform-internal, self-CI only.
+  "repo-settings-manifest.test.js",
+  "repo-settings-audit.test.js",
+  // #172 deferral 1 — the apply-in-CI safety properties (ungated plan vs gated
+  // apply, mint-time read/write scope split, the required_reviewers
+  // verification). Reads .github/workflows + scripts/, absent on a consumer.
+  "repo-settings-apply.test.js",
+  // The failure-summary RESOLVE step must be fail-open — a cosmetic
+  // comment-stamping step reddened a green e2e job on 2026-08-12 and blocked a
+  // merge. Reads .github/workflows/, absent on a consumer.
+  "resolve-summary-fail-open.test.js",
+  // #285 + #289 — the "no required context may end `cancelled`" gate: reads the
+  // root repo-settings.yml ruleset manifest, .github/workflows/ and the
+  // examples/site thin-caller templates, none of which a consumer ships.
+  // Platform-internal, self-CI only.
+  //
+  // RENAMED from "required-context-concurrency.test.js" in #289. The old name
+  // described one CAUSE (a `concurrency` group); v0.1.87 closed that route and
+  // `timeout-minutes` promptly cancelled three required contexts through the
+  // other one, so the guard is now named after the OUTCOME it forbids. If you are
+  // chasing an old reference, this is the file it means.
+  //
+  // Registering it testIgnores it on every CONSUMER lane, so it covers only HALF
+  // the surface — the platform tree and the TEMPLATES a site copies from, never
+  // the copies a site actually ships, which is where both bugs wedge a PR. The
+  // other half is "consumer-required-context-cancellable.test.js", deliberately
+  // absent from this list for exactly that reason (the cms-platform#244 lesson
+  // that also keeps "dependabot-theme-gem-ignored.test.js" and
+  // "consumer-required-check-mirrors.test.js" unregistered). Those three names are
+  // spelled in QUOTES on purpose: a comment inside this array literal quoting a
+  // spec name must never be counted as a registered element, and keeping one here
+  // keeps e2e/platform-meta-spec-registry.test.js's AST extractor honest against a
+  // real file rather than only a synthetic one. Do not "tidy" the consumer spec
+  // onto this list.
+  "required-context-cancellable.test.js",
+  "cms-config-preview-delta.spec.js",
+  "cms-automerge-nudge.test.js",
+  // #532 — parses the platform's OWN workflow definitions' createLabel calls.
+  "preview-only-label-description.test.js",
+  // #371 — joins repo-settings.yml's required-context strings to the workflow
+  // tree that would have to publish them. Reads the platform's own
+  // repo-settings.yml, .github/workflows/ and examples/site/ — none of which a
+  // consumer has — so it is platform-internal and testIgnored on a CONSUMER lane.
+  "ruleset-context-publishable.test.js",
+  // #1815 — the real-prod-loop budget-alignment lint reads the platform's OWN
+  // cms-media-roundtrip + cms-publish-loop-prod-mutate spec sources + the media
+  // workflow's timeout-minutes; platform-internal, self-CI only.
+  "cms-loop-budget-alignment.test.js",
+  "cms-editor-ui.test.js",
+  // #531 — AST-walks the harness's own real-lane spec sources to lock the
+  // disposable-test-post markers before Save; harness-internal, self-CI only
+  // (the same posture as cms-editor-ui.test.js above).
+  "prod-test-post-markers.test.js",
+  "cms-host.test.js",
+  "cms-label-contract.spec.js",
+  "cms-recursion-churn.test.js",
+  "cms-scheduled-post.spec.js",
+  "cloudfront-preview-location-fixer.spec.js",
+  "cloudfront-preview-router.spec.js",
+  "compute-visual-diffs.test.js",
+  // Reads examples/site/.github/workflows (platform templates) to lock the
+  // consumer-PAT consolidation (only CMS_E2E_PAT / CMS_PLATFORM_PAT). Self-CI only.
+  "consumer-pat-secrets-lint.test.js",
+  // #116 — locks the dev-hooks centralization: the dev-hooks-sync reusable's
+  // FILES list, scaffold/create-site.js's seed list, and the canonical guard
+  // files must stay in lockstep. Reads .github/workflows + scripts + scaffold
+  // (platform source), so platform-internal / self-CI only.
+  "dev-hooks-sync.test.js",
+  // #123 — locks the visual-regression PROD baseline origin: PROD_BASE in
+  // regression-video.spec.js must derive from APEX_DOMAIN (the consumer apex),
+  // never a hardcoded site. Reads the platform e2e source; self-CI only.
+  "regression-prod-base.test.js",
+  // Locks the reviews dashboard's pending-run discovery to the workflow
+  // path (run-name filtering matches nothing on consumers with dynamic
+  // run-name:). Reads PLATFORM theme files — self-CI only.
+  "reviews-dashboard-lint.test.js",
+  // Locks the release→bump chaining (dispatch fan-out + bump auto-merge,
+  // both fail-open). Reads the PLATFORM workflow files — platform self-CI
+  // only.
+  "release-fanout.test.js",
+  "decap-config-render-parity.test.js",
+  // #5 GOAL 2 — drives scripts/render-decap-config.rb + reads theme/admin
+  // (config.base.yml + field_library.yml) to render a $ref fixture and assert
+  // the resolved output. Platform-internal (reads scripts/ + theme/ source);
+  // self-CI only.
+  "field-library-ref-render.test.js",
+  // #213 — drives scripts/render-decap-config.rb with the ambient locale
+  // stripped + reads theme/admin/config.base.yml for a non-ASCII fixture byte
+  // and the script's own source for the encoding pin. Platform-internal
+  // (reads scripts/ + theme/ source); self-CI only.
+  "render-decap-config-locale.test.js",
+  // Reads the platform's OWN workflow DEFINITIONS to assert every
+  // dependabot-* reusable is called by a local self-* caller (a consumer
+  // ships only thin wrappers) — platform-internal, self-CI only.
+  "dependabot-dogfood.test.js",
+  // Reads THIS repo's own .github/dependabot.yml by literal path — a
+  // consumer's dependabot.yml is a different file with legitimately
+  // different groups, so this is platform-internal, self-CI only. Guards
+  // that every `groups.<name>` key (and every `applies-to` value) is one
+  // Dependabot actually recognises — an unrecognised key is silently
+  // ignored, not rejected, which would quietly reopen the #118-122
+  // batch-strand risk with nothing going red.
+  "dependabot-groups.test.js",
+  "dependabot-skip.test.js",
+  // #458 — reads the platform's OWN dependabot-rearm-sweep.yml /
+  // self-dependabot-rearm.yml workflow DEFINITIONS and executes the
+  // reusable's own sweep-step run: script via `bash -c`; platform-internal,
+  // self-CI only.
+  "dependabot-rearm-refresh-identity.test.js",
+  "deploy-commit-metadata.test.js",
+  "deploy-pill.test.js",
+  "deploy-preview-cms-slug.test.js",
+  "deploy-status-pill-robustness.test.js",
+  "deploy-status-pill-stale.test.js",
+  "detect-changed-pages.test.js",
+  // #539 — drives detect-changed-pages.js and visual-regression-salient.js
+  // (platform pipeline tooling) over throwaway git repos; platform-internal,
+  // like detect-changed-pages.test.js above.
+  "salience-git-paths.test.js",
+  // #541 — the merge-base helper's real-git scenarios, and the lint that
+  // parses the platform's visual-regression / parity-preview / preview-media
+  // workflow DEFINITIONS (absent on a consumer); platform-internal.
+  "ensure-merge-base.test.js",
+  "salience-checkout-depth.test.js",
+  // Runs the platform's scripts/reset-orphaned-canary.sh against a stubbed fetch
+  // to prove its public-log output carries no API body; platform-internal.
+  "reset-orphaned-canary-log.test.js",
+  // #689 — AST-walks the two tags lifecycle spec sources (harness-internal)
+  // beside the pure leftover-e2e-tag and in-flight-PR-close tests.
+  "leftover-e2e-tags.test.js",
+  "fixture-baseline.test.js",
+  "generate-test-videos.test.js",
+  // The theme gemspec's version is deliberately frozen at 0.1.4 (see the
+  // gemspec header): both consumers' Gemfile.lock record it, their CI installs
+  // in bundler DEPLOYMENT/frozen mode, and platform-bump.yml rewrites the lock
+  // textually so it can never update the bare version. This lint reads
+  // theme/cms-platform-theme.gemspec + .github/workflows/platform-bump.yml —
+  // platform source absent on a consumer.
+  "gemspec-version-frozen.test.js",
+  // #260 — the secrets-scan allowlist canary: reads the PLATFORM reusable
+  // DEFINITION (.github/workflows/secrets-scan.yml) and executes the exact
+  // python it ships against fixture configs. A consumer ships only a thin
+  // caller, so it is platform-internal, self-CI only.
+  "gitleaks-allowlist-canary.test.js",
+  "github-actions-poll.test.js",
+  // Runs scripts/diagnose-stuck-pr.js and scripts/auto-resolve-newline-
+  // conflict.js from the platform tree; a consumer ships neither.
+  "api-error-body-redaction.test.js",
+  "live-failures-reporter.test.js",
+  "playwright-log-privacy.test.js",
+  // #527 — locks self-fixture-e2e.yml (the platform's own browser lane): reads
+  // and executes steps of that workflow DEFINITION, which a consumer never ships.
+  "self-fixture-e2e.test.js",
+  // #526 — locks self-release-review-gate.yml and scripts/release-review-gate.js
+  // (the release-bearing PR review stamp): platform workflow + script, which a
+  // consumer never ships.
+  "self-release-review-gate.test.js",
+  // Reads the platform's admin shell SOURCE (theme/admin/index*.html) —
+  // meaningless on a consumer, which ships only the gem-rendered admin.
+  "live-preview-gating-lint.test.js",
+  // #328.3 — loads admin/live-url-derive.js's browser IIFE in a vm sandbox
+  // and calls window.LiveURL.compute() directly. Reads the platform's
+  // theme/admin SOURCE (not a consumer's rendered/gem admin) — platform-
+  // internal, self-CI only.
+  "live-url-derive-routable.test.js",
+  "matchmedia-skip-lint.test.js",
+  "oauth-app-restriction-detector.spec.js",
+  "oauth-app-restriction-detector.test.js",
+  "parity-tag-lint.test.js",
+  // Locks the platform-bump reusable: it must check out with the caller PAT
+  // (workflow-file push auth) and bump EVERY pinned ref atomically (#13). Reads
+  // the platform's OWN .github/workflows/platform-bump.yml definition — self-CI only.
+  "platform-bump-atomic.test.js",
+  // Runs scripts/reconcile-caller-secrets.js + the pin checker and reads the
+  // platform-bump.yml definition (the secrets: reconcile) — self-CI only.
+  "platform-bump-secrets-reconcile.test.js",
+  // Runs scripts/rewrite-platform-pins.js + the pin checker against fixtures
+  // and the platform's own examples/site (#530) — self-CI only.
+  "rewrite-platform-pins.test.js",
+  // #16 — the recurrence guard itself: it reads playwright.config.js + lints the
+  // harness spec sources for unregistered platform-internal specs. A harness
+  // self-test; ENOENT/no-op on a consumer (no platform tree to police).
+  "platform-meta-spec-registry.test.js",
+  // #283 — the pin-agreement lint: drives scripts/check-pin-agreement.js over
+  // synthetic workflows AND over this repo's own .github/workflows plus the
+  // examples/site thin-caller templates, and asserts the shape of the
+  // pin-agreement.yml reusable that delivers the check to fleet repos with no
+  // harness. All platform tree; a consumer ships none of it.
+  // Locks "a selected spec is a RUNNABLE spec": no PARITY_PREVIEW_SPECS entry
+  // may be testIgnore'd on a consumer lane. Reasons about this config and
+  // select-specs.js — platform-internal, self-CI only, like its select-specs
+  // siblings below.
+  "parity-preview-runnable-on-consumer.test.js",
+  "pin-agreement.test.js",
+  // #377 — the site-verify lint: asserts the shape of the site-verify.yml
+  // reusable (work/gate split, detect-then-build wiring) and of its dictated
+  // examples/site thin caller, and EXECUTES the two bash scripts lifted out of
+  // the reusable in scratch dirs. All platform tree; a consumer ships none of it.
+  "site-verify.test.js",
+  // #518 — the OAuth proxy build probe: runs scripts/probe-oauth-proxy-build.js
+  // against canned answers, reads oauth-proxy/lambda.py's digest, and lints the
+  // oauth-proxy-build.yml reusable + its examples/site caller. Platform tree only.
+  "probe-oauth-proxy-build.test.js",
+  // #518 — runs this repo's oauth-proxy/deploy.sh under stub aws/sam to lock
+  // its credential handling (placeholder refusal, keep-on-update). Platform
+  // tree only: a consumer ships a delegating wrapper, not this script.
+  "oauth-proxy-deploy-credentials.test.js",
+  // Runs this repo's infrastructure/bootstrap/deploy.sh under a stub aws to lock
+  // the inline minified template and the destructive-change guard. Platform
+  // tree only: a consumer ships a delegating wrapper.
+  "bootstrap-deploy-changeset-guard.test.js",
+  // Runs infrastructure/bootstrap/minify-template.rb over the bootstrap
+  // template: the 48,000-byte growth alarm and the parse-equivalence proof.
+  // Platform tree only, for the same reason.
+  "bootstrap-template-minify.test.js",
+  "playwright-image-drift.test.js",
+  // v0.1.83 — the federated-bundle lint: reads this repo's PLUGIN ROOT (the
+  // root plugin.json + .claude-plugin/plugin.json manifests, the vendored
+  // Agent Plugins schema under e2e/fixtures/, and every skills/<name>/SKILL.md).
+  // A consumer ships none of that — skills are installed from the adam-agentskills
+  // marketplace, never mirrored into a site — so it is platform-internal,
+  // self-CI only. (It also self-skips on SITE_ROOT; this registration is the
+  // belt to that spec's braces, and is what the recurrence guard demands.)
+  "plugin-manifests.test.js",
+  // Reads the platform's SOURCE config templates (theme/admin/config*.yml)
+  // + posts-list-enhance.js — meaningless on a consumer, which only ships
+  // the rendered config.
+  "posts-list-date-lint.test.js",
+  "posts-list-enhance-reorder.test.js",
+  // #16 — pure-Node unit tests for scripts/preflight-oauth.js (the org-owner
+  // go-live OAuth-restriction preflight CLI). Reads the platform scripts/ tree.
+  "preflight-oauth.test.js",
+  // Renders the OAuth proxy's callback page from oauth-proxy/lambda.py (python3)
+  // and runs its inline script in a node:vm sandbox to prove the token reaches
+  // only a configured opener origin. Reads the platform's oauth-proxy/ source,
+  // which a consumer vendors none of (scaffold-deploy-delegators.test.js), so it
+  // is platform-internal: testIgnored on a CONSUMER lane, run by self-CI's
+  // node-unit-lints. The registry's detector does not key off oauth-proxy/, so
+  // this entry is the ONLY thing keeping it off a consumer.
+  "oauth-proxy-callback-page.test.js",
+  "preview-bot-comment.test.js",
+  // cms-platform#651 — reads the platform's deploy-preview.yml (the preview 404
+  // page heredoc); self-CI only, like preview-bot-comment above.
+  "preview-404-contrast.test.js",
+  "preview-config-patch.spec.js",
+  // cms-platform#324 — reads infrastructure/bootstrap/template.yaml (the
+  // platform's own CloudFormation template; a consumer vendors no copy of
+  // it — see AGENTS.md "Bootstrap template is PLATFORM-OWNED"). Self-CI only,
+  // same posture as its cloudfront-preview-router/-location-fixer siblings
+  // a little above.
+  "preview-custom-error-response.test.js",
+  // cms-platform#517 — the opt-in admin host: reads the same bootstrap
+  // template and the theme/admin shells, so self-CI only for the same reason.
+  "admin-host-router.test.js",
+  // cms-platform#515 — the same template's response headers policies; the
+  // same platform-owned posture as preview-custom-error-response above.
+  "cloudfront-security-headers.test.js",
+  "preview-deploy-superset.test.js",
+  "prod-mutate-fixture.test.js",
+  "public-content.test.js",
+  // Locks the scheduled-publish PR flow: publish-scheduled-posts.yml must
+  // publish via a cms/posts/scheduled-publish-* PR + auto-merge (never a
+  // ruleset-rejected main push) and the cms-scheduled-publish-loop wiring
+  // must stay budget-aligned. Reads the PLATFORM workflow DEFINITIONS +
+  // the examples/site caller template — platform self-CI only.
+  "publish-scheduled-posts-flow.test.js",
+  "publish-via-auto-merge.test.js",
+  "publish-via-auto-merge-browser.spec.js",
+  "regression-video.spec.js",
+  // #16 — locks the e2e required-check stub's `paths:` to e2e-tests.yml's
+  // `paths-ignore` by reading the platform examples/site/.github templates.
+  "required-check-stub-paths.test.js",
+  // Reads examples/site + repo-settings.yml (the prerelease merge guard's
+  // template + ruleset wiring); neither exists in a consumed checkout.
+  "prerelease-guard.test.js",
+  "run-cms-loop.test.js",
+  // #16 — scaffolder-output invariants: they run scaffold/create-site.js (and
+  // read the platform fixture) to assert the seeded /preview/ + 404 + neutral
+  // logo. A consumer ships no scaffold/ tree.
+  "admin-keep-files.test.js",
+  "scaffold-preview-and-404.test.js",
+  "scaffold-seeds-neutral-logo.test.js",
+  // #325 — same shape as scaffold-seeds-neutral-logo.test.js above, plus a
+  // head-emission half: it runs scaffold/create-site.js (SCAFFOLD) and reads
+  // theme/assets/favicon.svg, theme/_includes/favicon.html, and every
+  // theme/_layouts/*.html layout (theme-src) to assert the gem-shipped
+  // neutral favicon and its <head> emission are real, not just documented.
+  // A consumer ships neither the scaffold/ tree nor theme/ source.
+  "scaffold-seeds-favicon.test.js",
+  // #242 — scaffold-output + template invariant: examples/site/.github/
+  // dependabot.yml's bundler ignore for cms-platform-theme, AND that
+  // scaffold/create-site.js copies it verbatim into a seeded site. A
+  // consumer ships no scaffold/ tree or examples/site/ template — the
+  // consumer-mode half of this guard is the separate, unregistered
+  // dependabot-theme-gem-ignored.test.js.
+  "scaffold-seeds-dependabot-ignore.test.js",
+  "scaffold-deploy-delegators.test.js",
+  "scaffold-platform-version.test.js",
+  // Single-version guard for the scaffold TEMPLATE's platform pins: reads the
+  // examples/site/.github templates, BOTH repo-root plugin manifests, and the
+  // scaffolder's own PLATFORM_VERSION fallback + scaffold/README.md (whose
+  // prose copy of that constant is the thing that rotted). Three platform-only
+  // surfaces at once (WORKFLOWS-DEF + PLUGIN-ROOT + SCAFFOLD) — a consumer
+  // ships none of them.
+  "examples-site-pins-current.test.js",
+  // The END-TO-END half of the guard above: it mutates the examples/site
+  // template in a temp tree, applies scaffold/create-site.js's REAL
+  // substitute(), and runs the platform's own scripts/verify-consumer-pins.sh
+  // over the result — proving a drift shape cannot red a scaffolded site while
+  // the template guard stays green. Reads scripts/, scaffold/ and the workflow
+  // templates (SCRIPTS + SCAFFOLD + WORKFLOWS-DEF); a consumer ships none.
+  "examples-site-scaffold-agreement.test.js",
+  // #84 — scaffolder-output + fixture invariant: the preview-media probe
+  // sentinel (assets/images/uploads/e2e-preview-media-probe.png). Runs
+  // scaffold/create-site.js and reads the platform's own fixture trees
+  // (fixture-site + fixture-site-singlepage) as literal paths.
+  "scaffold-seeds-media-probe.test.js",
+  // The CI matrix split: reads the platform's OWN e2e-tests.yml reusable
+  // definition + playwright.config.js to lock `matrix.project` against the
+  // real project list. Platform-internal, self-CI only.
+  "ci-matrix.test.js",
+  // Reads EVERY platform reusable workflow DEFINITION to assert each
+  // harness-running step declares the PW_PROJECT its --project flags imply (so
+  // the browser self-heal can't re-download engines the step never installed).
+  // Consumers ship only thin wrappers — platform-internal, self-CI only.
+  "engine-scope-lint.test.js",
+  // AST-walks every spec to forbid the `expect.poll(existsSync)`-then-read
+  // shape (an empty read where it feeds a write-back CORRUPTS the entry).
+  // Reads the harness's own spec sources — platform-internal.
+  "fs-poll-lint.test.js",
+  // Reads EVERY platform reusable workflow DEFINITION plus the
+  // .github/actions/install-playwright-browsers composite, to assert no lane
+  // shells out to an UNBOUNDED `playwright install` (a slow apt mirror once
+  // stalled one for 39 min, blocking a canary PR and failing a prod loop).
+  // Platform-internal, self-CI only.
+  "playwright-install-bounded.test.js",
+  "select-lane.test.js",
+  "select-specs.test.js",
+  // Reads scripts/set-repo-variables.sh + scaffold/create-site.js +
+  // infrastructure/site-params.example.env (all platform-only source) to lock the
+  // consumer repo-variable derivations + scaffolder wiring. Self-CI only.
+  "set-repo-variables.test.js",
+  "silent-catch-lint.test.js",
+  "sitemap-prune.test.js",
+  "slugify-parity.test.js",
+  "spec-load-smoke.test.js",
+  // Unit test for the AST fact extractor (e2e/spec-ast.js) the guard-registry
+  // lint is built on. A harness-internal self-test — platform self-CI only.
+  "spec-ast.test.js",
+  "visual-regression-content-skip.test.js",
+  "visual-regression-skip-review.test.js",
+  // Locks the reusable's build-before-detect step order (the _site scan is
+  // the canonical page universe). Reads the PLATFORM workflow file —
+  // platform self-CI only.
+  "visual-regression-step-order.test.js",
+  // Locks the deploy-metadata [data-visreg-ignore] exclusion (admin pills ↔
+  // the text capture). Reads PLATFORM theme/e2e files — self-CI only.
+  "visreg-ignore-lint.test.js",
+  "workflow-github-sha-lint.test.js",
+  "workflow-graph.test.js",
+  // #261 — the widened injection lint: parses the platform's OWN reusable
+  // workflow DEFINITIONS (workflow-yaml-utils) to assert no `${{ }}` is
+  // substituted into a `run:` shell body or an actions/github-script
+  // `with.script` JS body. Platform-internal; a consumer ships only thin
+  // callers. NOTE this means consumer thin callers get NO enforcement from
+  // it — same posture as workflow-shell-glob-lint.test.js, and acceptable
+  // because all three consumer trees scan 0 sinks today.
+  "workflow-injection-lint.test.js",
+  // #536 — the contributor trust-boundary lint: parses the platform's OWN
+  // workflow definitions, the examples/site templates and repo-settings.yml.
+  // Its consumer half, "consumer-contributor-trust-boundary-lint.test.js", is
+  // deliberately absent from this list (the cms-platform#244 reason).
+  "contributor-trust-boundary-lint.test.js",
+  // #16 — lints the prod-loop reusables' if:always() branch-cleanup steps by
+  // parsing the platform's OWN workflow DEFINITIONS (readWorkflow). Platform-
+  // internal: a consumer doesn't ship those reusable definitions.
+  "workflow-loop-branch-cleanup.test.js",
+  "workflow-prod-loop-serialized.test.js",
+  // Every job that runs python3/pip, ruby/gem/bundle or actionlint pins the
+  // runtime through a setup step (runner-images#14748: ubuntu-latest rolls to
+  // 26.04 from 2026-10-19). Reads the PLATFORM's own workflow and composite
+  // action definitions — a consumer has neither.
+  "workflow-runtime-pinned.test.js",
+  // #145 — reads the canonical examples/site thin-caller DEFINITIONS + the
+  // platform's own self-dependabot-auto-merge.yml / self-secrets-scan.yml to
+  // lock the base-retarget `edited` trigger + caller-job gate. Platform-
+  // internal: a consumer ships only its own copies of these callers.
+  "workflow-retarget-edited.test.js",
+  "workflow-run-name.test.js",
+  "workflow-shell-glob-lint.test.js",
+  "workflow-triggers.test.js",
+  // The consumer-checkout blind spot (cms-platform#303-class): reads the
+  // PLATFORM's own .github/workflows/*.yml DEFINITIONS (workflow-yaml-utils)
+  // and this repo's scripts/ directory listing to assert every
+  // `workflow_call` job that shells out to a platform-owned script does so
+  // via a `.cms-platform/scripts/…` path fed by an earlier checkout step in
+  // the same job — none of which a consumer ships in that position, so it is
+  // platform-internal, self-CI only.
+  "reusable-platform-script-checkout.test.js",
+  // #238 — the CMS_PLATFORM_PAT → GitHub App conversion: lints the two
+  // push-back reusables (platform-bump, dev-hooks-sync) + their examples/site
+  // callers, and unit-tests scripts/mint-app-token.js. Both read platform
+  // source a consumer lane has no business re-linting.
+  "app-token-platform-writers.test.js",
+  "mint-app-token.test.js",
+  // #408 — skill freshness lint: reads skills/*/SKILL.md and checks each cited
+  // path, workflow, secret/variable and CloudFormation name against this
+  // repo's own tree. A consumer ships none of it. Platform tree only.
+  "skill-references-fresh.test.js",
+  // Draft media fallback: vm-sandbox unit tests for
+  // theme/admin/draft-media-fallback.js (plus its <script> placement in the
+  // admin shells and theme/_layouts/preview.html) and for preview-bridge.js's
+  // payload. Both read theme/ SOURCE, absent on a consumer.
+  "draft-media-fallback.test.js",
+  // #736 media library tidy: vm-sandbox tests for theme/admin/media-library-tidy.js
+  // (upload-name trim, dotfile listing filter) and its placement in the admin
+  // shells. Reads theme/ SOURCE, absent on a consumer.
+  "media-library-tidy.test.js",
+  "preview-bridge-payload.test.js",
+  "preview-pane.test.js",
+  // The production 404 page is uploaded no-cache: parses the platform's own
+  // deploy-production.yml DEFINITION, which a consumer does not carry.
+  "deploy-production-404-cache.test.js",
+];
+
+// A single regex matching any PLATFORM_META_SPEC basename. Each name is
+// escaped (the `.` in `.spec.js` / `.test.js` is a literal) and anchored to
+// a path separator (or string start) on the left + end-of-string on the
+// right, so `cms-host.test.js` matches `e2e/cms-host.test.js` but never a
+// hypothetical `xcms-host.test.js`.
+const META_SPECS_RE = new RegExp(
+  "(?:^|[\\\\/])(?:" +
+    PLATFORM_META_SPECS.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") +
+    ")$",
+);
+
+// regression-video.spec.js is ALWAYS ignored (it's a video-fixture
+// generator, not a test — and it's also in the meta list above). In
+// CONSUMER mode we additionally ignore every meta spec. Playwright's
+// `testIgnore` accepts an array of regexes (OR-combined), so we pass the
+// always-on regression ignore plus the meta-specs ignore only when CONSUMER.
+const TEST_IGNORE = CONSUMER
+  ? [/regression-video\.spec\.js/, META_SPECS_RE]
+  : /regression-video\.spec\.js/;
+
+// Absolute path to the harness's own node_modules/.bin. The local webServer
+// commands `cd ${SITE_ROOT}` first (so `decap-server` resolves site files +
+// writes into the SITE tree), but the SITE has no node_modules, so referencing
+// the binary by absolute path keeps it resolvable from the harness regardless
+// of CWD. (`jekyll` is a Ruby gem run via the site's `bundle exec`, so it isn't
+// here.) The :4000 static server is the harness-local `static-serve.js` — a
+// crash-RESILIENT drop-in for `serve` that survives a racy post-open read error
+// instead of killing the shared webServer (see that file's header / #1815).
+const HARNESS_BIN = path.join(__dirname, "node_modules", ".bin");
+const STATIC_SERVE = path.join(__dirname, "static-serve.js");
+const DECAP_SERVER_BIN = path.join(HARNESS_BIN, "decap-server");
+
+const DESKTOP = { width: 1920, height: 1080 };
+const LAPTOP = { width: 1366, height: 768 };
+const TABLET = { width: 768, height: 1024 };
+const MOBILE = { width: 375, height: 667 };
+// 3K-monitor approximation. The admin UI is exercised at this resolution
+// (and ONLY this resolution among Chromium projects) so a contributor
+// running Chrome on a 3K display sees the same affordances the test
+// matrix asserts.
+const DESKTOP_3K = { width: 3000, height: 1500 };
+// iPhone 16 portrait viewport. The 393×852 logical viewport and 3x DPR
+// match Apple's published spec; it's the single WebKit surface the
+// admin UI is exercised on (per AGENTS.md "iOS-anything is WebKit",
+// this also covers iOS Chrome / Edge / Firefox since iOS bans
+// third-party rendering engines).
+const IPHONE_16 = { width: 393, height: 852 };
+
+// Tag-based browser-matrix filtering.
+//
+// Admin specs are tagged via Playwright's `{ tag: ['@admin-write' | ...] }`
+// option on `test.describe(...)` or `test(...)`. Three admin tags exist:
+//
+//   @admin-write       — drives /admin/* AND writes (Decap Save → cms/* PR,
+//                        decap-server FS write, etc.). Runs on
+//                        chromium-desktop-3k ONLY. Single-browser by
+//                        design: writes are heavy and serial.
+//   @admin-read        — drives /admin/* but is read-only (DOM contract,
+//                        HTTP byte parity, mocked APIs). Runs on
+//                        chromium-desktop-3k AND webkit-iphone16 — the
+//                        two engines admin UI actually needs to render in.
+//   @admin-screenshots — manual-walkthrough-* specs. They write to
+//                        docs/manual-screenshots/ (project-INDEPENDENT
+//                        paths, so two parallel projects would race and
+//                        last-write-wins). Run on chromium-desktop-3k
+//                        ONLY for screenshot determinism.
+//
+// `\b` (word boundary) on the tag name prevents future tag-name prefix
+// collisions: `/@admin-read\b/` matches `@admin-read` but NOT a
+// hypothetical `@admin-readonly`.
+const ADMIN_TAGS_ALL = /@admin-write\b|@admin-read\b|@admin-screenshots\b/;
+const ADMIN_TAGS_READ = /@admin-read\b/;
+
+// G3 — `TARGET=` env switch. Local is the default for every dev run and
+// the existing CI matrix; preview/prod skip the local Jekyll + decap-server
+// bring-up because they hit deployed surfaces directly via the `baseURL`
+// fixture override in `e2e/base.js`.
+const TARGET = (process.env.TARGET || "local").toLowerCase();
+const IS_LOCAL = TARGET === "local";
+
+// Worker concurrency (see the `workers:` key below for the why).
+//
+// Playwright validates this strictly: a NUMBER or a percentage STRING — `"4"`
+// is rejected with "config.workers must be a number or percentage". Env vars
+// are always strings, so `PW_WORKERS=4` has to be coerced or every job dies at
+// config load (it did, on the first CI run of this feature). A malformed value
+// throws rather than silently falling back: someone dialling workers down
+// mid-incident must not have their override quietly ignored.
+function resolveWorkers() {
+  const raw = (process.env.PW_WORKERS || "").trim();
+  if (!raw) return undefined;
+  if (/^\d+%$/.test(raw)) return raw;
+  const n = Number(raw);
+  if (Number.isInteger(n) && n > 0) return n;
+  throw new Error(
+    `PW_WORKERS=${JSON.stringify(raw)} is not a positive integer or a percentage ` +
+      `like "50%" — Playwright rejects anything else. Leave it empty for the default.`,
+  );
+}
+
+module.exports = defineConfig({
+  testDir: ".",
+  testIgnore: TEST_IGNORE,
+  // Install-on-miss browser self-heal (#1723 Cat 4): a sub-ms no-op when
+  // the prebaked browsers match this @playwright/test version (the normal
+  // path); installs only the missing build(s) on the rare image/cache
+  // mismatch so specs don't die at launch with "Executable doesn't exist".
+  globalSetup: "./install-browsers-on-miss.js",
+  fullyParallel: true,
+  // Worker concurrency — left to Playwright (50% of cores, i.e. 2 on a 4-vCPU
+  // GitHub runner) unless PW_WORKERS says otherwise. THIS config is also loaded by
+  // the sibling reusables (parity-preview, canary-prod, the loops), and each of
+  // those runs a HANDFUL of specs pinned to one or two projects in a single job —
+  // a shape the 150% number was never measured on, and one where the whole job is
+  // often a single serial @admin-write round trip that more workers cannot speed
+  // up. So the override is opt-IN per lane rather than a blanket CI default.
+  //
+  // e2e-tests.yml, which runs ONE PROJECT PER JOB, passes PW_WORKERS=150% (6 on a
+  // 4-vCPU runner) for EVERY project job — one number, not a per-project table;
+  // see e2e/ci-matrix.js. PW_WORKERS is also the no-release escape hatch (the
+  // reusable's `workers` input) if a project gets flaky under load.
+  // Measurements, including why the same worker count wins on one job shape and
+  // loses on the other: docs/E2E-PARALLELISM.md.
+  workers: resolveWorkers(),
+  // Single auto-retry on CI for the decap-server file-write race (and any
+  // similar transient flake). Local runs stay at 0 so a regression caught
+  // while iterating fails loudly the first time. A test that fails once
+  // and then passes lands in Playwright's report as "flaky" — visible,
+  // but doesn't block the merge gate.
+  retries: process.env.CI ? 1 : 0,
+  // Only spin up the local Jekyll build + decap-server when targeting
+  // `local`. Preview/prod runs hit deployed surfaces and don't need
+  // either process — running them would be ~30s of wasted bring-up plus
+  // a hard fail when bundler/jekyll aren't installed in the remote-only
+  // job's container.
+  webServer: IS_LOCAL
+    ? [
+        {
+          // Build + serve the SITE (SITE_ROOT), not the harness's parent —
+          // see the SITE_ROOT note at the top of this file. `cd ${SITE_ROOT}`
+          // makes both `bundle exec jekyll build` (reads the site's Gemfile +
+          // _config.yml) and the served `_site` resolve to the consuming site.
+          // The static server is `static-serve.js` (run via the harness `node`,
+          // not the SITE's — the SITE has no node_modules), a crash-resilient
+          // serve-handler wrapper: a racy post-open ENOENT on a `_site/admin/*`
+          // asset under the write-heavy admin lane would crash bare `serve` and
+          // ERR_CONNECTION_REFUSED every later @admin spec (#1815); this one
+          // logs-and-survives. Same engine + config as `serve@14`, so URL
+          // resolution (clean URLs, dir index, 404.html) is unchanged.
+          command: `cd ${SITE_ROOT} && bundle exec jekyll build --quiet && node "${STATIC_SERVE}" ${SITE_ROOT}/_site 4000`,
+          port: 4000,
+          reuseExistingServer: !process.env.CI,
+        },
+        {
+          // Decap CMS local-backend proxy: handles file IO for `local_backend: true`
+          // in admin/config-local.yml. Without it, the smoke spec's Login →
+          // Save / Delete cycle has nowhere to write to. decap-server writes
+          // relative to its CWD, so it MUST run from the SITE root (this `cd`
+          // was missing — a latent bug that only worked because the harness
+          // lived at the site root) or saves land in the wrong tree.
+          command: `cd ${SITE_ROOT} && "${DECAP_SERVER_BIN}"`,
+          // Readiness = the open TCP port. A prior change used
+          // `url: "http://localhost:8081/"` to wait for an HTTP response, but
+          // Playwright's webServer readiness only accepts HTTP 200-403, and
+          // decap-server returns 404 for EVERY GET route (/, /api/v1, /health —
+          // empirically verified) and 422 only for POST /api/v1. So no `url:`
+          // probe can ever go ready, and that silently broke the entire
+          // `target:local` lane (60s webServer timeout) for every consumer
+          // (cms-platform Self CI runs TARGET=prod, so it never caught it).
+          // The TCP `port` check is the only mechanism that works here; the
+          // original socket-open-before-API-ready flake belongs in a harness
+          // readiness poll, which the webServer `url` cannot express.
+          port: 8081,
+          reuseExistingServer: !process.env.CI,
+        },
+      ]
+    : undefined,
+  use: {
+    // Default baseURL — picked up by `page.goto("/foo")` and
+    // `page.request.get("/foo")` calls in every spec. The `TARGET=` env
+    // switch (G3) overrides this fixture at module-init time via
+    // `e2e/base.js`: when TARGET=preview or TARGET=prod, the custom
+    // `test` extends `baseURL` to resolve at fixture creation
+    // (https://preview-pr<latest>.adamdaniel.ai or https://adamdaniel.ai),
+    // so every path-relative request routes there instead. The CI matrix
+    // drives `TARGET=prod` against the `@parity` subset on every PR; see
+    // `.github/workflows/e2e-tests.yml` and the
+    // `e2e/parity-tag-lint.test.js` read-only guard.
+    baseURL: process.env.CMS_BASE_URL || "http://localhost:4000",
+    screenshot: "on",
+    video: "retain-on-failure",
+    // Default action timeout — caps every page action (click, fill,
+    // press, type, etc.) that doesn't pass an explicit `timeout`.
+    // Playwright's library default is 0 (no timeout), which turns any
+    // missing-element bug into the worst kind of failure: the runner
+    // hangs until the outer test timeout fires. Run #25473784039 was
+    // exactly this — `getByRole("button", { name: /^Status:/i }).click()`
+    // missed because the canary entry's actual button label was
+    // "Published"; the click pegged the runner for ~40 min before
+    // the spec timeout finally killed it. 30 s is generous for any
+    // real Decap interaction (the slowest in-flight thing is the
+    // editor mount, which the specs explicitly wait for via
+    // `expect(...).toBeVisible({ timeout: 60_000 })` — that's an
+    // expect, not an action) and turns the next "selector drifted"
+    // bug into a 30 s fast-fail with a clear diagnostic.
+    actionTimeout: 30_000,
+  },
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+    },
+  },
+  reporter: process.env.CI
+    ? [
+        ["html", { open: "never" }],
+        ["list"],
+        // Live failure stream — posts a marker-tagged comment per
+        // terminal failure (final retry only) so agents watching the
+        // PR see signal before the whole job ends. No-ops outside CI
+        // and when GITHUB_TOKEN / PR_NUMBER aren't exposed; opt in by
+        // adding `GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and
+        // `PR_NUMBER: ${{ github.event.pull_request.number }}` to a
+        // job's env. See e2e/live-failures-reporter.js.
+        ["./live-failures-reporter.js"],
+      ]
+    : [["list"]],
+  projects: [
+    // ── Public-page lane (7 projects) ─────────────────────────────
+    // Browser × viewport diversity for public-facing pages
+    // (/, /blog/<slug>/, /tags/, /tags/<slug>/, /tags/<slug>/feed.xml,
+    // /sitemap.xml, /404.html, etc.). Each project EXCLUDES admin tags
+    // via grepInvert so admin specs only run on the dedicated admin
+    // projects below.
+    {
+      // Public-lane Chromium project (viewport DESKTOP = 1920×1080). The
+      // "-1080" suffix mirrors "chromium-desktop-3k" (admin-lane, 3K) so
+      // the project name encodes the viewport — historical "chromium-
+      // desktop" left the resolution implicit.
+      name: "chromium-desktop-1080",
+      use: { browserName: "chromium", viewport: DESKTOP },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "chromium-laptop",
+      use: { browserName: "chromium", viewport: LAPTOP },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "chromium-mobile",
+      use: { browserName: "chromium", viewport: MOBILE },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "firefox-desktop",
+      use: { browserName: "firefox", viewport: DESKTOP },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "webkit-tablet",
+      use: { browserName: "webkit", viewport: TABLET },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "chromium-large-text",
+      use: { browserName: "chromium", viewport: DESKTOP, rootFontSize: "20px" },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "chromium-light",
+      use: { browserName: "chromium", viewport: DESKTOP, colorScheme: "light" },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "chromium-forced-colors",
+      use: {
+        browserName: "chromium",
+        viewport: DESKTOP,
+        forcedColors: "active",
+      },
+      grepInvert: ADMIN_TAGS_ALL,
+    },
+
+    // ── Admin lane (2 projects) ───────────────────────────────────
+    // The admin UI only needs to render correctly in the two engines
+    // a contributor actually uses: Chromium at 3K-monitor scale and
+    // WebKit at iPhone 16. See `ADMIN_TAGS_*` above for the routing
+    // contract — tags are added per spec via `{ tag: [...] }` on
+    // `test.describe(...)` or `test(...)`.
+    {
+      name: "chromium-desktop-3k",
+      use: { browserName: "chromium", viewport: DESKTOP_3K },
+      // Runs every admin tag (write, read, and screenshots).
+      grep: ADMIN_TAGS_ALL,
+    },
+    {
+      name: "webkit-iphone16",
+      use: {
+        browserName: "webkit",
+        viewport: IPHONE_16,
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
+      // Read-only admin specs only — writes (cms/* PR creation, FS
+      // mutations) and screenshot-deterministic specs run on
+      // chromium-desktop-3k only.
+      grep: ADMIN_TAGS_READ,
+    },
+  ],
+});

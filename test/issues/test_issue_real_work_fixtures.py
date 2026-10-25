@@ -43,6 +43,8 @@ CHECKER_BLOBS = {
         "e2e/live-url-derive-routable.test.js": "274da0153db0a64b05f25e5ac5e42753c7295a2c"},
     "cms-platform-760": {
         "theme/spec/tag_case_variants_build_test.rb": "449db50828e8cde85a01dcedf1cee25ded51e2dc"},
+    "cms-platform-761": {
+        "e2e/tags-suggest.test.js": "60cf99d5225f6b43546239383ae5b11a927aff4c"},
     "cms-platform-221": {
         "e2e/check-platform-pin-consistency.test.js": "e0235030215025986b023fdf56045ab4056a1d1b"},
     "_agent-guidance-196": {
