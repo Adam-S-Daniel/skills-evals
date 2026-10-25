@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PNe7tfBQrxuyRr5ivou178",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PNe7tfBQrxuyRr5ivou178",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n457d782 ...",
+      "output_chars": 1381,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WWJhP4dKekYGSa8JqPqHAs",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; find .gh bin src test .claude -type f | head -50; git show --stat HEAD | head -30",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WWJhP4dKekYGSa8JqPqHAs",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 2735,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QdkQ2gXMDAnMXUhZ5egA1R",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay; cat run-view-77001.log run-list.json api/repos/example-org/example-service/check-runs/99001/annotations.json api/repos/example-org/example-serv...",
+      "input_chars": 364,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QdkQ2gXMDAnMXUhZ5egA1R",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\ntest\tRun unit tests\t2026-01-07T07:00...",
+      "output_chars": 3269,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Razt6uLDDqDrqcMbUeVedt",
+      "name": "Bash",
+      "input": "cd <path> && python3 -m unittest test.test_legacy 2>&1 | tail -4; echo \"---\"; python3 -m unittest discover -s test 2>&1 | tail -4; echo \"---\"; python3 -m unittest test.test_current 2>&1 | tail -3; git...",
+      "input_chars": 249,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Razt6uLDDqDrqcMbUeVedt",
+      "is_error": false,
+      "output": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n---\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\n---\nRan 1 test in 0.000s\n\nFAILED (errors=1)\nf0be913 Import example service",
+      "output_chars": 285,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0128vPdeC8NdcMjhxLTpRvbg",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_current 2>&1 | grep -E \"Error|No module\"; python3 -c \"import test; print(test.__file__, test.__path__)\"; ls test; git show --stat f0be913 | tail -8",
+      "input_chars": 177,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0128vPdeC8NdcMjhxLTpRvbg",
+      "is_error": false,
+      "output": "ImportError: Failed to import test module: test_current\nModuleNotFoundError: No module named 'test.test_current'\n<path> ['<path>']\n__pycache__\ntest_current.py\n\n    Import example service\n\n .github/workflows/ci.yml | 18 ++++++++++++++++++\n README.md                |  9 +++++++++\n src/sequence.py     ...",
+      "output_chars": 439,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
