@@ -36,6 +36,21 @@ under the cap wherever the account's own week starts):
     could have spent. Ingested runs are assumed to belong to the old fires,
     so the recent ones stay held in full: the safe direction.
 
+Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
+usage if I'm approaching end of week and under pace"): the allowance the
+account has not used is released as its week ends. The newest account meter
+snapshot in those ingested summaries (`usage.measured.meter.snapshots`) gives
+the seven-day utilization and when that window resets; the room is
+`max(0, stop_when_account_above - utilization)` times the share of the week
+gone, less pending (fires still without results, whose spend the snapshot may
+not show yet, so every fire shrinks the room until its results are ingested),
+and a fire fits when it fits under the larger of that and the fixed cap left.
+So the cap is a floor, early in a week the pace room is near nothing,
+and the in-run `stop_when_account_above` stop still bounds every run. A
+snapshot more than `PACE_MAX_AGE` old, ahead of the clock, with a reset
+already past or more than a week out, or with a value out of range gives no
+pace room: the fixed cap alone, the safe direction.
+
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
 
@@ -83,6 +98,10 @@ FIRE_WORKFLOW = "routine-eval-fire.yml"
 #: (run_eval._meter_delta rounds to them), so a sum within this of the cap is
 #: an exact fit. 0.3 - 0.2 is 0.0999... in floats.
 EPSILON = 1e-9
+#: A meter snapshot older than this says too little of the account now to
+#: release room on; one more than PACE_CLOCK_SKEW ahead of `now` is not read.
+PACE_MAX_AGE = timedelta(hours=12)
+PACE_CLOCK_SKEW = timedelta(minutes=5)
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
 
@@ -98,6 +117,17 @@ def _parse_stamp(stamp: str) -> datetime:
 
 def _summary_paths(run_dir: Path) -> list[Path]:
     return sorted(path for path in run_dir.rglob("summary.json"))
+
+
+def _load_summary(path: Path):
+    """The parsed summary, or None for a symlink, an oversize file or one
+    that does not parse: data that is not trusted."""
+    try:
+        if path.is_symlink() or path.stat().st_size > SUMMARY_MAX_BYTES:
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
 
 
 def _invocation_cost(usage, limits: dict) -> float:
@@ -122,11 +152,8 @@ def run_cost(run_dir: Path, limits: dict) -> float:
     reserve = budget_file.run_reservation(limits)
     blocks = {}
     for path in _summary_paths(run_dir):
-        try:
-            if path.is_symlink() or path.stat().st_size > SUMMARY_MAX_BYTES:
-                return reserve
-            summary = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        summary = _load_summary(path)
+        if summary is None:
             return reserve
         usage = summary.get("usage") if isinstance(summary, dict) else None
         if not isinstance(usage, dict):
@@ -161,13 +188,80 @@ def ingested_runs(tree: Path, now: datetime) -> list[Path]:
     return found
 
 
+def _snapshot_time(snapshot):
+    """A snapshot's `at` as an aware datetime, or None."""
+    at = snapshot.get("at") if isinstance(snapshot, dict) else None
+    if not isinstance(at, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo is not None else None
+
+
+def newest_snapshot(runs: list[Path]):
+    """`(at, snapshot)` for the account meter snapshot with the newest `at`
+    in the runs' summaries, or None. A snapshot without a readable `at`, and
+    a summary `run_cost` would not trust, are skipped."""
+    newest = None
+    for run_dir in runs:
+        for path in _summary_paths(run_dir):
+            summary = _load_summary(path)
+            usage = summary.get("usage") if isinstance(summary, dict) else None
+            measured = usage.get("measured") if isinstance(usage, dict) else None
+            reading = measured.get("meter") if isinstance(measured, dict) else None
+            snapshots = reading.get("snapshots") if isinstance(reading, dict) else None
+            if not isinstance(snapshots, list):
+                continue
+            for snapshot in snapshots:
+                at = _snapshot_time(snapshot)
+                if at is not None and (newest is None or at > newest[0]):
+                    newest = (at, snapshot)
+    return newest
+
+
+def _number(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) \
+        and math.isfinite(value)
+
+
+def pace(runs: list[Path], limits: dict, now: datetime):
+    """`(pace_room, utilization, week_elapsed)` from the newest snapshot, or
+    `(0.0, None, None)` when there is none usable: the allowance below
+    `stop_when_account_above` the account has not used, scaled by the share
+    of its week gone."""
+    found = newest_snapshot(runs)
+    if found is None:
+        return 0.0, None, None
+    at, snapshot = found
+    if not now - PACE_MAX_AGE <= at <= now + PACE_CLOCK_SKEW:
+        return 0.0, None, None
+    info = snapshot.get("info")
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    used = week.get("utilization") if isinstance(week, dict) else None
+    resets = week.get("resetsAt") if isinstance(week, dict) else None
+    if not _number(used) or not 0 <= used <= 1 or not _number(resets):
+        return 0.0, None, None
+    left = resets - now.timestamp()
+    if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
+        return 0.0, None, None
+    elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
+    room = max(0.0, limits["stop_when_account_above"] - used) * elapsed
+    return room, float(used), elapsed
+
+
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int]) -> dict:
-    """{spent, pending, runs, fires, recent, reservation, cap} for the seven
-    days up to `now`, given `fires`, a pair: the successful fires of the last
-    seven days and of the last `PENDING_FULL_HOLD`. Ingested runs are assumed
-    to belong to the old fires, so the unresulted recent ones are held in
-    full and the rest are charged `per_run_overrun`."""
+    """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
+    account_used, week_elapsed} for the seven days up to `now`, given
+    `fires`, a pair: the successful fires of the last seven days and of the
+    last `PENDING_FULL_HOLD`. Ingested runs are assumed to belong to the old
+    fires, so the unresulted recent ones are held in full and the rest are
+    charged `per_run_overrun`. `pace_room` is `pace` of the same runs'
+    newest meter snapshot; `account_used` and `week_elapsed` are None when
+    there is no usable one."""
     try:
         fires_7d, fires_24h = fires
     except (TypeError, ValueError):
@@ -181,16 +275,22 @@ def account(tree: Path, limits: dict, now: datetime,
     unresulted = max(0, fires_7d - len(runs))
     recent = min(fires_24h, unresulted)
     pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
+    room, used, elapsed = pace(runs, limits, now)
     return {"spent": spent, "pending": pending, "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
-            "cap": limits["weekly_cap"]}
+            "cap": limits["weekly_cap"], "pace_room": room,
+            "account_used": used, "week_elapsed": elapsed}
 
 
 def fits(state: dict) -> int:
-    """How many more fires, each reserved in full, fit under the cap: the
-    largest n with spent + pending + n * reservation <= cap (within
-    EPSILON)."""
-    room = state["cap"] - state["spent"] - state["pending"] + EPSILON
+    """How many more fires, each reserved in full, fit: the largest n with
+    n * reservation <= max(cap - spent - pending, pace_room - pending)
+    (within EPSILON). The fixed cap left is a floor; late in an under-pace
+    week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
+    both: the snapshot behind the pace room may predate those fires, and
+    without it every fire would fit until the next snapshot is ingested."""
+    room = max(state["cap"] - state["spent"],
+               state.get("pace_room", 0.0)) - state["pending"] + EPSILON
     if room < state["reservation"]:
         return 0
     # Counted by comparison, not trusted from a float quotient alone.
@@ -248,11 +348,17 @@ def describe(state: dict) -> str:
     """One non-identifying line, in points (percent of the weekly allowance)."""
     def points(value):
         return f"{value * 100:.1f}"
-    return (f"weekly eval allowance: spent {points(state['spent'])} points over "
+    line = (f"weekly eval allowance: spent {points(state['spent'])} points over "
             f"{state['runs']} ingested run(s), pending {points(state['pending'])} "
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
             f"results ({state['recent']} from the last 24h held in full), this run reserves {points(state['reservation'])}, cap "
             f"{points(state['cap'])} (last 7 days)")
+    used = state.get("account_used")
+    if state.get("pace_room", 0.0) > 0 or used is not None:
+        return (f"{line}; account at {points(used or 0.0)}% with "
+                f"{points(state.get('week_elapsed') or 0.0)}% of its week gone, "
+                f"so pace allows {points(state.get('pace_room', 0.0))} points before pending fires")
+    return f"{line}; no recent account reading, so no pace room"
 
 
 def check(state: dict) -> bool:
