@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EP26sUV2ZXMs6CV8E7qtts",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EP26sUV2ZXMs6CV8E7qtts",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019772hKtKg6uUPb1dQkbZZ4",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/*.md CHANGELOG.md scripts/*.sh 2><path>",
+      "input_chars": 141,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019772hKtKg6uUPb1dQkbZZ4",
+      "is_error": false,
+      "output": "d0f8a96 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 5680,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L46mabFdyREngGsS9EfY6n",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots, not snapshots younger than 30 days\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[...",
+      "input_chars": 3124,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L46mabFdyREngGsS9EfY6n",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2606,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

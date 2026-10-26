@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HgrFpJdZWGtBxFAFF1QTde",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/*.md && cat CHANGELOG.md scripts/*.sh",
+      "input_chars": 136,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HgrFpJdZWGtBxFAFF1QTde",
+      "is_error": false,
+      "output": "4fe74e6 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 5571,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WswXryrVfGpC62ZU1y4XSY",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[0002](0002-prune-snapshots-older-tha...",
+      "input_chars": 2159,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WswXryrVfGpC62ZU1y4XSY",
+      "is_error": false,
+      "output": " docs/decisions/0002-prune-snapshots-older-than-30-days.md | 2 +-\n docs/decisions/README.md                                  | 3 ++-\n scripts/prune-snapshots.sh                                | 2 +-\n 3 files changed, 4 insertions(+), 3 deletions(-)\n| ADR | Title | Status |\n|-----|-------|--------|\n|...",
+      "output_chars": 823,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CsrXVBfuPCsemUnUKkNS1j",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/prune-snapshots.sh'\ns=open(p).read()\nstart=s.index(\"#\\n# Changed after\")\nend=s.index(\"set -euo pipefail\")\ns=s[:start]+\"#\\n# Counting snapshots instead of days means a stal...",
+      "input_chars": 419,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CsrXVBfuPCsemUnUKkNS1j",
+      "is_error": false,
+      "output": "#!<path> bash\n# prune-snapshots.sh: keep the newest 14 snapshots and delete the rest.\n#\n# Counting snapshots instead of days means a stalled snapshot job can no\n# longer prune its way down to nothing; see the retention policy ADR below.\nset -euo pipefail\n\nsnapshot_dir=\"${SNAPSHOT_DIR:-/var/backups/s...",
+      "output_chars": 401,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

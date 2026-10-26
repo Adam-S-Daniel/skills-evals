@@ -1,0 +1,414 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261026T145310Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.20892490000000002,
+    "num_turns": 5,
+    "duration_ms": 29472,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 17491,
+      "cache_read_input_tokens": 106030,
+      "output_tokens": 2382,
+      "output_tokens_details": {
+        "thinking_tokens": 301
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 17491,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 647,
+          "cache_read_input_tokens": 42149,
+          "cache_creation_input_tokens": 2829,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2829
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "new-adr-0004-is-a-house-format-entry",
+      "passed": true,
+      "detail": "docs/decisions/0004-keep-the-newest-14-snapshots.md matches"
+    },
+    {
+      "id": "new-adr-0004-names-0002",
+      "passed": true,
+      "detail": "docs/decisions/0004-keep-the-newest-14-snapshots.md matches"
+    },
+    {
+      "id": "adr-0002-status-says-superseded-by-0004",
+      "passed": true,
+      "detail": "docs/decisions/0002-prune-snapshots-older-than-30-days.md matches"
+    },
+    {
+      "id": "adr-0002-keeps-what-it-recorded",
+      "passed": true,
+      "detail": "docs/decisions/0002-prune-snapshots-older-than-30-days.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-row-for-0002-says-superseded-by-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-rows-for-0001-and-0003-kept",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "decision-log-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/0001-take-snapshots-with-pg-basebackup.md, docs/decisions/0002-prune-snapshots-older-than-30-days.md, docs/decisions/0003-store-snapshots-on-a-separate-volume.md, docs/decisions/0004-keep-the-newest-14-snapshots.md, docs/decisions/README.md)"
+    },
+    {
+      "id": "script-comment-points-at-0004",
+      "passed": true,
+      "detail": "scripts/prune-snapshots.sh matches"
+    },
+    {
+      "id": "script-adr-pointers-resolve",
+      "passed": true,
+      "detail": "all link targets exist (scripts/prune-snapshots.sh)"
+    },
+    {
+      "id": "script-still-keeps-the-newest-14",
+      "passed": true,
+      "detail": "scripts/prune-snapshots.sh matches"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": true,
+      "detail": "4 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-take-snapshots-with-pg-basebackup.md, docs/decisions/0003-store-snapshots-on-a-separate-volume.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "replacement-explains-the-reversal",
+        "score": 10,
+        "rationale": "Context describes the silently-failed job plus age-based pruning deleting everything without pre-announcing the decision, Decision states the by-count keep-14 policy, both header alternatives are rejected with reasons, consequences are honestly two-sided, and it plainly states it supersedes 0002."
+      },
+      {
+        "name": "audit-trail-preserved",
+        "score": 10,
+        "rationale": "ADR 0002's body is untouched with only its status flipped to 'Superseded by 0004', and the index and script comment now consistently reflect 0002 superseded, 0004 in force, and the script pointing at 0004 instead of presenting 0002 as the policy."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "ADRs 0001/0003 and their index rows, CHANGELOG.md, and the script's actual behavior are all left untouched, and no superfluous ADR was written for the changelog typo fix."
+      }
+    ],
+    "overall": 10.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-4-8"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1179,
+      "output_tokens": 18,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 2382,
+      "cache_read_input_tokens": 106030,
+      "cache_creation_input_tokens": 17491,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.00941733671109153,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "supersede",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "opus",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "f65fb39a66418c284dbe146b5559520b87b4333761b7a5200e02aafa9337f088",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "workstation",
+    "location": "cloud",
+    "id": "20261026T145309Z-10cac2",
+    "session_id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+    "harness_commit": "c0987d52f732d19356731d9082d74376d327e4e6",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T14:53:10Z",
+    "ended_at": "2026-10-26T14:58:12Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T14:53:10Z",
+      "to_at": "2026-10-26T14:56:13Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.64,
+          "to": 0.68,
+          "delta": 0.04,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.79,
+          "to": 0.8,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T14:53:10Z",
+      "ended_at": "2026-10-26T14:57:09Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T14:53:10Z",
+          "ended_at": "2026-10-26T14:53:42Z",
+          "duration_ms": 31977,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-26T14:56:52Z",
+          "ended_at": "2026-10-26T14:57:09Z",
+          "duration_ms": 16525,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T14:53:10Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.79,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.64,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.79,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-26T14:53:29.183Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.79,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.65,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.79,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 31977,
+        "num_turns": 5,
+        "cost_usd": 0.20892490000000002,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1179,
+            "output_tokens": 18,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001269
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 2382,
+            "cache_read_input_tokens": 106030,
+            "cache_creation_input_tokens": 17491,
+            "cost_usd": 0.20879799999999998
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 17491
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 16525,
+        "num_turns": 1,
+        "cost_usd": 0.1206145,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 4540,
+            "output_tokens": 21,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00046449999999999996
+          },
+          "claude-opus-4-8": {
+            "input_tokens": 2,
+            "output_tokens": 785,
+            "cache_read_input_tokens": 27450,
+            "cache_creation_input_tokens": 8679,
+            "cost_usd": 0.12014999999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 8679
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
