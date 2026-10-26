@@ -254,6 +254,7 @@ class WorkflowShapeTests(unittest.TestCase):
             "permission-contents": "read"})
         self.assertEqual(self.steps[checkout]["with"], {
             "repository": "Adam-S-Daniel/adam-agentskills-private",
+            "ref": "persistent/lessons",
             "path": "lessons-repo", "persist-credentials": False,
             "sparse-checkout": "lessons",
             "token": "${{ steps.lessons-token.outputs.token }}"})
