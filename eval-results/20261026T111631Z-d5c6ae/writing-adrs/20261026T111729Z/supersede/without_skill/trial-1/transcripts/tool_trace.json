@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QneYGkmJBUsq3Dq3CdFw2d",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md && ls docs/decisions && git log --oneline | head -20 && cat scripts/prune-snapshots.sh && head -30 CHANGELOG.md",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QneYGkmJBUsq3Dq3CdFw2d",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-line code\ncomment is enough for everything else.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from...",
+      "output_chars": 2802,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W5GuW7qwcKeNTW8quc5huk",
+      "name": "Bash",
+      "input": "cd <path> && cat 0002-*.md 0001-*.md | head -80; grep -rn \"0002\\|30 days\" <path> --include=* -I --exclude-dir=.git | grep -v \"^<path>\"",
+      "input_chars": 220,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W5GuW7qwcKeNTW8quc5huk",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 2894,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H9opqF27syUeGvS8thojt6",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014xPUJQsTz9hBX12owfrwGW",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019acA3fQ9BRK4VpaxtFNkQY",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cn1Pzxp13Se6tz9u3UYy6s",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H9opqF27syUeGvS8thojt6",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014xPUJQsTz9hBX12owfrwGW",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019acA3fQ9BRK4VpaxtFNkQY",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cn1Pzxp13Se6tz9u3UYy6s",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

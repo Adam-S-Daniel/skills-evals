@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LTGjik67AhiEtN4SPSjxku",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md && ls docs/decisions && git log --oneline | head -20 && cat scripts/prune-snapshots.sh && head -30 CHANGELOG.md",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LTGjik67AhiEtN4SPSjxku",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-line code\ncomment is enough for everything else.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from...",
+      "output_chars": 2802,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FH1DoXkVLyu9xJXho14L2x",
+      "name": "Bash",
+      "input": "cd <path> && cat 0002-*.md 0003-*.md",
+      "input_chars": 68,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FH1DoXkVLyu9xJXho14L2x",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 1612,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ko9nfV8LK18mALAcgqSTmy",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K1ePkFJ2bmybwsnVoHHU3o",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018XJ5uAsjqGq1y8Suza3nDT",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NqXAU9GUe2iHrx37cmg9Su",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ko9nfV8LK18mALAcgqSTmy",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K1ePkFJ2bmybwsnVoHHU3o",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018XJ5uAsjqGq1y8Suza3nDT",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NqXAU9GUe2iHrx37cmg9Su",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
