@@ -12,8 +12,23 @@ The results tree is laid out like `persistent/eval-results`:
 
 with `report.md` beside each `<timestamp>`'s arms. Paths below the prefix are
 parsed by `ingest_routine_results.parse_result_path`, the parser the ingester
-validates routine branches with. `guidance/` subjects are left out (a later
-part of #70/#124).
+validates routine branches with.
+
+GUIDANCE SECTIONS (#124). Runs under `guidance/<section>/` are read too
+(`guidance/<section>/<fixture>/`, a real-work fixture run with --section,
+is not). An isolation guidance run writes one summary per arm, no trial
+files and no aggregate: it is validated by `_validate_guidance`, as one
+trial, and each arm gets its role in one of the section's two pairs by its
+`mode` (harness/gates.py `GUIDANCE_PAIRS`). The fixtures on main are
+`evals/guidance/<section>/<name>/fixture.yaml` with that `section:` (a
+directory starting with `_`, such as the delivery canary, is not one), the
+summary's `fixture_name` names which, and the section's expected extent
+digest comes from the `--guidance` checkout (harness/guidance.py
+`content_digests`); without it every guidance cell is insufficient. With a
+`guidance:` block in the policy, the document gains `guidance` (a verdict
+per section seen, harness/gates.py `guidance_verdict`) and
+`guidance_retirement_mode`, and one section at most retires per
+evaluation, apart from the one skill.
 
 THE CONTENT ON MAIN. Each skill's fixtures are enumerated from `--evals-dir`
 (`run_eval.resolve_fixture_dirs`: `<skill>/fixture.yaml`, or every
@@ -94,6 +109,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import context  # noqa: E402
 import delivery  # noqa: E402
 import gates  # noqa: E402
+import guidance  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
 
@@ -162,8 +178,8 @@ def _summaries(tree: Path) -> dict:
                 found = ingest.parse_result_path("/".join(parts))
             except ingest.Rejected:
                 continue
-            if found["key"].split("/")[0] == "guidance":
-                continue
+            if found["key"].split("/")[0] == "guidance" and found["fixture"] is not None:
+                continue  # a real-work fixture run with --section
             run_dir = "/".join((prefix, *head, found["key"], found["timestamp"]))
             entry = arms.setdefault((run_dir, found["key"], found["timestamp"],
                                      found["fixture"], found["arm"]),
@@ -199,6 +215,8 @@ def _string(value):
 def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     """(arm run record, None) or (None, the reason it is skipped)."""
     run_dir, skill, timestamp, fixture, arm = key
+    if skill.startswith("guidance/"):
+        return _validate_guidance(tree, key, entry, evals_dir)
     cap = READ_CAPS["summary.json"]
     raw, problem = _read_bytes(entry["summary"], cap) if entry["summary"] else (None, None)
     if problem == "oversize":
@@ -284,6 +302,68 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
             "content": _content(raw, [data for data, _ in trial_reads])}, None
 
 
+GUIDANCE_MODES = {mode: (pair, role) for pair, roles in gates.GUIDANCE_PAIRS.items()
+                  for mode, role in roles.items()}
+
+
+def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
+    """`_validate` for one arm of an isolation guidance run (module
+    docstring): (arm run record, None) or (None, the reason it is skipped).
+    The record's `skill` is the section id."""
+    run_dir, subject, timestamp, _fixture, _arm = key
+    section = subject.split("/", 1)[1]
+    raw, problem = (_read_bytes(entry["summary"], READ_CAPS["summary.json"])
+                    if entry["summary"] else (None, None))
+    if problem == "oversize":
+        return None, "arm summary over its size cap"
+    summary = _parse(raw)
+    if summary is None:
+        return None, "no readable arm summary"
+    if entry["trials"]:
+        return None, "a guidance arm with trial files"
+    if summary.get("subject") != "guidance" or summary.get("section") != section:
+        return None, "summary names another section"
+    if summary.get("mode") not in GUIDANCE_MODES:
+        return None, "not a mode of a guidance pair"
+    if not isinstance(summary.get("run"), dict):
+        return None, "no run block"
+    name, digests = summary.get("fixture_name"), summary.get("guidance_digests")
+    if not (_string(name) and ingest.NAME_RE.fullmatch(name)) \
+            or not (_string(summary.get("fixture_digest"))
+                    and ingest.DIGEST_RE.fullmatch(summary["fixture_digest"])) \
+            or not isinstance(digests, dict) \
+            or not all(_string(digests.get(k)) and ingest.DIGEST_RE.fullmatch(digests[k])
+                       for k in ("section", "rest")):
+        return None, "no guidance pooling key"
+    model = run_eval._arm_model([summary])
+    if not isinstance(model, str) or not model:
+        return None, "no requested arm model"
+    report = f"{run_dir}/report.md"
+    report_bytes, problem = _read_bytes(tree / report, READ_CAPS["report.md"])
+    if problem == "oversize":
+        return None, "report over its size cap"
+    if report_bytes is None:
+        return None, "no report"
+    try:
+        records = [gates.trial_record(summary)]
+    except gates.MalformedSummary:
+        return None, "malformed trial summary"
+    pair, role = GUIDANCE_MODES[summary["mode"]]
+    carried, has_checks = _fixture_class(evals_dir, subject, name, records)
+    harness = summary.get("harness")
+    clis = ([harness["version"]] if isinstance(harness, dict)
+            and _string(harness.get("version")) else [])
+    return {"skill": section, "fixture": name, "model": model, "role": role,
+            "pair": pair, "timestamp": timestamp, "path": run_dir, "report": report,
+            "tested_digest": digests["section"],
+            "fixture_digest": summary["fixture_digest"],
+            "arm_context_digest": digests["rest"], "pair_key": digests["rest"],
+            "cli_versions": clis, "run": summary["run"],
+            "judge_conditional": summary.get("judge_conditional") is not False,
+            "judge_carried": carried, "fixture_checks": has_checks,
+            "trials": records, "content": _content(raw, [])}, None
+
+
 def _content(summary: bytes, trials: list) -> tuple:
     """(sha256 of the arm summary's bytes, sha256 over the sorted sha256s of
     its trial summaries' bytes, or None without trial files), from the bytes
@@ -299,7 +379,7 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
     """{"runs": [validated arm runs], "skipped": {reason: count},
     "skills": [every skill key seen]}: none stamped after `as_of`, and each
     arm run once per cell key, by the module docstring's DUPLICATES rules."""
-    runs, skipped, skills = [], {}, set()
+    runs, skipped, skills, sections = [], {}, set(), set()
 
     def count(reason):
         skipped[reason] = skipped.get(reason, 0) + 1
@@ -307,7 +387,10 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
     validated = []
     for key, entry in sorted(_summaries(tree).items(),
                              key=lambda item: tuple(p or "" for p in item[0])):
-        skills.add(key[1])
+        if key[1].startswith("guidance/"):
+            sections.add(key[1].split("/", 1)[1])
+        else:
+            skills.add(key[1])
         record, reason = _validate(tree, key, entry, evals_dir)
         if record is None:
             count(reason)
@@ -318,7 +401,8 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
         if record["timestamp"] > as_of:
             count("after as-of")
             continue
-        here = (record["skill"], record["fixture"] or "", record["model"], record["role"])
+        here = (record["skill"], record["fixture"] or "", record["model"], record["role"],
+                record.get("pair"))
         marks = {(here, "summary", record["content"][0]), (here, "run", record["timestamp"])}
         if record["content"][1] is not None:
             marks.add((here, "trials", record["content"][1]))
@@ -327,7 +411,9 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
             continue
         seen |= marks
         runs.append(record)
-    return {"runs": runs, "skipped": skipped, "skills": sorted(skills)}
+    return {"runs": [r for r in runs if "pair" not in r],
+            "guidance_runs": [r for r in runs if "pair" in r],
+            "skipped": skipped, "skills": sorted(skills), "sections": sorted(sections)}
 
 
 def parse_as_of(value: str) -> str:
@@ -390,6 +476,35 @@ def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
     return out
 
 
+def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) -> dict:
+    """{fixture name: {"fixture_digest", "tested_digest"}} for every fixture
+    of guidance `section` on main (`evals/guidance/<section>/<name>/`); the
+    tested digest is the section's extent in `guidance_dir` (None without
+    one, or when the manifest has no such row)."""
+    root = evals_dir / "guidance" / section
+    if section.startswith("_") or not root.is_dir() or root.is_symlink():
+        return {}
+    tested = None
+    if guidance_dir is not None:
+        try:
+            row = guidance.find_row(guidance.load_manifest(guidance_dir), section,
+                                    guidance_dir)
+            tested = guidance.content_digests(guidance_dir, row)["section"]
+        except (guidance.GuidanceError, OSError, UnicodeDecodeError):
+            tested = None
+    out = {}
+    for directory in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
+        try:
+            doc = yaml.safe_load((directory / run_eval.FIXTURE_FILE).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        if isinstance(doc, dict) and doc.get("subject") == "guidance" \
+                and doc.get("section") == section:
+            out[directory.name] = {"fixture_digest": run_eval.fixture_digest(directory),
+                                   "tested_digest": tested}
+    return out
+
+
 def finalize(skills: dict) -> None:
     """One retirement per evaluation, in place: of the skills whose verdict
     is `retire`, the one with the most arm runs (then the first by name)
@@ -408,10 +523,12 @@ def finalize(skills: dict) -> None:
 
 
 def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
-            as_of: str, registries: dict | None = None) -> dict:
+            as_of: str, registries: dict | None = None,
+            guidance_dir: Path | None = None) -> dict:
     """The gates document. ValueError for a roster with no arm or a
     malformed one: an empty roster must never mean no cell to fail."""
-    policy = gates.load_gate_policy(policy_path)["skills"]
+    policies = gates.load_gate_policy(policy_path)
+    policy = policies["skills"]
     roster, problem = run_eval.read_roster(roster_path)
     if problem:
         raise ValueError(problem)
@@ -430,11 +547,35 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
             skills[skill] = {"verdict": "insufficient", "cells": [], "runs_used": [],
                              "reason": f"the verdict raised {type(exc).__name__}"}
     finalize(skills)
-    return {"schema_version": 1, "as_of": as_of,
+    doc = {"schema_version": 1, "as_of": as_of,
             "newest_run": max((r["timestamp"] for r in index["runs"]), default=None),
             "policy": policy, "retirement_mode": policy["retirement_mode"],
             "roster_models": models, "registries": sorted((registries or {}).keys()),
             "skipped": index["skipped"], "skills": skills}
+    if policies["guidance"] is not None:
+        doc.update(guidance_section_verdicts(index, models, policies["guidance"],
+                                             evals_dir, guidance_dir))
+    return doc
+
+
+def guidance_section_verdicts(index: dict, models: list, policy: dict, evals_dir: Path,
+                              guidance_dir: Path | None) -> dict:
+    """The document's guidance half (#124): a verdict per section seen, one
+    retirement at most among them, and the guidance policy and mode."""
+    guidance_index = {"runs": index["guidance_runs"]}
+    sections = {}
+    for section in index["sections"]:
+        try:
+            sections[section] = gates.guidance_verdict(
+                guidance_index, models, section, policy,
+                expected_guidance(evals_dir, section, guidance_dir))
+        except Exception as exc:  # noqa: BLE001 - one section's failure is its own
+            sections[section] = {"verdict": "insufficient", "cells": [], "runs_used": [],
+                                 "reason": f"the verdict raised {type(exc).__name__}"}
+    finalize(sections)
+    return {"guidance": sections, "guidance_policy": policy,
+            "guidance_retirement_mode": policy["retirement_mode"],
+            "guidance_checkout": guidance_dir is not None}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -445,11 +586,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--as-of", required=True)
     parser.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     parser.add_argument("--registry", action="append", metavar="NAME=PATH")
+    parser.add_argument("--guidance", type=Path, metavar="PATH",
+                        help="an _agent-guidance checkout: the guidance sections' "
+                             "content on main (#124)")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         doc = compute(args.results_tree, args.roster, args.policy, args.evals_dir,
-                      parse_as_of(args.as_of), flag_registries(args.registry))
+                      parse_as_of(args.as_of), flag_registries(args.registry),
+                      args.guidance)
         text = json.dumps(doc, indent=2, sort_keys=True, allow_nan=False) + "\n"
     except (gates.GatePolicyError, ValueError, OSError, RecursionError) as exc:
         print(f"compute_gates: {exc}", file=sys.stderr)

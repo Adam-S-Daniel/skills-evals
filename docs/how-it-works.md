@@ -310,6 +310,22 @@ fixture candidate that a fixture writer turns into an eval. The layout and
 schema are in that repo's `lessons/README.md`. Commands: DESIGN.md, "Lessons
 from real sessions".
 
+### Guidance section retirement (#124)
+
+The same job also reads an `_agent-guidance` checkout. Five sections have
+fixtures under `evals/guidance/<section id>/<name>/`, and
+`anything-you-name-gets-its-link` has four. Each fixture runs the section
+inside the whole guidance against the guidance without it, and the section
+alone against no guidance. A section that adds nothing in situ is `retire`.
+If it helps only when alone, it is `shorten-or-merge` instead, because the
+rest of the guidance already covers it. Both verdicts become one
+skills-evals issue in `proposal` mode, which is the committed
+`guidance.retirement_mode`. In `auto` mode a `retire` would open an
+auto-merging removal pull request in `_agent-guidance` that passes that
+repository's own checks. A `shorten-or-merge` verdict never removes the
+section. Preview with
+`python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected

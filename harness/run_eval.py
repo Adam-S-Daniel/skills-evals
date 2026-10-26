@@ -6203,7 +6203,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                      "mode": arm["mode"], "bytes": info["bytes"],
                      "delivery": channel, "hook_verdict": info["verdict"],
                      "installed": info["installed"], "decoy": decoy,
-                     "hook_returncode": info["returncode"], "guard": None}
+                     "hook_returncode": info["returncode"], "guard": None,
+                     **ctx.get("record", {})}
             if fixture.get("_real_work"):
                 extra["guidance_violations"] = guidance_violations.measure(None, None, None)
             if info["returncode"] is not None and (
@@ -6551,13 +6552,24 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
             plan["repositories"].get(context.GUIDANCE_REPOSITORY))
         row = (guidance.find_row(guidance.load_manifest(guidance_dir), section,
                                  guidance_dir) if plan is None else None)
+        # What the retirement gate pools an isolation run by (#124): the
+        # fixture's content, its directory name (two fixtures of one section
+        # share `results/guidance/<section>/`), the section and the rest of
+        # the guidance as digests, and whether the judge waited on the pair.
+        judge_hold = _judge_hold(args, fixture, [a["name"] for a in arms])
+        record = {} if plan is not None else {
+            "fixture_name": args.eval_dir.name,
+            "guidance_digests": guidance.content_digests(guidance_dir, row),
+            "judge_conditional": judge_hold is not None,
+            **({"fixture_digest": digest}
+               if (digest := fixture_digest(args.eval_dir)) is not None else {})}
     except guidance.GuidanceError as exc:
         print(f"guidance configuration error: {exc}")
         return 2
 
     ctx = {"guidance_dir": guidance_dir, "row": row, "section": section,
-           "key": key, "delivery": args.delivery, "plan": plan,
-           "judge_hold": _judge_hold(args, fixture, [a["name"] for a in arms]),
+           "key": key, "delivery": args.delivery, "plan": plan, "record": record,
+           "judge_hold": judge_hold,
            # One fresh token per RUN, shared by every arm: the control arm
            # looks for the SAME token the treatment arm was given, which is
            # what turns "the control saw it" into proof of contamination.

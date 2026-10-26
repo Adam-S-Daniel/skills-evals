@@ -68,6 +68,34 @@ the gates file's `as_of`.
 
 The gate guards against honest mistakes, not forged results (Adam,
 2026-10-26): anyone who can write the results can also remove a skill.
+
+GUIDANCE SECTIONS (`--target guidance`, skills-evals#124; the functions
+named `guidance_*` below, kept apart from the skill path). The gates file's
+`guidance` block and `guidance_retirement_mode` decide, read the same way:
+
+  * a `retire` verdict, re-checked as a skill's is: in `proposal` mode an
+    issue in skills-evals (`GUIDANCE_ISSUE_MARKER`); in `auto` mode (Adam:
+    removal is automatic, 2026-10-10, and its pull requests auto-merge,
+    2026-10-25) a branch `retire-guidance/<section>` in the
+    `--guidance PATH` checkout of _agent-guidance that removes the
+    section's extent from its file (the whole file for a sections/*.md file
+    with no other `##`; for base.md, re-copied to the repository's own
+    `.claude/hooks/fleet-guidance.md` payload), deletes its
+    `agents-md/eval-coverage.yml` row,
+    rewrites the manifest's bytes (`check-guidance-coverage.js
+    --write-bytes`), adds a typed `remove` entry to
+    `docs/guidance-impact.md` whose `Eval:` line names the fixtures, the
+    pooled run count (`n=`) and the policy, and regenerates `AGENTS.md`
+    exactly as that repository's own instructions say: managed output with
+    its trailing newlines stripped, then everything from the `## Repo-
+    specific additions` heading LINE (never the first occurrence of the
+    substring, which the managed header quotes); pushed, opened and armed
+    to auto-merge, one at a time (`retire-guidance/` heads);
+  * a `shorten-or-merge` verdict (the section helps only alone): an issue in
+    skills-evals (`SHORTEN_ISSUE_MARKER`) in either mode, never a removal.
+
+One action per evaluation: a `retire` first, else the first
+`shorten-or-merge` section by name.
 """
 
 from __future__ import annotations
@@ -84,8 +112,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import yaml  # noqa: E402
+
 import compute_gates  # noqa: E402
 import delivery  # noqa: E402
+import guidance  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
@@ -521,6 +552,383 @@ def execute(action: dict, registries: dict, gh, push, env) -> str:
     return f"opened {url} with auto-merge"
 
 
+# ---------------------------------------------------------------------------
+# Guidance sections (skills-evals#124): `--target guidance`. Kept apart from
+# the skill path above; the two share only the gh/push plumbing, the issue
+# lookup's shape and `insert_entry`'s neighbor `_date`.
+
+GUIDANCE_REPO = "Adam-S-Daniel/_agent-guidance"
+GUIDANCE_BRANCH_PREFIX = "retire-guidance/"
+GUIDANCE_ISSUE_MARKER = "<!-- skills-evals:retire-guidance:{section} -->"
+SHORTEN_ISSUE_MARKER = "<!-- skills-evals:shorten-guidance:{section} -->"
+GUIDANCE_MANIFEST = "agents-md/eval-coverage.yml"
+GUIDANCE_IMPACT = "docs/guidance-impact.md"
+GUIDANCE_AGENTS = "AGENTS.md"
+#: _agent-guidance's own fleet-memory payload: a hand-made byte copy of
+#: base.md that nothing syncs (its scripts/check-fleet-guidance-mirror.js).
+GUIDANCE_PAYLOAD = ".claude/hooks/fleet-guidance.md"
+#: The heading LINE AGENTS.md is split on, never a substring of a line: the
+#: managed block's own first line quotes it (_agent-guidance AGENTS.md).
+REPO_SPECIFIC_LINE = "## Repo-specific additions"
+DATED_HEADING_RE = re.compile(r"^\d{4}-\d{2}-\d{2} — ")
+
+
+def guidance_mode(gates: dict) -> str:
+    return "auto" if gates.get("guidance_retirement_mode") == "auto" else "proposal"
+
+
+def guidance_block(gates: dict) -> dict:
+    block = gates.get("guidance")
+    if not isinstance(block, dict):
+        raise RetireError("the gates file has no guidance block (a policy without "
+                          "guidance:, or a compute_gates.py from before #124)")
+    return block
+
+
+def guidance_retiring(gates: dict) -> str | None:
+    """The one section whose verdict is `retire`, re-checked exactly as a
+    skill's is (`retiring`, over the guidance block)."""
+    return retiring({**gates, "skills": guidance_block(gates)})
+
+
+def guidance_shortening(gates: dict) -> list:
+    """Sections whose verdict is `shorten-or-merge`, by name."""
+    names = sorted(n for n, v in guidance_block(gates).items()
+                   if isinstance(v, dict) and v.get("verdict") == "shorten-or-merge")
+    for name in names:
+        if not SKILL_RE.fullmatch(name):
+            raise RetireError("a shorten-or-merge section's name is not a section id")
+    return names
+
+
+def guidance_open_prs(gh) -> list:
+    text = gh(["api", "--paginate",
+               f"repos/{GUIDANCE_REPO}/pulls?state=open&per_page=100",
+               "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url}"])
+    return [p for p in _json_lines(text)
+            if isinstance(p.get("head"), str) and p["head"].startswith(GUIDANCE_BRANCH_PREFIX)]
+
+
+def guidance_issues(gh, marker: str) -> dict:
+    """As `existing_issues`, for any marker."""
+    text = gh(["api", "--paginate",
+               f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
+               "--jq", ".[] | select(.pull_request == null) | "
+                       "{number: .number, body: (.body // \"\"), "
+                       "author: .user.login, state: .state}"])
+    found = {"open": [], "closed": []}
+    for item in _json_lines(text):
+        if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
+                or marker not in item["body"]:
+            continue
+        number, state = item.get("number"), item.get("state")
+        if type(number) is not int or number < 1 or state not in found:
+            raise RetireError("an issue record from the API is malformed")
+        found[state].append(number)
+    return {state: sorted(numbers) for state, numbers in found.items()}
+
+
+def guidance_evidence(verdict: dict) -> str:
+    """The in-situ cells, then the alone cells for contrast."""
+    tables = []
+    for title, cells in (("Whole guidance with vs without the section (decides)",
+                          verdict.get("cells")),
+                         ("The section alone vs no guidance (contrast)",
+                          (verdict.get("alone") or {}).get("cells"))):
+        rows = [f"{title}:", "", "| Fixture | Model | Class | Runs with | Runs without | "
+                "Objective upper | Judge upper |", "|---|---|---|---|---|---|---|"]
+        for cell in cells if isinstance(cells, list) else []:
+            if not isinstance(cell, dict):
+                continue
+            arms = [cell.get(a) if isinstance(cell.get(a), dict) else {}
+                    for a in ("with", "without")]
+            fixture, model, cls = (cell.get(k) for k in ("fixture", "model", "class"))
+            rows.append(f"| {fixture if isinstance(fixture, str) and NAME_RE.fullmatch(fixture) else 'n/a'} "
+                        f"| {model if isinstance(model, str) and NAME_RE.fullmatch(model) else 'n/a'} "
+                        f"| {cls if isinstance(cls, str) and NAME_RE.fullmatch(cls) else 'n/a'} "
+                        f"| {arms[0].get('runs', 'n/a')} | {arms[1].get('runs', 'n/a')} | "
+                        f"{_figure(cell.get('objective'), 'retire_upper')} | "
+                        f"{_figure(cell.get('judge'), 'retire_upper')} |")
+        tables.append("\n".join(rows))
+    return "\n\n".join(tables)
+
+
+def guidance_row(checkout: Path, section: str) -> dict:
+    """The section's manifest row in `checkout`, every path it touches
+    checked to be no symlink and inside the checkout."""
+    try:
+        rows = guidance.load_manifest(checkout)
+        row = guidance.find_row(rows, section, checkout)
+    except guidance.GuidanceError:
+        raise RetireError(f"{section}: no readable manifest row in the "
+                          "_agent-guidance checkout") from None
+    rel = row["file"]
+    if rel != "agents-md/base.md" and not re.fullmatch(r"agents-md/sections/[a-z0-9-]+\.md", rel):
+        raise RetireError(f"{section}: its file {rel!r} is neither base.md nor a sections file")
+    contained(checkout, ["agents-md", "agents-md/sections", rel, GUIDANCE_MANIFEST, "docs",
+                         GUIDANCE_IMPACT, GUIDANCE_AGENTS, "scripts", ".claude",
+                         ".claude/hooks", GUIDANCE_PAYLOAD])
+    return row
+
+
+def _read_exact(path: Path) -> str:
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def _write_exact(path: Path, text: str) -> None:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+
+
+def guidance_without_section(text: str, heading: str) -> str | None:
+    """`text` with the `##` extent named `heading` removed (harness/guidance.py
+    `h2_extents`, the arithmetic check-guidance-coverage.js uses), or None
+    when it was the file's only `##`, so the file goes."""
+    spans = guidance.h2_extents(text)
+    hits = [s for s in spans if s["heading"] == heading]
+    if len(hits) != 1:
+        raise RetireError(f"heading {heading!r} is not in its file exactly once")
+    if len(spans) == 1:
+        return None
+    return text[:hits[0]["start"]] + text[hits[0]["end"]:]
+
+
+def manifest_without_row(text: str, section: str) -> str:
+    """The manifest with `section`'s row deleted, comments and layout kept:
+    the row's lines are found on the composed YAML tree (its sequence item's
+    start, to the next item's start or the end), never by a line scan."""
+    try:
+        doc = yaml.compose(text, Loader=yaml.SafeLoader)
+    except yaml.YAMLError:
+        raise RetireError(f"{GUIDANCE_MANIFEST} is not valid YAML") from None
+    if not isinstance(doc, yaml.SequenceNode):
+        raise RetireError(f"{GUIDANCE_MANIFEST} is not a YAML list")
+    items = doc.value
+    hits = [i for i, node in enumerate(items) if isinstance(node, yaml.MappingNode)
+            and any(k.value == "id" and isinstance(v, yaml.ScalarNode) and v.value == section
+                    for k, v in node.value)]
+    if len(hits) != 1:
+        raise RetireError(f"{section}: not exactly one manifest row")
+    lines = text.splitlines(keepends=True)
+    start = items[hits[0]].start_mark.line
+    end = items[hits[0] + 1].start_mark.line if hits[0] + 1 < len(items) else len(lines)
+    return "".join(lines[:start] + lines[end:])
+
+
+def guidance_impact_entry(gates: dict, section: str, run_url: str | None) -> str:
+    """A typed `remove` entry whose Eval: line is a real result for
+    check-guidance-touch.js: the fixtures, the pooled run count as `n=` and
+    the policy."""
+    verdict = guidance_block(gates)[section]
+    cells = verdict["cells"]
+    fixtures = sorted({c.get("fixture") or "(flat)" for c in cells})
+    runs = sum(c.get(arm, {}).get("runs", 0) for c in cells for arm in ("with", "without")
+               if isinstance(c.get(arm), dict) and type(c[arm].get("runs")) is int)
+    where = f"workflow run {run_url}" if run_url else "the scheduled workflow"
+    return (f"## {_date(gates['as_of'])} — {section} — remove\n"
+            f"- Motivation: skills-evals#124's retirement verdict is `retire`: the whole "
+            f"guidance with and without the section shows no benefit in every cell "
+            f"({len(fixtures)} fixture(s) x {len(gates['roster_models'])} roster model(s)) "
+            f"at two fixed looks.\n"
+            f"- Change: removed the section and its eval-coverage.yml row, by "
+            f"skills-evals' scheduled retirement ({where}).\n"
+            f"- Eval: n={runs} pooled arm runs (full vs full-minus-section) as of "
+            f"{gates['as_of']}, fixtures "
+            f"{', '.join(f'evals/guidance/{section}/{f}' for f in fixtures)}, policy "
+            f"evals/gate-policy.yml guidance:.\n"
+            f"- Outcome: auto-merges once required checks pass, with no human review "
+            f"(Adam, 2026-10-10 and 2026-10-25).\n")
+
+
+def guidance_insert_entry(text: str, entry: str) -> str:
+    """`entry` newest first: before the first dated `##` entry (after the
+    file's header and its `## Entry format`), or at the end when none."""
+    for span in guidance.h2_extents(text):
+        if DATED_HEADING_RE.match(span["heading"]):
+            return text[:span["start"]] + entry + "\n" + text[span["start"]:]
+    return text.rstrip("\n") + "\n\n" + entry
+
+
+def regenerate_agents_md(checkout: Path, managed: str) -> None:
+    """AGENTS.md rebuilt as _agent-guidance's own AGENTS.md says: `managed`
+    (build-agents-md.sh's stdout) with its trailing newlines stripped, a
+    newline, then the file from its `## Repo-specific additions` heading
+    LINE on, trailing newlines stripped, and one closing newline."""
+    path = checkout / GUIDANCE_AGENTS
+    lines = _read_exact(path).split("\n")
+    marks = [i for i, line in enumerate(lines) if line.rstrip("\r") == REPO_SPECIFIC_LINE]
+    if len(marks) != 1:
+        raise RetireError(f"{GUIDANCE_AGENTS} has {len(marks)} `{REPO_SPECIFIC_LINE}` "
+                          "heading lines, not exactly one")
+    tail = "\n".join(lines[marks[0]:]).rstrip("\n")
+    _write_exact(path, managed.rstrip("\n") + "\n" + tail + "\n")
+
+
+def _run(checkout: Path, *args: str) -> str:
+    proc = subprocess.run(list(args), cwd=checkout, capture_output=True, text=True,
+                          check=False)
+    if proc.returncode != 0:
+        raise RetireError(f"{' '.join(args[:2])} exited {proc.returncode}")
+    return proc.stdout
+
+
+def guidance_issue_action(gates, section, kind, run_url) -> dict:
+    """Create or update the section's issue (`kind` retire or shorten), or
+    nothing when a closed one already decided it."""
+    verdict = guidance_block(gates)[section]
+    marker = (GUIDANCE_ISSUE_MARKER if kind == "retire" else SHORTEN_ISSUE_MARKER).format(
+        section=section)
+    return {"marker": marker, "section": section, "kind": kind,
+            "title": (f"Retire guidance section {section}: no marginal benefit on every "
+                      "roster model (#124)" if kind == "retire" else
+                      f"Shorten or merge guidance section {section}: it helps only alone "
+                      "(#124)"),
+            "body": (f"{marker}\nThe guidance verdict for `{section}` is "
+                     f"**{verdict.get('verdict')}** as of {gates['as_of']}: "
+                     f"{verdict.get('reason')}.\n\n"
+                     + ("`evals/gate-policy.yml` sets `guidance: retirement_mode: proposal`, "
+                        "so a human removes it from _agent-guidance.\n\n" if kind == "retire"
+                        else "Nothing is removed: the section teaches the behavior, and the "
+                        "rest of the guidance already covers it. Shorten it or merge it into "
+                        "the section that covers it.\n\n")
+                     + guidance_evidence(verdict)
+                     + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+                     + "\n\nFiled by scripts/retire_skill.py --target guidance on the "
+                       "scheduled workflow (#124).\n")}
+
+
+def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = None,
+                  allowed=("proposal",)) -> dict:
+    """What to do for guidance, read-only. RetireError for a refusal."""
+    mode = guidance_mode(gates)
+    section = guidance_retiring(gates)
+    if section is None:
+        shortening = guidance_shortening(gates)
+        if not shortening:
+            return {"action": "none", "mode": mode,
+                    "reason": "no guidance section has a retire or shorten-or-merge verdict"}
+        section, kind = shortening[0], "shorten"
+    else:
+        kind = "retire"
+        if mode not in allowed:
+            raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
+                              f"not wired (allowed: {', '.join(allowed)})")
+    if kind == "shorten" or mode == "proposal":
+        issue = guidance_issue_action(gates, section, kind, run_url)
+        found = guidance_issues(gh, issue["marker"])
+        if not found["open"] and found["closed"]:
+            return {"action": "none", "mode": mode, "section": section,
+                    "issue": found["closed"][0],
+                    "reason": f"{section} is already decided: issue "
+                              f"#{found['closed'][0]} is closed, so none is filed again"}
+        number = found["open"][0] if found["open"] else None
+        return {"action": "update-issue" if number else "create-issue", "mode": mode,
+                "section": section, "issue": number, "title": issue["title"],
+                "body": issue["body"]}
+    prs = guidance_open_prs(gh)
+    if prs:
+        raise RetireError("a guidance removal pull request is already open: "
+                          + ", ".join(str(p.get("url")) for p in prs))
+    if checkout is None:
+        raise RetireError("no _agent-guidance checkout was given (--guidance PATH)")
+    row = guidance_row(checkout, section)
+    verdict = guidance_block(gates)[section]
+    return {"action": "guidance-removal", "mode": mode, "section": section,
+            "file": row["file"], "heading": row["heading"],
+            "branch": f"{GUIDANCE_BRANCH_PREFIX}{section}",
+            "impact_entry": guidance_impact_entry(gates, section, run_url),
+            "title": f"Remove guidance section {section}: no marginal benefit "
+                     "(skills-evals#124)",
+            "body": (f"Removes the `## {row['heading']}` section of `{row['file']}` "
+                     f"and its `{GUIDANCE_MANIFEST}` row: its verdict in "
+                     f"[skills-evals#124](https://github.com/{EVALS_REPO}/issues/124) is "
+                     f"**retire** as of {gates['as_of']} ({verdict.get('reason')}).\n\n"
+                     f"{guidance_evidence(verdict)}\n\nAdds a `{GUIDANCE_IMPACT}` `remove` "
+                     f"entry and regenerates `{GUIDANCE_AGENTS}`.\n\nThis pull request "
+                     "auto-merges once required checks pass, with no human review "
+                     "(Adam, 2026-10-10 and 2026-10-25)."
+                     + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+                     + "\n\nOpened by skills-evals' scripts/retire_skill.py --target "
+                       "guidance on its scheduled workflow.\n")}
+
+
+def guidance_prepare_branch(checkout: Path, action: dict) -> None:
+    """The removal commit on a new branch of `checkout`, which must be
+    clean: the section, its row, the bytes, the impact entry, AGENTS.md."""
+    if _git(checkout, "status", "--porcelain"):
+        raise RetireError("the _agent-guidance checkout has uncommitted changes")
+    row = guidance_row(checkout, action["section"])
+    if row["file"] != action["file"] or row["heading"] != action["heading"]:
+        raise RetireError("the manifest row changed under the plan")
+    _git(checkout, "checkout", "-q", "-b", action["branch"])
+    source = checkout / row["file"]
+    remaining = guidance_without_section(_read_exact(source), row["heading"])
+    if remaining is None:
+        _git(checkout, "rm", "-q", "--", row["file"])
+    else:
+        _write_exact(source, remaining)
+        if row["file"] == "agents-md/base.md":
+            (checkout / GUIDANCE_PAYLOAD).write_bytes(source.read_bytes())
+    manifest = checkout / GUIDANCE_MANIFEST
+    _write_exact(manifest, manifest_without_row(_read_exact(manifest), action["section"]))
+    _run(checkout, "node", "scripts/check-guidance-coverage.js", "--write-bytes")
+    impact = checkout / GUIDANCE_IMPACT
+    _write_exact(impact, guidance_insert_entry(_read_exact(impact), action["impact_entry"]))
+    regenerate_agents_md(checkout, _run(checkout, "bash", "scripts/build-agents-md.sh"))
+    _git(checkout, "add", "-A", "--", "agents-md", GUIDANCE_IMPACT, GUIDANCE_AGENTS,
+         GUIDANCE_PAYLOAD)
+    _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
+         "commit", "-q", "-m",
+         f"Remove guidance section {action['section']}: no marginal benefit\n\n"
+         "skills-evals#124's scheduled retirement found no benefit of the whole "
+         "guidance with the section over it without, in every cell at two fixed looks.")
+
+
+def guidance_commands(action: dict) -> list:
+    """The writes `guidance_execute` makes, for a dry run."""
+    kind = action["action"]
+    if kind == "create-issue":
+        return [["gh", "issue", "create", "-R", EVALS_REPO, "--title", action["title"],
+                 "--body-file", "-"]]
+    if kind == "update-issue":
+        return [["gh", "issue", "edit", str(action["issue"]), "-R", EVALS_REPO,
+                 "--body-file", "-"]]
+    if kind == "guidance-removal":
+        return [["git", "checkout", "-b", action["branch"]],
+                ["edit", action["file"], f"remove ## {action['heading']}"],
+                *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD]]
+                  if action["file"] == "agents-md/base.md" else []),
+                ["edit", GUIDANCE_MANIFEST, f"delete row {action['section']}"],
+                ["node", "scripts/check-guidance-coverage.js", "--write-bytes"],
+                ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
+                ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
+                ["git", "commit"],
+                ["git", "push", "origin", f"HEAD:refs/heads/{action['branch']}"],
+                ["gh", "pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
+                 "--head", action["branch"], "--title", action["title"], "--body-file", "-"],
+                ["gh", "pr", "merge", "<new pull request url>", "-R", GUIDANCE_REPO,
+                 "--auto", "--merge"]]
+    return []
+
+
+def guidance_execute(action: dict, checkout: Path | None, gh, push, env) -> str:
+    kind = action["action"]
+    if kind == "none":
+        return action["reason"]
+    if kind in ("create-issue", "update-issue"):
+        gh(guidance_commands(action)[0][1:], action["body"])
+        return (f"filed an issue for {action['section']}" if kind == "create-issue"
+                else f"updated issue #{action['issue']} for {action['section']}")
+    check_auto_env(env)
+    guidance_prepare_branch(checkout, action)
+    push(checkout, action["branch"])
+    url = gh(["pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
+              "--head", action["branch"], "--title", action["title"],
+              "--body-file", "-"], action["body"]).strip()
+    gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge"])
+    return f"opened {url} with auto-merge"
+
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push,
          out=sys.stdout) -> int:
     env = os.environ if env is None else env
@@ -529,6 +937,11 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
     parser.add_argument("--registry", action="append", metavar="NAME=PATH")
     parser.add_argument("--allow-mode", action="append", choices=("auto", "proposal"))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--target", choices=("skill", "guidance"), default="skill",
+                        help="act on the skills' verdicts (default) or the guidance "
+                             "sections' (#124)")
+    parser.add_argument("--guidance", type=Path, metavar="PATH",
+                        help="the _agent-guidance checkout a guidance removal edits")
     args = parser.parse_args(argv)
     run_url = None
     if env.get("GITHUB_RUN_ID") and env.get("GITHUB_REPOSITORY") == EVALS_REPO \
@@ -540,6 +953,17 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
         gates = load_gates(args.gates)
         registries = compute_gates.flag_registries(args.registry)
         allowed = tuple(args.allow_mode or ("proposal",))
+        if args.target == "guidance":
+            if not args.dry_run and guidance_mode(gates) == "auto" and "auto" in allowed:
+                check_auto_env(env)
+            action = guidance_plan(gates, args.guidance, gh, run_url, allowed)
+            if args.dry_run:
+                out.write(json.dumps({"dry_run": True, **action,
+                                      "would_run": guidance_commands(action)},
+                                     indent=2, sort_keys=True) + "\n")
+                return 0
+            out.write(guidance_execute(action, args.guidance, gh, push, env) + "\n")
+            return 0
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)
         action = plan(gates, registries, gh, run_url, allowed)

@@ -18,3 +18,19 @@ fixtures:
     readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7.67/9 vs without 6/9, ranges 7-9 vs 6-6; judge 9.2 vs 6.57, ranges 8.8-10 vs 5.7-7."
   - path: evals/windows-elevation-from-wsl
     readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7/7 vs without 6/7, ranges 7-7 vs 6-6; judge 8.6 vs 7.53, ranges 8.4-8.8 vs 7.4-7.6."
+  - path: evals/guidance/anything-you-name-gets-its-link/handoff
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/anything-you-name-gets-its-link/waiting-on-review
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/anything-you-name-gets-its-link/done-summary
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/anything-you-name-gets-its-link/no-url
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/pinning-github-actions/new-workflow
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/git-practices/merge-method-and-closing-keyword
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."

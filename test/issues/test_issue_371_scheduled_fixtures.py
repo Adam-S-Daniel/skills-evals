@@ -69,18 +69,30 @@ def scheduled() -> list[dict]:
             if not row["readiness"].startswith("Promoted automatically")]
 
 
-def fixtures() -> dict[str, dict]:
+def all_fixtures() -> dict[str, dict]:
     return {row["path"]: run_eval.load_fixture(ROOT / row["path"]) for row in scheduled()}
 
 
+def fixtures() -> dict[str, dict]:
+    """The scheduled SKILL fixtures, the ones a context and an in-place pair
+    apply to. A guidance section fixture (#124) runs its own four arms
+    against the guidance alone: test_issue_124_guidance_gates.py covers it."""
+    return {path: fixture for path, fixture in all_fixtures().items()
+            if fixture.get("subject") != "guidance"}
+
+
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_eight_fixtures(self):
+    def test_the_schedule_names_eight_skill_and_eight_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 8)
-        self.assertEqual(len(set(paths)), 8)
+        self.assertEqual(len(paths), 16)
+        self.assertEqual(len(set(paths)), 16)
+        self.assertEqual(len(fixtures()), 8)
+        self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
+                         sorted(str(p.parent.relative_to(ROOT)) for p in
+                                (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))
 
     def test_no_fixture_pins_a_model_without_a_stated_reason(self):
-        for path, fixture in fixtures().items():
+        for path, fixture in all_fixtures().items():
             pins = [key for key, pinned in (("model", "model" in fixture),
                                             ("judge.model", "model" in (fixture.get("judge") or {})))
                     if pinned]
@@ -94,7 +106,7 @@ class ScheduledFixturesFollowTheRoster(unittest.TestCase):
     def test_the_committed_roster_selects_both_models(self):
         roster = yaml.safe_load(ROSTER.read_text(encoding="utf-8"))
         arms = [arm["id"] for arm in roster["arms"]]
-        for path, fixture in fixtures().items():
+        for path, fixture in all_fixtures().items():
             if path in PINNED_WITH_REASON:
                 continue
             with self.subTest(fixture=path):

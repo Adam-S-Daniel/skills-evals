@@ -29,7 +29,16 @@ REVIEWED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/github-actions-sha-pinning",
             "evals/writing-adrs/bootstrap",
             "evals/disarm-inherited-reach",
-            "evals/windows-elevation-from-wsl"]
+            "evals/windows-elevation-from-wsl",
+            # Guidance section fixtures (#124): four arms each.
+            "evals/guidance/anything-you-name-gets-its-link/handoff",
+            "evals/guidance/anything-you-name-gets-its-link/waiting-on-review",
+            "evals/guidance/anything-you-name-gets-its-link/done-summary",
+            "evals/guidance/anything-you-name-gets-its-link/no-url",
+            "evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure",
+            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+            "evals/guidance/pinning-github-actions/new-workflow",
+            "evals/guidance/git-practices/merge-method-and-closing-keyword"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
@@ -425,6 +434,29 @@ if args == ["diff", "--cached", "--quiet"]:
             # WIF preflight can retry once, with two 120 s attempts. Leave
             # room for checkout, dependency install, and summary overhead.
             self.assertLess(len(arms) * per_arm + 2 * 120, budget * .75, path)
+
+    def test_guidance_section_fixture_badge_reads_only_its_own_runs(self):
+        # Its eval key is its path without evals/, three segments; its runs
+        # share results/guidance/<section>/ with the section's other fixtures.
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            key = "guidance/anything-you-name-gets-its-link/handoff"
+            for stamp, name, scores in [("20261004T070000Z", "handoff", (5, 3)),
+                                        ("20261005T070000Z", "no-url", (0, 5))]:
+                for arm, passed in zip(("with_guidance_full",
+                                        "with_guidance_full_minus_section"), scores):
+                    directory = results / "guidance/anything-you-name-gets-its-link" / stamp / arm
+                    directory.mkdir(parents=True)
+                    (directory / "summary.json").write_text(json.dumps({
+                        "fixture_name": name,
+                        "objective_checks": [{"passed": i < passed} for i in range(5)]}))
+            result = badge.build_badge(results, key)
+            self.assertEqual(result["message"], "with 5/5 vs without 3/5 · 2026-10-04")
+            self.assertEqual(result["label"],
+                             "guidance eval: anything-you-name-gets-its-link/handoff")
+            for bad in ("guidance/a/b/c", "skill/a/b"):
+                with self.assertRaises(ValueError):
+                    badge.build_badge(results, bad)
 
     def test_nested_fixture_badge_reads_only_its_own_runs_and_preserves_date(self):
         with tempfile.TemporaryDirectory() as tmp:

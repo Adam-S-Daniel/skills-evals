@@ -57,6 +57,13 @@ Also accepts a guidance eval by its results-tree name, `guidance/<section id>`
 (#97), whose arms are with_guidance/without_guidance rather than
 with_skill/without_skill and whose label reads "guidance eval: <id>".
 
+And a guidance SECTION fixture as `guidance/<section id>/<fixture>` (#124),
+its fixture path without `evals/`: its runs are under
+results/guidance/<section id>/<timestamp>/ beside the section's other
+fixtures, so only run dirs whose summary records that `fixture_name` count,
+and its pair is the in-situ one the retirement gate decides on,
+with_guidance_full against with_guidance_full_minus_section.
+
 Usage:
     python3 scripts/make_badge.py workflow-path-audit
     python3 scripts/make_badge.py guidance/<section id>
@@ -93,17 +100,20 @@ def _validate_name(name: str) -> list[str]:
     checked before either is built: one or two safe segments, never absolute,
     never containing `..`."""
     parts = str(name).split("/")
-    if (not 1 <= len(parts) <= 2
+    if (not 1 <= len(parts) <= (3 if parts[0] == "guidance" else 2)
             or not all(_NAME_SEGMENT_RE.fullmatch(p) for p in parts)
             or any(p in (".", "..") for p in parts)):
         raise ValueError(
             f"invalid eval name {name!r}: expected `<skill>` or "
-            "`<skill>/<fixture>` or `guidance/<section id>` with no path metacharacters")
+            "`<skill>/<fixture>` or `guidance/<section id>[/<fixture>]` with no path "
+            "metacharacters")
     return parts
 
 
 def arm_names(name: str) -> tuple[str, str]:
     """(treatment, control) arm directory names for this subject."""
+    if name.startswith(GUIDANCE_PREFIX) and name.count("/") == 2:
+        return ("with_guidance_full", "with_guidance_full_minus_section")
     if name.startswith(GUIDANCE_PREFIX):
         return ("with_guidance", "without_guidance")
     return ("with_skill", "without_skill")
@@ -120,6 +130,15 @@ def badge_label(name: str) -> str:
     return f"skill eval: {name}"
 
 
+def _fixture_name(arm_dir: Path) -> str | None:
+    """The `fixture_name` a guidance arm's summary records, or None."""
+    try:
+        summary = json.loads((arm_dir / "summary.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return summary.get("fixture_name") if isinstance(summary, dict) else None
+
+
 def runs_newest_first(results_dir: Path, skill: str) -> list[Path]:
     """Run dirs under results/<skill>/, newest first.
 
@@ -128,6 +147,14 @@ def runs_newest_first(results_dir: Path, skill: str) -> list[Path]:
     """
     parts = skill.split("/")
     nested = len(parts) == 2 and not skill.startswith(GUIDANCE_PREFIX)
+    if len(parts) == 3:
+        skill_dir = results_dir / parts[0] / parts[1]
+        if not skill_dir.is_dir():
+            return []
+        arm = arm_names(skill)[0]
+        return sorted((d for d in skill_dir.iterdir()
+                       if d.is_dir() and _fixture_name(d / arm) == parts[2]),
+                      reverse=True)
     skill_dir = results_dir / (parts[0] if nested else skill)
     if not skill_dir.is_dir():
         return []

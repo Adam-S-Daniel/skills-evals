@@ -2489,6 +2489,56 @@ delivered, and written verbatim into
 to the public `persistent/eval-results` branch — so a row could publish any file the
 runner can read.
 
+### Section fixtures, verdicts and removal (2026-10-26, skills-evals#124)
+
+**Layout.** A section's behavioral fixtures live at
+`evals/guidance/<section id>/<name>/fixture.yaml`, with `subject: guidance`,
+`section: <id>` and the section id as their parent directory. A directory
+whose name starts with `_` (`_delivery`) is not a behavioral fixture and no
+gate reads it. Each declares four arms, `with_guidance_section` (`section`),
+`without_guidance` (`none`), `with_guidance_full` (`full`) and
+`with_guidance_full_minus_section` (`full-minus-section`), plus
+`ablation: [full, full-minus-section]`. `eval.yml`'s `--arm both` therefore
+runs both pairs in one fire, at four agent runs per fire, so the agent gets
+180 s and the guard 60 s to fit the 45-minute job;
+`run_eval.py <fixture> --ablation` still runs the in-situ pair alone, as arms
+`ablation_full` and `ablation_full_minus_section`. Results go to
+`results/guidance/<section id>/<ts>/<arm>/summary.json`, beside the section's
+other fixtures, so each guidance summary records `fixture_name`,
+`fixture_digest` (the git-staged digest), `guidance_digests` (`section`: the
+sha256 of the extent, `rest`: of the corpus without it, from
+`guidance.content_digests`) and `judge_conditional`. A fixture's badge key is
+its path without `evals/`; `make_badge.py` reads only run dirs whose summary
+names that fixture, on the in-situ pair.
+
+**The verdict.** `harness/gates.py` `guidance_verdict` reuses the skill
+machinery (run-level pooling, looks at 5, 10 and 20 runs, the same
+classes) twice per section: the in-situ pair (`full` vs
+`full-minus-section`) and the alone pair (`section` vs `none`), classified by
+each arm's `mode`, never its name. A run pools when its `section` digest is
+the section's extent on main and its fixture digest matches; the `rest`
+digest is the pair key, so runs beside different neighbours never share a
+cell. The in-situ verdict decides. The one change: a section whose in-situ
+verdict is `retire` but which shows `benefit` alone in any cell gets
+**`shorten-or-merge`**, since the rest of the guidance covers what it teaches.
+That verdict never removes anything. The thresholds are `gate-policy.yml`'s
+`guidance:` block, which is separate from `skills:`.
+
+**Removal.** `scripts/retire_skill.py --target guidance --guidance PATH`
+acts on at most one section per evaluation. `shorten-or-merge` always
+becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode
+(the committed `guidance.retirement_mode`), and in `auto` mode a branch
+`retire-guidance/<id>` in the `_agent-guidance` checkout that auto-merges.
+That branch removes the extent from `base.md` (or `git rm`s a `sections/`
+file when this was its only `##`) and re-copies `base.md` to
+`.claude/hooks/fleet-guidance.md`. It also deletes the manifest row, runs
+`check-guidance-coverage.js --write-bytes`, adds a typed `remove` entry to
+`docs/guidance-impact.md` whose `Eval:` line gives the pooled run count
+(`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
+`## Repo-specific additions` heading line. A dry run lists every step.
+Auto mode is not wired: it needs a write credential for `_agent-guidance` and
+the same refusals as the skill path.
+
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.

@@ -231,13 +231,22 @@ jobs:
           path: registry-site
           persist-credentials: false
 
+      - name: Check out _agent-guidance
+        # The guidance sections' source (#124): read for their extents and
+        # digests, never run. Not a skill registry, so it gets --guidance.
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          persist-credentials: false
+
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
       - name: Install the offline verdict dependency
-        run: python3 -m pip install pyyaml==6.0.3
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
 
       - name: Compute the retirement verdicts
         working-directory: skills-evals
@@ -250,6 +259,7 @@ jobs:
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --out "$RUNNER_TEMP/gates/latest.json"
 
       - name: Upload the verdicts
@@ -269,4 +279,17 @@ jobs:
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --allow-mode proposal
+
+      - name: File or update the guidance retirement issue
+        # One section at a time, in proposal mode: an issue in this
+        # repository, never a pull request (gate-policy.yml's guidance block;
+        # auto mode is a separate, owner-approved change).
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/retire_skill.py --target guidance \
+            --gates "$RUNNER_TEMP/gates/latest.json" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --allow-mode proposal

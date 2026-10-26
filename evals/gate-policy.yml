@@ -37,3 +37,25 @@ skills:
   bootstrap_resamples: 2000
   retire_looks: [5, 10, 20]
   retirement_mode: proposal
+# Guidance sections (skills-evals#124): the same verdict over each section's
+# ablation pair (full vs full-minus-section), with the section-vs-none pair
+# read only for the `shorten-or-merge` outcome (harness/gates.py,
+# `guidance_verdict`). Same starting values as skills, kept apart so they can
+# diverge. Adam made section removal automatic on 2026-10-10 (#124) and
+# removal pull requests auto-merging on 2026-10-25; the mode stays
+# `proposal` until the write path to _agent-guidance is wired, and switching
+# it is the owner's call, as for skills.
+guidance:
+  objective_margin: 0.05
+  judge_margin: 0.5
+  benefit_confidence: 0.90
+  retire_confidence: 0.975
+  check_confidence: 0.90
+  min_runs: 5
+  min_cli_versions: 2
+  ceiling_fraction: 0.90
+  judge_ceiling: 9.0
+  floor_fraction: 0.10
+  bootstrap_resamples: 2000
+  retire_looks: [5, 10, 20]
+  retirement_mode: proposal
