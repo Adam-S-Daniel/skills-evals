@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CGngmZW9vMRBcAxMA5g2ME",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CGngmZW9vMRBcAxMA5g2ME",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n0c3aa87 ...",
+      "output_chars": 1381,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XUqhYXH56n8TM3gYHDfdaX",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; ls -R bin src test .gh .claude; for f in bin/* src/* test/*; do echo \"== $f\"; cat \"$f\"; done",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XUqhYXH56n8TM3gYHDfdaX",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.5KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s tes...",
+      "output_chars": 2199,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0122LjNefzCXPGzv9ptaygoW",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; head -40 bin/gh; wc -l bin/gh; cat .gh/replay/run-list.json .gh/replay/run-view-77001.log .gh/replay/auth-status.txt",
+      "input_chars": 158,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0122LjNefzCXPGzv9ptaygoW",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n#!<path> python3\n\"\"\"Offline gh: answ...",
+      "output_chars": 3855,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019uf5qASCdWtL8A3d9TdFSq",
+      "name": "Bash",
+      "input": "git show --stat HEAD HEAD~1 | cat; git log --all --oneline -- test/ | cat; d=.gh/replay/api/repos/example-org/example-service; cat $d/branches/fix/ci-test-discovery.json \"$d/compare/main...fix/ci-test...",
+      "input_chars": 419,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019uf5qASCdWtL8A3d9TdFSq",
+      "is_error": false,
+      "output": "commit 0c3aa876239402007f7fe1c3eb03f7e0c9193c48\nAuthor: <redacted> <<email>>\nDate:   Mon Oct 26 10:57:05 2026 +0000\n\n    initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.j...",
+      "output_chars": 3296,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014ZxBZa9gTHCdV5Qjx5LEnr",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_current 2>&1 | head -8; python3 -I -c \"import test; print(test.__file__)\"; python3 --version",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014ZxBZa9gTHCdV5Qjx5LEnr",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_current (unittest.loader._FailedTest.test_current)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_current\nTraceback (most recent call last):\n  ...",
+      "output_chars": 466,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

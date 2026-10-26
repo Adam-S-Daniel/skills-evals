@@ -1,0 +1,473 @@
+{
+  "skill": "debug-github-workflows",
+  "arm": "without_skill",
+  "timestamp": "20261026T105535Z",
+  "error": null,
+  "agent": null,
+  "objective_checks": null,
+  "judge": null,
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1",
+    "claude-haiku-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 3609,
+      "output_tokens": 45,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 36,
+      "output_tokens": 6073,
+      "cache_read_input_tokens": 665307,
+      "cache_creation_input_tokens": 42894,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.005089391668663052,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "wrong-branch",
+  "fixture_digest": "c356cf09d69ce41ba1cb58b9c6e567e2384a525ec621d1c610b82e28957604c5",
+  "n": 3,
+  "errors": 0,
+  "scored": 3,
+  "trial_errors": [],
+  "aggregate": {
+    "objective": {
+      "n": 3,
+      "passed": 15,
+      "total": 21,
+      "mean_passed": 5.0,
+      "mean_total": 7.0,
+      "checks": [
+        {
+          "id": "failing-log-read-without-writes",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "feature-comparison-read",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "main-differs-from-feature",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "merge-existing-fix",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "obsolete-command-diagnosed",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "repository-files-unchanged",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "instrument-unchanged",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        }
+      ]
+    },
+    "judge": {
+      "n": 3,
+      "errors": 0,
+      "overall": {
+        "n": 3,
+        "mean": 8.933333333333334,
+        "min": 8.8,
+        "max": 9.2,
+        "sum": 26.8
+      },
+      "dimensions": [
+        {
+          "name": "correctness",
+          "n": 3,
+          "mean": 9.0,
+          "min": 9,
+          "max": 9,
+          "sum": 27
+        },
+        {
+          "name": "restraint",
+          "n": 3,
+          "mean": 8.666666666666666,
+          "min": 8,
+          "max": 10,
+          "sum": 26
+        },
+        {
+          "name": "explanation",
+          "n": 3,
+          "mean": 9.0,
+          "min": 9,
+          "max": 9,
+          "sum": 27
+        }
+      ]
+    },
+    "cost_usd": {
+      "n": 3,
+      "mean": 0.1994002666666667,
+      "min": 0.19575320000000002,
+      "max": 0.2019452,
+      "sum": 0.5982008000000001
+    },
+    "cost_unknown_trials": 0,
+    "efficiency": {
+      "cost_usd": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.1994002666666667,
+        "median": 0.2005024,
+        "min": 0.19575320000000002,
+        "max": 0.2019452,
+        "sum": 0.5982008000000001
+      },
+      "num_turns": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 6.0,
+        "median": 6,
+        "min": 6,
+        "max": 6,
+        "sum": 18
+      },
+      "duration_ms": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 27210.666666666668,
+        "median": 27289,
+        "min": 26648,
+        "max": 27695,
+        "sum": 81632
+      },
+      "input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 12.0,
+        "median": 12,
+        "min": 12,
+        "max": 12,
+        "sum": 36
+      },
+      "output_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 2024.3333333333333,
+        "median": 2018,
+        "min": 1974,
+        "max": 2081,
+        "sum": 6073
+      },
+      "cache_creation_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 14298.0,
+        "median": 14458,
+        "min": 13970,
+        "max": 14466,
+        "sum": 42894
+      },
+      "cache_read_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 221769.0,
+        "median": 221687,
+        "min": 221513,
+        "max": 222107,
+        "sum": 665307
+      },
+      "tool_errors": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "sum": 0
+      }
+    },
+    "model_tokens": {
+      "claude-haiku-5-5": {
+        "input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 1203.0,
+          "median": 1203,
+          "min": 1203,
+          "max": 1203,
+          "sum": 3609
+        },
+        "output_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 15.0,
+          "median": 15,
+          "min": 15,
+          "max": 15,
+          "sum": 45
+        },
+        "cache_read_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 0.0,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "sum": 0
+        },
+        "cache_creation_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 0.0,
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "sum": 0
+        }
+      },
+      "claude-opus-5-5": {
+        "input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 12.0,
+          "median": 12,
+          "min": 12,
+          "max": 12,
+          "sum": 36
+        },
+        "output_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 2024.3333333333333,
+          "median": 2018,
+          "min": 1974,
+          "max": 2081,
+          "sum": 6073
+        },
+        "cache_read_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 221769.0,
+          "median": 221687,
+          "min": 221513,
+          "max": 222107,
+          "sum": 665307
+        },
+        "cache_creation_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 14298.0,
+          "median": 14458,
+          "min": 13970,
+          "max": 14466,
+          "sum": 42894
+        }
+      }
+    },
+    "cross_model": {
+      "model": "claude-opus-5-5",
+      "threshold": 0.5,
+      "n": 3,
+      "n_unknown": 0,
+      "flagged_trials": 0,
+      "other_share": 0.005089391668663052,
+      "flagged": false
+    }
+  },
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261026T105448Z-5084ab",
+    "session_id": "cse_01F6ypw2U4pJUfneoagjto5f",
+    "harness_commit": "61d81b1187cf66a33fbd4d79489baa2f202e74d9",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T10:55:35Z",
+    "ended_at": "2026-10-26T11:00:46Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T10:55:35Z",
+      "to_at": "2026-10-26T10:58:03Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.13,
+          "to": 0.13,
+          "delta": 0.0,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.6,
+          "to": 0.6,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01F6ypw2U4pJUfneoagjto5f",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "arm",
+      "calls": null,
+      "meter": null,
+      "started_at": "2026-10-26T10:57:05Z",
+      "ended_at": "2026-10-26T11:00:46Z",
+      "agent": {
+        "calls": 3,
+        "duration_ms": 86332,
+        "num_turns": 18,
+        "cost_usd": 0.5982008000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 3609,
+            "output_tokens": 45,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00038340000000000005
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 36,
+            "output_tokens": 6073,
+            "cache_read_input_tokens": 665307,
+            "cache_creation_input_tokens": 42894,
+            "cost_usd": 0.5978174
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 42894
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 3,
+        "duration_ms": 63544,
+        "num_turns": 3,
+        "cost_usd": 0.64094795,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 6,
+            "output_tokens": 4233,
+            "cache_read_input_tokens": 88239,
+            "cache_creation_input_tokens": 20309,
+            "cost_usd": 0.63994975
+          },
+          "claude-haiku-5-5": {
+            "input_tokens": 8297,
+            "output_tokens": 337,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0009981999999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 20309
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {
+        "calls": "listed in each trial's own summary",
+        "meter": "listed in each trial's own summary"
+      }
+    }
+  }
+}
