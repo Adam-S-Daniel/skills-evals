@@ -82,6 +82,7 @@ CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 # A skill with at least three committed fixtures, and one of them.
 SKILL = "writing-adrs"
 HOLDOUT = "supersede"
+PROPOSAL = "proposals/2026-10-26/example-skill__new-skill.json"
 SKILL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # The miner key pattern the routine re-checks (routine-delta.md, Payload).
 CANDIDATE_RE = re.compile(r"^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$")
@@ -141,10 +142,19 @@ class WorkflowShapeTests(unittest.TestCase):
         inputs = on["workflow_dispatch"]["inputs"]
         self.assertEqual(set(inputs),
                          {"mode", "candidate", "fixture", "skill", "holdout",
-                          "model", "arms", "trials"})
+                          "model", "proposal", "hook_declined", "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
-                         ["eval", "scaffold", "improve"])
+                         ["eval", "scaffold", "improve", "draft"])
+        # Draft mode only: the proposal path, and whether the agent-checks
+        # lane declined the subject's hook proposal (a choice, so a string
+        # in the event file like every other input).
+        self.assertEqual(inputs["proposal"]["type"], "string")
+        self.assertIs(inputs["proposal"]["required"], False)
+        self.assertNotIn("default", inputs["proposal"])
+        self.assertEqual(inputs["hook_declined"]["type"], "choice")
+        self.assertEqual(inputs["hook_declined"]["options"], ["false", "true"])
+        self.assertEqual(inputs["hook_declined"]["default"], "false")
         self.assertEqual(inputs["mode"]["default"], "eval")
         self.assertEqual(inputs["candidate"]["type"], "string")
         # Required in scaffold mode only, so the form cannot require it; the
@@ -211,8 +221,55 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(hits, [("jobs", "fire", "steps", fire, "env",
                                  "EVAL_ROUTINE_FIRE_BEARER")])
         self.assertNotIn("secrets.", self.steps[fire]["run"])
+        # The one other secret is the read-only registry App's key, an input
+        # of draft mode's mint step (as propagation.yml mints it).
+        mint = next(i for i, s in enumerate(self.steps)
+                    if s.get("id") == "lessons-token")
         mentions = [p for p, v in scalars(self.doc) if "secrets." in v]
-        self.assertEqual(mentions, hits, "no other secret is referenced")
+        self.assertEqual(mentions, [
+            ("jobs", "fire", "steps", mint, "with", "private-key"), *hits],
+            "no other secret is referenced")
+
+    def test_draft_steps_read_the_lessons_with_a_read_only_token(self):
+        ids = [s.get("id") for s in self.steps]
+        names = [s.get("name") for s in self.steps]
+        fire = names.index("Fire the eval routine")
+        mint = ids.index("lessons-token")
+        checkout = names.index("Check out the lessons (adam-agentskills-private)")
+        build = ids.index("draft-payload")
+        self.assertLess(ids.index("validate"), mint)
+        self.assertLess(mint, checkout)
+        self.assertLess(checkout, build)
+        self.assertLess(build, fire)
+        for i in (mint, checkout, build):
+            self.assertEqual(self.steps[i]["if"],
+                             "steps.validate.outputs.mode == 'draft'")
+        step = self.steps[mint]
+        self.assertTrue(step["uses"].startswith("actions/create-github-app-token@"))
+        self.assertEqual(step["with"], {
+            "client-id": "${{ vars.REGISTRY_READ_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.REGISTRY_READ_APP_PEM }}",
+            "owner": "Adam-S-Daniel",
+            "repositories": "adam-agentskills-private",
+            "permission-contents": "read"})
+        self.assertEqual(self.steps[checkout]["with"], {
+            "repository": "Adam-S-Daniel/adam-agentskills-private",
+            "path": "lessons-repo", "persist-credentials": False,
+            "sparse-checkout": "lessons",
+            "token": "${{ steps.lessons-token.outputs.token }}"})
+        users = [p for p, v in scalars(self.doc) if "steps.lessons-token" in v]
+        self.assertEqual(users, [("jobs", "fire", "steps", checkout, "with", "token")])
+        build_step = self.steps[build]
+        self.assertEqual(build_step["env"], {
+            "RUN_ID": "${{ steps.validate.outputs.run_id }}",
+            "PROPOSAL": "${{ steps.validate.outputs.proposal }}",
+            "HOOK_DECLINED": "${{ steps.validate.outputs.hook_declined }}"})
+        self.assertIn("scripts/draft_new_skill.py payload --lessons lessons-repo/lessons",
+                      build_step["run"])
+        self.assertIn('--proposal="$PROPOSAL"', build_step["run"])
+        self.assertIn("scripts/draft_new_skill.py fire-check --payload", build_step["run"])
+        self.assertEqual(self.steps[fire]["env"]["DRAFT_PAYLOAD_FILE"],
+                         "${{ steps.draft-payload.outputs.file }}")
 
     def test_validation_step_runs_before_the_fire_step(self):
         ids = [s.get("id") for s in self.steps]
@@ -242,8 +299,9 @@ class WorkflowShapeTests(unittest.TestCase):
         for step in self.steps[:fire]:
             with self.subTest(step=step.get("name")):
                 text = yaml.safe_dump(step)
-                self.assertNotIn("secrets", text)
                 self.assertNotIn("BEARER", text)
+                if step.get("id") != "lessons-token":
+                    self.assertNotIn("secrets", text)
 
     def test_the_snapshot_step_sits_between_validation_and_the_fire_step(self):
         ids = [s.get("id") for s in self.steps]
@@ -298,8 +356,9 @@ class WorkflowShapeTests(unittest.TestCase):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
         # The default branch, persistent/eval-results for the allowance
-        # guard (#68), and _agent-guidance for scaffold mode.
-        self.assertEqual(len(checkout), 3)
+        # guard (#68), _agent-guidance for scaffold mode and the lessons for
+        # draft mode.
+        self.assertEqual(len(checkout), 4)
         for step in checkout:
             self.assertIs(step["with"]["persist-credentials"], False)
 
@@ -560,6 +619,69 @@ class ValidateStepTests(unittest.TestCase):
                     "holdout_given": {"holdout": HOLDOUT},
                     "skill_number": {"skill": 7},
                     "holdout_nul": {"holdout": "\u0000"},
+                })
+
+    def test_accepts_a_draft_run(self):
+        for extra, declined in (({}, "false"), ({"hook_declined": "false"}, "false"),
+                                ({"hook_declined": "true"}, "true")):
+            with self.subTest(**extra):
+                proc, values = self.run_step(
+                    {"mode": "draft", "proposal": PROPOSAL, "arms": "both",
+                     "trials": "1", **extra})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(values["mode"], "draft")
+                self.assertEqual(values["proposal"], PROPOSAL)
+                self.assertEqual(values["hook_declined"], declined)
+                for key in ("fixture", "candidate", "skill", "holdout", "model"):
+                    self.assertEqual(values[key], "")
+                self.assertRegex(values["run_id"], RUN_ID)
+
+    def test_refuses_bad_draft_inputs_without_echoing_them(self):
+        good = {"mode": "draft", "proposal": PROPOSAL, "arms": "both",
+                "trials": "1"}
+        self._refuse_all(good, {
+            "missing_proposal": {"proposal": None},
+            "empty_proposal": {"proposal": ""},
+            "not_new_skill": {"proposal": "proposals/2026-10-26/example-skill__skill-edit.json"},
+            "no_date_dir": {"proposal": "example-skill__new-skill.json"},
+            "lessons_prefix": {"proposal": "lessons/" + PROPOSAL},
+            "dotdot": {"proposal": "proposals/2026-10-26/../x__new-skill.json"},
+            "upper_subject": {"proposal": "proposals/2026-10-26/Example__new-skill.json"},
+            "leading_dash_subject": {"proposal": "proposals/2026-10-26/-x__new-skill.json"},
+            "long_subject": {"proposal": f"proposals/2026-10-26/{'s' * 65}__new-skill.json"},
+            "bad_date": {"proposal": "proposals/2026-1-26/example-skill__new-skill.json"},
+            "nested": {"proposal": "proposals/2026-10-26/x/example-skill__new-skill.json"},
+            "subst": {"proposal": "proposals/2026-10-26/$(id)__new-skill.json"},
+            "non_ascii": {"proposal": "proposals/2026-10-26/\u00e9x__new-skill.json"},
+        }, expect="is not proposals/<date>/<subject>__new-skill.json")
+        self._refuse_all(good, {
+            "trailing_newline": {"proposal": PROPOSAL + "\n"},
+            "nul": {"proposal": PROPOSAL + "\u0000"},
+            "number": {"proposal": 7},
+            "fixture_given": {"fixture": FIXTURE},
+            "candidate_given": {"candidate": CANDIDATE},
+            "skill_given": {"skill": SKILL},
+            "holdout_given": {"holdout": HOLDOUT},
+            "model_given": {"model": "claude-opus-5-5"},
+            "declined_word": {"hook_declined": "yes"},
+            "declined_case": {"hook_declined": "True"},
+            "declined_bool": {"hook_declined": True},
+        })
+
+    def test_refuses_draft_inputs_in_other_modes(self):
+        goods = (
+            {"mode": "eval", "fixture": FIXTURE, "arms": "both", "trials": "1"},
+            {"mode": "scaffold", "candidate": CANDIDATE, "arms": "both", "trials": "1"},
+            {"mode": "improve", "skill": SKILL, "arms": "both", "trials": "1"},
+        )
+        for good in goods:
+            with self.subTest(mode=good["mode"]):
+                self._refuse_all(good, {
+                    "proposal_given": {"proposal": PROPOSAL},
+                    "whitespace_proposal": {"proposal": " "},
+                }, expect="must be empty and 'hook_declined' false unless the mode is draft")
+                self._refuse_all(good, {
+                    "declined_given": {"hook_declined": "true"},
                 })
 
     def _refuse_all(self, good, cases, expect=None, forbid=None):
@@ -1043,6 +1165,72 @@ class FireStepTests(unittest.TestCase):
                 self.assertNotIn(FIXTURE, program)
                 self.assertNotIn(SKILL, program)
                 self.assertNotIn(HOLDOUT, program)
+
+    def draft_payload(self, **extra):
+        return {"run_id": "20261006T120000Z-a1b2c3", "mode": "draft",
+                "proposal": {"id": "lesson-0001", "subject": "example-skill",
+                             "evidence_count": 3,
+                             "examples": ['an "invented" example, $(x) \u00e9'],
+                             "repos": ["example/toy"]}, **extra}
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_draft_sends_the_payload_file_as_written(self):
+        # FIXTURE, ARMS, CANDIDATE and SKILL hold junk: draft mode sends the
+        # payload draft_new_skill.py wrote, byte for byte, and nothing else.
+        payload_file = self.tmp / "draft-payload.json"
+        for declined, extra in (("false", {}), ("true", {"hook_declined": True})):
+            with self.subTest(declined=declined):
+                payload = self.draft_payload(**extra)
+                payload_file.write_text(json.dumps(payload), encoding="utf-8")
+                proc = self.run_step(
+                    "200", self.ok_body(), MODE="draft", PROPOSAL=PROPOSAL,
+                    HOOK_DECLINED=declined, DRAFT_PAYLOAD_FILE=str(payload_file),
+                    FIXTURE="FIXTURE-SENTINEL", ARMS="ARMS-SENTINEL",
+                    CANDIDATE="CANDIDATE-SENTINEL", SKILL="SKILL-SENTINEL")
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                sent = self.sent_payload()
+                self.assertEqual(sent, payload)
+                self.assertEqual(list(sent), list(payload))
+                out = proc.stdout + proc.stderr
+                self.assertNotIn("SENTINEL", out)
+                self.assertNotIn("invented", out, "the payload is never printed")
+                summary = self.summary.read_text()
+                self.assertIn("draft mode", summary)
+                self.assertIn(PROPOSAL, summary)
+                self.assertIn("claude/draft-skill-20261006T120000Z-a1b2c3", summary)
+                self.assertIn("routine-draft-skill-gate.yml", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_draft_refuses_a_payload_that_is_not_this_runs(self):
+        payload_file = self.tmp / "draft-payload.json"
+        good = self.draft_payload()
+        cases = {
+            "other_run_id": (json.dumps({**good, "run_id": "20261006T120000Z-ffffff"}), "false"),
+            "other_mode": (json.dumps({**good, "mode": "improve"}), "false"),
+            "extra_key": (json.dumps({**good, "skill": "x"}), "false"),
+            "missing_proposal": (json.dumps({k: v for k, v in good.items() if k != "proposal"}), "false"),
+            "proposal_not_object": (json.dumps({**good, "proposal": "x"}), "false"),
+            "declined_key_without_input": (json.dumps({**good, "hook_declined": True}), "false"),
+            "declined_input_without_key": (json.dumps(good), "true"),
+            "declined_false_value": (json.dumps({**good, "hook_declined": False}), "true"),
+            "two_values": (json.dumps(good) + json.dumps(good), "false"),
+            "not_json": ("{not json", "false"),
+            "empty": ("", "false"),
+        }
+        for label, (content, declined) in cases.items():
+            with self.subTest(case=label):
+                (self.log / "calls").unlink(missing_ok=True)
+                payload_file.write_text(content, encoding="utf-8")
+                proc = self.run_step("200", self.ok_body(), MODE="draft",
+                                     PROPOSAL=PROPOSAL, HOOK_DECLINED=declined,
+                                     DRAFT_PAYLOAD_FILE=str(payload_file))
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("draft payload", proc.stdout)
+                self.assertFalse((self.log / "calls").exists())
+        proc = self.run_step("200", self.ok_body(), MODE="draft",
+                             PROPOSAL=PROPOSAL, DRAFT_PAYLOAD_FILE="")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse((self.log / "calls").exists())
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_an_unknown_mode_never_calls_the_api(self):

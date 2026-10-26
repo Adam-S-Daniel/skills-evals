@@ -3,7 +3,8 @@ name: Fire eval routine
 # Fires the eval runner routine (ADR 0010, "Smallest next PRs" item 2):
 # https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5
 #
-# * `workflow_dispatch` ONLY. The weekly caller dispatches eval mode; #71's
+# * `workflow_dispatch` ONLY. The weekly caller dispatches eval mode and
+#   the daily routine-draft-skill.yml draft mode; #71's
 #   three-PR gate (ADR 0010, decision 4) keeps the improvement loop off the
 #   schedule until three human-reviewed loop PRs have merged. No pull_request
 #   or push: a pull_request job would
@@ -25,10 +26,24 @@ name: Fire eval routine
 #   the loop's own fixture resolution (`scripts/improve_gate.py
 #   fire-check`): nested evals/<skill>/<name> fixtures that all name it and
 #   adam-agentskills, at least the loop's minimum of them, and `holdout`
-#   empty or one of their names. Each mode's own text inputs must
-#   be empty in the others (`candidate` and `skill`/`holdout` in eval mode,
-#   `fixture` and `skill`/`holdout` in scaffold mode, `fixture` and
-#   `candidate` in improve mode), so no input is silently ignored except
+#   empty or one of their names.
+#   `draft` (turn a `new-skill` lesson into a drafted skill; caller
+#   routine-draft-skill.yml) takes one input, `proposal`, a path under
+#   adam-agentskills-private's lessons/ matching
+#   proposals/<date>/<subject>__new-skill.json. A draft-only step mints the
+#   read-only registry App token (as propagation.yml does), sparse-checks
+#   out lessons/, and `scripts/draft_new_skill.py payload` re-validates the
+#   proposal and prints the payload, run_id, mode and proposal (subject,
+#   id, evidence_count, examples, repos), which `fire-check` checks again;
+#   the fire step sends that object as it is. A second draft-only input,
+#   `hook_declined` (a choice, false by default), says the agent-checks lane
+#   closed this subject's hook proposal as not planned; the payload then
+#   carries `hook_declined: true` and the routine skips its hooks-first
+#   triage. Each mode's own text inputs must
+#   be empty in the others (`candidate`, `skill`/`holdout` and `proposal`
+#   in eval mode, `fixture`, `skill`/`holdout` and `proposal` in scaffold
+#   mode, `fixture`, `candidate` and `proposal` in improve mode, and every
+#   other text input in draft mode), so no input is silently ignored except
 #   arms and trials, which are choices; arms is sent in eval mode only and
 #   trials in eval and improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
@@ -84,8 +99,9 @@ name: Fire eval routine
 #   decision 2). A scaffold run pushes `claude/scaffold-<fixture id>`
 #   instead, which its own gate validates, and an improve run pushes
 #   `claude/eval-improve-<run id>` only for an accepted candidate, which
-#   routine-improve-gate.yml validates. Nothing here writes to the
-#   repository.
+#   routine-improve-gate.yml validates. A draft run always pushes
+#   `claude/draft-skill-<run id>`, which routine-draft-skill-gate.yml
+#   validates. Nothing here writes to the repository.
 #
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
@@ -96,10 +112,10 @@ on:
         description: >-
           eval runs a fixture; scaffold turns one miner candidate into a
           draft real-work fixture; improve runs the improvement loop on
-          one skill.
+          one skill; draft turns one new-skill lesson into a drafted skill.
         required: true
         type: choice
-        options: [eval, scaffold, improve]
+        options: [eval, scaffold, improve, draft]
         default: eval
       candidate:
         description: >-
@@ -127,6 +143,21 @@ on:
           evals/<skill>/ to hold out, e.g. supersede. Empty means none.
         required: false
         type: string
+      proposal:
+        description: >-
+          Draft mode only (leave empty otherwise): the lesson proposal under
+          adam-agentskills-private's lessons/, e.g.
+          proposals/2026-10-26/example-skill__new-skill.json.
+        required: false
+        type: string
+      hook_declined:
+        description: >-
+          Draft mode only: true when the agent-checks lane declined this
+          subject's hook proposal, so the routine skips its triage.
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
       model:
         description: >-
           Eval mode only, optional (leave empty otherwise): the id of one
@@ -188,13 +219,14 @@ jobs:
           # NUL first, on the event file itself: bash's $( ) drops a NUL, so
           # every check below would otherwise judge a different string than
           # the dispatcher sent. No rejection echoes the value back.
-          # `fixture`, `candidate`, `skill`, `holdout` and `model` are
-          # optional strings (each is used in one mode only), so an absent
-          # one reads as empty.
+          # `fixture`, `candidate`, `skill`, `holdout`, `model` and
+          # `proposal` are optional strings (each is used in one mode only),
+          # so an absent one reads as empty.
           if jq -e '[.inputs.mode, .inputs.arms, .inputs.trials,
                      (.inputs.fixture // ""), (.inputs.candidate // ""),
                      (.inputs.skill // ""), (.inputs.holdout // ""),
-                     (.inputs.model // "")]
+                     (.inputs.model // ""), (.inputs.proposal // ""),
+                     (.inputs.hook_declined // "false")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
@@ -204,10 +236,10 @@ jobs:
           # value ending in one would otherwise pass the pattern below.
           if jq -e '[.inputs.mode, (.inputs.candidate // ""),
                      (.inputs.skill // ""), (.inputs.holdout // ""),
-                     (.inputs.model // "")]
+                     (.inputs.model // ""), (.inputs.proposal // "")]
                     | any(test("[\u0000-\u001f\u007f]"))' \
                "$event" >/dev/null; then
-            echo "::error::input 'mode', 'candidate', 'skill', 'holdout' or 'model' contains a control character"
+            echo "::error::input 'mode', 'candidate', 'skill', 'holdout', 'model' or 'proposal' contains a control character"
             exit 1
           fi
           mode="$(jq -r '.inputs.mode' "$event")"
@@ -216,6 +248,8 @@ jobs:
           skill="$(jq -r '.inputs.skill // ""' "$event")"
           holdout="$(jq -r '.inputs.holdout // ""' "$event")"
           model="$(jq -r '.inputs.model // ""' "$event")"
+          proposal="$(jq -r '.inputs.proposal // ""' "$event")"
+          hook_declined="$(jq -r '.inputs.hook_declined // "false"' "$event")"
           arms="$(jq -r '.inputs.arms' "$event")"
           trials="$(jq -r '.inputs.trials' "$event")"
 
@@ -231,18 +265,31 @@ jobs:
               echo "::error::input 'trials' must be 1, 2 or 3"
               exit 1 ;;
           esac
+          case "$hook_declined" in
+            false|true) ;;
+            *)
+              echo "::error::input 'hook_declined' must be false or true"
+              exit 1 ;;
+          esac
 
           case "$mode" in
-            eval|scaffold)
+            eval|scaffold|draft)
               if [ -n "$skill" ] || [ -n "$holdout" ]; then
                 echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve"
                 exit 1
               fi ;;
           esac
           case "$mode" in
-            scaffold|improve)
+            scaffold|improve|draft)
               if [ -n "$model" ]; then
                 echo "::error::input 'model' must be empty unless the mode is eval"
+                exit 1
+              fi ;;
+          esac
+          case "$mode" in
+            eval|scaffold|improve)
+              if [ -n "$proposal" ] || [ "$hook_declined" != false ]; then
+                echo "::error::input 'proposal' must be empty and 'hook_declined' false unless the mode is draft"
                 exit 1
               fi ;;
           esac
@@ -279,8 +326,20 @@ jobs:
                 echo "::error::input 'holdout' is longer than 128 characters or has characters outside [A-Za-z0-9._-]"
                 exit 1
               fi ;;
+            draft)
+              if [ -n "$fixture" ] || [ -n "$candidate" ]; then
+                echo "::error::inputs 'fixture' and 'candidate' must be empty in draft mode"
+                exit 1
+              fi
+              # The proposal file shape the miner writes; the subject part
+              # becomes a skill directory name, so it is checked here and
+              # again by draft_new_skill.py payload against the file.
+              if ! [[ "$proposal" =~ ^proposals/[0-9]{4}-[0-9]{2}-[0-9]{2}/[a-z0-9][a-z0-9-]{0,63}__new-skill\.json$ ]]; then
+                echo "::error::input 'proposal' is empty or is not proposals/<date>/<subject>__new-skill.json"
+                exit 1
+              fi ;;
             *)
-              echo "::error::input 'mode' must be eval, scaffold or improve"
+              echo "::error::input 'mode' must be eval, scaffold, improve or draft"
               exit 1 ;;
           esac
 
@@ -351,6 +410,8 @@ jobs:
             echo "skill=${skill}"
             echo "holdout=${holdout}"
             echo "model=${model}"
+            echo "proposal=${proposal}"
+            echo "hook_declined=${hook_declined}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
@@ -360,6 +421,8 @@ jobs:
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
           elif [ "$mode" = improve ]; then
             echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
+          elif [ "$mode" = draft ]; then
+            echo "mode: draft, proposal: ${proposal}, hook_declined: ${hook_declined} (arms and trials are not sent)"
           else
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}, model: ${model:-none}"
           fi
@@ -418,6 +481,55 @@ jobs:
             --registry "$FLEET_REGISTRY" --sync-workflow "$FLEET_SYNC_WORKFLOW"
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
+      # Draft mode only. The read-only registry App token, minted exactly as
+      # propagation.yml mints it: adam-agentskills-private alone, contents
+      # read, revoked when the job ends. It reaches only the checkout below.
+      - name: Mint the read-only token for the lessons
+        id: lessons-token
+        if: steps.validate.outputs.mode == 'draft'
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+
+      # Only lessons/ (the miner's redacted proposals), credentials not kept.
+      - name: Check out the lessons (adam-agentskills-private)
+        if: steps.validate.outputs.mode == 'draft'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          path: lessons-repo
+          persist-credentials: false
+          sparse-checkout: lessons
+          token: ${{ steps.lessons-token.outputs.token }}
+
+      # Draft mode only, with no token in env: `payload` re-validates the one
+      # proposal file (inside lessons/proposals, not a symlink, every field
+      # to the schema) and prints the payload, refusing one over 60,000
+      # bytes; `fire-check` re-reads that payload offline. Both refusals are
+      # fixed text that never echoes the file.
+      - name: Build the draft payload
+        id: draft-payload
+        if: steps.validate.outputs.mode == 'draft'
+        env:
+          RUN_ID: ${{ steps.validate.outputs.run_id }}
+          PROPOSAL: ${{ steps.validate.outputs.proposal }}
+          HOOK_DECLINED: ${{ steps.validate.outputs.hook_declined }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP:?}/draft-payload.json"
+          declined=()
+          if [ "$HOOK_DECLINED" = true ]; then
+            declined=(--hook-declined)
+          fi
+          python3 scripts/draft_new_skill.py payload --lessons lessons-repo/lessons \
+            --proposal="$PROPOSAL" --run-id="$RUN_ID" "${declined[@]}" > "$out"
+          python3 scripts/draft_new_skill.py fire-check --payload "$out"
+          echo "file=${out}" >> "$GITHUB_OUTPUT"
+
       - name: Fire the eval routine
         env:
           FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_014cqgegCtJUqXYjAKmkr4J5/fire
@@ -431,7 +543,10 @@ jobs:
           SKILL: ${{ steps.validate.outputs.skill }}
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
           MODEL: ${{ steps.validate.outputs.model }}
+          PROPOSAL: ${{ steps.validate.outputs.proposal }}
+          HOOK_DECLINED: ${{ steps.validate.outputs.hook_declined }}
           ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
+          DRAFT_PAYLOAD_FILE: ${{ steps.draft-payload.outputs.file }}
         run: |
           set -euo pipefail
           if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
@@ -470,8 +585,29 @@ jobs:
                 --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
                 '{text: ({run_id: $run_id, mode: "improve", skill: $skill, trials: $trials,
                           holdout: (if $holdout == "" then null else $holdout end)} | tojson)}')" ;;
+            draft)
+              # Exactly one JSON object, as draft_new_skill.py payload wrote
+              # and fire-check passed it, with this run's id and draft mode,
+              # `hook_declined: true` exactly when the input said so, and no
+              # other top-level key; it is sent as data, in its own key
+              # order, never read by the shell.
+              if [ -z "${DRAFT_PAYLOAD_FILE:-}" ] || ! jq -e -s --arg run_id "$RUN_ID" \
+                   --arg declined "${HOOK_DECLINED:-false}" \
+                   'length == 1 and (.[0] | type == "object"
+                      and (if $declined == "true"
+                           then keys == ["hook_declined", "mode", "proposal", "run_id"]
+                                and .hook_declined == true
+                           else keys == ["mode", "proposal", "run_id"] end)
+                      and .run_id == $run_id and .mode == "draft"
+                      and (.proposal | type == "object"))' \
+                   "$DRAFT_PAYLOAD_FILE" >/dev/null 2>&1; then
+                echo "::error::the draft payload is missing or is not this run's draft object"
+                exit 1
+              fi
+              body="$(jq -n -c --slurpfile payload "$DRAFT_PAYLOAD_FILE" \
+                '{text: ($payload[0] | tojson)}')" ;;
             *)
-              echo "::error::mode must be eval, scaffold or improve"
+              echo "::error::mode must be eval, scaffold, improve or draft"
               exit 1 ;;
           esac
           # The fire API's documented cap on `text`: 65,536 characters. Its
@@ -594,6 +730,15 @@ jobs:
               fi
               echo "- Session: ${session_url}"
               echo "- Results branch: \`claude/eval-improve-${RUN_ID}\`, pushed only on an accepted candidate; routine-improve-gate.yml validates it and opens the draft PR"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$MODE" = draft ]; then
+            {
+              echo "### Eval routine fired (draft mode)"
+              echo
+              echo "- Run id: \`${RUN_ID}\`"
+              echo "- Proposal: \`${PROPOSAL}\`, hook declined: \`${HOOK_DECLINED}\`"
+              echo "- Session: ${session_url}"
+              echo "- Branch: \`claude/draft-skill-${RUN_ID}\`, always pushed by the routine; routine-draft-skill-gate.yml validates it and opens the pull requests or the hook-proposal issue"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
