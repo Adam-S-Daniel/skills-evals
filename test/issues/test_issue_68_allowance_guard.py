@@ -105,11 +105,12 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # Adam raised the weekly cap and the account stop to 95% until the
-        # 2026-10-26 reset (evals/budget.yml says so); set this back to LIMITS
-        # with the file.
+        # Adam raised the weekly cap and the account stop to 95%, and the
+        # per-run cap is 1.5 points, until the 2026-10-26 reset
+        # (evals/budget.yml says so); set this back to LIMITS with the file.
         self.assertEqual(budget.load_budget(),
-                         {**LIMITS, "weekly_cap": 0.95, "stop_when_account_above": 0.95})
+                         {**LIMITS, "weekly_cap": 0.95, "per_run_cap": 0.015,
+                          "stop_when_account_above": 0.95})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -330,7 +331,7 @@ class EndToEndStopTests(unittest.TestCase):
         self.assertEqual(len(found), 6, sorted(found))
         self.assert_ingests(found)
         stop = {"reason": "per_run_cap", "utilization": 0.74, "moved": 0.04,
-                "limit": 0.03}
+                "limit": budget.load_budget()["per_run_cap"]}
         for rel, summary in found.items():
             with self.subTest(summary=rel):
                 self.assertEqual(summary["usage"]["budget_stop"], stop)

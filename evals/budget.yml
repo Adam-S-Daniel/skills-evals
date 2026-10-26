@@ -35,7 +35,13 @@ weekly_cap: 0.95
 
 # 3 points: one run stops starting new work once the meter has moved this
 # much since the run's first reading.
-per_run_cap: 0.03
+#
+# TEMPORARY: 1.5 points until the same 2026-10-26 reset. The 74 runs ingested
+# by 2026-10-26 10:55 UTC each moved the meter at most 1 point (median 0), so
+# the guard's 3.5-point reservation per fire held about five times what a run
+# spends while Adam asked for more usage before the reset. Set it back to
+# 0.03 with `weekly_cap`.
+per_run_cap: 0.015
 
 # Half a point, added to every run's measured spend: the meter is read as an
 # agent call begins, so the run's last call (and any judge call after it) is
