@@ -1,6 +1,6 @@
 # skills-evals
 
-[![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fworkflow-path-audit.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
+[![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fworkflow-path-audit%2Frequired-check-routing.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
 
 Evals for the [`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill

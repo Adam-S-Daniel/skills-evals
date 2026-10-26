@@ -42,7 +42,7 @@
 # * Schedule selection comes only from committed evals/scheduled.yml, a reviewed
 #   list with readiness evidence (ADR 0008). A contents: read planning job
 #   emits the matrix; dispatch still takes one `fixture` input (default
-#   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as data, never
+#   evals/workflow-path-audit/required-check-routing), read from $GITHUB_EVENT_PATH as data, never
 #   interpolated into run:. Every eval leg revalidates its own selection
 #   against Git's committed evals/**/fixture.yaml set before its own exchange.
 #   An untracked directory, traversal, malformed value or NUL cannot qualify.
@@ -202,11 +202,11 @@ on:
     inputs:
       fixture:
         description: >-
-          Fixture directory to run, e.g. evals/workflow-path-audit or
+          Fixture directory to run, e.g. evals/workflow-path-audit/required-check-routing or
           evals/guidance/_delivery. Validated against the committed
           evals/**/fixture.yaml set before any credential is minted.
         required: false
-        default: evals/workflow-path-audit
+        default: evals/workflow-path-audit/required-check-routing
       roster_only:
         description: >-
           Refresh the model roster and file its proposal, then stop: skip the
@@ -1623,7 +1623,7 @@ jobs:
           fi
           # Dispatch with no input keeps the single-fixture default.
           if [ -z "$fixture" ]; then
-            fixture="evals/workflow-path-audit"
+            fixture="evals/workflow-path-audit/required-check-routing"
           fi
           # SHAPE FIRST, before any matching. `grep -F` treats each LINE of
           # its pattern as a separate pattern, so a MULTI-LINE dispatch value

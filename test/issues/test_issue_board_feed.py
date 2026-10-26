@@ -231,6 +231,14 @@ class BoardFeedTests(unittest.TestCase):
         self.assertIn("workflow-path-audit/nested-fixture",
                       [row["fixture"] for row in self.build()["results"]["rows"]])
 
+    def test_trend_follows_the_reference_fixture_across_its_move_to_nested(self):
+        self.summary()
+        self.summary(stamp=LATER, key="workflow-path-audit/required-check-routing")
+        self.summary(stamp=LATER, key="workflow-path-audit/companion-skip-pair")
+        self.commit()
+        points = self.build()["trend"]["points"]
+        self.assertEqual([point["ts"] for point in points], [STAMP, LATER])
+
     def test_malformed_summaries_and_reports_remain_unknown(self):
         cases = ("{", "\x00")
         for index, raw in enumerate(cases):
