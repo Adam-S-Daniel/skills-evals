@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U4ef2wVufkexmuMpi5W3zk",
+      "name": "Bash",
+      "input": "cd <path> 2>&1 && ls; ls repo-settings; git -C <path> remote -v; ls <path>",
+      "input_chars": 132,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U4ef2wVufkexmuMpi5W3zk",
+      "is_error": false,
+      "output": "ls: cannot access 'repo-settings': No such file or directory\nREADME.md\nbin\nrepo-settings.yml\nShell cwd was reset to <path>",
+      "output_chars": 149,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014EijUF91wu8QBdqDhvSJmN",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md repo-settings.yml; ls -la bin; ls -a",
+      "input_chars": 88,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014EijUF91wu8QBdqDhvSJmN",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 951,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013LgFW3DbhNAuAfwLH1nU5C",
+      "name": "Bash",
+      "input": "cd <path>; head -c 1500 bin/gh; echo; which gh; ls .gh; cat .mcp.json",
+      "input_chars": 96,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013LgFW3DbhNAuAfwLH1nU5C",
+      "is_error": true,
+      "output": "Exit code 1\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no ...",
+      "output_chars": 1594,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018GLf2uYHSBF3iq8eYW2719",
+      "name": "Bash",
+      "input": "cd <path>; echo $GH_REPLAY_DIR; ls .gh/replay | head -50; for r in service-alpha service-beta; do echo \"== $r\"; bin/gh api repos/example-org/$r/actions/permissions; bin/gh api repos/example-org/$r/act...",
+      "input_chars": 325,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018GLf2uYHSBF3iq8eYW2719",
+      "is_error": false,
+      "output": "<path>\napi\n== service-alpha\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n{\n  \"approval_policy\": \"all_external_contributors\"\n}\n[\n  {\n    \"enforcement\": \"active\",\n    \"id\": 7201,\n    \"name\": \"default branch protection\",\n    \"target\": \"branch\"\n  },\n  {\n    \"enforce...",
+      "output_chars": 698,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019vpwJ3rWFrRRqWz6wzFe3A",
+      "name": "Bash",
+      "input": "cd <path>; for p in alpha/7201 alpha/7302 beta/7202; do echo \"== $p\"; bin/gh api repos/example-org/service-${p%/*}<path>${p#*/}; done 2>&1",
+      "input_chars": 169,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019vpwJ3rWFrRRqWz6wzFe3A",
+      "is_error": false,
+      "output": "== alpha/7201\n{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n    }\n  ],\n  \"conditions\": {\n    \"ref_name\": {\n      \"exclude\": [],\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ]\n    }\n  },\n  \"enforcement\": \"active\",\n  \"id\": 7...",
+      "output_chars": 2517,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
