@@ -191,7 +191,7 @@ class CommandSucceedsTests(unittest.TestCase):
         planted.chmod(0o700)
         with mock.patch.dict(os.environ, {"PATH": str(self.ws)}):
             self.assertTrue(self.python("pass")[0])
-        self.assertIn(commands._executable(self.ws, "python3"), commands.INTERPRETERS["python3"])
+        self.assertEqual(commands._executable(self.ws, "python3"), commands._fixed_interpreter("python3"))
 
     def _host_node(self, directory):
         """A fake host `node` that exits 0 only for a probe real node rejects."""
@@ -254,6 +254,7 @@ class CommandSucceedsTests(unittest.TestCase):
         fixed.write_text("#!/bin/sh\n", encoding="utf-8")
         fixed.chmod(0o700)
         with mock.patch.dict(commands.INTERPRETERS, {"node": (str(fixed),)}), \
+                mock.patch.object(commands, "SYSTEM_MOUNTS", (str(self.root),)), \
                 mock.patch.dict(os.environ, {"PATH": str(host_bin)}):
             self.assertEqual(commands._executable(self.ws.resolve(), "node"), str(fixed))
 
@@ -266,9 +267,14 @@ class CommandSucceedsTests(unittest.TestCase):
         env_root = self.root / "env"
         env_root.mkdir()
         with mock.patch.dict(commands.INTERPRETERS, {"node": (str(fixed),)}), \
+                mock.patch.object(commands, "SYSTEM_MOUNTS", (str(self.root),)), \
                 mock.patch.dict(os.environ, {"PATH": str(host_bin)}):
             env = commands._environment(env_root, self.ws)
-        self.assertEqual(env["PATH"], f"{env_root / 'bin'}:/usr/bin:/bin")
+        # A host whose python3 is a symlink adds its resolved-bin; node adds nothing.
+        resolved = env_root / "resolved-bin"
+        middle = f"{resolved}:" if resolved.is_dir() else ""
+        self.assertEqual(env["PATH"], f"{env_root / 'bin'}:{middle}/usr/bin:/bin")
+        self.assertFalse((resolved / "node").exists())
 
     def test_symlink_escape_and_cli_alias_rejected(self):
         (self.ws / "escape").symlink_to("/usr/bin/true")

@@ -321,6 +321,47 @@ class SandboxTests(unittest.TestCase):
             self.assertIn(run_eval.session_archive_dir().parent.resolve(), denied)
 
 
+class FixedInterpreterTests(unittest.TestCase):
+    """Symlinked interpreters are resolved, and only inside the system mounts."""
+
+    def layout(self):
+        tmp = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "usr/bin").mkdir(parents=True)
+        (tmp / "alternatives").mkdir()
+        (tmp / "elsewhere").mkdir()
+        return tmp
+
+    def executable(self, path):
+        path.write_text("#!/bin/sh\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def test_symlink_chain_through_an_unmounted_directory_resolves_inside(self):
+        tmp = self.layout()
+        target = self.executable(tmp / "usr/bin/python3.13")
+        # Like /usr/bin/python3 -> /etc/alternatives/python3 -> /usr/bin/python3.13.
+        (tmp / "alternatives/python3").symlink_to(target)
+        (tmp / "usr/bin/python3").symlink_to(tmp / "alternatives/python3")
+        with mock.patch.object(commands, "SYSTEM_MOUNTS", (str(tmp / "usr"),)), \
+                mock.patch.dict(commands.INTERPRETERS,
+                                {"python3": (str(tmp / "usr/bin/python3"),)}):
+            self.assertEqual(commands._fixed_interpreter("python3"), str(target))
+
+    def test_target_outside_the_system_mounts_is_skipped(self):
+        tmp = self.layout()
+        outside = self.executable(tmp / "elsewhere/python3")
+        (tmp / "usr/bin/python3").symlink_to(outside)
+        inside = self.executable(tmp / "usr/bin/fallback")
+        with mock.patch.object(commands, "SYSTEM_MOUNTS", (str(tmp / "usr"),)):
+            with mock.patch.dict(commands.INTERPRETERS,
+                                 {"python3": (str(tmp / "usr/bin/python3"),)}):
+                self.assertIsNone(commands._fixed_interpreter("python3"))
+            with mock.patch.dict(commands.INTERPRETERS,
+                                 {"python3": (str(tmp / "usr/bin/python3"), str(inside))}):
+                self.assertEqual(commands._fixed_interpreter("python3"), str(inside))
+
+
 class LiveSandboxTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

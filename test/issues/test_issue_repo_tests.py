@@ -238,7 +238,7 @@ class RepoTestsCheckTests(_Base):
         self.assertEqual([call[0][1:] for call in calls],
                          [["-m", "unittest", ADD], ["-m", "unittest", SUB],
                           ["-m", "unittest", "-k", "test_sub"]])
-        self.assertIn(calls[0][0][0], commands.INTERPRETERS["python3"])
+        self.assertEqual(calls[0][0][0], commands._fixed_interpreter("python3"))
         self.assertTrue(all(call[3] == 7 for call in calls))
         self.assertTrue(all(call[1] != ws.resolve() for call in calls),
                         "tests run in a scratch copy, never the agent's workspace")
