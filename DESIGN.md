@@ -1132,8 +1132,10 @@ judge-only: `changeset_triggers` replays `on:` blocks, never a gate's regex.
   trial's judge under `--judge always`, a single arm). Against the stand-in
   CLI, one fixture, two trials, a tie: 1 call from the last snapshot on, both
   by default and under `--judge always` (5 and 2 before the judge was read).
-  That a real judge or guard call prints the event is assumed from the agent
-  call's, not yet observed. Such a held judge call is added to the
+  A real judge call and a real guard call, each made through the harness's
+  own code (`judge._run_judge_cli`, `run_canary.run_leg`, CLI 2.1.310,
+  model `haiku`, 2026-10-26), each printed one event naming the
+  `five_hour` and `seven_day` windows, and returned their answer unchanged. Such a held judge call is added to the
   summary of the trial it judges after that summary was written
   (`_RunTelemetry.amend`), which also adds the snapshots its events make to
   that summary's own (the same first-and-last rule and bounds), so that
