@@ -39,17 +39,25 @@ compute_gates lets one skill retire per evaluation (harness/gates.py).
    pull request in adam-agentskills and enables auto-merge (merge commit).
    No human reviews it; adam-agentskills' required checks still gate it.
 2. It acts only from the scheduled workflow (`GITHUB_EVENT_NAME` is
-   `schedule`), never from a dispatch, a pull request or a terminal.
+   `schedule`), never from a dispatch, a pull request or a terminal; auto
+   mode also needs `GITHUB_ACTIONS=true` on `refs/heads/main`, and the
+   caller must name it (`--allow-mode auto`; the default is `proposal`).
 3. At most one removal pull request (head `retire-skill/<skill>`) is open
    at a time; an open one holds the slot whatever the newest verdict says.
 4. It refuses a skill whose basename is not found exactly once across the
    registry checkouts it is given, or whose copy is not a real
-   `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills.
+   `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills (no
+   symlink on the path, nothing it writes resolving outside the checkout),
+   and a verdict whose cells are not every fixture crossed with every
+   roster model exactly once, each `no-benefit`.
 5. The pull request carries the whole removal: the skill directory, the
    plugin's patch version in both manifests (adam-agentskills ADR 0009), and
    a `docs/skill-impact.md` `remove` entry.
 6. In `retirement_mode: proposal` (the committed value), a `retire` verdict
    files or updates one skills-evals issue instead, and a human removes.
+   One issue per skill, ever: only issues `github-actions[bot]` opened
+   count, and a closed one means the skill is already decided, so nothing
+   is filed again.
    Switching to `auto` is Adam's call, made in `evals/gate-policy.yml`.
 
 ## Consequences

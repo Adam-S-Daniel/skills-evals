@@ -8,16 +8,22 @@ an auto-merging removal pull request in adam-agentskills.
 
 `--gates` is scripts/compute_gates.py's output. A skill acts only when its
 verdict there is `retire`, and this script re-checks what that verdict
-means before acting: at least one cell, every cell `no-benefit`, and the
-cells' models exactly the gates file's roster models (every current roster
-arm, as harness/gates.py defines the verdict). compute_gates lets one skill
-retire per evaluation; two `retire` verdicts here are refused, never a pick.
+means before acting: every (fixture, roster model) cell of the cells'
+fixtures crossed with the gates file's roster models present exactly once,
+and every one `no-benefit` (as harness/gates.py defines the verdict). Any
+field of the wrong type is a refusal, never a crash or a pass.
+compute_gates lets one skill retire per evaluation; two `retire` verdicts
+here are refused, never a pick.
 
 THE MODE is the gates file's `retirement_mode` (from evals/gate-policy.yml;
 anything but `auto` is `proposal`):
 
   * `proposal`: an issue in skills-evals, found by a marker comment in its
-    body (`ISSUE_MARKER`), is created or its body updated. A human removes.
+    body (`ISSUE_MARKER`) on an issue `github-actions[bot]` opened, is
+    created or its body updated. One issue per skill, ever: an open one is
+    updated, and a closed one means the skill is already decided, so nothing
+    is filed again. A human removes. An issue anyone else wrote is ignored,
+    whatever it quotes.
   * `auto` (Adam, 2026-10-25; docs/decisions/0014): a branch
     `retire-skill/<skill>` is prepared in the adam-agentskills checkout that
     deletes `plugins/<plugin>/skills/<skill>/`, raises the plugin's patch
@@ -25,23 +31,30 @@ anything but `auto` is `proposal`):
     `docs/skill-impact.md` entry; it is pushed, a pull request is opened, and
     auto-merge (merge commit) is enabled. No human review.
 
-`--allow-mode` lists the modes the caller has wired (default: both). The
-scheduled workflow allows only `proposal`, since auto mode needs a write
-credential for adam-agentskills that does not exist yet; a gates file in a
-mode not allowed exits 2 rather than doing nothing quietly.
+`--allow-mode` lists the modes the caller has wired (default: `proposal`
+only, the safe one; auto must be named). The scheduled workflow allows only
+`proposal`, since auto mode needs a write credential for adam-agentskills
+that does not exist yet; a gates file in a mode not allowed exits 2 rather
+than doing nothing quietly.
 
 REFUSALS (exit 2, nothing written):
 
   * any run that is not `--dry-run` outside the scheduled workflow
     (`GITHUB_EVENT_NAME` must be `schedule`): never from a dispatch, a pull
     request or a terminal;
+  * in auto mode, any run that is not `--dry-run` outside GitHub Actions
+    (`GITHUB_ACTIONS` must be `true`) on the default branch (`GITHUB_REF`
+    must be `refs/heads/main`);
   * in auto mode, while any removal pull request (head `retire-skill/...`) is
     open in adam-agentskills: at most one at a time, and an open one holds
     the slot whatever the newest verdict says;
   * in auto mode, a skill whose basename is not found exactly once across
     every `--registry` checkout given, or whose one copy is not a real
-    `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills. In
-    proposal mode the issue says so instead, since a human removes.
+    `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills: none
+    of `plugins/`, the plugin, its `skills/`, the skill, its manifests or
+    `docs/skill-impact.md` may be a symlink or resolve outside the
+    checkout. In proposal mode the issue says so instead, since a human
+    removes.
 
 `--dry-run` reads (the gates file, the checkouts, and open pull requests or
 issues through `gh`), writes nothing, and prints the plan as JSON: the
@@ -84,9 +97,14 @@ MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json")
 ADR = ("https://github.com/Adam-S-Daniel/skills-evals/blob/main/docs/decisions/"
        "0014-removal-pull-requests-merge-without-review.md")
 COMMIT_NAME = "github-actions[bot]"
+ISSUE_AUTHOR = "github-actions[bot]"
+DEFAULT_REF = "refs/heads/main"
 COMMIT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 SKILL_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+# A fixture directory or a roster model id: no space, `|` or newline, so a
+# value can never break the evidence table or mention anyone.
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@\[\]/-]{0,127}$")
 
 
 class RetireError(Exception):
@@ -125,6 +143,21 @@ def check_event(env) -> None:
                           f"verdict (GITHUB_EVENT_NAME is {env.get('GITHUB_EVENT_NAME')!r})")
 
 
+def check_auto_env(env) -> None:
+    if env.get("GITHUB_ACTIONS") != "true" or env.get("GITHUB_REF") != DEFAULT_REF:
+        raise RetireError("refusing: auto mode acts only in GitHub Actions on "
+                          f"{DEFAULT_REF} (GITHUB_ACTIONS is "
+                          f"{env.get('GITHUB_ACTIONS')!r}, GITHUB_REF is "
+                          f"{env.get('GITHUB_REF')!r})")
+
+
+def _names(value) -> bool:
+    """A non-empty list of distinct NAME_RE strings."""
+    return (isinstance(value, list) and bool(value)
+            and all(isinstance(v, str) and NAME_RE.fullmatch(v) for v in value)
+            and len(set(value)) == len(value))
+
+
 def load_gates(path: Path) -> dict:
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -132,7 +165,7 @@ def load_gates(path: Path) -> dict:
         raise RetireError(f"cannot read the gates file ({type(exc).__name__})") from None
     if not isinstance(doc, dict) or doc.get("schema_version") != 1 \
             or not isinstance(doc.get("skills"), dict) \
-            or not isinstance(doc.get("roster_models"), list) \
+            or not _names(doc.get("roster_models")) \
             or not isinstance(doc.get("as_of"), str) \
             or not re.fullmatch(r"\d{8}T\d{6}Z", doc["as_of"]):
         raise RetireError("the gates file is not compute_gates.py schema 1")
@@ -156,15 +189,27 @@ def retiring(gates: dict) -> str | None:
     skill, verdict = names[0], gates["skills"][names[0]]
     if not SKILL_RE.fullmatch(skill):
         raise RetireError("the retiring skill's name is not a skill basename")
+    if not isinstance(verdict.get("reason"), str):
+        raise RetireError(f"{skill}: a retire verdict whose reason is not text")
     cells = verdict.get("cells")
-    roster = sorted(gates["roster_models"])
-    if not isinstance(cells, list) or not cells or not roster:
+    roster = gates["roster_models"]
+    if not isinstance(cells, list) or not cells or not _names(roster):
         raise RetireError(f"{skill}: a retire verdict with no cell")
-    if any(not isinstance(c, dict) or c.get("class") != "no-benefit" for c in cells):
-        raise RetireError(f"{skill}: a retire verdict with a cell that is not no-benefit")
-    if sorted({c.get("model") for c in cells}) != roster:
-        raise RetireError(f"{skill}: the retire verdict's cells do not cover exactly "
-                          "the roster models")
+    for c in cells:
+        if not isinstance(c, dict) or c.get("class") != "no-benefit":
+            raise RetireError(f"{skill}: a retire verdict with a cell that is not "
+                              "no-benefit")
+        fixture = c.get("fixture")
+        if not (fixture is None or isinstance(fixture, str) and NAME_RE.fullmatch(fixture)) \
+                or not isinstance(c.get("model"), str) \
+                or not isinstance(c.get("looks"), list):
+            raise RetireError(f"{skill}: a retire verdict with a malformed cell")
+    pairs = [(c["fixture"], c["model"]) for c in cells]
+    fixtures = {f for f, _ in pairs}
+    want = {(f, m) for f in fixtures for m in roster}
+    if len(set(pairs)) != len(pairs) or set(pairs) != want:
+        raise RetireError(f"{skill}: the retire verdict's cells are not each fixture "
+                          "crossed with each roster model exactly once (the cross product)")
     return skill
 
 
@@ -186,12 +231,26 @@ def locate(registries: dict, skill: str) -> dict:
     identity, plugin, directory = matches[0]
     if directory != dirs[0] or not directory.is_relative_to(root):
         raise RetireError(f"{skill}: its one copy is not in {TARGET}")
-    if directory.is_symlink() or not directory.is_dir():
+    if directory.is_symlink():
+        raise RetireError(f"{skill}: its copy is a symlink")
+    if not directory.is_dir():
         raise RetireError(f"{skill}: its copy is not a real directory")
     rel = directory.relative_to(root).as_posix()
     if rel != f"plugins/{plugin}/skills/{skill}":
         raise RetireError(f"{skill}: unexpected location {rel}")
+    contained(root, ["plugins", f"plugins/{plugin}", f"plugins/{plugin}/skills", rel])
     return {"plugin": plugin, "path": rel}
+
+
+def contained(root: Path, rels) -> None:
+    """RetireError unless each of `rels` under `root` is no symlink and
+    resolves inside `root`, so no write follows a link out of the checkout."""
+    base = root.resolve()
+    for rel in rels:
+        path = root / rel
+        if path.is_symlink() or not path.resolve().is_relative_to(base):
+            raise RetireError(f"{rel} is a symlink or resolves outside the {TARGET} "
+                              "checkout")
 
 
 def _json_lines(text: str) -> list:
@@ -212,15 +271,26 @@ def open_removal_prs(gh) -> list:
             if isinstance(p.get("head"), str) and p["head"].startswith(BRANCH_PREFIX)]
 
 
-def open_issue(gh, skill: str) -> int | None:
+def existing_issues(gh, skill: str) -> dict:
+    """{"open": [...], "closed": [...]}: the numbers, ascending, of every
+    issue, in any state, that github-actions[bot] opened with this skill's
+    marker. An issue anyone else opened is ignored, whatever it quotes."""
     text = gh(["api", "--paginate",
-               f"repos/{EVALS_REPO}/issues?state=open&per_page=100",
+               f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
                "--jq", ".[] | select(.pull_request == null) | "
-                       "{number: .number, body: (.body // \"\")}"])
+                       "{number: .number, body: (.body // \"\"), "
+                       "author: .user.login, state: .state}"])
     marker = ISSUE_MARKER.format(skill=skill)
-    found = sorted(i["number"] for i in _json_lines(text)
-                   if isinstance(i.get("body"), str) and marker in i["body"])
-    return found[0] if found else None
+    found = {"open": [], "closed": []}
+    for item in _json_lines(text):
+        if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
+                or marker not in item["body"]:
+            continue
+        number, state = item.get("number"), item.get("state")
+        if type(number) is not int or number < 1 or state not in found:
+            raise RetireError("an issue record from the API is malformed")
+        found[state].append(number)
+    return {state: sorted(numbers) for state, numbers in found.items()}
 
 
 def _figure(block, field):
@@ -289,6 +359,9 @@ def bump(version: str) -> str:
 def manifest_versions(checkout: Path, plugin: str) -> dict:
     """{manifest path: (old, new)}; both manifests must agree."""
     out = {}
+    contained(checkout, [f"plugins/{plugin}/.claude-plugin",
+                         *(f"plugins/{plugin}/{name}" for name in MANIFESTS), "docs",
+                         IMPACT_FILE])
     for name in MANIFESTS:
         rel = f"plugins/{plugin}/{name}"
         try:
@@ -329,7 +402,7 @@ def _pr_body(gates, skill, location, versions, run_url) -> str:
 
 
 def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
-         allowed=("auto", "proposal")) -> dict:
+         allowed=("proposal",)) -> dict:
     """What to do, read-only. RetireError for a refusal."""
     skill = retiring(gates)
     mode = mode_of(gates)
@@ -343,7 +416,13 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
             location, problem = locate(registries, skill), None
         except RetireError as exc:
             location, problem = None, str(exc)
-        number = open_issue(gh, skill)
+        issues = existing_issues(gh, skill)
+        if not issues["open"] and issues["closed"]:
+            return {"action": "none", "mode": mode, "skill": skill,
+                    "issue": issues["closed"][0],
+                    "reason": f"{skill} is already decided: issue "
+                              f"#{issues['closed'][0]} is closed, so none is filed again"}
+        number = issues["open"][0] if issues["open"] else None
         return {"action": "update-issue" if number else "create-issue", "mode": mode,
                 "skill": skill, "issue": number,
                 "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
@@ -367,12 +446,16 @@ def prepare_branch(checkout: Path, action: dict) -> None:
     """The removal commit on a new branch of `checkout`, which must be clean."""
     if _git(checkout, "status", "--porcelain"):
         raise RetireError(f"the {TARGET} checkout has uncommitted changes")
+    contained(checkout, ["plugins", f"plugins/{action['plugin']}",
+                         f"plugins/{action['plugin']}/skills", action["path"],
+                         f"plugins/{action['plugin']}/.claude-plugin", *action["versions"],
+                         "docs", IMPACT_FILE])
     _git(checkout, "checkout", "-b", action["branch"])
     _git(checkout, "rm", "-r", "-q", "--", action["path"])
     for rel, (old, new) in action["versions"].items():
         path = checkout / rel
         doc = json.loads(path.read_text(encoding="utf-8"))
-        if doc.get("version") != old:
+        if not isinstance(doc, dict) or doc.get("version") != old:
             raise RetireError(f"{rel} changed under the plan")
         text = path.read_text(encoding="utf-8")
         needle = f'"version": "{old}"'
@@ -417,7 +500,7 @@ def commands(action: dict) -> list:
     return []
 
 
-def execute(action: dict, registries: dict, gh, push) -> str:
+def execute(action: dict, registries: dict, gh, push, env) -> str:
     kind = action["action"]
     if kind == "none":
         return action["reason"]
@@ -427,6 +510,7 @@ def execute(action: dict, registries: dict, gh, push) -> str:
     if kind == "update-issue":
         gh(commands(action)[0][1:], action["body"])
         return f"updated issue #{action['issue']} for {action['skill']}"
+    check_auto_env(env)
     checkout = Path(registries[TARGET]["path"])
     prepare_branch(checkout, action)
     push(checkout, action["branch"])
@@ -455,14 +539,16 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
             check_event(env)
         gates = load_gates(args.gates)
         registries = compute_gates.flag_registries(args.registry)
-        action = plan(gates, registries, gh, run_url,
-                      tuple(args.allow_mode or ("auto", "proposal")))
+        allowed = tuple(args.allow_mode or ("proposal",))
+        if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
+            check_auto_env(env)
+        action = plan(gates, registries, gh, run_url, allowed)
         if args.dry_run:
             out.write(json.dumps({"dry_run": True, **action,
                                   "would_run": commands(action)},
                                  indent=2, sort_keys=True) + "\n")
             return 0
-        out.write(execute(action, registries, gh, push) + "\n")
+        out.write(execute(action, registries, gh, push, env) + "\n")
     except (RetireError, ValueError) as exc:
         print(f"retire_skill: {exc}", file=sys.stderr)
         return 2

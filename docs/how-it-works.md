@@ -164,7 +164,8 @@ then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
 `retire` (no benefit on every fixture and roster model, at two fixed looks)
 gets, in `retirement_mode: proposal` (the committed value in
 `evals/gate-policy.yml`), one skills-evals issue that is filed or updated and
-that a human acts on. In `auto` mode the script instead opens a removal pull
+that a human acts on; once that issue is closed, the skill is not proposed
+again. In `auto` mode the script instead opens a removal pull
 request in adam-agentskills that auto-merges with no human review
 ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
 one at a time. Auto mode is built but not wired: it needs a write credential
