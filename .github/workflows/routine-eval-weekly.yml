@@ -1,14 +1,30 @@
 name: Weekly routine evals
 
-# Plan only reviewed, committed fixtures. Each leg dispatches the existing
-# fire workflow, which validates its inputs and holds the routine bearer.
-# This caller uses eval mode only; the improvement loop has a separate gate.
-# The plan is cut to the fires that fit under the weekly allowance cap (#68,
-# evals/budget.yml, scripts/allowance_guard.py): the plan job reads the
-# ingested runs from a read-only checkout of persistent/eval-results and
-# counts recent fires with its token (`actions: read`). When none fits, the
-# matrix is empty, `count` is 0 and the dispatch job is skipped; each fire
-# still runs the guard itself before it spends anything.
+# The closed loop's weekly sweep (G5, G6): scripts/plan_week.py plans eval
+# AND improve fires by priority band (safety, missing evidence, near a
+# decision, improvements, re-checks; the thresholds design's rule D), with
+# improve eligibility and stopping (rules A and C) read from evidence that
+# already exists (scripts/improve_outcomes.py). Each leg dispatches the
+# existing fire workflow, which validates its inputs, runs the allowance
+# guard and holds the routine bearer.
+#
+# * Improve mode is scheduled since Adam's 2026-10-26 decision (ADR 0010,
+#   decision 4 addendum): no human in the loop.
+# * The plan job reads the whole results branch (ingested runs, the usage
+#   census) and the three public registries as data, computes the
+#   retirement verdicts as scripts/compute_gates.py does, and reads the
+#   GitHub evidence (fire runs, improve branches, adam-agentskills pull
+#   requests, open on-hold issues) with its read-only token. A read failure
+#   plans nothing (fail closed). When nothing fits, `count` is 0 and the
+#   dispatch job is skipped.
+# * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
+#   fewer than three fires are in flight (`plan_week.py wait-slot`), fires,
+#   then waits 60 seconds before the next leg (the routine's fire limit).
+#   Improve fires are planned last, so a long improve run never holds up
+#   the evals.
+# * Not a pull_request or push workflow, so no path filter and no required
+#   check. Inputs are never interpolated into `run:`; matrix values reach
+#   the shell through `env` and are revalidated before the dispatch.
 on:
   schedule:
     - cron: "0 7 * * 2"
@@ -19,10 +35,12 @@ jobs:
   plan:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
+      issues: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
@@ -31,6 +49,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -44,20 +63,45 @@ jobs:
           ref: persistent/eval-results
           path: eval-results-branch
           persist-credentials: false
-          sparse-checkout: routine-results
-      - name: Plan reviewed fixtures within the hourly fire limit and the weekly allowance
+      - name: Check out adam-agentskills
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: registry-agentskills
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out cms-platform
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: registry-cms
+          persist-credentials: false
+      - name: Check out adamdaniel.ai
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: registry-site
+          persist-credentials: false
+      - name: Plan the week's fires by band within the weekly allowance
         id: plan
         env:
-          GITHUB_EVENT_NAME: schedule
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/plan_scheduled_evals.py --max-fixtures 30 --allowance-tree eval-results-branch
+        run: |
+          set -euo pipefail
+          as_of="$(git -C eval-results-branch log -1 --format=%cI)"
+          python3 scripts/plan_week.py plan --results-tree eval-results-branch \
+            --as-of "$as_of" --max-fires 30 \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --out "$RUNNER_TEMP/plan.json"
 
   dispatch:
     needs: plan
     # An empty matrix is an error to GitHub, so no fire fitting skips the job.
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: write
@@ -75,23 +119,48 @@ jobs:
         uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
-      - name: Revalidate the committed fixture
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
+      - name: Revalidate the planned fire
         env:
+          MODE: ${{ matrix.mode }}
           FIXTURE: ${{ matrix.fixture }}
-          MATRIX_KEY: ${{ matrix.eval_key }}
-          MATRIX_SLOT: ${{ matrix.slot }}
-        run: python3 scripts/plan_scheduled_evals.py --validate "$FIXTURE" "$MATRIX_KEY" "$MATRIX_SLOT" > /dev/null
-      - name: Dispatch the validated eval
+          EVAL_KEY: ${{ matrix.eval_key }}
+          MODEL: ${{ matrix.model }}
+          SKILL: ${{ matrix.skill }}
+          HOLDOUT: ${{ matrix.holdout }}
+        run: python3 scripts/plan_week.py validate-fire
+      - name: Wait until fewer than three fires are in flight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/plan_week.py wait-slot --max-wait 1500
+      - name: Dispatch the validated fire
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          MODE: ${{ matrix.mode }}
           FIXTURE: ${{ matrix.fixture }}
+          MODEL: ${{ matrix.model }}
+          SKILL: ${{ matrix.skill }}
+          HOLDOUT: ${{ matrix.holdout }}
         run: |
           set -euo pipefail
+          case "$MODE" in
+            eval)
+              fields=(--raw-field mode=eval --raw-field "fixture=$FIXTURE"
+                      --raw-field "model=$MODEL" --raw-field arms=both --raw-field trials=1) ;;
+            improve)
+              fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
+                      --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;
+            *)
+              echo "::error::Routine eval dispatch failed"
+              exit 1 ;;
+          esac
           if ! gh workflow run routine-eval-fire.yml \
-            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
-            --raw-field mode=eval --raw-field "fixture=$FIXTURE" \
-            --raw-field arms=both --raw-field trials=1 > /dev/null 2>&1; then
+            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" "${fields[@]}" > /dev/null 2>&1; then
             echo "::error::Routine eval dispatch failed"
             exit 1
           fi
+      # The routine's fire limit: about one fire a minute.
+      - name: Space the next fire
+        run: sleep 60

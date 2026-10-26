@@ -10,8 +10,9 @@ this script is the layer that runs BEFORE any spend:
   check  routine-eval-fire.yml runs it before the fire step, in every mode,
          and a refusal stops the fire. A fire may go only when
          spent + pending + one run's reservation <= weekly_cap.
-  fits   prints how many more fires fit now; scripts/plan_scheduled_evals.py
-         calls `fires_that_fit` itself so the weekly sweep plans only those.
+  fits   prints how many more fires fit now; scripts/plan_week.py spends
+         `room` itself, at each fire's historical cost, so the weekly sweep
+         plans only what fits.
 
 What counts, over the last seven days (rolling, so every allowance week stays
 under the cap wherever the account's own week starts):
@@ -38,6 +39,18 @@ under the cap wherever the account's own week starts):
     timestamp (the fire workflow stamps it at fire time), so a run from the
     last `PENDING_FULL_HOLD` frees one recent fire; runs older than that free
     old fires.
+
+Improve fires (thresholds doc, plumbing gap 2): an improve run's results
+never land in `routine-results/`, so until 2026-10-26 it was held at one
+eval fire's reservation for `PENDING_FULL_HOLD` and the overrun after that,
+while it runs about twelve eval fires' worth of agent trials. Now every
+successful improve fire of the window (its run title, `Fire eval routine:
+improve <skill>`, says so; scripts/improve_outcomes.py reads it) is charged
+`improve_charge` for the whole window and is not matched against ingested
+runs: `IMPROVE_FIRE_UNITS` times the mean measured cost of the ingested eval
+runs (`eval_fire_cost`, never more than one reservation each), or times the
+full reservation while nothing is measured. `check --mode improve` needs room
+for that charge before an improve fire goes.
 
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
@@ -84,6 +97,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 
 import budget as budget_file  # noqa: E402
+import improve_outcomes  # noqa: E402
 
 #: The routine run id the fire workflow generates (routine-eval-fire.yml's
 #: validate step), and the directory ingest names after it.
@@ -108,6 +122,10 @@ EPSILON = 1e-9
 #: release room on; one more than PACE_CLOCK_SKEW ahead of `now` is not read.
 PACE_MAX_AGE = timedelta(hours=12)
 PACE_CLOCK_SKEW = timedelta(minutes=5)
+#: An improve run measures baseline and candidate on every fixture of the
+#: skill at three trials each, about 24 agent trials for a four-fixture skill
+#: (thresholds doc), where an eval fire (arms both, one trial) runs two.
+IMPROVE_FIRE_UNITS = 12
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
 
@@ -170,6 +188,59 @@ def run_cost(run_dir: Path, limits: dict) -> float:
     if not blocks:
         return reserve
     return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+
+
+def _unmeasured(usage) -> bool:
+    """Whether one run-level `usage` block has no measured weekly delta."""
+    delta = usage.get("meter_delta") if isinstance(usage, dict) else None
+    windows = delta.get("windows") if isinstance(delta, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    moved = week.get("delta") if isinstance(week, dict) else None
+    return isinstance(moved, bool) or not isinstance(moved, (int, float)) \
+        or not math.isfinite(moved) or week.get("window_reset") is not False
+
+
+def measured_cost(run_dir: Path, limits: dict) -> float | None:
+    """`run_cost` of one ingested run when every invocation in it carries a
+    measured weekly delta, else None: the runs a historical cost is taken
+    from."""
+    blocks = {}
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if not isinstance(usage, dict) or _unmeasured(usage):
+            return None
+        level = {key: value for key, value in usage.items() if key != "measured"}
+        blocks[json.dumps(level, sort_keys=True)] = usage
+    if not blocks:
+        return None
+    return sum(_invocation_cost(usage, limits) for usage in blocks.values())
+
+
+def all_runs(tree: Path) -> list[Path]:
+    """Every run directory under `<tree>/routine-results/`, any age."""
+    root = tree / DEST_ROOT
+    if not root.is_dir():
+        return []
+    return [run_dir for run_dir in sorted(root.iterdir())
+            if RUN_ID_RE.fullmatch(run_dir.name) and not run_dir.is_symlink()
+            and run_dir.is_dir()]
+
+
+def eval_fire_cost(tree: Path, limits: dict) -> float:
+    """The mean measured cost of one ingested eval run, any age, at most one
+    reservation; the reservation when no run is measured."""
+    reserve = budget_file.run_reservation(limits)
+    costs = [cost for cost in (measured_cost(run_dir, limits) for run_dir in all_runs(tree))
+             if cost is not None]
+    if not costs:
+        return reserve
+    return min(reserve, sum(costs) / len(costs))
+
+
+def improve_charge(tree: Path, limits: dict) -> float:
+    """What one improve fire is charged, for the whole window."""
+    return IMPROVE_FIRE_UNITS * eval_fire_cost(tree, limits)
 
 
 def ingested_runs(tree: Path, now: datetime) -> list[Path]:
@@ -259,9 +330,10 @@ def pace(runs: list[Path], limits: dict, now: datetime):
 
 
 def account(tree: Path, limits: dict, now: datetime,
-            fires: tuple[int, int]) -> dict:
+            fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
-    account_used, week_elapsed} for the seven days up to `now`, given
+    account_used, week_elapsed, improve_fires, improve_charge} for the seven
+    days up to `now`, given
     `fires`, a pair: the successful fires of the last seven days and of the
     last `PENDING_FULL_HOLD`. An ingested run is matched to a fire by its run
     id's timestamp (the fire workflow stamps it at fire time), so a run from
@@ -269,14 +341,20 @@ def account(tree: Path, limits: dict, now: datetime,
     that free old fires; the unresulted recent fires are held in full and the
     rest are charged `per_run_overrun`. `pace_room` is `pace` of the same runs'
     newest meter snapshot; `account_used` and `week_elapsed` are None when
-    there is no usable one."""
+    there is no usable one. `improve` is the same pair for the improve
+    fires among them: each is charged `improve_charge` for the whole window
+    and is never matched against ingested runs."""
     try:
         fires_7d, fires_24h = fires
+        improve_7d, improve_24h = improve
     except (TypeError, ValueError):
         raise GuardError("fire counts are not a pair") from None
-    for count in (fires_7d, fires_24h):
+    for count in (fires_7d, fires_24h, improve_7d, improve_24h):
         if isinstance(count, bool) or not isinstance(count, int) or count < 0:
             raise GuardError("fire count is not a non-negative integer")
+    # Improve fires are among the fires; they never produce routine-results.
+    fires_7d = max(0, fires_7d - improve_7d)
+    fires_24h = max(0, fires_24h - improve_24h)
     runs = ingested_runs(tree, now)
     reserve = budget_file.run_reservation(limits)
     spent = sum(run_cost(run_dir, limits) for run_dir in runs)
@@ -290,12 +368,23 @@ def account(tree: Path, limits: dict, now: datetime,
         if _parse_stamp(RUN_ID_RE.fullmatch(run_dir.name).group("stamp"))
         >= held_since)
     recent = max(0, min(fires_24h - recent_runs, unresulted))
-    pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
+    charge = improve_charge(tree, limits)
+    pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
+               + improve_7d * charge)
     room, used, elapsed = pace(runs, limits, now)
     return {"spent": spent, "pending": pending, "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
-            "account_used": used, "week_elapsed": elapsed}
+            "account_used": used, "week_elapsed": elapsed,
+            "improve_fires": improve_7d, "improve_charge": charge}
+
+
+def room(state: dict) -> float:
+    """The points left now: max(cap - spent, pace_room) - pending (`fits`).
+    The weekly planner (scripts/plan_week.py) spends it at each fire's
+    historical cost."""
+    return max(state["cap"] - state["spent"],
+               state.get("pace_room", 0.0)) - state["pending"]
 
 
 def fits(state: dict) -> int:
@@ -305,15 +394,14 @@ def fits(state: dict) -> int:
     week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
     both: the snapshot behind the pace room may predate those fires, and
     without it every fire would fit until the next snapshot is ingested."""
-    room = max(state["cap"] - state["spent"],
-               state.get("pace_room", 0.0)) - state["pending"] + EPSILON
-    if room < state["reservation"]:
+    left = room(state) + EPSILON
+    if left < state["reservation"]:
         return 0
     # Counted by comparison, not trusted from a float quotient alone.
-    count = int(room // state["reservation"])
-    while (count + 1) * state["reservation"] <= room:
+    count = int(left // state["reservation"])
+    while (count + 1) * state["reservation"] <= left:
         count += 1
-    while count and count * state["reservation"] > room:
+    while count and count * state["reservation"] > left:
         count -= 1
     return count
 
@@ -354,10 +442,10 @@ def count_successful_fires(repo: str, since: datetime, token: str,
 
 
 def fires_that_fit(tree: Path, limits: dict, now: datetime,
-                   fires: tuple[int, int]) -> int:
-    """`fits` of the accounting for `now`: the weekly planner's cap. `fires`
-    is `account`'s pair."""
-    return fits(account(tree, limits, now, fires))
+                   fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> int:
+    """`fits` of the accounting for `now`. `fires` and `improve` are
+    `account`'s pairs."""
+    return fits(account(tree, limits, now, fires, improve))
 
 
 def describe(state: dict) -> str:
@@ -370,6 +458,9 @@ def describe(state: dict) -> str:
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
             f"results ({state['recent']} from the last {hold_hours}h held in full), this run reserves {points(state['reservation'])}, cap "
             f"{points(state['cap'])} (last 7 days)")
+    if state.get("improve_fires"):
+        line += (f"; {state['improve_fires']} improve fire(s) held at "
+                 f"{points(state['improve_charge'])} points each")
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -378,8 +469,11 @@ def describe(state: dict) -> str:
     return f"{line}; no recent account reading, so no pace room"
 
 
-def check(state: dict) -> bool:
-    """Whether one more fire, reserved in full, stays within the cap."""
+def check(state: dict, mode: str = "eval") -> bool:
+    """Whether one more fire, reserved in full (an improve fire at
+    `improve_charge`), stays within the cap."""
+    if mode == "improve":
+        return room(state) + EPSILON >= state["improve_charge"]
     return fits(state) >= 1
 
 
@@ -392,22 +486,49 @@ def _live_fires(now: datetime) -> tuple[int, int]:
             count_successful_fires(repo, now - PENDING_FULL_HOLD, token, api=api))
 
 
+def improve_counts(runs: list, now: datetime) -> tuple[int, int]:
+    """(successful improve fires in the last seven days, in the last
+    `PENDING_FULL_HOLD`) among the runs API's rows."""
+    fires = [f for f in improve_outcomes.improve_fires(runs) if f["conclusion"] == "success"]
+    return (sum(1 for f in fires if f["started"] >= now - WINDOW),
+            sum(1 for f in fires if f["started"] >= now - PENDING_FULL_HOLD))
+
+
+def _live_improve(now: datetime) -> tuple[int, int]:
+    """`improve_counts` of the fire runs of the last seven days."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    token = os.environ.get("GH_TOKEN", "")
+    api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
+    try:
+        runs = improve_outcomes.fetch_fire_runs(
+            repo, token, now - WINDOW,
+            get=lambda path, tok, **kw: improve_outcomes.github_get(path, tok, api=api, **kw))
+    except improve_outcomes.EvidenceError as exc:
+        raise GuardError(str(exc)) from None
+    return improve_counts(runs, now)
+
+
 def main(argv: list[str] | None = None, now: datetime | None = None,
-         fire_count=None) -> int:
-    """`fire_count`, a function of `now` returning `(fires_7d, fires_24h)`,
-    stands in for the API in tests."""
+         fire_count=None, improve_count=None) -> int:
+    """`fire_count` and `improve_count`, functions of `now` returning
+    `(fires_7d, fires_24h)` (all fires, and the improve fires among them),
+    stand in for the API in tests."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("check", "fits"))
     parser.add_argument("--results-tree", type=Path, required=True,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
                         help="the budget file (default: evals/budget.yml)")
+    parser.add_argument("--mode", choices=("eval", "scaffold", "improve"), default="eval",
+                        help="the fire's mode: an improve fire needs room for "
+                             "improve_charge")
     args = parser.parse_args(argv)
     now = now or datetime.now(timezone.utc)
     try:
         limits = budget_file.load_budget(args.budget)
         state = account(args.results_tree, limits, now,
-                        (fire_count or _live_fires)(now))
+                        (fire_count or _live_fires)(now),
+                        (improve_count or _live_improve)(now))
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")
@@ -421,7 +542,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     if args.command == "fits":
         print(f"fires={fits(state)}")
         return 0
-    if not check(state):
+    if not check(state, args.mode):
         print(REFUSAL)
         return 1
     return 0

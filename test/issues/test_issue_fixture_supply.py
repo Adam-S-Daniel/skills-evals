@@ -134,6 +134,8 @@ class PickTests(unittest.TestCase):
     def test_fire_run_name_starts_with_the_prefix_pick_reads(self):
         doc = yaml.safe_load(FIRE.read_text(encoding="utf-8"))
         rendered = doc["run-name"].replace("${{ inputs.mode }}", "scaffold")
+        # A scaffold fire sends no model, so the folded title ends in a space.
+        rendered = rendered.replace("${{ inputs.model }}", "")
         for name in ("candidate", "fixture", "skill"):
             rendered = rendered.replace("${{ inputs.%s }}" % name,
                                         "example-org__widget__9" if name == "candidate" else "")

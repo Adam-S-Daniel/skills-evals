@@ -3,11 +3,10 @@ name: Fire eval routine
 # Fires the eval runner routine (ADR 0010, "Smallest next PRs" item 2):
 # https://claude.ai/code/routines/trig_014cqgegCtJUqXYjAKmkr4J5
 #
-# * `workflow_dispatch` ONLY. The weekly caller dispatches eval mode and
-#   the daily routine-draft-skill.yml draft mode; #71's
-#   three-PR gate (ADR 0010, decision 4) keeps the improvement loop off the
-#   schedule until three human-reviewed loop PRs have merged. No pull_request
-#   or push: a pull_request job would
+# * `workflow_dispatch` ONLY. The weekly caller dispatches eval and improve
+#   mode (ADR 0010, decision 4 addendum, 2026-10-26: #71's three-PR gate is
+#   lifted), and the daily routine-draft-skill.yml draft mode. No
+#   pull_request or push: a pull_request job would
 #   have to be a required check, and nothing here should run, or spend
 #   subscription usage, because a pull request changed.
 # * Every dispatch input is read from $GITHUB_EVENT_PATH as data, never
@@ -109,9 +108,21 @@ name: Fire eval routine
 #   within scripts/scaffold_real_work.py's REFIRE_AFTER_DAYS. It is a display
 #   title, never a `run:` block.
 #
+# * The run's title (`run-name`) names the mode, the one target input of that
+#   mode (fixture, candidate or skill) and the model when one is given. It is
+#   the only place the runs API exposes a dispatch's inputs, so
+#   scripts/improve_outcomes.py reads improve attempts from it and
+#   scripts/allowance_guard.py charges improve fires their own cost (G5,
+#   thresholds doc plumbing gap 2). A title is display text, never a command;
+#   the readers accept only titles matching a strict pattern, and only from
+#   runs that passed validation.
+#
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
-run-name: "Fire eval routine: ${{ inputs.mode }} ${{ inputs.candidate }}${{ inputs.fixture }}${{ inputs.skill }}"
+run-name: >-
+  Fire eval routine: ${{ inputs.mode }}
+  ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}
+  ${{ inputs.model }}
 
 on:
   workflow_dispatch:
@@ -447,14 +458,15 @@ jobs:
           sparse-checkout: routine-results
 
       # Every mode, before the fire: refused (exit 1, numbers-only log) when
-      # this run's reservation would take the last seven days past the weekly
-      # cap, or when the spend cannot be read. The job's read-only token,
-      # never the bearer.
+      # this run's reservation (an improve run's own, larger charge) would
+      # take the last seven days past the weekly cap, or when the spend
+      # cannot be read. The job's read-only token, never the bearer.
       - name: Check the weekly allowance
         id: allowance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/allowance_guard.py check --results-tree eval-results-branch
+          MODE: ${{ steps.validate.outputs.mode }}
+        run: python3 scripts/allowance_guard.py check --results-tree eval-results-branch --mode "$MODE"
 
       # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners (Recommended)"):
       # the candidate's owner must be in SYNC_OWNERS and its name in

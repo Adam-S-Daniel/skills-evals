@@ -127,8 +127,8 @@ session that lost the guidance must not also lose these.
   | `eval.yml` | dispatch only | no push or PR trigger; Adam's 2026-10-06 decision retired its Tuesday schedule because the [weekly routine](https://github.com/Adam-S-Daniel/skills-evals/pull/331) replaces it |
   | `roster-refresh.yml` | schedule, dispatch | no push or PR trigger, so no path filter; dispatches eval.yml with roster_only=true weekly so the roster follows current use |
   | `scheduled-run-health.yml` | schedule, dispatch | no push or PR trigger, so no path filter |
-  | `routine-eval-fire.yml` | dispatch only | none needed |
-  | `routine-eval-weekly.yml` | schedule only | no push or PR trigger; replaces `eval.yml`'s Tuesday schedule per Adam's 2026-10-06 decision; plans the reviewed fixture list and dispatches eval mode through `routine-eval-fire.yml` |
+  | `routine-eval-fire.yml` | dispatch only | none needed; its `run-name` carries the mode and target, which `scripts/improve_outcomes.py` and the allowance guard read |
+  | `routine-eval-weekly.yml` | schedule only | no push or PR trigger; replaces `eval.yml`'s Tuesday schedule per Adam's 2026-10-06 decision; `scripts/plan_week.py` plans eval and improve fires by band within the allowance (ADR 0010 decision 4 addendum, 2026-10-26) and dispatches them one at a time through `routine-eval-fire.yml`, at most three in flight |
   | `routine-eval-results-pushed.yml` | `push` to `claude/eval-*` | `paths: eval-results/**` (the routine's pinned result root); holds no permissions and runs nothing from the branch |
   | `routine-eval-ingest.yml` | `workflow_run` of the above, dispatch | runs the default branch's copy only; `scripts/ingest_routine_results.py` validates the branch and writes `persistent/eval-results` `routine-results/<run id>/` (ADR 0010 decision 2) |
   | `routine-improve-pushed.yml` | `push` to `claude/eval-improve-*` | `paths: eval-improve/**` (the one directory an improve branch adds to; disjoint from `eval-results/**`, which is what keeps it off the results ingest); holds no permissions and runs nothing from the branch |

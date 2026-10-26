@@ -4,7 +4,7 @@ A plain-English guide for someone who knows the fleet but has not worked in
 this repository. The technical method is in [`DESIGN.md`](../DESIGN.md), the
 operating record in [`HANDOFF.md`](../HANDOFF.md), and the live status board is
 [issue #126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
-Last revised 2026-09-23.
+Last revised 2026-10-26.
 
 ## 1. What the system does
 
@@ -134,12 +134,15 @@ Three layers enforce it:
    fire without results: at the full reservation when it is under 2 hours
    old, and at the overrun alone after that (a routine run finishes within
    minutes, so a fire with no results two hours later failed or never
-   started). The fire goes only if one
-   more reservation still fits under `weekly_cap`. If the GitHub API cannot
-   be read, the fire is refused. The log shows numbers only.
-3. **The weekly plan** (`scripts/plan_scheduled_evals.py --allowance-tree`).
-   The Tuesday sweep plans only as many fixtures as fit, in the schedule's
-   order; when none fits, the dispatch job is skipped.
+   started). An improve fire never lands results, so it is charged its own
+   cost for the whole seven days: twelve eval fires at their measured mean
+   (twelve full reservations until anything is measured). The fire goes
+   only if one more reservation (an improve fire's charge, in improve mode)
+   still fits under `weekly_cap`. If the GitHub API cannot be read, the
+   fire is refused. The log shows numbers only.
+3. **The weekly plan** (`scripts/plan_week.py`, see "The weekly plan"
+   below). The Tuesday sweep spends the room left at each fire's historical
+   cost; when nothing fits, the dispatch job is skipped.
 
 Known gaps:
 
@@ -155,6 +158,41 @@ Known gaps:
 - **Fires racing each other**: a fire counts only fires that have finished
   successfully, so two dispatched at the same moment do not see each other.
   The weekly plan accounts for its own fires up front.
+
+### The weekly plan
+
+`routine-eval-weekly.yml` runs `scripts/plan_week.py` every Tuesday at 07:00
+UTC (G5, G6; Adam lifted the three-PR gate on 2026-10-26, see the
+[ADR 0010 addendum](decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decision-4-addendum-2026-10-26)).
+It computes the retirement verdicts over the results branch, then plans
+eval fires (one reviewed fixture from `evals/scheduled.yml` on one roster
+model) and improve fires (one skill, with a fixed holdout) in five bands:
+
+1. **Safety**: every cell of a skill with an open removal pull request.
+2. **Missing evidence** (at least 30% of the room): cells with no run,
+   heaviest-used model first. A cell whose fires twice produced nothing
+   becomes a "fixture broken" work item instead.
+3. **Near a decision** (at least 20%): cells fewest runs short of their next
+   look.
+4. **Improvements** (at least 20%): skills with four or more fixtures, train
+   headroom, a check that fails often but can pass, no retirement verdict,
+   and no pause, ordered by skill usage and then headroom. A skill with
+   fewer fixtures becomes a "needs fixtures" work item.
+5. **Re-checks**: decided cells not measured for eight weeks.
+
+A skill is paused while an improve pull request is open, an attempt is in
+flight, an open `on-hold` issue names it, for 14 days after a rejection, and
+after three rejections in a row until the skill, a fixture or the roster
+changes (or 90 days). A failed fire is retried at most twice. After a merged
+improvement nothing is attempted until the with arm is measured again. The
+routine does not record rejections, so `scripts/improve_outcomes.py` reads
+them from GitHub: an improve fire with no `claude/eval-improve-<run id>`
+branch twelve hours later counts as a rejection.
+
+Work items (`needs-fixtures`, `fixture-broken`, and `agent-check` items read
+from lesson proposals) are listed in the plan, not fired; each carries a
+`change_type`. The dispatch job fires one leg at a time, waits while three
+fires are in flight, and spaces fires a minute apart; improve fires go last.
 
 ### Skill retirement (#70)
 

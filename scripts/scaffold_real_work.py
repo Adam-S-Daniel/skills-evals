@@ -1521,7 +1521,8 @@ def fired_candidates(titles: list[str]) -> set[str]:
     keys = set()
     for title in titles:
         if title.startswith(FIRE_TITLE_PREFIX):
-            key = title[len(FIRE_TITLE_PREFIX):]
+            # The run-name folds an empty model input into a trailing space.
+            key = title[len(FIRE_TITLE_PREFIX):].strip()
             if KEY_RE.fullmatch(key):
                 keys.add(key)
     return keys
