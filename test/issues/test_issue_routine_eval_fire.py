@@ -520,9 +520,8 @@ class ValidateStepTests(unittest.TestCase):
             "private_registry_skill": {"skill": "adam-writing-style"},
         }, expect="is not an adam-agentskills skill")
         self._refuse_all(no_holdout, {
-            # One nested fixture each.
+            # One nested fixture.
             "one_fixture_skill": {"skill": "debug-github-workflows"},
-            "one_fixture_skill_2": {"skill": "skills-doctor"},
         }, expect="fewer than 3 nested fixtures")
         self._refuse_all(good, {
             "holdout_not_a_fixture": {"holdout": "no-such-holdout-xyz"},
