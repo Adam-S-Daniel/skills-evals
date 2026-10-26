@@ -2,7 +2,8 @@
 """Print `--ingest-times` for scripts/compute_gates.py (#70): a JSON object
 mapping each `routine-results/<run id>` in a checkout of
 `persistent/eval-results` to its FIRST ingest: {"commit": the commit that
-first added a file under it, "time": that commit's committer time, "files":
+first added a file under it, "time": that commit's committer time in UTC
+(`YYYY-MM-DDTHH:MM:SSZ`, whatever offset Git prints), "files":
 {every path, relative to the run id directory, that commit added: its full
 Git blob id in that commit}}.
 
@@ -33,6 +34,7 @@ fails, its output is not the expected shape, or the checkout is shallow.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import re
 import sys
@@ -50,6 +52,19 @@ RUN_ID_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}")
 INGEST_COMMITTER = "skills-evals@users.noreply.github.com"
 #: A full Git object id, SHA-1 or SHA-256.
 OID_RE = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+
+
+def utc_time(value: str) -> str | None:
+    """Git's strict ISO 8601 committer time (`%cI`) as one canonical UTC
+    form, `YYYY-MM-DDTHH:MM:SSZ`, or None when it is not one: Git spells
+    the zero offset `+00:00` in some versions and `Z` in others."""
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return None
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def ingest_times(checkout: Path, committer: str = INGEST_COMMITTER) -> dict | None:
@@ -84,8 +99,9 @@ def ingest_times(checkout: Path, committer: str = INGEST_COMMITTER) -> dict | No
                 first["files"][rest] = fields[3]
         elif token.startswith("\x01"):
             current = tuple(token[1:].split(" ", 2))
-            if len(current) != 3:
+            if len(current) != 3 or utc_time(current[1]) is None:
                 return None
+            current = (current[0], utc_time(current[1]), current[2])
         elif token.startswith(":"):
             raw = token
         elif token:

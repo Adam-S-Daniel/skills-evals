@@ -657,7 +657,9 @@ class BoardFeedTests(unittest.TestCase):
         self.commit()
         code = Path(self.temp.name) / "code"
         code.mkdir()
-        for filename in ("board_feed.py", "ingest_routine_results.py"):
+        # ingest_routine_results.py imports write_vouch.py (#70): the set
+        # board_feed.py loads, whole.
+        for filename in ("board_feed.py", "ingest_routine_results.py", "write_vouch.py"):
             shutil.copyfile(ROOT / "scripts" / filename, code / filename)
         before = sorted(str(path.relative_to(code)) for path in code.rglob("*"))
         env = dict(os.environ)

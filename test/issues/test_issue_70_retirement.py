@@ -2255,6 +2255,17 @@ class ComputeGatesTests(unittest.TestCase):
         self.assertEqual(doc["skipped"]["arm summary's n or errors disagree with its "
                                         "trial files"], 4)
 
+    def test_an_ingest_time_is_one_canonical_utc_form(self):
+        # PR #411's CI: Git 2.55 and 2.43 spell the zero offset differently.
+        import routine_ingest_times
+        for value in ("2026-10-01T01:00:00Z", "2026-10-01T01:00:00+00:00",
+                      "2026-10-01T03:00:00+02:00", "2026-09-30T20:00:00-05:00"):
+            with self.subTest(value=value):
+                self.assertEqual(routine_ingest_times.utc_time(value), "2026-10-01T01:00:00Z")
+        for bad in ("2026-10-01T01:00:00", "yesterday", ""):
+            with self.subTest(bad=bad):
+                self.assertIsNone(routine_ingest_times.utc_time(bad))
+
     def test_ingest_files_come_from_the_first_commit_adding_each_run(self):
         import routine_ingest_times
         repo = self.tmp / "results-checkout"
@@ -2285,9 +2296,10 @@ class ComputeGatesTests(unittest.TestCase):
                                   check=True, capture_output=True, text=True).stdout.strip()
         # Each file's blob id is the one its first ingest added (round 5, B2).
         self.assertEqual(routine_ingest_times.ingest_times(repo), {
-            one: {"commit": log[0], "time": "2026-10-01T01:00:00+00:00",
+            # One canonical UTC form, whatever offset Git prints.
+            one: {"commit": log[0], "time": "2026-10-01T01:00:00Z",
                   "files": {"x/a": blob(log[0], f"routine-results/{one}/x/a")}},
-            two: {"commit": log[2], "time": "2026-10-02T03:00:00+02:00",
+            two: {"commit": log[2], "time": "2026-10-02T01:00:00Z",
                   "files": {"c": blob(log[2], f"routine-results/{two}/c")}}})
         # An edit in place afterwards does not change what was recorded.
         (repo / f"routine-results/{one}/x/a").write_text("edited", encoding="utf-8")
@@ -2997,7 +3009,7 @@ class ComputeGatesTests(unittest.TestCase):
         times = routine_ingest_times.ingest_times(repo)
         first = times["20261001T000000Z-abcdef"]
         self.assertEqual((first["commit"], first["time"]),
-                         (genuine, "2026-10-01T01:00:00+00:00"))
+                         (genuine, "2026-10-01T01:00:00Z"))
         self.assertEqual(sorted(first["files"]), ["vouch.json", "x"])
         self.assertEqual(first["files"]["x"], git("rev-parse", f"{genuine}:{run}/x"))
 

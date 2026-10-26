@@ -1893,42 +1893,43 @@ CLI_TMPDIR_VARS = ("CLAUDE_TMPDIR", "CLAUDE_CODE_TMPDIR")
 def _cli_scratch_rules(tmp_roots, session_dir: Path | None, protected: list[Path],
                        needed: list[Path], guarded=()):
     """The sandbox `denyRead` paths and Read deny rules for every Claude Code
-    scratch root (`CLI_SCRATCH_PREFIX`) under each of `tmp_roots`. Every
-    `claude-*` name but this uid's is denied, present or future; in this
-    uid's, Read rules spare only the arm's own session's directory (named
-    as `session_dir`, its `~/.claude/projects/<workspace>`), as
-    `_profile_read_rules` spares it in a profile, since the arm's own CLI
-    may keep its scratch there; commands are denied every existing one
-    whole (directories; a symlinked one only by the Read rules)."""
+    scratch root (`CLI_SCRATCH_PREFIX`) under each of `tmp_roots`.
+
+    One Read rule per root denies every `claude-*` name, present or future,
+    this uid's included: a carve-out for the arm's own session there takes
+    one complement pattern per character of its name, at every root, which
+    pushed an arm's settings past `MAX_SETTINGS_BYTES` (#70, round 10). So
+    the Read tool cannot read the arm's own background-task output there;
+    its commands still can. For commands, every existing `claude-*`
+    directory is denied whole, but this uid's, where each existing entry
+    except the arm's own session's directory (named as `session_dir`, its
+    `~/.claude/projects/<workspace>`) is denied: the arm's own CLI may write
+    there from inside the sandbox. A symlinked entry is left to the Read
+    rule. `protected` and `guarded` are unused: no rule here spares a
+    symlink."""
     own = f"{CLI_SCRATCH_PREFIX}{os.getuid()}" if hasattr(os, "getuid") else None
+    mine = session_dir.name if session_dir is not None else None
     denied, rules = [], []
-    for root in dict.fromkeys(Path(r).resolve() for r in tmp_roots):
-        base = _glob_escape(str(root))
-        if own is None:
-            rules.append(f"Read(/{base}/{_glob_escape(CLI_SCRATCH_PREFIX)}*)")
-        else:
-            for pattern in _complement_patterns(own):
-                if not pattern.startswith(CLI_SCRATCH_PREFIX):
-                    continue
-                if "*" in pattern:
-                    rules.append(f"Read(/{base}/{pattern})")
-                else:
-                    rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
-            keep = root / own / session_dir.name if session_dir is not None else None
-            for rule in _profile_read_rules(root / own, keep, protected, needed,
-                                            guarded, root):
-                if rule not in rules:
-                    rules.append(rule)
+
+    def entries(path, dirs_only):
         try:
-            entries = sorted(os.listdir(root))
+            names = sorted(os.listdir(path))
         except OSError:
-            entries = []
-        # Directories only: the CLI's `claude-<hex>-cwd` files beside them
-        # are its shells' working-directory notes, written from inside the
-        # sandbox, and hold no transcript.
-        denied += [root / name for name in entries if name.startswith(CLI_SCRATCH_PREFIX)
-                   and (root / name).is_dir() and not (root / name).is_symlink()
-                   and not any(_within(n, root / name) for n in needed)]
+            return []
+        return [path / name for name in names
+                if not (path / name).is_symlink()
+                and ((path / name).is_dir() or not dirs_only)
+                and not any(_within(n, path / name) for n in needed)]
+
+    for root in dict.fromkeys(Path(r).resolve() for r in tmp_roots):
+        rules.append(f"Read(/{_glob_escape(str(root))}/{_glob_escape(CLI_SCRATCH_PREFIX)}*)")
+        for path in entries(root, True):
+            if not path.name.startswith(CLI_SCRATCH_PREFIX):
+                continue
+            if path.name == own and mine is not None:
+                denied += [child for child in entries(path, False) if child.name != mine]
+            else:
+                denied.append(path)
     return denied, rules
 
 
