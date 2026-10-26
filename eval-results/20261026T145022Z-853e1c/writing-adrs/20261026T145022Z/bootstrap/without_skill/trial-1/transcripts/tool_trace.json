@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NnGbD2UGNDAiSf4qpEEykB",
+      "name": "Bash",
+      "input": "git log --oneline | head -10 && git status --short && find . -path ./.git -prune -o -type f -print | head -50 && cat scripts/retry.sh CHANGELOG.md",
+      "input_chars": 146,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NnGbD2UGNDAiSf4qpEEykB",
+      "is_error": false,
+      "output": "668e7f6 initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 1486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XLK75axkAUVpcfQoSP2Grr",
+      "name": "Bash",
+      "input": "cat README.md; ls docs 2>&1 | head",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XLK75axkAUVpcfQoSP2Grr",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\nls: cannot access 'docs': No such file or directory",
+      "output_chars": 231,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MvUcmB11zd7h3ZKge2sjUX",
+      "name": "Bash",
+      "input": "mkdir -p docs/decisions && cat > docs/decisions/0001-retry-policy.md <<'EOF'\n# 0001: Retry transient upstream failures with capped exponential backoff\n\n- Status: Accepted\n- Date: 2026-10-26 (the polic...",
+      "input_chars": 1775,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MvUcmB11zd7h3ZKge2sjUX",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GBY7UoPayHidpxGrkQtqBd",
+      "name": "Bash",
+      "input": "git status --short | grep -v '^?? \\.'; sed -n 9,14p scripts/retry.sh",
+      "input_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GBY7UoPayHidpxGrkQtqBd",
+      "is_error": false,
+      "output": "?? docs/\n# retry at all was ruled out too - it would turn every transient blip into a\n# customer-facing error. Capping attempts at 5 and backing off exponentially\n# (1s, 2s, 4s, 8s, 16s) bounds the damage either way.\nset -euo pipefail\n\nmax_attempts=5",
+      "output_chars": 250,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017UFBiMoDpKiznwan8rKnup",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HdVUrYPvj82dSasCuAyn1J",
+      "name": "Bash",
+      "input": "bash -n scripts/retry.sh && echo ok && git diff --stat",
+      "input_chars": 54,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017UFBiMoDpKiznwan8rKnup",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HdVUrYPvj82dSasCuAyn1J",
+      "is_error": false,
+      "output": "ok\n scripts/retry.sh | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-)",
+      "output_chars": 77,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
