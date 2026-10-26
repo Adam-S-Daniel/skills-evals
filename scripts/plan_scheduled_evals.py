@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 
-DEFAULT_FIXTURE = "evals/workflow-path-audit"
+DEFAULT_FIXTURE = "evals/workflow-path-audit/required-check-routing"
 
 
 def committed_fixtures(root):
