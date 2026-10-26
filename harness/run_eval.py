@@ -2258,6 +2258,7 @@ _CLI_PROFILE_TREES = (".cc-writes", "backups", "bridge-spawn", "projects",
 # or a directory, which could hold a plugin's `hooks/hooks.json`) of at most
 # the given size in bytes; anything else at that path is a change. The lock
 # is a directory the CLI creates and removes, exempt only while empty.
+_BUILTIN_PLUGIN_STORE = "plugins/store/cc-plugin-*_builtin-" + "[0-9a-f]" * 12 + ".json"
 _CLI_PROFILE_MARKERS = {
     ".claude.json": None, ".claude.json.tmp.*": None,
     "plugins/cache/*/.orphaned_at": 4096,
@@ -2280,6 +2281,13 @@ _CLI_PROFILE_MARKERS = {
     # most 16 MiB). It is a list of plugins one could install, not an install:
     # plugins load from installed_plugins.json and plugins/cache/, still watched.
     "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024,
+    # CLI 2.1.311 writes a built-in plugin's key-value store here on every
+    # session (the agents-md plugin's usage-row bookkeeping). Plugins load from
+    # installed_plugins.json and plugins/cache/, not from a store; a
+    # third-party plugin's store stays watched. The suffix is spelled out
+    # because `*` crosses `/`: a bare `*.json` would also match a
+    # `.json/hooks/hooks.json` planted beneath a directory of that name.
+    _BUILTIN_PLUGIN_STORE: 65536,
 }
 _CLI_PROFILE_EMPTY_DIRS = (".claude.json.lock",)
 # A shared profile (the operator's real `~/.claude`, or an inherited
@@ -2297,7 +2305,9 @@ _SHARED_PROFILE_MARKERS = {"plugins/cache/*/.orphaned_at": 4096,
                            # A CLI 2.1.304 startup timestamp (see above).
                            "plugins/.last_inuse_sweep": 4096,
                            # The CLI 2.1.310 catalog cache (see above).
-                           "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024}
+                           "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024,
+                           # The CLI 2.1.311 built-in plugin store (see above).
+                           _BUILTIN_PLUGIN_STORE: 65536}
 
 
 def _is_empty_json_object(path: Path, limit: int) -> bool:
