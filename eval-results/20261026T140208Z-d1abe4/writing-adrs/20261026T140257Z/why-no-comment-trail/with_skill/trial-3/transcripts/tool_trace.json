@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HrszsixjxFrWBUvHZFxzDT",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HrszsixjxFrWBUvHZFxzDT",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FjkooBMkk2dgqYJQHS7m7m",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls -R docs; cat docs/decisions/README.md; cat scripts/export-ledger.sh; cat CHANGELOG.md",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FjkooBMkk2dgqYJQHS7m7m",
+      "is_error": false,
+      "output": "216009c initial commit\ndocs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-l...",
+      "output_chars": 2031,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dn3Q3CzSBVcG1UajpR46h1",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-write-amounts-as-integer-cents.md; git status --short",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dn3Q3CzSBVcG1UajpR46h1",
+      "is_error": false,
+      "output": "# 0002. Write amounts as integer cents, not decimal strings\n\n- **Status:** Accepted\n- **Date:** 2025-10-01\n\n## Context\n\nThe ledger stores amounts as integer cents. Formatting them as decimal\nstrings went through a float and produced off-by-one-cent values on a few\nlarge entries.\n\n## Decision\n\nWrite ...",
+      "output_chars": 882,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EuoZnnm431cPukrnHEqHVB",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 73,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DXgBH4Ys66JkB163jDJk7U",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/README.md'\ns=open(p).read()\ns=s.rstrip('\\n')+'\\n| [0003](0003-end-export-lines-with-crlf.md) | End every export line with CRLF, not LF | Accepted |\\n'\nopen(p,'w').w...",
+      "input_chars": 541,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EuoZnnm431cPukrnHEqHVB",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DXgBH4Ys66JkB163jDJk7U",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..2f526f1 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1159,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
