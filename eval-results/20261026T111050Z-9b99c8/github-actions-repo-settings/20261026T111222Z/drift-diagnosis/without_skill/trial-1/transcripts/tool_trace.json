@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P2RDkyEY6zg4u7GBDsz6y3",
+      "name": "Bash",
+      "input": "pwd; ls; git remote -v; ls <path> <path> 2>&1 | head -50",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P2RDkyEY6zg4u7GBDsz6y3",
+      "is_error": false,
+      "output": "<path>\nREADME.md\nbin\nrepo-settings.yml\nls: cannot access '<path>': No such file or directory\n<path>:",
+      "output_chars": 149,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HAmUCvdYt45GmVgDyVAGxm",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -la bin; git log --oneline | head",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HAmUCvdYt45GmVgDyVAGxm",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 814,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018jC8kd4W1TJqbcQ1taootX",
+      "name": "Bash",
+      "input": "head -c 1500 bin/gh; which gh",
+      "input_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018jC8kd4W1TJqbcQ1taootX",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 1540,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011ind3z9691i91qcBiWQeH9",
+      "name": "Bash",
+      "input": "for r in service-alpha service-beta; do echo \"== $r\"; gh api repos/example-org/$r/rulesets; gh api repos/example-org/$r/actions/permissions; gh api repos/example-org/$r/actions/permissions/fork-pr-con...",
+      "input_chars": 239,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011ind3z9691i91qcBiWQeH9",
+      "is_error": false,
+      "output": "== service-alpha\n[\n  {\n    \"enforcement\": \"active\",\n    \"id\": 7201,\n    \"name\": \"default branch protection\",\n    \"target\": \"branch\"\n  },\n  {\n    \"enforcement\": \"active\",\n    \"id\": 7302,\n    \"name\": \"manual-main\",\n    \"target\": \"branch\"\n  }\n]\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pi...",
+      "output_chars": 649,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NTUyWnq8vHwYeehQnpJuUL",
+      "name": "Bash",
+      "input": "for p in alpha:7201 alpha:7302 beta:7202; do r=${p%:*}; i=${p#*:}; echo \"== $r $i\"; gh api repos/example-org/service-$r/rulesets/$i; done 2>&1",
+      "input_chars": 142,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NTUyWnq8vHwYeehQnpJuUL",
+      "is_error": false,
+      "output": "== alpha 7201\n{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n    }\n  ],\n  \"conditions\": {\n    \"ref_name\": {\n      \"exclude\": [],\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ]\n    }\n  },\n  \"enforcement\": \"active\",\n  \"id\": 7...",
+      "output_chars": 2517,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
