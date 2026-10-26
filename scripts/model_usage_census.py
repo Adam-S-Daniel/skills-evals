@@ -67,16 +67,28 @@ matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
 
+PRIVATE EVENTS are the exception, and the only one: `--events-out` writes
+one JSON line per skill invocation, with its timestamp, session id and title,
+repository and branch. That file is NEVER published publicly:
+`scripts/publish_usage_census.sh` commits it only to the private
+`persistent/usage-events` branch of adam-agentskills-private (see
+`evals/usage/CENSUS.md`, "Private usage events"). Nothing from it reaches
+the two public files.
+
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
-        [--weekly-out usage/weekly-local.json]
+        [--weekly-out usage/weekly-local.json] [--events-out events.jsonl]
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
+import socket
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -234,11 +246,12 @@ def skill_key(raw, allowlist: frozenset[str]) -> str:
     return OTHER_KEY
 
 
-def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
-    """The allowlisted skill a user entry's slash command names, or None.
+def _typed_command(message: dict) -> str | None:
+    """The slash command a user entry typed, as written, or None.
 
     Only the message's own text counts (a string, or `text` items): a
     `tool_result` can quote a transcript, and its tags were not typed here.
+    The first text that carries a command decides.
     """
     content = message.get("content")
     if isinstance(content, str):
@@ -252,11 +265,93 @@ def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
     for text in texts:
         match = _COMMAND_NAME_RE.search(text)
         if match:
-            name = _skill_name(match.group(1))
-            if name in allowlist and SKILL_KEY_RE.fullmatch(name):
-                return name
-            return None
+            return match.group(1)
     return None
+
+
+def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
+    """The allowlisted skill a user entry's slash command names, or None."""
+    name = _skill_name(_typed_command(message))
+    if name in allowlist and SKILL_KEY_RE.fullmatch(name):
+        return name
+    return None
+
+
+# --- Private per-invocation records (`--events-out`) -----------------------
+# These go ONLY to the private repository. They still get bounds: every free
+# string is capped, and a repository is published as `owner/name` only when it
+# has that shape, so a remote URL carrying a token never reaches the record.
+
+#: Longest kept value of a free string in a private record.
+EVENT_TEXT_CAP = 200
+#: A host name that may name a file in the private store.
+MACHINE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_GITHUB_REMOTE_RE = re.compile(
+    r"(?:https://(?:[^@/\s]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+    r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?")
+
+
+def machine_name() -> str:
+    """This host's name, or `unknown` when it is not shaped like one."""
+    name = socket.gethostname()
+    return name if isinstance(name, str) and MACHINE_RE.fullmatch(name) else "unknown"
+
+
+def _text(value) -> str | None:
+    """A non-empty string, capped; anything else is None."""
+    return value[:EVENT_TEXT_CAP] if isinstance(value, str) and value else None
+
+
+def github_repo(url) -> str | None:
+    """`owner/name` of a github.com remote URL, or None for any other URL."""
+    match = _GITHUB_REMOTE_RE.fullmatch(url) if isinstance(url, str) else None
+    if not match or match.group(2) in (".", ".."):
+        return None
+    return f"{match.group(1)}/{match.group(2)}"
+
+
+def cwd_repo(cwd, cache: dict) -> str | None:
+    """`owner/name` of `cwd`'s `origin` when `cwd` still exists and that
+    remote is on github.com; None otherwise. One `git` call per directory."""
+    if not isinstance(cwd, str) or not cwd:
+        return None
+    if cwd not in cache:
+        repo = None
+        if os.path.isabs(cwd) and os.path.isdir(cwd):
+            try:
+                proc = subprocess.run(
+                    ["git", "-C", cwd, "-c", "core.fsmonitor=false",
+                     "remote", "get-url", "origin"],
+                    capture_output=True, text=True, timeout=10,
+                    stdin=subprocess.DEVNULL)
+                if proc.returncode == 0:
+                    repo = github_repo(proc.stdout.strip())
+            except (OSError, subprocess.SubprocessError):
+                repo = None
+        cache[cwd] = repo
+    return cache[cwd]
+
+
+def _event_ts(when: datetime) -> str:
+    """UTC, milliseconds, `Z`: one shape, so records sort as strings."""
+    return when.astimezone(timezone.utc).isoformat(timespec="milliseconds") \
+        .replace("+00:00", "Z")
+
+
+def _skill_event(entry: dict, when: datetime, event_id, name: str,
+                 cache: dict, machine: str) -> dict:
+    """One private record of a skill invocation. `session_title` is filled
+    in when the whole transcript has been read."""
+    ts = _event_ts(when)
+    session = _text(entry.get("sessionId"))
+    if not _text(event_id):
+        # No tool-use id or entry uuid: an id that is still stable across runs.
+        event_id = hashlib.sha256(f"{session}\n{ts}\n{name}".encode("utf-8")).hexdigest()
+    return {"v": 1, "id": _text(event_id), "ts": ts, "kind": "skill",
+            "name": name[:EVENT_TEXT_CAP], "surface": "local", "machine": machine,
+            "session_id": session, "session_title": None,
+            "cwd_repo": cwd_repo(entry.get("cwd"), cache),
+            "branch": _text(entry.get("gitBranch"))}
 
 
 def _bump(counts: dict, key: str, week: str) -> None:
@@ -278,7 +373,8 @@ def census_counts(projects_dir: Path, now: datetime,
 
 
 def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
-               allowlist: frozenset[str] | None = None) -> tuple[dict, dict]:
+               allowlist: frozenset[str] | None = None,
+               events: list | None = None) -> tuple[dict, dict]:
     """(model counts, skill tally) from ONE walk of the transcripts.
 
     Model counts are `census_counts`'s. The skill tally is
@@ -289,6 +385,10 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
     allowlisted skill. `sessions` counts the distinct transcript files that
     invoked a skill in a week; `sessions_scanned` the transcript files read
     (those the mtime prefilter kept). Same window as the models.
+
+    When `events` is a list (and `allowlist` is given), one private record
+    per counted invocation is appended to it, the name as invoked; its
+    `session_title` is the transcript's last `summary` or `custom-title`.
     """
     wanted = set(window_weeks(now, weeks))
     oldest = window_start(now, weeks)
@@ -307,6 +407,9 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
     projects_dir = Path(projects_dir)
     if not projects_dir.is_dir():
         return counts, tally
+    record = events is not None and allowlist is not None
+    machine = machine_name() if record else ""
+    repos: dict = {}
 
     for transcript in sorted(projects_dir.rglob("*.jsonl")):
         try:
@@ -327,6 +430,8 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
         seen_turns: set[str] = set()
         seen_calls: set[str] = set()
         invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
+        file_events: list[dict] = []
+        title = None
         tally["sessions_scanned"] += 1
         try:
             with open(transcript, encoding="utf-8", errors="replace") as f:
@@ -341,6 +446,10 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                     if not isinstance(entry, dict):
                         continue
                     kind = entry.get("type")
+                    if record and kind in ("summary", "custom-title"):
+                        text = entry.get("summary" if kind == "summary" else "customTitle")
+                        title = _text(text) or title
+                        continue
                     if kind not in ("assistant", "user"):
                         continue
                     message = entry.get("message")
@@ -358,6 +467,12 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                             if typed is not None:
                                 _bump(skills, typed, week)
                                 invoked.add((typed, week))
+                                if record:
+                                    raw = _typed_command(message)
+                                    file_events.append(_skill_event(
+                                        entry, when, entry.get("uuid"),
+                                        raw[1:] if raw.startswith("/") else raw,
+                                        repos, machine))
                         continue
                     if allowlist is not None and isinstance(message.get("content"), list):
                         for item in message["content"]:
@@ -375,6 +490,9 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                             name = skill_key(raw, allowlist)
                             _bump(skills, name, week)
                             invoked.add((name, week))
+                            if record and _text(raw):
+                                file_events.append(_skill_event(
+                                    entry, when, call, raw, repos, machine))
                     key = published_key(message.get("model"))
                     if key is None:
                         continue
@@ -388,6 +506,10 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
             continue
         for name, week in invoked:
             _bump(sessions, name, week)
+        for event in file_events:
+            event["session_title"] = title
+        if record:
+            events.extend(file_events)
     return counts, tally
 
 
@@ -418,6 +540,14 @@ def build_weekly_document(tally: dict, now: datetime,
     return skill_usage.document(rows, now, window_from, tally["sessions_scanned"])
 
 
+def write_events(path: Path, events: list) -> None:
+    """JSON lines, sorted by timestamp (then id). PRIVATE: see the docstring."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for event in sorted(events, key=lambda e: (e["ts"], e["id"])):
+            f.write(json.dumps(event, sort_keys=True) + "\n")
+
+
 def _write_json(path: Path, document: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -434,6 +564,9 @@ def main() -> int:
     parser.add_argument("--weekly-out", type=Path, default=None,
                         help="also write weekly skill invocations here "
                              "(published as usage/weekly-local.json)")
+    parser.add_argument("--events-out", type=Path, default=None,
+                        help="also write one private JSON line per skill "
+                             "invocation here (never published publicly)")
     parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
@@ -469,7 +602,7 @@ def main() -> int:
         print("--now is not an ISO-8601 instant", file=sys.stderr)
         return 2
     allowlist = None
-    if args.weekly_out is not None:
+    if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
             allowlist = skill_allowlist(args.skill_allowlist_root)
@@ -479,7 +612,8 @@ def main() -> int:
             print("skill allowlist could not be read from the evals "
                   "directory; nothing published", file=sys.stderr)
             return 2
-    counts, tally = census_all(args.projects, now, args.weeks, allowlist)
+    events = [] if args.events_out is not None else None
+    counts, tally = census_all(args.projects, now, args.weeks, allowlist, events)
     document = _document(counts, now, args.weeks)
     _write_json(args.out, document)
 
@@ -492,6 +626,9 @@ def main() -> int:
         _write_json(args.weekly_out, build_weekly_document(tally, now, args.weeks))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
+    if args.events_out is not None:
+        write_events(args.events_out, events)
+        status += f"; {len(events)} private events -> {args.events_out}"
     print(status)
     return 0
 
