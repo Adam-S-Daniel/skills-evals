@@ -168,9 +168,14 @@ that a human acts on; once that issue is closed, the skill is not proposed
 again. In `auto` mode the script instead opens a removal pull
 request in adam-agentskills that auto-merges with no human review
 ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
-one at a time. Auto mode is built but not wired: it needs a write credential
-for adam-agentskills, and the workflow exits 2 if the policy is switched to
-`auto` before that exists. Preview either mode with
+one at a time. That branch carries everything the registry's required checks
+read — the layout pin in its `scripts/plugin_layout.json`, the README skill
+table and, when the plugin is locked, a `skills.lock` re-pin — produced by
+the registry's own generators rather than reimplemented here. Auto mode is
+built but not wired: it needs a write credential for adam-agentskills and a
+registry checkout with full history (the lock re-pin reads the commit the
+lock pins, so a shallow one is refused), and the workflow exits 2 if the
+policy is switched to `auto` before that exists. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
 ### Draft mode: new skills from lessons, hooks first
