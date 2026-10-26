@@ -592,8 +592,18 @@ def run_registry_script(checkout: Path, script: str, *args: str) -> None:
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8",
            "HOME": os.environ.get("HOME", "/nonexistent"),
            "PYTHONDONTWRITEBYTECODE": "1"}
-    proc = subprocess.run([sys.executable, script, *args], cwd=str(checkout), env=env,
-                          capture_output=True, text=True, check=False)
+    # Each target is spelled literally at its call so the suite's spawn audit
+    # (run_tests.py, S-B-a-2) can prove it is not the test runner.
+    if script == README_GENERATOR:
+        proc = subprocess.run([sys.executable, "scripts/generate_readme_table.py", *args],
+                              cwd=str(checkout), env=env, capture_output=True, text=True,
+                              check=False)
+    elif script == LOCK_GENERATOR:
+        proc = subprocess.run([sys.executable, "scripts/generate_skills_lock.py", *args],
+                              cwd=str(checkout), env=env, capture_output=True, text=True,
+                              check=False)
+    else:
+        raise RetireError(f"{script} is not a registry script this tool runs")
     if proc.returncode != 0:
         raise RetireError(" ".join([script, *args, "exited", str(proc.returncode)]))
 
