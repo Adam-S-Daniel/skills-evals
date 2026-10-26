@@ -1,6 +1,6 @@
 # Evals programme: handoff and current state
 
-## Current state (2026-10-25)
+## Current state (2026-10-26)
 
 **This section is current. Everything below it is history**, written for the
 September pause, and is not updated any more.
@@ -21,7 +21,23 @@ September pause, and is not updated any more.
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
   Until the 2026-10-26 reset only, the cap and the account stop are both
-  95%.
+  95%. A successful fire with no results holds a full reservation for 2
+  hours, then only the overrun
+  ([#412](https://github.com/Adam-S-Daniel/skills-evals/pull/412)).
+- **Roster:** `claude-sonnet-5-5` and `claude-opus-5-5`, judged by
+  `claude-fable-5-1`. `roster-refresh.yml` refreshes it weekly so it follows
+  the models in use ([#408](https://github.com/Adam-S-Daniel/skills-evals/pull/408),
+  [#409](https://github.com/Adam-S-Daniel/skills-evals/pull/409),
+  [#410](https://github.com/Adam-S-Daniel/skills-evals/pull/410)).
+- **Retirement (#70):** part 1 is merged
+  ([#411](https://github.com/Adam-S-Daniel/skills-evals/pull/411)).
+  `scripts/compute_gates.py` gives each skill and model a verdict from pooled
+  runs, with thresholds in `evals/gate-policy.yml`. Results are not signed:
+  Adam decided on 2026-10-26 that the gate guards against honest mistakes
+  only, since anyone who can write results can also remove a skill. Part 2
+  opens removal PRs that auto-merge with no human review (Adam, 2026-10-25),
+  which needs exception ADRs here, in repo-settings and in adam-agentskills,
+  plus an adversarial round.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in
@@ -29,7 +45,8 @@ September pause, and is not updated any more.
 - **Improvement loop:** a writing-adrs pass with 1 trial on 2026-10-25
   proposed no edit. A pass with 3 trials is running.
 - **Status board:** [#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
-  holds its 2026-10-10 state. Live progress is in #372 and the open PRs.
+  points here; its body below the pointer is the 2026-10-10 state. Live
+  progress is in #372 and the open PRs.
 
 
 **Read this first.** This is the one place that describes the whole
