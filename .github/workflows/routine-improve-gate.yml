@@ -62,8 +62,9 @@ name: Gate routine improvement candidate
 #   otherwise. The mode is evals/improve-policy.yml's, lowered to `draft`
 #   when the skill's plugin runs code (hooks, bin/, settings), so an
 #   auto-merged pull request never needs plugin-runtime-review. If that
-#   branch already exists, or any loop pull request (`eval-improve/*` or
-#   `retire-skill/*`) is open, it does nothing: they write the same files.
+#   branch already exists, or any loop pull request (`eval-improve/*`,
+#   `draft-skill/*` or `retire-skill/*`) is open, it does nothing: they
+#   write the same files.
 #   It never approves, force-pushes or deletes anything, and merges only
 #   through auto-merge, after adam-agentskills' required checks.
 # * #71's gate stays: nothing here is scheduled (ADR 0010 decision 4).
@@ -337,15 +338,15 @@ jobs:
             echo "::notice::${TARGET_BRANCH} already exists in ${TARGET_REPO}; a candidate for ${SKILL} is already waiting, so this one is not opened"
             exit 0
           fi
-          # One loop pull request at a time, improvement or removal: each
-          # writes the bundle version, docs/skill-impact.md and skills.lock,
-          # so a second open one would conflict with the first once it
-          # merges and wait forever.
+          # One loop pull request at a time, improvement, new skill or
+          # removal: each writes the bundle version, docs/skill-impact.md
+          # and skills.lock, so a second open one would conflict with the
+          # first once it merges and wait forever.
           heads="$(gh api --paginate "repos/${TARGET_REPO}/pulls?state=open&per_page=100" \
             --jq '.[].head.ref')" || { echo "::error::could not list ${TARGET_REPO}'s open pull requests"; exit 1; }
           while IFS= read -r head; do
             case "$head" in
-              eval-improve/*|retire-skill/*)
+              eval-improve/*|retire-skill/*|draft-skill/*)
                 echo "::notice::a loop pull request is already open in ${TARGET_REPO}; this candidate waits for it"
                 exit 0 ;;
             esac

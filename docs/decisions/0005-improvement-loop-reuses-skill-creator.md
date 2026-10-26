@@ -625,6 +625,16 @@ no routine run and no real pull request.
   on adam-agentskills cover pushing, opening, labeling and enabling
   auto-merge. The `eval-improve` label must exist there first. While either App
   secret is unset, the job still skips.
+- **The same switch drives the draft-skill gate.** `improve_gate.py
+  merge-mode` prints the same decision (`effective_mode`) for
+  `routine-draft-skill-gate.yml`: in `auto` its skill pull request in
+  adam-agentskills is ready, labeled and auto-merging (draft instead while
+  another loop pull request is open there), and its fixtures pull request
+  here is ready with auto-merge only when the skill's is. The fixtures pull
+  request is opened with the job token, which starts no workflow, so its
+  required checks (`test`, `agent-checks`) start only when someone pushes
+  or runs them; that keeps it behind the skill's, but it does not merge on
+  its own until a credential that starts workflows opens it.
 - **Not changed here.** Decision 4 of
   [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) ties
   any scheduled loop to three human-reviewed loop pull requests; an

@@ -49,6 +49,7 @@ $GITHUB_OUTPUT):
            --run-id ID [--policy FILE]
   pr-body  --staged DIR --run-id ID --sha SHA --branch NAME
            [--mode draft|auto]                          (body on stdout)
+  merge-mode --tree DIR --plugin NAME [--policy FILE]   (mode=, mode_reason=)
   fire-check SKILL [--holdout NAME]                     (no output; exit 0 or 1)
 
 `prepare` builds the whole registry change on a clean checkout of
@@ -62,6 +63,9 @@ registry's required checks and AGENTS.md ask of a skill edit. It prints the
 merge mode: `evals/improve-policy.yml`'s `improve_merge_mode`, or `draft`
 when the skill's plugin runs code (`auto_refusal`), so an auto-merged pull
 request never touches what adam-agentskills' plugin-runtime-review gates.
+`merge-mode` prints the same decision (`effective_mode`) for
+routine-draft-skill-gate.yml, so one policy file switches every loop gate
+that writes adam-agentskills.
 
 `fire-check` is the other end: `routine-eval-fire.yml` runs it before the
 fire bearer exists, so a skill the loop would refuse never starts a routine
@@ -494,6 +498,20 @@ def auto_refusal(tree: Path, plugin: str) -> str | None:
     return None
 
 
+def effective_mode(tree: Path, plugin: str, policy: Path = POLICY) -> dict:
+    """The merge mode for a loop pull request that changes a skill of
+    `plugin` in the registry checkout `tree`: the policy's, lowered to
+    `draft` (with the reason) when the plugin runs code. The one switch for
+    every loop gate that writes adam-agentskills: this gate's `prepare` and
+    routine-draft-skill-gate.yml's `merge-mode` step."""
+    if not NAME_RE.fullmatch(plugin):
+        raise Rejected("plugin is not a plugin name")
+    mode = merge_mode(policy)
+    reason = auto_refusal(tree, plugin) if mode == "auto" else None
+    return {"mode": "draft", "mode_reason": reason} if reason \
+        else {"mode": mode}
+
+
 def _bump_versions(tree: Path, plugin: str) -> tuple[str, str]:
     """Raise the plugin's patch version in both manifests (adam-agentskills
     ADR 0009: `claude plugin update` fires on the version string alone, and
@@ -639,11 +657,8 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
         raise Rejected("the skill changed on the registry's default branch "
                        "since it was measured; measure it again")
 
-    mode, reason = merge_mode(policy), None
-    if mode == "auto":
-        reason = auto_refusal(tree, plugin)
-        if reason:
-            mode = "draft"
+    decided = effective_mode(tree, plugin, policy)
+    mode, reason = decided["mode"], decided.get("mode_reason")
 
     apply(staged, tree, skill_md)
     record = json.loads((staged / "summary.json").read_text(encoding="utf-8"))
@@ -833,6 +848,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--registry-sha", required=True)
     p.add_argument("--run-id", required=True)
     p.add_argument("--policy", type=Path, default=POLICY)
+    p = sub.add_parser("merge-mode")
+    p.add_argument("--tree", required=True, type=Path)
+    p.add_argument("--plugin", required=True)
+    p.add_argument("--policy", type=Path, default=POLICY)
     p = sub.add_parser("pr-body")
     p.add_argument("--staged", required=True, type=Path)
     p.add_argument("--run-id", required=True)
@@ -854,6 +873,8 @@ def main(argv: list[str] | None = None) -> int:
                               args.expect_sha or None, args.out)
         elif args.command == "apply":
             result = apply(args.staged, args.tree, args.skill_md)
+        elif args.command == "merge-mode":
+            result = effective_mode(args.tree, args.plugin, args.policy)
         elif args.command == "prepare":
             result = prepare(args.staged, args.tree, args.skill_md,
                              args.registry_sha, args.run_id, args.policy)

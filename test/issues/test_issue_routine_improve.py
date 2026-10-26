@@ -987,6 +987,30 @@ class PrepareTests(unittest.TestCase):
                 with self.assertRaises(ingest.Rejected):
                     gate.prepare(self.staged, self.tree, *args)
 
+    def test_merge_mode_is_the_same_decision_for_other_gates(self):
+        """`merge-mode` (routine-draft-skill-gate.yml) and `prepare` read one
+        switch through one function."""
+        policy = self.tmp / "p.yml"
+        for text, files, want in (
+                ("improve_merge_mode: auto\n", {}, ["mode=auto"]),
+                ("improve_merge_mode: draft\n", {}, ["mode=draft"]),
+                ("improve_merge_mode: auto\n",
+                 {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"},
+                 ["mode=draft", "mode_reason=the skill's plugin runs code "
+                  "(it has a runtime path)"])):
+            with self.subTest(text=text, files=sorted(files)):
+                policy.write_text(text, encoding="utf-8")
+                self.write(files)
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = gate.main(["merge-mode", "--tree", str(self.tree),
+                                      "--plugin", PLUGIN, "--policy", str(policy)])
+                self.assertEqual((code, out.getvalue().splitlines()), (0, want))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(gate.main(["merge-mode", "--tree", str(self.tree),
+                                        "--plugin", "../x"]), 1)
+
     def test_the_cli_prints_validated_values(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -1213,7 +1237,7 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_one_loop_pull_request_at_a_time(self):
         run = self.open_step()["run"]
-        self.assertIn("eval-improve/*|retire-skill/*)", run)
+        self.assertIn("eval-improve/*|retire-skill/*|draft-skill/*)", run)
         self.assertLess(run.index("retire-skill/*"), run.index("push origin"))
         self.assertLess(run.index("ls-remote --heads"), run.index("push origin"))
 
