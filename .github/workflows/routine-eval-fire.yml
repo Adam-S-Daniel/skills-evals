@@ -102,8 +102,16 @@ name: Fire eval routine
 #   routine-improve-gate.yml validates. A draft run always pushes
 #   `claude/draft-skill-<run id>`, which routine-draft-skill-gate.yml
 #   validates. Nothing here writes to the repository.
+# * `run-name` names the mode and its one text input (a candidate, a
+#   fixture or a skill; the others are empty, as validation requires), so a
+#   successful scaffold run is titled `Fire eval routine: scaffold <key>`.
+#   routine-fixture-supply.yml reads those titles to fire no candidate twice
+#   within scripts/scaffold_real_work.py's REFIRE_AFTER_DAYS. It is a display
+#   title, never a `run:` block.
 #
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
+
+run-name: "Fire eval routine: ${{ inputs.mode }} ${{ inputs.candidate }}${{ inputs.fixture }}${{ inputs.skill }}"
 
 on:
   workflow_dispatch:

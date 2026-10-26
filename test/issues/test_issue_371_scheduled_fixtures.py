@@ -61,7 +61,12 @@ HEADROOM = 1.25
 
 
 def scheduled() -> list[dict]:
-    return yaml.safe_load(SCHEDULE.read_text(encoding="utf-8"))["fixtures"]
+    """The reviewed entries this module's recorded figures cover. An entry
+    `scaffold_real_work.py promote` appended (its readiness note starts
+    "Promoted automatically") is a real-work or other draft promoted after
+    clean runs; test_issue_scheduled_fixtures.py checks those."""
+    return [row for row in yaml.safe_load(SCHEDULE.read_text(encoding="utf-8"))["fixtures"]
+            if not row["readiness"].startswith("Promoted automatically")]
 
 
 def fixtures() -> dict[str, dict]:

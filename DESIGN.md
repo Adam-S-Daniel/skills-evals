@@ -225,8 +225,10 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65) names for a
   fixture no person has reviewed yet. `--arm objective-only` still runs it;
   any agent arm is refused (exit 2) unless `--allow-draft` is passed, which no
-  workflow does, so a draft is never paid for or published until a person
-  removes the key.
+  workflow does, so a draft is never paid for or published until the key is
+  removed: by a person, or by `scaffold_real_work.py promote` once runs of the
+  draft made with `--allow-draft` are ingested (see "The scaffolder and its
+  gate").
 - **`interface_strings:`** (optional) — 1 to 32 nonblank strings of at most
   200 characters: the identifiers and messages a hidden test checks
   verbatim, which the task text must therefore name. A run inside one
@@ -1582,11 +1584,14 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   through git plumbing only and rejects it unless it only adds regular files
   under the one `evals/real-work/<fixture id>/` its name names (an
   executable bit only under `seed/` and `checker/`), within the caps, as a
-  draft with no `setup:` or `env:` that passes `check` without `--run`.
-  Nothing from the branch runs in the gate. Its `draft-pr` job
-  (`pull-requests: write`) then opens a draft pull request labeled
-  `eval-scaffold`, or leaves an open one alone. It never merges, approves
-  or pushes. The label and the repository setting that lets Actions open
+  draft with no `setup:` or `env:` that passes `check` without `--run`,
+  and whose `checker/` files are the merge commit's own, compared with
+  trusted Git bytes. Nothing from the branch runs in the gate. Its
+  `pull-request` job then has the roster App open the pull request ready,
+  labeled `eval-scaffold`, with auto-merge on (Adam, 2026-10-26: no human in
+  the loop; ADR 0003's 2026-10-26 addendum), after a `disarm` job has turned
+  auto-merge off for every push. Without the App token it opens a draft and
+  arms nothing. It never approves or pushes. The label and the repository setting that lets Actions open
   pull requests come from repo-settings (Adam, 2026-10-06: "Yes, via
   repo-settings (Recommended)"), and the routine is fired in scaffold mode
   by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
@@ -1619,12 +1624,19 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   whose body is at or near GitHub's own 65,536-character limit cannot be
   scaffolded this way.
 
-What a reviewer adds before the fixture can leave draft: the fixture's
-entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`
-(that module fails until then, by design) and any `deps:` directory in
-ci.yml's install step, after which `test` runs it red and green. A pull
-request opened with the workflow's own token starts no workflow, so `test`
-first runs when a person pushes to it. The scaffold branches' head ref,
+Nothing outside the fixture's directory needs an edit: ci.yml and
+`scripts/dev_setup.sh` install each fixture's own `deps:`
+(`scaffold_real_work.py deps-dirs`), and `test` scores it red and green on
+the pull request, which the App opened so that its `pull_request` run
+starts with no approval. `CHECKER_BLOBS` in
+`test/issues/test_issue_real_work_fixtures.py` keeps the hand-checked blob
+ids of the first five fixtures; the gate checks every later one. A merged
+fixture is `draft: true` until `scaffold_real_work.py promote`, run daily by
+`routine-fixture-supply.yml`, finds two ingested runs of its committed
+content with both arms and no errored arm, and opens an auto-merging pull
+request that sets `draft: false` and adds it to `evals/scheduled.yml`. The
+same workflow mines the fleet daily and fires scaffold mode for up to three
+new candidates (`scaffold_real_work.py pick`). The scaffold branches' head ref,
 `claude/scaffold-`, is in the miner's bot list, so a merged scaffold is never
 mined back.
 

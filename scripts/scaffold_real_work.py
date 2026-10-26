@@ -97,6 +97,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -132,6 +133,9 @@ from scorers import objective  # noqa: E402
 LEAK_POLICY = "reject"
 #: Owner decision Q1: each red and green scoring finishes within 60 s.
 CAP_SECONDS = 60
+#: The static check's problem for a fixture that is not a draft: the gate
+#: rejects it, and a promoted fixture (PROMOTE below) carries only it.
+NOT_DRAFT_PROBLEM = "fixture.yaml is not `draft: true`"
 #: The label the gate puts on every scaffold pull request (#65's name).
 DRAFT_LABEL = "eval-scaffold"
 
@@ -397,11 +401,14 @@ def check_fleet(repo: str, fleet: tuple[list[str], list[str]]) -> None:
 
 
 def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]],
-                   deployed_context: dict | None = None) -> dict | None:
+                   deployed_context: dict | None = None,
+                   trusted: dict | None = None) -> dict | None:
     """SNAPSHOT_FIELDS for the merged pull request's one closing issue, or None
     when it closes none. The fire workflow and the gate both call this; the
     repository must be in the fleet and be what GitHub calls it (a renamed
-    repository's old name redirects, and its full_name then differs)."""
+    repository's old name redirects, and its full_name then differs). With
+    `deployed_context`, the merge commit read from GitHub is also recorded in
+    `trusted["merge"]` (the gate's checker check reads it)."""
     check_fleet(repo, fleet)
     try:
         pull = miner.gh_json("api", f"repos/{repo}/pulls/{pr}")
@@ -427,6 +434,8 @@ def issue_snapshot(repo: str, pr: int, fleet: tuple[list[str], list[str]],
         if not isinstance(commit, dict) or commit.get("sha") != merge:
             raise ScaffoldError("the candidate commit response does not prove its merge revision")
         gate_context(deployed_context, repo, pull, commit)
+        if trusted is not None:
+            trusted["merge"] = merge
     # The pull request's closing issues, read as the miner reads them (REST
     # only, #322), so the snapshot names the issue the routine's candidate
     # names.
@@ -878,7 +887,7 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
             problems.append("fixture.yaml sets keys a scaffold may not: "
                             + (str(sorted(map(str, unknown))) if detail else f"{len(unknown)} key(s)"))
         if fixture.get("draft") is not True:
-            problems.append("fixture.yaml is not `draft: true`")
+            problems.append(NOT_DRAFT_PROBLEM)
         if fixture.get("subject") != run_eval.SUBJECT_ANY:
             problems.append("fixture.yaml is not `subject: any`")
         if fixture.get("strip_agent_context") is not True:
@@ -1076,12 +1085,20 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
         raise ingest.Rejected("fixture.yaml's context metadata does not load") from None
     if not isinstance(fixture.get("context"), dict):
         raise ingest.Rejected("fixture.yaml has no structured context metadata")
+    trusted: dict = {}
     try:
-        expected = issue_snapshot(repo, pr, fleet, fixture["context"])
+        expected = issue_snapshot(repo, pr, fleet, fixture["context"], trusted)
     except ScaffoldError as error:
         raise ingest.Rejected(f"the issue snapshot could not be recomputed: {error}") from None
-    with trusted_context_repositories(fixture["context"], repositories) as mappings:
+    with trusted_context_repositories(fixture["context"], repositories,
+                                      merge=trusted["merge"]) as mappings:
         gate_context_bytes(fixture["context"], mappings)
+        _gate_snapshot_bytes(fixture_dir, fixture, expected, named)
+        gate_checker(fixture_dir, repo, trusted["merge"], mappings)
+
+
+def _gate_snapshot_bytes(fixture_dir: Path, fixture: dict, expected: dict | None,
+                         named: int | None) -> None:
     path = fixture_dir / SNAPSHOT_FILE
     if expected is None:
         if named is not None or os.path.lexists(path) or answer_leak.SNAPSHOT_KEY in fixture:
@@ -1104,13 +1121,45 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
             raise ingest.Rejected(f"`{key}:` differs from the one recomputed from GitHub")
 
 
+def gate_checker(fixture_dir: Path, repository: str, merge: str,
+                 repositories: dict[str, Path]) -> None:
+    """Require every file under checker/ to be the merge commit's file at the
+    same path, byte for byte: the check a reviewer used to make by hand with
+    `git ls-tree <merge> <path>` (test_issue_real_work_fixtures.py's
+    CHECKER_BLOBS), made here from trusted Git bytes so no person has to.
+    Which files were chosen is still the routine's call; that they are the
+    pull request's own is not."""
+    clone = repositories.get(repository)
+    if clone is None:
+        raise ingest.Rejected("the trusted merge commit is not available")
+    checker = fixture_dir / CHECKER_DIR
+    files = sorted(p for p in checker.rglob("*") if p.is_file())
+    if not files:
+        raise ingest.Rejected("checker/ holds no file")
+    for path in files:
+        rel = path.relative_to(checker).as_posix()
+        try:
+            entry = _tree_entry(clone, merge, rel)
+        except ScaffoldError:
+            raise ingest.Rejected("the trusted merge commit could not be read") from None
+        if entry is None or entry[1] != git_blob_id(path.read_bytes()):
+            raise ingest.Rejected(f"checker/{rel!r} is not the merge commit's file at that path")
+
+
+def git_blob_id(data: bytes) -> str:
+    """The id git gives a blob of `data`."""
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
 @contextlib.contextmanager
-def trusted_context_repositories(metadata: dict, repositories: dict[str, Path] | None = None):
+def trusted_context_repositories(metadata: dict, repositories: dict[str, Path] | None = None,
+                                 merge: str | None = None):
     """Acquire public trusted objects without checkout, hooks, or credentials.
 
     Injected local repositories support deterministic tests. Production reads
     only fixed github.com URLs, validates lock identities before fetching, and
     creates bare temporary stores with no remote or inherited push path.
+    `merge`, a full commit id, is fetched from the candidate repository too.
     """
     if repositories is not None:
         yield repositories
@@ -1167,6 +1216,10 @@ def trusted_context_repositories(metadata: dict, repositories: dict[str, Path] |
 
         try:
             fetch(metadata["repository"], metadata["revision"])
+            if merge is not None:
+                if not SHA_RE.fullmatch(merge):
+                    raise ingest.Rejected("the trusted merge revision is malformed")
+                fetch(metadata["repository"], merge)
             fetch(context.GUIDANCE_REPOSITORY, "refs/heads/main", "refs/remotes/origin/main")
             if metadata["guidance_revision"] is not None:
                 consumer = context._Git(metadata["repository"], mappings)
@@ -1398,6 +1451,314 @@ def scaffold_guidance(guidance_dir: Path, section_id: str | None,
 
 
 # ---------------------------------------------------------------------------
+# Fixture supply (routine-fixture-supply.yml; Adam, 2026-10-26: the closed
+# loop has no human in it). DEPS-DIRS derives the install lists the reviewer
+# used to edit by hand, PICK chooses which miner candidates to scaffold next,
+# and PROMOTE moves a draft that has run cleanly onto the weekly schedule.
+
+#: The routine runs at most this many sessions at once; a scaffold fire is
+#: counted as in flight for the allowance guard's PENDING_FULL_HOLD.
+MAX_IN_FLIGHT = 3
+#: A scaffold fire of a candidate within this many days blocks another: one
+#: the routine refused pushes no branch, so without it the same candidate
+#: would be fired every day.
+REFIRE_AFTER_DAYS = 30
+#: The fire workflow's run-name in scaffold mode (routine-eval-fire.yml).
+FIRE_TITLE_PREFIX = "Fire eval routine: scaffold "
+#: A miner `touches` class and the skill it is evidence for. A candidate's
+#: subject skills rank it; one with none ranks after every one with some.
+SUBJECT_BY_TOUCH = {"adr": "writing-adrs", "workflows": "workflow-path-audit",
+                    "shell": "review-bash-ci-reliability", "e2e-specs": "browser-testing"}
+#: Runs a draft needs before promotion: ingested, both arms, no error.
+MIN_PROMOTION_RUNS = 2
+#: Path segments never promoted (Adam, 2026-10-26: skip onboarding and
+#: browser-testing).
+NEVER_PROMOTE = frozenset({"onboarding", "browser-testing"})
+#: How a promoted schedule entry's readiness note starts; the scheduled
+#: fixtures' tests tell a promoted entry from a reviewed one by it.
+PROMOTED_NOTE = "Promoted automatically"
+DEPS_MANAGERS = ("npm", "bundler")
+
+
+def deps_dirs(manager: str, root: Path | None = None) -> list[str]:
+    """`<id>/seed[/<dir>]` for every `deps:` entry of `manager` in the
+    real-work fixtures under `root`, sorted: what ci.yml's install steps and
+    scripts/dev_setup.sh install, derived so a new fixture needs no edit
+    outside its own directory."""
+    if manager not in DEPS_MANAGERS:
+        raise ScaffoldError(f"--manager must be one of {', '.join(DEPS_MANAGERS)}")
+    root = Path(root) if root is not None else REPO_ROOT / REAL_WORK_ROOT
+    out = []
+    for path in sorted(root.glob(f"*/{FIXTURE_FILE}")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            raise ScaffoldError(f"{path.parent.name}/{FIXTURE_FILE} does not load") from None
+        entries = doc.get("deps") if isinstance(doc, dict) else None
+        for entry in entries or ():
+            if not isinstance(entry, dict) or entry.get("manager") != manager:
+                continue
+            rel = entry.get("dir")
+            if not isinstance(rel, str) or (rel != "." and not _safe_rel(rel)):
+                raise ScaffoldError(f"{path.parent.name}: a `deps:` dir is not a plain relative path")
+            out.append(f"{path.parent.name}/{SEED_DIR}" + ("" if rel == "." else f"/{rel}"))
+    return sorted(out)
+
+
+def _fixture_counts(evals: Path) -> dict[str, int]:
+    """Fixtures per skill directory under `evals` (flat or nested)."""
+    counts = {}
+    for path in evals.iterdir() if evals.is_dir() else ():
+        if path.is_dir():
+            n = int((path / FIXTURE_FILE).is_file()) + len(list(path.glob(f"*/{FIXTURE_FILE}")))
+            if n:
+                counts[path.name] = n
+    return counts
+
+
+def fired_candidates(titles: list[str]) -> set[str]:
+    """The miner keys named by successful scaffold fires' run titles."""
+    keys = set()
+    for title in titles:
+        if title.startswith(FIRE_TITLE_PREFIX):
+            key = title[len(FIRE_TITLE_PREFIX):]
+            if KEY_RE.fullmatch(key):
+                keys.add(key)
+    return keys
+
+
+def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], limit: int,
+         usage: Mapping[str, int] | None = None) -> list[str]:
+    """Up to `limit` miner keys to scaffold, best first.
+
+    A candidate is skipped when the routine would refuse it or has it already:
+    a key that does not parse or names a fixture id out of bounds, a body that
+    quotes the diff (the miner's answer_leak flag; LEAK_POLICY rejects it at
+    build), several closing issues (the fire refuses them), a truncated file
+    list, an existing `evals/real-work/<id>/`, an existing
+    `claude/scaffold-<id>` branch, or a fire within REFIRE_AFTER_DAYS. The
+    rest rank by their subject skills (SUBJECT_BY_TOUCH): most used first
+    (`usage`, a count per skill; none is known today, so every count is 0),
+    then fewest existing fixtures for that skill, then newest merge, then key.
+    """
+    counts = _fixture_counts(evals)
+    usage = usage or {}
+    ranked = []
+    for row in candidates:
+        if not isinstance(row, dict) or not isinstance(row.get("key"), str):
+            continue
+        key = row["key"]
+        match = KEY_RE.fullmatch(key)
+        if not match:
+            continue
+        fixture_id = f"{match['name']}-{int(match['pr'])}"
+        if not FIXTURE_ID_RE.fullmatch(fixture_id):
+            continue
+        leak = row.get("answer_leak")
+        if not isinstance(leak, dict) or leak.get("flag") is not False:
+            continue
+        issues = row.get("closing_issues")
+        if not isinstance(issues, list) or len(issues) > 1 or row.get("files_truncated"):
+            continue
+        if (evals / "real-work" / fixture_id).exists() \
+                or f"claude/scaffold-{fixture_id}" in branches or key in fired:
+            continue
+        touches = row.get("touches") if isinstance(row.get("touches"), list) else []
+        subjects = sorted({SUBJECT_BY_TOUCH[t] for t in touches if t in SUBJECT_BY_TOUCH})
+        if subjects:
+            rank = min((-usage.get(skill, 0), counts.get(skill, 0)) for skill in subjects)
+            rank = (0, *rank)
+        else:
+            rank = (1, 0, 0)
+        merged = row.get("merged_at") if isinstance(row.get("merged_at"), str) else ""
+        ranked.append((rank, merged, key))
+    # Stable sorts, last key first: key, then newest merge, then rank.
+    ranked.sort(key=lambda r: r[2])
+    ranked.sort(key=lambda r: r[1], reverse=True)
+    ranked.sort(key=lambda r: r[0])
+    return [key for _, _, key in ranked[:max(0, limit)]]
+
+
+def _role(summary: dict, arm: str) -> str | None:
+    role = summary.get("role") if isinstance(summary.get("role"), str) else None
+    return role or run_eval._ROLES.get(arm)
+
+
+def _clean_arm(summary) -> bool:
+    """An arm summary that ran and errored nowhere: no `error`, `errors` 0,
+    and at least one trial."""
+    return (isinstance(summary, dict) and not summary.get("error")
+            and summary.get("errors") == 0 and isinstance(summary.get("n"), int)
+            and not isinstance(summary.get("n"), bool) and summary["n"] >= 1)
+
+
+def clean_runs(tree: Path, fixture_dir: Path, evals: Path, as_of: str) -> int:
+    """How many ingested runs of the fixture at `fixture_dir` (as committed,
+    by run_eval.fixture_digest) on a results tree laid out like
+    persistent/eval-results have both a with and a without arm, and no arm
+    with an error. Runs stamped after `as_of` are not read. The tree is
+    data: read with compute_gates' bounded reader, never executed."""
+    import compute_gates  # noqa: PLC0415 - only promote needs it
+
+    digest = run_eval.fixture_digest(fixture_dir)
+    if digest is None:
+        return 0
+    rel = fixture_dir.relative_to(evals)
+    name = fixture_dir.name
+    fixture = run_eval.load_fixture(fixture_dir)
+    agnostic = fixture.get("subject") == run_eval.SUBJECT_ANY
+
+    def wanted(key, nested):
+        # Results are named as run_eval names them: a subject-agnostic
+        # fixture after its own directory (or under a guidance section), a
+        # skill's flat fixture after the skill, a nested one after both.
+        if agnostic:
+            return (key == name and nested is None) or (
+                key.startswith("guidance/") and nested == name)
+        if len(rel.parts) == 1:
+            return key == name and nested is None
+        return key == rel.parts[0] and nested == name
+    runs: dict = {}
+    for prefix in compute_gates.PREFIXES:
+        root = tree / prefix
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("summary.json")):
+            parts = path.relative_to(root).parts
+            head, parts = (parts[:1], parts[1:]) if prefix == "routine-results" else ((), parts)
+            try:
+                found = ingest.parse_result_path("/".join(parts))
+            except ingest.Rejected:
+                continue
+            if found["trial"] is not None or found["arm"] is None \
+                    or not wanted(found["key"], found["fixture"]) or found["timestamp"] > as_of:
+                continue
+            summary = compute_gates._read(path)
+            run = runs.setdefault((prefix, *head, found["key"], found["timestamp"],
+                                   found["fixture"]), {"roles": set(), "clean": True})
+            if not isinstance(summary, dict) or summary.get("fixture_digest") != digest:
+                run["clean"] = False
+                continue
+            run["roles"].add(_role(summary, found["arm"]))
+            run["clean"] = run["clean"] and _clean_arm(summary)
+    return sum(1 for run in runs.values() if run["clean"] and {"with", "without"} <= run["roles"])
+
+
+def promotable(root: Path, tree: Path, as_of: str) -> list[tuple[str, int]]:
+    """(fixture path, clean runs) for every committed `draft: true` fixture
+    under `root`/evals with at least MIN_PROMOTION_RUNS clean runs, outside
+    NEVER_PROMOTE. Its red/green check passed when it was scaffolded, and
+    `test` scores it red and green again on every pull request."""
+    import plan_scheduled_evals as planner  # noqa: PLC0415
+
+    evals = root / "evals"
+    out = []
+    for path in planner.committed_fixtures(root):
+        parts = Path(path).parts
+        if NEVER_PROMOTE & set(parts) or SEED_DIR in parts[1:]:
+            continue
+        directory = root / path
+        try:
+            doc = yaml.safe_load((directory / FIXTURE_FILE).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        if not isinstance(doc, dict) or doc.get("draft") is not True:
+            continue
+        count = clean_runs(tree, directory, evals, as_of)
+        if count >= MIN_PROMOTION_RUNS:
+            out.append((path, count))
+    return out
+
+
+DRAFT_LINE_RE = re.compile(r"^draft: true$", re.M)
+
+
+def promote(root: Path, promotions: list[tuple[str, int]], as_of: str) -> list[str]:
+    """Flip each fixture's `draft: true` to `draft: false` and append it to
+    evals/scheduled.yml (unless listed there), checking each result loads
+    back with nothing else changed. Returns the paths promoted."""
+    import plan_scheduled_evals as planner  # noqa: PLC0415
+
+    schedule = root / "evals" / "scheduled.yml"
+    committed = planner.committed_fixtures(root)
+    listed = planner.scheduled_fixtures(schedule, committed)
+    lines = []
+    date = f"{as_of[:4]}-{as_of[4:6]}-{as_of[6:8]}"
+    for path, count in promotions:
+        target = root / path / FIXTURE_FILE
+        text = target.read_text(encoding="utf-8")
+        if len(DRAFT_LINE_RE.findall(text)) != 1:
+            raise ScaffoldError(f"{path}: `draft: true` is not one top-level line")
+        before = yaml.safe_load(text)
+        flipped = DRAFT_LINE_RE.sub("draft: false", text)
+        after = yaml.safe_load(flipped)
+        if after != {**before, "draft": False}:
+            raise ScaffoldError(f"{path}: flipping `draft:` changed something else")
+        target.write_text(flipped, encoding="utf-8")
+        if path not in listed:
+            note = (f"{PROMOTED_NOTE} on {date} by scaffold_real_work.py promote: {count} "
+                    "ingested runs with both arms and no errored arm; red/green checked "
+                    "when scaffolded and by test.")
+            lines.append(f"  - path: {path}\n    readiness: {json.dumps(note)}\n")
+    if lines:
+        text = schedule.read_text(encoding="utf-8")
+        schedule.write_text(text + ("" if text.endswith("\n") else "\n") + "".join(lines),
+                            encoding="utf-8")
+    planner.scheduled_fixtures(schedule, committed)
+    return [path for path, _ in promotions]
+
+
+def allowance_state(tree: Path, now):
+    """The allowance guard's accounting for `now` (scripts/allowance_guard.py):
+    its one network read, the successful fires of the last seven days and of
+    the last PENDING_FULL_HOLD, isolated here so tests pass the state in."""
+    import allowance_guard  # noqa: PLC0415
+
+    limits = allowance_guard.budget_file.load_budget(None)
+    return allowance_guard.account(tree, limits, now, allowance_guard._live_fires(now))
+
+
+def _read_lines(path: Path) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        raise ScaffoldError(f"{path.name} could not be read") from None
+
+
+def supply_plan(candidates: Path, branches: Path, fired: Path, tree: Path, limit: int,
+                now=None) -> dict:
+    """PICK's whole plan: the picks cut to what the routine and the weekly
+    allowance allow now, as a fire matrix. Fails closed: an allowance that
+    cannot be read plans nothing (allowance_guard.GuardError)."""
+    import allowance_guard  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    if limit < 1:
+        raise ScaffoldError("--max must be at least 1")
+    try:
+        doc = json.loads(candidates.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise ScaffoldError("the candidates file does not load") from None
+    rows = doc.get("candidates") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise ScaffoldError("the candidates file has no candidates list")
+    names = set()
+    for line in _read_lines(branches):
+        ref = line.split("\t", 1)[-1].strip()
+        if ref.startswith("refs/heads/"):
+            names.add(ref[len("refs/heads/"):])
+    picks = pick(rows, REPO_ROOT / "evals", names, fired_candidates(_read_lines(fired)), limit)
+    try:
+        state = allowance_state(tree, now or datetime.now(timezone.utc))
+    except (allowance_guard.GuardError, allowance_guard.budget_file.BudgetError) as error:
+        raise ScaffoldError(f"allowance guard: {error}; planning no fire") from None
+    room = min(allowance_guard.fits(state), MAX_IN_FLIGHT - state["recent"])
+    picks = picks[:max(0, room)]
+    return {"include": [{"candidate": key, "slot": slot} for slot, key in enumerate(picks)],
+            "line": allowance_guard.describe(state)}
+
+
+# ---------------------------------------------------------------------------
 # CLI.
 
 def main(argv: list[str] | None = None) -> int:
@@ -1435,6 +1796,19 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--out", required=True, type=Path)
     g.add_argument("--registry", type=Path, required=True)
     g.add_argument("--sync-workflow", type=Path, required=True)
+    d = sub.add_parser("deps-dirs", help="list the real-work fixtures' deps: directories")
+    d.add_argument("--manager", required=True)
+    d.add_argument("--root", type=Path, default=None)
+    pk = sub.add_parser("pick", help="plan the next scaffold fires")
+    pk.add_argument("--candidates", type=Path, required=True)
+    pk.add_argument("--branches", type=Path, required=True)
+    pk.add_argument("--fired", type=Path, required=True)
+    pk.add_argument("--results-tree", type=Path, required=True)
+    pk.add_argument("--max", type=int, default=MAX_IN_FLIGHT)
+    pr = sub.add_parser("promote", help="promote drafts that ran cleanly")
+    pr.add_argument("--results-tree", type=Path, required=True)
+    pr.add_argument("--as-of", required=True)
+    pr.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     if args.command in ("resolve", "gate"):
         try:
@@ -1456,6 +1830,30 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{key}={value}")
         return 0
     try:
+        if args.command == "deps-dirs":
+            for line in deps_dirs(args.manager, args.root):
+                print(line)
+            return 0
+        if args.command == "pick":
+            plan = supply_plan(args.candidates, args.branches, args.fired,
+                               args.results_tree, args.max)
+            # Numbers only on stderr; stdout is the workflow's $GITHUB_OUTPUT.
+            print(plan.pop("line"), file=sys.stderr)
+            print("matrix=" + json.dumps(plan, separators=(",", ":")))
+            print(f"count={len(plan['include'])}")
+            return 0
+        if args.command == "promote":
+            import compute_gates  # noqa: PLC0415
+            try:
+                as_of = compute_gates.parse_as_of(args.as_of)
+            except ValueError:
+                raise ScaffoldError("--as-of is not a time") from None
+            found = promotable(REPO_ROOT, args.results_tree, as_of)
+            if args.apply:
+                promote(REPO_ROOT, found, as_of)
+            print(f"count={len(found)}")
+            print("fixtures=" + " ".join(path for path, _ in found))
+            return 0
         if args.command == "guidance":
             created, skipped = scaffold_guidance(args.guidance, args.section_id, args.dest)
             print(json.dumps({"created": created, "skipped": skipped}))

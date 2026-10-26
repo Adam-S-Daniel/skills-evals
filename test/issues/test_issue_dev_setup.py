@@ -38,6 +38,28 @@ def _strip_prefix(path: str) -> str:
     return path[len(CI_PREFIX):] if path.startswith(CI_PREFIX) else path
 
 
+#: How ci.yml's real-work steps read their list: the fixtures' own `deps:`.
+DERIVED = re.compile(r'dirs="\$\(python3 \.\./\.\./scripts/scaffold_real_work\.py deps-dirs '
+                     r'--manager (npm|bundler)\)"')
+
+
+def _loop_dirs(run: str) -> list[str] | None:
+    """The directories one ci.yml step's `for dir in ...; do` loop installs,
+    with a derived `$dirs` list expanded the way the step expands it."""
+    loop = re.search(r"for dir in ([^;]+);\s*do", run)
+    if not loop:
+        return None
+    words = loop.group(1).split()
+    if words == ["$dirs"]:
+        derived = DERIVED.search(run)
+        assert derived, "a $dirs loop must read scaffold_real_work.py deps-dirs"
+        listed = subprocess.run(["python3", str(ROOT / "scripts" / "scaffold_real_work.py"),
+                                 "deps-dirs", "--manager", derived.group(1)],
+                                capture_output=True, text=True, check=True).stdout
+        return listed.split()
+    return words
+
+
 class DevSetupMatchesCiTests(unittest.TestCase):
     def test_pip_pins_equal_ci(self):
         runs = [s["run"].strip() for s in _test_steps()
@@ -56,9 +78,9 @@ class DevSetupMatchesCiTests(unittest.TestCase):
             if not isinstance(run, str) or "npm ci" not in run:
                 continue
             base = step["working-directory"]
-            loop = re.search(r"for dir in ([^;]+);\s*do", run)
-            if loop:
-                ci_dirs += [f"{base}/{d}" for d in loop.group(1).split()]
+            loop = _loop_dirs(run)
+            if loop is not None:
+                ci_dirs += [f"{base}/{d}" for d in loop]
             else:
                 ci_dirs.append(base)
         ci_dirs = [_strip_prefix(d) for d in ci_dirs]
@@ -78,9 +100,9 @@ class DevSetupMatchesCiTests(unittest.TestCase):
             run = step.get("run")
             if not isinstance(run, str) or "bundle install" not in run:
                 continue
-            loop = re.search(r"for dir in ([^;]+);\s*do", run)
+            loop = _loop_dirs(run)
             self.assertIsNotNone(loop, run)
-            ci_dirs += [f"{step['working-directory']}/{d}" for d in loop.group(1).split()]
+            ci_dirs += [f"{step['working-directory']}/{d}" for d in loop]
         ci_dirs = [_strip_prefix(d) for d in ci_dirs]
         self.assertTrue(ci_dirs)
         result = _run_script("--print-bundler-dirs")

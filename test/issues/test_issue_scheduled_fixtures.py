@@ -23,13 +23,36 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
-EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
+REVIEWED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
             "evals/writing-adrs/bootstrap",
             "evals/disarm-inherited-reach",
             "evals/windows-elevation-from-wsl"]
+#: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
+#: module imports no harness code.
+PROMOTED_NOTE = "Promoted automatically"
+
+
+def promoted_entries():
+    """Entries `scaffold_real_work.py promote` appended after the reviewed
+    ones: each carries its readiness note and names a `draft: false`
+    fixture. Anything else after the reviewed list is not one."""
+    rows = yaml.safe_load((ROOT / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+    paths = []
+    for row in rows[len(REVIEWED):]:
+        fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
+        if not row["readiness"].startswith(PROMOTED_NOTE) or fixture.get("draft") is not False:
+            raise AssertionError(f"{row['path']}: scheduled after the reviewed fixtures, "
+                                 "but not promoted by scaffold_real_work.py promote")
+        paths.append(row["path"])
+    return paths
+
+
+#: The schedule: the reviewed fixtures, then any promoted ones (Adam,
+#: 2026-10-26: fixtures are promoted with no human in the loop).
+EXPECTED = REVIEWED + promoted_entries()
 
 
 def module(name, path):

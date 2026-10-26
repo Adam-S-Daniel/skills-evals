@@ -216,6 +216,47 @@ skips triage and drafts a skill. The routine's saved prompt for this mode
 is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
 approves changes to it.
 
+### Fixture supply (#65)
+
+Fixtures are the improvement queue, so they are made and promoted with no
+person in the loop (Adam, 2026-10-26; ADR
+[0003](decisions/0003-roster-merges-automatically.md)'s 2026-10-26 addendum).
+`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC:
+
+1. **Scaffold.** It mines the fleet's newest merged pull requests
+   (`scripts/mine_real_work.py`, REST only), and
+   `scripts/scaffold_real_work.py pick` drops every candidate the routine
+   would refuse or already has: a body that quotes the diff, several closing
+   issues, an existing `evals/real-work/<id>/` or `claude/scaffold-<id>`
+   branch, or a successful scaffold fire in the last 30 days (read from the
+   fire workflow's run titles). The rest rank by the skill their changed
+   files are evidence for (an ADR is writing-adrs, a workflow
+   workflow-path-audit, a shell script review-bash-ci-reliability, an e2e
+   spec browser-testing), fewest existing fixtures first. At most three
+   are fired in scaffold mode, a minute apart, and fewer when fires of the
+   last two hours are still counted as running or the allowance guard has
+   less room.
+2. **Merge.** The routine pushes `claude/scaffold-<id>`;
+   `routine-scaffold-gate.yml` validates it (now also that every checker
+   file is the merge commit's own) and the roster App opens the pull request
+   with auto-merge on. `test` scores the fixture red on the seed and green
+   with the fix; ci.yml installs its `deps:` from the fixture itself. Any
+   later push turns auto-merge off until it passes the gate again.
+3. **Promote.** A merged fixture is `draft: true`. `scaffold_real_work.py
+   promote` finds every committed draft (none under an `onboarding` or
+   `browser-testing` directory) with at least two ingested runs of its
+   current content where both arms ran and none errored, sets `draft: false`,
+   adds it to `evals/scheduled.yml` with a readiness note starting
+   "Promoted automatically", and the App opens that change as one
+   auto-merging pull request; an open one holds the slot.
+
+Known gaps: no workflow runs a draft's agent arms (`--allow-draft`), and a
+real-work fixture needs a subject (`--skill`) that the fire's eval mode does
+not send, so no draft has ingested runs yet and promotion has nothing to
+promote. No per-skill usage count exists, so the ranking uses fixture
+counts alone. Real-work fixtures (`subject: any`) are not counted by
+improve's fixture minimum.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected

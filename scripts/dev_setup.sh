@@ -19,19 +19,20 @@ PIP_PINS=(
   pytest-xdist==3.8.0
 )
 
-NPM_DIRS=(
-  evals/browser-testing/seed
-  evals/real-work/_agent-guidance-196/seed
-  evals/real-work/cms-platform-221/seed/e2e
-  evals/real-work/cms-platform-693/seed/e2e
-  evals/real-work/cms-platform-761/seed/e2e
-)
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Gemfile directories installed frozen into vendor/bundle beside the
-# Gemfile, as ci.yml's "Install real-work fixture gems" step does.
-BUNDLER_DIRS=(
-  evals/real-work/cms-platform-760/seed/e2e/fixture-site
-)
+# The real-work fixtures' directories come from their own `deps:` entries,
+# as ci.yml's install steps read them (scaffold_real_work.py deps-dirs, which
+# needs PyYAML). Gemfile directories are installed frozen into vendor/bundle
+# beside the Gemfile, as ci.yml's "Install real-work fixture gems" step does.
+real_work_dirs() {
+  local listed
+  listed="$(python3 "$REPO_ROOT/scripts/scaffold_real_work.py" deps-dirs --manager "$1")" || return 1
+  local dir
+  for dir in $listed; do
+    printf 'evals/real-work/%s\n' "$dir"
+  done
+}
 
 USAGE="usage: dev_setup.sh [--print-pins | --print-npm-dirs | --print-bundler-dirs]"
 if [ "$#" -gt 1 ]; then
@@ -41,24 +42,24 @@ fi
 if [ "$#" -eq 1 ]; then
   case "$1" in
     --print-pins) printf '%s\n' "${PIP_PINS[@]}"; exit 0 ;;
-    --print-npm-dirs) printf '%s\n' "${NPM_DIRS[@]}"; exit 0 ;;
-    --print-bundler-dirs) printf '%s\n' "${BUNDLER_DIRS[@]}"; exit 0 ;;
+    --print-npm-dirs) echo evals/browser-testing/seed; real_work_dirs npm; exit 0 ;;
+    --print-bundler-dirs) real_work_dirs bundler; exit 0 ;;
     *) echo "$USAGE" >&2; exit 2 ;;
   esac
 fi
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # A PEP 668 "externally managed" Python refuses the first form.
 if ! python3 -m pip install "${PIP_PINS[@]}"; then
   python3 -m pip install --break-system-packages "${PIP_PINS[@]}"
 fi
 
-for dir in "${NPM_DIRS[@]}"; do
+npm_dirs="$(real_work_dirs npm)"
+for dir in evals/browser-testing/seed $npm_dirs; do
   (cd "$REPO_ROOT/$dir" && npm ci --ignore-scripts --no-audit --no-fund)
 done
 
-for dir in "${BUNDLER_DIRS[@]}"; do
+bundler_dirs="$(real_work_dirs bundler)"
+for dir in $bundler_dirs; do
   (cd "$REPO_ROOT/$dir" && BUNDLE_PATH=vendor/bundle BUNDLE_FROZEN=true BUNDLE_DISABLE_SHARED_GEMS=true BUNDLE_APP_CONFIG="$(mktemp -d)" BUNDLE_SILENCE_ROOT_WARNING=true bundle install --quiet)
 done
 

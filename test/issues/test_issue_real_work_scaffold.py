@@ -868,7 +868,13 @@ class CommittedFixturesTests(unittest.TestCase):
         self.assertGreaterEqual(len(names), 3)
         for name in names:
             with self.subTest(fixture=name):
-                self.assertEqual(scaffold.static_problems(REAL_WORK / name, detail=True), ([], []))
+                # A promoted fixture (`scaffold_real_work.py promote`) is the
+                # one shape the scaffold never writes: `draft: false`.
+                promoted = yaml.safe_load((REAL_WORK / name / "fixture.yaml").read_text(
+                    encoding="utf-8")).get("draft") is False
+                wanted = [scaffold.NOT_DRAFT_PROBLEM] if promoted else []
+                self.assertEqual(scaffold.static_problems(REAL_WORK / name, detail=True),
+                                 (wanted, []))
 
     def test_the_miner_never_mines_a_scaffold_branch(self):
         self.assertTrue(mine_real_work.is_bot({"head": {"ref": "claude/scaffold-toy-7"}}))
@@ -898,7 +904,8 @@ class _GateCase(_BuildCase):
         self.context_repositories = mappings
         original = scaffold.trusted_context_repositories
         injection = mock.patch.object(scaffold, "trusted_context_repositories",
-                                      side_effect=lambda metadata, supplied=None: original(metadata, supplied or mappings))
+                                      side_effect=lambda metadata, supplied=None, **kwargs: original(
+                                          metadata, supplied or mappings, **kwargs))
         injection.start()
         self.addCleanup(injection.stop)
         self.fixture = self.build()
@@ -978,6 +985,19 @@ class GateTests(_GateCase):
         with self.assertRaisesRegex(ingest.Rejected, "not under 'evals/real-work/toy-8/'"):
             scaffold.gate(str(self.repo), "main", self.BRANCH, "claude/scaffold-toy-8", None,
                           self.tmp / "out", fleet=self.fleet)
+
+    def test_rejects_a_checker_that_is_not_the_merge_commits_file(self):
+        # The reviewer's CHECKER_BLOBS check, now the gate's: one changed
+        # byte in the overlay, or a file the merge commit does not have.
+        def weaken(where):
+            path = where / "checker" / "tests" / "test_tool.py"
+            path.write_text(path.read_text().replace("add(2, 3), 5", "add(2, 3), -1"))
+        self.assertRejected(r"checker/'tests/test_tool.py' is not the merge commit's file",
+                            weaken)
+
+    def test_rejects_a_checker_file_the_merge_commit_lacks(self):
+        self.assertRejected(r"checker/'tests/extra.py' is not the merge commit's file",
+                            lambda w: self.write(w / "checker", {"tests/extra.py": "x = 1\n"}))
 
     def test_rejects_a_symlink(self):
         self.assertRejected("mode 120000", lambda w: (w / "seed" / "ln").symlink_to("tool.py"))
@@ -1391,11 +1411,12 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(on["workflow_run"]["branches"], ["claude/scaffold-*"])
         self.assertEqual(set(on["workflow_dispatch"]["inputs"]), {"branch"})
 
-    def test_signal_is_a_filtered_push_with_no_reach(self):
+    def test_signal_is_an_unfiltered_push_with_no_reach(self):
+        # No path filter: a push outside evals/real-work/ must still reach
+        # the gate's disarm job, or it could ride an armed pull request.
         on = triggers(self.signal)
         self.assertEqual(set(on), {"push"})
-        self.assertEqual(on["push"]["branches"], ["claude/scaffold-*"])
-        self.assertEqual(on["push"]["paths"], [f"{scaffold.REAL_WORK_ROOT}/**"])
+        self.assertEqual(on["push"], {"branches": ["claude/scaffold-*"]})
         self.assertEqual(self.signal["permissions"], {})
         for job in self.signal["jobs"].values():
             self.assertNotIn("permissions", job)
@@ -1404,18 +1425,46 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_permissions_are_split_and_minimal(self):
         self.assertEqual(self.gate["permissions"], {})
-        self.assertEqual(set(self.gate["jobs"]), {"validate", "draft-pr"})
+        self.assertEqual(set(self.gate["jobs"]), {"validate", "disarm", "pull-request"})
         self.assertEqual(self.gate["jobs"]["validate"]["permissions"], {"contents": "read"})
-        self.assertEqual(self.gate["jobs"]["draft-pr"]["permissions"],
-                         {"contents": "read", "pull-requests": "write"})
-        self.assertEqual(self.gate["jobs"]["draft-pr"]["needs"], "validate")
+        for name in ("disarm", "pull-request"):
+            self.assertEqual(self.gate["jobs"][name]["permissions"],
+                             {"contents": "read", "pull-requests": "write"}, name)
+        # Only a push that passed the gate, after its own disarm, is armed.
+        self.assertEqual(self.gate["jobs"]["pull-request"]["needs"], ["disarm", "validate"])
+        self.assertNotIn("needs", self.gate["jobs"]["disarm"])
 
-    def test_the_writing_job_never_touches_the_branch(self):
-        steps = self.gate["jobs"]["draft-pr"]["steps"]
-        self.assertFalse([s for s in steps if "uses" in s], "no checkout in the PR job")
-        env = steps[0]["env"]
+    def test_the_writing_jobs_never_touch_the_branch(self):
+        for name in ("disarm", "pull-request"):
+            steps = self.gate["jobs"][name]["steps"]
+            self.assertFalse([s for s in steps if str(s.get("uses", "")).startswith(
+                "actions/checkout@")], f"no checkout in {name}")
+        env = self.manage_step()["env"]
         for key in ("BRANCH", "FIXTURE_ID", "SHA"):
             self.assertTrue(env[key].startswith("${{ needs.validate.outputs."), key)
+
+    def manage_step(self):
+        [step] = [s for s in self.gate["jobs"]["pull-request"]["steps"] if "run" in s]
+        return step
+
+    def test_the_app_token_is_minted_only_in_the_pull_request_job(self):
+        # ADR 0003 round 6's App: its key in one mint step, its token under
+        # its own name in one step, never as GH_TOKEN.
+        steps = [step for job in self.gate["jobs"].values() for step in job["steps"]]
+        self.assertEqual([s.get("id") for s in steps
+                          if "ROSTER_APP_PRIVATE_KEY" in yaml.safe_dump(s)], ["app-token"])
+        [mint] = [s for s in self.gate["jobs"]["pull-request"]["steps"] if "uses" in s]
+        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+        self.assertIs(mint["continue-on-error"], True)
+        self.assertEqual(mint["with"]["repositories"], "skills-evals")
+        self.assertEqual({k: v for k, v in mint["with"].items() if k.startswith("permission-")},
+                         {"permission-contents": "write", "permission-pull-requests": "write"})
+        env = self.manage_step()["env"]
+        self.assertEqual(env["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
+        self.assertEqual(env["GH_TOKEN"], "${{ github.token }}")
+        for name in ("validate", "disarm"):
+            self.assertNotIn("app-token", yaml.safe_dump(self.gate["jobs"][name]), name)
+            self.assertNotIn("ROSTER_APP", yaml.safe_dump(self.gate["jobs"][name]), name)
 
     def test_only_the_default_branch_copy_runs(self):
         self.assertIn("github.ref == format('refs/heads/{0}', "
@@ -1450,7 +1499,7 @@ class WorkflowShapeTests(unittest.TestCase):
         text = GATE.read_text(encoding="utf-8")
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
-        self.assertEqual(len(found), 3)
+        self.assertEqual(len(found), 4)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertIsNone(lock_problem(node.value, GATE))
@@ -1466,19 +1515,51 @@ class WorkflowShapeTests(unittest.TestCase):
                 with self.subTest(job=job, body=body[:40]):
                     self.assertNotIn("${{", body, "pass values through env, never inline")
 
-    def test_it_opens_only_a_labeled_draft_and_never_merges_or_pushes(self):
+    def test_it_arms_only_the_validated_sha_with_the_app_and_never_pushes(self):
         bodies = "\n".join(body for _, body in run_blocks(self.gate))
-        for verb in (r"\bgh\s+pr\s+(merge|review|close|ready)\b", r"\bgit\s+push\b",
-                     r"\bgit\s+merge\b", r"--auto\b", r"\bgh\s+api\s+[^\n]*-X\b",
-                     r"\b(delete|DELETE)\b"):
+        for verb in (r"\bgh\s+pr\s+(review|close|reopen|edit)\b", r"\bgit\s+push\b",
+                     r"\bgit\s+merge\b", r"\bgh\s+api\s+[^\n]*-X\b",
+                     r"\b(delete|DELETE)\b", r"--squash\b", r"--rebase\b", r"--admin\b"):
             with self.subTest(verb=verb):
                 self.assertIsNone(re.search(verb, bodies))
-        [create] = [line for line in bodies.splitlines() if "gh pr create" in line]
-        tail = bodies[bodies.index("gh pr create"):]
-        self.assertIn("--draft", create)
-        self.assertIn('--label "$LABEL"', tail)
-        self.assertEqual(self.gate["jobs"]["draft-pr"]["steps"][0]["env"]["LABEL"],
-                         scaffold.DRAFT_LABEL)
+        merges = [line.strip() for line in bodies.splitlines() if "pr merge" in line]
+        self.assertEqual(merges, [
+            'if ! gh pr merge "$number" --repo "$REPO" --disable-auto > /dev/null 2>&1; then',
+            'app_gh pr merge "$number" --repo "$REPO" --auto --merge --match-head-commit "$SHA"'])
+        [(_, disarm)] = [b for b in run_blocks(self.gate) if b[0] == "disarm"]
+        self.assertNotIn("--auto ", disarm)
+        self.assertNotIn("app_gh", disarm)
+        manage = self.manage_step()["run"]
+        creates = [line.strip() for line in manage.splitlines() if "pr create" in line]
+        self.assertEqual(len(creates), 2)
+        # With the App: ready, never --draft. Without it: GITHUB_TOKEN's draft.
+        app_create, draft_create = sorted(creates, key=lambda line: "app_gh" not in line)
+        self.assertTrue(app_create.startswith('url="$(app_gh pr create'), app_create)
+        self.assertNotIn("--draft", app_create)
+        self.assertTrue(draft_create.startswith("gh pr create"), draft_create)
+        self.assertIn("--draft", draft_create)
+        self.assertEqual(manage.count('--label "$LABEL"'), 2)
+        # The no-token branch exits before anything is armed.
+        start = manage.index('if [ -z "$app_token" ]; then')
+        no_token = manage[start:manage.index("\nfi\n", start)]
+        self.assertTrue(no_token.rstrip().endswith("exit 0"), no_token)
+        self.assertNotIn("--auto", no_token)
+        self.assertNotIn("app_gh", no_token)
+        self.assertEqual(self.manage_step()["env"]["LABEL"], scaffold.DRAFT_LABEL)
+
+    def test_disarm_reads_the_branch_from_the_event_file_and_fails_closed(self):
+        [step] = self.gate["jobs"]["disarm"]["steps"]
+        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
+                                       "REPO": "${{ github.repository }}",
+                                       "BASE": "${{ github.event.repository.default_branch }}"})
+        self.assertIn('"${GITHUB_EVENT_PATH:?}"', step["run"])
+        self.assertIn("^claude/scaffold-[A-Za-z0-9_][A-Za-z0-9._-]{0,63}-[1-9][0-9]{0,6}$",
+                      step["run"])
+        self.assertIsNotNone(scaffold.BRANCH_RE.fullmatch("claude/scaffold-toy-7"))
+        self.assertIn("head=${owner}:${branch}&base=${BASE}", step["run"])
+        # An unreadable lookup or a failed disable fails the run, so the
+        # pull-request job (which needs disarm) never arms.
+        self.assertEqual(step["run"].count("exit 1"), 3)
 
     def test_the_pr_job_reads_only_the_validated_outputs(self):
         # The gate's outputs are the only values that cross from the job that
@@ -1491,9 +1572,11 @@ class WorkflowShapeTests(unittest.TestCase):
             "branch": "${{ steps.resolve.outputs.branch }}",
             "fixture_id": "${{ steps.gate.outputs.fixture_id }}",
             "sha": "${{ steps.gate.outputs.sha }}"})
-        [step] = self.gate["jobs"]["draft-pr"]["steps"]
+        step = self.manage_step()
         self.assertEqual(step["env"], {
-            "GH_TOKEN": "${{ github.token }}", "REPO": "${{ github.repository }}",
+            "GH_TOKEN": "${{ github.token }}",
+            "APP_TOKEN": "${{ steps.app-token.outputs.token }}",
+            "REPO": "${{ github.repository }}",
             "BASE": "${{ needs.validate.outputs.base }}",
             "BRANCH": "${{ needs.validate.outputs.branch }}",
             "FIXTURE_ID": "${{ needs.validate.outputs.fixture_id }}",
@@ -1501,29 +1584,30 @@ class WorkflowShapeTests(unittest.TestCase):
         # No other route in: no env above the step, and no event field
         # (a head commit message, a branch's own text) anywhere in the job.
         self.assertNotIn("env", self.gate)
-        for name in ("validate", "draft-pr"):
+        for name in ("validate", "disarm", "pull-request"):
             self.assertNotIn("env", self.gate["jobs"][name], name)
-        job_text = yaml.safe_dump(self.gate["jobs"]["draft-pr"])
+        job_text = yaml.safe_dump(self.gate["jobs"]["pull-request"])
         self.assertIsNone(re.search(r"\$\{\{\s*github\.event", job_text))
         self.assertEqual(sorted(set(re.findall(r"\$\{\{\s*([^}]*?)\s*\}\}", job_text))), [
             "github.repository", "github.token", "needs.validate.outputs.base",
             "needs.validate.outputs.branch", "needs.validate.outputs.fixture_id",
-            "needs.validate.outputs.sha"])
-        [title] = re.findall(r'--title\s+("[^"]*")', step["run"])
-        self.assertEqual(title, '"Draft real-work fixture: ${FIXTURE_ID}"')
-        self.assertEqual(re.findall(r"\$\{?([A-Z_]+)", title), ["FIXTURE_ID"])
+            "needs.validate.outputs.sha", "secrets.ROSTER_APP_PRIVATE_KEY",
+            "steps.app-token.outputs.token", "vars.ROSTER_APP_CLIENT_ID"])
+        titles = re.findall(r'--title\s+("[^"]*")', step["run"])
+        self.assertEqual(titles, ['"Real-work fixture: ${FIXTURE_ID}"'] * 2)
+        self.assertEqual(re.findall(r"\$\{?([A-Z_]+)", titles[0]), ["FIXTURE_ID"])
 
     def test_an_open_pr_is_found_by_head_owner_not_branch_name_alone(self):
         # `gh pr list --head` matches a branch name in any fork, so a fork's
         # same-named branch would suppress the PR. The REST query names the
         # head as <owner>:<branch>.
-        [step] = self.gate["jobs"]["draft-pr"]["steps"]
+        step = self.manage_step()
         self.assertNotIn("gh pr list", step["run"])
         self.assertIn('owner="${REPO%%/*}"', step["run"])
         self.assertIn('pulls?state=open&head=${owner}:${BRANCH}&base=${BASE}', step["run"])
 
     def test_the_pr_body_has_no_closing_keyword(self):
-        [(_, body)] = [b for b in run_blocks(self.gate) if b[0] == "draft-pr"]
+        [(_, body)] = [b for b in run_blocks(self.gate) if b[0] == "pull-request"]
         self.assertIsNone(re.search(r"\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+(#|https://)",
                                     body, re.I))
         self.assertIn("Part of https://github.com/Adam-S-Daniel/skills-evals/issues/65", body)
