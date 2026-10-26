@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016wrDtRXJBPFkQGKRLsvSPK",
+      "name": "Bash",
+      "input": "cat scripts/export-ledger.sh && cat docs/decisions/README.md && ls docs/decisions && head -30 CHANGELOG.md",
+      "input_chars": 106,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016wrDtRXJBPFkQGKRLsvSPK",
+      "is_error": false,
+      "output": "#!<path> bash\n# export-ledger.sh: write one day's general-ledger entries as a CSV file for\n# the bank's reconciliation service.\n#\n# Usage: export-ledger.sh YYYY-MM-DD\nset -euo pipefail\n\nday=\"${1:?usage: export-ledger.sh YYYY-MM-DD}\"\nout=\"${EXPORT_DIR:-/var/exports}/ledger-$day.csv\"\n\n# Amounts are in...",
+      "output_chars": 1975,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MzAFZe54hPx7oYgmQgJc5n",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-write-amounts-as-integer-cents.md; git log --oneline | head",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MzAFZe54hPx7oYgmQgJc5n",
+      "is_error": false,
+      "output": "# 0002. Write amounts as integer cents, not decimal strings\n\n- **Status:** Accepted\n- **Date:** 2025-10-01\n\n## Context\n\nThe ledger stores amounts as integer cents. Formatting them as decimal\nstrings went through a float and produced off-by-one-cent values on a few\nlarge entries.\n\n## Decision\n\nWrite ...",
+      "output_chars": 754,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gkq4YhcZnHfWxp8ZBJteQj",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-csv-lines-with-crlf.md <<'EOF'\n# 0003. End every CSV line with CRLF, not LF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation importer...",
+      "input_chars": 2007,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gkq4YhcZnHfWxp8ZBJteQj",
+      "is_error": false,
+      "output": "diff --git a/CHANGELOG.md b/CHANGELOG.md\nindex e242110..1196d26 100644\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1,5 +1,10 @@\n # Changelog\n \n+## Unreleased\n+\n+- Documented why the export ends lines with CRLF (the bank's importer\n+  rejects LF); see `docs/decisions/0003-end-csv-lines-with-crlf.md`.\n+...",
+      "output_chars": 1554,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
