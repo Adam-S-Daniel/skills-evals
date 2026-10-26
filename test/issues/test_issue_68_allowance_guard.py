@@ -497,7 +497,9 @@ class GuardTests(unittest.TestCase):
         path.write_text(json.dumps(doc), encoding="utf-8")
 
     def spent(self, fires=(0, 0)) -> dict:
-        return guard.account(self.tree, LIMITS, NOW, fires)
+        # The matching rules, over a full seven days; WeekWindowTests covers
+        # where the window starts.
+        return guard.account(self.tree, LIMITS, NOW, fires, since=NOW - guard.WINDOW)
 
     def test_a_measured_run_is_its_delta_plus_the_overrun(self):
         run = self.run_dir("20261019T100000Z")
@@ -705,8 +707,8 @@ class GuardTests(unittest.TestCase):
             if summary.exists() else ""
 
     def test_check_passes_and_reports_numbers_only(self):
-        run = self.run_dir("20261019T100000Z")
-        self.summary(run, "k/20261019T100000Z/with_skill", usage_block(0.02))
+        run = self.run_dir("20261020T100000Z")
+        self.summary(run, "k/20261020T100000Z/with_skill", usage_block(0.02))
         code, out, summary = self.main("check", lambda now: (1, 1))
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
@@ -714,8 +716,18 @@ class GuardTests(unittest.TestCase):
         self.assertIn("(0 from the last 2h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
-        self.assertNotIn("20261019T100000Z", out + summary)
+        self.assertNotIn("20261020T100000Z", out + summary)
         self.assertNotIn(str(self.tree), out + summary)
+
+    def test_a_run_before_the_accounts_weekly_reset_is_not_charged(self):
+        # NOW is Tuesday 15:30 UTC; the account's week began Monday 17:00.
+        before = self.run_dir("20261019T165900Z", "aa11bb")
+        self.summary(before, "k/20261019T165900Z/with_skill", usage_block(0.2))
+        after = self.run_dir("20261019T170000Z", "cc22dd")
+        self.summary(after, "k/20261019T170000Z/with_skill", usage_block(0.02))
+        code, out, _ = self.main("check", lambda now: (1, 0))
+        self.assertEqual(code, 0, out)
+        self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
 
     def test_check_refuses_over_the_cap(self):
         code, out, _ = self.main("check", lambda now: (8, 8))
@@ -1113,3 +1125,40 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WeekWindowTests(unittest.TestCase):
+    """The cap's window is the account's allowance week (Adam, 2026-10-26),
+    a fixed instant every seven days, so daylight saving does not move it."""
+
+    def at(self, *args):
+        return datetime(*args, tzinfo=timezone.utc)
+
+    def test_the_window_starts_at_the_last_reset(self):
+        cases = {
+            self.at(2026, 10, 26, 17, 0): self.at(2026, 10, 26, 17, 0),
+            self.at(2026, 10, 26, 16, 59, 59): self.at(2026, 10, 19, 17, 0),
+            self.at(2026, 10, 20, 15, 30): self.at(2026, 10, 19, 17, 0),
+            # After US clocks fall back on 2026-11-01 the reset reads 12 PM
+            # Eastern, and is the same UTC instant.
+            self.at(2026, 11, 3, 9, 0): self.at(2026, 11, 2, 17, 0),
+            # Before the anchor, whole weeks back from it.
+            self.at(2026, 9, 1, 0, 0): self.at(2026, 8, 31, 17, 0),
+        }
+        for now, start in cases.items():
+            with self.subTest(now=now.isoformat()):
+                self.assertEqual(guard.window_start(now), start)
+
+    def test_the_window_is_never_longer_than_seven_days(self):
+        now = self.at(2026, 10, 26, 16, 59, 59)
+        self.assertLessEqual(now - guard.window_start(now), guard.WINDOW)
+        self.assertEqual(guard.window_start(now).weekday(), 0)
+
+    def test_the_default_window_is_the_accounts_week(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            for stamp in ("20261019T165900Z", "20261019T170000Z"):
+                (tree / "routine-results" / f"{stamp}-ab12cd").mkdir(parents=True)
+            runs = guard.ingested_runs(tree, NOW, guard.window_start(NOW))
+            self.assertEqual([r.name for r in runs], ["20261019T170000Z-ab12cd"])
+

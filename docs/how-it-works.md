@@ -109,7 +109,7 @@ weekly allowance):
 
 | Key | Value | Meaning |
 |---|---|---|
-| `weekly_cap` | 0.30 | all automated evals, in any rolling seven days |
+| `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.03 | one run stops starting new work after this much |
 | `per_run_overrun` | 0.005 | added to every run: its last call is never measured |
 | `stop_when_account_above` | 0.80 | a run stops once the account's weekly meter reads this |
@@ -128,14 +128,16 @@ Three layers enforce it:
    never stopped. `--budget PATH` reads another budget file.
 2. **The pre-fire check** (`scripts/allowance_guard.py check`, a step of
    `routine-eval-fire.yml` before the fire, in every mode). It adds up the
-   last seven days: each ingested run on `persistent/eval-results` at its
+   account's current allowance week, from its last weekly reset
+   (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
+   saving does not move it; a rolling seven days until 2026-10-26): each ingested run on `persistent/eval-results` at its
    measured weekly delta plus the overrun (or the full reservation,
    `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
    fire without results: at the full reservation when it is under 2 hours
    old, and at the overrun alone after that (a routine run finishes within
    minutes, so a fire with no results two hours later failed or never
    started). An improve fire never lands results, so it is charged its own
-   cost for the whole seven days: twelve eval fires at their measured mean
+   cost for the whole week: twelve eval fires at their measured mean
    (twelve full reservations until anything is measured). The fire goes
    only if one more reservation (an improve fire's charge, in improve mode)
    still fits under `weekly_cap`. If the GitHub API cannot be read, the
