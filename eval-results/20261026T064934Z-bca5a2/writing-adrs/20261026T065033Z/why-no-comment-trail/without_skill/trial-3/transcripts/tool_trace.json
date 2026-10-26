@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014CM6hPkrv3WKHPfT1HJt3A",
+      "name": "Bash",
+      "input": "git status && ls -R docs && cat docs/decisions/README.md && cat scripts/export-ledger.sh && cat CHANGELOG.md && ls docs/decisions | head; for f in docs/decisions/*.md; do echo \"== $f\"; cat \"$f\"; done ...",
+      "input_chars": 211,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014CM6hPkrv3WKHPfT1HJt3A",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\ndocs:\n...",
+      "output_chars": 5177,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V8JgoZSPtFka8r8EkEVCmj",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-export-lines-with-crlf.md <<'EOF'\n# 0003. End every export line with CRLF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation importer r...",
+      "input_chars": 1811,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V8JgoZSPtFka8r8EkEVCmj",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..b031c23 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1133,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

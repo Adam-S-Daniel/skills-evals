@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RUmbPaXhUv5r7pa3m1Fu98",
+      "name": "Bash",
+      "input": "ls -R docs; cat docs/decisions/README.md; cat scripts/export-ledger.sh; cat CHANGELOG.md; ls docs/decisions | head; git log --oneline | head",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RUmbPaXhUv5r7pa3m1Fu98",
+      "is_error": false,
+      "output": "docs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-line code\ncomment is eno...",
+      "output_chars": 2119,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012JpjFNHBbx6ueuzY55EhdS",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-write-amounts-as-integer-cents.md; git status --short",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012JpjFNHBbx6ueuzY55EhdS",
+      "is_error": false,
+      "output": "# 0002. Write amounts as integer cents, not decimal strings\n\n- **Status:** Accepted\n- **Date:** 2025-10-01\n\n## Context\n\nThe ledger stores amounts as integer cents. Formatting them as decimal\nstrings went through a float and produced off-by-one-cent values on a few\nlarge entries.\n\n## Decision\n\nWrite ...",
+      "output_chars": 870,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T4x8oUmzcoHpusQrzk3hmJ",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-export-lines-with-crlf.md <<'EOF'\n# 0003. End export lines with CRLF, not LF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation importe...",
+      "input_chars": 1754,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T4x8oUmzcoHpusQrzk3hmJ",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..4baabf8 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1471,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
