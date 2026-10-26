@@ -52,7 +52,7 @@ values only):
             -> decision=, subject=, plugin=, run_id=, sha=
   apply     --staged DIR --tree DIR         (in an adam-agentskills checkout)
   fixtures-apply --staged DIR --tree DIR    (in a skills-evals checkout)
-  pr-body   --staged DIR --run-id ID --sha SHA --branch NAME
+  pr-body   --staged DIR --run-id ID --sha SHA --branch NAME [--mode draft|auto]
             --repo adam-agentskills|skills-evals         (body on stdout)
   issue-body --staged DIR --run-id ID --sha SHA --branch NAME (body on stdout)
 
@@ -1431,7 +1431,11 @@ def _provenance(run_id: str, sha: str, branch: str) -> str:
             "`routine-draft-skill-gate.yml` validated it without running it")
 
 
-def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str) -> str:
+def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str,
+            mode: str = "draft") -> str:
+    """`mode` is the gate's merge mode (improve_gate.effective_mode): in
+    `auto` both pull requests are ready with auto-merge enabled, the skill's
+    first; in `draft` a person merges them."""
     record = staged_record(staged, "accepted")
     report = read_text(staged / "report.md", SIZE_CAPS["report.md"]).rstrip("\n")
     subject = record["subject"]
@@ -1442,8 +1446,13 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str) -> str:
             "applied its `skill.patch` here and made the registry's own "
             "additions (bundle version, README table, `docs/skill-impact.md`).",
             "",
-            "A person reviews and merges this, or closes it; nothing merges "
-            "itself. Its fixtures are in a companion skills-evals pull "
+            ("This pull request merges itself (merge commit) once the "
+             "required checks pass, with no human review (adam-agentskills "
+             f"[ADR 0021]({improve_gate.REGISTRY_ADR}); Adam, 2026-10-26). "
+             if mode == "auto" else
+             "A person reviews and merges this, or closes it; nothing merges "
+             "itself. ")
+            + "Its fixtures are in a companion skills-evals pull "
             "request; merge this one first. The numbers below are a routine "
             "measurement on those fixtures, not badge input.", "",
             "## Checklist", "", TEMPLATE_CHECKLIST]
@@ -1456,6 +1465,13 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str) -> str:
             "skill. Until then these fixtures name a skill the registry does "
             "not have: an eval dispatch fails `skill_not_found` and the "
             "coverage census reports an `orphan_fixture`."]
+        if mode == "auto":
+            head += [
+                "", "Auto-merge (merge commit) is enabled, with no human "
+                "review. This pull request was opened with the job token, "
+                "which starts no workflow, so its required checks start only "
+                "when someone pushes to it or runs them, after the skill's "
+                "pull request has merged."]
     return "\n".join([*head, "", "---", "", report, "", MARKER, ""])
 
 
@@ -1545,6 +1561,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         if name == "pr-body":
             p.add_argument("--repo", required=True,
                            choices=(REGISTRY_NAME, "skills-evals"))
+            p.add_argument("--mode", choices=improve_gate.MERGE_MODES,
+                           default="draft")
     args = parser.parse_args(argv)
     try:
         if args.command == "measure":
@@ -1564,7 +1582,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
         if args.command in ("pr-body", "issue-body"):
             check_body_args(args.run_id, args.sha, args.branch)
             sys.stdout.write(
-                pr_body(args.staged, args.run_id, args.sha, args.branch, args.repo)
+                pr_body(args.staged, args.run_id, args.sha, args.branch, args.repo,
+                        args.mode)
                 if args.command == "pr-body"
                 else issue_body(args.staged, args.run_id, args.sha, args.branch))
             return 0

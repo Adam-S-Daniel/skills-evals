@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """Plan only reviewed scheduled fixtures, or the single dispatch fixture.
 
-With `--allowance-tree` (a checkout of persistent/eval-results), the plan is
-cut to the fires that fit under the weekly allowance cap (#68,
-scripts/allowance_guard.py), in the schedule's order, and `count=<n>` is
-written beside `matrix=`; the weekly caller skips its dispatch job on 0.
+The routine sweep's banded, allowance-cut plan is scripts/plan_week.py,
+which reads the reviewed list through `scheduled_fixtures` here.
 """
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 
 DEFAULT_FIXTURE = "evals/workflow-path-audit/required-check-routing"
 
@@ -99,36 +95,10 @@ def plan(root, event_name, event):
                          "slot": slot} for slot, fixture in enumerate(fixtures)]}
 
 
-def allowance_room(tree, budget_path, now=None):
-    """How many fires fit under the weekly cap now (allowance_guard), or None
-    after printing a fixed, fail-closed refusal: an unknown spend plans no
-    fire at all."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import allowance_guard
-
-    now = now or datetime.now(timezone.utc)
-    try:
-        limits = allowance_guard.budget_file.load_budget(budget_path)
-        state = allowance_guard.account(tree, limits, now,
-                                        allowance_guard._live_fires(now))
-    except (allowance_guard.GuardError, allowance_guard.budget_file.BudgetError) as exc:
-        print(f"::error::allowance guard: {exc}; planning no fire")
-        return None
-    print(allowance_guard.describe(state))
-    return allowance_guard.fits(state)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--committed", action="store_true")
     parser.add_argument("--validate", nargs=3, metavar=("FIXTURE", "KEY", "SLOT"))
-    parser.add_argument("--max-fixtures", type=int, metavar="COUNT")
-    parser.add_argument("--allowance-tree", type=Path, metavar="PATH",
-                        help="a persistent/eval-results checkout: plan only "
-                             "the fires that fit under evals/budget.yml's "
-                             "weekly_cap (#68)")
-    parser.add_argument("--budget", type=Path, metavar="PATH",
-                        help="the budget file (default: evals/budget.yml)")
     args = parser.parse_args()
     root = Path.cwd()
     try:
@@ -141,26 +111,13 @@ def main():
                 raise ValueError("matrix key or slot does not match a validated fixture")
             print(f"eval_key={expected}")
         else:
-            if args.max_fixtures is not None and args.max_fixtures < 1:
-                raise ValueError("fixture cap must be positive")
             event_path = os.environ.get("GITHUB_EVENT_PATH")
             event = json.loads(Path(event_path).read_text()) if event_path else {}
             if not isinstance(event, dict):
                 raise ValueError("event must be an object")
             matrix = plan(root, os.environ["GITHUB_EVENT_NAME"], event)
-            if args.max_fixtures is not None and len(matrix["include"]) > args.max_fixtures:
-                raise ValueError("fixture plan exceeds the caller's fire limit")
-            lines = []
-            if args.allowance_tree is not None:
-                room = allowance_room(args.allowance_tree, args.budget)
-                if room is None:
-                    return 1
-                matrix["include"] = matrix["include"][:room]
-                lines.append(f"count={len(matrix['include'])}")
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
-                for line in lines:
-                    output.write(line + "\n")
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError):
         # Never echo event content or exception bodies into the public log.
         print("::error::Invalid eval plan or committed fixture selection")

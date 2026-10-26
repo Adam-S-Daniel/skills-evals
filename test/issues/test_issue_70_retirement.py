@@ -147,7 +147,7 @@ class PolicyTests(unittest.TestCase):
             "min_cli_versions": 2, "ceiling_fraction": 0.90, "judge_ceiling": 9.0,
             "floor_fraction": 0.10, "bootstrap_resamples": 2000,
             "retire_looks": [5, 10, 20],
-            "retirement_mode": "proposal"})
+            "retirement_mode": "auto"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -833,6 +833,37 @@ class VerdictTests(unittest.TestCase):
                 self.assertEqual(result["verdict"], "insufficient")
                 self.assertEqual(result["cells"][0]["with"]["runs"], 3)
 
+    def test_a_moved_fixture_pools_its_flat_runs_only_with_the_same_digest(self):
+        # #422/#427: a flat fixture nested as `nested`, content unchanged.
+        # Its old runs (fixture None) pool with the new name; a run of other
+        # content under the old name does not.
+        old = (series("with", FLAT[:6], FLAT_JUDGE)
+               + series("without", FLAT[:6], FLAT_JUDGE))
+        new = (series("with", FLAT[6:10], FLAT_JUDGE, start=6, fixture="nested")
+               + series("without", FLAT[6:10], FLAT_JUDGE, start=6, fixture="nested"))
+        stale = series("with", FLAT[:3], FLAT_JUDGE, start=20, fdig="older")
+        with mock.patch.dict(gates.FIXTURE_ALIASES, {("demo", ""): "nested"}):
+            result = self.verdict(old + new + stale, ["model-a"], self.expect("nested"))
+            mismatched = self.verdict(old, ["model-a"], self.expect("nested", fdig="changed"))
+        self.assertEqual(result["verdict"], "retire")
+        self.assertEqual((result["cells"][0]["fixture"], result["cells"][0]["with"]["runs"],
+                          result["cells"][0]["without"]["runs"]), ("nested", 10, 10))
+        self.assertEqual(len(result["runs_used"]), 20)
+        # Old content is a fixture no longer on main: the cell has no run.
+        self.assertEqual((mismatched["cells"][0]["class"], mismatched["cells"][0]["runs"]),
+                         ("missing", {"with": [], "without": []}))
+        # Without the alias the old runs belong to a fixture no longer on main.
+        plain = self.verdict(old + new, ["model-a"], self.expect("nested"))
+        self.assertEqual(len(plain["cells"][0]["runs"]["with"]), 4)
+
+    def test_the_declared_fixture_aliases_point_at_nested_fixtures_on_main(self):
+        self.assertTrue(gates.FIXTURE_ALIASES)
+        for (skill, old), new in gates.FIXTURE_ALIASES.items():
+            with self.subTest(skill=skill):
+                self.assertFalse((ROOT / "evals" / skill / old / "fixture.yaml").exists())
+                self.assertTrue((ROOT / "evals" / skill / new / "fixture.yaml").is_file())
+                self.assertIn(new, compute_gates.expected_content(ROOT / "evals", skill, {}))
+
     def test_the_arms_are_paired_on_one_guidance_and_skill_set(self):
         # Round 5's reproducer (test_ctx.py): twenty without runs from old
         # guidance G1, then fifteen of each arm from new guidance G2, which
@@ -1325,7 +1356,7 @@ class ComputeGatesTests(unittest.TestCase):
         entry = doc["skills"]["flat"]["cells"][0]["runs"]["with"][0]
         self.assertEqual(entry["run"]["billing"], "api")
         self.assertTrue((self.tree / entry["report"]["path"]).is_file())
-        self.assertEqual(doc["retirement_mode"], "proposal")
+        self.assertEqual(doc["retirement_mode"], "auto")
         self.assertNotIn("previous", doc)
 
     def test_five_runs_are_pending_and_ten_retire(self):

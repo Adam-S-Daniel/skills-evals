@@ -36,13 +36,21 @@ September pause, and is not updated any more.
   Adam decided on 2026-10-26 that the gate guards against honest mistakes
   only, since anyone who can write results can also remove a skill. Part 2
   is built: `scripts/retire_skill.py`, run daily by `skill-coverage.yml`'s
-  schedule-only `retirement` job, files or updates an issue in `proposal`
-  mode (the committed `retirement_mode`) and, in `auto` mode, opens one
-  removal PR at a time that auto-merges with no human review (Adam,
-  2026-10-25; [ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md)).
-  Before switching to `auto`: an adam-agentskills write credential for the
-  job (none exists, so the workflow allows only `proposal`), the matching
-  ADRs in repo-settings and adam-agentskills, and an adversarial round.
+  schedule-only `retirement` job, opens one removal PR at a time in
+  adam-agentskills that auto-merges with no human review in `auto` mode
+  (the committed `retirement_mode`; Adam, 2026-10-25 and 2026-10-26;
+  [ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md)),
+  and files or updates an issue instead when the job has no App token or
+  the skill's plugin runs code. Still owed before a removal can merge: the
+  repo-settings exception ADR, and the App's two secrets in skills-evals.
+- **Guidance sections (#124):** five sections have fixtures under
+  `evals/guidance/<section id>/<name>/` and are on the schedule. The same
+  `retirement` job gives each one a verdict, and a section that helps only
+  when alone gets `shorten-or-merge`, not removal. It files an issue in
+  `proposal` mode (`gate-policy.yml`'s `guidance:` block). The `auto`
+  removal pull request into `_agent-guidance` is built but not wired. See
+  DESIGN.md, "Section fixtures, verdicts and removal". No paid run of these
+  fixtures has happened yet.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in

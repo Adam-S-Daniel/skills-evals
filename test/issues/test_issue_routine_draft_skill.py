@@ -449,25 +449,63 @@ class GateTests(unittest.TestCase):
                     else:
                         self.assertEqual(w["ref"], "${{ github.event.repository.default_branch }}")
 
-    def test_it_opens_drafts_and_one_issue_and_never_merges_or_forces(self):
+    def test_it_opens_two_pull_requests_and_one_issue_and_never_forces(self):
         bodies = "\n".join(body for _, body in run_blocks(self.doc))
         creates = re.findall(r"gh pr create[^\n]*(?:\\\n[^\n]*)*", bodies)
         self.assertEqual(len(creates), 2)
         for c in creates:
-            self.assertIn("--draft", c)
+            self.assertIn('"${draft[@]}"', c)
         self.assertEqual(len(re.findall(r"gh issue create", bodies)), 1)
         issue = step(self.doc, "hook-issue", "Open the hook-proposal issue")["run"]
         self.assertIn('title="Hook proposal: ${SUBJECT}"', issue)
         self.assertIn("--label hook-proposal --label agent-authored", issue)
         self.assertIn("draft_new_skill.py issue-body", issue)
-        for banned in ("gh pr merge", "--force", "push -f", "--admin",
-                       "gh pr review", "--auto", "_agent-guidance"):
+        for banned in ("--force", "push -f", "--admin", "gh pr review",
+                       "--squash", "--rebase", "_agent-guidance"):
             self.assertNotIn(banned, bodies)
         targets = sorted(t for t in PUSH_TARGET.findall(bodies))
         self.assertEqual(targets, ['"HEAD:refs/heads/${target}"'] * 2)
 
+    def test_the_merge_mode_is_the_improvement_gates_one_switch(self):
+        """evals/improve-policy.yml via `improve_gate.py merge-mode`, decided
+        before the token exists; a draft unless the mode is auto."""
+        steps = self.jobs["skill-pr"]["steps"]
+        ids = [s.get("id") for s in steps]
+        mint = next(i for i, s in enumerate(steps)
+                    if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
+        self.assertLess(ids.index("mode"), mint)
+        decide = steps[ids.index("mode")]
+        self.assertIn("improve_gate.py merge-mode", decide["run"])
+        self.assertIn("--tree ../adam-agentskills", decide["run"])
+        self.assertNotIn("--policy", decide["run"])
+        self.assertNotIn("secrets.", json.dumps(decide))
+        skill = step(self.doc, "skill-pr", "Open the skill's pull request in adam-agentskills")
+        self.assertEqual(skill["env"]["MODE"], "${{ steps.mode.outputs.mode }}")
+        fixtures = step(self.doc, "fixtures-pr", "Open the fixtures' pull request")
+        self.assertEqual(fixtures["env"]["AUTO"], "${{ needs.skill-pr.outputs.auto }}")
+        self.assertEqual(self.jobs["skill-pr"]["outputs"]["auto"],
+                         "${{ steps.open.outputs.auto }}")
+        for run, mode in ((skill["run"], '"$MODE"'), (fixtures["run"], '"$mode"')):
+            with self.subTest(mode=mode):
+                self.assertIn(f"if [ {mode} = draft ]; then\n  draft=(--draft)\nfi",
+                              run.replace("          ", ""))
+                merges = re.findall(r"gh pr merge[^\n]*", run)
+                self.assertEqual(len(merges), 1)
+                self.assertTrue(merges[0].endswith("--auto --merge"))
+                auto = run.index(f"if [ {mode} = auto ]; then\n", run.index("gh pr create"))
+                self.assertLess(auto, run.index("gh pr merge"))
+                self.assertLess(run.index("gh pr merge"), run.index('"MERGE"'))
+        # The skill's is labeled before auto-merge and only then reports auto;
+        # the fixtures follow it, never lead.
+        run = skill["run"]
+        self.assertLess(run.index("--add-label agent-authored > /dev/null \\"),
+                        run.index("gh pr merge"))
+        self.assertLess(run.index("gh pr merge"), run.index('echo "auto=true"'))
+        self.assertIn("eval-improve/*|retire-skill/*|draft-skill/*)", run)
+        self.assertIn('if [ "$AUTO" = true ]; then\n  mode=auto', fixtures["run"].replace("          ", ""))
+
     def test_the_fixtures_commit_is_evals_subject_only(self):
-        body = step(self.doc, "fixtures-pr", "Open the fixtures' draft pull request")["run"]
+        body = step(self.doc, "fixtures-pr", "Open the fixtures' pull request")["run"]
         self.assertIn('target="draft-skill-fixtures/${SUBJECT}"', body)
         self.assertIn("draft_new_skill.py fixtures-apply", body)
         self.assertNotIn('git checkout -q "$SHA"', body, "files come from the staged copy")
@@ -475,7 +513,7 @@ class GateTests(unittest.TestCase):
         self.assertIn('":(exclude)README.md"', body)
         self.assertIn("--diff-filter=a", body)
         self.assertIn("--repo skills-evals", body)
-        skill = step(self.doc, "skill-pr", "Open the skill's draft pull request in adam-agentskills")["run"]
+        skill = step(self.doc, "skill-pr", "Open the skill's pull request in adam-agentskills")["run"]
         self.assertIn('target="draft-skill/${SUBJECT}"', skill)
         self.assertIn("draft_new_skill.py apply", skill)
         # A bundle in the registry's skills.lock is re-pinned on a second

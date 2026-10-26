@@ -225,8 +225,10 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   [#65](https://github.com/Adam-S-Daniel/skills-evals/issues/65) names for a
   fixture no person has reviewed yet. `--arm objective-only` still runs it;
   any agent arm is refused (exit 2) unless `--allow-draft` is passed, which no
-  workflow does, so a draft is never paid for or published until a person
-  removes the key.
+  workflow does, so a draft is never paid for or published until the key is
+  removed: by a person, or by `scaffold_real_work.py promote` once runs of the
+  draft made with `--allow-draft` are ingested (see "The scaffolder and its
+  gate").
 - **`interface_strings:`** (optional) — 1 to 32 nonblank strings of at most
   200 characters: the identifiers and messages a hidden test checks
   verbatim, which the task text must therefore name. A run inside one
@@ -1552,6 +1554,47 @@ decisions (Adam, 2026-10-06)".
   candidate records its merge date, so pre- and post-cutoff fixtures are
   reported separately rather than excluded.
 
+### Lessons from real sessions (2026-10-26, ADR 0015)
+
+The third mined source is Adam's own Claude Code sessions, and it is mined
+only on his own computer ([ADR 0015](docs/decisions/0015-mine-real-sessions-only-on-adams-own-computer.md)).
+`scripts/mine_sessions.py` keeps real-work sessions, turns corrections,
+redirections, stated rules, interruptions, repeated tool failures, red CI
+after a push and unfinished endings into short redacted **lesson records**,
+and routes them into **proposal files**: `agent-check` first when a git hook
+could enforce the lesson, else `skill-edit`, `new-skill`, `guidance-edit`,
+`memory-note` or `fixture-candidate`. A fixture candidate is a concrete
+failure tied to a skill or guidance section, and the input a fixture writer
+on that machine expands (`mine_sessions.py locate <session hash>` finds the
+transcript). Records and proposals land on adam-agentskills-private's
+`persistent/lessons` branch; that repo's `lessons/README.md` holds both
+schemas. Tests: `test/issues/test_issue_session_miner.py`, invented
+transcripts only.
+
+Daily run, from WSL, after a dry run first (`PRIVACY_DENYLIST_FILE` is a file
+outside every repo; `WIN_HOME` is the Windows profile as a WSL path, which
+also locates the desktop app's data; without it the script asks `cmd.exe`):
+
+```bash
+export PRIVACY_DENYLIST_FILE="$HOME/.config/privacy-denylist.txt"
+export WIN_HOME=/mnt/c/Users/<user>
+bash ~/repos/skills-evals/scripts/run_session_miner.sh --dry-run
+bash ~/repos/skills-evals/scripts/run_session_miner.sh
+```
+
+Scheduled like the usage census (`evals/usage/CENSUS.md`, Option B or C), for
+example in WSL cron:
+
+```cron
+17 7 * * * PRIVACY_DENYLIST_FILE="$HOME/.config/privacy-denylist.txt" WIN_HOME=/mnt/c/Users/<user> bash "$HOME/repos/skills-evals/scripts/run_session_miner.sh" >> "$HOME/.cache/session-miner.log" 2>&1
+```
+
+The script clones skills-evals `main` fresh, so the local checkout's branch
+does not matter; it pushes with the private clone's remote and the git
+credentials WSL already has, and moves its state file
+(`~/.local/state/session-miner/state.json`) into place only after the push is
+verified. `--file-issues` is off until Adam has rated a sample of records.
+
 ### The scaffolder and its gate
 
 Q6 puts the scaffolder's model call in the ADR 0010 routine and gives
@@ -1604,11 +1647,14 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   through git plumbing only and rejects it unless it only adds regular files
   under the one `evals/real-work/<fixture id>/` its name names (an
   executable bit only under `seed/` and `checker/`), within the caps, as a
-  draft with no `setup:` or `env:` that passes `check` without `--run`.
-  Nothing from the branch runs in the gate. Its `draft-pr` job
-  (`pull-requests: write`) then opens a draft pull request labeled
-  `eval-scaffold`, or leaves an open one alone. It never merges, approves
-  or pushes. The label and the repository setting that lets Actions open
+  draft with no `setup:` or `env:` that passes `check` without `--run`,
+  and whose `checker/` files are the merge commit's own, compared with
+  trusted Git bytes. Nothing from the branch runs in the gate. Its
+  `pull-request` job then has the roster App open the pull request ready,
+  labeled `eval-scaffold`, with auto-merge on (Adam, 2026-10-26: no human in
+  the loop; ADR 0003's 2026-10-26 addendum), after a `disarm` job has turned
+  auto-merge off for every push. Without the App token it opens a draft and
+  arms nothing. It never approves or pushes. The label and the repository setting that lets Actions open
   pull requests come from repo-settings (Adam, 2026-10-06: "Yes, via
   repo-settings (Recommended)"), and the routine is fired in scaffold mode
   by a new `routine-eval-fire.yml` input (Adam, 2026-10-06: "New
@@ -1641,12 +1687,19 @@ deterministic, in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.p
   whose body is at or near GitHub's own 65,536-character limit cannot be
   scaffolded this way.
 
-What a reviewer adds before the fixture can leave draft: the fixture's
-entry in `CHECKER_BLOBS` in `test/issues/test_issue_real_work_fixtures.py`
-(that module fails until then, by design) and any `deps:` directory in
-ci.yml's install step, after which `test` runs it red and green. A pull
-request opened with the workflow's own token starts no workflow, so `test`
-first runs when a person pushes to it. The scaffold branches' head ref,
+Nothing outside the fixture's directory needs an edit: ci.yml and
+`scripts/dev_setup.sh` install each fixture's own `deps:`
+(`scaffold_real_work.py deps-dirs`), and `test` scores it red and green on
+the pull request, which the App opened so that its `pull_request` run
+starts with no approval. `CHECKER_BLOBS` in
+`test/issues/test_issue_real_work_fixtures.py` keeps the hand-checked blob
+ids of the first five fixtures; the gate checks every later one. A merged
+fixture is `draft: true` until `scaffold_real_work.py promote`, run daily by
+`routine-fixture-supply.yml`, finds two ingested runs of its committed
+content with both arms and no errored arm, and opens an auto-merging pull
+request that sets `draft: false` and adds it to `evals/scheduled.yml`. The
+same workflow mines the fleet daily and fires scaffold mode for up to three
+new candidates (`scaffold_real_work.py pick`). The scaffold branches' head ref,
 `claude/scaffold-`, is in the miner's bot list, so a merged scaffold is never
 mined back.
 
@@ -2456,6 +2509,56 @@ delivered, and written verbatim into
 `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which `main` pushes
 to the public `persistent/eval-results` branch — so a row could publish any file the
 runner can read.
+
+### Section fixtures, verdicts and removal (2026-10-26, skills-evals#124)
+
+**Layout.** A section's behavioral fixtures live at
+`evals/guidance/<section id>/<name>/fixture.yaml`, with `subject: guidance`,
+`section: <id>` and the section id as their parent directory. A directory
+whose name starts with `_` (`_delivery`) is not a behavioral fixture and no
+gate reads it. Each declares four arms, `with_guidance_section` (`section`),
+`without_guidance` (`none`), `with_guidance_full` (`full`) and
+`with_guidance_full_minus_section` (`full-minus-section`), plus
+`ablation: [full, full-minus-section]`. `eval.yml`'s `--arm both` therefore
+runs both pairs in one fire, at four agent runs per fire, so the agent gets
+180 s and the guard 60 s to fit the 45-minute job;
+`run_eval.py <fixture> --ablation` still runs the in-situ pair alone, as arms
+`ablation_full` and `ablation_full_minus_section`. Results go to
+`results/guidance/<section id>/<ts>/<arm>/summary.json`, beside the section's
+other fixtures, so each guidance summary records `fixture_name`,
+`fixture_digest` (the git-staged digest), `guidance_digests` (`section`: the
+sha256 of the extent, `rest`: of the corpus without it, from
+`guidance.content_digests`) and `judge_conditional`. A fixture's badge key is
+its path without `evals/`; `make_badge.py` reads only run dirs whose summary
+names that fixture, on the in-situ pair.
+
+**The verdict.** `harness/gates.py` `guidance_verdict` reuses the skill
+machinery (run-level pooling, looks at 5, 10 and 20 runs, the same
+classes) twice per section: the in-situ pair (`full` vs
+`full-minus-section`) and the alone pair (`section` vs `none`), classified by
+each arm's `mode`, never its name. A run pools when its `section` digest is
+the section's extent on main and its fixture digest matches; the `rest`
+digest is the pair key, so runs beside different neighbours never share a
+cell. The in-situ verdict decides. The one change: a section whose in-situ
+verdict is `retire` but which shows `benefit` alone in any cell gets
+**`shorten-or-merge`**, since the rest of the guidance covers what it teaches.
+That verdict never removes anything. The thresholds are `gate-policy.yml`'s
+`guidance:` block, which is separate from `skills:`.
+
+**Removal.** `scripts/retire_skill.py --target guidance --guidance PATH`
+acts on at most one section per evaluation. `shorten-or-merge` always
+becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode
+(the committed `guidance.retirement_mode`), and in `auto` mode a branch
+`retire-guidance/<id>` in the `_agent-guidance` checkout that auto-merges.
+That branch removes the extent from `base.md` (or `git rm`s a `sections/`
+file when this was its only `##`) and re-copies `base.md` to
+`.claude/hooks/fleet-guidance.md`. It also deletes the manifest row, runs
+`check-guidance-coverage.js --write-bytes`, adds a typed `remove` entry to
+`docs/guidance-impact.md` whose `Eval:` line gives the pooled run count
+(`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
+`## Repo-specific additions` heading line. A dry run lists every step.
+Auto mode is not wired: it needs a write credential for `_agent-guidance` and
+the same refusals as the skill path.
 
 ## Out of scope
 

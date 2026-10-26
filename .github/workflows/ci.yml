@@ -286,13 +286,16 @@ jobs:
       # The real-work fixtures' checkers (test/issues/test_issue_real_work_fixtures.py)
       # run each seed's own tests, which need the seed's npm dependencies,
       # installed here from the seed's committed lockfile as a run's `deps:`
-      # step would. That test pins this list to the fixtures' `deps:` entries.
+      # step would. The list is the fixtures' own `deps:` entries
+      # (scaffold_real_work.py deps-dirs), so a scaffolded fixture needs no
+      # edit here; the assignment fails the step if the list cannot be read.
       - name: Install real-work fixture dependencies
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals/evals/real-work
         run: |
           set -euo pipefail
-          for dir in _agent-guidance-196/seed cms-platform-221/seed/e2e cms-platform-693/seed/e2e cms-platform-761/seed/e2e; do
+          dirs="$(python3 ../../scripts/scaffold_real_work.py deps-dirs --manager npm)"
+          for dir in $dirs; do
             (cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund)
           done
       # cms-platform-760's checker builds a real Jekyll site. Its gems come
@@ -300,14 +303,15 @@ jobs:
       # into vendor/bundle beside it, as seed_prep's bundler `deps:` installs
       # them in a run; the lockfile's bundler version is installed first so
       # the runner's older bundler does not try to switch versions mid-step.
-      # The same test pins this list to the fixtures' bundler `deps:` entries.
+      # The list is the fixtures' own bundler `deps:` entries, as above.
       - name: Install real-work fixture gems
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals/evals/real-work
         run: |
           set -euo pipefail
           sudo gem install bundler --version 4.0.10 --no-document
-          for dir in cms-platform-760/seed/e2e/fixture-site; do
+          dirs="$(python3 ../../scripts/scaffold_real_work.py deps-dirs --manager bundler)"
+          for dir in $dirs; do
             (cd "$dir" && BUNDLE_PATH=vendor/bundle BUNDLE_FROZEN=true BUNDLE_DISABLE_SHARED_GEMS=true BUNDLE_APP_CONFIG="$RUNNER_TEMP/bundle-config" bundle install --quiet)
           done
       # Workspace-executing scorers run only inside bubblewrap and fail

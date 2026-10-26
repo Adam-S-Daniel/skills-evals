@@ -2,6 +2,10 @@
 """The skill retirement verdict (#70, part 1): cells, their classes, and the
 verdict over them. Thresholds live in `evals/gate-policy.yml`.
 
+Guidance sections (#124) get the same verdict over their ablation pair
+(`guidance_verdict`, at the end of this module): the rules below apply with
+"skill" read as "section".
+
 POOLED EVIDENCE (Adam, 2026-10-25), replacing #70's four weekly sweeps.
 
   * A CELL is (skill, fixture, current roster arm model), for every fixture
@@ -10,7 +14,9 @@ POOLED EVIDENCE (Adam, 2026-10-25), replacing #70's four weekly sweeps.
     (`--roster`). A cell with no run is `missing`; runs of a fixture no
     longer on main, or of a model no longer on the roster, are not read: the
     roster follows current use (Adam, 2026-10-25), so a superseded model
-    leaves at once and no evidence is asked of it. The arm
+    leaves at once and no evidence is asked of it. A fixture moved to a
+    new name with its content unchanged keeps its runs (`FIXTURE_ALIASES`,
+    digest-checked by `pooled_fixture`). The arm
     model is the REQUESTED one: `cross_model.model`, which
     harness/run_eval.py writes from the arm's own `--model`
     (`_write_summary`'s `agent_model`) and `run_eval._arm_model` reads back;
@@ -195,7 +201,13 @@ BOOTSTRAP_SEED = 70
 #: Scored trials an arm of one run needs to count (#70's 3).
 MIN_TRIALS_PER_RUN = 1
 #: Trial error types that are the harness's, not the agent's.
-INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable")
+INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable",
+                         # A guidance arm whose delivery was not proved
+                         # (harness/run_eval.py `_guard_error`, and a hook
+                         # that never wrote its block): INCONCLUSIVE, never
+                         # the agent's failure.
+                         "delivery_failed", "guard_error", "guard_miss",
+                         "guard_contaminated")
 #: The start of a FAILED check's detail that names a scorer failure rather
 #: than anything the agent did: harness/scorers/commands.py's
 #: `ScorerSandboxUnavailable` message, `scorer_sandbox_unavailable exit=<n>`,
@@ -207,6 +219,16 @@ INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable")
 INFRASTRUCTURE_DETAIL_PREFIX = "scorer_sandbox_unavailable exit="
 #: Why a run with a scored trial that has no check result does not count.
 NO_CHECKS_REASON = "a trial without objective checks on a fixture that has them"
+#: Fixtures moved from the flat `evals/<skill>/` into a named subdirectory
+#: with their content unchanged (#422, #427): {(skill, old name, "" for
+#: flat): new name}. A run recorded under the old name pools with the new
+#: one only while its `fixture_digest` equals the new fixture's digest on
+#: main (`pooled_fixture`), so an alias never joins different content.
+FIXTURE_ALIASES = {
+    ("review-bash-ci-reliability", ""): "release-pipeline",
+    ("vendor-release-impact-issues", ""): "issue-hygiene",
+    ("workflow-path-audit", ""): "required-check-routing",
+}
 
 
 class GatePolicyError(ValueError):
@@ -249,7 +271,10 @@ SKILL_KEYS = {
 
 
 def parse_gate_policy(text: str) -> dict:
-    """{"skills": {...}} from `text`, or GatePolicyError naming the key.
+    """{"skills": {...}, "guidance": {...} or None} from `text`, or
+    GatePolicyError naming the key. `guidance:` (skills-evals#124) is
+    optional and has the same keys and rules as `skills:`, kept apart so the
+    two can diverge; without it no guidance verdict is computed.
 
     A missing or invalid `retirement_mode` is `proposal`, the mode that
     removes nothing on its own."""
@@ -259,32 +284,41 @@ def parse_gate_policy(text: str) -> dict:
         # PyYAML raises a bare ValueError for a date-shaped scalar that is
         # not a date (2026-13-05).
         raise GatePolicyError("gate policy is not valid YAML") from None
-    if not isinstance(document, dict) or set(document) != {"skills"} \
-            or not isinstance(document["skills"], dict):
-        raise GatePolicyError("gate policy must be a mapping with one key, skills")
-    block = document["skills"]
+    if not isinstance(document, dict) or "skills" not in document \
+            or not set(document) <= {"skills", "guidance"}:
+        raise GatePolicyError("gate policy must be a mapping with the key skills "
+                              "and optionally guidance")
+    return {"skills": _policy_block(document["skills"], "skills"),
+            "guidance": (_policy_block(document["guidance"], "guidance")
+                         if "guidance" in document else None)}
+
+
+def _policy_block(block, name: str) -> dict:
+    """One block of thresholds (`skills:` or `guidance:`), checked."""
+    if not isinstance(block, dict):
+        raise GatePolicyError(f"gate policy {name} must be a mapping")
     unknown = sorted(set(block) - set(SKILL_KEYS)
                      - {"retire_looks", "retirement_mode"})
     if unknown:
-        raise GatePolicyError(f"gate policy skills has unknown keys {unknown}")
-    skills = {}
+        raise GatePolicyError(f"gate policy {name} has unknown keys {unknown}")
+    out = {}
     for key, (words, valid) in SKILL_KEYS.items():
         if key not in block:
-            raise GatePolicyError(f"gate policy skills is missing {key}")
+            raise GatePolicyError(f"gate policy {name} is missing {key}")
         if not valid(block[key]):
-            raise GatePolicyError(f"gate policy skills.{key} must be {words}")
-        skills[key] = block[key]
+            raise GatePolicyError(f"gate policy {name}.{key} must be {words}")
+        out[key] = block[key]
     looks = block.get("retire_looks")
     if not isinstance(looks, list) or not looks \
-            or not all(_count(skills["min_runs"])(n) for n in looks) \
+            or not all(_count(out["min_runs"])(n) for n in looks) \
             or any(a >= b for a, b in zip(looks, looks[1:])):
-        raise GatePolicyError("gate policy skills.retire_looks must be a "
+        raise GatePolicyError(f"gate policy {name}.retire_looks must be a "
                               "strictly increasing list of integers, each at "
                               "least min_runs")
-    skills["retire_looks"] = list(looks)
+    out["retire_looks"] = list(looks)
     mode = block.get("retirement_mode")
-    skills["retirement_mode"] = mode if mode in MODES else "proposal"
-    return {"skills": skills}
+    out["retirement_mode"] = mode if mode in MODES else "proposal"
+    return out
 
 
 def load_gate_policy(path: Path | None = None) -> dict:
@@ -880,16 +914,29 @@ def _joint_context(with_runs: list, without_runs: list, models: list):
     return candidates[0][1:]
 
 
+def pooled_fixture(run: dict, skill: str, expected: dict) -> str:
+    """The fixture on main a run of `skill` counts for: its own name ("" for
+    flat), or its `FIXTURE_ALIASES` target when the old name is no longer on
+    main and the run's fixture digest equals the target's there."""
+    name = run["fixture"] or ""
+    target = FIXTURE_ALIASES.get((skill, name))
+    if target is None or name in expected or target not in expected:
+        return name
+    digest = expected[target].get("fixture_digest")
+    return target if digest is not None and run["fixture_digest"] == digest else name
+
+
 def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
     """Which arm runs each (fixture, model) cell of `skill` holds, each arm
     pooled by its own key against the content on main (module docstring).
     `expected` maps each fixture on main ("" for a flat one) to its
-    {"fixture_digest", "tested_digest"}, either None when unknown. The one
-    place runs are grouped; swap it to change the window."""
+    {"fixture_digest", "tested_digest"}, either None when unknown. A run's
+    fixture is `pooled_fixture`'s. The one place runs are grouped; swap it
+    to change the window."""
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
-        mine = [r for r in own if (r["fixture"] or "") == fixture]
+        mine = [r for r in own if pooled_fixture(r, skill, expected) == fixture]
         tested, fdig = main.get("tested_digest"), main.get("fixture_digest")
         current_with = [r for r in mine if r["role"] == "with" and tested is not None
                         and r["tested_digest"] == tested and fdig is not None
@@ -974,3 +1021,44 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         verdict, reason = "insufficient", "no cell shows no benefit"
     return {"verdict": verdict, "reason": reason, "cells": cells,
             "runs_used": sorted(used)}
+
+
+# ---------------------------------------------------------------------------
+# Guidance sections (skills-evals#124).
+
+#: Each of a section's two comparisons, and the role of an arm in it by its
+#: delivery mode. `in_situ` is the ablation, the whole guidance with and
+#: without the section, and decides removal; `alone` is the section against
+#: no guidance, and only says whether the section teaches the behavior.
+GUIDANCE_PAIRS = {"in_situ": {"full": "with", "full-minus-section": "without"},
+                  "alone": {"section": "with", "none": "without"}}
+
+
+def guidance_verdict(index: dict, models: list, section: str, policy: dict,
+                     expected: dict) -> dict:
+    """The verdict for one guidance section: `retirement` over its in-situ
+    cells (every run of `index` whose `pair` is `in_situ`), and over its
+    alone cells for contrast. `expected` is as for `pool_cells`, with the
+    section's own extent digest as `tested_digest`, and a run's `pair_key`
+    and arm context are the digest of the rest of the guidance it ran
+    beside, so the two arms of a cell always ran beside the same rest.
+
+    THE TWIST: a section whose in-situ verdict is `retire` while some alone
+    cell shows `benefit` teaches the behavior, but the rest of the guidance
+    already covers it. Its verdict is `shorten-or-merge`, never a removal.
+    Every other in-situ verdict stands as it is."""
+    runs = index.get("runs", [])
+    out = {pair: retirement({"runs": [r for r in runs if r.get("pair") == pair]},
+                            models, section, policy, expected)
+           for pair in GUIDANCE_PAIRS}
+    in_situ, alone = out["in_situ"], out["alone"]
+    verdict, reason = in_situ["verdict"], in_situ["reason"]
+    if verdict == "retire" and any(c["class"] == "benefit" for c in alone["cells"]):
+        verdict, reason = ("shorten-or-merge", "no marginal benefit inside the whole "
+                           "guidance, but a cell shows benefit alone (section vs "
+                           "none): the rest of the guidance covers it")
+    return {"verdict": verdict, "reason": reason, "in_situ_verdict": in_situ["verdict"],
+            "cells": in_situ["cells"],
+            "alone": {"verdict": alone["verdict"], "reason": alone["reason"],
+                      "cells": alone["cells"]},
+            "runs_used": sorted(set(in_situ["runs_used"]) | set(alone["runs_used"]))}

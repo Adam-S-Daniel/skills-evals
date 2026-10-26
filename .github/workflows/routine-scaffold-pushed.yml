@@ -15,17 +15,19 @@ name: Routine scaffold pushed
 # runs nothing from the branch (the same split as
 # routine-eval-results-pushed.yml).
 #
-# Salient path: `evals/real-work/**`, the one directory a scaffold adds to
-# (scripts/scaffold_real_work.py REAL_WORK_ROOT). A push that touches nothing
-# there has nothing to gate. This is not a pull_request workflow, so it
+# No path filter: every push to a scaffold branch is salient. The gate's
+# pull request may already have auto-merge on (Adam, 2026-10-26: no human in
+# the loop), and auto-merge follows the branch, not a commit, so the gate's
+# first job turns it off on EVERY push, whatever the push touched; only a
+# push that passes the gate again turns it back on. A path filter on
+# `evals/real-work/**` would let a push outside that directory ride an armed
+# pull request to main ungated. This is not a pull_request workflow, so it
 # publishes no required check.
 
 on:
   push:
     branches:
       - claude/scaffold-*
-    paths:
-      - evals/real-work/**
 
 permissions: {}
 

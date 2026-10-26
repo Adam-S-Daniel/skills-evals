@@ -991,6 +991,31 @@ class Bodies(Staged):
         _, fixtures_body = self.body("pr-body", "--repo", "skills-evals")
         self.assertIn(f"draft-skill/{SUBJECT}", fixtures_body)
 
+    def test_the_merge_mode_decides_what_both_bodies_promise(self):
+        """improve_gate's one switch: in auto both pull requests merge
+        themselves, the skill's first; draft (the default) keeps a person."""
+        for repo in ("adam-agentskills", "skills-evals"):
+            with self.subTest(repo):
+                code, auto = self.body("pr-body", "--repo", repo, "--mode", "auto")
+                self.assertEqual(code, 0)
+                _, draft = self.body("pr-body", "--repo", repo)
+                self.assertEqual(draft, self.body("pr-body", "--repo", repo,
+                                                  "--mode", "draft")[1])
+                self.assertEqual(auto.rstrip("\n").splitlines()[-1], dns.MARKER)
+                self.assertIsNone(dns.text_problem(auto.replace(dns.MARKER, "")))
+                self.assertNotIn("nothing merges", auto)
+                self.assertIn("merge this one first" if repo == "adam-agentskills"
+                              else "Merge this after", auto)
+        _, skill = self.body("pr-body", "--repo", "adam-agentskills", "--mode", "auto")
+        self.assertIn("merges itself (merge commit)", skill)
+        self.assertIn(dns.improve_gate.REGISTRY_ADR, skill)
+        _, fixtures = self.body("pr-body", "--repo", "skills-evals", "--mode", "auto")
+        self.assertIn("Auto-merge (merge commit) is enabled", fixtures)
+        _, draft = self.body("pr-body", "--repo", "adam-agentskills")
+        self.assertIn("nothing merges itself", draft)
+        with self.assertRaises(SystemExit):
+            self.body("pr-body", "--repo", "skills-evals", "--mode", "yes")
+
     def test_the_issue_body_carries_one_exact_json_block(self):
         record = hook_record(proposal={**hook_record()["proposal"],
                                        "examples": ["ping @someone about #12"]})

@@ -183,6 +183,8 @@ go with your recommendations". Those recommendations, now decided:
    feed the badge.
 4. **#71's three-PR gate stays.** No scheduled improvement loop, routine or
    otherwise, until three human-reviewed PRs from the loop have merged.
+   *Lifted on 2026-10-26: see the
+   [decision 4 addendum](#decision-4-addendum-2026-10-26).*
 5. **The fire bearer is a repository secret** whose name contains none of
    gitleaks' `generic-api-key` keywords (`access`, `auth`, `api`,
    `credential`, `creds`, `key`, `passwd`, `password`, `secret`, `token`).
@@ -371,3 +373,45 @@ Routine run [`session_01HV5BrZ2WgqHVzRq6K7pLka`](https://claude.ai/code/session_
   validation step that treats model-written output as untrusted.
 - **`setup-token` in `eval.yml`:** rejected by ADR 0002's table; a routine
   at least keeps the credential out of the Actions runner.
+
+## Decision 4 addendum (2026-10-26)
+
+Adam lifted #71's three-PR gate on 2026-10-26, with no human in the loop.
+His goal:
+
+> "getting the closed loop completed and working for all aspects of self-improvement"
+
+None of the three
+human-reviewed loop PRs had merged; the gate is removed, not met.
+
+What changes:
+
+- `routine-eval-weekly.yml` plans improve fires beside eval fires.
+  `scripts/plan_week.py` applies the thresholds design's rules: A
+  (eligibility: at least four fixtures with one held out, train headroom, a
+  failing check to target, not owned by retirement, not paused), C
+  (stopping: a 14-day cooldown after a rejection, a stop after three in a row
+  until the skill, a fixture or the roster changes or 90 days pass, at most
+  two retries of a failed fire, no attempt after a merged improvement until
+  the with arm is re-measured) and D (priority bands with minimum shares,
+  each fire reserved at its historical cost).
+- Improve outcomes are not recorded by the routine: its saved prompt is
+  unchanged (changing it needs Adam's OK). `scripts/improve_outcomes.py`
+  derives them from evidence that exists already. The evidence is the fire
+  run's title (`run-name`, `Fire eval routine: improve <skill>`). An
+  accepted candidate shows as the `claude/eval-improve-<run id>` branch. A
+  missing branch twelve hours after the fire counts as a rejection: a
+  measured rejection and a failed run look the same, so both count, the
+  conservative direction.
+- `scripts/allowance_guard.py` charges every improve fire of the last seven
+  days its own cost for the whole window. That cost is twelve eval fires at
+  their measured mean. The guard used to hold one at an eval fire's
+  reservation for two hours (the thresholds design's plumbing gap 2), since
+  improve results never reach `routine-results/`. `check --mode improve`
+  needs room for that charge.
+
+What does not change: arms still run only the registries' default branches
+(decision 1), the per-fire guard still runs before every fire, and the
+improve gate (`routine-improve-gate.yml`) still decides what becomes a
+registry pull request. How an accepted candidate merges is that gate's
+business, not this addendum's.

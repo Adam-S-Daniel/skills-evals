@@ -488,7 +488,9 @@ class BoardFeedTests(unittest.TestCase):
         cases = [(path, 2) for directory in ("orchestrator-scenarios", "real-work")
                  for path in sorted((ROOT / "evals" / directory).glob("*/fixture.yaml"))]
         cases.append((ROOT / "evals/guidance/_delivery/fixture.yaml", 1))
-        self.assertEqual(len(cases), 11)
+        # The globs must not be silently empty; scaffolds add real-work
+        # fixtures with no edit here, so the guard is a floor.
+        self.assertGreaterEqual(len(cases), 11)
         for source, count in cases:
             path = source.relative_to(ROOT).as_posix()
             with self.subTest(path=path):

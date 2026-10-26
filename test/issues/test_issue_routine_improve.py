@@ -7,9 +7,9 @@ candidate only, pushes one branch `claude/eval-improve-<run id>` holding
 the pull-request body and the registry patch the loop writes). It never opens
 a pull request. `scripts/improve_gate.py` validates that branch from the
 default branch's checkout, through git plumbing only, and
-`.github/workflows/routine-improve-gate.yml` opens a DRAFT pull request in
-Adam-S-Daniel/adam-agentskills, but only when the owner-chosen credential
-exists. What is pinned here:
+`.github/workflows/routine-improve-gate.yml` opens a pull request in
+Adam-S-Daniel/adam-agentskills, auto-merging or draft by
+evals/improve-policy.yml, but only when the owner-chosen credential exists. What is pinned here:
 
   * the branch contract: exactly the three files, additions only, under the
     branch's own run id; an accepted record for adam-agentskills whose
@@ -22,9 +22,19 @@ exists. What is pinned here:
     improve push never starts a results ingest, and back;
   * both workflows, parsed with PyYAML: workflow_run for the gate, no
     permissions on the signal, `contents: read` on every gate job, the
-    cross-repository credential only in the draft-PR job and that job
-    skipped unless the credential exists, `--draft`, no merge, no force, no
-    `${{ }}` in a `run:`, bare-SHA pins, no concurrency group;
+    cross-repository credential only in the registry-pr job and that job
+    skipped unless the credential exists, the registry built before the
+    token is minted, `--draft` unless the mode is `auto`, auto-merge only by
+    merge commit and only in auto mode, after the labels, one loop pull
+    request at a time, no force, no `${{ }}` in a `run:`, locked pins, no
+    concurrency group;
+  * `prepare`: the patch, the plugin's patch version in both manifests, a
+    docs/skill-impact.md entry with the record's numbers, a PURPOSE.md stub
+    only when missing, the README table and a skills.lock re-pin commit,
+    nothing else; `draft` when the plugin runs code or the policy says so;
+    refused when the skill moved since it was measured;
+  * evals/improve-policy.yml: `auto` committed, a missing key `auto`,
+    anything malformed `draft`;
   * #71's gate: no workflow that fires the routine or touches an improve
     branch has a schedule.
 
@@ -643,17 +653,375 @@ class ApplyTests(unittest.TestCase):
 
 class PrBodyTests(unittest.TestCase):
 
-    def test_body_wraps_the_report_and_closes_nothing(self):
+    def body(self, mode):
         staged = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, staged)
         (staged / "report.md").write_text(report_text(), encoding="utf-8")
-        body = gate.pr_body(staged, RUN_ID, "a" * 40, BRANCH)
-        self.assertIn(report_text(), body)
-        self.assertIn(BRANCH, body)
-        self.assertIn("Part of https://github.com/Adam-S-Daniel/skills-evals/"
-                      "issues/71", body)
-        self.assertIsNone(gate.CLOSING_RE.search(body))
-        self.assertIsNone(gate.CLOSING_URL_RE.search(gate.closing_text(body)))
+        return gate.pr_body(staged, RUN_ID, "a" * 40, BRANCH, mode)
+
+    def test_body_wraps_the_report_and_closes_nothing(self):
+        for mode in gate.MERGE_MODES:
+            with self.subTest(mode=mode):
+                body = self.body(mode)
+                self.assertIn(report_text(), body)
+                self.assertIn(BRANCH, body)
+                self.assertIn("Part of https://github.com/Adam-S-Daniel/"
+                              "skills-evals/issues/71", body)
+                self.assertIsNone(gate.CLOSING_RE.search(body))
+                self.assertIsNone(gate.CLOSING_URL_RE.search(
+                    gate.closing_text(body)))
+                self.assertTrue(body.endswith("\n" + gate.AGENT_MARKER + "\n"),
+                                "the fleet's agent marker ends the body")
+
+    def test_the_mode_decides_what_the_body_promises(self):
+        auto, draft = self.body("auto"), self.body("draft")
+        self.assertIn("merges itself (merge commit)", auto)
+        self.assertIn(gate.REGISTRY_ADR, auto)
+        self.assertNotIn("nothing merges itself", auto.split("---")[0])
+        self.assertIn("nothing merges itself", draft)
+        self.assertNotIn(gate.REGISTRY_ADR, draft)
+        self.assertEqual(gate.AGENT_MARKER, "<sub>🤖 Written by Claude Code on "
+                         "behalf of @Adam-S-Daniel</sub>")
+
+
+class MergeModeTests(unittest.TestCase):
+    """evals/improve-policy.yml's `improve_merge_mode` (Adam, 2026-10-26:
+    accepted improvements merge with no human in the loop)."""
+
+    def mode(self, text):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        path = tmp / "improve-policy.yml"
+        if text is not None:
+            path.write_text(text, encoding="utf-8")
+        return gate.merge_mode(path)
+
+    def test_the_committed_policy_is_auto(self):
+        self.assertEqual(gate.merge_mode(), "auto")
+        self.assertEqual(gate.POLICY, REPO_ROOT / "evals" / "improve-policy.yml")
+
+    def test_a_missing_key_is_auto(self):
+        self.assertEqual(self.mode(""), "auto")
+        self.assertEqual(self.mode("# nothing set\n"), "auto")
+        self.assertEqual(self.mode("improve_merge_mode: draft\n"), "draft")
+
+    def test_anything_malformed_is_draft(self):
+        for text in (None, "improve_merge_mode: yes\n",
+                     "improve_merge_mode: Auto\n", "improve_merge_mode: [auto]\n",
+                     "improve_merge_mode: auto\nretirement_mode: auto\n",
+                     "- auto\n", "improve_merge_mode: 'auto\n",
+                     "improve_merge_mode: 2026-13-05\n"):
+            with self.subTest(text=text):
+                self.assertEqual(self.mode(text), "draft")
+
+
+PLUGIN = "adam-anything-anywhere"
+FAKE_README = """import pathlib
+root = pathlib.Path(__file__).resolve().parent.parent
+md = root / "plugins/{plugin}/skills/{skill}/SKILL.md"
+description = md.read_text(encoding="utf-8").split("description: ", 1)[1].split(chr(10), 1)[0]
+(root / "README.md").write_text("table: " + description + chr(10), encoding="utf-8")
+""".format(plugin=PLUGIN, skill=SKILL)
+#: Stands in for adam-agentskills' generate_skills_lock.py: `--check-current`
+#: is current when the lock pins HEAD, `--repin` pins HEAD; LOCK_EXIT forces
+#: an exit code, STRAY makes it write a file nobody asked for.
+FAKE_LOCK = """import json, os, pathlib, subprocess, sys
+root = pathlib.Path(__file__).resolve().parent.parent
+if os.environ.get("LOCK_EXIT"):
+    sys.exit(int(os.environ["LOCK_EXIT"]))
+if os.environ.get("STRAY"):
+    (root / "stray.txt").write_text("x", encoding="utf-8")
+lock = root / "skills.lock"
+doc = json.loads(lock.read_text(encoding="utf-8"))
+head = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                      capture_output=True, text=True, check=True).stdout.strip()
+if "--check-current" in sys.argv:
+    sys.exit(0 if doc["ref"] == head else 1)
+if "--repin" in sys.argv and sys.argv[sys.argv.index("--repo") + 1] == ".":
+    doc["ref"] = head
+    lock.write_text(json.dumps(doc) + chr(10), encoding="utf-8")
+    sys.exit(0)
+sys.exit(3)
+"""
+IMPACT = ("# skill-impact.md\n\nEntry format here.\n\n---\n\n"
+          "## 2026-10-23 — other/skill — edit\n\n- Motivation: older.\n")
+
+
+class PrepareTests(unittest.TestCase):
+    """`prepare` builds what adam-agentskills' required checks ask of a
+    skill edit, against a scratch registry whose README and lock scripts
+    are stand-ins."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        env = mock.patch.dict(os.environ, GIT_ENV)
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("LOCK_EXIT", "STRAY"):
+            os.environ.pop(name, None)
+        self.tree = self.tmp / "registry"
+        self.tree.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.write({
+            SKILL_MD: ORIGINAL,
+            f"plugins/{PLUGIN}/skills/{SKILL}/references/x.md": "ref\n",
+            f"plugins/{PLUGIN}/plugin.json":
+                '{\n  "name": "%s",\n  "version": "1.0.0"\n}\n' % PLUGIN,
+            f"plugins/{PLUGIN}/.claude-plugin/plugin.json":
+                '{\n  "name": "%s",\n  "version": "1.0.0",\n'
+                '  "author": { "name": "Fixture" }\n}\n' % PLUGIN,
+            "docs/skill-impact.md": IMPACT,
+            "README.md": "table: Write an ADR.\n",
+            "scripts/generate_readme_table.py": FAKE_README,
+            "scripts/generate_skills_lock.py": FAKE_LOCK,
+            "skills.lock": '{"ref": "none"}\n',
+        })
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "registry")
+        self.measured = self.git("rev-parse", "HEAD")
+        self.staged = self.tmp / "staged"
+        self.staged.mkdir()
+        self.stage()
+
+    def git(self, *args) -> str:
+        return subprocess.run(["git", "-C", str(self.tree), *args], check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def write(self, files: dict) -> None:
+        for name, text in files.items():
+            path = self.tree / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+
+    def stage(self, new=CANDIDATE, doc=None) -> None:
+        doc = doc or record(split={"rotation": 0, "train": ["bootstrap"],
+                                   "validation": "existing-convention",
+                                   "holdout": "supersede"},
+                            baseline={"bootstrap": metrics(1),
+                                      "existing-convention": metrics(2),
+                                      "supersede": {"passed": True}},
+                            candidate={"bootstrap": metrics(2),
+                                       "existing-convention": metrics(2)})
+        (self.staged / "summary.json").write_text(json.dumps(doc),
+                                                  encoding="utf-8")
+        (self.staged / "skill.patch").write_text(patch_text(new=new),
+                                                 encoding="utf-8")
+        (self.staged / "report.md").write_text(report_text(), encoding="utf-8")
+
+    def prepare(self, policy_text="improve_merge_mode: auto\n"):
+        policy = self.tmp / "improve-policy.yml"
+        policy.write_text(policy_text, encoding="utf-8")
+        return gate.prepare(self.staged, self.tree, SKILL_MD, self.measured,
+                            RUN_ID, policy)
+
+    def changed(self) -> list[str]:
+        return sorted(self.git("diff", "--name-only", self.measured,
+                               "HEAD").split("\n"))
+
+    def show(self, rel: str) -> str:
+        return (self.tree / rel).read_text(encoding="utf-8")
+
+    def test_auto_builds_the_content_commit_and_the_lock_commit(self):
+        new = CANDIDATE.replace("Write an ADR.", "Write or supersede an ADR.")
+        self.stage(new=new)
+        # The fixture identity would override the gate's own; the workflow
+        # sets none.
+        for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+                     "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+            os.environ.pop(name)
+        out = self.prepare()
+        self.assertEqual(out["mode"], "auto")
+        self.assertNotIn("mode_reason", out)
+        self.assertEqual(out["base_sha"], self.measured)
+        self.assertEqual(out["version"], "1.0.1")
+        self.assertEqual(out["commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(self.git("rev-parse", "HEAD~1"), out["content_sha"])
+        self.assertEqual(self.git("rev-parse", "HEAD~2"), self.measured)
+        self.assertEqual(self.git("show", "--name-only", "--format=", "HEAD"),
+                         "skills.lock")
+        self.assertEqual(json.loads(self.show("skills.lock"))["ref"],
+                         out["content_sha"])
+        skill_dir = f"plugins/{PLUGIN}/skills/{SKILL}"
+        self.assertEqual(self.changed(), sorted([
+            "README.md", "docs/skill-impact.md", f"plugins/{PLUGIN}/plugin.json",
+            f"plugins/{PLUGIN}/.claude-plugin/plugin.json", "skills.lock",
+            f"{skill_dir}/SKILL.md", f"{skill_dir}/PURPOSE.md"]))
+        self.assertEqual(self.show(SKILL_MD), new)
+        self.assertEqual(self.show("README.md"),
+                         "table: Write or supersede an ADR.\n")
+        for name in gate.MANIFESTS:
+            text = self.show(f"plugins/{PLUGIN}/{name}")
+            self.assertIn('"version": "1.0.1"', text)
+            self.assertEqual(text.replace("1.0.1", "1.0.0"),
+                             self.git("show", f"{self.measured}:plugins/{PLUGIN}/{name}")
+                             + "\n", "only the version moved")
+        self.assertIn(f"# Purpose — {SKILL}", self.show(f"{skill_dir}/PURPOSE.md"))
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertIn("Agent: claude-code", self.git("log", "-1", "--format=%B",
+                                                     "HEAD~1"))
+        self.assertEqual(self.git("log", "-1", "--format=%an <%ae>"),
+                         "skills-evals improve-gate bot "
+                         "<skills-evals@users.noreply.github.com>")
+
+    def test_the_impact_entry_is_newest_first_and_carries_the_numbers(self):
+        self.prepare()
+        text = self.show("docs/skill-impact.md")
+        head, rest = text.split("\n---\n\n", 1)
+        self.assertEqual(head + "\n---", IMPACT.split("\n\n## ")[0])
+        self.assertTrue(rest.startswith(
+            f"## 2026-10-06 — {PLUGIN}/{SKILL} — edit\n\n- Motivation: "))
+        self.assertIn("\n## 2026-10-23 — other/skill — edit", rest)
+        entry = rest.split("\n## 2026-10-23", 1)[0]
+        for line in ("- Motivation:", "- Change:", "- Eval:", "- Outcome:"):
+            self.assertEqual(entry.count("\n" + line), 1, line)
+        self.assertIn("train bootstrap 1/2 -> 2/2; validation "
+                      "existing-convention 2/2 -> 2/2; holdout supersede "
+                      "n/a -> n/a", entry)
+        self.assertIn("1.0.0 -> 1.0.1", entry)
+        self.assertIn("auto-merges once required checks pass", entry)
+        self.assertIn("a `PURPOSE.md` stub added", entry)
+        self.assertIsNone(gate.MENTION_RE.search(entry))
+        self.assertIsNone(gate.CLOSING_RE.search(gate.closing_text(entry)))
+
+    def test_an_existing_purpose_is_kept(self):
+        purpose = f"plugins/{PLUGIN}/skills/{SKILL}/PURPOSE.md"
+        self.write({purpose: "# Purpose\n\nHand-written.\n"})
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "purpose")
+        self.measured = self.git("rev-parse", "HEAD")
+        self.prepare()
+        self.assertEqual(self.show(purpose), "# Purpose\n\nHand-written.\n")
+        self.assertNotIn(purpose, self.changed())
+        self.assertNotIn("PURPOSE.md", self.show("docs/skill-impact.md"))
+
+    def test_a_current_lock_gets_no_second_commit(self):
+        os.environ["LOCK_EXIT"] = "0"
+        out = self.prepare()
+        self.assertEqual(out["commit"], out["content_sha"])
+        self.assertNotIn("skills.lock", self.changed())
+
+    def test_a_registry_without_a_lock_gets_no_second_commit(self):
+        self.git("rm", "-q", "skills.lock")
+        self.git("commit", "-q", "-m", "no lock")
+        self.measured = self.git("rev-parse", "HEAD")
+        out = self.prepare()
+        self.assertEqual(out["commit"], out["content_sha"])
+
+    def test_the_policy_can_ask_for_a_draft(self):
+        out = self.prepare("improve_merge_mode: draft\n")
+        self.assertEqual(out["mode"], "draft")
+        self.assertNotIn("mode_reason", out)
+        self.assertIn("draft pull request; a person merges or closes it",
+                      self.show("docs/skill-impact.md"))
+
+    def test_a_plugin_that_runs_code_falls_back_to_a_draft(self):
+        cases = {
+            "hooks": {f"plugins/{PLUGIN}/hooks/hooks.json": "{}\n"},
+            "bin": {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"},
+            "settings": {f"plugins/{PLUGIN}/settings.json": "{}\n"},
+            "manifest": {f"plugins/{PLUGIN}/.claude-plugin/plugin.json":
+                         '{\n  "name": "%s",\n  "version": "1.0.0",\n'
+                         '  "hooks": "./h.json"\n}\n' % PLUGIN},
+        }
+        start = self.measured
+        for label, files in cases.items():
+            with self.subTest(case=label):
+                self.git("checkout", "-q", "-f", "--detach", start)
+                self.git("clean", "-qfdx")
+                self.write(files)
+                self.git("add", "-A")
+                self.git("commit", "-q", "-m", label)
+                self.measured = self.git("rev-parse", "HEAD")
+                out = self.prepare()
+                self.assertEqual(out["mode"], "draft")
+                self.assertIn("runs code", out["mode_reason"])
+                self.assertIn("draft pull request",
+                              self.show("docs/skill-impact.md"))
+
+    def test_refuses_a_skill_that_moved_since_it_was_measured(self):
+        self.write({f"plugins/{PLUGIN}/skills/{SKILL}/references/x.md": "new\n"})
+        self.git("commit", "-q", "-am", "moved")
+        tip = self.git("rev-parse", "HEAD")
+        with self.assertRaisesRegex(ingest.Rejected, "measure it again"):
+            self.prepare()
+        self.assertEqual(self.git("rev-parse", "HEAD"), tip)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_refuses_a_dirty_checkout(self):
+        self.write({"notes.txt": "x\n"})
+        with self.assertRaisesRegex(ingest.Rejected, "not clean"):
+            self.prepare()
+
+    def test_refuses_manifests_that_disagree_or_are_not_semver(self):
+        for label, version in (("disagree", "1.0.2"), ("not-semver", "1.0")):
+            with self.subTest(case=label):
+                self.git("checkout", "-q", "-f", "main")
+                self.git("clean", "-qfdx")
+                rel = f"plugins/{PLUGIN}/plugin.json"
+                self.write({rel: '{\n  "version": "%s"\n}\n' % version})
+                if label == "not-semver":
+                    other = f"plugins/{PLUGIN}/.claude-plugin/plugin.json"
+                    self.write({other: '{\n  "version": "%s"\n}\n' % version})
+                self.git("commit", "-q", "-am", label)
+                self.measured = self.git("rev-parse", "HEAD")
+                with self.assertRaisesRegex(ingest.Rejected, "version"):
+                    self.prepare()
+
+    def test_refuses_when_a_registry_script_fails_or_strays(self):
+        for env, pattern in ((("LOCK_EXIT", "2"), "could not run"),
+                             (("STRAY", "1"), "not asked to")):
+            with self.subTest(env=env):
+                self.git("checkout", "-q", "-f", "--detach", self.measured)
+                self.git("clean", "-qfdx")
+                os.environ.pop("LOCK_EXIT", None)
+                os.environ.pop("STRAY", None)
+                os.environ[env[0]] = env[1]
+                with self.assertRaisesRegex(ingest.Rejected, pattern):
+                    self.prepare()
+
+    def test_refuses_unvalidated_arguments(self):
+        for args in (("plugins/p/skills/s/../SKILL.md", self.measured, RUN_ID),
+                     (SKILL_MD, "HEAD", RUN_ID), (SKILL_MD, self.measured, "x")):
+            with self.subTest(args=args):
+                with self.assertRaises(ingest.Rejected):
+                    gate.prepare(self.staged, self.tree, *args)
+
+    def test_merge_mode_is_the_same_decision_for_other_gates(self):
+        """`merge-mode` (routine-draft-skill-gate.yml) and `prepare` read one
+        switch through one function."""
+        policy = self.tmp / "p.yml"
+        for text, files, want in (
+                ("improve_merge_mode: auto\n", {}, ["mode=auto"]),
+                ("improve_merge_mode: draft\n", {}, ["mode=draft"]),
+                ("improve_merge_mode: auto\n",
+                 {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"},
+                 ["mode=draft", "mode_reason=the skill's plugin runs code "
+                  "(it has a runtime path)"])):
+            with self.subTest(text=text, files=sorted(files)):
+                policy.write_text(text, encoding="utf-8")
+                self.write(files)
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = gate.main(["merge-mode", "--tree", str(self.tree),
+                                      "--plugin", PLUGIN, "--policy", str(policy)])
+                self.assertEqual((code, out.getvalue().splitlines()), (0, want))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(gate.main(["merge-mode", "--tree", str(self.tree),
+                                        "--plugin", "../x"]), 1)
+
+    def test_the_cli_prints_validated_values(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = gate.main(["prepare", "--staged", str(self.staged),
+                              "--tree", str(self.tree), "--skill-md", SKILL_MD,
+                              "--registry-sha", self.measured,
+                              "--run-id", RUN_ID])
+        self.assertEqual(code, 0)
+        keys = [line.split("=", 1)[0] for line in out.getvalue().splitlines()]
+        self.assertEqual(keys, ["mode", "base_sha", "content_sha", "commit",
+                                "version"])
 
 
 # ---------------------------------------------------------------------------
@@ -742,11 +1110,11 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.gate["permissions"], {})
-        self.assertEqual(set(self.jobs), {"validate", "credential", "draft-pr"})
+        self.assertEqual(set(self.jobs), {"validate", "credential", "registry-pr"})
         self.assertEqual(self.jobs["validate"]["permissions"],
                          {"contents": "read"})
         self.assertEqual(self.jobs["credential"]["permissions"], {})
-        self.assertEqual(self.jobs["draft-pr"]["permissions"],
+        self.assertEqual(self.jobs["registry-pr"]["permissions"],
                          {"contents": "read"})
         for doc in (self.gate, self.signal):
             self.assertNotIn("env", doc)
@@ -763,7 +1131,7 @@ class WorkflowShapeTests(unittest.TestCase):
                          {"validate"})
 
     def mint_step(self) -> dict:
-        steps = [s for s in self.jobs["draft-pr"]["steps"]
+        steps = [s for s in self.jobs["registry-pr"]["steps"]
                  if str(s.get("uses", "")).startswith(
                      "actions/create-github-app-token@")]
         self.assertEqual(len(steps), 1, "one step mints the App token")
@@ -776,13 +1144,13 @@ class WorkflowShapeTests(unittest.TestCase):
         client, pem = gate.APP_CLIENT_ID_SECRET, gate.APP_PEM_SECRET
         refs = sorted((path, text.strip()) for path, text in strings(self.gate)
                       if "secrets." in text)
-        mint = self.jobs["draft-pr"]["steps"].index(self.mint_step())
+        mint = self.jobs["registry-pr"]["steps"].index(self.mint_step())
         self.assertEqual(refs, sorted([
             (("jobs", "credential", "steps", "0", "env", "PR_CREDENTIAL_SET"),
              "${{ secrets.%s != '' && secrets.%s != '' }}" % (client, pem)),
-            (("jobs", "draft-pr", "steps", str(mint), "with", "client-id"),
+            (("jobs", "registry-pr", "steps", str(mint), "with", "client-id"),
              "${{ secrets.%s }}" % client),
-            (("jobs", "draft-pr", "steps", str(mint), "with", "private-key"),
+            (("jobs", "registry-pr", "steps", str(mint), "with", "private-key"),
              "${{ secrets.%s }}" % pem),
         ]))
         self.assertNotIn("secrets.", json.dumps(self.jobs["validate"]))
@@ -802,18 +1170,18 @@ class WorkflowShapeTests(unittest.TestCase):
         path, text = users[0]
         self.assertEqual(path[-2:], ("env", "GH_TOKEN"))
         self.assertEqual(text.strip(), "${{ steps.app-token.outputs.token }}")
-        holder = self.jobs["draft-pr"]["steps"][int(path[3])]
+        holder = self.jobs["registry-pr"]["steps"][int(path[3])]
         self.assertIn("gh pr create", holder["run"])
 
-    def test_the_draft_pr_job_is_skipped_without_the_credential(self):
-        job = self.jobs["draft-pr"]
+    def test_the_pr_job_is_skipped_without_the_credential(self):
+        job = self.jobs["registry-pr"]
         self.assertEqual(sorted(job["needs"]), ["credential", "validate"])
         self.assertIn("needs.credential.outputs.present == 'true'", job["if"])
         self.assertEqual(self.jobs["credential"]["outputs"]["present"],
                          "${{ steps.check.outputs.present }}")
 
-    def test_the_draft_pr_job_revalidates_before_it_holds_the_credential(self):
-        steps = self.jobs["draft-pr"]["steps"]
+    def test_the_pr_job_revalidates_and_builds_before_it_holds_the_credential(self):
+        steps = self.jobs["registry-pr"]["steps"]
         names = [s.get("id") for s in steps]
         self.assertIn("revalidate", names)
         holder = next(i for i, s in enumerate(steps)
@@ -823,20 +1191,63 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertLess(names.index("revalidate"), holder)
         body = steps[names.index("revalidate")]["run"]
         self.assertIn("--expect-sha", body)
+        # The registry's own scripts run in the build step, before the
+        # token exists, and that step names no credential at all.
+        self.assertLess(names.index("build"), holder)
+        build = steps[names.index("build")]
+        self.assertIn("improve_gate.py prepare", build["run"])
+        self.assertNotIn("GH_TOKEN", json.dumps(build))
+        self.assertNotIn("extraheader", build["run"])
 
-    def test_opens_a_draft_in_adam_agentskills_and_never_merges(self):
+    def open_step(self) -> dict:
+        return next(s for s in self.jobs["registry-pr"]["steps"]
+                    if "gh pr create" in s.get("run", ""))
+
+    def test_opens_one_pull_request_in_adam_agentskills(self):
         bodies = "\n".join(body for _, body in run_blocks(self.gate))
         creates = re.findall(r"gh pr create[^\n]*(?:\\\n[^\n]*)*", bodies)
         self.assertEqual(len(creates), 1)
-        self.assertIn("--draft", creates[0])
-        self.assertIn("--repo \"$TARGET_REPO\"", creates[0])
-        step = next(s for s in self.jobs["draft-pr"]["steps"]
-                    if "gh pr create" in s.get("run", ""))
+        self.assertIn('--repo "$TARGET_REPO" "${draft[@]}"', creates[0])
+        step = self.open_step()
         self.assertEqual(step["env"]["TARGET_REPO"],
                          "Adam-S-Daniel/adam-agentskills")
-        for banned in ("gh pr merge", "--force", "push -f", "--admin",
-                       "gh pr review", "--auto"):
+        self.assertEqual(step["env"]["MODE"], "${{ steps.build.outputs.mode }}")
+        self.assertIn('if [ "$MODE" = draft ]; then\n  draft=(--draft)\nfi',
+                      step["run"].replace("          ", ""))
+        self.assertIn('-f "labels[]=agent-authored" -f "labels[]=eval-improve"',
+                      step["run"])
+        for banned in ("--force", "push -f", "--admin", "gh pr review",
+                       "--squash", "--rebase", "--approve", "git push --delete"):
             self.assertNotIn(banned, bodies)
+
+    def test_auto_merge_is_a_merge_commit_enabled_only_in_auto_mode(self):
+        run = self.open_step()["run"]
+        merges = re.findall(r"gh pr merge[^\n]*", run)
+        self.assertEqual(merges, ['gh pr merge "$url" --repo "$TARGET_REPO" '
+                                  '--auto --merge'])
+        auto = run.index('if [ "$MODE" = auto ]; then')
+        self.assertLess(auto, run.index("gh pr merge"))
+        self.assertLess(run.index("labels[]="), auto,
+                        "labels go on before auto-merge is enabled")
+        self.assertLess(run.index("gh pr merge"), run.index('"MERGE"'),
+                        "the enabled merge method is read back")
+        other = "\n".join(body for job, body in run_blocks(self.gate)
+                          if body is not run)
+        self.assertNotIn("gh pr merge", other)
+
+    def test_one_loop_pull_request_at_a_time(self):
+        run = self.open_step()["run"]
+        self.assertIn("eval-improve/*|retire-skill/*|draft-skill/*)", run)
+        self.assertLess(run.index("retire-skill/*"), run.index("push origin"))
+        self.assertLess(run.index("ls-remote --heads"), run.index("push origin"))
+
+    def test_the_policy_file_names_the_mode_the_build_step_reads(self):
+        policy = yaml.safe_load(gate.POLICY.read_text(encoding="utf-8"))
+        self.assertEqual(policy, {"improve_merge_mode": "auto"})
+        build = next(s for s in self.jobs["registry-pr"]["steps"]
+                     if s.get("id") == "build")
+        self.assertNotIn("--policy", build["run"],
+                         "the committed default-branch policy is the one read")
 
     def test_every_push_targets_the_improve_branch_without_force(self):
         targets = [t for _, body in run_blocks(self.gate)
@@ -875,7 +1286,7 @@ class WorkflowShapeTests(unittest.TestCase):
                     self.assertNotIn("${{", body)
 
     def test_checkouts_are_the_default_branch_without_credentials(self):
-        for name in ("validate", "draft-pr"):
+        for name in ("validate", "registry-pr"):
             checkouts = [s for s in self.jobs[name]["steps"]
                          if str(s.get("uses", "")).startswith(
                              "actions/checkout@")]

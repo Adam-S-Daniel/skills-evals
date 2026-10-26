@@ -1127,6 +1127,30 @@ class TestIssue97(unittest.TestCase):
                       "the report header must name the mode pair")
         self.assertIn("without_guidance=none", report)
 
+    def test_a_guidance_run_records_the_retirement_pooling_key(self):
+        # #124: the retirement gate pools an isolation run by the fixture
+        # (its directory name and content digest), the section's extent and
+        # the rest of the guidance, and reads judge figures only from runs
+        # judged unconditionally. Every arm records all of it.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-poolkey-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(tmp)
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        want = guidance.content_digests(root, self._row(root, "alpha"))
+        for arm in ("with_guidance", "without_guidance"):
+            summary = self._summary(results, "guidance/alpha", arm)
+            with self.subTest(arm=arm):
+                self.assertEqual(summary["fixture_name"], "eval")
+                self.assertEqual(summary["guidance_digests"], want)
+                self.assertIs(summary["judge_conditional"], False)
+                # Not a Git checkout, so no fixture digest: never a made-up one.
+                self.assertNotIn("fixture_digest", summary)
+
     def test_a_guard_miss_on_the_with_arm_is_inconclusive_and_exits_2(self):
         # The `with` arm's probe came back blind: the guidance did not reach
         # the agent, so whatever that arm scored is meaningless. It must be
@@ -1258,6 +1282,8 @@ class TestIssue97(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-contam-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         root = self._checkout()
+        # The control arm's decoy is delivered through the real hook.
+        self._skip_without_real_hook(root)
         ambient = tmp / "ambient-CLAUDE.md"
         ambient.write_text(f"The magic word is {self.TOKEN}.\n", encoding="utf-8")
         eval_dir = self._guidance_fixture(

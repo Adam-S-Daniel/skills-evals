@@ -16,7 +16,8 @@ name: Gate routine skill draft
 #               fixtures. This gate opens a DRAFT pull request in
 #               adam-agentskills with the skill, then a DRAFT pull request
 #               here with only evals/<subject>/ and its README layout line;
-#               both bodies say to merge the skill first.
+#               both bodies say to merge the skill first. In auto merge
+#               mode (below) both are ready instead, with auto-merge on.
 #   rejected    nothing else: the record stays on its branch, and the
 #               subject counts as drafted, so it is not picked again.
 #
@@ -62,8 +63,18 @@ name: Gate routine skill draft
 # * One proposal per subject: an existing `draft-skill/<subject>` branch in
 #   adam-agentskills, `draft-skill-fixtures/<subject>` branch here or
 #   `Hook proposal: <subject>` issue (open or closed) means one is already
-#   waiting for a person, so nothing is opened. Nothing here merges,
-#   approves, force-pushes or deletes anything.
+#   waiting for a person, so nothing is opened. Nothing here approves,
+#   force-pushes or deletes anything.
+# * The merge mode is the improvement gate's one switch,
+#   evals/improve-policy.yml `improve_merge_mode`, read by
+#   `improve_gate.py merge-mode` (draft when the skill's plugin runs code).
+#   In `auto` (Adam, 2026-10-26; adam-agentskills ADR 0021) the skill's pull
+#   request is ready, labeled and auto-merges (merge commit) after its
+#   required checks, unless another loop pull request (`eval-improve/*`,
+#   `draft-skill/*`, `retire-skill/*`) is open there, which makes both
+#   drafts. The fixtures pull request is ready with auto-merge only when the
+#   skill's is, so it never leads; opened with the job token, its required
+#   checks start only when someone pushes or runs them.
 # * Branch names, shas and file content are never interpolated into a
 #   `run:` block: the event is read from $GITHUB_EVENT_PATH by the
 #   validator, which emits only values that matched a strict pattern, and
@@ -216,6 +227,7 @@ jobs:
       contents: read
     outputs:
       opened: ${{ steps.open.outputs.opened }}
+      auto: ${{ steps.open.outputs.auto }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -260,6 +272,21 @@ jobs:
             --out "$RUNNER_TEMP/staged" > "$RUNNER_TEMP/revalidate.out"
           cat "$RUNNER_TEMP/revalidate.out"
 
+      # The loop's one merge switch (evals/improve-policy.yml), lowered to
+      # draft when the skill's plugin runs code, exactly as the improvement
+      # gate decides it. No credential is held yet.
+      - name: Decide the merge mode
+        id: mode
+        working-directory: skills-evals
+        env:
+          PLUGIN: ${{ needs.validate.outputs.plugin }}
+        run: |
+          set -euo pipefail
+          python3 scripts/improve_gate.py merge-mode \
+            --tree ../adam-agentskills --plugin "$PLUGIN" > "$RUNNER_TEMP/mode.out"
+          cat "$RUNNER_TEMP/mode.out"
+          cat "$RUNNER_TEMP/mode.out" >> "$GITHUB_OUTPUT"
+
       # Minted only now, after re-validation: an installation token for
       # adam-agentskills alone, with contents and pull-requests write only.
       - name: Mint the GitHub App token for adam-agentskills
@@ -273,7 +300,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Open the skill's draft pull request in adam-agentskills
+      - name: Open the skill's pull request in adam-agentskills
         id: open
         working-directory: skills-evals
         env:
@@ -284,9 +311,19 @@ jobs:
           RUN_ID: ${{ needs.validate.outputs.run_id }}
           SUBJECT: ${{ needs.validate.outputs.subject }}
           PLUGIN: ${{ needs.validate.outputs.plugin }}
+          MODE: ${{ steps.mode.outputs.mode }}
+          MODE_REASON: ${{ steps.mode.outputs.mode_reason }}
         run: |
           set -euo pipefail
           echo "opened=false" >> "$GITHUB_OUTPUT"
+          echo "auto=false" >> "$GITHUB_OUTPUT"
+          if ! [[ "$MODE" =~ ^(auto|draft)$ ]]; then
+            echo "::error::the merge-mode step decided no mode"
+            exit 1
+          fi
+          if [ -n "$MODE_REASON" ]; then
+            echo "::notice::opening drafts, not auto-merging pull requests: ${MODE_REASON}"
+          fi
           # The values re-derived from the judged sha must be the ones
           # `validate` handed over.
           for pair in "decision=accepted" "run_id=${RUN_ID}" "sha=${SHA}" \
@@ -315,6 +352,20 @@ jobs:
           if [ -n "$existing" ]; then
             echo "::notice::${target} already exists in ${TARGET_REPO}; a draft of ${SUBJECT} is already waiting, so this one is not opened"
             exit 0
+          fi
+          # Another open loop pull request writes the same bundle version,
+          # docs/skill-impact.md and skills.lock, so this one would conflict
+          # once that one merged: it is opened as a draft for a person.
+          if [ "$MODE" = auto ]; then
+            heads="$(gh api --paginate "repos/${TARGET_REPO}/pulls?state=open&per_page=100" \
+              --jq '.[].head.ref')" || { echo "::error::could not list ${TARGET_REPO}'s open pull requests"; exit 1; }
+            while IFS= read -r head; do
+              case "$head" in
+                eval-improve/*|retire-skill/*|draft-skill/*)
+                  echo "::notice::a loop pull request is already open in ${TARGET_REPO}; opening drafts instead"
+                  MODE=draft ;;
+              esac
+            done <<<"$heads"
           fi
           # A new skill adds files, so it is based on the registry's current
           # default branch, where the registry's own additions (apply) fit.
@@ -356,15 +407,32 @@ jobs:
           body="$RUNNER_TEMP/body.md"
           python3 scripts/draft_new_skill.py pr-body --staged "$RUNNER_TEMP/staged" \
             --run-id "$RUN_ID" --sha "$SHA" --branch "$BRANCH" \
-            --repo adam-agentskills > "$body"
-          url="$(gh pr create --repo "$TARGET_REPO" --draft --base "$base" \
+            --repo adam-agentskills --mode "$MODE" > "$body"
+          draft=()
+          if [ "$MODE" = draft ]; then
+            draft=(--draft)
+          fi
+          url="$(gh pr create --repo "$TARGET_REPO" "${draft[@]}" --base "$base" \
             --head "$target" \
             --title "New skill: ${SUBJECT} (draft run ${RUN_ID})" \
             --body-file "$body")"
           echo "opened=true" >> "$GITHUB_OUTPUT"
-          # The label is a courtesy: a missing label must not strand an
-          # opened pull request, so a failure here is a warning.
-          if ! gh pr edit "$url" --add-label agent-authored > /dev/null 2>&1; then
+          if [ "$MODE" = auto ]; then
+            # Labeled before auto-merge: a pull request that could not be
+            # marked as the loop's stays open for a person.
+            gh pr edit "$url" --add-label agent-authored > /dev/null \
+              || { echo "::error::could not label ${url}; it stays open without auto-merge"; exit 1; }
+            gh pr merge "$url" --repo "$TARGET_REPO" --auto --merge
+            method="$(gh pr view "$url" --repo "$TARGET_REPO" --json autoMergeRequest \
+              --jq '.autoMergeRequest.mergeMethod // ""')" || method=""
+            if [ "$method" != "MERGE" ]; then
+              echo "::error::auto-merge is not enabled on ${url}"
+              exit 1
+            fi
+            echo "auto=true" >> "$GITHUB_OUTPUT"
+          # The label is a courtesy on a draft: a missing label must not
+          # strand an opened pull request, so a failure here is a warning.
+          elif ! gh pr edit "$url" --add-label agent-authored > /dev/null 2>&1; then
             echo "::warning::could not add the agent-authored label to the skill's pull request"
           fi
           {
@@ -430,7 +498,7 @@ jobs:
       # from the default branch: the record under draft-skill/ stays on the
       # routine's branch. The job token pushes; a push with it starts no
       # workflow.
-      - name: Open the fixtures' draft pull request
+      - name: Open the fixtures' pull request
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ github.token }}
@@ -441,6 +509,7 @@ jobs:
           RUN_ID: ${{ needs.validate.outputs.run_id }}
           SUBJECT: ${{ needs.validate.outputs.subject }}
           PLUGIN: ${{ needs.validate.outputs.plugin }}
+          AUTO: ${{ needs.skill-pr.outputs.auto }}
         run: |
           set -euo pipefail
           for pair in "decision=accepted" "run_id=${RUN_ID}" "sha=${SHA}" \
@@ -489,18 +558,41 @@ jobs:
             exit 1
           fi
           body="$RUNNER_TEMP/body.md"
+          # Auto only when the skill's own pull request auto-merges: the
+          # fixtures follow the skill, never lead it.
+          mode=draft
+          if [ "$AUTO" = true ]; then
+            mode=auto
+          fi
           python3 scripts/draft_new_skill.py pr-body --staged "$RUNNER_TEMP/staged" \
             --run-id "$RUN_ID" --sha "$SHA" --branch "$BRANCH" \
-            --repo skills-evals > "$body"
-          url="$(gh pr create --repo "$REPO" --draft --base "$BASE" \
+            --repo skills-evals --mode "$mode" > "$body"
+          draft=()
+          if [ "$mode" = draft ]; then
+            draft=(--draft)
+          fi
+          url="$(gh pr create --repo "$REPO" "${draft[@]}" --base "$BASE" \
             --head "$target" \
             --title "Fixtures for the drafted ${SUBJECT} skill (draft run ${RUN_ID})" \
             --body-file "$body")"
           if ! gh pr edit "$url" --add-label agent-authored > /dev/null 2>&1; then
             echo "::warning::could not add the agent-authored label to the fixtures pull request"
           fi
+          # The job token starts no workflow, so this pull request's
+          # required checks wait for someone to push or run them; by then
+          # the skill's pull request, already auto-merging, has had its
+          # checks. Auto-merge only removes the click.
+          if [ "$mode" = auto ]; then
+            gh pr merge "$url" --repo "$REPO" --auto --merge
+            method="$(gh pr view "$url" --repo "$REPO" --json autoMergeRequest \
+              --jq '.autoMergeRequest.mergeMethod // ""')" || method=""
+            if [ "$method" != "MERGE" ]; then
+              echo "::error::auto-merge is not enabled on ${url}"
+              exit 1
+            fi
+          fi
           {
-            echo "### Fixtures draft pull request opened"
+            echo "### Fixtures pull request opened (${mode})"
             echo
             echo "- Run id: \`${RUN_ID}\`"
             echo "- Branch: \`${target}\` at \`${commit}\`"

@@ -5,6 +5,9 @@
   reopened and armed by a dedicated GitHub App, and the `ci.yml` dispatch
   in decision 3 is gone.
 - **Amended by [ADR 0004](0004-eval-runs-on-the-roster-its-run-merged.md) (2026-09-30):** `roster-pr` arms the pull request BEFORE the eval (`needs: [roster, disarm]`), not last, and a `roster-wait` job resolves the arming (merged, or auto-merge turned off) before `eval` and `publish` start.
+- **Extended 2026-10-26** by the [addendum](#addendum-2026-10-26-fixture-pull-requests-merge-the-same-way)
+  below: real-work scaffold pull requests and fixture promotion pull
+  requests use the same App and auto-merge.
 - **Issue:** none filed; Adam's decision of 2026-09-28. Settings-as-code
   follow-up for the "Allow GitHub Actions to create and approve pull
   requests" repo setting this depends on:
@@ -578,6 +581,53 @@ scope on the repository's contents. A side effect: no job pushes
 leaves is its own run alone. Merge this change before the ruleset, and
 verify it with a `roster_only` dispatch; it works with or without the
 ruleset in place.
+
+## Addendum 2026-10-26: fixture pull requests merge the same way
+
+**Decision (Adam, 2026-10-26: a "closed loop with no human in the loop").**
+Eval fixtures are the improvement queue (improve needs several per skill,
+and only writing-adrs has enough), and until now each one waited on a
+person twice: a scaffolded real-work fixture landed as a draft pull request
+a person reviewed and merged, and a merged fixture stayed `draft: true`
+until a person removed the key and scheduled it. Both now merge through
+this ADR's mechanism, with no human review:
+
+1. **Scaffold pull requests** (`routine-scaffold-gate.yml`). When
+   `scripts/scaffold_real_work.py gate` passes, the roster App opens the
+   pull request ready for review (or marks an open draft ready) and runs
+   `gh pr merge --auto --merge --match-head-commit <validated sha>`. Decision
+   4's rule carries over as a `disarm` job that turns auto-merge off on the
+   branch's open pull request on every gate run, before validation, and
+   `routine-scaffold-pushed.yml` loses its path filter so that every push to
+   the branch reaches it; only a push that passes the gate is re-armed.
+2. **Promotion pull requests** (`routine-fixture-supply.yml`, daily).
+   `scaffold_real_work.py promote` flips `draft: true` to `draft: false` and
+   adds the fixture to `evals/scheduled.yml` once it has two ingested runs
+   with both arms and no errored arm for its committed content (never under
+   an `onboarding` or `browser-testing` directory). The App pushes the change
+   to `fixture-promotion/<run id>`, a new branch each time, opens the pull
+   request and arms it the same way. One is open at a time.
+3. **The same App and the same fallbacks** (round 6): the token is minted in
+   the one job that writes the pull request, reaches only `gh` and the one
+   push, and is never GH_TOKEN. No token: the scaffold gate opens a draft
+   with GITHUB_TOKEN and arms nothing (the flow before this addendum), and
+   promotion publishes nothing.
+4. **What a person used to check, and what checks it now.** The checker
+   files must be the merge commit's own (the gate compares them with trusted
+   Git bytes, replacing the reviewer's `CHECKER_BLOBS` entry); ci.yml and
+   `scripts/dev_setup.sh` derive the dependency installs from each fixture's
+   own `deps:` (`scaffold_real_work.py deps-dirs`), so a scaffold changes
+   nothing outside its directory; and `test` scores every real-work fixture
+   red on the seed and green with the fix. A fixture that fails any of them
+   leaves its pull request open, armed, and unmerged.
+
+**Residuals.** The prompt and `interface_strings:` are model-authored and now
+reach `main` unread; the gate lints them but does not judge them. Between
+arming and the merge, a write-access actor that pushes the scaffold branch
+retargets the armed pull request until that push's own `disarm` runs, the
+gap round 4 names for `roster/proposal`; a `test` run takes far longer than
+`disarm`, and no ruleset restricts `claude/scaffold-*` yet. There is no
+policy flag: switching back is reverting the two workflows' App steps.
 
 ## Consequences
 

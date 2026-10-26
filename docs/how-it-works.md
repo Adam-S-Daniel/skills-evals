@@ -4,7 +4,7 @@ A plain-English guide for someone who knows the fleet but has not worked in
 this repository. The technical method is in [`DESIGN.md`](../DESIGN.md), the
 operating record in [`HANDOFF.md`](../HANDOFF.md), and the live status board is
 [issue #126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
-Last revised 2026-09-23.
+Last revised 2026-10-26.
 
 ## 1. What the system does
 
@@ -134,12 +134,15 @@ Three layers enforce it:
    fire without results: at the full reservation when it is under 2 hours
    old, and at the overrun alone after that (a routine run finishes within
    minutes, so a fire with no results two hours later failed or never
-   started). The fire goes only if one
-   more reservation still fits under `weekly_cap`. If the GitHub API cannot
-   be read, the fire is refused. The log shows numbers only.
-3. **The weekly plan** (`scripts/plan_scheduled_evals.py --allowance-tree`).
-   The Tuesday sweep plans only as many fixtures as fit, in the schedule's
-   order; when none fits, the dispatch job is skipped.
+   started). An improve fire never lands results, so it is charged its own
+   cost for the whole seven days: twelve eval fires at their measured mean
+   (twelve full reservations until anything is measured). The fire goes
+   only if one more reservation (an improve fire's charge, in improve mode)
+   still fits under `weekly_cap`. If the GitHub API cannot be read, the
+   fire is refused. The log shows numbers only.
+3. **The weekly plan** (`scripts/plan_week.py`, see "The weekly plan"
+   below). The Tuesday sweep spends the room left at each fire's historical
+   cost; when nothing fits, the dispatch job is skipped.
 
 Known gaps:
 
@@ -156,27 +159,104 @@ Known gaps:
   successfully, so two dispatched at the same moment do not see each other.
   The weekly plan accounts for its own fires up front.
 
+### The weekly plan
+
+`routine-eval-weekly.yml` runs `scripts/plan_week.py` every Tuesday at 07:00
+UTC (G5, G6; Adam lifted the three-PR gate on 2026-10-26, see the
+[ADR 0010 addendum](decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decision-4-addendum-2026-10-26)).
+It computes the retirement verdicts over the results branch, then plans
+eval fires (one reviewed fixture from `evals/scheduled.yml` on one roster
+model) and improve fires (one skill, with a fixed holdout) in five bands:
+
+1. **Safety**: every cell of a skill with an open removal pull request.
+2. **Missing evidence** (at least 30% of the room): cells with no run,
+   heaviest-used model first. A cell whose fires twice produced nothing
+   becomes a "fixture broken" work item instead.
+3. **Near a decision** (at least 20%): cells fewest runs short of their next
+   look.
+4. **Improvements** (at least 20%): skills with four or more fixtures, train
+   headroom, a check that fails often but can pass, no retirement verdict,
+   and no pause, ordered by skill usage and then headroom. A skill with
+   fewer fixtures becomes a "needs fixtures" work item.
+5. **Re-checks**: decided cells not measured for eight weeks.
+
+A skill is paused while an improve pull request is open, an attempt is in
+flight, an open `on-hold` issue names it, for 14 days after a rejection, and
+after three rejections in a row until the skill, a fixture or the roster
+changes (or 90 days). A failed fire is retried at most twice. After a merged
+improvement nothing is attempted until the with arm is measured again. The
+routine does not record rejections, so `scripts/improve_outcomes.py` reads
+them from GitHub: an improve fire with no `claude/eval-improve-<run id>`
+branch twelve hours later counts as a rejection.
+
+Work items (`needs-fixtures`, `fixture-broken`, and `agent-check` items read
+from lesson proposals) are listed in the plan, not fired; each carries a
+`change_type`. The dispatch job fires one leg at a time, waits while three
+fires are in flight, and spaces fires a minute apart; improve fires go last.
+
+### The trigger lane
+
+Usage tracking (2026-10-26) counted about 55 skill calls in eight weeks over
+about 72,000 model turns: most skills almost never trigger, so a skill's
+description is probably the biggest lever. Every adam-agentskills skill whose
+usage weight is fresh and at most one call in four weeks (an unknown weight
+is neutral and gets nothing) becomes a work item, placed just before the
+improve work items:
+
+- **`trigger-optimize`** (change type `trigger`) when
+  `evals/<skill>/trigger-eval-set.json` exists. It is routed
+  **needs routine prompt change**, not fired: improve mode's payload is
+  exactly `run_id`, `mode`, `skill`, `trials` and `holdout`, and the
+  routine's saved prompt (not in this repository) decides the loop's flags.
+  To fire it, Adam would add to the prompt's IMPROVE MODE: "When
+  `evals/<skill>/trigger-eval-set.json` exists in the skills-evals checkout,
+  pass `--trigger-eval-set evals/<skill>/trigger-eval-set.json` to
+  `scripts/propose_skill_edit.py`." That alone makes every improve fire of
+  such a skill use the reviewed set. A trigger-only fire for a skill that is
+  not improve-eligible would also need a payload field from
+  `routine-eval-fire.yml` and a description-only option in
+  `propose_skill_edit.py`; neither exists. Once fired, a trigger fire would
+  be charged and ordered as an improve fire.
+- **`needs-trigger-set`** (change type `fixture`) when there is no set: write
+  one, a JSON list of `{query, should_trigger}` objects.
+
+The plan also lists **hook candidates** (Adam: hooks first): skills whose
+SKILL.md has at least half its non-blank body lines under a heading naming a
+checklist, rules or checks. That heuristic is cheap and misses rules written
+as prose.
+
 ### Skill retirement (#70)
 
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
 then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
 `retire` (no benefit on every fixture and roster model, at two fixed looks)
-gets, in `retirement_mode: proposal` (the committed value in
-`evals/gate-policy.yml`), one skills-evals issue that is filed or updated and
-that a human acts on; once that issue is closed, the skill is not proposed
-again. In `auto` mode the script instead opens a removal pull
-request in adam-agentskills that auto-merges with no human review
-([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
-one at a time. That branch carries everything the registry's required checks
-read — the layout pin in its `scripts/plugin_layout.json`, the README skill
-table and, when the plugin is locked, a `skills.lock` re-pin — produced by
-the registry's own generators rather than reimplemented here. Auto mode is
-built but not wired: it needs a write credential for adam-agentskills and a
-registry checkout with full history (the lock re-pin reads the commit the
-lock pins, so a shallow one is refused), and the workflow exits 2 if the
-policy is switched to `auto` before that exists. Preview either mode with
+gets, in `retirement_mode: auto` (the committed value in
+`evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
+labeled `agent-authored`, that auto-merges (merge commit) with no human
+review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
+adam-agentskills ADR 0021), one loop pull request at a time: nothing is
+opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
+request is open there, and a closed `retire-skill/<skill>` one means the
+skill is decided. That branch carries everything the registry's required
+checks read — the skill gone, the plugin's major version raised, a
+`docs/skill-impact.md` entry, the layout pin in its
+`scripts/plugin_layout.json`, the README skill table and, when the plugin is
+locked, a `skills.lock` re-pin — produced by the registry's own generators
+rather than reimplemented here. The job checks out the registry with full
+history (the lock re-pin reads the commit the lock pins) and writes with the
+improvement gate's GitHub App token. Without that token, or for a skill whose
+plugin runs code (its removal would wait on plugin-runtime-review), it falls
+back to `proposal`: one skills-evals issue that is filed or updated and that
+a human acts on; once that issue is closed, the skill is not proposed
+again. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
+
+A fixture moved into a named subdirectory with its content unchanged keeps
+its evidence: `FIXTURE_ALIASES` in `harness/gates.py` maps the old name (""
+for a flat fixture) to the new one, and an old run pools with it only while
+its `fixture_digest` equals the new fixture's on main. It lists the three
+fixtures nested on 2026-10-26 (#422, #427).
 
 ### Draft mode: new skills from lessons, hooks first
 
@@ -220,6 +300,78 @@ picker then re-admits that subject with `hook_declined`, and the routine
 skips triage and drafts a skill. The routine's saved prompt for this mode
 is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
 approves changes to it.
+
+### Fixture supply (#65)
+
+Fixtures are the improvement queue, so they are made and promoted with no
+person in the loop (Adam, 2026-10-26; ADR
+[0003](decisions/0003-roster-merges-automatically.md)'s 2026-10-26 addendum).
+`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC:
+
+1. **Scaffold.** It mines the fleet's newest merged pull requests
+   (`scripts/mine_real_work.py`, REST only), and
+   `scripts/scaffold_real_work.py pick` drops every candidate the routine
+   would refuse or already has: a body that quotes the diff, several closing
+   issues, an existing `evals/real-work/<id>/` or `claude/scaffold-<id>`
+   branch, or a successful scaffold fire in the last 30 days (read from the
+   fire workflow's run titles). The rest rank by the skill their changed
+   files are evidence for (an ADR is writing-adrs, a workflow
+   workflow-path-audit, a shell script review-bash-ci-reliability, an e2e
+   spec browser-testing), fewest existing fixtures first. At most three
+   are fired in scaffold mode, a minute apart, and fewer when fires of the
+   last two hours are still counted as running or the allowance guard has
+   less room.
+2. **Merge.** The routine pushes `claude/scaffold-<id>`;
+   `routine-scaffold-gate.yml` validates it (now also that every checker
+   file is the merge commit's own) and the roster App opens the pull request
+   with auto-merge on. `test` scores the fixture red on the seed and green
+   with the fix; ci.yml installs its `deps:` from the fixture itself. Any
+   later push turns auto-merge off until it passes the gate again.
+3. **Promote.** A merged fixture is `draft: true`. `scaffold_real_work.py
+   promote` finds every committed draft (none under an `onboarding` or
+   `browser-testing` directory) with at least two ingested runs of its
+   current content where both arms ran and none errored, sets `draft: false`,
+   adds it to `evals/scheduled.yml` with a readiness note starting
+   "Promoted automatically", and the App opens that change as one
+   auto-merging pull request; an open one holds the slot.
+
+Known gaps: no workflow runs a draft's agent arms (`--allow-draft`), and a
+real-work fixture needs a subject (`--skill`) that the fire's eval mode does
+not send, so no draft has ingested runs yet and promotion has nothing to
+promote. No per-skill usage count exists, so the ranking uses fixture
+counts alone. Real-work fixtures (`subject: any`) are not counted by
+improve's fixture minimum.
+
+### Lessons from real sessions (2026-10-26)
+
+Once a day on Adam's own computer, never in the cloud
+([ADR 0015](decisions/0015-mine-real-sessions-only-on-adams-own-computer.md)),
+`scripts/run_session_miner.sh` reads the Claude Code sessions written since
+the last run, keeps real work, and records where the agent was corrected,
+interrupted, failed the same tool call repeatedly, turned CI red after a push
+or stopped unfinished. Each record is a short redacted excerpt with a hashed
+session id. Records are grouped into proposal files on adam-agentskills-private's
+`persistent/lessons` branch: a new git-hook check when one could enforce the
+lesson, otherwise a skill or guidance edit, a new skill, a memory note, or a
+fixture candidate that a fixture writer turns into an eval. The layout and
+schema are in that repo's `lessons/README.md`. Commands: DESIGN.md, "Lessons
+from real sessions".
+
+### Guidance section retirement (#124)
+
+The same job also reads an `_agent-guidance` checkout. Five sections have
+fixtures under `evals/guidance/<section id>/<name>/`, and
+`anything-you-name-gets-its-link` has four. Each fixture runs the section
+inside the whole guidance against the guidance without it, and the section
+alone against no guidance. A section that adds nothing in situ is `retire`.
+If it helps only when alone, it is `shorten-or-merge` instead, because the
+rest of the guidance already covers it. Both verdicts become one
+skills-evals issue in `proposal` mode, which is the committed
+`guidance.retirement_mode`. In `auto` mode a `retire` would open an
+auto-merging removal pull request in `_agent-guidance` that passes that
+repository's own checks. A `shorten-or-merge` verdict never removes the
+section. Preview with
+`python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
 
 ## 4. Where to look for current results
 

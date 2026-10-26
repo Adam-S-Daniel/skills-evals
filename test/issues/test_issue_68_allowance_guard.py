@@ -58,7 +58,6 @@ import allowance_guard as guard  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
 import budget  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
-import plan_scheduled_evals as planner  # noqa: E402
 import run_eval  # noqa: E402
 from arm_test_env import install_arm_test_environment  # noqa: E402
 
@@ -708,7 +707,7 @@ class GuardTests(unittest.TestCase):
              contextlib.redirect_stdout(out):
             code = guard.main([command, "--results-tree", str(self.tree),
                                "--budget", str(self.budget_file())], now=NOW,
-                              fire_count=fires)
+                              fire_count=fires, improve_count=lambda now: (0, 0))
         return code, out.getvalue(), summary.read_text(encoding="utf-8") \
             if summary.exists() else ""
 
@@ -747,7 +746,8 @@ class GuardTests(unittest.TestCase):
         bad.write_text("weekly_cap: 2\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()) as out:
             code = guard.main(["check", "--results-tree", str(self.tree),
-                               "--budget", str(bad)], now=NOW, fire_count=lambda now: (0, 0))
+                               "--budget", str(bad)], now=NOW, fire_count=lambda now: (0, 0),
+                              improve_count=lambda now: (0, 0))
         self.assertEqual(code, 1)
         self.assertIn("refusing", out.getvalue())
 
@@ -1050,60 +1050,6 @@ class PaceRoomTests(unittest.TestCase):
             "; no recent account reading, so no pace room"))
 
 
-class PlannerTests(unittest.TestCase):
-
-    def run_planner(self, include: int, fires, tree=None):
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        output = tmp / "output"
-        output.write_text("")
-        budget_path = tmp / "budget.yml"
-        budget_path.write_text(VALID_BUDGET, encoding="utf-8")
-        argv = ["plan_scheduled_evals.py", "--max-fixtures", "30",
-                "--allowance-tree", str(tree or tmp), "--budget", str(budget_path)]
-        matrix = {"include": [{"fixture": f"evals/x{i}", "eval_key": f"x{i}", "slot": i}
-                              for i in range(include)]}
-        live = (mock.patch.object(guard, "_live_fires", side_effect=fires)
-                if callable(fires) else
-                mock.patch.object(guard, "_live_fires", return_value=(fires, fires)))
-        out = io.StringIO()
-        with mock.patch.object(sys, "argv", argv), \
-             mock.patch.dict(os.environ, {"GITHUB_EVENT_NAME": "schedule",
-                                          "GITHUB_OUTPUT": str(output),
-                                          "GITHUB_EVENT_PATH": ""}), \
-             mock.patch.object(planner, "plan", return_value=matrix), live, \
-             contextlib.redirect_stdout(out):
-            code = planner.main()
-        return code, output.read_text().splitlines(), out.getvalue()
-
-    def test_the_plan_is_cut_to_the_fires_that_fit_in_schedule_order(self):
-        code, lines, out = self.run_planner(8, 6)
-        self.assertEqual(code, 0, out)
-        matrix = json.loads(lines[0].removeprefix("matrix="))
-        self.assertEqual([row["slot"] for row in matrix["include"]], [0, 1])
-        self.assertEqual(lines[1], "count=2")
-        self.assertIn("weekly eval allowance:", out)
-
-    def test_nothing_fitting_is_an_empty_plan_not_a_failure(self):
-        code, lines, out = self.run_planner(8, 9)
-        self.assertEqual(code, 0, out)
-        self.assertEqual(lines, ['matrix={"include":[]}', "count=0"])
-
-    def test_room_for_all_keeps_the_whole_plan(self):
-        code, lines, _ = self.run_planner(3, 0)
-        self.assertEqual(code, 0)
-        self.assertEqual(len(json.loads(lines[0].removeprefix("matrix="))["include"]), 3)
-        self.assertEqual(lines[1], "count=3")
-
-    def test_an_unknown_spend_plans_nothing_and_fails(self):
-        def failing(now):
-            raise guard.GuardError("the workflow runs API answered 500")
-        code, lines, out = self.run_planner(3, failing)
-        self.assertEqual(code, 1)
-        self.assertEqual(lines, [])
-        self.assertIn("answered 500; planning no fire", out)
-
-
 # ---------------------------------------------------------------------------
 # The workflows run it
 
@@ -1131,9 +1077,10 @@ class WorkflowTests(unittest.TestCase):
         step = steps[at]
         # Every mode: no `if:`; the job token only, never the bearer.
         self.assertNotIn("if", step)
-        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}"})
+        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
+                                       "MODE": "${{ steps.validate.outputs.mode }}"})
         self.assertEqual(step["run"], "python3 scripts/allowance_guard.py check "
-                                      "--results-tree eval-results-branch")
+                                      "--results-tree eval-results-branch --mode \"$MODE\"")
         self.assertLess(ids.index("validate"), at)
         self.assertLess(at, ids.index("snapshot"))
         self.assertLess(at, names.index("Fire the eval routine"))
@@ -1145,16 +1092,19 @@ class WorkflowTests(unittest.TestCase):
 
     def test_the_weekly_plan_reads_the_results_and_skips_an_empty_dispatch(self):
         jobs = load("routine-eval-weekly.yml")["jobs"]
-        self.assertEqual(jobs["plan"]["permissions"], {"contents": "read", "actions": "read"})
+        self.assertEqual(jobs["plan"]["permissions"]["actions"], "read")
         steps = jobs["plan"]["steps"]
         ids = [s.get("id") for s in steps]
         names = [s.get("name") for s in steps]
         checkout = names.index("Check out persistent/eval-results (the ingested runs)")
         self.assertLess(checkout, ids.index("plan"))
-        self.assert_results_checkout(steps[checkout], "routine-eval-weekly.yml")
+        # The whole branch: the planner reads the usage census beside the runs.
+        self.assertEqual(steps[checkout]["with"],
+                         {"ref": "persistent/eval-results", "path": "eval-results-branch",
+                          "persist-credentials": False})
         self.assertEqual(steps[checkout]["uses"], steps[0]["uses"])
         plan = steps[ids.index("plan")]
-        self.assertIn("--allowance-tree eval-results-branch", plan["run"])
+        self.assertIn("--results-tree eval-results-branch", plan["run"])
         self.assertEqual(plan["env"]["GH_TOKEN"], "${{ github.token }}")
         self.assertEqual(jobs["plan"]["outputs"]["count"], "${{ steps.plan.outputs.count }}")
         self.assertTrue(jobs["dispatch"]["if"].endswith(

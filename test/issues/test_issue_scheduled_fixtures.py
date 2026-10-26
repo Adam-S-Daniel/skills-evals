@@ -23,14 +23,46 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
-EXPECTED = ["evals/workflow-path-audit/required-check-routing",
+REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability/release-pipeline",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
             "evals/writing-adrs/bootstrap",
             "evals/disarm-inherited-reach",
-            "evals/windows-elevation-from-wsl"]
+            "evals/windows-elevation-from-wsl",
+            # Guidance section fixtures (#124): four arms each.
+            "evals/guidance/anything-you-name-gets-its-link/handoff",
+            "evals/guidance/anything-you-name-gets-its-link/waiting-on-review",
+            "evals/guidance/anything-you-name-gets-its-link/done-summary",
+            "evals/guidance/anything-you-name-gets-its-link/no-url",
+            "evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure",
+            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+            "evals/guidance/pinning-github-actions/new-workflow",
+            "evals/guidance/git-practices/merge-method-and-closing-keyword"]
+#: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
+#: module imports no harness code.
+PROMOTED_NOTE = "Promoted automatically"
+
+
+def promoted_entries():
+    """Entries `scaffold_real_work.py promote` appended after the reviewed
+    ones: each carries its readiness note and names a `draft: false`
+    fixture. Anything else after the reviewed list is not one."""
+    rows = yaml.safe_load((ROOT / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+    paths = []
+    for row in rows[len(REVIEWED):]:
+        fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
+        if not row["readiness"].startswith(PROMOTED_NOTE) or fixture.get("draft") is not False:
+            raise AssertionError(f"{row['path']}: scheduled after the reviewed fixtures, "
+                                 "but not promoted by scaffold_real_work.py promote")
+        paths.append(row["path"])
+    return paths
+
+
+#: The schedule: the reviewed fixtures, then any promoted ones (Adam,
+#: 2026-10-26: fixtures are promoted with no human in the loop).
+EXPECTED = REVIEWED + promoted_entries()
 
 
 def module(name, path):
@@ -404,6 +436,29 @@ if args == ["diff", "--cached", "--quiet"]:
             # room for checkout, dependency install, and summary overhead.
             self.assertLess(len(arms) * per_arm + 2 * 120, budget * .75, path)
 
+    def test_guidance_section_fixture_badge_reads_only_its_own_runs(self):
+        # Its eval key is its path without evals/, three segments; its runs
+        # share results/guidance/<section>/ with the section's other fixtures.
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            key = "guidance/anything-you-name-gets-its-link/handoff"
+            for stamp, name, scores in [("20261004T070000Z", "handoff", (5, 3)),
+                                        ("20261005T070000Z", "no-url", (0, 5))]:
+                for arm, passed in zip(("with_guidance_full",
+                                        "with_guidance_full_minus_section"), scores):
+                    directory = results / "guidance/anything-you-name-gets-its-link" / stamp / arm
+                    directory.mkdir(parents=True)
+                    (directory / "summary.json").write_text(json.dumps({
+                        "fixture_name": name,
+                        "objective_checks": [{"passed": i < passed} for i in range(5)]}))
+            result = badge.build_badge(results, key)
+            self.assertEqual(result["message"], "with 5/5 vs without 3/5 · 2026-10-04")
+            self.assertEqual(result["label"],
+                             "guidance eval: anything-you-name-gets-its-link/handoff")
+            for bad in ("guidance/a/b/c", "skill/a/b"):
+                with self.assertRaises(ValueError):
+                    badge.build_badge(results, bad)
+
     def test_nested_fixture_badge_reads_only_its_own_runs_and_preserves_date(self):
         with tempfile.TemporaryDirectory() as tmp:
             results = Path(tmp)
@@ -433,12 +488,13 @@ if args == ["diff", "--cached", "--quiet"]:
 
 
 class WeeklyRoutineCallerTests(unittest.TestCase):
-    """The scheduled caller only dispatches the reviewed eval fixtures."""
+    """The scheduled caller dispatches the banded plan (scripts/plan_week.py);
+    test_issue_closed_loop_planner.py covers the planner itself."""
 
     def workflow(self):
         return yaml.safe_load((ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
 
-    def test_weekly_caller_is_eval_only_and_leaves_fire_credentials_separate(self):
+    def test_weekly_caller_plans_by_band_and_leaves_fire_credentials_separate(self):
         workflow = self.workflow()
         trigger = workflow.get("on", workflow.get(True))
         self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"}]})
@@ -446,14 +502,12 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertNotIn("concurrency", workflow)
         jobs = workflow["jobs"]
         self.assertEqual(set(jobs), {"plan", "dispatch"})
-        # `actions: read`: the allowance cut counts recent fires (#68).
         self.assertEqual(jobs["plan"]["permissions"],
-                         {"contents": "read", "actions": "read"})
+                         {"contents": "read", "actions": "read", "issues": "read",
+                          "pull-requests": "read"})
         self.assertEqual(jobs["dispatch"]["permissions"],
                          {"contents": "read", "actions": "write"})
         self.assertEqual(jobs["dispatch"]["needs"], "plan")
-        # No fire fitting the weekly allowance plans an empty matrix, which
-        # GitHub refuses to expand, so the dispatch job is skipped on 0.
         self.assertEqual(jobs["dispatch"]["if"],
                          jobs["plan"]["if"] + " && needs.plan.outputs.count != '0'")
         self.assertEqual(jobs["plan"]["outputs"],
@@ -462,27 +516,21 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(jobs["dispatch"]["strategy"],
                          {"fail-fast": False, "max-parallel": 1,
                           "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})
-        self.assertEqual(jobs["plan"]["if"],
-                         "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
-        self.assertEqual(plan_step["run"],
-                         "python3 scripts/plan_scheduled_evals.py --max-fixtures 30 "
-                         "--allowance-tree eval-results-branch")
-        self.assertEqual(plan_step["env"], {"GITHUB_EVENT_NAME": "schedule",
-                                            "GH_TOKEN": "${{ github.token }}"})
+        self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
+                      plan_step["run"])
+        self.assertIn("--max-fires 30", plan_step["run"])
+        self.assertEqual(plan_step["env"], {"GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
-        self.assertLess(next(i for i, s in enumerate(steps) if s["name"].startswith("Revalidate")),
-                        next(i for i, s in enumerate(steps) if s["name"].startswith("Dispatch")))
-        fire = steps[-1]
-        self.assertEqual(fire["env"]["GH_TOKEN"], "${{ github.token }}")
-        self.assertEqual(fire["env"]["DEFAULT_BRANCH"],
-                         "${{ github.event.repository.default_branch }}")
-        self.assertEqual(fire["env"]["FIXTURE"], "${{ matrix.fixture }}")
-        validate = steps[-2]
-        self.assertEqual(validate["env"],
-                         {"FIXTURE": "${{ matrix.fixture }}",
-                          "MATRIX_KEY": "${{ matrix.eval_key }}",
-                          "MATRIX_SLOT": "${{ matrix.slot }}"})
+        names = [s["name"] for s in steps]
+        order = [names.index("Revalidate the planned fire"),
+                 names.index("Wait until fewer than three fires are in flight"),
+                 names.index("Dispatch the validated fire"),
+                 names.index("Space the next fire")]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(steps[order[3]]["run"], "sleep 60")
+        fire = steps[order[2]]
+        wait = steps[order[1]]
         for job in jobs.values():
             self.assertNotIn("concurrency", job)
             for item in job["steps"]:
@@ -491,77 +539,13 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                     self.assertIsNone(lock_problem(item["uses"], "routine-eval-weekly.yml"))
                     if "checkout@" in item["uses"]:
                         self.assertEqual(item["with"]["persist-credentials"], False)
-                        # The default branch, or (for the allowance cut, #68)
-                        # the results branch, read as data.
-                        self.assertIn(item["with"]["ref"],
-                                      ("${{ github.event.repository.default_branch }}",
-                                       "persistent/eval-results"))
-                if item is not fire and item is not plan_step:
+                if item not in (fire, plan_step, wait):
                     self.assertNotIn("GH_TOKEN", item.get("env", {}))
                 self.assertNotIn("EVAL_ROUTINE_FIRE_BEARER", str(item))
 
-    def test_actual_plan_and_revalidation_cover_the_reviewed_fixtures(self):
-        jobs = self.workflow()["jobs"]
-        plan_run = next(s["run"] for s in jobs["plan"]["steps"] if s.get("id") == "plan")
-        validate_run = jobs["dispatch"]["steps"][-2]["run"]
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            validate_script = base / "validate.sh"
-            validate_script.write_text(validate_run)
-            output = base / "output"
-            env = dict(os.environ, GITHUB_EVENT_NAME="schedule", GITHUB_OUTPUT=str(output),
-                       GITHUB_EVENT_PATH="")
-            # The step's own command, run in process so the allowance cut's
-            # one API call is a stand-in (no network): an empty results tree
-            # and no recent fire leave room for the whole schedule (#68).
-            argv = plan_run.split()
-            self.assertEqual(argv[:2], ["python3", "scripts/plan_scheduled_evals.py"])
-            argv[argv.index("--allowance-tree") + 1] = str(base / "results-tree")
-            captured = io.StringIO()
-            with mock.patch.object(sys, "argv", argv[1:]), \
-                 mock.patch.dict(os.environ, env), \
-                 mock.patch.object(allowance_guard, "_live_fires", return_value=(0, 0)), \
-                 mock.patch.object(Path, "cwd", return_value=ROOT), \
-                 contextlib.redirect_stdout(captured):
-                self.assertEqual(planner.main(), 0, captured.getvalue())
-            lines = output.read_text().splitlines()
-            self.assertEqual(lines[1], f"count={len(EXPECTED)}")
-            matrix = json.loads(lines[0].removeprefix("matrix="))
-            self.assertEqual(matrix, {"include": [
-                {"fixture": path, "eval_key": path[6:], "slot": i}
-                for i, path in enumerate(EXPECTED)]})
-            for row in matrix["include"]:
-                selected = dict(env, FIXTURE=row["fixture"], MATRIX_KEY=row["eval_key"],
-                                MATRIX_SLOT=str(row["slot"]))
-                result = subprocess.run(["bash", str(validate_script)], cwd=ROOT,
-                                        env=selected, text=True, capture_output=True)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                selected["MATRIX_KEY"] = "wrong-key"
-                result = subprocess.run(["bash", str(validate_script)], cwd=ROOT,
-                                        env=selected, text=True, capture_output=True)
-                self.assertNotEqual(result.returncode, 0)
-
-    def test_planner_refuses_31_fires_before_writing_a_matrix(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "output"
-            argv = ["plan_scheduled_evals.py", "--max-fixtures", "30"]
-            env = {"GITHUB_EVENT_NAME": "schedule", "GITHUB_OUTPUT": str(output),
-                   "GITHUB_EVENT_PATH": ""}
-            for count, expected in [(30, 0), (31, 1)]:
-                output.write_text("")
-                matrix = {"include": [{"fixture": EXPECTED[0]}] * count}
-                captured = io.StringIO()
-                with mock.patch.object(sys, "argv", argv), mock.patch.dict(os.environ, env), \
-                     mock.patch.object(planner, "plan", return_value=matrix), \
-                     contextlib.redirect_stdout(captured):
-                    self.assertEqual(planner.main(), expected)
-                self.assertEqual(bool(output.read_text()), count == 30)
-                if count == 31:
-                    self.assertEqual(captured.getvalue(),
-                                     "::error::Invalid eval plan or committed fixture selection\n")
-
-    def test_dispatch_uses_existing_fire_workflow_and_sanitizes_failure(self):
-        script = self.workflow()["jobs"]["dispatch"]["steps"][-1]["run"]
+    def dispatch(self, env_extra, fail=False):
+        steps = self.workflow()["jobs"]["dispatch"]["steps"]
+        script = next(s for s in steps if s["name"] == "Dispatch the validated fire")["run"]
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             bin_dir = base / "bin"
@@ -579,21 +563,38 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             capture = base / "capture"
             env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
                        CAPTURE=str(capture), GITHUB_REPOSITORY="example.com/sample",
-                       DEFAULT_BRANCH="main", FIXTURE=EXPECTED[0])
+                       DEFAULT_BRANCH="main", FIXTURE="", MODEL="", SKILL="", HOLDOUT="",
+                       FAIL_DISPATCH="1" if fail else "0")
+            env.update(env_extra)
             result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
                                     text=True, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(json.loads(capture.read_text()),
-                             ["workflow", "run", "routine-eval-fire.yml", "--repo",
-                              "example.com/sample", "--ref", "main", "--raw-field",
-                              "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
-                              "--raw-field", "arms=both", "--raw-field", "trials=1"])
-            env["FAIL_DISPATCH"] = "1"
-            result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
-                                    text=True, capture_output=True)
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("Routine eval dispatch failed", result.stdout)
-            self.assertNotIn("private-source-marker", result.stdout + result.stderr)
+            sent = json.loads(capture.read_text()) if capture.exists() else None
+            return result, sent
+
+    def test_dispatch_sends_each_mode_and_sanitizes_failure(self):
+        result, sent = self.dispatch({"MODE": "eval", "FIXTURE": EXPECTED[0],
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent, ["workflow", "run", "routine-eval-fire.yml", "--repo",
+                                "example.com/sample", "--ref", "main", "--raw-field",
+                                "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
+                                "--raw-field", "model=claude-opus-5-5",
+                                "--raw-field", "arms=both", "--raw-field", "trials=1"])
+        result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
+                                      "HOLDOUT": "bootstrap"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-8:], ["--raw-field", "skill=writing-adrs",
+                                     "--raw-field", "holdout=bootstrap",
+                                     "--raw-field", "arms=both", "--raw-field", "trials=3"])
+        self.assertIn("mode=improve", sent)
+        result, sent = self.dispatch({"MODE": "scaffold"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIsNone(sent)
+        result, _ = self.dispatch({"MODE": "eval", "FIXTURE": EXPECTED[0],
+                                   "MODEL": "claude-opus-5-5"}, fail=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Routine eval dispatch failed", result.stdout)
+        self.assertNotIn("private-source-marker", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

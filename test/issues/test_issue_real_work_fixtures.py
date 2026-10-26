@@ -16,7 +16,6 @@ import io
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -35,9 +34,15 @@ from scorers import commands  # noqa: E402
 import seed_prep  # noqa: E402
 
 REAL_WORK = REPO / "evals" / "real-work"
+SCHEDULE = REPO / "evals" / "scheduled.yml"
+sys.path.insert(0, str(REPO / "scripts"))
+import scaffold_real_work as scaffold  # noqa: E402
 
-# Each checker file's git blob id in its pull request's merge commit, read with
-# `git ls-tree <merge> <path>`: the overlay is that file, byte for byte.
+# Each checker file's git blob id in its pull request's merge commit, read by
+# hand with `git ls-tree <merge> <path>`: the overlay is that file, byte for
+# byte. These are the fixtures a person reviewed; routine-scaffold-gate.yml
+# makes the same check from trusted Git bytes for every later one
+# (scaffold_real_work.gate_checker), so a scaffolded fixture needs no entry.
 CHECKER_BLOBS = {
     "cms-platform-693": {
         "e2e/live-url-derive-routable.test.js": "274da0153db0a64b05f25e5ac5e42753c7295a2c"},
@@ -98,16 +103,23 @@ class RealWorkFixtureTests(unittest.TestCase):
 
     def fixtures(self):
         names = sorted(p.name for p in REAL_WORK.iterdir() if (p / "fixture.yaml").is_file())
-        self.assertEqual(names, sorted(CHECKER_BLOBS))
+        self.assertLessEqual(set(CHECKER_BLOBS), set(names))
         for name in names:
             yield name, REAL_WORK / name, run_eval.load_fixture(REAL_WORK / name)
 
-    def test_each_fixture_loads_as_a_subject_agnostic_draft(self):
+    def test_each_fixture_loads_as_a_subject_agnostic_draft_or_promoted(self):
+        schedule = {row["path"]: row["readiness"] for row in
+                    yaml.safe_load(SCHEDULE.read_text(encoding="utf-8"))["fixtures"]}
         for name, directory, fixture in self.fixtures():
             with self.subTest(fixture=name):
                 path = directory / "fixture.yaml"
                 self.assertEqual(fixture["subject"], "any")
-                self.assertIs(fixture["draft"], True)
+                if fixture["draft"] is not True:
+                    # Only `scaffold_real_work.py promote` clears the key, and
+                    # it schedules the fixture with its own readiness note.
+                    self.assertIs(fixture["draft"], False)
+                    self.assertTrue(schedule.get(f"evals/real-work/{name}", "")
+                                    .startswith(scaffold.PROMOTED_NOTE), name)
                 self.assertIs(fixture["strip_agent_context"], True)
                 self.assertNotIn("skill", fixture)
                 self.assertNotIn("section", fixture)
@@ -123,7 +135,9 @@ class RealWorkFixtureTests(unittest.TestCase):
                 checker = directory / "checker"
                 found = {p.relative_to(checker).as_posix(): blob_id(p)
                          for p in checker.rglob("*") if p.is_file()}
-                self.assertEqual(found, CHECKER_BLOBS[name])
+                self.assertTrue(found)
+                if name in CHECKER_BLOBS:
+                    self.assertEqual(found, CHECKER_BLOBS[name])
 
     def test_each_seed_is_stripped_and_trimmed(self):
         for name, directory, _ in self.fixtures():
@@ -153,29 +167,30 @@ class RealWorkFixtureTests(unittest.TestCase):
                   if s.get("name") == "Install real-work fixture dependencies"]
         self.assertEqual(step["working-directory"], "skills-evals/evals/real-work")
         self.assertEqual(step["if"], "steps.salient.outputs.run == 'true'")
-        [loop] = [line.strip() for line in step["run"].splitlines()
-                  if line.strip().startswith("for dir in ")]
-        words = shlex.split(loop.removesuffix("; do"))
-        installed = words[3:]
-        wanted = sorted(f"{name}/seed" + ("" if entry["dir"] == "." else f"/{entry['dir']}")
-                        for name, _, fixture in self.fixtures()
-                        for entry in fixture["deps"] if entry["manager"] == "npm")
-        self.assertEqual(installed, wanted)
+        self.assert_derived_loop(step["run"], "npm")
         self.assertIn("npm ci --ignore-scripts --no-audit --no-fund", step["run"])
         [step] = [s for s in workflow["jobs"]["test"]["steps"]
                   if s.get("name") == "Install real-work fixture gems"]
         self.assertEqual(step["working-directory"], "skills-evals/evals/real-work")
         self.assertEqual(step["if"], "steps.salient.outputs.run == 'true'")
-        [loop] = [line.strip() for line in step["run"].splitlines()
-                  if line.strip().startswith("for dir in ")]
-        installed = shlex.split(loop.removesuffix("; do"))[3:]
-        wanted = sorted(f"{name}/seed" + ("" if entry["dir"] == "." else f"/{entry['dir']}")
-                        for name, _, fixture in self.fixtures()
-                        for entry in fixture["deps"] if entry["manager"] == "bundler")
-        self.assertEqual(installed, wanted)
+        self.assert_derived_loop(step["run"], "bundler")
         for variable in ("BUNDLE_PATH=vendor/bundle", "BUNDLE_FROZEN=true",
                          "BUNDLE_DISABLE_SHARED_GEMS=true"):
             self.assertIn(variable, step["run"])
+
+    def assert_derived_loop(self, run, manager):
+        # The step installs exactly what deps-dirs lists, and fails when the
+        # list cannot be read (an assignment, not a bare `for ... in $(...)`).
+        lines = [line.strip() for line in run.splitlines()]
+        self.assertIn('dirs="$(python3 ../../scripts/scaffold_real_work.py deps-dirs '
+                      f'--manager {manager})"', lines)
+        self.assertIn("for dir in $dirs; do", lines)
+        self.assertIn("set -euo pipefail", lines)
+        wanted = sorted(f"{name}/seed" + ("" if entry["dir"] == "." else f"/{entry['dir']}")
+                        for name, _, fixture in self.fixtures()
+                        for entry in fixture.get("deps", ()) if entry["manager"] == manager)
+        self.assertTrue(wanted)
+        self.assertEqual(scaffold.deps_dirs(manager), wanted)
 
     def test_cms_seeds_keep_only_the_checkers_own_spec(self):
         # Adam, 2026-10-06: "Trim other e2e specs". The e2e helpers and
@@ -187,8 +202,10 @@ class RealWorkFixtureTests(unittest.TestCase):
             with self.subTest(fixture=name):
                 specs = sorted(p.name for p in e2e.iterdir()
                                if p.name.endswith((".spec.js", ".test.js", ".spec.js-snapshots")))
-                self.assertEqual(specs, [Path(path).name for path in CHECKER_BLOBS[name]
-                                         if Path(path).parts[0] == "e2e"])
+                checker = directory / "checker"
+                self.assertEqual(specs, sorted(p.name for p in checker.rglob("*")
+                                               if p.is_file() and p.relative_to(checker).parts[0]
+                                               == "e2e"))
 
     def test_no_task_text_quotes_the_merged_diff(self):
         # The answer is every line the pull request added: its fix
