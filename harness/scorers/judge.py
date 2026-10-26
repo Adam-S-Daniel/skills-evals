@@ -39,7 +39,8 @@ from . import invisibles, wrapping
 _HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
 if _HARNESS_DIR not in sys.path:
     sys.path.insert(0, _HARNESS_DIR)
-from cli_json import failed_run_detail, normalize_cli_result  # noqa: E402
+from cli_json import (failed_run_detail, normalize_cli_result,  # noqa: E402
+                      rate_limit_events)
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -135,7 +136,10 @@ USAGE_RESULT_KEYS = ("num_turns", "usage", "total_cost_usd")
 #: The open `collecting_models()` blocks. Each is a list every judge CLI call
 #: made inside that block appends one entry to (#202, #371): `modelUsage`
 #: (always, `None` when the result has none) plus `num_turns`, `usage` and
-#: `total_cost_usd`, each only when the result has that key, all raw.
+#: `total_cost_usd`, each only when the result has that key, all raw; and
+#: `events`, the meter events the call printed (`cli_json.rate_limit_events`,
+#: `[]` when it printed none), which the run records as the call's account
+#: meter readings (#370).
 _MODEL_SINKS: list[list] = []
 
 
@@ -145,8 +149,9 @@ def collecting_models():
 
     The judge runs through the same Claude Code CLI as the agent, so its
     result names the model(s) that served it; `run_eval.py` records their
-    keys as an arm's `judge_models_used` (#202), and the turns, cost, tokens
-    and cache-write split of the call as `usage.measured.judge` (#371). A context manager rather
+    keys as an arm's `judge_models_used` (#202), the turns, cost, tokens
+    and cache-write split of the call as `usage.measured.judge` (#371), and
+    the meter events it printed as account meter snapshots (#370). A context manager rather
     than a new `score()` keyword, so the call site keeps the shape it has
     always had and both judge modes — one CLI call or several — are covered
     by the one place a judge call is spelled. Values are recorded raw and
@@ -208,7 +213,13 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
     # still needs the real HOME for its login (a scratch HOME or config dir
     # loses it, measured on CLI 2.1.289), so these flags are the isolation.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
-          "--output-format", "json", "--permission-mode", permission_mode,
+          "--output-format", "json",
+          # `--verbose` makes the CLI print the account meter event an agent
+          # call prints, so the judge is read as it starts too (#370, #371):
+          # a judged pair's judge calls all come after its last agent call.
+          # As run_eval.run_agent's comment says, it also fixes the output
+          # shape (a message array) whatever the machine's verbose setting.
+          "--verbose", "--permission-mode", permission_mode,
           *JUDGE_ISOLATION_FLAGS]
     if model:
         cmd += ["--model", model]
@@ -239,7 +250,8 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
         )
 
     try:
-        data = normalize_cli_result(json.loads(result.stdout))
+        decoded = json.loads(result.stdout)
+        data = normalize_cli_result(decoded)
     except json.JSONDecodeError as e:
         raise RuntimeError(
             f"judge CLI produced invalid JSON: {e.msg} at character {e.pos} "
@@ -251,7 +263,8 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
     for sink in _MODEL_SINKS:
         sink.append({"modelUsage": data.get("modelUsage"),
                      **{key: data[key] for key in USAGE_RESULT_KEYS
-                        if key in data}}
+                        if key in data},
+                     "events": rate_limit_events(decoded)}
                     if isinstance(data, dict) else None)
     return data.get("result", "")
 

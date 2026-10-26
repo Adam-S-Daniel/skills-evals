@@ -81,7 +81,8 @@ def claude_version() -> str:
 
 
 #: The open `collecting_results()` blocks, as `judge._MODEL_SINKS` is for the
-#: judge: each is a list every leg's parsed result is appended to.
+#: judge: each is a list every leg's parsed result is appended to, with the
+#: meter events the leg printed under `events` (#370).
 _RESULT_SINKS: list[list] = []
 
 
@@ -89,8 +90,9 @@ _RESULT_SINKS: list[list] = []
 def collecting_results():
     """Collect the usage figures of every CLI result `run_leg` parses in this
     block: `modelUsage` (always) and `num_turns`, `usage` and
-    `total_cost_usd` where the result has them, raw and unvalidated (#371).
-    An `is_error` result is collected too: it was still spent."""
+    `total_cost_usd` where the result has them, raw and unvalidated (#371),
+    and `events`, the meter events the leg printed (#370). An `is_error`
+    result is collected too: it was still spent."""
     sink: list = []
     _RESULT_SINKS.append(sink)
     try:
@@ -121,7 +123,8 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     # guidance.run_guard with the `guard.timeout_s` knob, and from anywhere a
     # later caller decides to reach it from.
     import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
-    from cli_json import failed_run_detail, normalize_cli_result  # noqa: PLC0415 — main() sets path
+    from cli_json import (failed_run_detail, normalize_cli_result,  # noqa: PLC0415 — main() sets path
+                          rate_limit_events)
     guidance.check_timeout(timeout, "run_canary.run_leg(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
     # Unlike run_eval, no --permission-mode bypassPermissions: the probe must
@@ -130,6 +133,10 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     # and bypassPermissions is refused outright when running as root.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
           "--output-format", "json",
+          # The meter event an agent call prints (#370): the guidance guard
+          # is read as it starts too, and the shape no longer depends on the
+          # machine's verbose setting.
+          "--verbose",
           "--setting-sources", setting_sources,
           "--disallowedTools", disallowed_tools,
           "--strict-mcp-config"]
@@ -156,7 +163,8 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
                 "returncode": result.returncode}
 
     try:
-        data = normalize_cli_result(json.loads(result.stdout))
+        decoded = json.loads(result.stdout)
+        data = normalize_cli_result(decoded)
     except json.JSONDecodeError as e:
         return {"error": "invalid_json",
                 "detail": f"stdout is not valid JSON ({e.msg} at character "
@@ -167,7 +175,8 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     for sink in _RESULT_SINKS:
         sink.append({"modelUsage": data.get("modelUsage"),
                      **{key: data[key] for key in
-                        ("num_turns", "usage", "total_cost_usd") if key in data}})
+                        ("num_turns", "usage", "total_cost_usd") if key in data},
+                     "events": rate_limit_events(decoded)})
 
     if data.get("is_error"):
         return {"error": "agent_error", "detail": data.get("result", ""), "raw": data}

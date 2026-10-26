@@ -614,11 +614,13 @@ class MeasuredTests(Checks):
         run_eval._TELEMETRY.timed("judge", judge_started,
                                   [{"modelUsage": result_object()["modelUsage"]}])
         usage = self.written()["usage"]
-        # The guard came before the first snapshot; the second agent call
-        # and the judge are from the last snapshot on.
+        # The guard (here printing no event) came before the first snapshot;
+        # the second agent call and the judge (likewise) are from the last
+        # snapshot on.
         self.assertEqual(usage["meter_delta"]["uncovered"], uncovered(1, 2))
-        self.assertEqual(set(usage["meter"]["not_sampled"]),
-                         {"judge", "guard", "run_end"})
+        # Only the run's end is unread now: the judge and the guard print the
+        # meter event an agent call does when they are made `--verbose`.
+        self.assertEqual(set(usage["meter"]["not_sampled"]), {"run_end"})
         self.assertIn("added call", usage["meter"]["not_sampled"]["run_end"])
 
     def test_a_run_of_one_agent_call_has_no_delta_and_says_why(self):
@@ -803,6 +805,141 @@ class MeasuredTests(Checks):
         self.assertEqual(measured["judge"]["calls"], 1)
         self.assert_complete(summary)
         ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    # A deferred judge call prints meter events like any call (#370, #371);
+    # `amend` turns them into snapshots exactly as `_measure` does.
+
+    def event(self, week: float, at: str | None = FAKE_MESSAGE_AT) -> dict:
+        return {"at": at, "info": None if week is None else meter(week)}
+
+    def amended_with(self, summary: dict, events: list, role="judge") -> dict:
+        self.clock.advance(2)
+        started = self.clock.now()
+        self.clock.advance(3)
+        run_eval._TELEMETRY.amend(summary, role, started, [
+            {"modelUsage": result_object()["modelUsage"]}], "ok", events)
+        # What `finish()` does once the run has ended.
+        summary["usage"].update(run_eval._TELEMETRY._run_level())
+        return summary["usage"]["measured"]
+
+    def weeks(self, snapshots: list) -> list:
+        return [s["info"]["unifiedWindows"]["seven_day"]["utilization"]
+                for s in snapshots]
+
+    def test_a_call_added_after_the_summary_keeps_its_first_and_last_event(self):
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(), [meter(0.72)]))))
+        summary = self.written()
+        measured = self.amended_with(summary, [
+            self.event(0.73), self.event(0.74), self.event(0.75, at=None)])
+        self.assertEqual(measured["meter"]["omitted"], 0)
+        first, last = measured["meter"]["snapshots"][1:]
+        self.assertEqual(self.weeks([first, last]), [0.73, 0.75])
+        self.assertEqual(first, {"at": FAKE_MESSAGE_AT, "at_source": "cli_message",
+                                 "call": {"role": "judge", "index": 0},
+                                 "info": meter(0.73)})
+        # No timestamp of its own: the call's start, two seconds in.
+        self.assertEqual((last["at"], last["at_source"]),
+                         ("2026-10-12T17:00:07Z", "call_start"))
+        telemetry = run_eval._TELEMETRY
+        self.assertEqual(len(telemetry.snapshots), 3)
+        self.assertEqual((telemetry.calls_seen, telemetry.snapshot_calls),
+                         (2, [0, 1, 1]))
+        self.assert_complete(summary)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_a_call_added_after_the_summary_keeps_both_ends_of_a_full_record(self):
+        # Six agent calls of two events each fill the trial's twelve.
+        weeks = [0.10 + 0.01 * i for i in range(12)]
+        for i in range(6):
+            self.agent(Cli(self.clock, json.dumps(verbose_array(
+                result_object(), [meter(weeks[2 * i]), meter(weeks[2 * i + 1])]))))
+        summary = self.written()
+        self.assertEqual(len(summary["usage"]["measured"]["meter"]["snapshots"]),
+                         run_eval.METER_MAX_SNAPSHOTS)
+        measured = self.amended_with(summary, [
+            self.event(0.5), self.event(0.6), self.event(0.7)])
+        meter_block = measured["meter"]
+        # 12 + 2 new = 14, of which the first six and the last six are kept.
+        self.assertEqual(self.weeks(meter_block["snapshots"]),
+                         weeks[:6] + weeks[8:] + [0.5, 0.7])
+        self.assertEqual(meter_block["omitted"], 2)
+        self.assertEqual(len(run_eval._TELEMETRY.snapshots), 14)
+        self.assertEqual(run_eval._TELEMETRY.snapshot_calls[-2:], [6, 6])
+        self.assert_complete(summary)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_a_call_added_to_a_record_that_already_omitted_counts_what_it_omitted(self):
+        for i in range(8):
+            self.agent(Cli(self.clock, json.dumps(verbose_array(
+                result_object(), [meter(0.1 + 0.01 * i), meter(0.2 + 0.01 * i)]))))
+        summary = self.written()
+        self.assertEqual(summary["usage"]["measured"]["meter"]["omitted"], 4)
+        measured = self.amended_with(summary, [self.event(0.5)])
+        # 16 in the trial, one new: 17 in all, 12 kept.
+        self.assertEqual(measured["meter"]["omitted"], 5)
+        self.assertEqual(len(measured["meter"]["snapshots"]), 12)
+        self.assertEqual(self.weeks(measured["meter"]["snapshots"])[-1], 0.5)
+
+    def test_an_api_billed_run_stores_no_amended_snapshot_but_counts_it(self):
+        run_eval._TELEMETRY.begin(flags(run_billing="api"))
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        self.assertIsNone(summary["usage"]["measured"]["meter"])
+        measured = self.amended_with(summary, [self.event(0.73), self.event(0.74)])
+        self.assertIsNone(measured["meter"])
+        self.assertEqual(len(run_eval._TELEMETRY.snapshots), 2)
+        self.assertEqual(measured["judge"]["calls"], 1)
+
+    def test_an_unreadable_event_of_an_added_call_is_counted_not_kept(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        measured = self.amended_with(summary, [self.event(None), self.event(0.73)])
+        self.assertEqual(self.weeks(measured["meter"]["snapshots"]), [0.73])
+        self.assertEqual(run_eval._TELEMETRY.unreadable, 1)
+        self.assertEqual(run_eval._TELEMETRY.snapshot_calls, [1])
+
+    def test_snapshots_of_an_added_call_too_large_to_write_are_dropped(self):
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(), [meter(0.72)]))))
+        summary = self.written()
+        size = len(json.dumps({"usage": {"measured": summary["usage"]["measured"]}},
+                              indent=2).encode("utf-8"))
+        # Room for what is there now: not for the new snapshots, nor for the
+        # trial's first and last.
+        with mock.patch.object(run_eval, "USAGE_MAX_BYTES", size):
+            measured = self.amended_with(summary, [
+                self.event(0.73), self.event(0.74)])
+        self.assertEqual(measured["meter"], {"snapshots": [], "omitted": 3})
+        self.assertEqual(len(run_eval._TELEMETRY.snapshots), 3)
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_events_of_a_call_added_past_the_call_bound_are_still_kept(self):
+        for _ in range(run_eval.USAGE_MAX_CALLS):
+            self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        measured = self.amended_with(summary, [self.event(0.73)])
+        self.assertIsNone(measured["calls"])
+        self.assertIn(f"more than {run_eval.USAGE_MAX_CALLS} calls",
+                      measured["reasons"]["calls"])
+        self.assertEqual(self.weeks(measured["meter"]["snapshots"]), [0.73])
+        self.assertEqual(run_eval._TELEMETRY.snapshot_calls,
+                         [run_eval.USAGE_MAX_CALLS])
+        ingest.check_usage(summary["usage"], "s", summary["run"])
+
+    def test_split_events_separates_the_meter_from_the_usage_figures(self):
+        entries = [{"modelUsage": {"m": 1}, "events": [self.event(0.7)]},
+                   None, {"modelUsage": None, "total_cost_usd": 1,
+                          "events": [self.event(0.8), self.event(0.9)]},
+                   {"modelUsage": None}]
+        results, events = run_eval._split_events(entries)
+        self.assertEqual(results, [{"modelUsage": {"m": 1}}, None,
+                                   {"modelUsage": None, "total_cost_usd": 1},
+                                   {"modelUsage": None}])
+        self.assertEqual(self.weeks(events), [0.7, 0.8, 0.9])
+        # The entries themselves are left as they were.
+        self.assertIn("events", entries[0])
+        self.assertEqual(run_eval._split_events([]), ([], []))
 
     def test_a_call_added_to_a_summary_that_lists_no_calls_adds_none(self):
         summary = self.fullest(17)
@@ -1151,10 +1288,14 @@ class EndToEndTests(Checks):
         self.assertEqual((aggregate["agent"]["calls"], aggregate["agent"]["cost_usd"],
                           aggregate["judge"]["calls"]), (2, 0.1, 2))
 
-    def test_a_judged_pair_leaves_all_its_judging_outside_the_meter_delta(self):
+    def test_judge_calls_that_print_no_meter_event_are_counted_as_uncovered(self):
         # The default (`--judge auto`) on a tie: no judge call until both
         # arms' trials are scored, so all four come after the last agent
-        # call, whose start printed the run's last snapshot (#371).
+        # call (#371). Here the judge prints no meter event (the meter file
+        # is only in the arms' environment), so the agent call's start is
+        # the run's last snapshot and the four judge calls are counted as
+        # outside the delta. A judge that prints one is read as it starts
+        # (`test_a_deferred_judge_call_is_read_as_it_starts_like_an_agent_call`).
         self.fixture(batches=[[meter(0.72)], [meter(0.73)], [meter(0.73)],
                               [meter(0.75, five=0.04)]])
         proc = self.run_eval("--trials", "2", "--run-billing", "subscription")
@@ -1194,6 +1335,87 @@ class EndToEndTests(Checks):
         kinds = ["judge" if "fake-judge" in argv else "agent"
                  for argv in self.cli_calls() if "--version" not in argv]
         self.assertEqual(kinds, ["agent"] * 4 + ["judge"] * 4)
+
+    def metered(self, *args, **kw):
+        """`run_eval`, with the meter file also in the process environment:
+        the judge inherits that, while an arm sees only its fixture's `env:`."""
+        return self.run_eval(*args, environ={
+            "FAKE_CLAUDE_RATE_LIMIT_FILE": str(self.batches)}, **kw)
+
+    def assert_judge_is_metered(self, calls: list) -> None:
+        judges = [a for a in calls if "fake-judge" in a]
+        self.assertEqual(len(judges), 4, calls)
+        for argv in judges:
+            self.assertIn("--verbose", argv)
+
+    def test_a_deferred_judge_call_is_read_as_it_starts_like_an_agent_call(self):
+        # The default (`--judge auto`) on a tie: the four judge calls come
+        # after the last agent call, and each prints a meter event (#370,
+        # #371), so the delta reaches the last judge call.
+        self.fixture(batches=[[meter(0.72)], [meter(0.73)], [meter(0.74)],
+                              [meter(0.75)], [meter(0.76)], [meter(0.77)],
+                              [meter(0.78)], [meter(0.79, five=0.04)]])
+        proc = self.metered("--trials", "2", "--run-billing", "subscription")
+        self.assertEqual(proc.returncode, 0, self.said(proc))
+        calls = [a for a in self.cli_calls() if "--version" not in a]
+        # No call was added: four agent calls, four judge calls.
+        self.assertEqual(len(calls), 8, calls)
+        self.assert_judge_is_metered(calls)
+        found = self.summaries()
+        self.assertEqual(len(found), 6, sorted(found))
+        for rel, summary in found.items():
+            with self.subTest(summary=rel):
+                self.assert_complete(summary)
+                ingest.check_summary(summary, rel, ingest.parse_result_path(rel))
+                usage = summary["usage"]
+                self.assertEqual(usage["meter"], {
+                    "snapshot_count": 8, "unreadable_events": 0,
+                    "not_sampled": {"run_end": run_eval._NO_RUN_END}})
+                self.assertEqual(usage["meter_delta"]["uncovered"], uncovered(0, 1))
+                self.assertEqual(usage["meter_delta"]["windows"]["seven_day"],
+                                 {"from": 0.72, "to": 0.79, "delta": 0.07,
+                                  "window_reset": False})
+        weeks = {}
+        for arm in ("with_skill", "without_skill"):
+            for trial in (1, 2):
+                snaps = self.summary(arm, f"trial-{trial}/summary.json")[
+                    "usage"]["measured"]["meter"]["snapshots"]
+                self.assertEqual([s["call"] for s in snaps], [
+                    {"role": "agent", "index": 0}, {"role": "judge", "index": 0}])
+                weeks[arm, trial] = [
+                    s["info"]["unifiedWindows"]["seven_day"]["utilization"]
+                    for s in snaps]
+        self.assertEqual(weeks, {
+            ("with_skill", 1): [0.72, 0.76], ("with_skill", 2): [0.73, 0.77],
+            ("without_skill", 1): [0.74, 0.78], ("without_skill", 2): [0.75, 0.79]})
+
+    def test_a_judge_inside_each_trial_is_read_as_it_starts(self):
+        # One batch per call, in the order the calls are made: each trial's
+        # agent call and then its judge call.
+        self.fixture(batches=[[meter(0.72 + 0.01 * i)] for i in range(8)])
+        proc = self.metered("--trials", "2", "--judge", "always",
+                            "--run-billing", "subscription")
+        self.assertEqual(proc.returncode, 0, self.said(proc))
+        calls = [a for a in self.cli_calls() if "--version" not in a]
+        self.assertEqual(len(calls), 8, calls)
+        self.assert_judge_is_metered(calls)
+        weeks = []
+        for arm in ("with_skill", "without_skill"):
+            for trial in (1, 2):
+                summary = self.summary(arm, f"trial-{trial}/summary.json")
+                ingest.check_summary(summary, "x", ingest.parse_result_path(
+                    f"{self.SKILL}/{self.TS}/{arm}/trial-{trial}/summary.json"))
+                snaps = summary["usage"]["measured"]["meter"]["snapshots"]
+                self.assertEqual([s["call"]["role"] for s in snaps],
+                                 ["agent", "judge"])
+                weeks += [s["info"]["unifiedWindows"]["seven_day"]["utilization"]
+                          for s in snaps]
+        self.assertEqual(sorted(weeks), [0.72 + 0.01 * i for i in range(8)])
+        usage = self.summary("with_skill")["usage"]
+        self.assertEqual(usage["meter"]["snapshot_count"], 8)
+        self.assertEqual(usage["meter_delta"]["uncovered"], uncovered(0, 1))
+        self.assertEqual(usage["meter"]["not_sampled"],
+                         {"run_end": run_eval._NO_RUN_END})
 
     def test_telemetry_adds_no_cli_call(self):
         # One version call, then an agent call and a judge call per arm: the
@@ -1290,8 +1512,8 @@ class EndToEndTests(Checks):
             report)
         self.assertIn(
             "- Account meter (account-wide, so anything else the account ran "
-            "is in it; read as each agent call starts, so the 1 call(s) from "
-            "the last reading on are not in it): five_hour 0.01 to 0.01, "
+            "is in it; read as each agent, judge or guard call starts, so the "
+            "1 call(s) from the last reading on are not in it): five_hour 0.01 to 0.01, "
             "seven_day 0.72 to 0.74, from 2 snapshots", report)
         self.assertEqual(report[0], f"# Eval report: {self.SKILL}")
 
@@ -1429,6 +1651,26 @@ class IngestTests(Checks):
         self.assert_complete(self.good)
         self.check(self.good)
 
+    def test_summaries_from_before_the_judge_and_guard_were_read_still_ingest(self):
+        # `not_sampled` named the judge and the guard until they were made
+        # `--verbose` (#370): such a summary is still accepted.
+        why = "the call is made without --verbose"
+        old = self.changed("usage", "meter", "not_sampled", value={
+            "judge": why, "guard": why, "run_end": why})
+        self.check(old)
+
+    def test_a_judge_or_guard_snapshot_is_accepted(self):
+        self.assertEqual(self.good["usage"]["meter"]["not_sampled"],
+                         {"run_end": run_eval._NO_RUN_END})
+        snapshots = self.good["usage"]["measured"]["meter"]["snapshots"]
+        for role in ("judge", "guard"):
+            with self.subTest(role=role):
+                summary = self.changed(
+                    "usage", "measured", "meter", "snapshots", value=[
+                        {**shot, "call": {"role": role, "index": 0}}
+                        for shot in snapshots])
+                self.check(summary)
+
     def test_values_the_harness_never_writes_are_rejected(self):
         # Review round 1 on #378: each of these passed `check_summary`.
         flood = ["x" * 4000] * 100
@@ -1505,7 +1747,9 @@ class IngestTests(Checks):
                         self.check(self.edited((path, value)))
                     except ingest.Rejected:
                         pass
-        self.assertGreater(tried, 2000)
+        # `not_sampled` lost its judge and guard nodes: 2 paths of 12 values
+        # each, 24 fewer tries than before.
+        self.assertGreater(tried, 1950)
 
     def test_a_call_that_has_not_ended_is_rejected(self):
         with self.assertRaises(ingest.Rejected):
