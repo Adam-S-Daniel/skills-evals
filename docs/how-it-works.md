@@ -131,9 +131,10 @@ Three layers enforce it:
    last seven days: each ingested run on `persistent/eval-results` at its
    measured weekly delta plus the overrun (or the full reservation,
    `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
-   fire without results: at the full reservation when it is under 24 hours
+   fire without results: at the full reservation when it is under 2 hours
    old, and at the overrun alone after that (a routine run finishes within
-   minutes, so a fire with no results a day later failed). The fire goes only if one
+   minutes, so a fire with no results two hours later failed or never
+   started). The fire goes only if one
    more reservation still fits under `weekly_cap`. If the GitHub API cannot
    be read, the fire is refused. The log shows numbers only.
 3. **The weekly plan** (`scripts/plan_scheduled_evals.py --allowance-tree`).

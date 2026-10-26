@@ -26,16 +26,18 @@ under the cap wherever the account's own week starts):
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
   * pending: successful runs of routine-eval-fire.yml in the window that
-    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (24
+    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (2
     hours) is reserved at `per_run_cap + per_run_overrun`; an older one is
     charged `per_run_overrun` only for the rest of the week. A routine run
-    finishes within minutes (healthy runs take 4-12), so a fire with no
-    results a day later failed (or is a scaffold or improve run, which never
-    lands in routine-results/), and the in-run stops (`per_run_cap`,
+    finishes within minutes (healthy runs take 4-12, ingest a few more), so a
+    fire with no results two hours later failed or never started (or is a
+    scaffold or improve run, which never lands in routine-results/), and the
+    in-run stops (`per_run_cap`,
     `stop_when_account_above` in harness/run_eval.py) still bound what it
     could have spent. An ingested run is matched to a fire by its run id's
     timestamp (the fire workflow stamps it at fire time), so a run from the
-    last 24 hours frees one recent fire; runs older than that free old fires.
+    last `PENDING_FULL_HOLD` frees one recent fire; runs older than that free
+    old fires.
 
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
@@ -89,8 +91,11 @@ RUN_ID_RE = re.compile(r"(?P<stamp>[0-9]{8}T[0-9]{6}Z)-[0-9a-f]{6}")
 DEST_ROOT = "routine-results"
 WINDOW = timedelta(days=7)
 #: A fire without results younger than this is held at the full reservation;
-#: an older one failed, and is charged per_run_overrun only.
-PENDING_FULL_HOLD = timedelta(hours=24)
+#: an older one failed or never started, and is charged per_run_overrun only.
+#: It was 24 hours until 2026-10-26, when fires whose routine never started
+#: held a day's reservation each and kept a week-end ramp from using the
+#: allowance Adam had left; healthy runs land within about 15 minutes.
+PENDING_FULL_HOLD = timedelta(hours=2)
 #: ingest_routine_results.SIZE_CAPS["summary.json"]: a bigger file was never
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024
@@ -359,10 +364,11 @@ def describe(state: dict) -> str:
     """One non-identifying line, in points (percent of the weekly allowance)."""
     def points(value):
         return f"{value * 100:.1f}"
+    hold_hours = f"{PENDING_FULL_HOLD.total_seconds() / 3600:g}"
     line = (f"weekly eval allowance: spent {points(state['spent'])} points over "
             f"{state['runs']} ingested run(s), pending {points(state['pending'])} "
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
-            f"results ({state['recent']} from the last 24h held in full), this run reserves {points(state['reservation'])}, cap "
+            f"results ({state['recent']} from the last {hold_hours}h held in full), this run reserves {points(state['reservation'])}, cap "
             f"{points(state['cap'])} (last 7 days)")
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
@@ -378,7 +384,7 @@ def check(state: dict) -> bool:
 
 
 def _live_fires(now: datetime) -> tuple[int, int]:
-    """(successful fires in the last seven days, in the last 24 hours)."""
+    """(successful fires in the last seven days, in the last `PENDING_FULL_HOLD`)."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
     api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
