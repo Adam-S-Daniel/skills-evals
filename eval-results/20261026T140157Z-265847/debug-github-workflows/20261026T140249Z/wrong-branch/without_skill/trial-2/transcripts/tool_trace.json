@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J2wG1stit8Ci69UVS58eJ2",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 85,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J2wG1stit8Ci69UVS58eJ2",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\nd62d8d3 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zp...",
+      "output_chars": 343,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014GECaUWpfx4Ko4YqmiXrKE",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md | head -40; ls bin src test; git show --stat HEAD | head -30",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014GECaUWpfx4Ko4YqmiXrKE",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1786,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013CSSf5vSKCc6bbdfPn6iZj",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; cat .gh/replay/run-list.json | head -20; cat src/sequence.py test/test_current.py; python3 -m unittest test.test_legacy 2>&1 | tail -5; python3 -m unittest discover ...",
+      "input_chars": 340,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013CSSf5vSKCc6bbdfPn6iZj",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 1527,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NTjTzTum91jK3Ycuh4qVxp",
+      "name": "Bash",
+      "input": "cd <path> && ls; find . -name 'main...*' -o -name 'ci-test-discovery.json' | head; cat api/repos/example-org/example-service/compare/*.json 2><path> | head -40; git -C .. show f0be913 --stat | tail -8",
+      "input_chars": 224,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NTjTzTum91jK3Ycuh4qVxp",
+      "is_error": false,
+      "output": "replay\n./replay/api/repos/example-org/example-service/compare/main...fix\n./replay/api/repos/example-org/example-service/compare/main...fix/ci-test-discovery.json\n./replay/api/repos/example-org/example-service/branches/fix/ci-test-discovery.json\n\n    Import example service\n\n .github/workflows/ci.yml ...",
+      "output_chars": 477,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DKYzzhFSuWqqD6j7HM4UEr",
+      "name": "Bash",
+      "input": "cd <path> && cat compare/main...fix/ci-test-discovery.json branches/fix/ci-test-discovery.json",
+      "input_chars": 160,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DKYzzhFSuWqqD6j7HM4UEr",
+      "is_error": false,
+      "output": "{\n  \"url\": \"https://example.net/repos/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"html_url\": \"https://example.com/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"status\": \"ahead\",\n  \"ahead_by\": 1,\n  \"behind_by\": 0,\n  \"total_commits\": 1,\n  \"base_commit\"...",
+      "output_chars": 1292,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

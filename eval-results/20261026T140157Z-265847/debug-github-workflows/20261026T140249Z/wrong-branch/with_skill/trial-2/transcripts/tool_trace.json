@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017p8i6Jecwf6cVPQ7GkM9WW",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017p8i6Jecwf6cVPQ7GkM9WW",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WP5UfkThCaCq2VMJvi3mso",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls .github/workflows 2><path>",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WP5UfkThCaCq2VMJvi3mso",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n0b4757b initial commit\nf0be913 Import example service\nci.yml",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EzHKDA9mKFrazvPgETKNCE",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; git remote -v; ls; command -v gh",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EzHKDA9mKFrazvPgETKNCE",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 493,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RfGWSNhGTQeHfRFaMvATsY",
+      "name": "Bash",
+      "input": "ls test src bin; python3 -m unittest test.test_legacy 2>&1 | tail -30; head -20 bin/gh",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RfGWSNhGTQeHfRFaMvATsY",
+      "is_error": false,
+      "output": "bin:\ngh\n\nsrc:\nsequence.py\n\ntest:\ntest_current.py\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: tes...",
+      "output_chars": 1875,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YB5S4UrzzbojYzFVSSfffN",
+      "name": "Bash",
+      "input": "git log --stat --format='%h %s' | head -20; head -15 test/test_current.py; python3 -m unittest test.test_current 2>&1 | tail -5; echo $GH_REPLAY_DIR; gh run list 2>&1 | head",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YB5S4UrzzbojYzFVSSfffN",
+      "is_error": false,
+      "output": "0b4757b initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   |   35 +\n .../example-org/example-service...",
+      "output_chars": 1721,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011B59sezSFm6ies1FsrUS4K",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_current 2>&1 | head -15; ls test/__init__.py src/__init__.py; cat src/sequence.py; cat .gh/replay/run-view-77001.log; gh api repos/example-org/example-service/compare/mai...",
+      "input_chars": 312,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011B59sezSFm6ies1FsrUS4K",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_current (unittest.loader._FailedTest.test_current)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_current\nTraceback (most recent call last):\n  ...",
+      "output_chars": 2714,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KRMNvCgZLvYfUCU6NErcuV",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test 2>&1 | tail -5",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KRMNvCgZLvYfUCU6NErcuV",
+      "is_error": false,
+      "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK",
+      "output_chars": 97,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
