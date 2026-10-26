@@ -106,10 +106,12 @@ class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
         # Adam raised the weekly cap and the account stop to 95%, and the
-        # per-run cap is 1.5 points, until the 2026-10-26 reset
-        # (evals/budget.yml says so); set this back to LIMITS with the file.
+        # per-run cap is 1.5 points and the overrun 0.1 point, until the
+        # 2026-10-26 reset (evals/budget.yml says so); set this back to
+        # LIMITS with the file.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 0.95, "per_run_cap": 0.015,
+                          "per_run_overrun": 0.001,
                           "stop_when_account_above": 0.95})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)

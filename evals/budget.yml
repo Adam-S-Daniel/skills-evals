@@ -46,7 +46,15 @@ per_run_cap: 0.015
 # Half a point, added to every run's measured spend: the meter is read as an
 # agent call begins, so the run's last call (and any judge call after it) is
 # never inside the measured delta.
-per_run_overrun: 0.005
+#
+# TEMPORARY: 0.1 point until the same 2026-10-26 reset. On that morning the
+# guard counted 62 points of eval spend over 92 runs, 46 of them this
+# overrun alone, and charged it again on each of 25 old fires that never
+# produced results, while the account meter itself read 62%. That held about
+# 25 phantom points while Adam asked for all usage that fits before the
+# reset (2026-10-26). `stop_when_account_above` still stops every run at the
+# account's real 95%. Set it back to 0.005 with `weekly_cap`.
+per_run_overrun: 0.001
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of
