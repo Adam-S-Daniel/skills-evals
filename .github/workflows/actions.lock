@@ -28,8 +28,18 @@ workflows:
         - 'actions/setup-python@v7.0.0'
         - 'actions/upload-artifact@v7.0.2'
     '.github/workflows/roster-refresh.yml': []
+    '.github/workflows/routine-draft-skill-gate.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.2.0'
+        - 'actions/setup-python@v7.0.0'
+    '.github/workflows/routine-draft-skill-pushed.yml': []
+    '.github/workflows/routine-draft-skill.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.2.0'
+        - 'actions/setup-python@v7.0.0'
     '.github/workflows/routine-eval-fire.yml':
         - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.2.0'
         - 'actions/setup-python@v7.0.0'
     '.github/workflows/routine-eval-ingest.yml':
         - 'actions/checkout@v7.0.1'
