@@ -302,7 +302,8 @@ class CliTests(unittest.TestCase):
     def test_without_weekly_out_the_model_output_is_byte_identical(self):
         plain, plain_status = self.run_main()
         weekly_out = self.tmp / "weekly-local.json"
-        with_skills, status = self.run_main("--weekly-out", str(weekly_out))
+        with_skills, status = self.run_main("--weekly-out", str(weekly_out),
+                                            "--hook-logs", "")
         self.assertEqual(plain, with_skills)
         self.assertNotIn("invocations", plain_status)
         self.assertIn("3 skill invocations", status)

@@ -8,8 +8,8 @@ branch (see `evals/usage/CENSUS.md`). The planner reads it through `load`,
 `is_fresh` and `weight`, so a skill used often is improved first.
 
 THE SCHEMA LIVES HERE, and only here: the census builds every row with
-`row()` and every document with `document()`. Rows of other kinds (`hook`)
-will be added to the same file, so the reader ignores any kind it is not
+`row()` (or `hook_row()`) and every document with `document()`. The file
+holds rows of more than one kind, so the reader ignores any kind it is not
 asked about.
 
     {"generated_at": "2026-09-04T12:00:00Z", "schema": 1,
@@ -21,8 +21,15 @@ asked about.
                "sessions": n, "blocked": null, "overridden": null,
                "outcome": null}]}
 
+A `hook` row counts local git-hook runs from the agent-checks log: `name`
+is a check id (or `other`, or `all` for every run that week), `repo` an
+allowlisted public `owner/name`, `other` or null, `invocations` the runs in
+which the check ran and `blocked` the runs in which it failed; `sessions` is
+null. A second source, `scope: "hooks"` with `runs_scanned`, is present only
+when a hook log was read, so an absent one means unknown, not zero.
+
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
-name. `sessions` is the number of distinct transcript files that invoked the
+name, repo. `sessions` is the number of distinct transcript files that invoked the
 name that week; `sessions_scanned` is how many transcript files were read
 inside the window. Neither carries an id.
 
@@ -58,16 +65,27 @@ def row(iso_week_label: str, kind: str, name: str, invocations: int,
             "outcome": None}
 
 
+def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
+             blocked: int) -> dict:
+    """One local hook row: runs in which check `name` ran, and failed."""
+    return {**row(iso_week_label, "hook", name, runs, None), "repo": repo,
+            "blocked": blocked}
+
+
 def document(rows: list[dict], now: datetime, window_from: datetime,
-             sessions_scanned: int) -> dict:
+             sessions_scanned: int, hook_runs_scanned: int | None = None) -> dict:
     """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`."""
+    window = {"surface": SURFACE_LOCAL, "from": window_from.strftime(STAMP),
+              "to": now.strftime(STAMP)}
+    sources = [{**window, "scope": "transcripts", "sessions_scanned": sessions_scanned}]
+    if hook_runs_scanned is not None:
+        sources.append({**window, "scope": "hooks", "runs_scanned": hook_runs_scanned})
     return {
         "generated_at": now.strftime(STAMP),
         "schema": SCHEMA,
-        "sources": [{"surface": SURFACE_LOCAL, "scope": "transcripts",
-                     "from": window_from.strftime(STAMP), "to": now.strftime(STAMP),
-                     "sessions_scanned": sessions_scanned}],
-        "rows": sorted(rows, key=lambda r: (r["week"], r["kind"], r["name"])),
+        "sources": sources,
+        "rows": sorted(rows, key=lambda r: (r["week"], r["kind"], r["name"],
+                                            r["repo"] or "")),
     }
 
 

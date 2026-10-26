@@ -67,6 +67,13 @@ matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
 
+HOOK RUNS from the fleet's git hook runner (agent-checks writes one JSON line
+per local run, `--hook-logs`) become `hook` rows in the same weekly file:
+per check id, per allowlisted public repository, runs and failures. A check
+id is published only when shaped like one, a repository only when it is
+public (`public_repos()`); everything else is `other`, and an `all` row per
+week counts every run, so the totals do not depend on either allowlist.
+
 PRIVATE EVENTS are the exception, and the only one: `--events-out` writes
 one JSON line per skill invocation, with its timestamp, session id and title,
 repository and branch. That file is NEVER published publicly:
@@ -77,7 +84,8 @@ the two public files.
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
-        [--weekly-out usage/weekly-local.json] [--events-out events.jsonl]
+        [--weekly-out usage/weekly-local.json] [--events-out events.jsonl] \
+        [--hook-logs PATH[:PATH...]]
 """
 
 from __future__ import annotations
@@ -372,6 +380,127 @@ def census_counts(projects_dir: Path, now: datetime,
     return census_all(projects_dir, now, weeks)[0]
 
 
+# --- Local git-hook runs (`--hook-logs`) -----------------------------------
+# agent-checks (managed in _agent-guidance) appends one line per local hook
+# run: {"v":1,"ts":"...Z","event":"pre-commit|pre-push","repo":"owner/name"|null,
+# "checks":[ids],"failed":[ids]}. The lines are as untrusted as transcripts.
+
+#: The shape of a check id that may be a published key.
+HOOK_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,40}")
+HOOK_EVENTS = ("pre-commit", "pre-push")
+#: The per-week row that counts every run, whatever its checks.
+HOOK_ALL = "all"
+#: Public repositories that are not skill registries but run the hooks.
+ALWAYS_PUBLIC_REPOS = frozenset({"Adam-S-Daniel/skills-evals",
+                                 "Adam-S-Daniel/_agent-guidance"})
+_HOOK_LIST_CAP = 200
+
+
+def default_hook_log() -> str:
+    """Where agent-checks writes, by the same rule it uses."""
+    explicit = os.environ.get("AGENT_CHECKS_LOG")
+    if explicit:
+        return explicit
+    state = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state")
+    return os.path.join(state, "agent-checks", "runs.jsonl")
+
+
+def public_repos() -> frozenset[str]:
+    """`owner/name` of every registry in harness/registries.yml that is not
+    private, plus ALWAYS_PUBLIC_REPOS. Needs PyYAML, so the import is lazy."""
+    import eval_coverage
+    import run_eval
+    repos = set(ALWAYS_PUBLIC_REPOS)
+    for entry in run_eval._load_registries_config():
+        if entry["name"] not in eval_coverage.PRIVATE_REGISTRIES:
+            repo = github_repo(entry["url"])
+            if repo:
+                repos.add(repo)
+    return frozenset(repos)
+
+
+def _id_list(value) -> list | None:
+    if not isinstance(value, list) or len(value) > _HOOK_LIST_CAP:
+        return None
+    if not all(isinstance(item, str) and 0 < len(item) <= 100 for item in value):
+        return None
+    return value
+
+
+def _hook_run(line: str) -> dict | None:
+    """One well-formed agent-checks line, or None."""
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(entry, dict) or type(entry.get("v")) is not int or entry["v"] != 1:
+        return None
+    when = parse_ts(entry["ts"]) if isinstance(entry.get("ts"), str) else None
+    repo = entry.get("repo")
+    checks, failed = _id_list(entry.get("checks")), _id_list(entry.get("failed"))
+    if (when is None or entry.get("event") not in HOOK_EVENTS or checks is None
+            or failed is None
+            or not (repo is None or (isinstance(repo, str) and 0 < len(repo) <= 200))):
+        return None
+    return {"when": when, "event": entry["event"], "repo": repo,
+            "checks": checks, "failed": failed}
+
+
+def _hook_key(check: str) -> str:
+    return check if HOOK_ID_RE.fullmatch(check) and check != HOOK_ALL else OTHER_KEY
+
+
+def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
+               events: list | None = None, machine: str = "") -> dict | None:
+    """{"rows": {(iso_week, name, repo): [runs, blocked]}, "runs_scanned": n}
+    over the census window, or None when no file in `paths` could be read.
+
+    A malformed line is skipped. A line seen twice (the same bytes in two
+    logs) counts once: its id is the hash of the machine and the line. When
+    `events` is a list, each counted run is appended to it as a private
+    record.
+    """
+    wanted = set(window_weeks(now, weeks))
+    rows: dict = {}
+    seen: set[str] = set()
+    read = False
+    for path in paths:
+        try:
+            handle = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        read = True
+        with handle:
+            for raw in handle:
+                raw = raw.strip()
+                run = _hook_run(raw) if raw else None
+                if run is None or iso_week(run["when"]) not in wanted:
+                    continue
+                digest = hashlib.sha256(f"{machine}\n{raw}".encode("utf-8")).hexdigest()
+                if digest in seen:
+                    continue
+                seen.add(digest)
+                week = iso_week(run["when"])
+                repo = run["repo"]
+                if repo is not None and repo not in repos:
+                    repo = OTHER_KEY
+                failed = {_hook_key(check) for check in run["failed"]}
+                ran = {_hook_key(check) for check in run["checks"]} | failed
+                for name, hit in [((HOOK_ALL, None), bool(failed))] + \
+                        [((key, repo), key in failed) for key in ran]:
+                    counts = rows.setdefault((week, *name), [0, 0])
+                    counts[0] += 1
+                    counts[1] += int(hit)
+                if events is not None:
+                    events.append({"v": 1, "id": digest, "ts": _event_ts(run["when"]),
+                                   "kind": "hook", "event": run["event"],
+                                   "repo": run["repo"], "checks": run["checks"],
+                                   "failed": run["failed"], "surface": "local",
+                                   "machine": machine})
+    return {"rows": rows, "runs_scanned": len(seen)} if read else None
+
+
 def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                allowlist: frozenset[str] | None = None,
                events: list | None = None) -> tuple[dict, dict]:
@@ -528,16 +657,21 @@ def _document(counts: dict, now: datetime, weeks: int) -> dict:
 
 
 def build_weekly_document(tally: dict, now: datetime,
-                          weeks: int = DEFAULT_WEEKS) -> dict:
+                          weeks: int = DEFAULT_WEEKS, hooks: dict | None = None) -> dict:
     """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
-    owns its schema. The window starts at the Monday of its oldest week."""
+    owns its schema. The window starts at the Monday of its oldest week.
+    `hooks` is `hook_tally()`'s result; None adds no hook rows or source."""
     rows = [skill_usage.row(week, "skill", name, n,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
             for week, n in by_week.items()]
+    if hooks is not None:
+        rows += [skill_usage.hook_row(week, name, repo, runs, blocked)
+                 for (week, name, repo), (runs, blocked) in hooks["rows"].items()]
     oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
     window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
-    return skill_usage.document(rows, now, window_from, tally["sessions_scanned"])
+    return skill_usage.document(rows, now, window_from, tally["sessions_scanned"],
+                                None if hooks is None else hooks["runs_scanned"])
 
 
 def write_events(path: Path, events: list) -> None:
@@ -567,6 +701,10 @@ def main() -> int:
     parser.add_argument("--events-out", type=Path, default=None,
                         help="also write one private JSON line per skill "
                              "invocation here (never published publicly)")
+    parser.add_argument("--hook-logs", default=None,
+                        help="agent-checks run logs, separated by the OS path "
+                             "separator; missing files are skipped (default: "
+                             "agent-checks' own default path)")
     parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
@@ -602,10 +740,12 @@ def main() -> int:
         print("--now is not an ISO-8601 instant", file=sys.stderr)
         return 2
     allowlist = None
+    repos = frozenset()
     if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
             allowlist = skill_allowlist(args.skill_allowlist_root)
+            repos = public_repos()
         except (eval_coverage.CensusRefusal, ValueError, OSError):
             # No detail: a refusal message can carry a path, and this line
             # reaches a scheduled task's status report. Nothing is written.
@@ -614,6 +754,11 @@ def main() -> int:
             return 2
     events = [] if args.events_out is not None else None
     counts, tally = census_all(args.projects, now, args.weeks, allowlist, events)
+    hooks = None
+    if allowlist is not None:
+        paths = ([default_hook_log()] if args.hook_logs is None
+                 else [p for p in args.hook_logs.split(os.pathsep) if p])
+        hooks = hook_tally(paths, now, args.weeks, repos, events, machine_name())
     document = _document(counts, now, args.weeks)
     _write_json(args.out, document)
 
@@ -623,7 +768,8 @@ def main() -> int:
     status = (f"census: {len(document['counts'])} models, {total} assistant turns, "
               f"{args.weeks} weeks -> {args.out}")
     if args.weekly_out is not None:
-        _write_json(args.weekly_out, build_weekly_document(tally, now, args.weeks))
+        _write_json(args.weekly_out,
+                    build_weekly_document(tally, now, args.weeks, hooks))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
     if args.events_out is not None:
