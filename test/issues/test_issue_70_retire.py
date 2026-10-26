@@ -82,7 +82,66 @@ def git(cwd, *args):
                           check=True, capture_output=True, text=True).stdout
 
 
-def make_registry(root: Path, skills=((PLUGIN, SKILL),), version="1.2.7") -> Path:
+KEPT = "other-skill"
+LOCKED = ("adam-anything-anywhere", PLUGIN)
+
+# Stand-ins for adam-agentskills' own generators, which retire_skill.py runs in
+# the checkout. Each appends one JSON line to `<checkout>.calls` (outside the
+# checkout, so it never dirties it) and exits 3 while `<checkout>.fail-<name>`
+# exists. The README one rebuilds the table from the plugin directories; the
+# lock one pins HEAD and digests each locked bundle's skills, as
+# generate_skills_lock.py --repin does, and --check-current compares the
+# working tree with the pinned commit.
+FAKE_COMMON = '''import hashlib, json, os, subprocess, sys
+from pathlib import Path
+ROOT = Path.cwd()
+NAME = Path(sys.argv[0]).stem
+with open(f"{ROOT}.calls", "a") as log:
+    log.write(json.dumps({"script": NAME, "args": sys.argv[1:],
+                          "env": sorted(os.environ)}) + "\\n")
+if Path(f"{ROOT}.fail-{NAME}").exists():
+    sys.exit(3)
+'''
+FAKE_README = FAKE_COMMON + '''text = (ROOT / "README.md").read_text()
+head, rest = text.split("<!-- BEGIN -->\\n", 1)
+_, tail = rest.split("<!-- END -->\\n", 1)
+rows = [f"| `{p.parent.parent.name}` | `/{p.parent.parent.name}:{p.name}` |\\n"
+        for p in sorted(ROOT.glob("plugins/*/skills/*")) if p.is_dir()]
+(ROOT / "README.md").write_text(head + "<!-- BEGIN -->\\n" + "".join(rows)
+                                + "<!-- END -->\\n" + tail)
+'''
+FAKE_LOCK = FAKE_COMMON + '''def digests(tree, bundles):
+    return {f"{b}/{p.name}": "sha256:" + hashlib.sha256(
+                (p / "SKILL.md").read_bytes()).hexdigest()
+            for b in bundles for p in sorted((tree / "plugins" / b / "skills").glob("*"))}
+lock = json.loads((ROOT / "skills.lock").read_text())
+if sys.argv[1:] == ["--repin"]:
+    head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+    lock.update(ref=head, skills=digests(ROOT, lock["bundles"]), generated_from=head)
+    (ROOT / "skills.lock").write_text(json.dumps(lock, indent=2) + "\\n")
+elif sys.argv[1:] == ["--check-current"]:
+    import tarfile, io, tempfile
+    tmp = Path(tempfile.mkdtemp())
+    data = subprocess.run(["git", "archive", lock["ref"]], capture_output=True,
+                          check=True).stdout
+    tarfile.open(fileobj=io.BytesIO(data)).extractall(tmp)
+    sys.exit(0 if digests(tmp, lock["bundles"]) == digests(ROOT, lock["bundles"]) else 1)
+else:
+    sys.exit(2)
+'''
+
+
+def calls(registry: Path) -> list:
+    """The fake generators' invocations, oldest first."""
+    path = Path(f"{registry}.calls")
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def make_registry(root: Path, skills=((PLUGIN, SKILL), (PLUGIN, KEPT)),
+                  version="1.2.7", lock_bundles=LOCKED) -> Path:
     root.mkdir(parents=True)
     plugins = {p for p, _ in skills} | {PLUGIN}
     for plugin in plugins:
@@ -97,9 +156,27 @@ def make_registry(root: Path, skills=((PLUGIN, SKILL),), version="1.2.7") -> Pat
         (directory / "SKILL.md").write_text(f"---\nname: {skill}\n---\nBody.\n")
     (root / "docs").mkdir()
     (root / "docs" / "skill-impact.md").write_text(IMPACT)
+    (root / "scripts").mkdir()
+    layout = {"plugins": {p: {"defaultEnabled": True,
+                              "skills": sorted(s for q, s in skills if q == p)}
+                          for p in sorted(plugins)}}
+    (root / "scripts" / "plugin_layout.json").write_text(json.dumps(layout, indent=2) + "\n")
+    (root / "scripts" / "generate_readme_table.py").write_text(FAKE_README)
+    (root / "scripts" / "generate_skills_lock.py").write_text(FAKE_LOCK)
+    (root / "README.md").write_text("# Registry\n\n<!-- BEGIN -->\n<!-- END -->\n\nMore.\n")
+    subprocess.run([sys.executable, "scripts/generate_readme_table.py"], cwd=root, check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+    if lock_bundles is not None:
+        (root / "skills.lock").write_text(json.dumps(
+            {"registry": "Adam-S-Daniel/adam-agentskills", "ref": "", "bundles":
+             list(lock_bundles), "skills": {}, "generated_from": ""}, indent=2) + "\n")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "seed")
+    if lock_bundles is not None:
+        subprocess.run([sys.executable, "scripts/generate_skills_lock.py", "--repin"],
+                       cwd=root, check=True)
+        git(root, "commit", "-qam", "pin")
+    Path(f"{root}.calls").unlink(missing_ok=True)
     return root
 
 
@@ -255,7 +332,8 @@ class AutoTests(Base):
         changed = sorted(git(self.registry, "diff", "--name-only", "main", "HEAD").split())
         self.assertEqual(changed, sorted([
             "docs/skill-impact.md", f"plugins/{PLUGIN}/.claude-plugin/plugin.json",
-            f"plugins/{PLUGIN}/plugin.json", f"plugins/{PLUGIN}/skills/{SKILL}/SKILL.md"]))
+            f"plugins/{PLUGIN}/plugin.json", f"plugins/{PLUGIN}/skills/{SKILL}/SKILL.md",
+            "scripts/plugin_layout.json", "README.md", "skills.lock"]))
         for rel in (f"plugins/{PLUGIN}/plugin.json",
                     f"plugins/{PLUGIN}/.claude-plugin/plugin.json"):
             self.assertEqual(json.loads((self.registry / rel).read_text())["version"], "1.2.8")
@@ -874,6 +952,345 @@ class GitHubCallTests(unittest.TestCase):
                 with self.assertRaises(retire_skill.RetireError) as caught:
                     retire_skill.default_gh(["api", "x"])
             self.assertEqual(str(caught.exception), "gh api exited 4")
+
+
+class RegistryCheckTests(AutoTests):
+    """A removal pull request has to pass adam-agentskills' required checks
+    with no human edit, so the branch carries every file those checks read:
+    the README skill table, the ADR 0013 layout pin in
+    `scripts/plugin_layout.json`, and `skills.lock` when the plugin is locked.
+    The registry's own generators produce the first and the last; nothing here
+    reimplements them."""
+
+    def plan_for(self, registry=None, mode="auto"):
+        doc = gates_doc(mode)
+        path = self.write_gates(doc)
+        fake = FakeGitHub()
+        registries = compute_gates.flag_registries(
+            [f"adam-agentskills={registry or self.registry}"])
+        return retire_skill.plan(json.loads(path.read_text()), registries, fake.gh,
+                                 None, ("auto", "proposal"))
+
+    def test_the_readme_table_is_regenerated_by_the_registrys_own_script(self):
+        code, _, err, _ = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 0, err)
+        readme = (self.registry / "README.md").read_text()
+        self.assertNotIn(SKILL, readme)
+        self.assertIn(KEPT, readme)
+        scripts = [call["script"] for call in calls(self.registry)]
+        self.assertEqual(scripts[0], "generate_readme_table")
+        self.assertEqual(calls(self.registry)[0]["args"], [])
+
+    def test_the_layout_pin_loses_only_the_removed_skill(self):
+        code, _, err, _ = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 0, err)
+        text = (self.registry / "scripts" / "plugin_layout.json").read_text()
+        doc = json.loads(text)
+        self.assertEqual(doc["plugins"][PLUGIN]["skills"], [KEPT])
+        # The registry's canonical form, so the diff shows only those lines.
+        self.assertEqual(text, json.dumps(doc, indent=2) + "\n")
+
+    def test_the_lock_is_repinned_in_a_second_commit(self):
+        code, _, err, _ = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 0, err)
+        subjects = git(self.registry, "log", "--format=%s", "main..HEAD").split("\n")
+        self.assertEqual(len(subjects), 3, subjects)  # two commits and the trailing ""
+        self.assertIn("Re-pin skills.lock", subjects[0])
+        self.assertIn(f"Remove {PLUGIN}/{SKILL}", subjects[1])
+        removal = git(self.registry, "rev-parse", "HEAD~1").strip()
+        lock = json.loads((self.registry / "skills.lock").read_text())
+        self.assertEqual(lock["ref"], removal)
+        self.assertNotIn(f"{PLUGIN}/{SKILL}", lock["skills"])
+        self.assertIn(f"{PLUGIN}/{KEPT}", lock["skills"])
+        # Only skills.lock moves in the re-pin commit, and the registry's
+        # --check-current ran before it was committed.
+        self.assertEqual(git(self.registry, "diff", "--name-only", "HEAD~1", "HEAD").split(),
+                         ["skills.lock"])
+        lock_calls = [c["args"] for c in calls(self.registry) if c["script"].endswith("lock")]
+        self.assertEqual(lock_calls, [["--repin"], ["--check-current"]])
+
+    def test_an_unlocked_plugin_gets_no_repin_commit(self):
+        registry = make_registry(self.tmp / "unlocked", lock_bundles=("adam-coding-local",))
+        code, _, err, _ = self.run_main(gates_doc("auto"),
+                                        registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(git(registry, "log", "--format=%s", "main..HEAD").split("\n")), 2)
+        self.assertEqual([c["script"] for c in calls(registry)], ["generate_readme_table"])
+
+    def test_a_registry_with_no_lock_file_gets_no_repin(self):
+        registry = make_registry(self.tmp / "nolock", lock_bundles=None)
+        code, _, err, _ = self.run_main(gates_doc("auto"),
+                                        registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c["script"] for c in calls(registry)], ["generate_readme_table"])
+
+    def test_a_shallow_checkout_is_refused(self):
+        shallow = self.tmp / "shallow"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{self.registry}",
+                        str(shallow)], check=True, capture_output=True)
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={shallow}"])
+        self.assertEqual(code, 2)
+        self.assertIn("shallow", err)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(calls(shallow), [])
+
+    def test_a_plugins_last_skill_is_refused(self):
+        registry = make_registry(self.tmp / "only", skills=((PLUGIN, SKILL),))
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 2)
+        self.assertIn("last skill", err)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(calls(registry), [])
+        self.assertTrue((registry / "plugins" / PLUGIN / "skills" / SKILL).is_dir())
+
+    def test_a_layout_file_that_does_not_list_the_skill_is_refused(self):
+        for broken in ({"plugins": {PLUGIN: {"defaultEnabled": True, "skills": [KEPT]}}},
+                       {"plugins": {}}, {"plugins": [PLUGIN]}, []):
+            with self.subTest(repr(broken)[:40]):
+                registry = make_registry(self.tmp / f"layout{abs(hash(repr(broken)))}")
+                (registry / "scripts" / "plugin_layout.json").write_text(
+                    json.dumps(broken, indent=2) + "\n")
+                git(registry, "commit", "-qam", "break the layout")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn("plugin_layout.json", err)
+                self.assertEqual(fake.pushes, [])
+
+    def test_a_missing_layout_file_is_refused(self):
+        registry = make_registry(self.tmp / "nolayout")
+        (registry / "scripts" / "plugin_layout.json").unlink()
+        git(registry, "commit", "-qam", "drop the layout")
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 2)
+        self.assertIn("plugin_layout.json", err)
+        self.assertEqual(fake.pushes, [])
+
+    def test_a_missing_generator_is_refused_before_anything_is_written(self):
+        for rel in ("scripts/generate_readme_table.py", "scripts/generate_skills_lock.py",
+                    "README.md"):
+            with self.subTest(rel):
+                registry = make_registry(self.tmp / f"gone{rel.count('/')}{rel[-6]}")
+                (registry / rel).unlink()
+                git(registry, "commit", "-qam", f"drop {rel}")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn(rel, err)
+                self.assertEqual(fake.pushes, [])
+                self.assertEqual(git(registry, "branch", "--show-current").strip(), "main")
+
+    def test_a_generator_failure_reports_only_its_exit_code(self):
+        for name in ("generate_readme_table", "generate_skills_lock"):
+            with self.subTest(name):
+                registry = make_registry(self.tmp / f"fail-{name}")
+                Path(f"{registry}.fail-{name}").write_text("x")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn(f"scripts/{name}.py", err)
+                self.assertIn("exited 3", err)
+                self.assertEqual(fake.pushes, [])
+                self.assertEqual(fake.writes(), [])
+
+    def test_a_lock_that_does_not_come_current_is_refused(self):
+        # --check-current is the registry's own verdict on the re-pin, so a
+        # red one refuses rather than pushing a branch CI would reject.
+        registry = make_registry(self.tmp / "stale-lock")
+        (registry / "scripts" / "generate_skills_lock.py").write_text(
+            FAKE_COMMON + 'sys.exit(1 if sys.argv[1:] == ["--check-current"] else 0)\n')
+        git(registry, "commit", "-qam", "a re-pin that does not take")
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 2)
+        self.assertIn("--check-current exited 1", err)
+        self.assertEqual(fake.pushes, [])
+
+    def test_no_secret_reaches_a_registry_generator(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"GH_TOKEN": "t0ken", "SECRET_PEM": "pem"}):
+            code, _, err, _ = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 0, err)
+        for call in calls(self.registry):
+            self.assertNotIn("GH_TOKEN", call["env"], call["script"])
+            self.assertNotIn("SECRET_PEM", call["env"], call["script"])
+            self.assertIn("PATH", call["env"])
+
+    def test_the_checkout_is_clean_and_on_the_branch_afterwards(self):
+        code, _, err, _ = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(git(self.registry, "status", "--porcelain"), "")
+        self.assertEqual(git(self.registry, "branch", "--show-current").strip(),
+                         f"retire-skill/{SKILL}")
+
+    def test_the_plan_and_the_dry_run_name_every_new_step(self):
+        plan = self.plan_for()
+        self.assertTrue(plan["repin"])
+        self.assertIn("scripts/plugin_layout.json", plan["body"])
+        self.assertIn("README.md", plan["body"])
+        self.assertIn("skills.lock", plan["body"])
+        commands = retire_skill.commands(plan)
+        self.assertIn(["python3", "scripts/generate_readme_table.py"], commands)
+        self.assertIn(["python3", "scripts/generate_skills_lock.py", "--repin"], commands)
+        self.assertIn(["python3", "scripts/generate_skills_lock.py", "--check-current"],
+                      commands)
+        self.assertEqual(sum(1 for c in commands if c[:2] == ["git", "commit"]), 2)
+
+    def test_a_dry_run_writes_nothing_in_the_registry(self):
+        code, out, err, fake = self.run_main(gates_doc("auto"), "--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(json.loads(out)["repin"])
+        self.assertEqual(calls(self.registry), [])
+        self.assertUntouched()
+
+    def test_an_unlocked_plugins_plan_names_no_repin(self):
+        registry = make_registry(self.tmp / "plan-unlocked",
+                                 lock_bundles=("adam-coding-local",))
+        plan = self.plan_for(registry)
+        self.assertFalse(plan["repin"])
+        self.assertNotIn("skills.lock", plan["body"])
+        commands = retire_skill.commands(plan)
+        self.assertNotIn(["python3", "scripts/generate_skills_lock.py", "--repin"], commands)
+        self.assertEqual(sum(1 for c in commands if c[:2] == ["git", "commit"]), 1)
+
+    def test_a_lock_whose_skills_name_the_plugin_counts_as_locked(self):
+        # bundles and skills are read together: either one naming the plugin
+        # makes the lock stale, and a malformed lock is refused.
+        registry = make_registry(self.tmp / "keyed", lock_bundles=("adam-coding-local",))
+        lock = json.loads((registry / "skills.lock").read_text())
+        lock["skills"] = {f"{PLUGIN}/{SKILL}": "sha256:" + "0" * 64}
+        (registry / "skills.lock").write_text(json.dumps(lock, indent=2) + "\n")
+        git(registry, "commit", "-qam", "a lock keyed by skill")
+        self.assertTrue(retire_skill.lock_relevant(registry, PLUGIN))
+        (registry / "skills.lock").write_text(json.dumps({"bundles": "all"}) + "\n")
+        with self.assertRaises(retire_skill.RetireError):
+            retire_skill.lock_relevant(registry, PLUGIN)
+
+    def test_a_skill_the_runtime_gate_would_hold_is_refused(self):
+        # adam-agentskills' plugin-runtime-review gate (its ADR 0016) holds a
+        # pull request that changes how a plugin runs code until the owner
+        # approves the environment. Auto-merge cannot approve it, so such a
+        # branch would sit open forever holding the one removal slot.
+        cases = {
+            "a hooks directory": ("plugins/{p}/skills/{s}/hooks/on-start.sh", "#!/bin/sh\n"),
+            "a bin directory": ("plugins/{p}/skills/{s}/bin/tool", "#!/bin/sh\n"),
+        }
+        for name, (rel, body) in cases.items():
+            with self.subTest(name):
+                registry = make_registry(self.tmp / f"gated-{rel.count('bin')}")
+                path = registry / rel.format(p=PLUGIN, s=SKILL)
+                path.parent.mkdir(parents=True)
+                path.write_text(body)
+                git(registry, "add", "-A")
+                git(registry, "commit", "-qm", name)
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn("plugin-runtime-review", err)
+                self.assertEqual(fake.pushes, [])
+                self.assertEqual(calls(registry), [])
+
+    def test_a_hook_naming_a_path_inside_the_skill_is_refused(self):
+        for rel in (f"plugins/{PLUGIN}/hooks/hooks.json",
+                    f"plugins/{PLUGIN}/.claude-plugin/plugin.json"):
+            with self.subTest(rel):
+                registry = make_registry(self.tmp / f"hooked-{rel.count('claude')}")
+                path = registry / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                hook = {"type": "command",
+                        "command": '"${CLAUDE_PLUGIN_ROOT}"/skills/%s/scripts/run.sh' % SKILL,
+                        "timeout": 10}
+                if rel.endswith("plugin.json"):
+                    doc = json.loads(path.read_text())
+                    doc["hooks"] = {"SessionStart": [{"hooks": [hook]}]}
+                else:
+                    doc = {"hooks": {"SessionStart": [{"hooks": [hook]}]}}
+                path.write_text(json.dumps(doc, indent=2) + "\n")
+                git(registry, "add", "-A")
+                git(registry, "commit", "-qm", "a hook into the skill")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn("plugin-runtime-review", err)
+                self.assertIn(rel, err)
+                self.assertEqual(fake.pushes, [])
+
+    def test_a_hook_naming_another_skill_does_not_refuse(self):
+        registry = make_registry(self.tmp / "hooked-elsewhere")
+        path = registry / "plugins" / PLUGIN / "hooks" / "hooks.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
+            {"type": "command",
+             "command": '"${CLAUDE_PLUGIN_ROOT}"/skills/%s/scripts/run.sh' % KEPT,
+             "timeout": 10}]}]}}, indent=2) + "\n")
+        git(registry, "add", "-A")
+        git(registry, "commit", "-qm", "a hook into the kept skill")
+        code, _, err, _ = self.run_main(gates_doc("auto"),
+                                        registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 0, err)
+
+    def test_a_waiver_under_the_skill_is_refused(self):
+        registry = make_registry(self.tmp / "waived")
+        (registry / "scripts" / "skills_waivers.yml").write_text(
+            "# A comment naming %s, which is not a waiver.\nwaivers:\n"
+            "  - klass: british-spelling\n    registry: adam-agentskills\n"
+            "    path: plugins/%s/skills/%s/SKILL.md\n    issue: 1\n"
+            "    reason: invented\n" % (KEPT, PLUGIN, SKILL))
+        git(registry, "add", "-A")
+        git(registry, "commit", "-qm", "a waiver under the skill")
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 2)
+        self.assertIn("skills_waivers.yml", err)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(calls(registry), [])
+
+    def test_waivers_elsewhere_and_an_empty_list_do_not_refuse(self):
+        # The file is parsed, not grepped: a comment naming the skill, a
+        # waiver on another skill, and `waivers: []` all pass.
+        for name, text in (
+                ("empty", "waivers: []\n"),
+                ("comment only", "# %s was waived once.\nwaivers: []\n" % SKILL),
+                ("another skill", "waivers:\n  - klass: british-spelling\n"
+                                  "    registry: adam-agentskills\n"
+                                  "    path: plugins/%s/skills/%s/SKILL.md\n"
+                                  "    issue: 1\n    reason: invented\n" % (PLUGIN, KEPT))):
+            with self.subTest(name):
+                registry = make_registry(self.tmp / f"waiver-{name.replace(' ', '-')}")
+                (registry / "scripts" / "skills_waivers.yml").write_text(text)
+                git(registry, "add", "-A")
+                git(registry, "commit", "-qm", name)
+                code, _, err, _ = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 0, err)
+
+    def test_a_malformed_waivers_file_is_refused(self):
+        for text in ("waivers: not-a-list\n", "waivers:\n  - [\n"):
+            with self.subTest(text.strip()[:20]):
+                registry = make_registry(self.tmp / f"badwaiver{len(text)}")
+                (registry / "scripts" / "skills_waivers.yml").write_text(text)
+                git(registry, "add", "-A")
+                git(registry, "commit", "-qm", "a malformed waivers file")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn("skills_waivers.yml", err)
+                self.assertEqual(fake.pushes, [])
+
+    def test_a_proposal_is_filed_whatever_the_registry_checkout_looks_like(self):
+        # The registry preconditions are auto-mode's: in proposal mode a human
+        # removes, so a shallow or last-skill checkout must still file.
+        registry = make_registry(self.tmp / "proposal-only", skills=((PLUGIN, SKILL),))
+        code, out, err, fake = self.run_main(
+            gates_doc("proposal"), "--allow-mode", "proposal",
+            registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(fake.writes()[0][:2], ["issue", "create"])
+        self.assertEqual(calls(registry), [])
 
 
 class WorkflowTests(unittest.TestCase):
