@@ -38,7 +38,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LOCAL_EVAL = REPO_ROOT / "scripts" / "local_eval.py"
 FAKE_CLAUDE = REPO_ROOT / "test" / "fake-claude"
 FAKE_CLAUDE_INIT = REPO_ROOT / "test" / "fake-claude-init"
-EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
+# These tests drive a FLAT fixture (#66). workflow-path-audit's fixtures are
+# nested, so setUpModule stages a copy of one of them at
+# `<temp>/evals/workflow-path-audit/`, whose parent is not named after the
+# skill and so reads as flat; EVAL_DIR names that copy once it exists.
+FLAT_SOURCE = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
+EVAL_DIR = FLAT_SOURCE
 GUIDANCE_FIXTURE = REPO_ROOT / "evals" / "guidance" / "_delivery"
 SKILL = "workflow-path-audit"
 EXHIBIT = "local — not badge input"
@@ -130,7 +135,12 @@ from arm_test_env import arm_test_environment, install_arm_test_environment  # n
 
 @install_arm_test_environment
 def setUpModule() -> None:
-    pass
+    global EVAL_DIR
+    staging = Path(tempfile.mkdtemp(prefix="local-eval-flat-",
+                                    dir=TestLocalEval._temp_base())).resolve()
+    unittest.addModuleCleanup(shutil.rmtree, staging, ignore_errors=True)
+    EVAL_DIR = staging / "evals" / SKILL
+    shutil.copytree(FLAT_SOURCE, EVAL_DIR)
 
 
 def tearDownModule() -> None:

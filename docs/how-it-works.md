@@ -352,7 +352,7 @@ Raw transcripts are deliberately never published (public repository): each arm's
 
 ## 5. What is measured today
 
-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
+Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed. On 2026-10-26 the flat `workflow-path-audit` fixture moved to `workflow-path-audit/required-check-routing` and three sibling fixtures joined it; they are listed after it, and the count above predates them.
 
 Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
@@ -484,13 +484,37 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/wsl-automation`. Class B. No real run yet.
 
-### workflow-path-audit
+### workflow-path-audit/required-check-routing
 
-- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit)
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/required-check-routing](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/required-check-routing) (the flat `evals/workflow-path-audit` fixture until 2026-10-26, when the skill's fixtures were nested; its earlier runs are keyed as the flat fixture)
 - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
 - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
 - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
+
+### workflow-path-audit/companion-skip-pair
+
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/companion-skip-pair](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/companion-skip-pair)
+- Check a repo's path filters where the required `unit-tests` check lives in a path-filtered tests.yml beside tests-skip.yml, which reports the same check under the inverse `paths-ignore:`. Good output deletes the companion and gates tests.yml internally, explaining that a mixed changeset fires both.
+- Objective (8): the required check's workflow has no workflow-level filter and gates on a computed output; the companion is gone; two changeset replays; all workflows parse; the schedule-only workflow gained no filter; the ruleset and every file outside `.github/workflows/` untouched.
+- Judge: weighted — `correctness` 0.6, `explanation` 0.2, `restraint` 0.2.
+- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
+
+### workflow-path-audit/moved-test-dir
+
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/moved-test-dir](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/moved-test-dir)
+- Tighten filters where e2e.yml still watches `e2e/**` after the specs moved to `tests/e2e/`, omits the server script its Playwright config starts, unit.yml omits its own file, and lint.yml watches all of `.github/`. Good output fixes all four from what each workflow's steps consume, without moving any file.
+- Objective (10): seven changeset replays (moved spec, server script, own workflow file, sibling workflow file, unit test, prose, lockfile); all workflows parse; the schedule-only workflow gained no filter; nothing outside `.github/workflows/` changed and no `e2e/` came back.
+- Judge: weighted — `salience` 0.6, `completeness` 0.2, `restraint` 0.2.
+- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
+
+### workflow-path-audit/workflow-doc-in-step
+
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/workflow-doc-in-step](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/workflow-doc-in-step)
+- Filter two always-run workflows in a repo whose AGENTS.md table says `all paths` for both. Good output filters each on what it consumes and brings the existing table's rows in step, creating no second workflow doc.
+- Objective (10): four changeset replays; line-anchored checks that the tests.yml row names `src/` and the docs-site.yml row names `docs/` with neither still saying `all paths`, and that the rest of AGENTS.md survives; all workflows parse; the schedule-only workflow gained no filter; nothing else changed and no new workflow doc appeared at the common names.
+- Judge: weighted — `docs-in-step` 0.4, `salience` 0.4, `restraint` 0.2.
+- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
 
 ### writing-adrs/bootstrap
 

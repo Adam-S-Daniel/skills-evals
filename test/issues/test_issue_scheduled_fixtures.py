@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
-REVIEWED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
+REVIEWED = ["evals/workflow-path-audit/required-check-routing",
+            "evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability/release-pipeline",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
@@ -135,14 +136,14 @@ class TestScheduledFixtures(unittest.TestCase):
         for event in events:
             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", event),
                              {"include": [{"fixture": EXPECTED[0],
-                                           "eval_key": "workflow-path-audit", "slot": 0}]})
+                                           "eval_key": EXPECTED[0][6:], "slot": 0}]})
         for path in EXPECTED:
             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": path}})["include"],
                              [{"fixture": path, "eval_key": path[6:], "slot": 0}])
 
     def test_dispatch_rejects_invalid_types_nul_and_paths(self):
         for value in [False, True, 0, 123, [], {}, "\0" + EXPECTED[0],
-                      EXPECTED[0] + "\n", "evals/../evals/workflow-path-audit", "evals/nope"]:
+                      EXPECTED[0] + "\n", "evals/../" + EXPECTED[0], "evals/workflow-path-audit", "evals/nope"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": value}})
         for inputs in [False, 0, [], "fixture"]:

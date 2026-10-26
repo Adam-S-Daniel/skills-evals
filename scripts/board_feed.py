@@ -318,7 +318,9 @@ def results(tree):
         newest.append(row)
     points = []
     for row in sorted(rows, key=lambda item: (item["ts"], item["_source"])):
-        if row["fixture"] == "workflow-path-audit":
+        # The reference fixture's trend, across its move from flat to nested.
+        if row["fixture"] in ("workflow-path-audit",
+                              "workflow-path-audit/required-check-routing"):
             arms = {arm["arm"]: arm for arm in row["arms"]}
             points.append({"ts": row["ts"], **{name: (
                 {metric: arms[name][metric] for metric in METRICS} if name in arms else None)

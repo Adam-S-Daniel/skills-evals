@@ -48,7 +48,7 @@ HARNESS_DIR = REPO_ROOT / "harness"
 FAKE_CLAUDE = TEST_DIR / "fake-claude"
 FAKE_REGISTRY = TEST_DIR / "fixtures" / "fake_registry"
 FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
-EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
+EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 ADRS_EXISTING_DIR = REPO_ROOT / "evals" / "writing-adrs" / "existing-convention"
@@ -5969,8 +5969,10 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("with_skill", report)
             self.assertIn("without_skill", report)
 
+            # A nested fixture writes its arms under its own name (#66).
+            fixture_dir = run_dir / EVAL_DIR.name
             for arm in ("with_skill", "without_skill"):
-                summary_path = run_dir / arm / "summary.json"
+                summary_path = fixture_dir / arm / "summary.json"
                 self.assertTrue(summary_path.is_file())
                 summary = json.loads(summary_path.read_text(encoding="utf-8"))
                 self.assertIsNone(summary["error"])
@@ -5983,7 +5985,7 @@ class EndToEndTests(unittest.TestCase):
                 # self-reports 7.5, which is what an unwired weights kwarg
                 # would leave behind.
                 self.assertNotEqual(summary["judge"]["overall"], 7.5)
-                raw_path = run_dir / arm / "transcripts" / "raw.json"
+                raw_path = fixture_dir / arm / "transcripts" / "raw.json"
                 self.assertTrue(raw_path.is_file())
 
             # Never pollutes the real repo results/ dir.
@@ -8358,7 +8360,7 @@ exit 0
     #              fall-through-to-CLI-default contract -------------------
 
     def test_workflow_path_audit_fixture_describes_the_fail_closed_precedence(self):
-        text = (REPO_ROOT / "evals" / "workflow-path-audit" / "fixture.yaml").read_text(
+        text = (EVAL_DIR / "fixture.yaml").read_text(
             encoding="utf-8")
         self.assertNotIn("the CLI's own default", text,
                          "select_models() fails closed; nothing falls through "
