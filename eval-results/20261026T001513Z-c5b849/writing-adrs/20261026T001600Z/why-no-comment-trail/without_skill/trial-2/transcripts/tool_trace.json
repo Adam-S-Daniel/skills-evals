@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EVjGBqo1s7JiRf6ws89uGT",
+      "name": "Bash",
+      "input": "cat scripts/export-ledger.sh && ls docs/decisions && cat docs/decisions/README.md && head -30 CHANGELOG.md && for f in docs/decisions/*.md; do echo \"== $f\"; head -40 \"$f\"; done; git log --oneline | he...",
+      "input_chars": 202,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EVjGBqo1s7JiRf6ws89uGT",
+      "is_error": false,
+      "output": "#!<path> bash\n# export-ledger.sh: write one day's general-ledger entries as a CSV file for\n# the bank's reconciliation service.\n#\n# Usage: export-ledger.sh YYYY-MM-DD\nset -euo pipefail\n\nday=\"${1:?usage: export-ledger.sh YYYY-MM-DD}\"\nout=\"${EXPORT_DIR:-/var/exports}/ledger-$day.csv\"\n\n# Amounts are in...",
+      "output_chars": 4785,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BapWPr5RutTmS2y4iR2ATa",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-csv-lines-with-crlf.md <<'EOF'\n# 0003. End every CSV line with CRLF, not LF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation importer...",
+      "input_chars": 1629,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BapWPr5RutTmS2y4iR2ATa",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..a2b955c 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1476,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

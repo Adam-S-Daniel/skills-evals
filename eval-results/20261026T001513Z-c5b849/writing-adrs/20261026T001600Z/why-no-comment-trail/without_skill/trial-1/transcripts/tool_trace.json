@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UUbSX4K1QGq8RbQWNeCD3K",
+      "name": "Bash",
+      "input": "ls -R docs; cat docs/decisions/README.md; cat scripts/export-ledger.sh; cat CHANGELOG.md; ls docs/decisions | head; cat docs/decisions/0*.md 2><path> | head -60",
+      "input_chars": 163,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UUbSX4K1QGq8RbQWNeCD3K",
+      "is_error": false,
+      "output": "docs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-line code\ncomment is eno...",
+      "output_chars": 3611,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013k4zFAXYDCT7ZjxhBZXGZN",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-export-lines-with-crlf.md <<'EOF'\n# 0003. End export lines with CRLF, not LF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation importe...",
+      "input_chars": 1784,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013k4zFAXYDCT7ZjxhBZXGZN",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..4baabf8 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1150,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
