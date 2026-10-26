@@ -39127,7 +39127,13 @@ class TestPublishUsageCensus(unittest.TestCase):
             "GIT_TERMINAL_PROMPT": "0",
             "SKILLS_EVALS_URL": self.url,
             "CENSUS_NOW": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            # The private events repository and the hook logs: local and
+            # empty, so nothing from the developer's machine is read.
+            "USAGE_EVENTS_URL": (self.tmp / "events.git").as_uri(),
+            "USAGE_HOOK_LOGS": "",
         }
+        self.git("init", "--bare", "--quiet", str(self.tmp / "events.git"))
+        self.git("config", "maintenance.auto", "false", cwd=self.tmp / "events.git")
         self._seed_origin()
         self.projects = self._fake_projects()
 

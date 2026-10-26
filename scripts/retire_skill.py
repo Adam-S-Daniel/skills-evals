@@ -4,7 +4,7 @@ an auto-merging removal pull request in adam-agentskills.
 
   retire_skill.py --gates FILE --registry adam-agentskills=PATH
                   [--registry NAME=PATH ...] [--dry-run]
-                  [--allow-mode proposal|auto ...]
+                  [--allow-mode proposal|auto ...] [--usage FILE]
 
 `--gates` is scripts/compute_gates.py's output. A skill acts only when its
 verdict there is `retire`, and this script re-checks what that verdict
@@ -88,6 +88,11 @@ tests need no network. An error from `gh` is reported by its exit code
 only, never its output. Deterministic: no clock; the skill-impact date is
 the gates file's `as_of`.
 
+`--usage` is the published `usage/weekly-local.json`; the issue body names
+the skill's invocations over the four weeks ending at the gates file's
+`as_of` (harness/skill_usage.weight), or says `unknown` when there is no
+fresh census. It informs the human; it changes no decision.
+
 The gate guards against honest mistakes, not forged results (Adam,
 2026-10-26): anyone who can write the results can also remove a skill.
 """
@@ -101,6 +106,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -111,6 +117,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import compute_gates  # noqa: E402
 import delivery  # noqa: E402
+import skill_usage  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
@@ -406,6 +413,17 @@ def manifest_versions(checkout: Path, plugin: str) -> dict:
     return out
 
 
+def usage_line(usage: dict | None, skill: str, as_of: str) -> str:
+    """One line on how often `skill` was invoked lately, for the human who
+    decides; `unknown` when there is no fresh usage census at `as_of`."""
+    now = datetime.strptime(as_of, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    count = skill_usage.weight(usage, skill, now)
+    if count is None:
+        return "Recent use: unknown (no fresh usage census)."
+    return (f"Recent use: {count} local invocation(s) in the four weeks to {as_of} "
+            "(usage/weekly-local.json).")
+
+
 def layout_without(checkout: Path, plugin: str, skill: str) -> str:
     """`scripts/plugin_layout.json`'s text with `skill` dropped from
     `plugin`, in the registry's canonical form (json.dumps, indent 2, one
@@ -608,13 +626,14 @@ def run_registry_script(checkout: Path, script: str, *args: str) -> None:
         raise RetireError(" ".join([script, *args, "exited", str(proc.returncode)]))
 
 
-def _issue_body(gates, skill, location, problem, run_url) -> str:
+def _issue_body(gates, skill, location, problem, run_url, usage=None) -> str:
     where = (f"`{location['path']}` in {REGISTRY_REPO}" if location
              else f"not located: {problem}")
     run = f"\nWorkflow run: {run_url}\n" if run_url else ""
     return (f"{ISSUE_MARKER.format(skill=skill)}\n"
             f"The retirement verdict for `{skill}` is **retire** as of "
             f"{gates['as_of']}: {gates['skills'][skill].get('reason')}.\n\n"
+            f"{usage_line(usage, skill, gates['as_of'])}\n\n"
             f"`evals/gate-policy.yml` sets `retirement_mode: proposal`, so a human "
             f"removes it. Copy: {where}.\n\n{evidence(gates, skill)}\n{run}\n"
             "Filed by scripts/retire_skill.py on the scheduled workflow (#70).\n")
@@ -639,7 +658,7 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
 
 
 def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
-         allowed=("proposal",)) -> dict:
+         allowed=("proposal",), usage: dict | None = None) -> dict:
     """What to do, read-only. RetireError for a refusal."""
     skill = retiring(gates)
     mode = mode_of(gates)
@@ -663,7 +682,7 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         return {"action": "update-issue" if number else "create-issue", "mode": mode,
                 "skill": skill, "issue": number,
                 "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
-                "body": _issue_body(gates, skill, location, problem, run_url)}
+                "body": _issue_body(gates, skill, location, problem, run_url, usage)}
     prs = open_removal_prs(gh)
     if prs:
         raise RetireError("a removal pull request is already open: "
@@ -792,6 +811,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
     parser.add_argument("--registry", action="append", metavar="NAME=PATH")
     parser.add_argument("--allow-mode", action="append", choices=("auto", "proposal"))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--usage", type=Path, default=None,
+                        help="usage/weekly-local.json, for the issue's recent-use line")
     args = parser.parse_args(argv)
     run_url = None
     if env.get("GITHUB_RUN_ID") and env.get("GITHUB_REPOSITORY") == EVALS_REPO \
@@ -805,7 +826,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
         allowed = tuple(args.allow_mode or ("proposal",))
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)
-        action = plan(gates, registries, gh, run_url, allowed)
+        usage = skill_usage.load(args.usage) if args.usage is not None else None
+        action = plan(gates, registries, gh, run_url, allowed, usage)
         if args.dry_run:
             out.write(json.dumps({"dry_run": True, **action,
                                   "would_run": commands(action)},

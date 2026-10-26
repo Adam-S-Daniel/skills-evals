@@ -302,7 +302,8 @@ class CliTests(unittest.TestCase):
     def test_without_weekly_out_the_model_output_is_byte_identical(self):
         plain, plain_status = self.run_main()
         weekly_out = self.tmp / "weekly-local.json"
-        with_skills, status = self.run_main("--weekly-out", str(weekly_out))
+        with_skills, status = self.run_main("--weekly-out", str(weekly_out),
+                                            "--hook-logs", "")
         self.assertEqual(plain, with_skills)
         self.assertNotIn("invocations", plain_status)
         self.assertIn("3 skill invocations", status)
@@ -332,7 +333,10 @@ class PublisherTests(unittest.TestCase):
         self.env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.tmp / "home"),
                     "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
                     "GIT_TERMINAL_PROMPT": "0", "SKILLS_EVALS_URL": self.origin.as_uri(),
-                    "CENSUS_NOW": NOW_TEXT}
+                    "CENSUS_NOW": NOW_TEXT, "USAGE_HOOK_LOGS": "",
+                    "USAGE_EVENTS_URL": (self.tmp / "events.git").as_uri()}
+        self.git("init", "--bare", "--quiet", str(self.tmp / "events.git"))
+        self.git("config", "maintenance.auto", "false", cwd=self.tmp / "events.git")
         self.seed()
         self.projects = self.tmp / "projects"
         write_transcript(self.projects / "-home-example-proj" / "s.jsonl", [
