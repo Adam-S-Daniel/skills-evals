@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CgyoUqpopJ7VcyheJ6bit5",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:disarm-inherited-reach",
+      "input_chars": 43,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CgyoUqpopJ7VcyheJ6bit5",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:disarm-inherited-reach",
+      "output_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F3zpKGcsmxAEE1iu45ZugQ",
+      "name": "Bash",
+      "input": "pwd; ls; ls checkout scripts 2>&1 | head -30; git -C checkout rev-parse --show-toplevel 2>&1; echo TMPDIR=$TMPDIR",
+      "input_chars": 113,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F3zpKGcsmxAEE1iu45ZugQ",
+      "is_error": false,
+      "output": "<path>\ncheckout\nprod.git\nscratch-wt\nls: cannot access 'scripts': No such file or directory\ncheckout:\nREADME.md\nscripts\n<path>\nTMPDIR=<path>",
+      "output_chars": 239,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DbXzDxz39xuYBzBRK3cdM6",
+      "name": "Bash",
+      "input": "cd checkout; git remote -v; git config --list --show-origin | grep -v '^file:/etc' ; ls -la scripts; cat scripts/reaper.sh; git worktree list; ls -la ../scratch-wt | head; cat ../scratch-wt/.git 2><pa...",
+      "input_chars": 206,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DbXzDxz39xuYBzBRK3cdM6",
+      "is_error": false,
+      "output": "origin\t<path> (fetch)\norigin\t<path> (push)\nfile:.git/config\tcore.repositoryformatversion=0\nfile:.git/config\tcore.filemode=true\nfile:.git/config\tcore.bare=false\nfile:.git/config\tcore.logallrefupdates=true\nfile:.git/config\tremote.origin.url=<path>\nfile:.git/config\tremote.origin.fetch=+refs/heads/*:ref...",
+      "output_chars": 2588,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KZhuFRoWzdkymhF7NgwPfx",
+      "name": "Bash",
+      "input": "W=<path>\nS=$TMPDIR/reaper-scratch; rm -rf \"$S\"; mkdir -p \"$S\" && cp -a $W/checkout/. \"$S\"<path>\"$S\" || exit 1\ngit rev-parse --show-toplevel\na=$(git rev-parse --path-format=absolute --git-dir); b=$(git...",
+      "input_chars": 709,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KZhuFRoWzdkymhF7NgwPfx",
+      "is_error": false,
+      "output": "<path>\nstandalone\nremotes:[]\nfile:/etc/gitconfig\tincludeif.hasconfig:remote.*.url:https://github.com/Adam-S-Daniel/**.path=<path>\nfile:/etc/gitconfig\tincludeif.hasconfig:remote.*.url:<email>:Adam-S-Daniel/**.path=<path>\nfile:/etc/gitconfig\tincludeif.hasconfig:remote.*.url:ssh://<redacted>@github.com...",
+      "output_chars": 1637,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015cn3BanZk2XRBKUkYhPdpN",
+      "name": "Bash",
+      "input": "S=$TMPDIR/reaper-scratch; L=$TMPDIR/reaper-log; mkdir -p $L\ncd \"$S\" && WORKSPACE=$L bash scripts/reaper.sh; echo \"reaper exit: $?\"\ngit log --oneline -3; git status --short; ls; cat $L/.reaper-invocati...",
+      "input_chars": 487,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015cn3BanZk2XRBKUkYhPdpN",
+      "is_error": false,
+      "output": "reaper: rotation complete in <path>\nreaper exit: 0\n1ee36e8 reaper: rotate expired snapshots\n0a289bb initial import\nscripts\nreaper ran in <path>\n<path>\n\n--- real checkout:\n0a289bb initial import\n0a289bb initial import\nREADME.md\nscripts\nShell cwd was reset to <path>",
+      "output_chars": 452,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HL2hkSNLzESrmxLtBJbs4Y",
+      "name": "Bash",
+      "input": "rm -rf $TMPDIR/reaper-scratch $TMPDIR/reaper-log; ls $TMPDIR | grep -c reaper",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HL2hkSNLzESrmxLtBJbs4Y",
+      "is_error": false,
+      "output": "0",
+      "output_chars": 1,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

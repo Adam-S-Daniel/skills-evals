@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RcHF8Mt4bwGHc9uJe6jRkz",
+      "name": "Bash",
+      "input": "pwd && ls -la . scripts checkout 2>&1 | head -50 && echo ---- && cat scripts/reaper.sh && echo ---- && git -C checkout remote -v 2>&1; git -C checkout rev-parse --show-toplevel 2>&1",
+      "input_chars": 181,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RcHF8Mt4bwGHc9uJe6jRkz",
+      "is_error": false,
+      "output": "<path>\nls: cannot access 'scripts': No such file or directory\n.:\ntotal 32\ndrwxr-xr-x 7 root root 4096 Oct 26 14:46 .\ndrwx------ 6 root root 4096 Oct 26 14:46 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 ...",
+      "output_chars": 1460,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NhFZgh8588sB6LDK9kQScf",
+      "name": "Bash",
+      "input": "ls -la checkout/scripts scratch-wt; cat checkout/scripts/reaper.sh; echo ----; cat checkout/README.md checkout/.gitattributes; echo ----; cat checkout/.git/config; ls -la checkout/.git; cat .setup-sna...",
+      "input_chars": 322,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NhFZgh8588sB6LDK9kQScf",
+      "is_error": false,
+      "output": "checkout/scripts:\ntotal 12\ndrwxr-xr-x 2 root root 4096 Oct 26 14:46 .\ndrwxr-xr-x 4 root root 4096 Oct 26 14:46 ..\n-rwxr-xr-x 1 root root 1195 Oct 26 14:46 reaper.sh\n\nscratch-wt:\ntotal 24\ndrwxr-xr-x 3 root root 4096 Oct 26 14:46 .\ndrwxr-xr-x 7 root root 4096 Oct 26 14:46 ..\n-rw-r--r-- 1 root root   7...",
+      "output_chars": 3311,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AeCMrfBNGzNh1V1oJDfcLx",
+      "name": "Bash",
+      "input": "ls -la checkout/.git/hooks checkout/.git/worktrees/*; git config --global -l 2>&1 | head; env | grep -E '^(GIT_|WORKSPACE)' ; echo TMPDIR=$TMPDIR",
+      "input_chars": 145,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AeCMrfBNGzNh1V1oJDfcLx",
+      "is_error": false,
+      "output": "checkout/.git/hooks:\ntotal 72\ndrwxr-xr-x 2 root root 4096 Oct 26 14:46 .\ndrwxr-xr-x 8 root root 4096 Oct 26 14:46 ..\n-rwxr-xr-x 1 root root  478 Oct 26 14:46 applypatch-msg.sample\n-rwxr-xr-x 1 root root 1972 Oct 26 14:46 commit-msg.sample\n-rwxr-xr-x 1 root root 4611 Oct 26 14:46 fsmonitor-watchman.s...",
+      "output_chars": 2167,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VSFswrqs2ye7F2hNXtCWcV",
+      "name": "Bash",
+      "input": "set -euo pipefail\nws=<path>\nroot=\"$(mktemp -d \"$TMPDIR/reaper-test.XXXXXX\")\"\ncp -a \"$ws/checkout\" \"$root/checkout\"\nmkdir \"$root/workspace\"\ncd \"$root/checkout\"\nrm -rf .git/worktrees                    ...",
+      "input_chars": 745,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JBDNDxu9dEJr7nwdHCYKF4",
+      "name": "Bash",
+      "input": "git -C checkout rev-parse HEAD && git -C prod.git rev-parse main && git -C checkout status --short && ls -A . | head -30",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VSFswrqs2ye7F2hNXtCWcV",
+      "is_error": false,
+      "output": "root=<path>\n--- config\n[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n--- remotes: []\n--- gitdir: <path>\n--- worktrees\n<path> 0a289bb [main]\n--- grep for real paths in .git\n.git/logs/refs/heads/main\n.git/logs/HEAD\nShell cwd was reset to <path>",
+      "output_chars": 506,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JBDNDxu9dEJr7nwdHCYKF4",
+      "is_error": false,
+      "output": "0a289bb8c98595befee470a3ba28d63c15c54b29\n0a289bb8c98595befee470a3ba28d63c15c54b29\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.setup-snapshot.json\n.vscode\n.zprofile\n.zshrc\ncheckout\nprod.git\nscratch-wt",
+      "output_chars": 250,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016qEqzTDzmCWsWK3v9ygWEi",
+      "name": "Bash",
+      "input": "root=\"$(cat $TMPDIR/reaper-root)\"; cd \"$root/checkout\" && WORKSPACE=\"$root/workspace\" bash ./scripts/reaper.sh; rc=$?; echo \"exit=$rc\"; git log --oneline; git status --short; ls -A; cat \"$root/workspa...",
+      "input_chars": 227,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017kzNMPQXt5mTLhfi8G1DUe",
+      "name": "Bash",
+      "input": "git -C checkout rev-parse HEAD && git -C prod.git rev-parse main && git -C checkout status --short && ls checkout scratch-wt && ls -A . | grep -i reaper || echo \"no reaper artifacts in real ws\"",
+      "input_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016qEqzTDzmCWsWK3v9ygWEi",
+      "is_error": false,
+      "output": "reaper: rotation complete in <path>\nexit=0\ne458332 reaper: rotate expired snapshots\n0a289bb initial import\n.git\n.gitattributes\n.reaper-ran\nscripts\nreaper ran in <path>\n<path>\nShell cwd was reset to <path>",
+      "output_chars": 431,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017kzNMPQXt5mTLhfi8G1DUe",
+      "is_error": false,
+      "output": "0a289bb8c98595befee470a3ba28d63c15c54b29\n0a289bb8c98595befee470a3ba28d63c15c54b29\ncheckout:\nREADME.md\nscripts\n\nscratch-wt:\nREADME.md\nscripts\nno reaper artifacts in real ws",
+      "output_chars": 171,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
