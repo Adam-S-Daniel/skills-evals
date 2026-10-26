@@ -52,8 +52,8 @@ result object: a message array of an init message, an assistant message
 with a fixed timestamp, one `rate_limit_event` per object in the first batch,
 and the result. That call takes its batch off the file, so successive calls
 can report a moving account meter (#370); with no batch left the array
-carries no event. A call without `--verbose` (the judge's) prints the single
-object and takes nothing.
+carries no event. A call without `--verbose` prints the single object and
+takes nothing (the harness's own agent, judge and guard calls all carry it).
 
 $FAKE_CLAUDE_FULL_USAGE, when set, gives every result `num_turns`, a
 `total_cost_usd`, `usage.cache_creation` and a complete, costed `modelUsage`

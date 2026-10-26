@@ -448,8 +448,10 @@ class SinkTests(unittest.TestCase):
             with judge.collecting_models() as sink:
                 judge._run_judge_cli("p", model="m-1", timeout=60)
         (entry,) = sink
+        # `events`: the call's meter events, none printed here (#370).
         self.assertEqual(set(entry), {"modelUsage", "num_turns", "usage",
-                                      "total_cost_usd"})
+                                      "total_cost_usd", "events"})
+        self.assertEqual(entry["events"], [])
         self.assertEqual((entry["num_turns"], entry["total_cost_usd"]),
                          (2, 0.07))
         self.assertEqual(entry["usage"]["cache_creation"],
@@ -465,7 +467,8 @@ class SinkTests(unittest.TestCase):
         with mock.patch.object(judge.subprocess, "run", return_value=done):
             with judge.collecting_models() as sink:
                 judge._run_judge_cli("p", model=None, timeout=60)
-        self.assertEqual(sink, [{"modelUsage": None, "total_cost_usd": 0.5}])
+        self.assertEqual(sink, [{"modelUsage": None, "total_cost_usd": 0.5,
+                                 "events": []}])
 
     def test_a_canary_leg_collects_every_parsed_result_and_returns_as_before(self):
         import run_canary
@@ -479,7 +482,55 @@ class SinkTests(unittest.TestCase):
                 self.assertEqual(set(result), shape)
                 (entry,) = sink
                 self.assertEqual(set(entry), {"modelUsage", "num_turns",
-                                              "usage", "total_cost_usd"})
+                                              "usage", "total_cost_usd",
+                                              "events"})
+                self.assertEqual(entry["events"], [])
+
+    def meter_file(self, *weeks: float) -> Path:
+        path = self.tmp / "meter.json"
+        path.write_text(json.dumps([[{
+            "status": "allowed", "unifiedWindows": {"seven_day": {
+                "utilization": week, "resetsAt": 1791824400}}}]
+            for week in weeks]), encoding="utf-8")
+        return path
+
+    def test_a_judge_sink_entry_carries_the_meter_events_of_its_call(self):
+        from scorers import judge
+        argv_log = self.tmp / "argv.log"
+        with self.env(FAKE_CLAUDE_RATE_LIMIT_FILE=str(self.meter_file(0.7, 0.8)),
+                      FAKE_CLAUDE_ARGV_LOG=str(argv_log)):
+            with judge.collecting_models() as sink:
+                judge._run_judge_cli("p", model="m-1", timeout=60)
+                judge._run_judge_cli("p", model="m-1", timeout=60)
+        # `--verbose` is what makes the CLI print the event; each call takes
+        # one batch off the file, in order.
+        for line in argv_log.read_text(encoding="utf-8").splitlines():
+            self.assertIn("--verbose", json.loads(line)["argv"])
+        self.assertEqual(
+            [[e["info"]["unifiedWindows"]["seven_day"]["utilization"]
+              for e in entry["events"]] for entry in sink], [[0.7], [0.8]])
+        self.assertEqual(set(sink[0]["events"][0]), {"at", "info"})
+        # The result is still what the judge hands back.
+        with self.env():
+            self.assertEqual(judge._run_judge_cli("p", model=None, timeout=60),
+                             judge._run_judge_cli("p", model=None, timeout=60))
+
+    def test_a_canary_sink_entry_carries_the_meter_events_of_its_leg(self):
+        import run_canary
+        argv_log = self.tmp / "argv.log"
+        with self.env(FAKE_CLAUDE_MODE="agent", FAKE_CLAUDE_ARGV_LOG=str(argv_log),
+                      FAKE_CLAUDE_RATE_LIMIT_FILE=str(self.meter_file(0.7))):
+            with run_canary.collecting_results() as sink:
+                result = run_canary.run_leg(self.tmp, "p", "Read", model="m-1",
+                                            timeout=60)
+        self.assertEqual(set(result), {"reply"})
+        (call,) = [json.loads(l)["argv"] for l in
+                   argv_log.read_text(encoding="utf-8").splitlines()]
+        self.assertIn("--verbose", call)
+        (entry,) = sink
+        self.assertEqual(
+            [e["info"]["unifiedWindows"]["seven_day"]["utilization"]
+             for e in entry["events"]], [0.7])
 
     def test_a_leg_that_fails_before_a_result_collects_nothing(self):
         import run_canary
@@ -584,14 +635,16 @@ class UsageOfADeferredJudgeTests(PairCase):
                     with self.assertRaises(ingest.Rejected):
                         ingest.check_summary(nulled, rel, parts)
 
-    def test_judging_adds_no_call_and_samples_no_meter(self):
+    def test_judging_adds_no_call_and_is_made_verbose_to_sample_the_meter(self):
         proc = self.figures_run()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         argvs = self.argvs()
         judges = [a for a in argvs if "fake-judge-model" in a]
         self.assertEqual((len(argvs), len(judges)), (4, 2))
+        # The judge prints the meter event an agent call prints (#370): it
+        # is `--verbose`, and still the same one call per judge.
         for argv in judges:
-            self.assertNotIn("--verbose", argv)
+            self.assertIn("--verbose", argv)
 
     def test_a_judge_that_fails_is_a_judge_error_with_its_outcome_listed(self):
         proc = self.both([BARE, BARE], [{"fail": True}, {"overall": 5.0}])
@@ -616,7 +669,8 @@ class GuidancePairTests(unittest.TestCase):
         self.log = self.tmp / "argv.log"
         self.results = self.tmp / "results"
 
-    def run_guidance(self, check: str, *flags: str, arms=None, full=False):
+    def run_guidance(self, check: str, *flags: str, arms=None, full=False,
+                     meter_file=None):
         eval_dir = self.tmp / "eval"
         eval_dir.mkdir()
         fixture = {
@@ -631,13 +685,18 @@ class GuidancePairTests(unittest.TestCase):
             fixture["arms"] = arms
         (eval_dir / "fixture.yaml").write_text(
             yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+        if meter_file is not None:
+            fixture["env"]["FAKE_CLAUDE_RATE_LIMIT_FILE"] = str(meter_file)
         if full:
             fixture["env"]["FAKE_CLAUDE_FULL_USAGE"] = "1"
+        if full or meter_file is not None:
             (eval_dir / "fixture.yaml").write_text(
                 yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
         env = _child_env(self.tmp, CLAUDE_BIN=str(FAKE_CLAUDE),
                          FAKE_CLAUDE_ARGV_LOG=str(self.log),
-                         **({"FAKE_CLAUDE_FULL_USAGE": "1"} if full else {}))
+                         **({"FAKE_CLAUDE_FULL_USAGE": "1"} if full else {}),
+                         **({"FAKE_CLAUDE_RATE_LIMIT_FILE": str(meter_file)}
+                            if meter_file is not None else {}))
         cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
                "--arm", "both", "--guidance", str(self.root),
                "--results-dir", str(self.results), "--timeout", "60", *flags]
@@ -695,14 +754,42 @@ class GuidancePairTests(unittest.TestCase):
                  if "--version" not in a]
         guards = [a for a in argvs if "--disallowedTools" in a
                   and "--setting-sources" in a and "-p" in a
-                  and "fake-agent-model" in a and "--verbose" not in a]
+                  and "fake-agent-model" in a and "--permission-mode" not in a]
         # Two guards, two agents, two judges (a tie): nothing added.
         self.assertEqual(len(argvs), 6)
         self.assertEqual(sum("fake-judge" in a for a in argvs), 2)
         self.assertGreaterEqual(len(guards), 2)
+        # Every call prints the meter event (#370): the guard and the judge
+        # are `--verbose` like the agent.
         for argv in argvs:
-            if "fake-judge" in argv:
-                self.assertNotIn("--verbose", argv)
+            self.assertIn("--verbose", argv)
+
+    def test_a_guard_call_is_read_as_it_starts_and_adds_no_call(self):
+        # One batch per call, in the order made: guard, agent (per arm), then
+        # the two judge calls of the tie. Readings close enough that the
+        # run's default budget stop (#68) is not reached.
+        meter_file = self.tmp / "meter.json"
+        meter_file.write_text(json.dumps([[{
+            "status": "allowed", "unifiedWindows": {"seven_day": {
+                "utilization": 0.5 + 0.001 * i, "resetsAt": 1791824400}}}]
+            for i in range(6)]), encoding="utf-8")
+        proc = self.run_guidance(".", meter_file=meter_file)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        lines = self.log.read_text(encoding="utf-8").splitlines()
+        argvs = [a for a in (json.loads(l)["argv"] for l in lines)
+                 if "--version" not in a]
+        self.assertEqual(len(argvs), 6)
+        for arm in ("with_guidance", "without_guidance"):
+            summary = self.summary(arm)
+            measured = summary["usage"]["measured"]
+            roles = [s["call"]["role"] for s in measured["meter"]["snapshots"]]
+            with self.subTest(arm=arm):
+                self.assertEqual(roles, ["guard", "agent", "judge"])
+                self.assertEqual(measured["guard"]["calls"], 1)
+                ingest.check_usage(summary["usage"], arm, summary["run"])
+        self.assertEqual(summary["usage"]["meter"], {
+            "snapshot_count": 6, "unreadable_events": 0,
+            "not_sampled": {"run_end": run_eval._NO_RUN_END}})
 
     def test_a_guard_result_without_a_figure_is_null_with_its_reason(self):
         proc = self.run_guidance(".")

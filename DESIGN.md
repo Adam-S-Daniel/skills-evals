@@ -1095,11 +1095,14 @@ judge-only: `changeset_triggers` replays `on:` blocks, never a gate's regex.
   rewritten with the final one, so all of a run's summaries agree; a run that
   is killed leaves `ended_at: null` with its reason.
   A meter snapshot is the CLI's own `rate_limit_event`: with `--verbose`
-  the agent call's message array carries one (CLI 2.1.296, measured
-  2026-10-10), so reading the account meter adds no model call. Each
+  a call's message array carries one (CLI 2.1.296, measured 2026-10-10), so
+  reading the account meter adds no model call. The agent, the judge
+  (`scorers/judge.py`) and the guidance guard (`run_canary.run_leg`) are all
+  made with `--verbose`, and each hands the events it printed to the run's
+  telemetry, so every call the harness makes is read as it starts. Each
   snapshot is stored once, in the summary of the trial whose call printed
   it, under `usage.measured.meter: {snapshots, omitted}`: the first and the
-  last event of each of that trial's agent CLI calls, each as `{at,
+  last event of each of that trial's agent, judge and guard CLI calls, each as `{at,
   at_source, call: {role, index}, info}` with `info` the event's
   `rate_limit_info` verbatim (whatever windows it names), `at` the timestamp
   of the message before it (`cli_message`), else the call's start
@@ -1110,32 +1113,35 @@ judge-only: `changeset_triggers` replays `on:` blocks, never a gate's regex.
   run's meter series is therefore the union of its trial summaries. The
   run-level `meter` is `{snapshot_count, unreadable_events, not_sampled}`:
   how many snapshots the run recorded, how many events were not kept for
-  their shape or size, and why the judge call, the guard call and the end of
-  the run are not sampled (the judge and the guard are called without
-  `--verbose`, so they print no meter event, and no call is added to read
-  the meter). The meter is read when an agent call starts and at no other
-  time: the one real call observed (two API requests) printed one event,
-  as it began. That is one observation, and a longer call may print more;
-  the first and last of each call are kept either way. So there is no
-  snapshot at run end, and the run's last snapshot is the start of its
-  last agent call. `meter_delta` is the run's first snapshot against its
-  last, per window both name, whatever a trial's own list dropped. It
-  therefore leaves out the call that printed the last snapshot and every
-  call after it (that agent call's own spend, and the judge and guard calls
-  that follow), and any call before the first snapshot. Conditional judging
-  (#371) widens that: a pair's judge calls are all made after its last agent
-  call, so on a judged pair the delta covers none of the judging, where a
-  judge inside each trial (`--judge always`, a single arm) leaves out only
-  the last trial's. Measured on one fixture, two trials, a tie: 5 calls
-  after the last snapshot by default (the last agent call and all four judge
-  calls), 2 under `--judge always`. Such a held judge call is added to the
+  their shape or size, and why the end of the run is not sampled (no call
+  the harness makes prints a meter event after its last call has started,
+  and no call is added to read the meter). Summaries written before the
+  judge and the guard were made `--verbose` also name them there; the
+  ingester still accepts those. The meter is read when a call (agent, judge
+  or guard) starts and at no other time: the one real call observed (two API
+  requests) printed one event, as it began. That is one observation, and a
+  longer call may print more; the first and last of each call are kept
+  either way. So there is no snapshot at run end, and the run's last
+  snapshot is the start of its last call. `meter_delta` is the run's first
+  snapshot against its last, per window both name, whatever a trial's own
+  list dropped. It therefore leaves out the call that printed the last
+  snapshot (its own spend) and every call after it, and any call before the
+  first snapshot. Conditional judging (#371) makes a judged pair's judge
+  calls all come after its last agent call, but each is read as it starts,
+  so the delta now leaves out only the last judge call of the pair (the last
+  trial's judge under `--judge always`, a single arm). Against the stand-in
+  CLI, one fixture, two trials, a tie: 1 call from the last snapshot on, both
+  by default and under `--judge always` (5 and 2 before the judge was read).
+  That a real judge or guard call prints the event is assumed from the agent
+  call's, not yet observed. Such a held judge call is added to the
   summary of the trial it judges after that summary was written
-  (`_RunTelemetry.amend`), so that trial's `usage.measured.started_at` to
-  `ended_at` spans the trials that ran in between and trial windows of a
-  judged pair overlap;
+  (`_RunTelemetry.amend`), which also adds the snapshots its events make to
+  that summary's own (the same first-and-last rule and bounds), so that
+  trial's `usage.measured.started_at` to `ended_at` spans the trials that ran
+  in between and trial windows of a judged pair overlap;
   `meter_delta.uncovered: {calls_before_first_snapshot,
   calls_from_last_snapshot}` counts both, `report.md`'s meter line repeats
-  the second, and a run of one agent call has no delta at all. Each window
+  the second, and a run of one agent call and no other has no delta at all. Each window
   is `{from, to, delta, window_reset}`, at most 16 of them, `delta`
   `null` when the window's reset time changed between them. It is
   account-wide, so it is this run's cost only if nothing else used the

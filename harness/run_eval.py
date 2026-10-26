@@ -3655,17 +3655,14 @@ _CLI_LABEL = re.compile(r"[A-Za-z0-9_.-]{1,32}")
 #: Why a role's figures are null even when its call succeeded.
 _API_BILLED = "API-billed run: the subscription's account meter does not apply"
 #: When the meter is read. Measured once (2026-10-10, CLI 2.1.296, one agent
-#: call of two API requests): one event, printed as the call began. So a
-#: run's last snapshot is the start of its last agent call.
+#: call of two API requests): one event, printed as the call began. Every
+#: call the harness makes (agent, judge and guard) is made with `--verbose`
+#: and so is read as it begins, so a run's last snapshot is the start of its
+#: last call.
 _NO_RUN_END = ("no call the harness makes prints a meter event after its last "
-               "agent call has started (one real call observed: one event, as "
-               "the call began); reading the meter at run end would need an "
-               "added call")
-#: Why `usage.meter.not_sampled` names the judge and the guard: neither call
-#: is made with `--verbose`, so neither prints a meter event, and no call is
-#: added to read the meter.
-_NOT_METERED = ("the call is made without --verbose, so it prints no meter "
-                "event, and no call is added to read the meter")
+               "call (agent, judge or guard) has started (one real call "
+               "observed: one event, as the call began); reading the meter at "
+               "run end would need an added call")
 
 
 def _now() -> datetime:
@@ -3811,16 +3808,55 @@ def _sum_measured(trials: list) -> dict:
     return out
 
 
+def _split_events(entries) -> tuple[list, list]:
+    """(the entries without their meter events, the events) of a sink's
+    entries (`judge.collecting_models`, `run_canary.collecting_results`).
+    The events of every entry are concatenated in order, as one call's; the
+    entries are left as they were, the first returned list holding copies
+    that are exactly what the usage figures are read from."""
+    events, results = [], []
+    for entry in entries:
+        if isinstance(entry, dict):
+            events += entry.get("events") or []
+            entry = {key: value for key, value in entry.items() if key != "events"}
+        results.append(entry)
+    return results, events
+
+
+def _cap_snapshots(snapshots: list) -> list:
+    """The first and the last half of `METER_MAX_SNAPSHOTS`, when there are
+    more than that."""
+    half = METER_MAX_SNAPSHOTS // 2
+    return (snapshots if len(snapshots) <= METER_MAX_SNAPSHOTS
+            else snapshots[:half] + snapshots[-half:])
+
+
+def _written_bytes(measured: dict) -> int:
+    """What a trial's `usage.measured` takes as written (USAGE_MAX_BYTES)."""
+    return len(json.dumps({"usage": {"measured": measured}},
+                          indent=2).encode("utf-8"))
+
+
+def _fit_meter(measured: dict, known: list, total: int) -> None:
+    """Hold `measured` to USAGE_MAX_BYTES by dropping snapshots: down to the
+    first and last of the `known` ones, then to none. `total` is how many
+    the trial printed, so `omitted` stays true."""
+    for ends in (known[:1] + known[1:][-1:], []):
+        if measured["meter"] is None or _written_bytes(measured) <= USAGE_MAX_BYTES:
+            break
+        measured["meter"] = {"snapshots": ends, "omitted": total - len(ends)}
+
+
 def _meter_delta(snapshots: list, uncovered: dict) -> dict | None:
     """How far each window moved between the first and the last snapshot,
     for the windows both name. Account-wide, so it is this run's cost only
     if nothing else ran: labeled, never corrected. A window whose reset time
     changed in between has no delta.
 
-    It is not the whole run either. A call is read as it begins (_NO_RUN_END),
-    so the call that printed the last snapshot and every call after it are
-    outside the delta, as is any call before the first snapshot. `uncovered`
-    counts both and is carried in the block."""
+    It is not the whole run either. A call (agent, judge or guard) is read as
+    it begins (_NO_RUN_END), so the call that printed the last snapshot and
+    every call after it are outside the delta, as is any call before the
+    first snapshot. `uncovered` counts both and is carried in the block."""
     if len(snapshots) < 2:
         return None
     first, last = (s["info"].get("unifiedWindows") for s in (snapshots[0], snapshots[-1]))
@@ -3907,7 +3943,9 @@ class _RunTelemetry:
     exception is `amend()`: a judge call held back for its pair's objective
     result (#371) is made after every trial of the pair and added to the
     summary of the trial it judges, so that trial's `started_at`..`ended_at`
-    spans the trials that ran in between. A meter
+    spans the trials that ran in between. Every call (agent, judge and guard)
+    prints a meter event as it starts (#370), and `amend()` turns a deferred
+    judge call's events into snapshots as `_measure` does. A meter
     snapshot is stored once, with the trial whose call printed it. The
     run-level half (times, how far the meter moved, what else was running)
     is written into every summary as it stood at that moment, and `finish()`
@@ -3949,10 +3987,11 @@ class _RunTelemetry:
             r for r in results if isinstance(r, dict)]})
 
     def timed(self, role: str, started: datetime, results=(),
-              outcome: str = "ok") -> None:
-        """Queue one call that began at `started` and has just returned."""
+              outcome: str = "ok", events=()) -> None:
+        """Queue one call that began at `started` and has just returned, with
+        the meter events it printed."""
         self.record(role, [{"started": started, "ended": _now(),
-                            "outcome": outcome, "events": []}], results)
+                            "outcome": outcome, "events": list(events)}], results)
 
     def run(self, cli_version: str | None) -> dict:
         return run_block(self.flags, os.environ, harness_commit=HARNESS_COMMIT,
@@ -3967,7 +4006,7 @@ class _RunTelemetry:
         Read from every weekly-window reading the run has so far, including
         those of calls still queued for the summary being built (an agent
         call whose judge is about to be made). A run with no reading yet goes
-        on: the meter is only read as an agent call begins. An API-billed run
+        on: the meter is only read as a call begins. An API-billed run
         is never stopped: it has no account meter (`_API_BILLED`)."""
         if self.stop is not None or self.budget is None or self._api_billed():
             return self.stop
@@ -3977,6 +4016,26 @@ class _RunTelemetry:
         readings = [r for r in map(_seven_day, infos) if r is not None]
         self.stop = budget_stop_reading(readings, self.budget)
         return self.stop
+
+    def _call_snapshots(self, events: list, role: str, index: int,
+                        started: datetime) -> list:
+        """The snapshots one call's meter events make: the first and the last
+        readable one. An unreadable event is counted, not kept. The call is
+        the run's latest (`calls_seen` has counted it)."""
+        self.unreadable += sum(e["info"] is None for e in events)
+        events = [e for e in events if e["info"] is not None]
+        shots = []
+        for event in events[:1] + events[1:][-1:]:
+            # Only an event before the call's first timestamped message has
+            # no time of its own; the call's start is the latest time known
+            # to precede it.
+            shots.append({
+                "at": event["at"] or _stamp(started),
+                "at_source": "cli_message" if event["at"] else "call_start",
+                "call": {"role": role, "index": index},
+                "info": event["info"]})
+            self.snapshot_calls.append(self.calls_seen - 1)
+        return shots
 
     def _measure(self) -> dict:
         """This summary's own calls and the meter snapshots they printed."""
@@ -3997,22 +4056,11 @@ class _RunTelemetry:
                                "duration_ms": call["duration_ms"],
                                "outcome": call["outcome"] if _OUTCOME.fullmatch(
                                    str(call["outcome"])) else "error"})
-                events = call.get("events") or []
-                self.unreadable += sum(e["info"] is None for e in events)
-                events = [e for e in events if e["info"] is not None]
-                for event in events[:1] + events[1:][-1:]:
-                    # Only an event before the call's first timestamped
-                    # message has no time of its own; the call's start is
-                    # the latest time known to precede it.
-                    shots.append({
-                        "at": event["at"] or _stamp(call["started"]),
-                        "at_source": "cli_message" if event["at"] else "call_start",
-                        "call": {"role": group["role"], "index": index},
-                        "info": event["info"]})
-                    self.snapshot_calls.append(self.calls_seen - 1)
+                shots += self._call_snapshots(call.get("events") or [],
+                                              group["role"], index,
+                                              call["started"])
         self.snapshots += shots
-        half = METER_MAX_SNAPSHOTS // 2
-        kept = shots if len(shots) <= METER_MAX_SNAPSHOTS else shots[:half] + shots[-half:]
+        kept = _cap_snapshots(shots)
         first = started or min((c["started"] for g in groups for c in g["calls"]),
                                default=None)
         measured = {"scope": "trial", "started_at": _stamp(first),
@@ -4031,14 +4079,8 @@ class _RunTelemetry:
             measured["reasons"]["meter"] = _API_BILLED
         # Bound what is written, not what is counted: fewer snapshots (the
         # trial's first and last, then none), then no call list.
-        def written() -> int:
-            return len(json.dumps({"usage": {"measured": measured}},
-                                  indent=2).encode("utf-8"))
-        for ends in (shots[:1] + shots[1:][-1:], []):
-            if measured["meter"] is None or written() <= USAGE_MAX_BYTES:
-                break
-            measured["meter"] = {"snapshots": ends, "omitted": len(shots) - len(ends)}
-        if written() > USAGE_MAX_BYTES:
+        _fit_meter(measured, shots, len(shots))
+        if _written_bytes(measured) > USAGE_MAX_BYTES:
             measured["calls"] = None
         if measured["calls"] is None:
             measured["reasons"]["calls"] = (
@@ -4047,12 +4089,14 @@ class _RunTelemetry:
         return measured
 
     def amend(self, summary: dict, role: str, started: datetime,
-              results=(), outcome: str = "ok") -> None:
+              results=(), outcome: str = "ok", events=()) -> None:
         """Add one call made AFTER `summary` was written to its
         `usage.measured`: a judge call held back until its pair's objective
         result was known (#371). The role made no call before it, so its
-        block is that one call's. `calls` keeps its bound, as `_measure`
-        does."""
+        block is that one call's. The call's meter events become snapshots
+        as in `_measure` and join the summary's own (unless the run is
+        API-billed and the summary has none), within the same bounds; `calls`
+        keeps its bound too."""
         measured = summary["usage"]["measured"]
         ended = _now()
         self.calls_seen += 1
@@ -4061,6 +4105,15 @@ class _RunTelemetry:
         measured["ended_at"] = _stamp(ended)
         measured[role] = _role_usage(role, [call], [
             r for r in results if isinstance(r, dict)])
+        new = self._call_snapshots(list(events), role, 0, started)
+        self.snapshots += new
+        if new and measured["meter"] is not None:
+            old = measured["meter"]
+            combined = old["snapshots"] + new
+            total = len(old["snapshots"]) + old["omitted"] + len(new)
+            kept = _cap_snapshots(combined)
+            measured["meter"] = {"snapshots": kept, "omitted": total - len(kept)}
+            _fit_meter(measured, combined, total)
         if measured["calls"] is not None:
             measured["calls"].append({
                 "role": role, "index": 0, "started_at": _stamp(started),
@@ -4068,8 +4121,7 @@ class _RunTelemetry:
                 "outcome": outcome if _OUTCOME.fullmatch(str(outcome))
                 else "error"})
             if (len(measured["calls"]) > USAGE_MAX_CALLS
-                    or len(json.dumps({"usage": {"measured": measured}},
-                                      indent=2).encode("utf-8")) > USAGE_MAX_BYTES):
+                    or _written_bytes(measured) > USAGE_MAX_BYTES):
                 measured["calls"] = None
                 measured["reasons"]["calls"] = (
                     f"more than {USAGE_MAX_CALLS} calls, or too large to list: "
@@ -4091,9 +4143,7 @@ class _RunTelemetry:
             # The snapshots themselves are in the trial summaries, once each.
             meter = {"snapshot_count": len(self.snapshots),
                      "unreadable_events": self.unreadable,
-                     "not_sampled": {"judge": _NOT_METERED,
-                                     "guard": _NOT_METERED,
-                                     "run_end": _NO_RUN_END}}
+                     "not_sampled": {"run_end": _NO_RUN_END}}
             delta = _meter_delta(self.snapshots, {
                 "calls_before_first_snapshot": self.snapshot_calls[0],
                 "calls_from_last_snapshot":
@@ -4102,8 +4152,9 @@ class _RunTelemetry:
             if delta is None:
                 reasons["meter_delta"] = (
                     "fewer than two meter snapshots that share a window were "
-                    "recorded; the meter is read once per agent call, as the "
-                    "call starts, so a run of one agent call has none")
+                    "recorded; the meter is read once per call (agent, judge or "
+                    "guard), as the call starts, so a run of one agent call and no "
+                    "other has none")
         quiet = getattr(self.flags, "asserted_quiet", None)
         session = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID") or ""
         # Present only once the run has stopped for its budget (#68), so a
@@ -4163,7 +4214,8 @@ class _RunTelemetry:
                           for name, window in delta["windows"].items())
         late = delta["uncovered"]["calls_from_last_snapshot"]
         return [*lines, "- Account meter (account-wide, so anything else the "
-                        "account ran is in it; read as each agent call starts, "
+                        "account ran is in it; read as each agent, judge or guard "
+                        "call starts, "
                         f"so the {late} call(s) from the last reading on are "
                         f"not in it): {moved}, from {len(self.snapshots)} snapshots"]
 
@@ -5291,8 +5343,9 @@ def _objective_decided(with_trials: list[dict], without_trials: list[dict]) -> b
 def _call_judge(fixture: dict, transcript: str, diff: str, model: str | None,
                 permission_mode: str | None) -> tuple:
     """One judge call: (the result, the models that served it, when it began,
-    the CLI results it produced, the outcome to record). A call that fails is
-    `{"error": ...}`, a result and not a crash."""
+    the CLI results it produced, the outcome to record, the meter events it
+    printed). A call that fails is `{"error": ...}`, a result and not a
+    crash."""
     judge_cfg = fixture.get("judge", {})
     # Bound before the `with`, and read AFTER the try: a judge CLI call that
     # completed is recorded even when `score` then raises on its answer (#203
@@ -5314,8 +5367,9 @@ def _call_judge(fixture: dict, transcript: str, diff: str, model: str | None,
         raise
     except Exception as exc:  # noqa: BLE001 — record, never crash the run
         judge_result = {"error": str(exc)}
+    judge_results, events = _split_events(judge_results)
     return (judge_result, models_used(*judge_results), started, judge_results,
-            "error" if "error" in (judge_result or ()) else "ok")
+            "error" if "error" in (judge_result or ()) else "ok", events)
 
 
 def _judge_unless_stopped(judge_call) -> tuple:
@@ -5325,8 +5379,8 @@ def _judge_unless_stopped(judge_call) -> tuple:
     stop = _TELEMETRY.budget_stop()
     if stop is not None:
         return {"error": _budget_detail(stop, "judge call")}, []
-    judge_result, judge_models, started, results, outcome = judge_call()
-    _TELEMETRY.timed("judge", started, results, outcome)
+    judge_result, judge_models, started, results, outcome, events = judge_call()
+    _TELEMETRY.timed("judge", started, results, outcome, events)
     return judge_result, judge_models
 
 
@@ -5344,8 +5398,8 @@ def _settle_judging(hold: list, decided: bool) -> None:
             # No call made, so nothing is added to the summary's usage.
             block, models = {"error": _budget_detail(stop, "judge call")}, []
         else:
-            block, models, started, results, outcome = entry["call"]()
-            _TELEMETRY.amend(summary, "judge", started, results, outcome)
+            block, models, started, results, outcome, events = entry["call"]()
+            _TELEMETRY.amend(summary, "judge", started, results, outcome, events)
         summary["judge"], summary["judge_models_used"] = block, models
         entry["path"].write_text(json.dumps(summary, indent=2), encoding="utf-8")
         entry["result"]["judge"] = block
@@ -6246,8 +6300,10 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                     timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
             extra["guard"] = guard
+            guard_results, guard_events = _split_events(guard_results)
             _TELEMETRY.timed("guard", guard_started, guard_results, outcome=(
-                guard.get("error") or {}).get("type") or "ok")
+                guard.get("error") or {}).get("type") or "ok",
+                events=guard_events)
 
             if not guard["ok"]:
                 error = _guard_error(guard)
