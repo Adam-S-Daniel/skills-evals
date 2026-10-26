@@ -57,6 +57,27 @@ September pause, and is not updated any more.
   [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372).
 - **Improvement loop:** a writing-adrs pass with 1 trial on 2026-10-25
   proposed no edit. A pass with 3 trials is running.
+- **Closed loop (2026-10-26, [#423](https://github.com/Adam-S-Daniel/skills-evals/pull/423)):**
+  Adam decided at 14:14 UTC that loop changes passing their evals merge with
+  no human, except plugins that run code. The lanes on `main`:
+  - *Fixture supply:* `routine-fixture-supply.yml` mines merged fleet PRs
+    into scaffold fires; the scaffold gate opens ready, auto-merging PRs
+    through the roster App, and `scaffold_real_work.py promote` schedules a
+    draft after 2 clean ingested runs.
+  - *Weekly planner:* `routine-eval-weekly.yml` (Tuesday 07:00 UTC) runs
+    `scripts/plan_week.py`, which plans eval, improve and trigger items by
+    band within the allowance and fires them one at a time, at most three
+    in flight. `trigger-optimize` items wait on a routine prompt change.
+  - *Session miner:* `scripts/run_session_miner.sh` runs only on Adam's
+    computer ([ADR 0015](docs/decisions/0015-mine-real-sessions-only-on-adams-own-computer.md))
+    and writes lessons to adam-agentskills-private's `persistent/lessons`;
+    `routine-draft-skill.yml` turns one `new-skill` lesson a day into a
+    draft, hook first. Not yet scheduled on the machine.
+  - *Improvement auto-merge:* `evals/improve-policy.yml`
+    `improve_merge_mode: auto` makes the improve gate's registry PR ready
+    with auto-merge. It needs `EVAL_IMPROVE_APP_CLIENT_ID` and
+    `EVAL_IMPROVE_APP_PEM`; without them it opens nothing.
+  - *Draft mode* also waits on a routine prompt edit that Adam owns.
 - **Status board:** [#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
   points here; its body below the pointer is the 2026-10-10 state. Live
   progress is in #372 and the open PRs.
