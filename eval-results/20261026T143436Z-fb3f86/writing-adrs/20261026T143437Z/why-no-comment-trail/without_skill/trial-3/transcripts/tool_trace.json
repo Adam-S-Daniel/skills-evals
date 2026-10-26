@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Brh9tVepyNGLcYAj6kWWiG",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Brh9tVepyNGLcYAj6kWWiG",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# export-ledger.sh: write one day's general-ledger entries as a CSV file for\n3\t# the bank's reconciliation service.\n4\t#\n5\t# Usage: export-ledger.sh YYYY-MM-DD\n6\tset -euo pipefail\n7\t\n8\tday=\"${1:?usage: export-ledger.sh YYYY-MM-DD}\"\n9\tout=\"${EXPORT_DIR:-/var/exports}/ledger-$day.csv\"...",
+      "output_chars": 611,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019v1LSCVtygb9EabbLD871d",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019v1LSCVtygb9EabbLD871d",
+      "is_error": false,
+      "output": "1\t# Architecture decisions\n2\t\n3\tThis log records the choices a reader of the code would otherwise\n4\tsecond-guess: what we picked, why, and what it costs us. A one-line code\n5\tcomment is enough for everything else.\n6\t\n7\t## Format\n8\t\n9\tEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered...",
+      "output_chars": 1208,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016sSjNnKzu2zgCmfQs3SHcb",
+      "name": "Bash",
+      "input": "ls docs/decisions && head -30 CHANGELOG.md",
+      "input_chars": 42,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016sSjNnKzu2zgCmfQs3SHcb",
+      "is_error": false,
+      "output": "0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# Changelog\n\n## 1.4.0 - 2026-03-02\n\n- `scripts/export-ledger.sh` now takes the day to export as its first\n  argument, so a missed day can be re-run.\n- Fixed a typo in the export's usage message.",
+      "output_chars": 282,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016TmVMpMgc6YWLXA1nLkbUg",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 77,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016TmVMpMgc6YWLXA1nLkbUg",
+      "is_error": false,
+      "output": "1\t# 0002. Write amounts as integer cents, not decimal strings\n2\t\n3\t- **Status:** Accepted\n4\t- **Date:** 2025-10-01\n5\t\n6\t## Context\n7\t\n8\tThe ledger stores amounts as integer cents. Formatting them as decimal\n9\tstrings went through a float and produced off-by-one-cent values on a few\n10\tlarge entries....",
+      "output_chars": 804,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P2WxBig3GDjXa198zHsfM9",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 70,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01D42TYYvicJ9yNyQzxdzGgf",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AGfSfk18uFRa5Qy35NLXAp",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P2WxBig3GDjXa198zHsfM9",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 166,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01D42TYYvicJ9yNyQzxdzGgf",
+      "is_error": true,
+      "output": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: | Accepted |\n</tool_use_error>",
+      "output_chars": 270,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AGfSfk18uFRa5Qy35NLXAp",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 154,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LL7HMChn1rS7X8RcDujaLP",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LL7HMChn1rS7X8RcDujaLP",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 154,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
