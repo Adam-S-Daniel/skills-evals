@@ -16,7 +16,7 @@ Three layers enforce it, all reading `evals/budget.yml`:
   * the pre-fire check (scripts/allowance_guard.py): spent (ingested runs of
     the last seven days, each its measured delta plus the overrun, or the full
     reservation when unmeasured, counted once per run_eval invocation) plus
-    pending (successful fires without results: reserved in full under 24 hours
+    pending (successful fires without results: reserved in full under PENDING_FULL_HOLD
     old, the overrun alone after that) plus
     this run's reservation must stay within the cap; an API error refuses;
     routine-eval-fire.yml runs it before the fire in every mode, and the
@@ -67,6 +67,8 @@ LIMITS = {"weekly_cap": 0.30, "per_run_cap": 0.03, "per_run_overrun": 0.005,
           "stop_when_account_above": 0.80}
 RESERVE = 0.035
 NOW = datetime(2026, 10, 20, 15, 30, 0, tzinfo=timezone.utc)
+#: The hold window in hours, read from the guard so the tests follow it.
+HOLD_H = guard.PENDING_FULL_HOLD.total_seconds() / 3600
 VALID_BUDGET = ("weekly_cap: 0.30\nper_run_cap: 0.03\nper_run_overrun: 0.005\n"
                 "stop_when_account_above: 0.80\n")
 
@@ -613,9 +615,9 @@ class GuardTests(unittest.TestCase):
         return run
 
     def test_recent_ingested_runs_free_the_recent_fires(self):
-        # The run id is stamped at fire time, so a run from the last day is
-        # one of the last day's fires: three fired, three ingested, none held.
-        for index, hours in enumerate((1, 6, 23)):
+        # The run id is stamped at fire time, so a run from the hold window
+        # is one of its fires: three fired, three ingested, none held.
+        for index, hours in enumerate((HOLD_H * 0.05, HOLD_H * 0.5, HOLD_H * 0.95)):
             self.recent_run(hours, f"a1b2c{index}")
         state = self.spent(fires=(3, 3))
         self.assertEqual(state["recent"], 0)
@@ -640,8 +642,8 @@ class GuardTests(unittest.TestCase):
         # A manual run, or one stamped ahead of this clock, can leave more
         # recent results than recent fires: no recent fire is held, and the
         # count is never negative.
-        self.recent_run(2, "a1b2c0")
-        self.recent_run(3, "a1b2c1")
+        self.recent_run(HOLD_H * 0.25, "a1b2c0")
+        self.recent_run(HOLD_H * 0.5, "a1b2c1")
         ahead = (NOW + timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
         self.summary(self.run_dir(ahead, "a1b2c2"), f"k/{ahead}/with_skill",
                      usage_block(0.02))
@@ -653,8 +655,8 @@ class GuardTests(unittest.TestCase):
     def test_recent_and_old_runs_are_matched_to_their_own_fires(self):
         # 8 fires, 4 of them recent; 2 recent runs and 1 old run ingested.
         # 5 unresulted: 4 - 2 = 2 recent in full, 3 old at the overrun.
-        self.recent_run(4, "a1b2c0")
-        self.recent_run(24, "a1b2c1")  # exactly PENDING_FULL_HOLD old: recent
+        self.recent_run(HOLD_H * 0.5, "a1b2c0")
+        self.recent_run(HOLD_H, "a1b2c1")  # exactly PENDING_FULL_HOLD old: recent
         old = self.run_dir("20261019T100000Z", "a1b2c2")
         self.summary(old, "k/20261019T100000Z/with_skill", usage_block(0.02))
         state = self.spent(fires=(8, 4))
@@ -714,7 +716,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
         self.assertIn("pending 0.0 points", out)
-        self.assertIn("(0 from the last 24h held in full)", out)
+        self.assertIn("(0 from the last 2h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
         self.assertNotIn("20261019T100000Z", out + summary)
@@ -773,12 +775,12 @@ class LiveFiresTests(unittest.TestCase):
         self.assertEqual(self.live(opener), (5, 2))
         self.assertEqual(len(seen), 2)
         self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
-        self.assertIn("created=%3E%3D2026-10-19T15%3A30%3A00Z", seen[1])
+        self.assertIn("created=%3E%3D2026-10-20T13%3A30%3A00Z", seen[1])
         self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
 
-    def test_a_failed_24_hour_count_fails_closed(self):
+    def test_a_failed_hold_window_count_fails_closed(self):
         def opener(request, timeout):
-            if "2026-10-19T15" in request.full_url:
+            if "2026-10-20T13" in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
                                              io.BytesIO(b"private-body-marker"))
             return FireCountTests.Response(b'{"total_count": 5}')
