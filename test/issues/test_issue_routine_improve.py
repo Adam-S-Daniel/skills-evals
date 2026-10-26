@@ -936,7 +936,7 @@ class FireCheckTests(unittest.TestCase):
         self.assert_rejected("adam-writing-style", gate.FIRE_NOT_ROUTINE_REGISTRY)
 
     def test_refuses_too_few_fixtures(self):
-        for skill in ("debug-github-workflows", "skills-doctor"):
+        for skill in ("github-actions-repo-settings", "skills-doctor"):
             with self.subTest(skill=skill):
                 self.assert_rejected(skill, gate._fire_too_few())
 
