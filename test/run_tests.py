@@ -59,7 +59,7 @@ GHA_SHA_PINNING_DIR = REPO_ROOT / "evals" / "github-actions-sha-pinning"
 POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 PDF_OCR_DIR = REPO_ROOT / "evals" / "pdf-ocr-audit"
-VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
+VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues" / "issue-hygiene"
 
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
@@ -22413,7 +22413,7 @@ class TestIssue85(unittest.TestCase):
 
 
 class TestVendorReleaseImpactPublishTimesCheck(unittest.TestCase):
-    """evals/vendor-release-impact-issues fixture.yaml,
+    """evals/vendor-release-impact-issues/issue-hygiene fixture.yaml,
     `publish-times-source-and-version-bound` (formerly
     `publish-times-are-github-publish-not-tag-or-npm` — the id changed with
     the semantics; see the fixture's own comment): tests the release-time
