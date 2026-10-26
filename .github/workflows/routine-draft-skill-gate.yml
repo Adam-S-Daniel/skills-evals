@@ -15,7 +15,8 @@ name: Gate routine skill draft
 #               evals/<subject>/: the drafted skill beat no skill on its own
 #               fixtures. This gate opens a DRAFT pull request in
 #               adam-agentskills with the skill, then a DRAFT pull request
-#               here with only evals/<subject>/.
+#               here with only evals/<subject>/ and its README layout line;
+#               both bodies say to merge the skill first.
 #   rejected    nothing else: the record stays on its branch, and the
 #               subject counts as drafted, so it is not picked again.
 #
@@ -41,13 +42,16 @@ name: Gate routine skill draft
 #                  exist (a boolean), as routine-improve-gate.yml does.
 #     skill-pr     contents: read; mints the EVAL_IMPROVE_APP installation
 #                  token (adam-agentskills only, contents and pull-requests
-#                  write) after re-validation, and one step uses it. Without
+#                  write) after re-validation, and one step uses it: `apply`
+#                  adds the skill and the registry's bookkeeping, and when
+#                  the bundle is in the registry's skills.lock a second
+#                  commit re-pins it (generate_skills_lock.py --repin). Without
 #                  the secrets it is SKIPPED with a job-summary note, and so
 #                  is fixtures-pr: fixtures for a skill no pull request
 #                  proposes would only fail.
 #     fixtures-pr  contents: write and pull-requests: write on this
-#                  repository's job token: it commits evals/<subject>/ alone
-#                  to a fresh branch `draft-skill-fixtures/<subject>` from
+#                  repository's job token: it commits evals/<subject>/ and
+#                  its README layout line (fixtures-apply) to a fresh branch `draft-skill-fixtures/<subject>` from
 #                  the default branch and opens a draft pull request. It
 #                  runs only after skill-pr opened the skill's pull request,
 #                  so the order is skill first, fixtures second; the
@@ -285,7 +289,7 @@ jobs:
           echo "opened=false" >> "$GITHUB_OUTPUT"
           # The values re-derived from the judged sha must be the ones
           # `validate` handed over.
-          for pair in "decision=accepted" "run_id=${RUN_ID}" \
+          for pair in "decision=accepted" "run_id=${RUN_ID}" "sha=${SHA}" \
                       "subject=${SUBJECT}" "plugin=${PLUGIN}"; do
             if ! grep -qxF -- "$pair" "$RUNNER_TEMP/revalidate.out"; then
               echo "::error::re-validation disagrees with the validate job"
@@ -317,13 +321,29 @@ jobs:
           git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
             fetch -q --no-tags origin "+refs/heads/${base}:refs/remotes/origin/${base}"
           git -C "$reg" checkout -q --detach "refs/remotes/origin/${base}"
+          # apply: the patch as data, then the registry's own additions
+          # (manifest versions, README table, docs/skill-impact.md entry).
           python3 scripts/draft_new_skill.py apply \
-            --staged "$RUNNER_TEMP/staged" --tree "$reg"
+            --staged "$RUNNER_TEMP/staged" --tree "$reg" > "$RUNNER_TEMP/apply.out"
+          cat "$RUNNER_TEMP/apply.out"
           git -C "$reg" add -A
           git -C "$reg" \
             -c user.name="skills-evals draft-gate bot" \
             -c user.email="skills-evals@users.noreply.github.com" \
             commit -q -m "Add the drafted ${SUBJECT} skill from draft run ${RUN_ID}"
+          # The bundle is in the registry's own skills.lock: re-pin it on the
+          # commit just made, as its --check-current requires, and commit that.
+          if grep -qxF -- "relock=true" "$RUNNER_TEMP/apply.out"; then
+            (cd "$reg" && python3 scripts/generate_skills_lock.py --repin)
+            git -C "$reg" add -A
+            git -C "$reg" \
+              -c user.name="skills-evals draft-gate bot" \
+              -c user.email="skills-evals@users.noreply.github.com" \
+              commit -q -m "Re-pin skills.lock for the drafted ${SUBJECT} skill"
+          elif ! grep -qxF -- "relock=false" "$RUNNER_TEMP/apply.out"; then
+            echo "::error::apply printed no relock decision"
+            exit 1
+          fi
           commit="$(git -C "$reg" rev-parse HEAD)"
           git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
             push origin "HEAD:refs/heads/${target}"
@@ -404,9 +424,12 @@ jobs:
             --out "$RUNNER_TEMP/staged" > "$RUNNER_TEMP/revalidate.out"
           cat "$RUNNER_TEMP/revalidate.out"
 
-      # Only evals/<subject>/ at the judged sha, on a fresh branch from the
-      # default branch: the record under draft-skill/ stays on the routine's
-      # branch. The job token pushes; a push with it starts no workflow.
+      # Only the validated fixtures, placed at evals/<subject>/ by
+      # fixtures-apply from this job's staged copy, plus the README layout
+      # line the suite requires of every eval directory, on a fresh branch
+      # from the default branch: the record under draft-skill/ stays on the
+      # routine's branch. The job token pushes; a push with it starts no
+      # workflow.
       - name: Open the fixtures' draft pull request
         working-directory: skills-evals
         env:
@@ -420,7 +443,7 @@ jobs:
           PLUGIN: ${{ needs.validate.outputs.plugin }}
         run: |
           set -euo pipefail
-          for pair in "decision=accepted" "run_id=${RUN_ID}" \
+          for pair in "decision=accepted" "run_id=${RUN_ID}" "sha=${SHA}" \
                       "subject=${SUBJECT}" "plugin=${PLUGIN}"; do
             if ! grep -qxF -- "$pair" "$RUNNER_TEMP/revalidate.out"; then
               echo "::error::re-validation disagrees with the validate job"
@@ -438,13 +461,19 @@ jobs:
             exit 0
           fi
           git checkout -q --detach "refs/remotes/origin/${BASE}"
-          git checkout -q "$SHA" -- "evals/${SUBJECT}"
-          # The commit adds files under evals/<subject>/ and nothing else.
-          outside="$(git diff --cached --name-only -- . ":(exclude)evals/${SUBJECT}/")"
-          changed="$(git diff --cached --name-only --diff-filter=a)"
-          added="$(git diff --cached --name-only --diff-filter=A)"
-          if [ -n "$outside" ] || [ -n "$changed" ] || [ -z "$added" ]; then
-            echo "::error::the fixtures commit would not be additions under evals/${SUBJECT}/ alone"
+          python3 scripts/draft_new_skill.py fixtures-apply \
+            --staged "$RUNNER_TEMP/staged" --tree .
+          git add -A
+          # The commit adds files under evals/<subject>/, edits README.md's
+          # layout, and changes nothing else.
+          outside="$(git diff --cached --name-only -- . \
+            ":(exclude)evals/${SUBJECT}/" ":(exclude)README.md")"
+          changed="$(git diff --cached --name-only --diff-filter=a -- "evals/${SUBJECT}/")"
+          added="$(git diff --cached --name-only --diff-filter=A -- "evals/${SUBJECT}/")"
+          readme="$(git diff --cached --name-only --diff-filter=M -- README.md)"
+          if [ -n "$outside" ] || [ -n "$changed" ] || [ -z "$added" ] \
+             || [ "$readme" != README.md ]; then
+            echo "::error::the fixtures commit would not be evals/${SUBJECT}/ additions plus the README layout line"
             exit 1
           fi
           git -c user.name="skills-evals draft-gate bot" \
@@ -539,7 +568,8 @@ jobs:
           SUBJECT: ${{ needs.validate.outputs.subject }}
         run: |
           set -euo pipefail
-          for pair in "decision=hook-first" "run_id=${RUN_ID}" "subject=${SUBJECT}"; do
+          for pair in "decision=hook-first" "run_id=${RUN_ID}" "sha=${SHA}" \
+                      "subject=${SUBJECT}"; do
             if ! grep -qxF -- "$pair" "$RUNNER_TEMP/revalidate.out"; then
               echo "::error::re-validation disagrees with the validate job"
               exit 1

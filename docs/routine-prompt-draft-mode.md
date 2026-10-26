@@ -75,21 +75,23 @@ Setup, in the skills-evals checkout:
      `context:` block, a realistic prompt that does not name the skill, and
      deterministic objective checks that a with-skill run should pass and a
      plain run plausibly misses.
-   - the triage object from step 1 as $RUNNER/staging/triage.json.
+   - triage.json: the triage object from step 1, {"mechanical": false,
+     "reason": ...} (not needed when PAYLOAD has "hook_declined": true).
 
 4. Measure: `python3 scripts/draft_new_skill.py measure --staging
    $RUNNER/staging --registry adam-agentskills=<adam-agentskills checkout>
    --ref <its HEAD sha> --payload PAYLOAD --trials 1 --results
    $RUNNER/results`. Exit 0 is accepted, 1 rejected, 2 refused. Do not edit
-   the draft and re-measure; one measurement per run.
+   the draft and re-measure; one measurement per run. measure (like
+   hook-first) writes $RUNNER/results as the exact tree the branch adds:
+   draft-skill/<run_id>/ always, plus evals/<subject>/<name>/ on accept.
 
 5. On a refusal (exit 2), fix only the staging shape the message names and
    run measure once more; a second refusal is recorded as it stands.
 
-6. Push, always. Create branch claude/draft-skill-<run_id> from origin/main
-   and add $RUNNER/results/draft-skill/<run_id>/ (summary.json, plus
-   report.md, and skill.patch on accepted), and on accepted only the
-   fixtures at evals/<subject>/<name>/. Add nothing else. Commit, then
+6. Push, always. Create branch claude/draft-skill-<run_id> from origin/main,
+   copy the tree under $RUNNER/results onto it unchanged (`cp -R
+   $RUNNER/results/. .`), and add nothing else. Commit, then
    self-check before pushing: `python3 scripts/draft_new_skill.py validate
    --repo . --base origin/main --source HEAD --branch
    claude/draft-skill-<run_id> --registry adam-agentskills=<checkout> --out

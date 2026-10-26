@@ -423,6 +423,7 @@ class GateTests(unittest.TestCase):
                 self.assertLess(ids.index("revalidate"), actor)
                 self.assertIn("grep -qxF -- \"$pair\" \"$RUNNER_TEMP/revalidate.out\"",
                               steps[-1]["run"])
+                self.assertIn('"sha=${SHA}"', steps[-1]["run"])
         validate = self.jobs["validate"]["steps"]
         gate = next(s for s in validate if s.get("id") == "gate")
         self.assertIn("draft_new_skill.py validate", gate["run"])
@@ -461,13 +462,20 @@ class GateTests(unittest.TestCase):
     def test_the_fixtures_commit_is_evals_subject_only(self):
         body = step(self.doc, "fixtures-pr", "Open the fixtures' draft pull request")["run"]
         self.assertIn('target="draft-skill-fixtures/${SUBJECT}"', body)
-        self.assertIn('git checkout -q "$SHA" -- "evals/${SUBJECT}"', body)
+        self.assertIn("draft_new_skill.py fixtures-apply", body)
+        self.assertNotIn('git checkout -q "$SHA"', body, "files come from the staged copy")
         self.assertIn(':(exclude)evals/${SUBJECT}/', body)
+        self.assertIn('":(exclude)README.md"', body)
         self.assertIn("--diff-filter=a", body)
         self.assertIn("--repo skills-evals", body)
         skill = step(self.doc, "skill-pr", "Open the skill's draft pull request in adam-agentskills")["run"]
         self.assertIn('target="draft-skill/${SUBJECT}"', skill)
         self.assertIn("draft_new_skill.py apply", skill)
+        # A bundle in the registry's skills.lock is re-pinned on a second
+        # commit, and a missing relock line stops the job.
+        self.assertIn('grep -qxF -- "relock=true"', skill)
+        self.assertIn("python3 scripts/generate_skills_lock.py --repin", skill)
+        self.assertIn('grep -qxF -- "relock=false"', skill)
         self.assertIn("--repo adam-agentskills", skill)
 
     def test_the_guards_can_fail(self):

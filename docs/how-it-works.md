@@ -205,8 +205,9 @@ Draft mode is what consumes the `new-skill` kind:
    `claude/draft-skill-<run id>`; the gate validates it from the default
    branch without running it. Accepted: a draft pull request in
    adam-agentskills with the skill, then a draft pull request here with
-   only `evals/<subject>/` (merge the skill first). Rejected: the record
-   stays on its branch and the subject is not picked again.
+   only `evals/<subject>/` and its README layout line (merge the skill
+   first). Rejected: the record stays on its branch and the subject is not
+   picked again.
 
 **The decline path.** When the agent-checks lane finds a hook proposal
 cannot be checked at commit time, it closes the issue as not planned. The
