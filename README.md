@@ -39,9 +39,10 @@ harness/
     README.md              # its keying rule, its classes, its invocation log
   registries.yml           # registry name -> URL -> skill-directory layout
 evals/
-  workflow-path-audit/     # the A/B eval
-    fixture.yaml           # prompt, arms, objective checks, judge rubric
-    seed/                  # workspace the agent starts from (unfiltered workflows)
+  workflow-path-audit/     # the reference A/B eval: a skill dir of nested fixtures
+    required-check-routing/  # the original fixture; the scheduled run's default
+      fixture.yaml         # prompt, arms, objective checks, judge rubric
+      seed/                # workspace the agent starts from (unfiltered workflows)
   github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
     fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
     seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
@@ -482,7 +483,8 @@ since the payload no longer travels through the `CLAUDE.md → @AGENTS.md`
 bridge. Keep the bridge canary for the repo-stub path.
 
 Any fixture can be given a real run on `main` by dispatching **Real eval**
-with its `fixture` input (default `evals/workflow-path-audit`); the value is
+with its `fixture` input (default
+`evals/workflow-path-audit/required-check-routing`); the value is
 validated against the committed fixture set before any credential is minted.
 Set `roster_only` to refresh the model roster and file its proposal without
 the eval: the WIF preflight, the eval and the badge are skipped, so the only

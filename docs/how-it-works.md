@@ -302,9 +302,9 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/wsl-automation`. Class B. No real run yet.
 
-### workflow-path-audit
+### workflow-path-audit/required-check-routing
 
-- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit)
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/required-check-routing](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/required-check-routing) (the flat `evals/workflow-path-audit` fixture until 2026-10-26, when the skill's fixtures were nested; its earlier runs are keyed as the flat fixture)
 - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
 - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
 - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
