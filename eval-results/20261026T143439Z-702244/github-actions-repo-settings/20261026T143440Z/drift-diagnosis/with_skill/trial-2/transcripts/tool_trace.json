@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HYQ4G8r8vm3cSG6LtwURrw",
+      "name": "Bash",
+      "input": "pwd; ls -la; git remote -v; git log --oneline -3; ls .. 2><path> | head",
+      "input_chars": 74,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HYQ4G8r8vm3cSG6LtwURrw",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 14:35 .\ndrwx------ 6 root root 4096 Oct 26 14:35 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 14:35 .claude\ndrwxr-xr-x 3 root root 4096 Oct 26 14:31 .gh...",
+      "output_chars": 1041,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RMCL9vH2Sh1zK4GjZesMvb",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -R bin .gh .claude | head -50; cat bin/* | head -100",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RMCL9vH2Sh1zK4GjZesMvb",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 6878,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CNeyDtkUKEBNQRCKyuay8x",
+      "name": "Bash",
+      "input": "cd <path>; export GH_REPLAY_DIR=$PWD/.gh/replay; for r in alpha beta; do for p in \"\" <path> <path> /rulesets; do echo \"== $r $p\"; python3 bin/gh api repos/example-org/service-$r$p 2>&1 | head -c 3000;...",
+      "input_chars": 295,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NXLSitM3iU9dohp8wgnjNj",
+      "name": "Bash",
+      "input": "cd <path>; export GH_REPLAY_DIR=$PWD/.gh/replay; for id in alpha/7201 alpha/7302 beta/7202; do echo \"== $id\"; python3 bin/gh api repos/example-org/service-${id%/*}<path>${id#*/} 2>&1; done",
+      "input_chars": 219,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CNeyDtkUKEBNQRCKyuay8x",
+      "is_error": false,
+      "output": "== alpha \n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n== alpha <path>\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n== alpha <path>\n{\n  \"approval_policy\": \"all_external_contributors\"\n}\n== alpha /rulesets\n[\n  {\n  ...",
+      "output_chars": 1037,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NXLSitM3iU9dohp8wgnjNj",
+      "is_error": false,
+      "output": "== alpha/7201\n{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n    }\n  ],\n  \"conditions\": {\n    \"ref_name\": {\n      \"exclude\": [],\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ]\n    }\n  },\n  \"enforcement\": \"active\",\n  \"id\": 7...",
+      "output_chars": 2517,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DwVk4LEyWpeGq1NNaiJgTL",
+      "name": "Bash",
+      "input": "pwd && ls -la && git remote -v && git log --oneline -3; ls <path> <path> 2>&1 | head -30",
+      "input_chars": 99,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DwVk4LEyWpeGq1NNaiJgTL",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 14:34 .\ndrwx------ 6 root root 4096 Oct 26 14:34 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 14:34 .claude\ndrwxr-xr-x 3 root root 4096 Oct 26 14:31 .gh...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015rThzL7p5Cwo2LkYSmmUM6",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -la bin .gh .gh/*; head -50 bin/*",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015rThzL7p5Cwo2LkYSmmUM6",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 4156,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ks1U3KD9YLMXfV1fbWfnNY",
+      "name": "Bash",
+      "input": "find .gh -type f | head -50; export PATH=$PWD/bin:$PATH; for r in service-alpha service-beta; do echo \"== $r\"; gh api repos/example-org/$r/actions/permissions; gh api repos/example-org/$r/actions/perm...",
+      "input_chars": 296,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ks1U3KD9YLMXfV1fbWfnNY",
+      "is_error": false,
+      "output": ".gh/replay/api/repos/example-org/service-alpha.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7201.json\n.gh/replay/api/repos/example-org/service-alpha/actions/permissions/fork-pr-contributor-approval.json\n.gh/replay/api/...",
+      "output_chars": 1414,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LuTbpdHN5beRxkctvxjfQA",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH; for p in repos/example-org/service-alpha repos/example-org/service-alpha/rulesets/7201 repos/example-org/service-alpha/rulesets/7302 repos/example-org/service-beta repos/ex...",
+      "input_chars": 275,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LuTbpdHN5beRxkctvxjfQA",
+      "is_error": false,
+      "output": "== repos/example-org/service-alpha\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n== repos/example-org/service-alpha/rulesets/7201\n{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n   ...",
+      "output_chars": 2880,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
