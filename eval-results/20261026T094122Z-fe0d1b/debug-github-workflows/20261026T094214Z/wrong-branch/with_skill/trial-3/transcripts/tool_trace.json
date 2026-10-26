@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0156RioPVmy46v6r8UgtKxRM",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0156RioPVmy46v6r8UgtKxRM",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011U36GRYZqz9TiE4eg1LjYQ",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls .github/workflows 2><path>",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011U36GRYZqz9TiE4eg1LjYQ",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n4019dbb initial commit\nf0be913 Import example service\nci.yml",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018RCJNDbYNuHndjME3apYHz",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; git remote -v; command -v gh; ls",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018RCJNDbYNuHndjME3apYHz",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 493,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UShXsNe13eXAm9Uog4ahHc",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -30; ls test src; git show --stat HEAD | head -20",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UShXsNe13eXAm9Uog4ahHc",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent call last):\n  Fil...",
+      "output_chars": 1647,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0157mPh3UjJCcvGXeBogRG4g",
+      "name": "Bash",
+      "input": "git ls-files | grep -v '^\\.gh\\|api/' | head -30; git ls-files | grep annotations; git show HEAD --format= -- '*check-runs/99001/annotations.json' '*compare/main...fix*' '*branches.json' | grep '^+' ; ...",
+      "input_chars": 268,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0157mPh3UjJCcvGXeBogRG4g",
+      "is_error": false,
+      "output": ".github/workflows/ci.yml\nREADME.md\nbin/gh\nsrc/sequence.py\ntest/test_current.py\n.gh/replay/api/repos/example-org/example-service/check-runs/99001/annotations.json\n+++ b/.gh/replay/api/repos/example-org/example-service/branches.json\n+[\n+  {\n+    \"name\": \"main\",\n+    \"commit\": {\n+      \"sha\": \"11111111...",
+      "output_chars": 2568,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0155RG74mLoGbQDvVizb7PFZ",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test -t . 2>&1 | tail -5; echo ---; python3 -m unittest discover -s test 2>&1 | tail -5",
+      "input_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0155RG74mLoGbQDvVizb7PFZ",
+      "is_error": false,
+      "output": "    self.test = loader.discover(self.start, self.pattern, self.top)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<path>\", line 332, in discover\n    raise ImportError('Start directory is not importable: %r' % start_dir)\nImportError: Start directory is not importable: '<...",
+      "output_chars": 462,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
