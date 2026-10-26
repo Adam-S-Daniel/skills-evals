@@ -64,6 +64,7 @@ VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues" / "iss
 sys.path.insert(0, str(TEST_DIR))
 from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
+from shard import assign, load_weights, parse_shard, shard_key  # noqa: E402
 
 
 @install_arm_test_environment
@@ -4752,7 +4753,7 @@ class CiDispatchTests(unittest.TestCase):
     def _salient_step(self) -> dict:
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        steps = doc["jobs"]["test"]["steps"]
+        steps = doc["jobs"]["suite"]["steps"]
         return next(s for s in steps if s.get("id") == "salient")
 
     def test_both_filtered_events_keep_the_same_salient_paths(self):
@@ -4922,7 +4923,7 @@ class CiDispatchTests(unittest.TestCase):
         # execute here.
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        steps = doc["jobs"]["test"]["steps"]
+        steps = doc["jobs"]["suite"]["steps"]
         # Identified by with.path == "skills-evals", not positionally — a
         # reordering of the checkout steps must not make this compare the
         # adam-agentskills checkout's SHA against itself and pass vacuously.
@@ -4974,7 +4975,7 @@ class CiDispatchTests(unittest.TestCase):
                          "override it")
 
     def test_salient_step_is_right_after_the_skills_evals_checkout(self):
-        steps = self._doc()["jobs"]["test"]["steps"]
+        steps = self._doc()["jobs"]["suite"]["steps"]
         own_checkout_idx = next(
             i for i, s in enumerate(steps)
             if (s.get("uses") or "").startswith("actions/checkout@")
@@ -4984,7 +4985,7 @@ class CiDispatchTests(unittest.TestCase):
                          "immediately after the skills-evals checkout")
 
     def test_skills_evals_checkout_has_fetch_depth_two(self):
-        steps = self._doc()["jobs"]["test"]["steps"]
+        steps = self._doc()["jobs"]["suite"]["steps"]
         own_checkout = next(
             s for s in steps
             if (s.get("uses") or "").startswith("actions/checkout@")
@@ -4995,7 +4996,7 @@ class CiDispatchTests(unittest.TestCase):
                          "checkout would not have it")
 
     def test_every_step_after_salient_gates_on_its_output(self):
-        steps = self._doc()["jobs"]["test"]["steps"]
+        steps = self._doc()["jobs"]["suite"]["steps"]
         salient_idx = next(i for i, s in enumerate(steps)
                            if s.get("id") == "salient")
         for step in steps[salient_idx + 1:]:
@@ -5010,7 +5011,7 @@ class CiDispatchTests(unittest.TestCase):
                          "steps.salient.outputs.run")
 
     def test_final_step_reports_the_skip(self):
-        steps = self._doc()["jobs"]["test"]["steps"]
+        steps = self._doc()["jobs"]["suite"]["steps"]
         skip_steps = [s for s in steps
                      if "steps.salient.outputs.run != 'true'" in s.get("if", "")]
         self.assertEqual(len(skip_steps), 1,
@@ -5028,7 +5029,7 @@ class CiDispatchTests(unittest.TestCase):
         # text sitting inside a comment or a string. Bare pytest here would
         # skip main()'s run-wide memory guard and collection cross-check, so
         # this pins the RUNNER's own flag, never `pytest` invoked directly.
-        steps = self._doc()["jobs"]["test"]["steps"]
+        steps = self._doc()["jobs"]["suite"]["steps"]
         run_step = next(s for s in steps if s.get("name") == "Run tests")
         run_argv = shlex.split(run_step["run"])
         self.assertIn("python3", run_argv)
@@ -5060,6 +5061,113 @@ class CiDispatchTests(unittest.TestCase):
         self.assertTrue(set(PARALLEL_PINS).issubset(install_argv),
                         "PARALLEL_PINS must equal the exact versions "
                         f"pip-installed in ci.yml: {install_argv}")
+
+
+class CiShardTests(unittest.TestCase):
+    """ci.yml splits the suite across a `suite` matrix, and the required
+    `test` context is a separate job that passes only when every shard did.
+
+    Each shard's runner already proves it ran exactly its share of
+    build_suite(). What no single shard can see is whether the shares add up
+    to the whole suite, so these pin that: the matrix names every shard
+    1..N, the run step passes the matrix total as N, and the shards
+    partition the suite.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+    def _doc(self) -> dict:
+        import yaml
+        return yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+
+    def test_matrix_names_every_shard_from_one_to_its_total(self):
+        matrix = self._doc()["jobs"]["suite"]["strategy"]["matrix"]
+        self.assertEqual(set(matrix), {"shard"},
+                         "any other matrix axis would multiply the shards "
+                         "and run each share more than once")
+        shards = matrix["shard"]
+        self.assertGreater(len(shards), 1)
+        self.assertEqual(shards, list(range(1, len(shards) + 1)),
+                         "shards must be 1..N: --shard takes N from "
+                         "strategy.job-total, so a gap or a duplicate would "
+                         "leave a share of the suite unrun")
+
+    def test_run_step_passes_the_matrix_shard_and_total(self):
+        steps = self._doc()["jobs"]["suite"]["steps"]
+        run_step = next(s for s in steps if s.get("name") == "Run tests")
+        argv = shlex.split(run_step["run"])
+        self.assertEqual(argv[argv.index("--shard") + 1], "$SHARD")
+        self.assertEqual(run_step["env"]["SHARD"],
+                         "${{ matrix.shard }}/${{ strategy.job-total }}")
+
+    def test_suite_does_not_fail_fast(self):
+        strategy = self._doc()["jobs"]["suite"]["strategy"]
+        self.assertIs(strategy.get("fail-fast"), False,
+                      "a failing shard must not cancel the others: every "
+                      "shard's failures belong in the same red run")
+
+    def test_required_test_job_waits_for_every_shard_even_on_failure(self):
+        job = self._doc()["jobs"]["test"]
+        self.assertEqual(job.get("needs"), "suite")
+        self.assertEqual(job.get("if"), "always()",
+                         "without always() a failed shard SKIPS `test`, and "
+                         "a skipped required check reads as passing")
+
+    def test_required_test_job_passes_only_on_success(self):
+        [step] = self._doc()["jobs"]["test"]["steps"]
+        self.assertEqual(step["env"]["SUITE_RESULT"], "${{ needs.suite.result }}")
+        for result, want in (("success", 0), ("failure", 1), ("cancelled", 1),
+                             ("skipped", 1), ("", 1)):
+            with self.subTest(result=result):
+                proc = subprocess.run(
+                    ["bash", "-e", "-c", step["run"]],
+                    env={"PATH": "/usr/bin:/bin", "SUITE_RESULT": result},
+                    capture_output=True, text=True, timeout=10)
+                self.assertEqual(proc.returncode, want, proc.stdout + proc.stderr)
+
+    def test_shards_partition_the_suite(self):
+        every = _expected_test_ids()
+        shares = [_expected_test_ids((k, 3)) for k in (1, 2, 3)]
+        self.assertTrue(all(shares), "every shard must get some tests")
+        self.assertEqual(set().union(*shares), every)
+        self.assertEqual(sum(len(s) for s in shares), len(every),
+                         "a test landed in more than one shard")
+
+    def test_assign_balances_by_weight_and_is_deterministic(self):
+        # Longest first, each to the lightest shard: the two heavy tests go
+        # to different shards, and shuffling the input changes nothing.
+        weights = {"m::C::slow_a": 60.0, "m::C::slow_b": 50.0}
+        keys = ["m::C::slow_a", "m::C::slow_b"] + [f"m::C::t{i}" for i in range(40)]
+        got = assign(keys, 2, weights)
+        self.assertNotEqual(got["m::C::slow_a"], got["m::C::slow_b"])
+        self.assertEqual(assign(list(reversed(keys)), 2, weights), got)
+        loads = [sum(weights.get(k, 0.3) for k, s in got.items() if s == i)
+                 for i in (1, 2)]
+        self.assertLess(abs(loads[0] - loads[1]), 1.0, loads)
+
+    def test_weights_name_tests_that_exist(self):
+        # A renamed slow test keeps its weight under the old name and the
+        # split drifts out of balance with nothing failing. Refresh with
+        # `python3 test/shard.py --refresh <junit.xml>` (its docstring).
+        every = {shard_key(*triple) for triple in _expected_test_ids()}
+        stale = sorted(set(load_weights()) - every)
+        self.assertEqual(stale, [], "test/shard_weights.json names tests "
+                         "that no longer exist")
+
+    def test_shard_argument_is_validated(self):
+        for bad in ("0/4", "5/4", "1/0", "4", "a/b"):
+            with self.subTest(value=bad):
+                with self.assertRaises(SystemExit), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    parse_argv(["--jobs", "2", "--shard", bad])
+        self.assertEqual(parse_argv(["--jobs", "2", "--shard", "2/4"]).shard, (2, 4))
+
+    def test_shard_without_jobs_is_refused(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status = main(["--shard", "1/2"])
+        self.assertEqual(status, 2)
+        self.assertIn("--shard needs --jobs", buf.getvalue())
 
 
 class WorkflowPinnedPythonTests(unittest.TestCase):
@@ -5189,9 +5297,9 @@ class ActionLockfileGuardTests(unittest.TestCase):
 
     def _verify_step(self) -> dict:
         doc = yaml.safe_load(self.CI_WORKFLOW.read_text(encoding="utf-8"))
-        steps = [s for s in doc["jobs"]["test"]["steps"]
+        steps = [s for s in doc["jobs"]["suite"]["steps"]
                  if s.get("name") == "Verify action lockfile"]
-        self.assertEqual(len(steps), 1, "ci.yml's test job must carry one Verify action lockfile step")
+        self.assertEqual(len(steps), 1, "ci.yml's suite job must carry one Verify action lockfile step")
         return steps[0]
 
     def test_lock_problem_refuses_unpinned_docker_and_cms_platform_refs(self):
@@ -5360,7 +5468,7 @@ class CiSalientDetectionTests(unittest.TestCase):
     def setUpClass(cls):
         import yaml
         doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
-        steps = doc["jobs"]["test"]["steps"]
+        steps = doc["jobs"]["suite"]["steps"]
         step = next(s for s in steps if s.get("id") == "salient")
         cls.SCRIPT = step["run"]
         cls.SALIENT_PATHS = step["env"]["SALIENT_PATHS"]
@@ -33796,6 +33904,16 @@ def _jobs_arg(value: str) -> int | str:
             f"invalid --jobs value {value!r}: expected an integer or 'auto'")
 
 
+def _shard_arg(value: str) -> tuple[int, int]:
+    """`--shard`'s argparse type: `K/N` with 1 <= K <= N."""
+    try:
+        return parse_shard(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid --shard value {value!r}: expected K/N with "
+            f"1 <= K <= N ({exc})")
+
+
 def parse_argv(argv: list[str]) -> argparse.Namespace:
     """This runner's own command line.
 
@@ -33831,6 +33949,12 @@ def parse_argv(argv: list[str]) -> argparse.Namespace:
                              "via pytest-xdist, or 'auto' for one worker per "
                              "CPU (needs pytest and pytest-xdist installed; "
                              "the memory guard still spans the run)")
+    parser.add_argument("--shard", type=_shard_arg, default=None,
+                        metavar="K/N",
+                        help="with --jobs: run only shard K of N "
+                             "(test/shard.py), still cross-checked against "
+                             "build_suite()'s share for that shard; ci.yml "
+                             "runs every K in parallel jobs")
     parser.add_argument("targets", nargs="*", metavar="TestClass.test_name",
                         help="a targeted run through unittest.main, which "
                              "addresses this file's own classes only")
@@ -36597,7 +36721,8 @@ def parallel_pin_disagreements(ours: tuple[str, ...],
     return problems
 
 
-def _expected_test_ids() -> set[tuple[str, str, str]]:
+def _expected_test_ids(shard: tuple[int, int] | None = None
+                       ) -> set[tuple[str, str, str]]:
     """`(module_stem, Class, method)` for every test build_suite() carries.
 
     `_normalise_nodeid` derives the same triple from a pytest nodeid, so the
@@ -36613,6 +36738,9 @@ def _expected_test_ids() -> set[tuple[str, str, str]]:
         if module == "__main__":
             module = SUITE_RUNNER_MODULE
         ids.add((module, test.__class__.__name__, test._testMethodName))
+    if shard is not None:
+        shards = assign([shard_key(*triple) for triple in ids], shard[1])
+        ids = {triple for triple in ids if shards[shard_key(*triple)] == shard[0]}
     return ids
 
 
@@ -36834,6 +36962,11 @@ def main(argv: list[str] | None = None) -> int:
     if override:
         print(f"DISCOVERY OVERRIDE: ${DISCOVERY_ENV}={override} — "
               "test/issues/ is NOT what this run discovered.")
+    if opts.shard is not None and opts.jobs == 1:
+        print("FAILED: --shard needs --jobs: a shard is cross-checked "
+              "against the pytest-xdist collection, which the serial path "
+              "does not have.")
+        return memory_guard(memory, before, 2)
     if opts.jobs != 1:
         if isinstance(opts.jobs, int) and opts.jobs < 1:
             print(f"FAILED: --jobs {opts.jobs} is not a positive worker "
@@ -36856,7 +36989,17 @@ def main(argv: list[str] | None = None) -> int:
             print("FAILED: --jobs needs pytest and pytest-xdist installed "
                   f"— pip install {' '.join(PARALLEL_PINS)}")
             return memory_guard(memory, before, 2)
-        expected = _expected_test_ids()
+        expected = _expected_test_ids(opts.shard)
+        if opts.shard is not None:
+            k, n = opts.shard
+            if not expected:
+                print(f"FAILED: --shard {k}/{n} selected 0 tests. An empty "
+                      "shard measures nothing.")
+                return memory_guard(memory, before, 2)
+            print(f"SHARD {k}/{n}: {len(expected)} of "
+                  f"{len(_expected_test_ids())} tests. An OK from this run "
+                  "is a full-suite pass only together with the other "
+                  f"{n - 1} shard(s).")
         collector = _XdistCollector()
         # Named `pytest_argv`, not the generic `args` this file's helpers use
         # everywhere for an arbitrary *args passthrough: the suite-fork scan
@@ -36878,6 +37021,11 @@ def main(argv: list[str] | None = None) -> int:
             pytest_argv.append("-q")
         if opts.failfast:
             pytest_argv.append("-x")
+        if opts.shard is not None:
+            # Deselection happens in each worker (test/conftest.py), so the
+            # ids the collector sums are the shard's own, and the equality
+            # check below holds per shard.
+            pytest_argv.append(f"--skills-evals-shard={opts.shard[0]}/{opts.shard[1]}")
         rc = pytest.main(pytest_argv, plugins=[collector])
         collected = collector.collected
         if collected != expected:

@@ -163,13 +163,13 @@ class RealWorkFixtureTests(unittest.TestCase):
     def test_ci_installs_exactly_the_fixtures_dependencies(self):
         workflow = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml")
                                   .read_text(encoding="utf-8"))
-        [step] = [s for s in workflow["jobs"]["test"]["steps"]
+        [step] = [s for s in workflow["jobs"]["suite"]["steps"]
                   if s.get("name") == "Install real-work fixture dependencies"]
         self.assertEqual(step["working-directory"], "skills-evals/evals/real-work")
         self.assertEqual(step["if"], "steps.salient.outputs.run == 'true'")
         self.assert_derived_loop(step["run"], "npm")
         self.assertIn("npm ci --ignore-scripts --no-audit --no-fund", step["run"])
-        [step] = [s for s in workflow["jobs"]["test"]["steps"]
+        [step] = [s for s in workflow["jobs"]["suite"]["steps"]
                   if s.get("name") == "Install real-work fixture gems"]
         self.assertEqual(step["working-directory"], "skills-evals/evals/real-work")
         self.assertEqual(step["if"], "steps.salient.outputs.run == 'true'")
