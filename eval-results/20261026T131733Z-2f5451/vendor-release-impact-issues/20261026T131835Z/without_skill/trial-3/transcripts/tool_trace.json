@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JquQAwWZFWtP1aNRF8BpRQ",
+      "name": "Bash",
+      "input": "ls -la && find vendor -type f | head -50 && git log --oneline | head",
+      "input_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JquQAwWZFWtP1aNRF8BpRQ",
+      "is_error": false,
+      "output": "total 40\ndrwxr-xr-x 8 root root 4096 Oct 26 13:22 .\ndrwxrwxrwt 9 root root 4096 Oct 26 13:22 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 12:59 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 12:59 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 13:22 .claude\ndrwxr-xr-x 2 root root 4096 Oct 25 21:39 .example-c...",
+      "output_chars": 1110,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012C4nRT5jqD8ThixdhR1F1Q",
+      "name": "Bash",
+      "input": "cat README.md vendor/RELEASES.md; head -c 3000 vendor/releases.json; ls -R .example-cli hooks .github .claude | head -50",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012C4nRT5jqD8ThixdhR1F1Q",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-start.sh`) match...",
+      "output_chars": 2921,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MpsNPA4zT7XMUp8LDuVU2S",
+      "name": "Bash",
+      "input": "cat .example-cli/settings.json hooks/session-start.sh .github/workflows/ci.yml; grep -rn \"model\\|synced\\|skill\" --exclude-dir=.git --exclude-dir=vendor . | head -20; ls .claude -la",
+      "input_chars": 180,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MpsNPA4zT7XMUp8LDuVU2S",
+      "is_error": false,
+      "output": "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/session-start.sh\"\n          }\n        ]\n      }\n    ]\n  }\n}\n#!<path> bash\n# Runs on every SessionStart event matched by ....",
+      "output_chars": 1602,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KB2JQpjECunyuKN8HDTGij",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-fork-source.md <<'EOF'\n# SessionStart hook no longer logs forked sessions after ExampleCLI 4.2.0\n\n## Background\n\nExampleCLI v4.2.0 changed ...",
+      "input_chars": 2785,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KB2JQpjECunyuKN8HDTGij",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-fork-source.md\n02-readme-synced-skill-names-outdated.md",
+      "output_chars": 84,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
