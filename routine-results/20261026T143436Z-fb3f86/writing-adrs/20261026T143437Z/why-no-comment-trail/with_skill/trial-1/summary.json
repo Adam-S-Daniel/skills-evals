@@ -1,0 +1,404 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261026T143437Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.09496560000000001,
+    "num_turns": 8,
+    "duration_ms": 27913,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 15089,
+      "cache_read_input_tokens": 146367,
+      "output_tokens": 1981,
+      "output_tokens_details": {
+        "thinking_tokens": 147
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 15089,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 516,
+          "cache_read_input_tokens": 41321,
+          "cache_creation_input_tokens": 1371,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1371
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "new-adr-0003-is-a-house-format-entry",
+      "passed": true,
+      "detail": "docs/decisions/0003-end-export-lines-with-crlf.md matches"
+    },
+    {
+      "id": "adr-0003-records-the-reason",
+      "passed": true,
+      "detail": "docs/decisions/0003-end-export-lines-with-crlf.md matches"
+    },
+    {
+      "id": "adr-0003-records-the-rejected-alternatives",
+      "passed": true,
+      "detail": "docs/decisions/0003-end-export-lines-with-crlf.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0003",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-rows-for-0001-and-0002-kept",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "decision-log-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/0001-export-after-the-ledger-closes.md, docs/decisions/0002-write-amounts-as-integer-cents.md, docs/decisions/0003-end-export-lines-with-crlf.md, docs/decisions/README.md)"
+    },
+    {
+      "id": "script-comment-points-at-0003",
+      "passed": true,
+      "detail": "scripts/export-ledger.sh matches"
+    },
+    {
+      "id": "script-adr-pointers-resolve",
+      "passed": true,
+      "detail": "all link targets exist (scripts/export-ledger.sh)"
+    },
+    {
+      "id": "script-still-writes-crlf",
+      "passed": true,
+      "detail": "scripts/export-ledger.sh matches"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": true,
+      "detail": "3 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-export-after-the-ledger-closes.md, docs/decisions/0002-write-amounts-as-integer-cents.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "adr-records-the-reason",
+        "score": 10,
+        "rationale": "The ADR's Context describes the importer constraint and prior manual process without pre-announcing the decision, the Decision states that export-ledger.sh writes CRLF on every line, both relayed alternatives (manual conversion and converting in the upload job) are discussed and rejected with reasons, consequences are honestly positive and negative, and the title is an imperative decision statement."
+      },
+      {
+        "name": "next-reader-finds-it",
+        "score": 10,
+        "rationale": "A two-line comment at the CRLF printf lines points to the new ADR, the index carries a row for 0003, and the reply answers the question directly and says the reason now lives in the ADR."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "The agent changed only the new ADR, the index row, and the script comment, leaving the export behavior, ADRs 0001/0002, CHANGELOG, README, and AGENTS.md untouched and writing no superfluous ADR."
+      }
+    ],
+    "overall": 10.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-4-8"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1349,
+      "output_tokens": 24,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 1981,
+      "cache_read_input_tokens": 146367,
+      "cache_creation_input_tokens": 15089,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.008330400805737237,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "why-no-comment-trail",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "c8e14f5511932853a0ad633b04f2db5b8536f4224da33b63ff07b077e6794520",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "workstation",
+    "location": "cloud",
+    "id": "20261026T143436Z-fb3f86",
+    "session_id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+    "harness_commit": "c0987d52f732d19356731d9082d74376d327e4e6",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T14:34:37Z",
+    "ended_at": "2026-10-26T14:39:01Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T14:34:37Z",
+      "to_at": "2026-10-26T14:37:49.061Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.5,
+          "to": 0.53,
+          "delta": 0.03,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.76,
+          "to": 0.77,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T14:34:37Z",
+      "ended_at": "2026-10-26T14:38:03Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T14:34:37Z",
+          "ended_at": "2026-10-26T14:35:09Z",
+          "duration_ms": 31799,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-26T14:37:52Z",
+          "ended_at": "2026-10-26T14:38:03Z",
+          "duration_ms": 11492,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T14:34:37Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.76,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.5,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.76,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-26T14:35:06.341Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.76,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.51,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.76,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 31799,
+        "num_turns": 8,
+        "cost_usd": 0.09496560000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1349,
+            "output_tokens": 24,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001469
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 1981,
+            "cache_read_input_tokens": 146367,
+            "cache_creation_input_tokens": 15089,
+            "cost_usd": 0.0948187
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 15089
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 11492,
+        "num_turns": 1,
+        "cost_usd": 0.1000127,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 3572,
+            "output_tokens": 21,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0003677
+          },
+          "claude-opus-4-8": {
+            "input_tokens": 2,
+            "output_tokens": 352,
+            "cache_read_input_tokens": 27450,
+            "cache_creation_input_tokens": 7711,
+            "cost_usd": 0.099645
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7711
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
