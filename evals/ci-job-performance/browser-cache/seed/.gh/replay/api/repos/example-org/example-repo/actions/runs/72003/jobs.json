@@ -1,0 +1,332 @@
+{
+  "total_count": 3,
+  "jobs": [
+    {
+      "id": 820031,
+      "run_id": 72003,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "0be7c450be7c450be7c450be7c450be7c450be7c",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/72003/job/820031",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-21T09:33:50Z",
+      "started_at": "2026-10-21T09:34:03Z",
+      "completed_at": "2026-10-21T09:35:34Z",
+      "name": "e2e (chromium)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-21T09:34:03Z",
+          "completed_at": "2026-10-21T09:34:04Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-21T09:34:04Z",
+          "completed_at": "2026-10-21T09:34:06Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-21T09:34:06Z",
+          "completed_at": "2026-10-21T09:34:11Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-21T09:34:11Z",
+          "completed_at": "2026-10-21T09:34:22Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-21T09:34:22Z",
+          "completed_at": "2026-10-21T09:34:27Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-21T09:34:27Z",
+          "completed_at": "2026-10-21T09:34:50Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-10-21T09:34:50Z",
+          "completed_at": "2026-10-21T09:34:50Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-21T09:34:50Z",
+          "completed_at": "2026-10-21T09:35:32Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-21T09:35:32Z",
+          "completed_at": "2026-10-21T09:35:33Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-21T09:35:33Z",
+          "completed_at": "2026-10-21T09:35:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-21T09:35:34Z",
+          "completed_at": "2026-10-21T09:35:34Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1497",
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 820032,
+      "run_id": 72003,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "0be7c450be7c450be7c450be7c450be7c450be7c",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/72003/job/820032",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-21T09:33:50Z",
+      "started_at": "2026-10-21T09:34:00Z",
+      "completed_at": "2026-10-21T09:35:50Z",
+      "name": "e2e (firefox)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-21T09:34:00Z",
+          "completed_at": "2026-10-21T09:34:02Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-21T09:34:02Z",
+          "completed_at": "2026-10-21T09:34:03Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-21T09:34:03Z",
+          "completed_at": "2026-10-21T09:34:08Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-21T09:34:08Z",
+          "completed_at": "2026-10-21T09:34:17Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-21T09:34:17Z",
+          "completed_at": "2026-10-21T09:34:23Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-21T09:34:23Z",
+          "completed_at": "2026-10-21T09:34:48Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-10-21T09:34:48Z",
+          "completed_at": "2026-10-21T09:34:48Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-21T09:34:48Z",
+          "completed_at": "2026-10-21T09:35:49Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-21T09:35:49Z",
+          "completed_at": "2026-10-21T09:35:49Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-21T09:35:49Z",
+          "completed_at": "2026-10-21T09:35:50Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-21T09:35:50Z",
+          "completed_at": "2026-10-21T09:35:50Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1498",
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 820033,
+      "run_id": 72003,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "0be7c450be7c450be7c450be7c450be7c450be7c",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/72003/job/820033",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-21T09:33:50Z",
+      "started_at": "2026-10-21T09:33:59Z",
+      "completed_at": "2026-10-21T09:35:35Z",
+      "name": "e2e (webkit)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-21T09:33:59Z",
+          "completed_at": "2026-10-21T09:34:00Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-21T09:34:00Z",
+          "completed_at": "2026-10-21T09:34:02Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-21T09:34:02Z",
+          "completed_at": "2026-10-21T09:34:06Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-21T09:34:06Z",
+          "completed_at": "2026-10-21T09:34:18Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-21T09:34:18Z",
+          "completed_at": "2026-10-21T09:34:24Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-21T09:34:24Z",
+          "completed_at": "2026-10-21T09:34:42Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-10-21T09:34:42Z",
+          "completed_at": "2026-10-21T09:34:42Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-21T09:34:42Z",
+          "completed_at": "2026-10-21T09:35:33Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-21T09:35:33Z",
+          "completed_at": "2026-10-21T09:35:34Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-21T09:35:34Z",
+          "completed_at": "2026-10-21T09:35:34Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-21T09:35:34Z",
+          "completed_at": "2026-10-21T09:35:35Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1499",
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

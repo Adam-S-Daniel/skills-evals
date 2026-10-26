@@ -1,0 +1,68 @@
+2026-10-13T15:41:36.1790820Z Current runner version: '2.329.0'
+2026-10-13T15:41:36.1890820Z ##[group]Runner Image Provisioner
+2026-10-13T15:41:36.1890820Z Hosted Compute Agent
+2026-10-13T15:41:36.1890820Z ##[endgroup]
+2026-10-13T15:41:36.1890820Z ##[group]Operating System
+2026-10-13T15:41:36.1890820Z Ubuntu
+2026-10-13T15:41:36.1890820Z 24.04.3
+2026-10-13T15:41:36.1890820Z LTS
+2026-10-13T15:41:36.1890820Z ##[endgroup]
+2026-10-13T15:41:36.4890820Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+2026-10-13T15:41:36.6890820Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+2026-10-13T15:41:36.9890820Z Complete job name: e2e (chromium)
+2026-10-13T15:41:38.0934220Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+2026-10-13T15:41:38.1034220Z ##[endgroup]
+2026-10-13T15:41:38.1534220Z Syncing repository: example-org/example-repo
+2026-10-13T15:41:38.5534220Z Fetching the repository
+2026-10-13T15:41:39.1534220Z Checking out the ref
+2026-10-13T15:41:40.1112280Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+2026-10-13T15:41:40.1212280Z ##[endgroup]
+2026-10-13T15:41:40.5212280Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+2026-10-13T15:41:40.6212280Z Environment details
+2026-10-13T15:41:42.0212280Z Cache hit for: node-cache-Linux-x64-npm-e2e
+2026-10-13T15:41:43.1212280Z Cache restored successfully
+2026-10-13T15:41:45.7513070Z ##[group]Run npm ci
+2026-10-13T15:41:45.7513070Z npm ci
+2026-10-13T15:41:45.7513070Z shell: /usr/bin/bash -e {0}
+2026-10-13T15:41:45.7513070Z env:
+2026-10-13T15:41:45.7513070Z   BROWSER: chromium
+2026-10-13T15:41:45.7513070Z ##[endgroup]
+2026-10-13T15:41:52.2513070Z 
+2026-10-13T15:41:52.4513070Z added 3 packages, and audited 4 packages in 2s
+2026-10-13T15:41:52.5513070Z found 0 vulnerabilities
+2026-10-13T15:41:55.8488100Z ##[group]Run npx playwright install-deps "$BROWSER"
+2026-10-13T15:41:55.8488100Z npx playwright install-deps "$BROWSER"
+2026-10-13T15:41:55.8488100Z ##[endgroup]
+2026-10-13T15:41:57.0488100Z Installing dependencies...
+2026-10-13T15:41:57.1488100Z Switching to root user to install dependencies...
+2026-10-13T15:41:57.9488100Z Hit:1 http://example.net/ubuntu noble InRelease
+2026-10-13T15:41:58.2488100Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+2026-10-13T15:42:00.1488100Z Fetched 4,812 kB in 2s (2,406 kB/s)
+2026-10-13T15:42:01.7488100Z Reading package lists...
+2026-10-13T15:42:02.9488100Z 0 upgraded, 41 newly installed, 0 to remove and 18 not upgraded.
+2026-10-13T15:42:02.9488100Z Need to get 69.7 MB of archives.
+2026-10-13T15:42:12.8520860Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+2026-10-13T15:42:13.2520860Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+2026-10-13T15:42:14.7520860Z ##[group]Run npx playwright install "$BROWSER"
+2026-10-13T15:42:14.7520860Z npx playwright install "$BROWSER"
+2026-10-13T15:42:14.7520860Z ##[endgroup]
+2026-10-13T15:42:15.0520860Z Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium/1194/chromium-ubuntu-24.04.zip
+2026-10-13T15:42:20.4152430Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 167.3 MiB
+2026-10-13T15:42:20.5152430Z Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+2026-10-13T15:42:20.8152430Z Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium_headless_shell/1194/chromium_headless_shell-ubuntu-24.04.zip
+2026-10-13T15:42:24.1684180Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 104.6 MiB
+2026-10-13T15:42:24.2684180Z Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+2026-10-13T15:42:24.5684180Z Downloading FFMPEG playwright build v1011 from https://example.net/playwright/builds/ffmpeg/1011/ffmpeg-ubuntu-24.04.zip
+2026-10-13T15:42:24.6421490Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+2026-10-13T15:42:24.7421490Z FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+2026-10-13T15:42:24.7421490Z ##[group]Run npx playwright test --project="$BROWSER"
+2026-10-13T15:42:24.7421490Z npx playwright test --project="$BROWSER"
+2026-10-13T15:42:24.7421490Z ##[endgroup]
+2026-10-13T15:42:26.1421490Z 
+2026-10-13T15:42:26.1421490Z Running 8 tests using 2 workers
+2026-10-13T15:43:07.2778650Z 
+2026-10-13T15:43:07.3778650Z   8 passed (41.9s)
+2026-10-13T15:43:08.8778650Z Post job cleanup.
+2026-10-13T15:43:08.9778650Z /usr/bin/git version
+2026-10-13T15:43:08.9778650Z git version 2.51.0
+2026-10-13T15:43:09.4598330Z Cleaning up orphan processes

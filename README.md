@@ -84,6 +84,10 @@ evals/
     swallowed-failure/     # a green run whose process substitution hid a failed gh listing
     git-identity/          # a bare exit 128 from a test script that commits without a git identity
     secret-name/           # a workflow reads a secret name the repository does not have
+  ci-job-performance/      # Class B: speed up a slow CI job from recorded timings
+    browser-cache/         # a Playwright browser cache that slows the firefox leg it was meant to speed up
+      fixture.yaml         # gh-log timing reads, parsed-workflow probes per matrix leg, file guards, rubric
+      seed/                # an e2e browser-matrix workflow, shared gh symlink, eight recorded runs
   embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
     fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
     seed/                  # a wired Tools collection, an existing tool, and a standalone app

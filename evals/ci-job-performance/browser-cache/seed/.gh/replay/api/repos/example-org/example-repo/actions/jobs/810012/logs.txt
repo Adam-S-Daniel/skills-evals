@@ -1,0 +1,62 @@
+2026-10-12T09:14:16.3268810Z Current runner version: '2.329.0'
+2026-10-12T09:14:16.3368810Z ##[group]Runner Image Provisioner
+2026-10-12T09:14:16.3368810Z Hosted Compute Agent
+2026-10-12T09:14:16.3368810Z ##[endgroup]
+2026-10-12T09:14:16.3368810Z ##[group]Operating System
+2026-10-12T09:14:16.3368810Z Ubuntu
+2026-10-12T09:14:16.3368810Z 24.04.3
+2026-10-12T09:14:16.3368810Z LTS
+2026-10-12T09:14:16.3368810Z ##[endgroup]
+2026-10-12T09:14:16.6368810Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+2026-10-12T09:14:16.8368810Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+2026-10-12T09:14:17.1368810Z Complete job name: e2e (firefox)
+2026-10-12T09:14:18.0493770Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+2026-10-12T09:14:18.0593770Z ##[endgroup]
+2026-10-12T09:14:18.1093770Z Syncing repository: example-org/example-repo
+2026-10-12T09:14:18.5093770Z Fetching the repository
+2026-10-12T09:14:19.1093770Z Checking out the ref
+2026-10-12T09:14:19.7979520Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+2026-10-12T09:14:19.8079520Z ##[endgroup]
+2026-10-12T09:14:20.2079520Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+2026-10-12T09:14:20.3079520Z Environment details
+2026-10-12T09:14:21.7079520Z Cache hit for: node-cache-Linux-x64-npm-e2e
+2026-10-12T09:14:22.8079520Z Cache restored successfully
+2026-10-12T09:14:23.9035300Z ##[group]Run npm ci
+2026-10-12T09:14:23.9035300Z npm ci
+2026-10-12T09:14:23.9035300Z shell: /usr/bin/bash -e {0}
+2026-10-12T09:14:23.9035300Z env:
+2026-10-12T09:14:23.9035300Z   BROWSER: firefox
+2026-10-12T09:14:23.9035300Z ##[endgroup]
+2026-10-12T09:14:30.4035300Z 
+2026-10-12T09:14:30.6035300Z added 3 packages, and audited 4 packages in 2s
+2026-10-12T09:14:30.7035300Z found 0 vulnerabilities
+2026-10-12T09:14:36.2846590Z ##[group]Run npx playwright install-deps "$BROWSER"
+2026-10-12T09:14:36.2846590Z npx playwright install-deps "$BROWSER"
+2026-10-12T09:14:36.2846590Z ##[endgroup]
+2026-10-12T09:14:37.4846590Z Installing dependencies...
+2026-10-12T09:14:37.5846590Z Switching to root user to install dependencies...
+2026-10-12T09:14:38.3846590Z Hit:1 http://example.net/ubuntu noble InRelease
+2026-10-12T09:14:38.6846590Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+2026-10-12T09:14:40.5846590Z Fetched 4,812 kB in 2s (2,406 kB/s)
+2026-10-12T09:14:42.1846590Z Reading package lists...
+2026-10-12T09:14:43.3846590Z 0 upgraded, 37 newly installed, 0 to remove and 18 not upgraded.
+2026-10-12T09:14:43.3846590Z Need to get 62.9 MB of archives.
+2026-10-12T09:14:54.7962660Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+2026-10-12T09:14:55.1962660Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+2026-10-12T09:14:56.6962660Z ##[group]Run npx playwright install "$BROWSER"
+2026-10-12T09:14:56.6962660Z npx playwright install "$BROWSER"
+2026-10-12T09:14:56.6962660Z ##[endgroup]
+2026-10-12T09:14:56.9962660Z Downloading Firefox 142.0.1 (playwright build v1495) from https://example.net/playwright/builds/firefox/1495/firefox-ubuntu-24.04.zip
+2026-10-12T09:15:01.0771390Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 96.8 MiB
+2026-10-12T09:15:01.1771390Z Firefox 142.0.1 (playwright build v1495) downloaded to /home/runner/.cache/ms-playwright/firefox-1495
+2026-10-12T09:15:01.3771390Z ##[group]Run npx playwright test --project="$BROWSER"
+2026-10-12T09:15:01.3771390Z npx playwright test --project="$BROWSER"
+2026-10-12T09:15:01.3771390Z ##[endgroup]
+2026-10-12T09:15:02.7771390Z 
+2026-10-12T09:15:02.7771390Z Running 8 tests using 2 workers
+2026-10-12T09:15:50.8800380Z 
+2026-10-12T09:15:50.9800380Z   8 passed (48.9s)
+2026-10-12T09:15:52.4800380Z Post job cleanup.
+2026-10-12T09:15:52.5800380Z /usr/bin/git version
+2026-10-12T09:15:52.5800380Z git version 2.51.0
+2026-10-12T09:15:53.0281790Z Cleaning up orphan processes

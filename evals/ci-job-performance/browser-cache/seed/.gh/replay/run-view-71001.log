@@ -1,0 +1,192 @@
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4869150Z Current runner version: '2.329.0'
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z ##[group]Runner Image Provisioner
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z Hosted Compute Agent
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z ##[endgroup]
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z ##[group]Operating System
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z Ubuntu
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z 24.04.3
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z LTS
+e2e (chromium)	Set up job	2026-10-12T09:14:06.4969150Z ##[endgroup]
+e2e (chromium)	Set up job	2026-10-12T09:14:06.7969150Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (chromium)	Set up job	2026-10-12T09:14:06.9969150Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (chromium)	Set up job	2026-10-12T09:14:07.2969150Z Complete job name: e2e (chromium)
+e2e (chromium)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:08.1925320Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (chromium)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:08.2025320Z ##[endgroup]
+e2e (chromium)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:08.2525320Z Syncing repository: example-org/example-repo
+e2e (chromium)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:08.6525320Z Fetching the repository
+e2e (chromium)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:09.2525320Z Checking out the ref
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:10.0968770Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:10.1068770Z ##[endgroup]
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:10.5068770Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:10.6068770Z Environment details
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:12.0068770Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (chromium)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:13.1068770Z Cache restored successfully
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z ##[group]Run npm ci
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z npm ci
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z shell: /usr/bin/bash -e {0}
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z env:
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z   BROWSER: chromium
+e2e (chromium)	Install dependencies	2026-10-12T09:14:14.2889330Z ##[endgroup]
+e2e (chromium)	Install dependencies	2026-10-12T09:14:20.7889330Z 
+e2e (chromium)	Install dependencies	2026-10-12T09:14:20.9889330Z added 3 packages, and audited 4 packages in 2s
+e2e (chromium)	Install dependencies	2026-10-12T09:14:21.0889330Z found 0 vulnerabilities
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:22.6100410Z ##[group]Run npx playwright install-deps "$BROWSER"
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:22.6100410Z npx playwright install-deps "$BROWSER"
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:22.6100410Z ##[endgroup]
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:23.8100410Z Installing dependencies...
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:23.9100410Z Switching to root user to install dependencies...
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:24.7100410Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:25.0100410Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:26.9100410Z Fetched 4,812 kB in 2s (2,406 kB/s)
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:28.5100410Z Reading package lists...
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:29.7100410Z 0 upgraded, 41 newly installed, 0 to remove and 18 not upgraded.
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:29.7100410Z Need to get 69.7 MB of archives.
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:45.0665930Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+e2e (chromium)	Install browser OS dependencies	2026-10-12T09:14:45.4665930Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (chromium)	Install browser	2026-10-12T09:14:46.9665930Z ##[group]Run npx playwright install "$BROWSER"
+e2e (chromium)	Install browser	2026-10-12T09:14:46.9665930Z npx playwright install "$BROWSER"
+e2e (chromium)	Install browser	2026-10-12T09:14:46.9665930Z ##[endgroup]
+e2e (chromium)	Install browser	2026-10-12T09:14:47.2665930Z Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium/1194/chromium-ubuntu-24.04.zip
+e2e (chromium)	Install browser	2026-10-12T09:14:53.1417600Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 167.3 MiB
+e2e (chromium)	Install browser	2026-10-12T09:14:53.2417600Z Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+e2e (chromium)	Install browser	2026-10-12T09:14:53.5417600Z Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium_headless_shell/1194/chromium_headless_shell-ubuntu-24.04.zip
+e2e (chromium)	Install browser	2026-10-12T09:14:57.2150560Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 104.6 MiB
+e2e (chromium)	Install browser	2026-10-12T09:14:57.3150560Z Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+e2e (chromium)	Install browser	2026-10-12T09:14:57.6150560Z Downloading FFMPEG playwright build v1011 from https://example.net/playwright/builds/ffmpeg/1011/ffmpeg-ubuntu-24.04.zip
+e2e (chromium)	Install browser	2026-10-12T09:14:57.6958260Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB
+e2e (chromium)	Install browser	2026-10-12T09:14:57.7958260Z FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+e2e (chromium)	Run Playwright tests	2026-10-12T09:14:57.7958260Z ##[group]Run npx playwright test --project="$BROWSER"
+e2e (chromium)	Run Playwright tests	2026-10-12T09:14:57.7958260Z npx playwright test --project="$BROWSER"
+e2e (chromium)	Run Playwright tests	2026-10-12T09:14:57.7958260Z ##[endgroup]
+e2e (chromium)	Run Playwright tests	2026-10-12T09:14:59.1958260Z 
+e2e (chromium)	Run Playwright tests	2026-10-12T09:14:59.1958260Z Running 8 tests using 2 workers
+e2e (chromium)	Run Playwright tests	2026-10-12T09:15:37.4892310Z 
+e2e (chromium)	Run Playwright tests	2026-10-12T09:15:37.5892310Z   8 passed (39.1s)
+e2e (chromium)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:39.0892310Z Post job cleanup.
+e2e (chromium)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:39.1892310Z /usr/bin/git version
+e2e (chromium)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:39.1892310Z git version 2.51.0
+e2e (chromium)	Complete job	2026-10-12T09:15:39.4853220Z Cleaning up orphan processes
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3268810Z Current runner version: '2.329.0'
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z ##[group]Runner Image Provisioner
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z Hosted Compute Agent
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z ##[endgroup]
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z ##[group]Operating System
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z Ubuntu
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z 24.04.3
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z LTS
+e2e (firefox)	Set up job	2026-10-12T09:14:16.3368810Z ##[endgroup]
+e2e (firefox)	Set up job	2026-10-12T09:14:16.6368810Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (firefox)	Set up job	2026-10-12T09:14:16.8368810Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (firefox)	Set up job	2026-10-12T09:14:17.1368810Z Complete job name: e2e (firefox)
+e2e (firefox)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:18.0493770Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (firefox)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:18.0593770Z ##[endgroup]
+e2e (firefox)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:18.1093770Z Syncing repository: example-org/example-repo
+e2e (firefox)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:18.5093770Z Fetching the repository
+e2e (firefox)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:19.1093770Z Checking out the ref
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:19.7979520Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:19.8079520Z ##[endgroup]
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:20.2079520Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:20.3079520Z Environment details
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:21.7079520Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (firefox)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:22.8079520Z Cache restored successfully
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z ##[group]Run npm ci
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z npm ci
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z shell: /usr/bin/bash -e {0}
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z env:
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z   BROWSER: firefox
+e2e (firefox)	Install dependencies	2026-10-12T09:14:23.9035300Z ##[endgroup]
+e2e (firefox)	Install dependencies	2026-10-12T09:14:30.4035300Z 
+e2e (firefox)	Install dependencies	2026-10-12T09:14:30.6035300Z added 3 packages, and audited 4 packages in 2s
+e2e (firefox)	Install dependencies	2026-10-12T09:14:30.7035300Z found 0 vulnerabilities
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:36.2846590Z ##[group]Run npx playwright install-deps "$BROWSER"
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:36.2846590Z npx playwright install-deps "$BROWSER"
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:36.2846590Z ##[endgroup]
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:37.4846590Z Installing dependencies...
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:37.5846590Z Switching to root user to install dependencies...
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:38.3846590Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:38.6846590Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:40.5846590Z Fetched 4,812 kB in 2s (2,406 kB/s)
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:42.1846590Z Reading package lists...
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:43.3846590Z 0 upgraded, 37 newly installed, 0 to remove and 18 not upgraded.
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:43.3846590Z Need to get 62.9 MB of archives.
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:54.7962660Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+e2e (firefox)	Install browser OS dependencies	2026-10-12T09:14:55.1962660Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (firefox)	Install browser	2026-10-12T09:14:56.6962660Z ##[group]Run npx playwright install "$BROWSER"
+e2e (firefox)	Install browser	2026-10-12T09:14:56.6962660Z npx playwright install "$BROWSER"
+e2e (firefox)	Install browser	2026-10-12T09:14:56.6962660Z ##[endgroup]
+e2e (firefox)	Install browser	2026-10-12T09:14:56.9962660Z Downloading Firefox 142.0.1 (playwright build v1495) from https://example.net/playwright/builds/firefox/1495/firefox-ubuntu-24.04.zip
+e2e (firefox)	Install browser	2026-10-12T09:15:01.0771390Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 96.8 MiB
+e2e (firefox)	Install browser	2026-10-12T09:15:01.1771390Z Firefox 142.0.1 (playwright build v1495) downloaded to /home/runner/.cache/ms-playwright/firefox-1495
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:01.3771390Z ##[group]Run npx playwright test --project="$BROWSER"
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:01.3771390Z npx playwright test --project="$BROWSER"
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:01.3771390Z ##[endgroup]
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:02.7771390Z 
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:02.7771390Z Running 8 tests using 2 workers
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:50.8800380Z 
+e2e (firefox)	Run Playwright tests	2026-10-12T09:15:50.9800380Z   8 passed (48.9s)
+e2e (firefox)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:52.4800380Z Post job cleanup.
+e2e (firefox)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:52.5800380Z /usr/bin/git version
+e2e (firefox)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:52.5800380Z git version 2.51.0
+e2e (firefox)	Complete job	2026-10-12T09:15:53.0281790Z Cleaning up orphan processes
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3061270Z Current runner version: '2.329.0'
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z ##[group]Runner Image Provisioner
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z Hosted Compute Agent
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z ##[endgroup]
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z ##[group]Operating System
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z Ubuntu
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z 24.04.3
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z LTS
+e2e (webkit)	Set up job	2026-10-12T09:14:10.3161270Z ##[endgroup]
+e2e (webkit)	Set up job	2026-10-12T09:14:10.6161270Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (webkit)	Set up job	2026-10-12T09:14:10.8161270Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (webkit)	Set up job	2026-10-12T09:14:11.1161270Z Complete job name: e2e (webkit)
+e2e (webkit)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:11.6832370Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (webkit)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:11.6932370Z ##[endgroup]
+e2e (webkit)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:11.7432370Z Syncing repository: example-org/example-repo
+e2e (webkit)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:12.1432370Z Fetching the repository
+e2e (webkit)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:14:12.7432370Z Checking out the ref
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:13.5134040Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:13.5234040Z ##[endgroup]
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:13.9234040Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:14.0234040Z Environment details
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:15.4234040Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (webkit)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-12T09:14:16.5234040Z Cache restored successfully
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z ##[group]Run npm ci
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z npm ci
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z shell: /usr/bin/bash -e {0}
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z env:
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z   BROWSER: webkit
+e2e (webkit)	Install dependencies	2026-10-12T09:14:17.6714590Z ##[endgroup]
+e2e (webkit)	Install dependencies	2026-10-12T09:14:24.1714590Z 
+e2e (webkit)	Install dependencies	2026-10-12T09:14:24.3714590Z added 3 packages, and audited 4 packages in 2s
+e2e (webkit)	Install dependencies	2026-10-12T09:14:24.4714590Z found 0 vulnerabilities
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:27.0875660Z ##[group]Run npx playwright install-deps "$BROWSER"
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:27.0875660Z npx playwright install-deps "$BROWSER"
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:27.0875660Z ##[endgroup]
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:28.2875660Z Installing dependencies...
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:28.3875660Z Switching to root user to install dependencies...
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:29.1875660Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:29.4875660Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:31.3875660Z Fetched 4,812 kB in 2s (2,406 kB/s)
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:32.9875660Z Reading package lists...
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:34.1875660Z 0 upgraded, 58 newly installed, 0 to remove and 18 not upgraded.
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:34.1875660Z Need to get 98.6 MB of archives.
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:42.9896380Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+e2e (webkit)	Install browser OS dependencies	2026-10-12T09:14:43.3896380Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (webkit)	Install browser	2026-10-12T09:14:44.8896380Z ##[group]Run npx playwright install "$BROWSER"
+e2e (webkit)	Install browser	2026-10-12T09:14:44.8896380Z npx playwright install "$BROWSER"
+e2e (webkit)	Install browser	2026-10-12T09:14:44.8896380Z ##[endgroup]
+e2e (webkit)	Install browser	2026-10-12T09:14:45.1896380Z Downloading WebKit 26.0 (playwright build v2215) from https://example.net/playwright/builds/webkit/2215/webkit-ubuntu-24.04.zip
+e2e (webkit)	Install browser	2026-10-12T09:14:51.1047620Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 92.1 MiB
+e2e (webkit)	Install browser	2026-10-12T09:14:51.2047620Z WebKit 26.0 (playwright build v2215) downloaded to /home/runner/.cache/ms-playwright/webkit-2215
+e2e (webkit)	Run Playwright tests	2026-10-12T09:14:51.4047620Z ##[group]Run npx playwright test --project="$BROWSER"
+e2e (webkit)	Run Playwright tests	2026-10-12T09:14:51.4047620Z npx playwright test --project="$BROWSER"
+e2e (webkit)	Run Playwright tests	2026-10-12T09:14:51.4047620Z ##[endgroup]
+e2e (webkit)	Run Playwright tests	2026-10-12T09:14:52.8047620Z 
+e2e (webkit)	Run Playwright tests	2026-10-12T09:14:52.8047620Z Running 8 tests using 2 workers
+e2e (webkit)	Run Playwright tests	2026-10-12T09:15:42.3317600Z 
+e2e (webkit)	Run Playwright tests	2026-10-12T09:15:42.4317600Z   8 passed (50.3s)
+e2e (webkit)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:43.9317600Z Post job cleanup.
+e2e (webkit)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:44.0317600Z /usr/bin/git version
+e2e (webkit)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-12T09:15:44.0317600Z git version 2.51.0
+e2e (webkit)	Complete job	2026-10-12T09:15:44.3059260Z Cleaning up orphan processes

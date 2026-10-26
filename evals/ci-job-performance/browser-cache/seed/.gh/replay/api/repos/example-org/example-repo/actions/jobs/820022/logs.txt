@@ -1,0 +1,68 @@
+2026-10-20T13:48:21.4713760Z Current runner version: '2.329.0'
+2026-10-20T13:48:21.4813760Z ##[group]Runner Image Provisioner
+2026-10-20T13:48:21.4813760Z Hosted Compute Agent
+2026-10-20T13:48:21.4813760Z ##[endgroup]
+2026-10-20T13:48:21.4813760Z ##[group]Operating System
+2026-10-20T13:48:21.4813760Z Ubuntu
+2026-10-20T13:48:21.4813760Z 24.04.3
+2026-10-20T13:48:21.4813760Z LTS
+2026-10-20T13:48:21.4813760Z ##[endgroup]
+2026-10-20T13:48:21.7813760Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+2026-10-20T13:48:21.9813760Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+2026-10-20T13:48:22.1813760Z Download action repository 'actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830'
+2026-10-20T13:48:22.4813760Z Complete job name: e2e (firefox)
+2026-10-20T13:48:23.2194180Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+2026-10-20T13:48:23.2294180Z ##[endgroup]
+2026-10-20T13:48:23.2794180Z Syncing repository: example-org/example-repo
+2026-10-20T13:48:23.6794180Z Fetching the repository
+2026-10-20T13:48:24.2794180Z Checking out the ref
+2026-10-20T13:48:25.2216750Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+2026-10-20T13:48:25.2316750Z ##[endgroup]
+2026-10-20T13:48:25.6316750Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+2026-10-20T13:48:25.7316750Z Environment details
+2026-10-20T13:48:27.1316750Z Cache hit for: node-cache-Linux-x64-npm-e2e
+2026-10-20T13:48:28.2316750Z Cache restored successfully
+2026-10-20T13:48:30.4177330Z ##[group]Run npm ci
+2026-10-20T13:48:30.4177330Z npm ci
+2026-10-20T13:48:30.4177330Z shell: /usr/bin/bash -e {0}
+2026-10-20T13:48:30.4177330Z env:
+2026-10-20T13:48:30.4177330Z   BROWSER: firefox
+2026-10-20T13:48:30.4177330Z ##[endgroup]
+2026-10-20T13:48:36.9177330Z 
+2026-10-20T13:48:37.1177330Z added 3 packages, and audited 4 packages in 2s
+2026-10-20T13:48:37.2177330Z found 0 vulnerabilities
+2026-10-20T13:48:39.8843800Z ##[group]Run actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+2026-10-20T13:48:39.8843800Z with:
+2026-10-20T13:48:39.8843800Z   path: ~/.cache/ms-playwright
+2026-10-20T13:48:39.8843800Z   key: playwright-Linux-firefox-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b
+2026-10-20T13:48:39.8843800Z ##[endgroup]
+2026-10-20T13:48:40.4843800Z Cache Size: ~97 MB (101502156 B)
+2026-10-20T13:48:40.5843800Z /usr/bin/tar -xf /home/runner/work/_temp/cache.tzst -P -C /home/runner/work/example-repo/example-repo --use-compress-program unzstd
+2026-10-20T13:48:44.9166080Z Cache restored successfully
+2026-10-20T13:48:44.9666080Z Cache restored from key: playwright-Linux-firefox-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b
+2026-10-20T13:48:45.1166080Z ##[group]Run npx playwright install-deps "$BROWSER"
+2026-10-20T13:48:45.1166080Z npx playwright install-deps "$BROWSER"
+2026-10-20T13:48:45.1166080Z ##[endgroup]
+2026-10-20T13:48:46.3166080Z Installing dependencies...
+2026-10-20T13:48:46.4166080Z Switching to root user to install dependencies...
+2026-10-20T13:48:47.2166080Z Hit:1 http://example.net/ubuntu noble InRelease
+2026-10-20T13:48:47.5166080Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+2026-10-20T13:48:49.4166080Z Fetched 4,812 kB in 2s (2,406 kB/s)
+2026-10-20T13:48:51.0166080Z Reading package lists...
+2026-10-20T13:48:52.2166080Z 0 upgraded, 37 newly installed, 0 to remove and 18 not upgraded.
+2026-10-20T13:48:52.2166080Z Need to get 62.9 MB of archives.
+2026-10-20T13:49:00.5509900Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+2026-10-20T13:49:00.9509900Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+2026-10-20T13:49:02.4509900Z ##[group]Run npx playwright test --project="$BROWSER"
+2026-10-20T13:49:02.4509900Z npx playwright test --project="$BROWSER"
+2026-10-20T13:49:02.4509900Z ##[endgroup]
+2026-10-20T13:49:03.8509900Z 
+2026-10-20T13:49:03.8509900Z Running 8 tests using 2 workers
+2026-10-20T13:49:57.2297620Z 
+2026-10-20T13:49:57.3297620Z   8 passed (54.2s)
+2026-10-20T13:49:58.8297620Z Post job cleanup.
+2026-10-20T13:49:59.1297620Z Cache hit occurred on the primary key playwright-Linux-firefox-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b, not saving cache.
+2026-10-20T13:49:59.5357530Z Post job cleanup.
+2026-10-20T13:49:59.6357530Z /usr/bin/git version
+2026-10-20T13:49:59.6357530Z git version 2.51.0
+2026-10-20T13:50:00.1195980Z Cleaning up orphan processes

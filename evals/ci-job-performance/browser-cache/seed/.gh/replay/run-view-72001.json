@@ -1,0 +1,317 @@
+{
+  "attempt": 1,
+  "conclusion": "success",
+  "createdAt": "2026-10-19T10:05:41Z",
+  "databaseId": 72001,
+  "displayTitle": "ci: cache Playwright browsers in e2e",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "4d9c2f74d9c2f74d9c2f74d9c2f74d9c2f74d9c2",
+  "name": "e2e",
+  "number": 1021,
+  "startedAt": "2026-10-19T10:05:41Z",
+  "status": "completed",
+  "updatedAt": "2026-10-19T10:07:37Z",
+  "url": "https://example.com/example-org/example-repo/actions/runs/72001",
+  "workflowDatabaseId": 4401,
+  "workflowName": "e2e",
+  "jobs": [
+    {
+      "databaseId": 820011,
+      "name": "e2e (chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-19T10:05:44Z",
+      "completedAt": "2026-10-19T10:07:37Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/72001/job/820011",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-19T10:05:44Z",
+          "completedAt": "2026-10-19T10:05:46Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-19T10:05:46Z",
+          "completedAt": "2026-10-19T10:05:48Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-19T10:05:48Z",
+          "completedAt": "2026-10-19T10:05:52Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-19T10:05:52Z",
+          "completedAt": "2026-10-19T10:06:02Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-19T10:06:02Z",
+          "completedAt": "2026-10-19T10:06:03Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-19T10:06:03Z",
+          "completedAt": "2026-10-19T10:06:28Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-19T10:06:28Z",
+          "completedAt": "2026-10-19T10:06:38Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-19T10:06:38Z",
+          "completedAt": "2026-10-19T10:07:28Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-19T10:07:28Z",
+          "completedAt": "2026-10-19T10:07:36Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "startedAt": "2026-10-19T10:07:36Z",
+          "completedAt": "2026-10-19T10:07:37Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "startedAt": "2026-10-19T10:07:37Z",
+          "completedAt": "2026-10-19T10:07:37Z"
+        }
+      ]
+    },
+    {
+      "databaseId": 820012,
+      "name": "e2e (firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-19T10:05:50Z",
+      "completedAt": "2026-10-19T10:07:32Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/72001/job/820012",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-19T10:05:50Z",
+          "completedAt": "2026-10-19T10:05:52Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-19T10:05:52Z",
+          "completedAt": "2026-10-19T10:05:53Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-19T10:05:53Z",
+          "completedAt": "2026-10-19T10:05:57Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-19T10:05:57Z",
+          "completedAt": "2026-10-19T10:06:09Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-19T10:06:09Z",
+          "completedAt": "2026-10-19T10:06:10Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-19T10:06:10Z",
+          "completedAt": "2026-10-19T10:06:33Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-19T10:06:33Z",
+          "completedAt": "2026-10-19T10:06:37Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-19T10:06:37Z",
+          "completedAt": "2026-10-19T10:07:27Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-19T10:07:27Z",
+          "completedAt": "2026-10-19T10:07:31Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "startedAt": "2026-10-19T10:07:31Z",
+          "completedAt": "2026-10-19T10:07:32Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "startedAt": "2026-10-19T10:07:32Z",
+          "completedAt": "2026-10-19T10:07:32Z"
+        }
+      ]
+    },
+    {
+      "databaseId": 820013,
+      "name": "e2e (webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-19T10:05:51Z",
+      "completedAt": "2026-10-19T10:07:31Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/72001/job/820013",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-19T10:05:51Z",
+          "completedAt": "2026-10-19T10:05:53Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-19T10:05:53Z",
+          "completedAt": "2026-10-19T10:05:55Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-19T10:05:55Z",
+          "completedAt": "2026-10-19T10:06:00Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-19T10:06:00Z",
+          "completedAt": "2026-10-19T10:06:12Z"
+        },
+        {
+          "name": "Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-19T10:06:12Z",
+          "completedAt": "2026-10-19T10:06:13Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-19T10:06:13Z",
+          "completedAt": "2026-10-19T10:06:35Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-19T10:06:35Z",
+          "completedAt": "2026-10-19T10:06:41Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-19T10:06:41Z",
+          "completedAt": "2026-10-19T10:07:25Z"
+        },
+        {
+          "name": "Post Restore browser cache",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-19T10:07:25Z",
+          "completedAt": "2026-10-19T10:07:30Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "startedAt": "2026-10-19T10:07:30Z",
+          "completedAt": "2026-10-19T10:07:30Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "startedAt": "2026-10-19T10:07:30Z",
+          "completedAt": "2026-10-19T10:07:31Z"
+        }
+      ]
+    }
+  ]
+}
