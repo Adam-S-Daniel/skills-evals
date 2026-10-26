@@ -86,7 +86,10 @@ VOUCH_KEY = "test-only-vouch-key-example"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
 #: An arm of the committed roster: eval mode requires one (#70, round 8).
-MODEL = "claude-sonnet-5"
+#: Read from the roster so a weekly roster change cannot break the test.
+MODEL = yaml.safe_load(
+    (REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8")
+)["arms"][0]["id"]
 CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 # A skill with at least three committed fixtures, and one of them.
 SKILL = "writing-adrs"
