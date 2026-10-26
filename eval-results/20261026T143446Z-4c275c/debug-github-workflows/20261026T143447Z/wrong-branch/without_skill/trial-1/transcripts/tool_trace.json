@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0125wYviEGRXxn4rfHyoRkVp",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0125wYviEGRXxn4rfHyoRkVp",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n2aaf697 ...",
+      "output_chars": 1444,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018w5aQzhF64gYmAdvnhEKyD",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; find .gh bin src test -type f | head -50; git show --stat HEAD HEAD~1",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018w5aQzhF64gYmAdvnhEKyD",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 3093,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015AVxHkT55RmgCF9g1DgLPa",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay && for f in run-list.json run-view-77001.log run-view-77001.json api/repos/example-org/example-service/check-runs/99001/annotations.json api/rep...",
+      "input_chars": 380,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015AVxHkT55RmgCF9g1DgLPa",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n=== run-list.json\n[\n  {\n    \"databas...",
+      "output_chars": 4222,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PxfGZLtQtu6JuB2f9TZrsr",
+      "name": "Bash",
+      "input": "cd <path> && echo \"--- current CI cmd\"; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo \"--- proposed cmd\"; python3 -B -m unittest discover -s test; echo \"exit=$?\"; git log --all --oneline ...",
+      "input_chars": 239,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PxfGZLtQtu6JuB2f9TZrsr",
+      "is_error": false,
+      "output": "--- current CI cmd\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recen...",
+      "output_chars": 728,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MZbDxCv4reVm6dLMEwJjDY",
+      "name": "Bash",
+      "input": "python3 -c \"import test; print(test.__file__, getattr(test,'__path__',None))\"; ls test",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MZbDxCv4reVm6dLMEwJjDY",
+      "is_error": false,
+      "output": "<path> ['<path>']\ntest_current.py",
+      "output_chars": 81,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
