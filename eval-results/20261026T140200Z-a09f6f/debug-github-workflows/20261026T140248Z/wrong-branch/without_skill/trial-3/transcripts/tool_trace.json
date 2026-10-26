@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011w7rFccPdKdqbK5XWrFEMn",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011w7rFccPdKdqbK5XWrFEMn",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n4f62f4c ...",
+      "output_chars": 1381,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W6UxFZpJmkvgBEkkyQ11nR",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; ls -R bin src test .gh .claude; git show --stat HEAD HEAD~1 | head -40",
+      "input_chars": 110,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W6UxFZpJmkvgBEkkyQ11nR",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 3378,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AoQXR47XWZAwAKSC5dcYRw",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay && for f in run-list.json run-view-77001.json run-view-77001.log api/repos/example-org/example-service/check-runs/99001/annotations.json api/rep...",
+      "input_chars": 379,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AoQXR47XWZAwAKSC5dcYRw",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n== run-list.json\n[\n  {\n    \"database...",
+      "output_chars": 4216,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018kwRwrgCnFPCdQUttVvouv",
+      "name": "Bash",
+      "input": "cd <path> && export PYTHONDONTWRITEBYTECODE=1; echo \"== CI command\"; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo \"== proposed fix\"; python3 -m unittest discover -s test -v; echo \"exit=$...",
+      "input_chars": 340,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018kwRwrgCnFPCdQUttVvouv",
+      "is_error": false,
+      "output": "== CI command\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent cal...",
+      "output_chars": 1058,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H4YEJAFvbvPmCJeC4SGDn9",
+      "name": "Bash",
+      "input": "PYTHONDONTWRITEBYTECODE=1 python3 -c \"import test; print(test)\"; PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test.test_current; echo \"exit=$?\"",
+      "input_chars": 144,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H4YEJAFvbvPmCJeC4SGDn9",
+      "is_error": false,
+      "output": "<module 'test' from '<path>'>\nE\n======================================================================\nERROR: test_current (unittest.loader._FailedTest.test_current)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_current\nTraceba...",
+      "output_chars": 688,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
