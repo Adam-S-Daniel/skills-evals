@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WGACNf8yeE37y1UwhCfx2Z",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WGACNf8yeE37y1UwhCfx2Z",
+      "is_error": false,
+      "output": "1\t# Architecture decisions\n2\t\n3\tThis log records the choices a reader of the code would otherwise\n4\tsecond-guess: what we picked, why, and what it costs us. A one-line code\n5\tcomment is enough for everything else.\n6\t\n7\t## Format\n8\t\n9\tEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered...",
+      "output_chars": 1307,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018FqLQEpYk65TC4TfywNNUQ",
+      "name": "Bash",
+      "input": "git log --oneline | head -10 && git status --short && ls docs/decisions scripts && cat scripts/prune-snapshots.sh && head -30 CHANGELOG.md",
+      "input_chars": 138,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018FqLQEpYk65TC4TfywNNUQ",
+      "is_error": false,
+      "output": "782f7e9 initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndocs/decisions:\n0001-take-snapshots-with-pg-basebackup.md\n0002-prune-snapshots-older-than-30-days.md\n0003-store-snapshots-on-a-separate-vo...",
+      "output_chars": 1760,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GNoqNhJydqcHiP6gB5iGXj",
+      "name": "Bash",
+      "input": "cd <path> && cat 0002-*.md && echo ------- && cat 0003-*.md | head -20",
+      "input_chars": 102,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GNoqNhJydqcHiP6gB5iGXj",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 1412,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JEyG7Ko8weVVunpUt65YZW",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017J1sM4L7fkS8qzdfeALMbG",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QL3aAEAXpT89W1Hmq6AoK3",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XaTYHjX6FdpabUwQGDuHPa",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JEyG7Ko8weVVunpUt65YZW",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017J1sM4L7fkS8qzdfeALMbG",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QL3aAEAXpT89W1Hmq6AoK3",
+      "is_error": true,
+      "output": "<tool_use_error>String to replace not found in file.\nString: | 0002](0002-prune-snapshots-older-than-30-days.md) | Prune snapshots older than 30 days | Accepted |</tool_use_error>",
+      "output_chars": 179,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XaTYHjX6FdpabUwQGDuHPa",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CrRXF3iCAmRVVarHNAXbqg",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jq6d4BZ1NVmnirn6czPRxp",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CrRXF3iCAmRVVarHNAXbqg",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 154,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jq6d4BZ1NVmnirn6czPRxp",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 154,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

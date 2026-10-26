@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KyftuoMF5rHv5omK7ENgAq",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KyftuoMF5rHv5omK7ENgAq",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TJ9bjtGT1hMzHTYdLQHkWz",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && ls -R docs scripts 2><path>; cat docs/decisions/README.md; cat scripts/prune-snapshots.sh; head -30 CHANGELOG.md",
+      "input_chars": 147,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TJ9bjtGT1hMzHTYdLQHkWz",
+      "is_error": false,
+      "output": "3957bbe initial commit\ndocs:\ndecisions\n\ndocs/decisions:\n0001-take-snapshots-with-pg-basebackup.md\n0002-prune-snapshots-older-than-30-days.md\n0003-store-snapshots-on-a-separate-volume.md\nREADME.md\n\nscripts:\nprune-snapshots.sh\n# Architecture decisions\n\nThis log records the choices a reader of the code...",
+      "output_chars": 2864,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KnMwk7S4JXwU8aJcX5wajk",
+      "name": "Bash",
+      "input": "cd <path> && cat 0002-*.md; echo ------; cat 0003-*.md",
+      "input_chars": 86,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KnMwk7S4JXwU8aJcX5wajk",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 1619,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WZ54RhvWZxw5xpmYaaHRNf",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 79,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PosYp7KKYL1dS9RzSxQv8M",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cq2P7vmZimJ7PvKVT8bXSE",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EGyvEyhXqfEDs1Pq7ZKKiH",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016zCRKQxniH4WL2UNWfFkn5",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WZ54RhvWZxw5xpmYaaHRNf",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 175,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PosYp7KKYL1dS9RzSxQv8M",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cq2P7vmZimJ7PvKVT8bXSE",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EGyvEyhXqfEDs1Pq7ZKKiH",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016zCRKQxniH4WL2UNWfFkn5",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
