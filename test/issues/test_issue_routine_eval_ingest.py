@@ -525,6 +525,18 @@ class InPlaceSemanticConsistencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ingest.Rejected, "hook digest"):
             self.check(doc)
 
+    def test_others_digest_is_optional_and_a_digest(self):
+        # #70: compute_gates pairs the arms by it; older summaries lack it.
+        for role in ("with", "without"):
+            doc = self.record(role)
+            doc["arm_context"]["others_digest"] = "8" * 64
+            self.check(doc)
+            for bad in ("8" * 63, "A" * 64, 7, None):
+                doc["arm_context"]["others_digest"] = bad
+                with self.subTest(role=role, bad=bad), \
+                        self.assertRaisesRegex(ingest.Rejected, "others digest: malformed"):
+                    self.check(doc)
+
     def test_rejects_with_skill_arm_with_no_installed_skills(self):
         doc = self.record("with")
         doc["arm_context"]["skills"] = 0

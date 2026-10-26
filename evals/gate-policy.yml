@@ -1,0 +1,39 @@
+# Thresholds for the retirement verdict, read by harness/gates.py (#70).
+#
+# Adam set the thresholds on 2026-10-10 (#70) and chose POOLED evidence on
+# 2026-10-25, replacing #70's four weekly sweeps: a cell (skill, fixture,
+# requested arm model) pools every validated run whose fixture, arm context
+# and (for the with arm) skill content match the current ones, the run is
+# the unit, and bounds over run means decide it. harness/gates.py's
+# docstring says how each number is used.
+#
+# Confidences: `benefit_confidence` is two-sided, `retire_confidence` and
+# `check_confidence` are one-sided. `retire_looks` are the only run counts
+# at which a cell may be classified `no-benefit`, and it must be so at the
+# two largest it has reached (so at least ten runs per arm).
+#
+# Every validated run counts, from `results/` and `routine-results/` alike
+# (scripts/compute_gates.py): the gate guards against honest mistakes (a
+# changed fixture or skill, a different guidance or skill set between the
+# arms, errored trials, a copy of a run ingested twice), not against forged
+# results, since anyone who can write the results can also remove a skill.
+#
+# `retirement_mode` is `auto` (a `retire` verdict opens the removal PR) or
+# `proposal` (an issue is filed and a human removes). A missing or invalid
+# value is `proposal`. Part 2 opens a removal PR only from the scheduled
+# workflow, never from a dispatched or pull-request run. It is `proposal`;
+# switching it to `auto` is the owner's call.
+skills:
+  objective_margin: 0.05
+  judge_margin: 0.5
+  benefit_confidence: 0.90
+  retire_confidence: 0.975
+  check_confidence: 0.90
+  min_runs: 5
+  min_cli_versions: 2
+  ceiling_fraction: 0.90
+  judge_ceiling: 9.0
+  floor_fraction: 0.10
+  bootstrap_resamples: 2000
+  retire_looks: [5, 10, 20]
+  retirement_mode: proposal

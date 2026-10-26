@@ -39,11 +39,17 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
          "--get-regexp", r"^include(if\..*)?\.path$"),
         ("config", "--local", "--includes", "--get", "core.worktree"),
         ("rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"),
+        # run_eval.fixture_digest (#70): a fixture directory's tracked entries
+        # and its untracked files, and the whole repository's entries for a
+        # symlink's target. Never `ls-files -m`, which runs clean filters.
+        ("ls-files", "-s", "-z", "--", "."),
+        ("ls-files", "-o", "--exclude-standard", "-z", "--", "."),
+        ("ls-files", "-s", "-z", "--", ":/"),
     ):
         raise HarnessGitReadError("harness metadata permits only audited Git reads")
     return subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", str(cwd),
                            *args], env=_env(), stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True)
+                          capture_output=True, encoding="utf-8", errors="surrogateescape")
 
 
 def _git_out(*args: str, cwd: Path) -> str | None:

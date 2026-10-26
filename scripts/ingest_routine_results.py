@@ -295,7 +295,7 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "installed", "decoy", "hook_returncode", "guard",
     "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
                                       "context_subject", "arm_context") + ("run", "usage") + (
-    "judge_selection",)
+    "judge_selection", "fixture_digest", "judge_conditional")
 #: A summary's `judge_selection` (#371): which model judges the arm, and the
 #: rule that chose it. Null when the run selected no judge.
 JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
@@ -465,6 +465,10 @@ SUBJECT_KEYS = {
 }
 ARM_CONTEXT_KEYS = ("skills", "skills_digest", "guidance_bytes",
                     "guidance_digest", "subject_present")
+#: Optional in arm_context (#70): the digest of the arm's skills other than
+#: the subject, which compute_gates pairs the two arms by. Older summaries
+#: lack it; their cells cannot be paired.
+ARM_CONTEXT_OPTIONAL = ("others_digest",)
 
 
 def _pattern(value, where, pattern, *, null=False):
@@ -584,7 +588,10 @@ def check_in_place(doc, where: str, parts: dict) -> None:
             raise Rejected(f"{where}: context_subject extent is inconsistent")
 
     arm = doc["arm_context"]
-    _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS, ARM_CONTEXT_KEYS)
+    _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS + ARM_CONTEXT_OPTIONAL,
+            ARM_CONTEXT_KEYS)
+    if "others_digest" in arm:
+        _pattern(arm["others_digest"], f"{where}: others digest", DIGEST_RE)
     _integer(arm["skills"], f"{where}: arm_context.skills", 0, 4096)
     if doc["arm"] == "with_skill" and doc["role"] == "with" \
             and arm["skills"] == 0:
@@ -1057,6 +1064,10 @@ def check_summary(doc, where: str, parts: dict) -> None:
         raise Rejected(f"{where}: a skipped judge beside a judge model or a "
                        "judge call")
 
+    if "fixture_digest" in doc:
+        _pattern(doc["fixture_digest"], f"{where}: fixture_digest", DIGEST_RE)
+    if "judge_conditional" in doc and not isinstance(doc["judge_conditional"], bool):
+        raise Rejected(f"{where}: judge_conditional must be true or false")
     for field in ("errors", "scored"):
         if field in doc:
             _integer(doc[field], f"{where}: {field}", 0, MAX_TRIALS)

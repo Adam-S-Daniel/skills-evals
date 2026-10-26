@@ -212,11 +212,15 @@ def _stable_bytes(path: Path) -> bytes:
     from them. Both blocks are a summary's last two keys, so the rest
     re-serializes to the bytes the harness wrote before them. Also without
     `judge_selection` (#371), the key before those two, which names the judge
-    chosen and is tested in test_issue_371_judge_tier.py."""
+    chosen and is tested in test_issue_371_judge_tier.py, and without
+    `fixture_digest` and `judge_conditional` (#70), which follow it and are
+    tested in test_issue_70_retirement.py."""
     if path.name == "summary.json":
         summary = json.loads(path.read_text(encoding="utf-8"))
         for block in ("run", "usage", "judge_selection"):
             summary.pop(block)
+        for block in ("fixture_digest", "judge_conditional"):
+            summary.pop(block, None)
         return json.dumps(summary, indent=2).encode("utf-8")
     if path.name == "report.md":
         return b"".join(line for line in path.read_bytes().splitlines(keepends=True)

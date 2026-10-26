@@ -966,6 +966,7 @@ class EndToEndTests(Base):
         self.assertEqual(with_call["registrations"], without_call["registrations"])
         self.assertEqual({k: v for k, v in with_call["plugins"].items()
                           if not k.startswith("bundle/skills/sample/")}, without_call["plugins"])
+        arm_contexts = []
         for arm, role in (("with_skill", "with"), ("without_skill", "without")):
             doc = self.assert_ingests(self.results / "sample" / self.TS / arm / "summary.json")
             self.assertIsNone(doc["error"])
@@ -975,6 +976,13 @@ class EndToEndTests(Base):
             self.assertEqual(doc["context_subject"]["deployed_digest"], digest(SAMPLE))
             self.assertEqual(doc["arm_context"]["subject_present"], role == "with")
             self.assertLess(len(json.dumps(doc)), ingest.SIZE_CAPS["summary.json"])
+            arm_contexts.append(doc["arm_context"])
+        # #70, round 5: the non-subject skills are one set across the pair
+        # (compute_gates pairs arms on it), though the arms' full sets differ.
+        with_ctx, without_ctx = arm_contexts
+        self.assertEqual(with_ctx["others_digest"], without_ctx["others_digest"])
+        self.assertNotEqual(with_ctx["skills_digest"], without_ctx["skills_digest"])
+        self.assertEqual(without_ctx["others_digest"], without_ctx["skills_digest"])
         self.assertEqual(sorted(Path(tempfile.gettempdir()).glob(
             f"{run_eval.ARM_WORKSPACE_PREFIX}with*_skill-*")), [])
 

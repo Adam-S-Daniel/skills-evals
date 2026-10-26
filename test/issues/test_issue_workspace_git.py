@@ -504,7 +504,8 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                 self.assertEqual(len(sinks), 1)
                 expected = ast.parse('subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", '
                                      'str(cwd), *args], env=_env(), stdin=subprocess.DEVNULL, '
-                                     'capture_output=True, text=True)', mode='eval').body
+                                     'capture_output=True, encoding="utf-8", errors="surrogateescape")',
+                                     mode='eval').body
                 self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
                 allowed_reads.add(id(sinks[0]))
             bindings = {}
@@ -591,6 +592,12 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             # ADR 0012 fences both linked-worktree and shared context metadata.
             ('run_eval.py', 'used_paths',
              ('rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'), ('cwd',)),
+            # #70: a fixture directory's tracked and untracked entries, and
+            # the checkout's, for its digest.
+            ('run_eval.py', 'fixture_digest', ('ls-files', '-s', '-z', '--', '.'), ('cwd',)),
+            ('run_eval.py', 'fixture_digest',
+             ('ls-files', '-o', '--exclude-standard', '-z', '--', '.'), ('cwd',)),
+            ('run_eval.py', '_tracked_blobs', ('ls-files', '-s', '-z', '--', ':/'), ('cwd',)),
         ])
         self.assertCountEqual(direct_calls, [
             ('_git_out', (ast.dump(ast.parse('_git(*args)', mode='eval').body.args[0]),), ('cwd',)),
