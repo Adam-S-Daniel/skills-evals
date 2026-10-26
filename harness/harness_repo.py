@@ -49,7 +49,7 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
         raise HarnessGitReadError("harness metadata permits only audited Git reads")
     return subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", str(cwd),
                            *args], env=_env(), stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True)
+                          capture_output=True, encoding="utf-8", errors="surrogateescape")
 
 
 def _git_out(*args: str, cwd: Path) -> str | None:
