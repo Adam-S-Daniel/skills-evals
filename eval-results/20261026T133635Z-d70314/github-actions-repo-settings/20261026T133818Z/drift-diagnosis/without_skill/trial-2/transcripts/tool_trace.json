@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016vNLfCSwiyvUCiNHJ5VrrT",
+      "name": "Bash",
+      "input": "pwd; ls -la; git remote -v; ls ~ 2>&1 | head; which gh",
+      "input_chars": 54,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016vNLfCSwiyvUCiNHJ5VrrT",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 13:40 .\ndrwx------ 6 root root 4096 Oct 26 13:40 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 04:01 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 04:01 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 13:40 .claude\ndrwxr-xr-x 3 root root 4096 Oct 25 21:39 .gh...",
+      "output_chars": 1022,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UqVpG1oGTkU3FPmnLZP1tY",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -R .gh bin .claude | head -50; file bin/gh; head -40 bin/gh",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UqVpG1oGTkU3FPmnLZP1tY",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 4025,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WeAf88xPpUh3aRrND4ybzy",
+      "name": "Bash",
+      "input": "cd .gh/replay/api/repos/example-org; for f in $(find . -type f | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WeAf88xPpUh3aRrND4ybzy",
+      "is_error": false,
+      "output": "=== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n=== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== ./service-alpha/actions/permissions/fork-pr-co...",
+      "output_chars": 3760,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

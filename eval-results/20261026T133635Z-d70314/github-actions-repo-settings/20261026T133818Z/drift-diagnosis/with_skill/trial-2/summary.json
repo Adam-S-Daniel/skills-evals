@@ -1,0 +1,360 @@
+{
+  "skill": "github-actions-repo-settings",
+  "arm": "with_skill",
+  "timestamp": "20261026T133818Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0907473,
+    "num_turns": 5,
+    "duration_ms": 25956,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 14254,
+      "cache_read_input_tokens": 168813,
+      "output_tokens": 1683,
+      "output_tokens_details": {
+        "thinking_tokens": 274
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 14254,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1058,
+          "cache_read_input_tokens": 37727,
+          "cache_creation_input_tokens": 1348,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1348
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "alpha-sha-drift",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*actions\\.sha_pinning_required[ \\t]*\\|[ \\t]*false[ \\t]*\\|[ \\t]*true[ \\t]*\\|[ \\t]*(?:(?:\\*\\*|`)[ \\t]*|[-*+][ \\t]+)*(?i:(?:run[ \\t]+\\S*repo_settings\\.py[ \\t]+apply[ \\t]+to[ \\t]+|please[ \\t]+|should[ \\t]+|must[ \\t]+)?(?:enable|require|set|turn[ \\t]+on)\\b)[ \\t]+(?i:(?:(?:(?:full[- ]length|commit)[ \\t]+)?SHA(?:[- ]pinning|[ \\t]+pinning)|sha_pinning_required[ \\t]*(?:=|to)[ \\t]*true))[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/; transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*overall[ \\t]*\\|[ \\t]*(?i:drift|mismatch|one[ \\t]+declared[ \\t]+setting[ \\t]+drifts;[ \\t]+one[ \\t]+extra[ \\t]+ruleset)[ \\t]*\\|[ \\t]*[^|\\n]*[ \\t]*\\|[ \\t]*[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-unmanaged-ruleset-facts",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*(?:ruleset[ \\t]+)?(?:`manual-main`|manual-main)[ \\t]*(?:\\((?i:(?:id|ruleset))[ \\t]*:?[ \\t]*7302\\)|#7302)[ \\t]*\\|[ \\t]*bypass_actors[ \\t]*(?:=|:)[ \\t]*\\[\\][ \\t]*\\|[ \\t]*(?i:unmanaged|undeclared|not[ \\t]+declared(?:[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config))?|not[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config)|absent[ \\t]+from[ \\t]+(?:the[ \\t]+)?(?:declared[ \\t]+)?(?:baseline|config)|not[ \\t]+managed[ \\t]+by[ \\t]+(?:the[ \\t]+)?engine)[ \\t]*\\|[ \\t]*[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-engine-does-not-delete",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*(?:ruleset[ \\t]+)?(?:`manual-main`|manual-main)[ \\t]*(?:\\((?i:(?:id|ruleset))[ \\t]*:?[ \\t]*[0-9]+\\)|#[0-9]+)[ \\t]*\\|[ \\t]*[^|\\n]*[ \\t]*\\|[ \\t]*(?i:unmanaged|undeclared|not[ \\t]+declared(?:[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config))?|not[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config)|absent[ \\t]+from[ \\t]+(?:the[ \\t]+)?(?:declared[ \\t]+)?(?:baseline|config)|not[ \\t]+managed[ \\t]+by[ \\t]+(?:the[ \\t]+)?engine)[ \\t]*\\|[ \\t]*[^|\\n]*(?i:(?:the[ \\t]+)?(?:engine|repo_settings\\.py)(?:[ \\t]+apply)?[ \\t]+(?:will[ \\t]+not|does[ \\t]+not|cannot|won\\x27t|won\u2019t)[ \\t]+(?:automatically[ \\t]+)?delete|(?:leave|keep)[ \\t]+(?:it|this[ \\t]+ruleset)[ \\t]+in[ \\t]+place[ \\t]+because[ \\t]+(?:it[ \\t]+is[ \\t]+)?unmanaged|apply[ \\t]+(?:never[ \\t]+touches[ \\t]+other[ \\t]+rulesets|leaves[ \\t]+it[ \\t]+untouched))[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "beta-overall-match",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-beta[ \\t]*\\|[ \\t]*overall[ \\t]*\\|[ \\t]*(?i:match|(?:all[ \\t]+)?(?:declared[ \\t]+)?settings[ \\t]+match|matches[ \\t]+declared[ \\t]+settings|no[ \\t]+drift)[ \\t]*\\|[ \\t]*(?i:declared[ \\t]+baseline|same[ \\t]+as[ \\t]+declared|match)[ \\t]*\\|[ \\t]*(?i:no[ \\t]+(?:change|changes|action)[ \\t]+(?:needed|required)|leave[ \\t]+(?:as[ \\t]+is|unchanged))(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-live-settings-read",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "beta-live-settings-read",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "no-write-attempted",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "config-unchanged",
+      "passed": true,
+      "detail": "unchanged (repo-settings.yml)"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gh/replay/api/repos/example-org/service-alpha.json, .gh/replay/api/repos/example-org/service-alpha/actions/permissions.json, .gh/replay/api/repos/example-org/service-alpha/actions/permissions/fork-pr-contributor-approval.json, .gh/replay/api/repos/example-org/service-alpha/rulesets.json, .gh/replay/api/repos/example-org/service-alpha/rulesets/7201.json, .gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json, .gh/replay/api/repos/example-org/service-beta.json, .gh/replay/api/repos/example-org/service-beta/actions/permissions.json, .gh/replay/api/repos/example-org/service-beta/actions/permissions/fork-pr-contributor-approval.json, .gh/replay/api/repos/example-org/service-beta/rulesets.json, .gh/replay/api/repos/example-org/service-beta/rulesets/7202.json, README.md, bin/gh)"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 1683,
+      "cache_read_input_tokens": 168813,
+      "cache_creation_input_tokens": 14254,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "drift-diagnosis",
+  "trial": 2,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "181c69d2b5e10666915347dccd61306e7fd2df4fe98105637c166725d1b4712b",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/repo-settings",
+    "revision": "19378e8ddd8fa291cd74b4a24cd6389734cba747",
+    "digest": "7a0cefeb2aebd89bb9369c20af7956d6b80bbde422e51c3c42c8eb9c54b2004e",
+    "lock_digest": "3d7747e7b7752429bdadfe7e64982544dc970f6af483d5f34d6f5082e5e79b08",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "ca1e5752c73471090a738aed8f5b65268a7423f5",
+        "digest": "8d84928b3c00c5f4b40ede46501396ab8228d11edc3400fb42e7a0e695f2a959",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "c211a6b46d2cb52bb9a4a68c4d5ea885268dd2c548a99f147e3bb17a114e51d3"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "8df41c1275798c9a1b0ed1fa257f5cb2a321b42280b0d851d893aa36efb1f288"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "5d2ed452358dd2eb215d27c80760a0e6b09c13b7",
+      "digest": "9883a9340636ecf8871f3fab42006e798e8eeb264f5d15137c94891d03339cff",
+      "bytes": 24478,
+      "sections": [],
+      "hook_digest": "dce4b8b7425cebf605e7e788fd57384703ce220b25fa28cef2cf8478aeb6a365"
+    },
+    "measurements": {
+      "guidance_bytes": 24478,
+      "skill_catalog_bytes": 6107,
+      "skill_payload_bytes": 672169
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "github-actions-repo-settings",
+    "action": "removed",
+    "deployed_digest": "31f3ec7dc4ed2132c4fd6651cc534f66c744c24e760616488fece8ad54c74aeb",
+    "tested_digest": "31f3ec7dc4ed2132c4fd6651cc534f66c744c24e760616488fece8ad54c74aeb",
+    "bytes": 54810
+  },
+  "arm_context": {
+    "skills": 9,
+    "skills_digest": "0fe0f42469ab4764e353056cca5f7c4c238ff44905b191eed788bbdd827e460f",
+    "others_digest": "4e187fcfb255e3d500a4959fa5bb6f16bc6a02b0fc642f977f3824f52c1f47bc",
+    "guidance_bytes": 24478,
+    "guidance_digest": "9883a9340636ecf8871f3fab42006e798e8eeb264f5d15137c94891d03339cff",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261026T133635Z-d70314",
+    "session_id": "cse_018A5HfANCrkEMyeNsPSsM67",
+    "harness_commit": "c0987d52f732d19356731d9082d74376d327e4e6",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T13:38:18Z",
+    "ended_at": "2026-10-26T13:40:56Z",
+    "meter": {
+      "snapshot_count": 7,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T13:38:26.608Z",
+      "to_at": "2026-10-26T13:40:36.808Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.1,
+          "to": 0.11,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.68,
+          "to": 0.68,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_018A5HfANCrkEMyeNsPSsM67",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T13:38:45Z",
+      "ended_at": "2026-10-26T13:39:13Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T13:38:45Z",
+          "ended_at": "2026-10-26T13:39:13Z",
+          "duration_ms": 27410,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T13:38:51.521Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793037600,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.1,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.68,
+                  "resetsAt": 1793034000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 27410,
+        "num_turns": 5,
+        "cost_usd": 0.0907473,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 1683,
+            "cache_read_input_tokens": 168813,
+            "cache_creation_input_tokens": 14254,
+            "cost_usd": 0.0907473
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 14254
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
