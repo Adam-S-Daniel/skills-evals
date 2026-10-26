@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015ajKCiqQ7UDdokyEx4RFrU",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && git status && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md && ls docs/decisions",
+      "input_chars": 143,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015ajKCiqQ7UDdokyEx4RFrU",
+      "is_error": false,
+      "output": "35199fb initial commit\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"gi...",
+      "output_chars": 2086,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011Z5pUbmgykHc53H1VgvNhm",
+      "name": "Bash",
+      "input": "for f in docs/decisions/000*.md scripts/prune-snapshots.sh CHANGELOG.md README.md; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011Z5pUbmgykHc53H1VgvNhm",
+      "is_error": false,
+      "output": "=== docs/decisions/0001-take-snapshots-with-pg-basebackup.md\n# 0001. Take snapshots with pg_basebackup, not pg_dump\n\n- **Status:** Accepted\n- **Date:** 2025-11-04\n\n## Context\n\nThe application database is about 40 GB. A logical dump of it takes over\ntwo hours and holds a long-running transaction open...",
+      "output_chars": 4385,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0114vEg98zYyBcmfGTLt5GxT",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013ERkM89xFauygi2rrPnK9T",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\np='docs/decisions/0002-prune-snapshots-older-than-30-days.md'\ns=open(p).read(); s=s.replace('- **Status:** Accepted','- **Status:** Superseded by 0004',1); open(p,'w').writ...",
+      "input_chars": 998,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0114vEg98zYyBcmfGTLt5GxT",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013ERkM89xFauygi2rrPnK9T",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2666,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
