@@ -1,5 +1,7 @@
 # ADR 0002: The roster seats each tier's vendor-default model at once and retires the version it superseded after a buffer
 
+> Note: ADR 0002 is also used by [0002-runs-bill-the-api-org-not-the-subscription.md](0002-runs-bill-the-api-org-not-the-subscription.md) (real runs bill the API organization); the two are distinct decisions, numbered in parallel by mistake.
+
 - **Status:** accepted (2026-09-27); decision 1 revised 2026-09-28 (see the
   second update below)
 - **Issue:** [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202);
