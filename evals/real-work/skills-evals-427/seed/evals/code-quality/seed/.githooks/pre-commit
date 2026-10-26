@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Enabled with: git config --local core.hooksPath .githooks
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+"$ROOT/scripts/lint-staged.sh"

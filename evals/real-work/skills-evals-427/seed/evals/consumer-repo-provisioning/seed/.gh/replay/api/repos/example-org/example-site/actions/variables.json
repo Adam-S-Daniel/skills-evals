@@ -1,0 +1,21 @@
+{
+  "total_count": 4,
+  "variables": [
+    {
+      "name": "CMS_APEX",
+      "value": "example.com"
+    },
+    {
+      "name": "CMS_PROD_URL",
+      "value": "https://example.com"
+    },
+    {
+      "name": "PREVIEW_BUCKET",
+      "value": "example-com-previews"
+    },
+    {
+      "name": "AWS_REGION",
+      "value": "us-east-1"
+    }
+  ]
+}

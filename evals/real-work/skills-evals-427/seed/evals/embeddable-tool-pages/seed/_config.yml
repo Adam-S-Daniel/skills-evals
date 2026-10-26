@@ -1,0 +1,12 @@
+title: Example Workshop
+url: https://example.com
+collections:
+  tools:
+    output: true
+    permalink: /tools/:slug/
+defaults:
+  - scope:
+      path: ""
+      type: tools
+    values:
+      layout: tool

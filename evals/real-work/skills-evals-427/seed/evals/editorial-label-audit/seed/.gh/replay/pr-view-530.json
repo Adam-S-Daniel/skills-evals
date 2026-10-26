@@ -1,0 +1,12 @@
+{
+  "number": 530,
+  "headRefName": "fix/navigation",
+  "labels": [
+    {
+      "name": "maintenance"
+    }
+  ],
+  "title": "Navigation update",
+  "state": "OPEN",
+  "url": "https://github.com/example-org/example-site/pull/530"
+}

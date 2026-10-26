@@ -1,0 +1,19 @@
+{
+  "timelines": {
+    "run-list.json": [
+      "timeline/list-1.json",
+      "timeline/list-2.json",
+      "timeline/list-3.json"
+    ],
+    "run-view-73019.json": [
+      "timeline/view-1.json",
+      "timeline/view-2.json",
+      "timeline/view-3.json"
+    ],
+    "pr-checks-12.json": [
+      "timeline/checks-1.json",
+      "timeline/checks-2.json",
+      "timeline/checks-3.json"
+    ]
+  }
+}

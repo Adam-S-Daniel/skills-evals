@@ -1,0 +1,7 @@
+name: Recursion gate wrapper
+description: Wraps the platform's recursion-gate composite for this repo's workflows.
+
+runs:
+  using: composite
+  steps:
+    - uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@v0.1.104

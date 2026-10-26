@@ -1,0 +1,29 @@
+{
+  "databaseId": 4471182930,
+  "workflowName": "CMS Publish Loop — Prod Mutation Playground",
+  "displayTitle": "manual — @cms-bot",
+  "headBranch": "main",
+  "headSha": "9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35",
+  "event": "workflow_dispatch",
+  "status": "completed",
+  "conclusion": "failure",
+  "createdAt": "2026-09-02T05:41:02Z",
+  "updatedAt": "2026-09-02T06:14:11Z",
+  "url": "https://github.com/example-org/example-site/actions/runs/4471182930",
+  "jobs": [
+    {
+      "databaseId": 12554300811,
+      "name": "prod-loop / prod-mutate",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        { "name": "Set up job", "conclusion": "success", "number": 1 },
+        { "name": "Checkout site", "conclusion": "success", "number": 2 },
+        { "name": "Checkout cms-platform", "conclusion": "success", "number": 3 },
+        { "name": "Install Playwright browsers", "conclusion": "success", "number": 4 },
+        { "name": "Run prod-mutate playground loop", "conclusion": "failure", "number": 5 },
+        { "name": "Post failure summary", "conclusion": "success", "number": 6 }
+      ]
+    }
+  ]
+}

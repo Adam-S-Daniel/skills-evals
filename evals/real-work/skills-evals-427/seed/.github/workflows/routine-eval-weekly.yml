@@ -1,0 +1,97 @@
+name: Weekly routine evals
+
+# Plan only reviewed, committed fixtures. Each leg dispatches the existing
+# fire workflow, which validates its inputs and holds the routine bearer.
+# This caller uses eval mode only; the improvement loop has a separate gate.
+# The plan is cut to the fires that fit under the weekly allowance cap (#68,
+# evals/budget.yml, scripts/allowance_guard.py): the plan job reads the
+# ingested runs from a read-only checkout of persistent/eval-results and
+# counts recent fires with its token (`actions: read`). When none fits, the
+# matrix is empty, `count` is 0 and the dispatch job is skipped; each fire
+# still runs the guard itself before it spends anything.
+on:
+  schedule:
+    - cron: "0 7 * * 2"
+
+permissions: {}
+
+jobs:
+  plan:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
+      - name: Check out persistent/eval-results (the ingested runs)
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results-branch
+          persist-credentials: false
+          sparse-checkout: routine-results
+      - name: Plan reviewed fixtures within the hourly fire limit and the weekly allowance
+        id: plan
+        env:
+          GITHUB_EVENT_NAME: schedule
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/plan_scheduled_evals.py --max-fixtures 30 --allowance-tree eval-results-branch
+
+  dispatch:
+    needs: plan
+    # An empty matrix is an error to GitHub, so no fire fitting skips the job.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Revalidate the committed fixture
+        env:
+          FIXTURE: ${{ matrix.fixture }}
+          MATRIX_KEY: ${{ matrix.eval_key }}
+          MATRIX_SLOT: ${{ matrix.slot }}
+        run: python3 scripts/plan_scheduled_evals.py --validate "$FIXTURE" "$MATRIX_KEY" "$MATRIX_SLOT" > /dev/null
+      - name: Dispatch the validated eval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          FIXTURE: ${{ matrix.fixture }}
+        run: |
+          set -euo pipefail
+          if ! gh workflow run routine-eval-fire.yml \
+            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
+            --raw-field mode=eval --raw-field "fixture=$FIXTURE" \
+            --raw-field arms=both --raw-field trials=1 > /dev/null 2>&1; then
+            echo "::error::Routine eval dispatch failed"
+            exit 1
+          fi

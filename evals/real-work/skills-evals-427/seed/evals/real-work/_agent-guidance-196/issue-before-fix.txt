@@ -1,0 +1,34 @@
+dependabot-config-health: a repo whose config arrived in its first commit, with no check run, reads as unknown forever
+
+When a repo's `.github/dependabot.yml` arrives in its very first commit, pushed directly with no PR, GitHub records no validation check for it. The sweep then reads that repo as **unknown** and turns red every day, even though the config is fine.
+
+## Evidence (2026-09-27)
+
+- **The repo:** `Adam-S-Daniel/adam-agentskills` was created at 2026-09-24T21:58Z. Its config arrived in commit `559ceb7` ("Start adam-agentskills from the retired registry's current tree"), the only commit that has touched `.github/dependabot.yml`, pushed directly.
+- **No check:** that commit has **no check runs at all**, and there is no PR, so there's no merge commit to look at either.
+- **But Dependabot works:** it has run **7 successful update jobs** there, the latest at 2026-09-25T18:32Z.
+- **The sweep has been red daily since 2026-09-25.** For example, https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/36321373390 reports `Adam-S-Daniel/adam-agentskills: unknown` with "GitHub's config check run could not be found on the path commit or its PR merge commit". That red is what the health audit reported on #162.
+
+## Why the rule is too strict here
+
+`verdictFor` in `scripts/dependabot-config-health.js` maps `check.state === "missing"` to **unknown**, unconditionally. The #429 decision was deliberate: an invalid config that *replaces* a valid one does not stop update jobs, so recent jobs can't prove the current config parses.
+
+That reasoning needs a **previous** valid config. When the file's only commit is its first ever, there's nothing earlier for Dependabot to have been running on. Successful update jobs started after that commit therefore prove GitHub parsed it.
+
+## Proposed rule
+
+A missing check **and** exactly one commit ever touching `.github/dependabot.yml` **and** at least one successful Dependabot update job that started after that commit → **healthy**, logged with a notice line that names the reason. Anything else with a missing check stays **unknown**, exactly as today.
+
+## Done when
+
+- [ ] Unit tests on fixture data, with no network and no clock, cover:
+  - one commit, a successful job after it → healthy
+  - one commit, no jobs → unknown
+  - one commit, jobs only before the commit → unknown
+  - several commits, check missing → unknown (the #429 case)
+  - one commit, the only job after it failed → unknown
+- [ ] Negative control: the new tests fail against the current `verdictFor`.
+- [ ] ADR 0014 gets an addendum recording the narrowed rule and why it doesn't reopen #429's hole.
+- [ ] A read-only dry run of the sweep reports `adam-agentskills` as healthy, with the notice line.
+
+A comment-only PR in `adam-agentskills` is also giving that file a recorded check, which clears today's red. This issue is about the next repo pushed the same way.

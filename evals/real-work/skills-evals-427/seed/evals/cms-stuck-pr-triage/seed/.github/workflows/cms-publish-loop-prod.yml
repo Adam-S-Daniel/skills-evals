@@ -1,0 +1,36 @@
+# Thin caller. Owns the push / workflow_dispatch triggers and the run-name;
+# delegates the prod-mutation publish loop to the platform's reusable
+# workflow. Keep `platform_ref` equal to the `@vX.Y.Z` pin on the `uses:`
+# line and to platform.lock.
+name: CMS Publish Loop — Prod Mutation Playground
+run-name: >-
+  ${{ github.event_name == 'push'
+        && format('push — {0} @{1}', github.ref_name, github.actor)
+   || format('manual — @{0}', github.actor) }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cms-publish-loop-prod.yml
+      - admin/**
+      - playwright.config.js
+      - package.json
+      - package-lock.json
+      - _config.yml
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  prod-loop:
+    uses: example-org/cms-platform/.github/workflows/cms-publish-loop-prod.yml@v0.1.104
+    with:
+      platform_ref: v0.1.104
+    secrets:
+      CMS_E2E_PAT: ${{ secrets.CMS_E2E_PAT }}

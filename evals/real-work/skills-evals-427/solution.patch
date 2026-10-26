@@ -1,0 +1,3620 @@
+diff --git a/README.md b/README.md
+index a1410313..714e23d9 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+ # skills-evals
+ 
+-[![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fworkflow-path-audit.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
++[![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fworkflow-path-audit%2Frequired-check-routing.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
+ 
+ Evals for the [`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills)
+ registry: for each skill, measure agent quality **with vs. without** the skill
+@@ -40,9 +40,13 @@ harness/
+     README.md              # its keying rule, its classes, its invocation log
+   registries.yml           # registry name -> URL -> skill-directory layout
+ evals/
+-  workflow-path-audit/     # the A/B eval
+-    fixture.yaml           # prompt, arms, objective checks, judge rubric
+-    seed/                  # workspace the agent starts from (unfiltered workflows)
++  workflow-path-audit/     # the reference A/B eval: a skill dir of nested fixtures
++    required-check-routing/  # the original fixture; the scheduled run's default
++      fixture.yaml         # prompt, arms, objective checks, judge rubric
++      seed/                # workspace the agent starts from (unfiltered workflows)
++    companion-skip-pair/   # an inherited same-name skip workflow beside a required check
++    moved-test-dir/        # a filter left pointing at a directory the tests moved out of
++    workflow-doc-in-step/  # the repo's own workflow table kept in step with the filters
+   github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
+     fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
+     seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
+@@ -268,10 +272,11 @@ measurements from different runs.
+ 
+ ## Running
+ 
+-Objective-only (no agent invocation — scores a workspace as-is):
++Objective-only (no agent invocation — scores a workspace as-is; it scores one
++fixture, so name a nested one or pass `--fixture NAME`):
+ 
+ ```bash
+-python3 harness/run_eval.py evals/workflow-path-audit --arm objective-only
++python3 harness/run_eval.py evals/workflow-path-audit/required-check-routing --arm objective-only
+ ```
+ 
+ Full A/B run (spawns the Claude Code CLI headlessly for each arm, scores with
+@@ -501,7 +506,8 @@ since the payload no longer travels through the `CLAUDE.md → @AGENTS.md`
+ bridge. Keep the bridge canary for the repo-stub path.
+ 
+ Any fixture can be given a real run on `main` by dispatching **Real eval**
+-with its `fixture` input (default `evals/workflow-path-audit`); the value is
++with its `fixture` input (default
++`evals/workflow-path-audit/required-check-routing`); the value is
+ validated against the committed fixture set before any credential is minted.
+ Set `roster_only` to refresh the model roster and file its proposal without
+ the eval: the WIF preflight, the eval and the badge are skipped, so the only
+diff --git a/docs/how-it-works.md b/docs/how-it-works.md
+index 8652e33a..18e7dae4 100644
+--- a/docs/how-it-works.md
++++ b/docs/how-it-works.md
+@@ -242,7 +242,7 @@ Raw transcripts are deliberately never published (public repository): each arm's
+ 
+ ## 5. What is measured today
+ 
+-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed.
++Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed. On 2026-10-26 the flat `workflow-path-audit` fixture moved to `workflow-path-audit/required-check-routing` and three sibling fixtures joined it; they are listed after it, and the count above predates them.
+ 
+ Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
+ 
+@@ -374,14 +374,38 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
+ - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
+ - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/wsl-automation`. Class B. No real run yet.
+ 
+-### workflow-path-audit
++### workflow-path-audit/required-check-routing
+ 
+-- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit)
++- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/required-check-routing](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/required-check-routing) (the flat `evals/workflow-path-audit` fixture until 2026-10-26, when the skill's fixtures were nested; its earlier runs are keyed as the flat fixture)
+ - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
+ - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
+ - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
+ - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. No class label (the repo's original pilot fixture, run weekly). 14 real runs, latest 2026-09-22T12:55:52Z.
+ 
++### workflow-path-audit/companion-skip-pair
++
++- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/companion-skip-pair](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/companion-skip-pair)
++- Check a repo's path filters where the required `unit-tests` check lives in a path-filtered tests.yml beside tests-skip.yml, which reports the same check under the inverse `paths-ignore:`. Good output deletes the companion and gates tests.yml internally, explaining that a mixed changeset fires both.
++- Objective (8): the required check's workflow has no workflow-level filter and gates on a computed output; the companion is gone; two changeset replays; all workflows parse; the schedule-only workflow gained no filter; the ruleset and every file outside `.github/workflows/` untouched.
++- Judge: weighted — `correctness` 0.6, `explanation` 0.2, `restraint` 0.2.
++- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
++
++### workflow-path-audit/moved-test-dir
++
++- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/moved-test-dir](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/moved-test-dir)
++- Tighten filters where e2e.yml still watches `e2e/**` after the specs moved to `tests/e2e/`, omits the server script its Playwright config starts, unit.yml omits its own file, and lint.yml watches all of `.github/`. Good output fixes all four from what each workflow's steps consume, without moving any file.
++- Objective (10): seven changeset replays (moved spec, server script, own workflow file, sibling workflow file, unit test, prose, lockfile); all workflows parse; the schedule-only workflow gained no filter; nothing outside `.github/workflows/` changed and no `e2e/` came back.
++- Judge: weighted — `salience` 0.6, `completeness` 0.2, `restraint` 0.2.
++- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
++
++### workflow-path-audit/workflow-doc-in-step
++
++- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit/workflow-doc-in-step](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit/workflow-doc-in-step)
++- Filter two always-run workflows in a repo whose AGENTS.md table says `all paths` for both. Good output filters each on what it consumes and brings the existing table's rows in step, creating no second workflow doc.
++- Objective (10): four changeset replays; line-anchored checks that the tests.yml row names `src/` and the docs-site.yml row names `docs/` with neither still saying `all paths`, and that the rest of AGENTS.md survives; all workflows parse; the schedule-only workflow gained no filter; nothing else changed and no new workflow doc appeared at the common names.
++- Judge: weighted — `docs-in-step` 0.4, `salience` 0.4, `restraint` 0.2.
++- No pinned models: the roster picks the agent and the judge. No in-place context (isolation pair). Offline `gh` from `harness/fakes/`. No real run yet.
++
+ ### writing-adrs/bootstrap
+ 
+ - `writing-adrs` (registry: `adam-agentskills`) — [evals/writing-adrs/bootstrap](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/bootstrap)
+diff --git a/evals/scheduled.yml b/evals/scheduled.yml
+index e68ed008..fce945e3 100644
+--- a/evals/scheduled.yml
++++ b/evals/scheduled.yml
+@@ -2,7 +2,7 @@
+ # record: from the fixture's pins at skills-evals c1bf71c, or for the unpinned
+ # fixture from the roster's first arm and judge at fc7e1cf.
+ fixtures:
+-  - path: evals/workflow-path-audit
++  - path: evals/workflow-path-audit/required-check-routing
+     readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Current scheduled fixture; local smoke: with 8 vs without 7."
+   - path: evals/embeddable-tool-pages
+     readiness: "Isolation pair, unpinned (the committed roster then named arm claude-sonnet-5 and judge claude-fable-5-1). Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
+diff --git a/evals/workflow-path-audit/companion-skip-pair/fixture.yaml b/evals/workflow-path-audit/companion-skip-pair/fixture.yaml
+new file mode 100644
+index 00000000..424b0f82
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/fixture.yaml
+@@ -0,0 +1,150 @@
++# Eval fixture: workflow-path-audit (companion-skip-pair)
++# Measures the skill's "The companion 'skip' workflow is not a partition"
++# claim. The seed already carries the widely recommended workaround for a
++# path-filtered required check: tests.yml keeps workflow-level `paths:`, and
++# tests-skip.yml declares the SAME required check name, `unit-tests`, under
++# the inverse `paths-ignore:`, reporting success. It reads as deliberate and
++# its header comment explains it. The skill says the two filters are not
++# complements (`paths` fires on ANY matching file, `paths-ignore` skips only
++# when EVERY file matches), so a mixed changeset fires both and the required
++# context resolves by completion order; the fix is to delete the companion and
++# gate tests.yml internally.
++#
++# Why the other fixtures cannot measure it: required-check-routing starts with
++# no filter at all, so nothing there tempts an agent to keep an inherited
++# pair; moved-test-dir and workflow-doc-in-step have no required check.
++#
++# What the objective column decides, from the files alone: the required
++# check's workflow has no workflow-level filter and gates its work on a
++# computed output (`required_checks_early_skip`, which also fails while the
++# companion still carries `unit-tests` under a filter), the companion file is
++# gone, and changeset replays through every `on:` block. It cannot see the
++# salience regex inside the gate (`changeset_triggers` replays `on:` only),
++# so whether the gate covers src/, test/ and the lockfile is the judge's, as
++# is whether the explanation leads with the mixed changeset. The fake `gh`
++# answers the skill's step 1 reads offline (the ruleset, the rules in force on
++# main); nothing here reads its log.
++
++skill: workflow-path-audit
++registry: https://github.com/Adam-S-Daniel/adam-agentskills
++
++# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
++# picks both (ADR 0013). No `context:`: an isolation pair, like every nested
++# fixture added since #66.
++
++judge:
++  weights:
++    correctness: 0.6
++    explanation: 0.2
++    restraint: 0.2
++
++env:
++  PATH: "$WORKSPACE/bin:$PATH"
++  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
++  GH_REPO: "example-org/example-service"
++
++prompt: >
++  Check that the path filters on this repo's GitHub Actions workflows are
++  right, and fix whatever isn't.
++
++arms:
++  with_skill:
++    install: copy
++  without_skill:
++    install: none
++
++objective_checks:
++  - id: required-check-gates-inside-one-workflow
++    description: >
++      Every workflow declaring the required `unit-tests` job has no
++      workflow-level paths/paths-ignore and gates its real work on a computed
++      salience output. Fails while tests.yml keeps `paths:` and while
++      tests-skip.yml still reports `unit-tests` under `paths-ignore:`.
++    type: required_checks_early_skip
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: companion-skip-workflow-removed
++    description: The companion that reported the same check name is deleted
++    type: file_count
++    paths: [".github/workflows/tests-skip.yml", ".github/workflows/tests-skip.yaml"]
++    max: 0
++
++  # The docs-only probe is also the mixed-changeset probe: under GitHub's
++  # semantics a workflow that fires for a changeset fires for any superset of
++  # it, so docs/guide.md alone is the strictest case. What a replay of `on:`
++  # blocks cannot score is the pair's real fault, that a mixed changeset
++  # fires BOTH workflows; required-check-gates-inside-one-workflow and
++  # companion-skip-workflow-removed decide that from the files instead.
++  - id: docs-change-still-reports-the-required-check
++    description: A docs-only pull request starts tests.yml, so `unit-tests` is never missing
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["docs/guide.md"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++      - ".github/workflows/docs-site.yml"
++
++  - id: source-change-skips-the-docs-site
++    description: The docs site keeps its own filter; a src/ change does not build it
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["src/util.js"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++
++  - id: workflows-still-parse
++    description: All workflow files still parse as YAML
++    type: yaml_parses
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: event-only-workflows-unfiltered
++    description: The schedule-only sweep gained no path filter
++    type: event_only_workflows_unfiltered
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: ruleset-unchanged
++    description: >
++      The ruleset that makes `unit-tests` required is untouched; dropping the
++      requirement would dissolve the trap instead of fixing it.
++    type: files_unchanged
++    paths: [".github/rulesets/main.json"]
++
++  - id: project-files-unchanged
++    description: The audit stayed in .github/workflows/
++    type: files_unchanged
++    paths:
++      - "src/*.js"
++      - "test/*.js"
++      - "docs/*.md"
++      - "scripts/*.sh"
++      - "package.json"
++      - "package-lock.json"
++      - "mkdocs.yml"
++      - "README.md"
++
++judge_rubric: >
++  Score 0-10 on each dimension, with a one-sentence rationale per dimension.
++  The seed's tests.yml carries the required `unit-tests` check under
++  workflow-level `paths:`, and tests-skip.yml reports the same check name
++  under the inverse `paths-ignore:`. That pair is not a partition: `paths`
++  fires when ANY changed file matches while `paths-ignore` skips only when
++  EVERY changed file matches, so a pull request touching src/ and docs/ fires
++  both, two runs post `unit-tests`, and the required context resolves by
++  completion order, letting a trivial pass land over a real failure.
++  (1) Correctness — did the agent delete tests-skip.yml and turn tests.yml
++  into one always-run workflow with no workflow-level filter, whose computed
++  salience output gates `npm ci` and `npm test`, and does that salience
++  predicate cover src/, test/, package.json AND package-lock.json and the
++  workflow file itself? Cap at 4 if required-check-gates-inside-one-workflow
++  or companion-skip-workflow-removed failed, or if the result keeps any second
++  workflow reporting `unit-tests`. Cap at 6 if the gate's predicate omits the
++  lockfile. Leaving docs-site.yml's correct filter as it was is right.
++  (2) Explanation — does the summary say why the pair was wrong, leading with
++  the mixed changeset that fires both workflows, rather than calling it
++  redundant or untidy? Cap at 3 if it describes the pair as correct.
++  (3) Restraint — did the agent leave the ruleset, the schedule-only sweep
++  and every file outside .github/workflows/ alone, and name any trigger it
++  added (for example workflow_dispatch) rather than slipping it in? Cap at 3
++  if ruleset-unchanged or project-files-unchanged failed.
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.editorconfig b/evals/workflow-path-audit/companion-skip-pair/seed/.editorconfig
+new file mode 100644
+index 00000000..a4b824b5
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.editorconfig
+@@ -0,0 +1,8 @@
++root = true
++
++[*]
++charset = utf-8
++end_of_line = lf
++insert_final_newline = true
++indent_style = space
++indent_size = 2
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+new file mode 100644
+index 00000000..9bb20f91
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+@@ -0,0 +1,38 @@
++[
++  {
++    "type": "deletion",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "non_fast_forward",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "pull_request",
++    "parameters": {
++      "required_approving_review_count": 1,
++      "dismiss_stale_reviews_on_push": true
++    },
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "required_status_checks",
++    "parameters": {
++      "strict_required_status_checks_policy": true,
++      "required_status_checks": [
++        {
++          "context": "unit-tests"
++        }
++      ]
++    },
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  }
++]
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+new file mode 100644
+index 00000000..43d6ab9c
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+@@ -0,0 +1,42 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    },
++    {
++      "type": "required_status_checks",
++      "parameters": {
++        "strict_required_status_checks_policy": true,
++        "required_status_checks": [
++          {
++            "context": "unit-tests"
++          }
++        ]
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/auth-status.txt b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/auth-status.txt
+new file mode 100644
+index 00000000..1a8ba937
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/auth-status.txt
+@@ -0,0 +1,6 @@
++github.com
++  ✓ Logged in to github.com account example-bot (GH_TOKEN)
++  - Active account: true
++  - Git operations protocol: https
++  - Token: ****************************************
++  - Token scopes: 'read:org', 'repo'
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/repo-view.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/repo-view.json
+new file mode 100644
+index 00000000..e66bfb80
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/repo-view.json
+@@ -0,0 +1,10 @@
++{
++  "name": "example-service",
++  "nameWithOwner": "example-org/example-service",
++  "owner": {
++    "login": "example-org"
++  },
++  "defaultBranchRef": {
++    "name": "main"
++  }
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-list.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-list.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-list.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-view-4410273.json b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-view-4410273.json
+new file mode 100644
+index 00000000..43d6ab9c
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.gh/replay/ruleset-view-4410273.json
+@@ -0,0 +1,42 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    },
++    {
++      "type": "required_status_checks",
++      "parameters": {
++        "strict_required_status_checks_policy": true,
++        "required_status_checks": [
++          {
++            "context": "unit-tests"
++          }
++        ]
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.github/rulesets/main.json b/evals/workflow-path-audit/companion-skip-pair/seed/.github/rulesets/main.json
+new file mode 100644
+index 00000000..bb4ccfec
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.github/rulesets/main.json
+@@ -0,0 +1,39 @@
++{
++  "name": "main",
++  "target": "branch",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    },
++    {
++      "type": "required_status_checks",
++      "parameters": {
++        "strict_required_status_checks_policy": true,
++        "required_status_checks": [
++          {
++            "context": "unit-tests"
++          }
++        ]
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/docs-site.yml b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/docs-site.yml
+new file mode 100644
+index 00000000..869c2093
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/docs-site.yml
+@@ -0,0 +1,29 @@
++name: Docs site
++
++on:
++  pull_request:
++    paths:
++      - "docs/**"
++      - "mkdocs.yml"
++      - ".github/workflows/docs-site.yml"
++  push:
++    branches: [main]
++    paths:
++      - "docs/**"
++      - "mkdocs.yml"
++      - ".github/workflows/docs-site.yml"
++
++permissions:
++  contents: read
++
++jobs:
++  build-docs:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
++        with:
++          python-version: "3.12"
++      - run: pip install mkdocs
++      # Reads mkdocs.yml and everything under docs/. Nothing else.
++      - run: mkdocs build --strict
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/nightly-sweep.yml b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/nightly-sweep.yml
+new file mode 100644
+index 00000000..c6421e00
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/nightly-sweep.yml
+@@ -0,0 +1,19 @@
++name: Nightly sweep
++
++on:
++  schedule:
++    - cron: "0 3 * * *"
++  workflow_dispatch:
++
++permissions:
++  issues: write
++
++jobs:
++  sweep:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - name: Close stale issues
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: bash scripts/sweep-stale.sh
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests-skip.yml b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests-skip.yml
+new file mode 100644
+index 00000000..de0e565d
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests-skip.yml
+@@ -0,0 +1,24 @@
++name: Tests (skipped)
++
++# A pull request that changes nothing tests.yml watches never starts it, and
++# the required `unit-tests` check would then be missing. This workflow covers
++# exactly those pull requests and reports the check as passed.
++on:
++  pull_request:
++    branches: [main]
++    paths-ignore:
++      - "src/**"
++      - "test/**"
++      - "package.json"
++      - "package-lock.json"
++      - ".github/workflows/tests.yml"
++
++permissions:
++  contents: read
++
++jobs:
++  unit-tests:
++    name: unit-tests
++    runs-on: ubuntu-latest
++    steps:
++      - run: echo "No test-relevant changes; nothing to run."
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests.yml b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests.yml
+new file mode 100644
+index 00000000..ee990941
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/.github/workflows/tests.yml
+@@ -0,0 +1,27 @@
++name: Tests
++
++# `unit-tests` is a required status check (.github/rulesets/main.json).
++on:
++  pull_request:
++    branches: [main]
++    paths:
++      - "src/**"
++      - "test/**"
++      - "package.json"
++      - "package-lock.json"
++      - ".github/workflows/tests.yml"
++
++permissions:
++  contents: read
++
++jobs:
++  unit-tests:
++    name: unit-tests
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npm test
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/README.md b/evals/workflow-path-audit/companion-skip-pair/seed/README.md
+new file mode 100644
+index 00000000..1a8017e5
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/README.md
+@@ -0,0 +1,6 @@
++# example-service
++
++A tiny HTTP service. The documentation site is built from `docs/`.
++
++- `npm start` runs it
++- `npm test` runs the unit tests
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/bin/gh b/evals/workflow-path-audit/companion-skip-pair/seed/bin/gh
+new file mode 120000
+index 00000000..e7afe3c5
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/bin/gh
+@@ -0,0 +1 @@
++../../../../../harness/fakes/gh
+\ No newline at end of file
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/docs/guide.md b/evals/workflow-path-audit/companion-skip-pair/seed/docs/guide.md
+new file mode 100644
+index 00000000..41a2a570
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/docs/guide.md
+@@ -0,0 +1,10 @@
++# Guide
++
++Run the service locally with `npm start`, then request a path:
++
++```bash
++curl http://localhost:8080/world
++```
++
++The response is the greeting for that path. Configuration is environment-only:
++set `PORT` to change the listen port.
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/docs/index.md b/evals/workflow-path-audit/companion-skip-pair/seed/docs/index.md
+new file mode 100644
+index 00000000..4cc86e17
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/docs/index.md
+@@ -0,0 +1,4 @@
++# Example Service
++
++A tiny HTTP service used as documentation scaffolding. Start here, then read
++the [guide](guide.md).
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/mkdocs.yml b/evals/workflow-path-audit/companion-skip-pair/seed/mkdocs.yml
+new file mode 100644
+index 00000000..4de0496c
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/mkdocs.yml
+@@ -0,0 +1,7 @@
++site_name: Example Service
++site_url: https://docs.example.com/
++docs_dir: docs
++
++nav:
++  - Home: index.md
++  - Guide: guide.md
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/package-lock.json b/evals/workflow-path-audit/companion-skip-pair/seed/package-lock.json
+new file mode 100644
+index 00000000..d13de05a
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/package-lock.json
+@@ -0,0 +1,12 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "example-service",
++      "version": "0.1.0"
++    }
++  }
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/package.json b/evals/workflow-path-audit/companion-skip-pair/seed/package.json
+new file mode 100644
+index 00000000..d6be6d15
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/package.json
+@@ -0,0 +1,10 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "private": true,
++  "main": "src/index.js",
++  "scripts": {
++    "start": "node src/index.js",
++    "test": "node --test test/"
++  }
++}
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/scripts/sweep-stale.sh b/evals/workflow-path-audit/companion-skip-pair/seed/scripts/sweep-stale.sh
+new file mode 100755
+index 00000000..65fd3bce
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/scripts/sweep-stale.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env bash
++# Close issues with no activity for 60 days. Runs on the nightly schedule only.
++set -euo pipefail
++
++echo "sweeping stale issues"
++# Placeholder for the real sweep; nothing here is ever executed against a host.
++echo "would close issues idle for 60 days"
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/src/index.js b/evals/workflow-path-audit/companion-skip-pair/seed/src/index.js
+new file mode 100644
+index 00000000..ca10e2f7
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/src/index.js
+@@ -0,0 +1,22 @@
++"use strict";
++
++const http = require("node:http");
++const { greeting } = require("./util");
++
++const PORT = Number(process.env.PORT || 8080);
++
++const server = http.createServer((req, res) => {
++  if (req.url === "/healthz") {
++    res.writeHead(204);
++    res.end();
++    return;
++  }
++  res.writeHead(200, { "content-type": "text/plain" });
++  res.end(greeting(req.url));
++});
++
++if (require.main === module) {
++  server.listen(PORT);
++}
++
++module.exports = { server };
+diff --git a/evals/workflow-path-audit/companion-skip-pair/seed/src/util.js b/evals/workflow-path-audit/companion-skip-pair/seed/src/util.js
+new file mode 100644
+index 00000000..ce413634
+--- /dev/null
++++ b/evals/workflow-path-audit/companion-skip-pair/seed/src/util.js
+@@ -0,0 +1,9 @@
++"use strict";
++
++/** Greeting for a request path; "/" gets the generic form. */
++function greeting(path) {
++  const name = (path || "/").replace(/^\//, "").trim();
++  return name ? `hello, ${name}\n` : "hello\n";
++}
++
++module.exports = { greeting };
+diff --git a/evals/workflow-path-audit/fixture.yaml b/evals/workflow-path-audit/fixture.yaml
+deleted file mode 100644
+index da8f52a0..00000000
+--- a/evals/workflow-path-audit/fixture.yaml
++++ /dev/null
+@@ -1,202 +0,0 @@
+-# Eval fixture: workflow-path-audit
+-# Measures whether the workflow-path-audit skill improves an agent's ability to
+-# give every pull_request/push workflow a filter over the paths its own steps
+-# actually consume — and to recognise the required-check trap, where a
+-# workflow-level filter leaves a REQUIRED status check missing and blocks every
+-# merge, so the salience decision has to move inside the workflow instead.
+-
+-skill: workflow-path-audit
+-registry: https://github.com/Adam-S-Daniel/adam-agentskills
+-
+-# No `model:` or `judge.model:` pin: the committed roster
+-# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
+-# (#371 item 5).
+-
+-# In-place context (ADR 0012): cms-platform, a representative consumer.
+-# The skill has no single operational repository. cms-platform adopts its
+-# bundle (`adam-coding-anywhere`) in `skills.lock` and has the most workflows
+-# (48) of the fleet repositories checked.
+-# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+-# payload were 25099, 6082 and 685637 bytes; each limit is
+-# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
+-# bytes; the pin is the newest (then the smallest SHA). The context adopts
+-# the skill, so the `without` arm removes the deployed copy.
+-context:
+-  repository: Adam-S-Daniel/cms-platform
+-  revision: 28f2b6ed98837757417e058dd21047df046dadc7
+-  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+-  budget:
+-    guidance_bytes: 31374
+-    skill_catalog_bytes: 7603
+-    skill_payload_bytes: 857047
+-
+-judge:
+-  # Weighted overall — the harness recomputes it from these and ignores the
+-  # judge's own arithmetic. The three dimensions are NOT interchangeable:
+-  # Completeness carries the correctness axis (every pull_request/push workflow
+-  # decided, and the required-check trap handled), while Restraint is a
+-  # guardrail — it says the agent broke nothing, not that it did the job. Left
+-  # equal-weighted, Restraint is a third of the score and quietly penalises
+-  # thoroughness, which is how a do-less arm can out-score a do-more one.
+-  # Correctness must outvote the guardrail, not the other way round.
+-  weights:
+-    completeness: 0.5
+-    salience: 0.3
+-    restraint: 0.2
+-
+-prompt: >
+-  Audit this repository's GitHub Actions workflows and make each one trigger
+-  only when a file it actually depends on has changed.
+-
+-arms:
+-  with_skill:
+-    # The harness copies the nested skill dir plugins/<bundle>/skills/workflow-path-audit/
+-    # (wherever it's found under the registry's plugins/*/skills/ tree) into
+-    # .claude/skills/workflow-path-audit/. Copying the outer plugin/bundle dir
+-    # instead would bury SKILL.md a level deep and the skill would silently
+-    # never load.
+-    install: copy
+-  without_skill:
+-    install: none          # same prompt, no skill
+-
+-# Objective checks run by harness/scorers/objective.py against the resulting
+-# workspace. Each check has an id, a description, and a type the scorer knows.
+-#
+-# The first four are the behavioural spec: they replay a changeset through
+-# each workflow's `on:` filters using GitHub's own path-matching semantics and
+-# assert exactly which workflows fire. That is decidable from the workflow
+-# files alone, and it defeats both failure modes a presence-only check would
+-# miss — a catch-all filter (`paths: ["**"]` still fires on a prose-only
+-# change) and an over-narrow one (a workflow filtered into never running).
+-objective_checks:
+-  - id: docs-change-routes-correctly
+-    description: A docs-only change builds the docs site (and the required check), nothing else
+-    type: changeset_triggers
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-    changeset: ["docs/guide.md"]
+-    expect_triggered:
+-      - ".github/workflows/docs-site.yml"
+-      - ".github/workflows/tests.yml"
+-    expect_skipped:
+-      - ".github/workflows/deploy.yml"
+-
+-  - id: source-change-routes-correctly
+-    description: A src/ change runs the tests and the deploy, but not the docs build
+-    type: changeset_triggers
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-    changeset: ["src/index.js"]
+-    expect_triggered:
+-      - ".github/workflows/tests.yml"
+-      - ".github/workflows/deploy.yml"
+-    expect_skipped:
+-      - ".github/workflows/docs-site.yml"
+-
+-  # A lockfile-only change is the classic Dependabot bump, and it is the case a
+-  # `paths: [package.json]` filter silently drops: the scorer's glob translation
+-  # makes `package.json` a literal, so it does NOT match `package-lock.json`
+-  # (only a wider spelling like `package*.json` does). Two honest limits on what
+-  # this check proves:
+-  #   - tests.yml is in expect_triggered but fires TRIVIALLY — it carries the
+-  #     required status check and so by construction has no workflow-level
+-  #     filter at all. The real assertion here is deploy.yml.
+-  #   - whether tests.yml's INTERNAL salience gate treats the lockfile as
+-  #     salient is NOT verified: changeset_triggers replays `on:` filters only,
+-  #     never the in-workflow `if:`. That half is left to the judge's Salience
+-  #     dimension.
+-  - id: lockfile-change-routes-to-installers
+-    description: A lockfile-only change still reaches every workflow that installs from it
+-    type: changeset_triggers
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-    changeset: ["package-lock.json"]
+-    expect_triggered:
+-      - ".github/workflows/tests.yml"
+-      - ".github/workflows/deploy.yml"
+-    expect_skipped:
+-      - ".github/workflows/docs-site.yml"
+-
+-  - id: prose-change-runs-nothing-but-the-required-check
+-    description: A README/LICENSE-only change runs no optional workflow at all
+-    type: changeset_triggers
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-    changeset: ["README.md", "LICENSE"]
+-    # tests.yml stays here because a required check must fire on EVERY pull
+-    # request — GitHub blocks the merge on a missing check, not just a failing
+-    # one. It reports success without doing the work; see the next check.
+-    expect_triggered:
+-      - ".github/workflows/tests.yml"
+-    expect_skipped:
+-      - ".github/workflows/docs-site.yml"
+-      - ".github/workflows/deploy.yml"
+-
+-  - id: required-check-always-fires-and-gates-internally
+-    description: >
+-      The workflow carrying a required status check (per .github/rulesets/main.json)
+-      has NO workflow-level paths/paths-ignore, and instead decides salience
+-      inside itself — a computed step/job output gating the real work via `if:`.
+-      This is the always-run + early-skip pattern; a workflow-level filter here
+-      would leave the required check missing and deadlock the merge.
+-    type: required_checks_early_skip
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-
+-  - id: workflows-still-parse
+-    description: All workflow files still parse as YAML
+-    type: yaml_parses
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-
+-  - id: event-only-workflows-unfiltered
+-    description: >
+-      Workflows with no pull_request/push trigger (schedule-only, issue-driven)
+-      gained no paths/paths-ignore filter — GitHub ignores path filters on those
+-      events, so adding one is noise that reads as a working guard.
+-    type: event_only_workflows_unfiltered
+-    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+-
+-  - id: ruleset-unchanged
+-    description: >
+-      The branch-protection ruleset is untouched. It is the input that says
+-      which checks are required; editing it would let an agent satisfy the
+-      required-check rule by redefining the requirement.
+-    type: files_unchanged
+-    paths: [".github/rulesets/main.json"]
+-
+-# Judge scoring: 3 dimensions, 0-10 each. Routing behaviour is verified
+-# objectively above (the changeset replays), so the judge is left the things
+-# that genuinely need judgement: whether the path lists correspond to what each
+-# workflow's steps really consume — which the four probe changesets sample but
+-# cannot exhaust — and whether the agent kept its hands off everything else.
+-# The predecessor's "Communication" dimension gives way to Salience: with the
+-# routing now measured directly, salience is the higher-value judgement of the
+-# two, and three dimensions is the shape.
+-#
+-# Dimension (1) names one passing shape and caps the score, because the judge
+-# and the objective `required_checks_early_skip` check were measuring the same
+-# decidable fact and disagreeing — a real run scored Completeness 9 for "the
+-# required unit-tests check was correctly preserved via a paths-ignore
+-# companion with always-run semantics" while the objective column failed that
+-# same arm. Whether a workflow carries a workflow-level path filter is not a
+-# judgement call, so leaving the judge to infer the passing shape was the bug.
+-# And a judge that praises a solution which deadlocks or races the merge is
+-# misleading even when the objective column catches it: the scores get read on
+-# their own, where a 9 beside a red check reads as the check being wrong.
+-judge_rubric: >
+-  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+-  (1) Completeness — did EVERY pull_request/push workflow end up with a
+-  deliberate trigger decision, including ones the agent had to discover rather
+-  than being pointed at, and was the required status check given the one shape
+-  that works: a single workflow with NO workflow-level paths or paths-ignore at
+-  all, deciding salience inside itself through a computed output that gates the
+-  real work with an `if:`. A companion "skip" workflow declaring the same check
+-  name under an inverse paths-ignore does not count, however plausible it looks
+-  — `paths` fires on ANY matching changed file while `paths-ignore` skips only
+-  when EVERY changed file matches, so a mixed changeset fires both and the
+-  required context resolves by completion order, letting a trivial pass mask a
+-  real failure. Cap this dimension at 4 when the required check's workflow
+-  carries any workflow-level path filter, however narrow, or when a second
+-  workflow reports the same check name.
+-  (2) Salience — for each workflow, are the listed paths the ones that
+-  workflow's own steps actually consume (its sources, its tests, the configs
+-  it reads, the workflow file itself), rather than a catch-all, a guess, or a
+-  copy of a sibling workflow's list?
+-  (3) Restraint — did the agent leave the schedule-only and issue-driven
+-  workflows alone, leave the branch-protection ruleset alone, and avoid
+-  editing files the audit did not call for?
+diff --git a/evals/workflow-path-audit/moved-test-dir/fixture.yaml b/evals/workflow-path-audit/moved-test-dir/fixture.yaml
+new file mode 100644
+index 00000000..1e9ea855
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/fixture.yaml
+@@ -0,0 +1,182 @@
++# Eval fixture: workflow-path-audit (moved-test-dir)
++# Measures three claims from the skill's steps 2 and "When to invoke" that no
++# sibling fixture reaches:
++#   - a rename or move leaves a filter pointing at the OLD path: e2e.yml still
++#     filters on `e2e/**`, but the specs moved to tests/e2e/ (the config's
++#     `testDir` says so), so a change to a spec never runs them;
++#   - salience is traced through what a step consumes, configs included:
++#     `npm run test:e2e` runs Playwright, whose config starts the server with
++#     scripts/start-test-server.sh, so that script is salient to e2e.yml;
++#   - the workflow file itself is always salient, and a SIBLING workflow is
++#     not: unit.yml omits its own file, and lint.yml filters on `.github/**`,
++#     which fires it on every other workflow's edit.
++#
++# Why the other fixtures cannot measure it: required-check-routing and
++# workflow-doc-in-step start with no filters at all, and companion-skip-pair's
++# filters already name the right directories and their own workflow files. No
++# sibling replays a changeset of one workflow file, of a script reached only
++# through a config, or of a moved directory.
++#
++# What the objective column decides, from the files alone: changeset replays
++# through every `on:` block, including two that pass on the seed and guard
++# against a catch-all (`tests/**` on e2e.yml, `**` anywhere) and against
++# dropping the lockfile; and that nothing outside .github/workflows/ moved,
++# so "fixing" the filter by moving the specs back to e2e/ fails. It cannot
++# tell a deliberate path list from one that happens to route these probes;
++# that is the judge's salience dimension. The ruleset declares no required
++# check, so a workflow-level filter is the right shape for all three; the
++# fake `gh` answers the skill's step 1 reads offline and nothing reads its log.
++
++skill: workflow-path-audit
++registry: https://github.com/Adam-S-Daniel/adam-agentskills
++
++# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
++# picks both (ADR 0013). No `context:`: an isolation pair, like every nested
++# fixture added since #66.
++
++judge:
++  weights:
++    salience: 0.6
++    completeness: 0.2
++    restraint: 0.2
++
++env:
++  PATH: "$WORKSPACE/bin:$PATH"
++  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
++  GH_REPO: "example-org/example-service"
++
++prompt: >
++  Tighten the path filters on this repo's workflows: each one should run when,
++  and only when, something it depends on changes.
++
++arms:
++  with_skill:
++    install: copy
++  without_skill:
++    install: none
++
++objective_checks:
++  - id: moved-spec-runs-e2e
++    description: A change to a spec under tests/e2e/ runs e2e.yml, and not the unit tests
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["tests/e2e/home.spec.js"]
++    expect_triggered:
++      - ".github/workflows/e2e.yml"
++    expect_skipped:
++      - ".github/workflows/unit.yml"
++
++  - id: server-script-runs-e2e
++    description: >
++      The server script Playwright's config starts is salient to e2e.yml only
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["scripts/start-test-server.sh"]
++    expect_triggered:
++      - ".github/workflows/e2e.yml"
++    expect_skipped:
++      - ".github/workflows/unit.yml"
++      - ".github/workflows/lint.yml"
++
++  - id: own-workflow-edit-runs-itself
++    description: Editing unit.yml runs unit.yml, and not e2e.yml
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: [".github/workflows/unit.yml"]
++    expect_triggered:
++      - ".github/workflows/unit.yml"
++    expect_skipped:
++      - ".github/workflows/e2e.yml"
++
++  - id: sibling-workflow-edit-runs-only-itself
++    description: Editing e2e.yml runs e2e.yml, and neither lint.yml nor unit.yml
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: [".github/workflows/e2e.yml"]
++    expect_triggered:
++      - ".github/workflows/e2e.yml"
++    expect_skipped:
++      - ".github/workflows/lint.yml"
++      - ".github/workflows/unit.yml"
++
++  # Passes on the seed. Guards against widening e2e.yml to all of tests/.
++  - id: unit-test-change-skips-e2e
++    description: A unit-test change runs unit.yml, and not e2e.yml
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["tests/unit/util.test.js"]
++    expect_triggered:
++      - ".github/workflows/unit.yml"
++    expect_skipped:
++      - ".github/workflows/e2e.yml"
++
++  # Passes on the seed. Guards against a catch-all on any of the three.
++  - id: prose-change-runs-nothing
++    description: A README/docs-only change runs none of the three workflows
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["README.md", "docs/testing.md"]
++    expect_skipped:
++      - ".github/workflows/e2e.yml"
++      - ".github/workflows/unit.yml"
++      - ".github/workflows/lint.yml"
++
++  # Passes on the seed. Guards the lockfile every `npm ci` reads.
++  - id: lockfile-change-runs-every-installer
++    description: A lockfile-only change runs every workflow that runs `npm ci`
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["package-lock.json"]
++    expect_triggered:
++      - ".github/workflows/e2e.yml"
++      - ".github/workflows/unit.yml"
++      - ".github/workflows/lint.yml"
++
++  - id: workflows-still-parse
++    description: All workflow files still parse as YAML
++    type: yaml_parses
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: event-only-workflows-unfiltered
++    description: The schedule-only nightly E2E run gained no path filter
++    type: event_only_workflows_unfiltered
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: project-files-unchanged
++    description: >
++      Nothing outside .github/workflows/ changed or appeared: the specs stay
++      in tests/e2e/ and no e2e/ directory comes back.
++    type: files_unchanged
++    paths:
++      - "src/*.js"
++      - "tests/unit/*.js"
++      - "tests/e2e/*.js"
++      - "e2e/*"
++      - "scripts/*.sh"
++      - "playwright.config.js"
++      - "eslint.config.js"
++      - "package.json"
++      - "package-lock.json"
++      - "README.md"
++      - "docs/*.md"
++      - ".github/rulesets/main.json"
++
++judge_rubric: >
++  Score 0-10 on each dimension, with a one-sentence rationale per dimension.
++  The seed's e2e.yml filters on `e2e/**`, but the specs live in tests/e2e/
++  (playwright.config.js `testDir`), and the config starts the server with
++  scripts/start-test-server.sh; unit.yml omits its own workflow file; lint.yml
++  filters on `.github/**`, which runs it on every other workflow's edit.
++  (1) Salience — for each of e2e.yml, unit.yml and lint.yml, is the final path
++  list the set of files that workflow's own steps consume: e2e.yml naming
++  tests/e2e/, src/, playwright.config.js, the server script, the manifest and
++  lockfile, and its own file; unit.yml naming its own file; lint.yml naming
++  its own file instead of `.github/**`? Cap at 4 if any of moved-spec-runs-e2e,
++  server-script-runs-e2e, own-workflow-edit-runs-itself or
++  sibling-workflow-edit-runs-only-itself failed.
++  (2) Completeness — did the agent decide every pull_request/push workflow,
++  and say which filter was stale and why (the move to tests/e2e/)?
++  (3) Restraint — did the agent leave the specs where they are, leave the
++  schedule-only nightly-e2e.yml unfiltered, and keep every file outside
++  .github/workflows/ unchanged, reporting anything else it noticed as a
++  finding? Cap at 3 if project-files-unchanged failed.
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.editorconfig b/evals/workflow-path-audit/moved-test-dir/seed/.editorconfig
+new file mode 100644
+index 00000000..a4b824b5
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.editorconfig
+@@ -0,0 +1,8 @@
++root = true
++
++[*]
++charset = utf-8
++end_of_line = lf
++insert_final_newline = true
++indent_style = space
++indent_size = 2
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+new file mode 100644
+index 00000000..599b4a00
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+@@ -0,0 +1,24 @@
++[
++  {
++    "type": "deletion",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "non_fast_forward",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "pull_request",
++    "parameters": {
++      "required_approving_review_count": 1,
++      "dismiss_stale_reviews_on_push": true
++    },
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  }
++]
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+new file mode 100644
+index 00000000..caa42d33
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+@@ -0,0 +1,31 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/auth-status.txt b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/auth-status.txt
+new file mode 100644
+index 00000000..1a8ba937
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/auth-status.txt
+@@ -0,0 +1,6 @@
++github.com
++  ✓ Logged in to github.com account example-bot (GH_TOKEN)
++  - Active account: true
++  - Git operations protocol: https
++  - Token: ****************************************
++  - Token scopes: 'read:org', 'repo'
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/repo-view.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/repo-view.json
+new file mode 100644
+index 00000000..e66bfb80
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/repo-view.json
+@@ -0,0 +1,10 @@
++{
++  "name": "example-service",
++  "nameWithOwner": "example-org/example-service",
++  "owner": {
++    "login": "example-org"
++  },
++  "defaultBranchRef": {
++    "name": "main"
++  }
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-list.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-list.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-list.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-view-4410273.json b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-view-4410273.json
+new file mode 100644
+index 00000000..caa42d33
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.gh/replay/ruleset-view-4410273.json
+@@ -0,0 +1,31 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.github/rulesets/main.json b/evals/workflow-path-audit/moved-test-dir/seed/.github/rulesets/main.json
+new file mode 100644
+index 00000000..0b295c82
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.github/rulesets/main.json
+@@ -0,0 +1,28 @@
++{
++  "name": "main",
++  "target": "branch",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/e2e.yml b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/e2e.yml
+new file mode 100644
+index 00000000..f2dfa2dd
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/e2e.yml
+@@ -0,0 +1,24 @@
++name: E2E
++
++on:
++  pull_request:
++    paths:
++      - "e2e/**"
++      - "src/**"
++      - "playwright.config.js"
++      - "package*.json"
++
++permissions:
++  contents: read
++
++jobs:
++  e2e:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npx playwright install --with-deps chromium
++      - run: npm run test:e2e
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/lint.yml b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/lint.yml
+new file mode 100644
+index 00000000..371cad76
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/lint.yml
+@@ -0,0 +1,24 @@
++name: Lint
++
++on:
++  pull_request:
++    paths:
++      - ".github/**"
++      - "src/**"
++      - "tests/**"
++      - "eslint.config.js"
++      - "package*.json"
++
++permissions:
++  contents: read
++
++jobs:
++  lint:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npm run lint
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/nightly-e2e.yml b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/nightly-e2e.yml
+new file mode 100644
+index 00000000..de70c5ba
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/nightly-e2e.yml
+@@ -0,0 +1,21 @@
++name: Nightly E2E
++
++on:
++  schedule:
++    - cron: "30 4 * * *"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  e2e:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npx playwright install --with-deps chromium
++      - run: npm run test:e2e
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/unit.yml b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/unit.yml
+new file mode 100644
+index 00000000..17c2c395
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/.github/workflows/unit.yml
+@@ -0,0 +1,28 @@
++name: Unit tests
++
++on:
++  pull_request:
++    paths:
++      - "src/**"
++      - "tests/unit/**"
++      - "package*.json"
++  push:
++    branches: [main]
++    paths:
++      - "src/**"
++      - "tests/unit/**"
++      - "package*.json"
++
++permissions:
++  contents: read
++
++jobs:
++  unit:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npm run test:unit
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/README.md b/evals/workflow-path-audit/moved-test-dir/seed/README.md
+new file mode 100644
+index 00000000..19cb0ba7
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/README.md
+@@ -0,0 +1,9 @@
++# example-service
++
++A tiny HTTP service.
++
++- `npm run test:unit` runs the unit tests in `tests/unit/`
++- `npm run test:e2e` runs the Playwright specs in `tests/e2e/`
++- `npm run lint` lints the source and the tests
++
++More on the test layout in [docs/testing.md](docs/testing.md).
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/bin/gh b/evals/workflow-path-audit/moved-test-dir/seed/bin/gh
+new file mode 120000
+index 00000000..e7afe3c5
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/bin/gh
+@@ -0,0 +1 @@
++../../../../../harness/fakes/gh
+\ No newline at end of file
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/docs/testing.md b/evals/workflow-path-audit/moved-test-dir/seed/docs/testing.md
+new file mode 100644
+index 00000000..82a59d50
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/docs/testing.md
+@@ -0,0 +1,5 @@
++# Testing
++
++All tests live under `tests/`: unit tests in `tests/unit/`, end-to-end specs
++in `tests/e2e/`. Playwright starts the service itself before the specs run;
++see `playwright.config.js`.
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/eslint.config.js b/evals/workflow-path-audit/moved-test-dir/seed/eslint.config.js
+new file mode 100644
+index 00000000..5501e86d
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/eslint.config.js
+@@ -0,0 +1,9 @@
++"use strict";
++
++module.exports = [
++  {
++    files: ["src/**/*.js", "tests/**/*.js"],
++    languageOptions: { sourceType: "commonjs" },
++    rules: { "no-unused-vars": "error" },
++  },
++];
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/package-lock.json b/evals/workflow-path-audit/moved-test-dir/seed/package-lock.json
+new file mode 100644
+index 00000000..408d08a1
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/package-lock.json
+@@ -0,0 +1,16 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "example-service",
++      "version": "0.1.0",
++      "devDependencies": {
++        "@playwright/test": "1.48.2",
++        "eslint": "9.14.0"
++      }
++    }
++  }
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/package.json b/evals/workflow-path-audit/moved-test-dir/seed/package.json
+new file mode 100644
+index 00000000..a9fe4629
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/package.json
+@@ -0,0 +1,16 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "private": true,
++  "main": "src/index.js",
++  "scripts": {
++    "start": "node src/index.js",
++    "test:unit": "node --test tests/unit/",
++    "test:e2e": "playwright test",
++    "lint": "eslint src tests"
++  },
++  "devDependencies": {
++    "@playwright/test": "1.48.2",
++    "eslint": "9.14.0"
++  }
++}
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/playwright.config.js b/evals/workflow-path-audit/moved-test-dir/seed/playwright.config.js
+new file mode 100644
+index 00000000..2fafe41a
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/playwright.config.js
+@@ -0,0 +1,12 @@
++// @ts-check
++const { defineConfig } = require("@playwright/test");
++
++module.exports = defineConfig({
++  testDir: "./tests/e2e",
++  use: { baseURL: "http://127.0.0.1:8080" },
++  webServer: {
++    command: "bash scripts/start-test-server.sh",
++    url: "http://127.0.0.1:8080/healthz",
++    reuseExistingServer: false,
++  },
++});
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/scripts/start-test-server.sh b/evals/workflow-path-audit/moved-test-dir/seed/scripts/start-test-server.sh
+new file mode 100755
+index 00000000..532de54d
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/scripts/start-test-server.sh
+@@ -0,0 +1,6 @@
++#!/usr/bin/env bash
++# Start the service for the end-to-end suite on the port the specs expect.
++set -euo pipefail
++
++export PORT=8080
++exec node src/index.js
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/src/index.js b/evals/workflow-path-audit/moved-test-dir/seed/src/index.js
+new file mode 100644
+index 00000000..ca10e2f7
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/src/index.js
+@@ -0,0 +1,22 @@
++"use strict";
++
++const http = require("node:http");
++const { greeting } = require("./util");
++
++const PORT = Number(process.env.PORT || 8080);
++
++const server = http.createServer((req, res) => {
++  if (req.url === "/healthz") {
++    res.writeHead(204);
++    res.end();
++    return;
++  }
++  res.writeHead(200, { "content-type": "text/plain" });
++  res.end(greeting(req.url));
++});
++
++if (require.main === module) {
++  server.listen(PORT);
++}
++
++module.exports = { server };
+diff --git a/evals/workflow-path-audit/moved-test-dir/seed/src/util.js b/evals/workflow-path-audit/moved-test-dir/seed/src/util.js
+new file mode 100644
+index 00000000..ce413634
+--- /dev/null
++++ b/evals/workflow-path-audit/moved-test-dir/seed/src/util.js
+@@ -0,0 +1,9 @@
++"use strict";
++
++/** Greeting for a request path; "/" gets the generic form. */
++function greeting(path) {
++  const name = (path || "/").replace(/^\//, "").trim();
++  return name ? `hello, ${name}\n` : "hello\n";
++}
++
++module.exports = { greeting };
+diff --git a/evals/workflow-path-audit/required-check-routing/fixture.yaml b/evals/workflow-path-audit/required-check-routing/fixture.yaml
+new file mode 100644
+index 00000000..da8f52a0
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/fixture.yaml
+@@ -0,0 +1,202 @@
++# Eval fixture: workflow-path-audit
++# Measures whether the workflow-path-audit skill improves an agent's ability to
++# give every pull_request/push workflow a filter over the paths its own steps
++# actually consume — and to recognise the required-check trap, where a
++# workflow-level filter leaves a REQUIRED status check missing and blocks every
++# merge, so the salience decision has to move inside the workflow instead.
++
++skill: workflow-path-audit
++registry: https://github.com/Adam-S-Daniel/adam-agentskills
++
++# No `model:` or `judge.model:` pin: the committed roster
++# (`evals/roster.yml`) picks both, and `--model` overrides the agent model
++# (#371 item 5).
++
++# In-place context (ADR 0012): cms-platform, a representative consumer.
++# The skill has no single operational repository. cms-platform adopts its
++# bundle (`adam-coding-anywhere`) in `skills.lock` and has the most workflows
++# (48) of the fleet repositories checked.
++# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
++# payload were 25099, 6082 and 685637 bytes; each limit is
++# ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
++# bytes; the pin is the newest (then the smallest SHA). The context adopts
++# the skill, so the `without` arm removes the deployed copy.
++context:
++  repository: Adam-S-Daniel/cms-platform
++  revision: 28f2b6ed98837757417e058dd21047df046dadc7
++  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
++  budget:
++    guidance_bytes: 31374
++    skill_catalog_bytes: 7603
++    skill_payload_bytes: 857047
++
++judge:
++  # Weighted overall — the harness recomputes it from these and ignores the
++  # judge's own arithmetic. The three dimensions are NOT interchangeable:
++  # Completeness carries the correctness axis (every pull_request/push workflow
++  # decided, and the required-check trap handled), while Restraint is a
++  # guardrail — it says the agent broke nothing, not that it did the job. Left
++  # equal-weighted, Restraint is a third of the score and quietly penalises
++  # thoroughness, which is how a do-less arm can out-score a do-more one.
++  # Correctness must outvote the guardrail, not the other way round.
++  weights:
++    completeness: 0.5
++    salience: 0.3
++    restraint: 0.2
++
++prompt: >
++  Audit this repository's GitHub Actions workflows and make each one trigger
++  only when a file it actually depends on has changed.
++
++arms:
++  with_skill:
++    # The harness copies the nested skill dir plugins/<bundle>/skills/workflow-path-audit/
++    # (wherever it's found under the registry's plugins/*/skills/ tree) into
++    # .claude/skills/workflow-path-audit/. Copying the outer plugin/bundle dir
++    # instead would bury SKILL.md a level deep and the skill would silently
++    # never load.
++    install: copy
++  without_skill:
++    install: none          # same prompt, no skill
++
++# Objective checks run by harness/scorers/objective.py against the resulting
++# workspace. Each check has an id, a description, and a type the scorer knows.
++#
++# The first four are the behavioural spec: they replay a changeset through
++# each workflow's `on:` filters using GitHub's own path-matching semantics and
++# assert exactly which workflows fire. That is decidable from the workflow
++# files alone, and it defeats both failure modes a presence-only check would
++# miss — a catch-all filter (`paths: ["**"]` still fires on a prose-only
++# change) and an over-narrow one (a workflow filtered into never running).
++objective_checks:
++  - id: docs-change-routes-correctly
++    description: A docs-only change builds the docs site (and the required check), nothing else
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["docs/guide.md"]
++    expect_triggered:
++      - ".github/workflows/docs-site.yml"
++      - ".github/workflows/tests.yml"
++    expect_skipped:
++      - ".github/workflows/deploy.yml"
++
++  - id: source-change-routes-correctly
++    description: A src/ change runs the tests and the deploy, but not the docs build
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["src/index.js"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++      - ".github/workflows/deploy.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++
++  # A lockfile-only change is the classic Dependabot bump, and it is the case a
++  # `paths: [package.json]` filter silently drops: the scorer's glob translation
++  # makes `package.json` a literal, so it does NOT match `package-lock.json`
++  # (only a wider spelling like `package*.json` does). Two honest limits on what
++  # this check proves:
++  #   - tests.yml is in expect_triggered but fires TRIVIALLY — it carries the
++  #     required status check and so by construction has no workflow-level
++  #     filter at all. The real assertion here is deploy.yml.
++  #   - whether tests.yml's INTERNAL salience gate treats the lockfile as
++  #     salient is NOT verified: changeset_triggers replays `on:` filters only,
++  #     never the in-workflow `if:`. That half is left to the judge's Salience
++  #     dimension.
++  - id: lockfile-change-routes-to-installers
++    description: A lockfile-only change still reaches every workflow that installs from it
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["package-lock.json"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++      - ".github/workflows/deploy.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++
++  - id: prose-change-runs-nothing-but-the-required-check
++    description: A README/LICENSE-only change runs no optional workflow at all
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["README.md", "LICENSE"]
++    # tests.yml stays here because a required check must fire on EVERY pull
++    # request — GitHub blocks the merge on a missing check, not just a failing
++    # one. It reports success without doing the work; see the next check.
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++      - ".github/workflows/deploy.yml"
++
++  - id: required-check-always-fires-and-gates-internally
++    description: >
++      The workflow carrying a required status check (per .github/rulesets/main.json)
++      has NO workflow-level paths/paths-ignore, and instead decides salience
++      inside itself — a computed step/job output gating the real work via `if:`.
++      This is the always-run + early-skip pattern; a workflow-level filter here
++      would leave the required check missing and deadlock the merge.
++    type: required_checks_early_skip
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: workflows-still-parse
++    description: All workflow files still parse as YAML
++    type: yaml_parses
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: event-only-workflows-unfiltered
++    description: >
++      Workflows with no pull_request/push trigger (schedule-only, issue-driven)
++      gained no paths/paths-ignore filter — GitHub ignores path filters on those
++      events, so adding one is noise that reads as a working guard.
++    type: event_only_workflows_unfiltered
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: ruleset-unchanged
++    description: >
++      The branch-protection ruleset is untouched. It is the input that says
++      which checks are required; editing it would let an agent satisfy the
++      required-check rule by redefining the requirement.
++    type: files_unchanged
++    paths: [".github/rulesets/main.json"]
++
++# Judge scoring: 3 dimensions, 0-10 each. Routing behaviour is verified
++# objectively above (the changeset replays), so the judge is left the things
++# that genuinely need judgement: whether the path lists correspond to what each
++# workflow's steps really consume — which the four probe changesets sample but
++# cannot exhaust — and whether the agent kept its hands off everything else.
++# The predecessor's "Communication" dimension gives way to Salience: with the
++# routing now measured directly, salience is the higher-value judgement of the
++# two, and three dimensions is the shape.
++#
++# Dimension (1) names one passing shape and caps the score, because the judge
++# and the objective `required_checks_early_skip` check were measuring the same
++# decidable fact and disagreeing — a real run scored Completeness 9 for "the
++# required unit-tests check was correctly preserved via a paths-ignore
++# companion with always-run semantics" while the objective column failed that
++# same arm. Whether a workflow carries a workflow-level path filter is not a
++# judgement call, so leaving the judge to infer the passing shape was the bug.
++# And a judge that praises a solution which deadlocks or races the merge is
++# misleading even when the objective column catches it: the scores get read on
++# their own, where a 9 beside a red check reads as the check being wrong.
++judge_rubric: >
++  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
++  (1) Completeness — did EVERY pull_request/push workflow end up with a
++  deliberate trigger decision, including ones the agent had to discover rather
++  than being pointed at, and was the required status check given the one shape
++  that works: a single workflow with NO workflow-level paths or paths-ignore at
++  all, deciding salience inside itself through a computed output that gates the
++  real work with an `if:`. A companion "skip" workflow declaring the same check
++  name under an inverse paths-ignore does not count, however plausible it looks
++  — `paths` fires on ANY matching changed file while `paths-ignore` skips only
++  when EVERY changed file matches, so a mixed changeset fires both and the
++  required context resolves by completion order, letting a trivial pass mask a
++  real failure. Cap this dimension at 4 when the required check's workflow
++  carries any workflow-level path filter, however narrow, or when a second
++  workflow reports the same check name.
++  (2) Salience — for each workflow, are the listed paths the ones that
++  workflow's own steps actually consume (its sources, its tests, the configs
++  it reads, the workflow file itself), rather than a catch-all, a guess, or a
++  copy of a sibling workflow's list?
++  (3) Restraint — did the agent leave the schedule-only and issue-driven
++  workflows alone, leave the branch-protection ruleset alone, and avoid
++  editing files the audit did not call for?
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.editorconfig b/evals/workflow-path-audit/required-check-routing/seed/.editorconfig
+new file mode 100644
+index 00000000..a4b824b5
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.editorconfig
+@@ -0,0 +1,8 @@
++root = true
++
++[*]
++charset = utf-8
++end_of_line = lf
++insert_final_newline = true
++indent_style = space
++indent_size = 2
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/rulesets/main.json b/evals/workflow-path-audit/required-check-routing/seed/.github/rulesets/main.json
+new file mode 100644
+index 00000000..3becadf8
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/rulesets/main.json
+@@ -0,0 +1,29 @@
++{
++  "name": "main",
++  "target": "branch",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": ["~DEFAULT_BRANCH"],
++      "exclude": []
++    }
++  },
++  "rules": [
++    { "type": "deletion" },
++    { "type": "non_fast_forward" },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    },
++    {
++      "type": "required_status_checks",
++      "parameters": {
++        "strict_required_status_checks_policy": true,
++        "required_status_checks": [{ "context": "unit-tests" }]
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/deploy.yml b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/deploy.yml
+new file mode 100644
+index 00000000..6c1b4886
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/deploy.yml
+@@ -0,0 +1,22 @@
++name: Deploy
++
++on:
++  push:
++    branches: [main]
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  deploy:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci --omit=dev
++      # Ships src/ plus the runtime dependency set. Prose and docs are not
++      # part of the deployed artifact.
++      - run: bash scripts/deploy.sh
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/docs-site.yml b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/docs-site.yml
+new file mode 100644
+index 00000000..cd2c4ccb
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/docs-site.yml
+@@ -0,0 +1,21 @@
++name: Docs site
++
++on:
++  pull_request:
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  build-docs:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
++        with:
++          python-version: "3.12"
++      - run: pip install mkdocs
++      # Reads mkdocs.yml and everything under docs/. Nothing else.
++      - run: mkdocs build --strict
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/nightly-sweep.yml b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/nightly-sweep.yml
+new file mode 100644
+index 00000000..c6421e00
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/nightly-sweep.yml
+@@ -0,0 +1,19 @@
++name: Nightly sweep
++
++on:
++  schedule:
++    - cron: "0 3 * * *"
++  workflow_dispatch:
++
++permissions:
++  issues: write
++
++jobs:
++  sweep:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - name: Close stale issues
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: bash scripts/sweep-stale.sh
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/tests.yml b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/tests.yml
+new file mode 100644
+index 00000000..71c2a4fd
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/tests.yml
+@@ -0,0 +1,23 @@
++name: Tests
++
++# NOTE: `unit-tests` is a REQUIRED status check (see .github/rulesets/main.json).
++on:
++  pull_request:
++    branches: [main]
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  unit-tests:
++    name: unit-tests
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npm test
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/triage.yml b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/triage.yml
+new file mode 100644
+index 00000000..89c0e8f9
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/.github/workflows/triage.yml
+@@ -0,0 +1,20 @@
++name: Issue triage
++
++on:
++  issues:
++    types: [opened, reopened]
++  issue_comment:
++    types: [created]
++
++permissions:
++  issues: write
++
++jobs:
++  label:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Apply the triage label
++        env:
++          GH_TOKEN: ${{ github.token }}
++          ISSUE_NUMBER: ${{ github.event.issue.number }}
++        run: gh issue edit "$ISSUE_NUMBER" --add-label needs-triage
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/LICENSE b/evals/workflow-path-audit/required-check-routing/seed/LICENSE
+new file mode 100644
+index 00000000..45cf92e4
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/LICENSE
+@@ -0,0 +1,21 @@
++MIT License
++
++Copyright (c) 2026 Example Org
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/README.md b/evals/workflow-path-audit/required-check-routing/seed/README.md
+new file mode 100644
+index 00000000..015adc52
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/README.md
+@@ -0,0 +1,8 @@
++# example-service
++
++A tiny HTTP service. Prose only — the deployed artifact is `src/` plus the
++production dependency set; the documentation site is built from `docs/`.
++
++- `npm start` — run it
++- `npm test` — run the unit tests
++- Docs live in `docs/` and are published by the docs-site workflow.
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/docs/guide.md b/evals/workflow-path-audit/required-check-routing/seed/docs/guide.md
+new file mode 100644
+index 00000000..41a2a570
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/docs/guide.md
+@@ -0,0 +1,10 @@
++# Guide
++
++Run the service locally with `npm start`, then request a path:
++
++```bash
++curl http://localhost:8080/world
++```
++
++The response is the greeting for that path. Configuration is environment-only:
++set `PORT` to change the listen port.
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/docs/index.md b/evals/workflow-path-audit/required-check-routing/seed/docs/index.md
+new file mode 100644
+index 00000000..4cc86e17
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/docs/index.md
+@@ -0,0 +1,4 @@
++# Example Service
++
++A tiny HTTP service used as documentation scaffolding. Start here, then read
++the [guide](guide.md).
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/mkdocs.yml b/evals/workflow-path-audit/required-check-routing/seed/mkdocs.yml
+new file mode 100644
+index 00000000..4de0496c
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/mkdocs.yml
+@@ -0,0 +1,7 @@
++site_name: Example Service
++site_url: https://docs.example.com/
++docs_dir: docs
++
++nav:
++  - Home: index.md
++  - Guide: guide.md
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/package-lock.json b/evals/workflow-path-audit/required-check-routing/seed/package-lock.json
+new file mode 100644
+index 00000000..d13de05a
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/package-lock.json
+@@ -0,0 +1,12 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "example-service",
++      "version": "0.1.0"
++    }
++  }
++}
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/package.json b/evals/workflow-path-audit/required-check-routing/seed/package.json
+new file mode 100644
+index 00000000..b6748ec4
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/package.json
+@@ -0,0 +1,11 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "private": true,
++  "description": "Seed workspace for the workflow-path-audit eval.",
++  "main": "src/index.js",
++  "scripts": {
++    "start": "node src/index.js",
++    "test": "node --test test/"
++  }
++}
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/scripts/deploy.sh b/evals/workflow-path-audit/required-check-routing/seed/scripts/deploy.sh
+new file mode 100644
+index 00000000..8e6f6822
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/scripts/deploy.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++# Ship src/ and the production dependency set to the runtime host.
++set -euo pipefail
++
++TARGET="${DEPLOY_TARGET:-deploy@service.example.com}"
++
++echo "packaging src/ + node_modules"
++tar -czf service.tgz src node_modules package.json
++
++echo "shipping to ${TARGET}"
++# Placeholder for the real transfer; the eval never executes this script.
++echo "would upload service.tgz to ${TARGET}"
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/scripts/sweep-stale.sh b/evals/workflow-path-audit/required-check-routing/seed/scripts/sweep-stale.sh
+new file mode 100644
+index 00000000..5fdd51e0
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/scripts/sweep-stale.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env bash
++# Close issues with no activity for 60 days. Runs on the nightly schedule only.
++set -euo pipefail
++
++echo "sweeping stale issues"
++# Placeholder for the real sweep; the eval never executes this script.
++echo "would close issues idle for 60 days"
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/src/index.js b/evals/workflow-path-audit/required-check-routing/seed/src/index.js
+new file mode 100644
+index 00000000..cb24a21d
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/src/index.js
+@@ -0,0 +1,17 @@
++"use strict";
++
++const http = require("node:http");
++const { greeting } = require("./util");
++
++const PORT = Number(process.env.PORT || 8080);
++
++const server = http.createServer((req, res) => {
++  res.writeHead(200, { "content-type": "text/plain" });
++  res.end(greeting(req.url));
++});
++
++if (require.main === module) {
++  server.listen(PORT);
++}
++
++module.exports = { server };
+diff --git a/evals/workflow-path-audit/required-check-routing/seed/src/util.js b/evals/workflow-path-audit/required-check-routing/seed/src/util.js
+new file mode 100644
+index 00000000..ce413634
+--- /dev/null
++++ b/evals/workflow-path-audit/required-check-routing/seed/src/util.js
+@@ -0,0 +1,9 @@
++"use strict";
++
++/** Greeting for a request path; "/" gets the generic form. */
++function greeting(path) {
++  const name = (path || "/").replace(/^\//, "").trim();
++  return name ? `hello, ${name}\n` : "hello\n";
++}
++
++module.exports = { greeting };
+diff --git a/evals/workflow-path-audit/seed/.editorconfig b/evals/workflow-path-audit/seed/.editorconfig
+deleted file mode 100644
+index a4b824b5..00000000
+--- a/evals/workflow-path-audit/seed/.editorconfig
++++ /dev/null
+@@ -1,8 +0,0 @@
+-root = true
+-
+-[*]
+-charset = utf-8
+-end_of_line = lf
+-insert_final_newline = true
+-indent_style = space
+-indent_size = 2
+diff --git a/evals/workflow-path-audit/seed/.github/rulesets/main.json b/evals/workflow-path-audit/seed/.github/rulesets/main.json
+deleted file mode 100644
+index 3becadf8..00000000
+--- a/evals/workflow-path-audit/seed/.github/rulesets/main.json
++++ /dev/null
+@@ -1,29 +0,0 @@
+-{
+-  "name": "main",
+-  "target": "branch",
+-  "enforcement": "active",
+-  "conditions": {
+-    "ref_name": {
+-      "include": ["~DEFAULT_BRANCH"],
+-      "exclude": []
+-    }
+-  },
+-  "rules": [
+-    { "type": "deletion" },
+-    { "type": "non_fast_forward" },
+-    {
+-      "type": "pull_request",
+-      "parameters": {
+-        "required_approving_review_count": 1,
+-        "dismiss_stale_reviews_on_push": true
+-      }
+-    },
+-    {
+-      "type": "required_status_checks",
+-      "parameters": {
+-        "strict_required_status_checks_policy": true,
+-        "required_status_checks": [{ "context": "unit-tests" }]
+-      }
+-    }
+-  ]
+-}
+diff --git a/evals/workflow-path-audit/seed/.github/workflows/deploy.yml b/evals/workflow-path-audit/seed/.github/workflows/deploy.yml
+deleted file mode 100644
+index 6c1b4886..00000000
+--- a/evals/workflow-path-audit/seed/.github/workflows/deploy.yml
++++ /dev/null
+@@ -1,22 +0,0 @@
+-name: Deploy
+-
+-on:
+-  push:
+-    branches: [main]
+-  workflow_dispatch:
+-
+-permissions:
+-  contents: read
+-
+-jobs:
+-  deploy:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+-        with:
+-          node-version: 22
+-      - run: npm ci --omit=dev
+-      # Ships src/ plus the runtime dependency set. Prose and docs are not
+-      # part of the deployed artifact.
+-      - run: bash scripts/deploy.sh
+diff --git a/evals/workflow-path-audit/seed/.github/workflows/docs-site.yml b/evals/workflow-path-audit/seed/.github/workflows/docs-site.yml
+deleted file mode 100644
+index cd2c4ccb..00000000
+--- a/evals/workflow-path-audit/seed/.github/workflows/docs-site.yml
++++ /dev/null
+@@ -1,21 +0,0 @@
+-name: Docs site
+-
+-on:
+-  pull_request:
+-  push:
+-    branches: [main]
+-
+-permissions:
+-  contents: read
+-
+-jobs:
+-  build-docs:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+-      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+-        with:
+-          python-version: "3.12"
+-      - run: pip install mkdocs
+-      # Reads mkdocs.yml and everything under docs/. Nothing else.
+-      - run: mkdocs build --strict
+diff --git a/evals/workflow-path-audit/seed/.github/workflows/nightly-sweep.yml b/evals/workflow-path-audit/seed/.github/workflows/nightly-sweep.yml
+deleted file mode 100644
+index c6421e00..00000000
+--- a/evals/workflow-path-audit/seed/.github/workflows/nightly-sweep.yml
++++ /dev/null
+@@ -1,19 +0,0 @@
+-name: Nightly sweep
+-
+-on:
+-  schedule:
+-    - cron: "0 3 * * *"
+-  workflow_dispatch:
+-
+-permissions:
+-  issues: write
+-
+-jobs:
+-  sweep:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+-      - name: Close stale issues
+-        env:
+-          GH_TOKEN: ${{ github.token }}
+-        run: bash scripts/sweep-stale.sh
+diff --git a/evals/workflow-path-audit/seed/.github/workflows/tests.yml b/evals/workflow-path-audit/seed/.github/workflows/tests.yml
+deleted file mode 100644
+index 71c2a4fd..00000000
+--- a/evals/workflow-path-audit/seed/.github/workflows/tests.yml
++++ /dev/null
+@@ -1,23 +0,0 @@
+-name: Tests
+-
+-# NOTE: `unit-tests` is a REQUIRED status check (see .github/rulesets/main.json).
+-on:
+-  pull_request:
+-    branches: [main]
+-  push:
+-    branches: [main]
+-
+-permissions:
+-  contents: read
+-
+-jobs:
+-  unit-tests:
+-    name: unit-tests
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+-        with:
+-          node-version: 22
+-      - run: npm ci
+-      - run: npm test
+diff --git a/evals/workflow-path-audit/seed/.github/workflows/triage.yml b/evals/workflow-path-audit/seed/.github/workflows/triage.yml
+deleted file mode 100644
+index 89c0e8f9..00000000
+--- a/evals/workflow-path-audit/seed/.github/workflows/triage.yml
++++ /dev/null
+@@ -1,20 +0,0 @@
+-name: Issue triage
+-
+-on:
+-  issues:
+-    types: [opened, reopened]
+-  issue_comment:
+-    types: [created]
+-
+-permissions:
+-  issues: write
+-
+-jobs:
+-  label:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - name: Apply the triage label
+-        env:
+-          GH_TOKEN: ${{ github.token }}
+-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+-        run: gh issue edit "$ISSUE_NUMBER" --add-label needs-triage
+diff --git a/evals/workflow-path-audit/seed/LICENSE b/evals/workflow-path-audit/seed/LICENSE
+deleted file mode 100644
+index 45cf92e4..00000000
+--- a/evals/workflow-path-audit/seed/LICENSE
++++ /dev/null
+@@ -1,21 +0,0 @@
+-MIT License
+-
+-Copyright (c) 2026 Example Org
+-
+-Permission is hereby granted, free of charge, to any person obtaining a copy
+-of this software and associated documentation files (the "Software"), to deal
+-in the Software without restriction, including without limitation the rights
+-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-copies of the Software, and to permit persons to whom the Software is
+-furnished to do so, subject to the following conditions:
+-
+-The above copyright notice and this permission notice shall be included in all
+-copies or substantial portions of the Software.
+-
+-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-SOFTWARE.
+diff --git a/evals/workflow-path-audit/seed/README.md b/evals/workflow-path-audit/seed/README.md
+deleted file mode 100644
+index 015adc52..00000000
+--- a/evals/workflow-path-audit/seed/README.md
++++ /dev/null
+@@ -1,8 +0,0 @@
+-# example-service
+-
+-A tiny HTTP service. Prose only — the deployed artifact is `src/` plus the
+-production dependency set; the documentation site is built from `docs/`.
+-
+-- `npm start` — run it
+-- `npm test` — run the unit tests
+-- Docs live in `docs/` and are published by the docs-site workflow.
+diff --git a/evals/workflow-path-audit/seed/docs/guide.md b/evals/workflow-path-audit/seed/docs/guide.md
+deleted file mode 100644
+index 41a2a570..00000000
+--- a/evals/workflow-path-audit/seed/docs/guide.md
++++ /dev/null
+@@ -1,10 +0,0 @@
+-# Guide
+-
+-Run the service locally with `npm start`, then request a path:
+-
+-```bash
+-curl http://localhost:8080/world
+-```
+-
+-The response is the greeting for that path. Configuration is environment-only:
+-set `PORT` to change the listen port.
+diff --git a/evals/workflow-path-audit/seed/docs/index.md b/evals/workflow-path-audit/seed/docs/index.md
+deleted file mode 100644
+index 4cc86e17..00000000
+--- a/evals/workflow-path-audit/seed/docs/index.md
++++ /dev/null
+@@ -1,4 +0,0 @@
+-# Example Service
+-
+-A tiny HTTP service used as documentation scaffolding. Start here, then read
+-the [guide](guide.md).
+diff --git a/evals/workflow-path-audit/seed/mkdocs.yml b/evals/workflow-path-audit/seed/mkdocs.yml
+deleted file mode 100644
+index 4de0496c..00000000
+--- a/evals/workflow-path-audit/seed/mkdocs.yml
++++ /dev/null
+@@ -1,7 +0,0 @@
+-site_name: Example Service
+-site_url: https://docs.example.com/
+-docs_dir: docs
+-
+-nav:
+-  - Home: index.md
+-  - Guide: guide.md
+diff --git a/evals/workflow-path-audit/seed/package-lock.json b/evals/workflow-path-audit/seed/package-lock.json
+deleted file mode 100644
+index d13de05a..00000000
+--- a/evals/workflow-path-audit/seed/package-lock.json
++++ /dev/null
+@@ -1,12 +0,0 @@
+-{
+-  "name": "example-service",
+-  "version": "0.1.0",
+-  "lockfileVersion": 3,
+-  "requires": true,
+-  "packages": {
+-    "": {
+-      "name": "example-service",
+-      "version": "0.1.0"
+-    }
+-  }
+-}
+diff --git a/evals/workflow-path-audit/seed/package.json b/evals/workflow-path-audit/seed/package.json
+deleted file mode 100644
+index b6748ec4..00000000
+--- a/evals/workflow-path-audit/seed/package.json
++++ /dev/null
+@@ -1,11 +0,0 @@
+-{
+-  "name": "example-service",
+-  "version": "0.1.0",
+-  "private": true,
+-  "description": "Seed workspace for the workflow-path-audit eval.",
+-  "main": "src/index.js",
+-  "scripts": {
+-    "start": "node src/index.js",
+-    "test": "node --test test/"
+-  }
+-}
+diff --git a/evals/workflow-path-audit/seed/scripts/deploy.sh b/evals/workflow-path-audit/seed/scripts/deploy.sh
+deleted file mode 100644
+index 8e6f6822..00000000
+--- a/evals/workflow-path-audit/seed/scripts/deploy.sh
++++ /dev/null
+@@ -1,12 +0,0 @@
+-#!/usr/bin/env bash
+-# Ship src/ and the production dependency set to the runtime host.
+-set -euo pipefail
+-
+-TARGET="${DEPLOY_TARGET:-deploy@service.example.com}"
+-
+-echo "packaging src/ + node_modules"
+-tar -czf service.tgz src node_modules package.json
+-
+-echo "shipping to ${TARGET}"
+-# Placeholder for the real transfer; the eval never executes this script.
+-echo "would upload service.tgz to ${TARGET}"
+diff --git a/evals/workflow-path-audit/seed/scripts/sweep-stale.sh b/evals/workflow-path-audit/seed/scripts/sweep-stale.sh
+deleted file mode 100644
+index 5fdd51e0..00000000
+--- a/evals/workflow-path-audit/seed/scripts/sweep-stale.sh
++++ /dev/null
+@@ -1,7 +0,0 @@
+-#!/usr/bin/env bash
+-# Close issues with no activity for 60 days. Runs on the nightly schedule only.
+-set -euo pipefail
+-
+-echo "sweeping stale issues"
+-# Placeholder for the real sweep; the eval never executes this script.
+-echo "would close issues idle for 60 days"
+diff --git a/evals/workflow-path-audit/seed/src/index.js b/evals/workflow-path-audit/seed/src/index.js
+deleted file mode 100644
+index cb24a21d..00000000
+--- a/evals/workflow-path-audit/seed/src/index.js
++++ /dev/null
+@@ -1,17 +0,0 @@
+-"use strict";
+-
+-const http = require("node:http");
+-const { greeting } = require("./util");
+-
+-const PORT = Number(process.env.PORT || 8080);
+-
+-const server = http.createServer((req, res) => {
+-  res.writeHead(200, { "content-type": "text/plain" });
+-  res.end(greeting(req.url));
+-});
+-
+-if (require.main === module) {
+-  server.listen(PORT);
+-}
+-
+-module.exports = { server };
+diff --git a/evals/workflow-path-audit/seed/src/util.js b/evals/workflow-path-audit/seed/src/util.js
+deleted file mode 100644
+index ce413634..00000000
+--- a/evals/workflow-path-audit/seed/src/util.js
++++ /dev/null
+@@ -1,9 +0,0 @@
+-"use strict";
+-
+-/** Greeting for a request path; "/" gets the generic form. */
+-function greeting(path) {
+-  const name = (path || "/").replace(/^\//, "").trim();
+-  return name ? `hello, ${name}\n` : "hello\n";
+-}
+-
+-module.exports = { greeting };
+diff --git a/evals/workflow-path-audit/seed/test/index.test.js b/evals/workflow-path-audit/seed/test/index.test.js
+deleted file mode 100644
+index a9a50a39..00000000
+--- a/evals/workflow-path-audit/seed/test/index.test.js
++++ /dev/null
+@@ -1,13 +0,0 @@
+-"use strict";
+-
+-const assert = require("node:assert");
+-const { test } = require("node:test");
+-const { greeting } = require("../src/util");
+-
+-test("root path gets the generic greeting", () => {
+-  assert.strictEqual(greeting("/"), "hello\n");
+-});
+-
+-test("a named path is echoed back", () => {
+-  assert.strictEqual(greeting("/world"), "hello, world\n");
+-});
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/fixture.yaml b/evals/workflow-path-audit/workflow-doc-in-step/fixture.yaml
+new file mode 100644
+index 00000000..f959a124
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/fixture.yaml
+@@ -0,0 +1,176 @@
++# Eval fixture: workflow-path-audit (workflow-doc-in-step)
++# Measures the skill's step 5, "Update the docs that already exist": the repo
++# documents its workflows in AGENTS.md, in a table whose "Salient paths"
++# column says `all paths` for tests.yml and docs-site.yml, and the audit is
++# done only when that column matches the filters it wrote. It also measures
++# the step's other half, "If no such doc exists, do not create one", from the
++# side this seed can see: the table already exists, so a new WORKFLOWS.md, a
++# CONTRIBUTING.md or a page under docs/ is a second record nobody asked for.
++#
++# Why the other fixtures cannot measure it: none of the sibling seeds
++# documents its workflows anywhere, so none can tell an agent that brings an
++# existing table back in step from one that edits the YAML and stops.
++#
++# What the objective column decides, from the files alone: changeset replays
++# through every `on:` block (the seed fires both workflows on everything, so
++# all four fail on it); line-anchored patterns over AGENTS.md that the
++# tests.yml row names src/ and the docs-site.yml row names docs/, with
++# neither row still saying `all paths`, and the schedule row and the other
++# sections kept; and byte comparison of everything else, which catches a new
++# doc at the common names. It does not read the table's prose: a row naming
++# src/ for the wrong reason passes, and a doc created under some other name is
++# the judge's. The ruleset declares no required check, so workflow-level
++# filters are the right shape; the fake `gh` answers the skill's step 1 reads
++# offline and nothing reads its log.
++
++skill: workflow-path-audit
++registry: https://github.com/Adam-S-Daniel/adam-agentskills
++
++# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
++# picks both (ADR 0013). No `context:`: an isolation pair, like every nested
++# fixture added since #66.
++
++judge:
++  weights:
++    docs-in-step: 0.4
++    salience: 0.4
++    restraint: 0.2
++
++env:
++  PATH: "$WORKSPACE/bin:$PATH"
++  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
++  GH_REPO: "example-org/example-service"
++
++prompt: >
++  Both of our CI workflows run on every change. Fix their triggers so each
++  runs only when it needs to.
++
++arms:
++  with_skill:
++    install: copy
++  without_skill:
++    install: none
++
++# Every must_match / must_not_match pattern below is anchored at both ends,
++# has no unescaped `.`, and every negated class excludes a newline, so a
++# pattern matches one whole line of AGENTS.md and nothing across lines.
++objective_checks:
++  - id: docs-change-builds-only-the-docs
++    description: A docs-only change builds the docs site and skips the tests
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["docs/guide.md"]
++    expect_triggered:
++      - ".github/workflows/docs-site.yml"
++    expect_skipped:
++      - ".github/workflows/tests.yml"
++
++  - id: source-change-runs-only-the-tests
++    description: A src/ change runs the tests and skips the docs build
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["src/util.js"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++
++  - id: lockfile-change-runs-only-the-tests
++    description: A lockfile-only change runs the tests (npm ci reads it) and skips the docs build
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["package-lock.json"]
++    expect_triggered:
++      - ".github/workflows/tests.yml"
++    expect_skipped:
++      - ".github/workflows/docs-site.yml"
++
++  - id: agents-md-change-runs-nothing
++    description: Editing AGENTS.md or README.md, the audit's own doc change, runs neither workflow
++    type: changeset_triggers
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++    changeset: ["AGENTS.md", "README.md"]
++    expect_skipped:
++      - ".github/workflows/tests.yml"
++      - ".github/workflows/docs-site.yml"
++
++  - id: tests-row-names-its-paths
++    description: The AGENTS.md table row for tests.yml names src/ and no longer says `all paths`
++    type: file_matches
++    paths: ["AGENTS.md"]
++    require_present: true
++    must_match:
++      - '^\|[^\n]*tests\.yml[^\n]*\|[^\n]*src/[^\n]*\|[ \t]*$'
++    must_not_match:
++      - '^\|[^\n]*tests\.yml[^\n]*\|[ \t]*all paths[ \t]*\|[ \t]*$'
++
++  - id: docs-site-row-names-its-paths
++    description: The AGENTS.md table row for docs-site.yml names docs/ and no longer says `all paths`
++    type: file_matches
++    paths: ["AGENTS.md"]
++    require_present: true
++    must_match:
++      - '^\|[^\n]*docs-site\.yml[^\n]*\|[^\n]*(?<![A-Za-z0-9_-])docs/[^\n]*\|[ \t]*$'
++    must_not_match:
++      - '^\|[^\n]*docs-site\.yml[^\n]*\|[ \t]*all paths[ \t]*\|[ \t]*$'
++
++  - id: agents-md-keeps-the-rest
++    description: AGENTS.md keeps the schedule row and its other sections
++    type: file_matches
++    paths: ["AGENTS.md"]
++    require_present: true
++    must_match:
++      - '^\|[^\n]*nightly-sweep\.yml[^\n]*\|[^\n]*schedule[^\n]*\|[ \t]*$'
++      - '^## Running locally$'
++      - '^## Conventions$'
++      - '^- Keep `src/` free of runtime dependencies\.$'
++
++  - id: workflows-still-parse
++    description: All workflow files still parse as YAML
++    type: yaml_parses
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: event-only-workflows-unfiltered
++    description: The schedule-only sweep gained no path filter
++    type: event_only_workflows_unfiltered
++    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
++
++  - id: no-second-workflow-doc
++    description: >
++      Nothing outside .github/workflows/ and AGENTS.md changed, and no new
++      workflow doc appeared at the common names beside the table that exists.
++    type: files_unchanged
++    paths:
++      - "src/*.js"
++      - "test/*.js"
++      - "docs/*"
++      - "scripts/*.sh"
++      - "package.json"
++      - "package-lock.json"
++      - "mkdocs.yml"
++      - "README.md"
++      - "CONTRIBUTING.md"
++      - "WORKFLOWS.md"
++      - ".github/*.md"
++      - ".github/rulesets/main.json"
++
++judge_rubric: >
++  Score 0-10 on each dimension, with a one-sentence rationale per dimension.
++  The seed's tests.yml and docs-site.yml run on every pull request and every
++  push to main, and AGENTS.md's "CI workflows" table says `all paths` for
++  both. No check is required, so a workflow-level `paths:` (or
++  `paths-ignore:`) filter is the right shape.
++  (1) Docs in step — after the change, does each AGENTS.md row's "Salient
++  paths" cell state the filter its workflow now carries (tests.yml: src/,
++  test/, the manifest and lockfile, its own file; docs-site.yml: docs/,
++  mkdocs.yml, its own file), and do the Triggers cells still match the YAML?
++  Cap at 3 if tests-row-names-its-paths or docs-site-row-names-its-paths
++  failed. Cap at 5 if the agent wrote a second workflow doc instead of, or
++  beside, the existing table.
++  (2) Salience — are the path lists the files each workflow's own steps
++  consume, rather than a catch-all or a copy of the sibling's list? Cap at 4
++  if any of the four changeset checks failed.
++  (3) Restraint — did the agent leave the schedule-only sweep unfiltered,
++  leave every file outside .github/workflows/ and AGENTS.md alone, and keep
++  the rest of AGENTS.md as it was? Cap at 3 if no-second-workflow-doc or
++  agents-md-keeps-the-rest failed.
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.editorconfig b/evals/workflow-path-audit/workflow-doc-in-step/seed/.editorconfig
+new file mode 100644
+index 00000000..a4b824b5
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.editorconfig
+@@ -0,0 +1,8 @@
++root = true
++
++[*]
++charset = utf-8
++end_of_line = lf
++insert_final_newline = true
++indent_style = space
++indent_size = 2
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+new file mode 100644
+index 00000000..599b4a00
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rules/branches/main.json
+@@ -0,0 +1,24 @@
++[
++  {
++    "type": "deletion",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "non_fast_forward",
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  },
++  {
++    "type": "pull_request",
++    "parameters": {
++      "required_approving_review_count": 1,
++      "dismiss_stale_reviews_on_push": true
++    },
++    "ruleset_source_type": "Repository",
++    "ruleset_source": "example-org/example-service",
++    "ruleset_id": 4410273
++  }
++]
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+new file mode 100644
+index 00000000..caa42d33
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json
+@@ -0,0 +1,31 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/auth-status.txt b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/auth-status.txt
+new file mode 100644
+index 00000000..1a8ba937
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/auth-status.txt
+@@ -0,0 +1,6 @@
++github.com
++  ✓ Logged in to github.com account example-bot (GH_TOKEN)
++  - Active account: true
++  - Git operations protocol: https
++  - Token: ****************************************
++  - Token scopes: 'read:org', 'repo'
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/repo-view.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/repo-view.json
+new file mode 100644
+index 00000000..e66bfb80
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/repo-view.json
+@@ -0,0 +1,10 @@
++{
++  "name": "example-service",
++  "nameWithOwner": "example-org/example-service",
++  "owner": {
++    "login": "example-org"
++  },
++  "defaultBranchRef": {
++    "name": "main"
++  }
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-list.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-list.json
+new file mode 100644
+index 00000000..1b798e04
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-list.json
+@@ -0,0 +1,10 @@
++[
++  {
++    "id": 4410273,
++    "name": "main",
++    "target": "branch",
++    "source_type": "Repository",
++    "source": "example-org/example-service",
++    "enforcement": "active"
++  }
++]
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-view-4410273.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-view-4410273.json
+new file mode 100644
+index 00000000..caa42d33
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.gh/replay/ruleset-view-4410273.json
+@@ -0,0 +1,31 @@
++{
++  "id": 4410273,
++  "name": "main",
++  "target": "branch",
++  "source_type": "Repository",
++  "source": "example-org/example-service",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/rulesets/main.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/rulesets/main.json
+new file mode 100644
+index 00000000..0b295c82
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/rulesets/main.json
+@@ -0,0 +1,28 @@
++{
++  "name": "main",
++  "target": "branch",
++  "enforcement": "active",
++  "conditions": {
++    "ref_name": {
++      "include": [
++        "~DEFAULT_BRANCH"
++      ],
++      "exclude": []
++    }
++  },
++  "rules": [
++    {
++      "type": "deletion"
++    },
++    {
++      "type": "non_fast_forward"
++    },
++    {
++      "type": "pull_request",
++      "parameters": {
++        "required_approving_review_count": 1,
++        "dismiss_stale_reviews_on_push": true
++      }
++    }
++  ]
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/docs-site.yml b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/docs-site.yml
+new file mode 100644
+index 00000000..cd2c4ccb
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/docs-site.yml
+@@ -0,0 +1,21 @@
++name: Docs site
++
++on:
++  pull_request:
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  build-docs:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
++        with:
++          python-version: "3.12"
++      - run: pip install mkdocs
++      # Reads mkdocs.yml and everything under docs/. Nothing else.
++      - run: mkdocs build --strict
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/nightly-sweep.yml b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/nightly-sweep.yml
+new file mode 100644
+index 00000000..c6421e00
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/nightly-sweep.yml
+@@ -0,0 +1,19 @@
++name: Nightly sweep
++
++on:
++  schedule:
++    - cron: "0 3 * * *"
++  workflow_dispatch:
++
++permissions:
++  issues: write
++
++jobs:
++  sweep:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - name: Close stale issues
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: bash scripts/sweep-stale.sh
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/tests.yml b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/tests.yml
+new file mode 100644
+index 00000000..91c7b3bc
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/.github/workflows/tests.yml
+@@ -0,0 +1,20 @@
++name: Tests
++
++on:
++  pull_request:
++  push:
++    branches: [main]
++
++permissions:
++  contents: read
++
++jobs:
++  unit-tests:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
++      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
++        with:
++          node-version: 22
++      - run: npm ci
++      - run: npm test
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/AGENTS.md b/evals/workflow-path-audit/workflow-doc-in-step/seed/AGENTS.md
+new file mode 100644
+index 00000000..e8be8cd3
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/AGENTS.md
+@@ -0,0 +1,21 @@
++# AGENTS.md
++
++Notes for anyone, human or agent, changing this repository.
++
++## Running locally
++
++- `npm ci`, then `npm test` runs the unit tests.
++- `pip install mkdocs && mkdocs serve` previews the docs site.
++
++## CI workflows
++
++| Workflow | Triggers | Salient paths |
++|---|---|---|
++| `tests.yml` | pull_request, push to main | all paths |
++| `docs-site.yml` | pull_request, push to main | all paths |
++| `nightly-sweep.yml` | schedule (03:00 UTC), manual dispatch | n/a: schedule only |
++
++## Conventions
++
++- Commit messages explain why, not what.
++- Keep `src/` free of runtime dependencies.
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/README.md b/evals/workflow-path-audit/workflow-doc-in-step/seed/README.md
+new file mode 100644
+index 00000000..91d439b2
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/README.md
+@@ -0,0 +1,5 @@
++# example-service
++
++A tiny HTTP service. The documentation site is built from `docs/`.
++Contributor notes, including what each CI workflow does, are in
++[AGENTS.md](AGENTS.md).
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/bin/gh b/evals/workflow-path-audit/workflow-doc-in-step/seed/bin/gh
+new file mode 120000
+index 00000000..e7afe3c5
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/bin/gh
+@@ -0,0 +1 @@
++../../../../../harness/fakes/gh
+\ No newline at end of file
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/guide.md b/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/guide.md
+new file mode 100644
+index 00000000..41a2a570
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/guide.md
+@@ -0,0 +1,10 @@
++# Guide
++
++Run the service locally with `npm start`, then request a path:
++
++```bash
++curl http://localhost:8080/world
++```
++
++The response is the greeting for that path. Configuration is environment-only:
++set `PORT` to change the listen port.
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/index.md b/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/index.md
+new file mode 100644
+index 00000000..4cc86e17
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/docs/index.md
+@@ -0,0 +1,4 @@
++# Example Service
++
++A tiny HTTP service used as documentation scaffolding. Start here, then read
++the [guide](guide.md).
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/mkdocs.yml b/evals/workflow-path-audit/workflow-doc-in-step/seed/mkdocs.yml
+new file mode 100644
+index 00000000..4de0496c
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/mkdocs.yml
+@@ -0,0 +1,7 @@
++site_name: Example Service
++site_url: https://docs.example.com/
++docs_dir: docs
++
++nav:
++  - Home: index.md
++  - Guide: guide.md
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/package-lock.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/package-lock.json
+new file mode 100644
+index 00000000..d13de05a
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/package-lock.json
+@@ -0,0 +1,12 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "lockfileVersion": 3,
++  "requires": true,
++  "packages": {
++    "": {
++      "name": "example-service",
++      "version": "0.1.0"
++    }
++  }
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/package.json b/evals/workflow-path-audit/workflow-doc-in-step/seed/package.json
+new file mode 100644
+index 00000000..d6be6d15
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/package.json
+@@ -0,0 +1,10 @@
++{
++  "name": "example-service",
++  "version": "0.1.0",
++  "private": true,
++  "main": "src/index.js",
++  "scripts": {
++    "start": "node src/index.js",
++    "test": "node --test test/"
++  }
++}
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/scripts/sweep-stale.sh b/evals/workflow-path-audit/workflow-doc-in-step/seed/scripts/sweep-stale.sh
+new file mode 100755
+index 00000000..65fd3bce
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/scripts/sweep-stale.sh
+@@ -0,0 +1,7 @@
++#!/usr/bin/env bash
++# Close issues with no activity for 60 days. Runs on the nightly schedule only.
++set -euo pipefail
++
++echo "sweeping stale issues"
++# Placeholder for the real sweep; nothing here is ever executed against a host.
++echo "would close issues idle for 60 days"
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/src/index.js b/evals/workflow-path-audit/workflow-doc-in-step/seed/src/index.js
+new file mode 100644
+index 00000000..ca10e2f7
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/src/index.js
+@@ -0,0 +1,22 @@
++"use strict";
++
++const http = require("node:http");
++const { greeting } = require("./util");
++
++const PORT = Number(process.env.PORT || 8080);
++
++const server = http.createServer((req, res) => {
++  if (req.url === "/healthz") {
++    res.writeHead(204);
++    res.end();
++    return;
++  }
++  res.writeHead(200, { "content-type": "text/plain" });
++  res.end(greeting(req.url));
++});
++
++if (require.main === module) {
++  server.listen(PORT);
++}
++
++module.exports = { server };
+diff --git a/evals/workflow-path-audit/workflow-doc-in-step/seed/src/util.js b/evals/workflow-path-audit/workflow-doc-in-step/seed/src/util.js
+new file mode 100644
+index 00000000..ce413634
+--- /dev/null
++++ b/evals/workflow-path-audit/workflow-doc-in-step/seed/src/util.js
+@@ -0,0 +1,9 @@
++"use strict";
++
++/** Greeting for a request path; "/" gets the generic form. */
++function greeting(path) {
++  const name = (path || "/").replace(/^\//, "").trim();
++  return name ? `hello, ${name}\n` : "hello\n";
++}
++
++module.exports = { greeting };
+diff --git a/scripts/board_feed.py b/scripts/board_feed.py
+index f4471299..b8f32375 100644
+--- a/scripts/board_feed.py
++++ b/scripts/board_feed.py
+@@ -318,7 +318,9 @@ def results(tree):
+         newest.append(row)
+     points = []
+     for row in sorted(rows, key=lambda item: (item["ts"], item["_source"])):
+-        if row["fixture"] == "workflow-path-audit":
++        # The reference fixture's trend, across its move from flat to nested.
++        if row["fixture"] in ("workflow-path-audit",
++                              "workflow-path-audit/required-check-routing"):
+             arms = {arm["arm"]: arm for arm in row["arms"]}
+             points.append({"ts": row["ts"], **{name: (
+                 {metric: arms[name][metric] for metric in METRICS} if name in arms else None)
+diff --git a/scripts/plan_scheduled_evals.py b/scripts/plan_scheduled_evals.py
+index e6c34f6c..4869a556 100644
+--- a/scripts/plan_scheduled_evals.py
++++ b/scripts/plan_scheduled_evals.py
+@@ -15,7 +15,7 @@ import re
+ import subprocess
+ import sys
+ 
+-DEFAULT_FIXTURE = "evals/workflow-path-audit"
++DEFAULT_FIXTURE = "evals/workflow-path-audit/required-check-routing"
+ 
+ 
+ def committed_fixtures(root):
+diff --git a/test/issues/test_issue_202_harness.py b/test/issues/test_issue_202_harness.py
+index ed660634..0141baa6 100644
+--- a/test/issues/test_issue_202_harness.py
++++ b/test/issues/test_issue_202_harness.py
+@@ -55,7 +55,8 @@ POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+ EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+ PROPAGATION_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+ FAKE_CLAUDE = TEST_DIR / "fake-claude"
+-EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
++# A nested fixture: its arms are written under its own name (#66).
++EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
+ FAKE_VERSION_LINE = "fake-claude 0.0.0 (hermetic test stub)"
+ 
+ sys.path.insert(0, str(HARNESS_DIR))
+@@ -539,7 +540,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
+         run_dir = self._run_dir(skill)
+         for arm in ("with_skill", "without_skill"):
+             with self.subTest(arm=arm):
+-                summary = json.loads((run_dir / arm / "summary.json")
++                summary = json.loads((run_dir / EVAL_DIR.name / arm / "summary.json")
+                                      .read_text(encoding="utf-8"))
+                 self.assertEqual(summary["harness"],
+                                  {"name": "claude-code",
+@@ -569,7 +570,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
+         proc = self._run(EVAL_DIR, "--arm", "without_skill",
+                          env_extra={"CLAUDE_BIN": str(wrapper)})
+         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+-        summary = json.loads((self._run_dir(skill) / "without_skill" /
++        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
+                               "summary.json").read_text(encoding="utf-8"))
+         self.assertEqual(summary["error"]["type"], "nonzero_exit")
+         self.assertEqual(summary["harness"]["version"], FAKE_VERSION_LINE)
+@@ -604,7 +605,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
+                          env_extra={"CLAUDE_BIN": str(wrapper)})
+         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+         self.assertIn("exit 9", proc.stderr)
+-        summary = json.loads((self._run_dir(skill) / "without_skill" /
++        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
+                               "summary.json").read_text(encoding="utf-8"))
+         self.assertEqual(summary["harness"], {"name": "claude-code", "version": None,
+                                               "permission_mode": "auto", "effort": None})
+@@ -627,7 +628,7 @@ class TestJudgeModelsOnTheExceptionPath(_RunEvalEndToEnd):
+             f"os.execv({str(FAKE_CLAUDE)!r}, [{str(FAKE_CLAUDE)!r}] + sys.argv[1:])"))
+         proc = self._run(EVAL_DIR, "--arm", "without_skill",
+                          env_extra={"CLAUDE_BIN": str(wrapper)})
+-        summary = json.loads((self._run_dir(skill) / "without_skill" /
++        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
+                               "summary.json").read_text(encoding="utf-8"))
+         self.assertIn("error", summary["judge"] or {}, proc.stdout + proc.stderr)
+         self.assertEqual(summary["judge_models_used"], [judge_model])
+diff --git a/test/issues/test_issue_371_scheduled_fixtures.py b/test/issues/test_issue_371_scheduled_fixtures.py
+index e610eba9..cc04d8e8 100644
+--- a/test/issues/test_issue_371_scheduled_fixtures.py
++++ b/test/issues/test_issue_371_scheduled_fixtures.py
+@@ -46,7 +46,7 @@ ISOLATION_ONLY: dict[str, str] = {}
+ _CMS_PLATFORM = (25099, 6082, 685637)
+ _ADAMDANIEL_AI = (25099, 14017, 885455)
+ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+-    "evals/workflow-path-audit": (_CMS_PLATFORM, _CMS_PLATFORM),
++    "evals/workflow-path-audit/required-check-routing": (_CMS_PLATFORM, _CMS_PLATFORM),
+     "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
+     "evals/review-bash-ci-reliability/release-pipeline": (_CMS_PLATFORM, _CMS_PLATFORM),
+     "evals/skills-doctor/bucketed-account-store": ((25099, 6115, 644882),) * 2,
+diff --git a/test/issues/test_issue_66.py b/test/issues/test_issue_66.py
+index 5b1c206c..ef0d121b 100644
+--- a/test/issues/test_issue_66.py
++++ b/test/issues/test_issue_66.py
+@@ -389,7 +389,8 @@ class TestIssue66SingleTrialIsMainPlusN(_HarnessCase):
+     def test_the_documented_objective_only_invocation_still_works(self):
+         # The issue's own verifier line, on the fixture the scheduled run
+         # uses: `--trials 1` beside objective-only prints what no flag does.
+-        eval_dir = REPO_ROOT / "evals" / "workflow-path-audit"
++        eval_dir = (REPO_ROOT / "evals" / "workflow-path-audit"
++                    / "required-check-routing")
+         plain = self._run(eval_dir, "--arm", "objective-only")
+         flagged = self._run(eval_dir, "--arm", "objective-only",
+                             "--trials", "1")
+diff --git a/test/issues/test_issue_71.py b/test/issues/test_issue_71.py
+index 25c5b9eb..4dccc2e4 100644
+--- a/test/issues/test_issue_71.py
++++ b/test/issues/test_issue_71.py
+@@ -442,10 +442,16 @@ class RefusalTests(PipelineCase):
+     def test_a_flat_single_fixture_skill_exits_2(self):
+         rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
+         self.assertEqual(rc, 0)  # sanity: writing-adrs itself plans fine
++        # A synthetic flat skill: workflow-path-audit, the example this used
++        # to name, has nested fixtures enough to plan since 2026-10-26.
++        evals = self.tmp / "evals"
++        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit"
++                        / "required-check-routing", evals / "workflow-path-audit")
+         argv = self.argv()
+         argv[0] = "workflow-path-audit"
+         buf = io.StringIO()
+         with mock.patch.dict(os.environ, self.env, clear=True), \
++                mock.patch.object(pse, "EVALS_DIR", evals), \
+                 contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
+             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
+         self.assertEqual(rc, 2)
+diff --git a/test/issues/test_issue_97.py b/test/issues/test_issue_97.py
+index 92a4b13a..e1b5d8c6 100644
+--- a/test/issues/test_issue_97.py
++++ b/test/issues/test_issue_97.py
+@@ -1546,7 +1546,8 @@ class TestIssue97(unittest.TestCase):
+         # ambient: the harness reads it itself and never passes it on.
+         skill_log = tmp / "skill-argv.jsonl"
+         skill_eval = tmp / "skill-eval"
+-        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit", skill_eval)
++        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit"
++                        / "required-check-routing", skill_eval)
+         skill_fixture = yaml.safe_load(
+             (skill_eval / "fixture.yaml").read_text(encoding="utf-8"))
+         skill_fixture["env"] = {"FAKE_CLAUDE_MODE": "agent",
+@@ -3877,7 +3878,7 @@ class TestIssue97(unittest.TestCase):
+         # objective-only run died with a bare ImportError traceback on a
+         # machine without the parser, for a code path that never parses
+         # markdown. The import is at its one call site now.
+-        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit"
++        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
+         baseline, _ = self._run_main([skill_dir, "--arm", "objective-only"])
+         blocked = dict(sys.modules)
+         blocked["markdown_it"] = None
+@@ -4014,7 +4015,8 @@ class TestIssue97(unittest.TestCase):
+                          "the weekly routine owns scheduled evals; eval.yml stays manual")
+         inputs = (triggers["workflow_dispatch"] or {}).get("inputs") or {}
+         self.assertIn("fixture", inputs)
+-        self.assertEqual(inputs["fixture"].get("default"), "evals/workflow-path-audit",
++        self.assertEqual(inputs["fixture"].get("default"),
++                         "evals/workflow-path-audit/required-check-routing",
+                          "manual dispatch keeps its default")
+         self.assertFalse(inputs["fixture"].get("required"),
+                          "manual dispatch can omit the fixture input")
+@@ -4103,7 +4105,7 @@ class TestIssue97(unittest.TestCase):
+             with self.subTest(event=event):
+                 proc = self._run_validation(event)
+                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+-                self.assertEqual(proc.selected, "evals/workflow-path-audit")
++                self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
+ 
+     # Every value the step must refuse, driven through the real `run:` block.
+     # Two shapes of refusal, both exit 1 before the token exchange: a value
+@@ -4115,20 +4117,22 @@ class TestIssue97(unittest.TestCase):
+         "evals/nope",
+         "evals",
+         "evals/guidance",
+-        "evals/workflow-path-audit/seed",
++        # a skill directory of nested fixtures names no single fixture (#66)
++        "evals/workflow-path-audit",
++        "evals/workflow-path-audit/required-check-routing/seed",
+         123,                                    # a JSON number, not a string
+         # path shapes that are not the committed spelling
+         "../../etc/passwd",
+         "/etc",
+         "/tmp/x",
+-        "./evals/workflow-path-audit",
++        "./evals/workflow-path-audit/required-check-routing",
+         "evals//workflow-path-audit",
+-        "evals/../evals/workflow-path-audit",
+-        "evals/workflow-path-audit/",
++        "evals/../evals/workflow-path-audit/required-check-routing",
++        "evals/workflow-path-audit/required-check-routing/",
+         # whitespace-decorated
+-        "evals/workflow-path-audit ",
+-        "evals/workflow-path-audit\t",
+-        "evals/workflow-path-audit\r",
++        "evals/workflow-path-audit/required-check-routing ",
++        "evals/workflow-path-audit/required-check-routing\t",
++        "evals/workflow-path-audit/required-check-routing\r",
+         # shell metacharacters (inert here — every use is quoted — but the
+         # gate refuses them on shape rather than relying on that)
+         "; rm -rf /",
+@@ -4145,13 +4149,13 @@ class TestIssue97(unittest.TestCase):
+         # real bearer was minted and the WIF preflight spent a call before the
+         # run step failed on "no such fixture.yaml". The header promises the
+         # opposite, twice.
+-        "/etc/passwd\nevals/workflow-path-audit",
+-        "evals/workflow-path-audit\nevals/guidance/_delivery",
+-        "evals/workflow-path-audit\n$(id)",
++        "/etc/passwd\nevals/workflow-path-audit/required-check-routing",
++        "evals/workflow-path-audit/required-check-routing\nevals/guidance/_delivery",
++        "evals/workflow-path-audit/required-check-routing\n$(id)",
+         # structured JSON: jq renders these across lines, so they are
+         # multi-line too
+-        ["evals/workflow-path-audit"],
+-        {"fixture": "evals/workflow-path-audit"},
++        ["evals/workflow-path-audit/required-check-routing"],
++        {"fixture": "evals/workflow-path-audit/required-check-routing"},
+     )
+ 
+     def test_the_validation_step_rejects_anything_that_names_no_fixture(self):
+@@ -4229,12 +4233,12 @@ class TestIssue97(unittest.TestCase):
+         # match a committed path — but the gate never saw the byte it would
+         # refuse, which is not what this workflow's header says it does.
+         for label, value in (
+-            ("leading", self.NUL + "evals/workflow-path-audit"),
+-            ("trailing", "evals/workflow-path-audit" + self.NUL),
++            ("leading", self.NUL + "evals/workflow-path-audit/required-check-routing"),
++            ("trailing", "evals/workflow-path-audit/required-check-routing" + self.NUL),
+             # Collapses to a COMMITTED name once the NUL is dropped — the
+             # shape that was accepted.
+             ("embedded, collapsing to a committed name",
+-             "evals/workflow" + self.NUL + "-path-audit"),
++             "evals/workflow" + self.NUL + "-path-audit/required-check-routing"),
+             # Collapses to nothing committed: refused before, refused now, but
+             # by the NUL rule rather than by accident.
+             ("embedded, collapsing to nothing committed",
+@@ -4260,9 +4264,9 @@ class TestIssue97(unittest.TestCase):
+         # The accepted rows are unchanged: the gate runs before the
+         # substitution and a value with no NUL never reaches it.
+         proc = self._run_validation(
+-            {"inputs": {"fixture": "evals/workflow-path-audit"}})
++            {"inputs": {"fixture": "evals/workflow-path-audit/required-check-routing"}})
+         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+-        self.assertEqual(proc.selected, "evals/workflow-path-audit")
++        self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
+ 
+     @staticmethod
+     def _commit_selection_tree(root: Path) -> None:
+diff --git a/test/issues/test_issue_local_eval.py b/test/issues/test_issue_local_eval.py
+index f2e43cfe..cf379a66 100644
+--- a/test/issues/test_issue_local_eval.py
++++ b/test/issues/test_issue_local_eval.py
+@@ -38,7 +38,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+ LOCAL_EVAL = REPO_ROOT / "scripts" / "local_eval.py"
+ FAKE_CLAUDE = REPO_ROOT / "test" / "fake-claude"
+ FAKE_CLAUDE_INIT = REPO_ROOT / "test" / "fake-claude-init"
+-EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
++# These tests drive a FLAT fixture (#66). workflow-path-audit's fixtures are
++# nested, so setUpModule stages a copy of one of them at
++# `<temp>/evals/workflow-path-audit/`, whose parent is not named after the
++# skill and so reads as flat; EVAL_DIR names that copy once it exists.
++FLAT_SOURCE = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
++EVAL_DIR = FLAT_SOURCE
+ GUIDANCE_FIXTURE = REPO_ROOT / "evals" / "guidance" / "_delivery"
+ SKILL = "workflow-path-audit"
+ EXHIBIT = "local — not badge input"
+@@ -130,7 +135,12 @@ from arm_test_env import arm_test_environment, install_arm_test_environment  # n
+ 
+ @install_arm_test_environment
+ def setUpModule() -> None:
+-    pass
++    global EVAL_DIR
++    staging = Path(tempfile.mkdtemp(prefix="local-eval-flat-",
++                                    dir=TestLocalEval._temp_base())).resolve()
++    unittest.addModuleCleanup(shutil.rmtree, staging, ignore_errors=True)
++    EVAL_DIR = staging / "evals" / SKILL
++    shutil.copytree(FLAT_SOURCE, EVAL_DIR)
+ 
+ 
+ def tearDownModule() -> None:
+diff --git a/test/issues/test_issue_scheduled_fixtures.py b/test/issues/test_issue_scheduled_fixtures.py
+index e9a3219d..3e6095aa 100644
+--- a/test/issues/test_issue_scheduled_fixtures.py
++++ b/test/issues/test_issue_scheduled_fixtures.py
+@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
+ WORKFLOW = ROOT / ".github/workflows/eval.yml"
+ sys.path.insert(0, str(ROOT / "test"))
+ from lockfile_pins import lock_problem  # noqa: E402
+-EXPECTED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
++EXPECTED = ["evals/workflow-path-audit/required-check-routing",
++            "evals/embeddable-tool-pages",
+             "evals/review-bash-ci-reliability/release-pipeline",
+             "evals/skills-doctor/bucketed-account-store",
+             "evals/github-actions-sha-pinning",
+@@ -103,14 +104,14 @@ class TestScheduledFixtures(unittest.TestCase):
+         for event in events:
+             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", event),
+                              {"include": [{"fixture": EXPECTED[0],
+-                                           "eval_key": "workflow-path-audit", "slot": 0}]})
++                                           "eval_key": EXPECTED[0][6:], "slot": 0}]})
+         for path in EXPECTED:
+             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": path}})["include"],
+                              [{"fixture": path, "eval_key": path[6:], "slot": 0}])
+ 
+     def test_dispatch_rejects_invalid_types_nul_and_paths(self):
+         for value in [False, True, 0, 123, [], {}, "\0" + EXPECTED[0],
+-                      EXPECTED[0] + "\n", "evals/../evals/workflow-path-audit", "evals/nope"]:
++                      EXPECTED[0] + "\n", "evals/../" + EXPECTED[0], "evals/workflow-path-audit", "evals/nope"]:
+             with self.subTest(value=value), self.assertRaises(ValueError):
+                 planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": value}})
+         for inputs in [False, 0, [], "fixture"]:

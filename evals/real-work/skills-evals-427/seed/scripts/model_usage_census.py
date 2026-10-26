@@ -1,0 +1,500 @@
+#!/usr/bin/env python3
+"""Count which Claude models this account actually used, per ISO week.
+
+*** THE OUTPUT OF THIS SCRIPT IS PUBLISHED PUBLICLY. ***
+
+It is committed to the `persistent/eval-results` branch of a PUBLIC repository as
+`usage/latest.json` by `scripts/publish_usage_census.sh` (see
+`evals/usage/CENSUS.md`). Treat every byte it emits as world-readable,
+forever.
+
+That is why the output is `{model_id: {iso_week: count}}` and NOTHING else. It
+carries no project names, no directory names, no filesystem paths, no prompt
+or reply text, no session ids, no timestamps finer than an ISO week. The
+transcripts it reads are full of all of those — `~/.claude/projects/` encodes
+the project path in the directory name alone — so the narrowness here is the
+whole safety property, not tidiness.
+
+AND THE KEYS ARE NOT TRUSTED EITHER. `message.model` is whatever the routing
+layer wrote into the transcript, and it is not always a model id: a Bedrock
+inference-profile ARN carries an AWS account number, a Vertex path carries a
+GCP project id, a local proxy can put a filesystem path or free prose there.
+Copying that verbatim into a top-level key published every one of them. Only
+values matching `MODEL_ID_RE` become keys; everything else is counted under
+the single key `other`, so the raw turn count this script publishes stays
+honest — nothing is silently dropped — without any of those strings crossing
+the boundary. The roster's own usage_share() then EXCLUDES `other`, and any
+key it cannot rank, from what it divides by: this file's contract is a
+truthful count of turns seen, not a truthful denominator for a model's
+share, which is roster.py's decision to make. Nothing is ever passed
+through `str()` — `str()` of a dict is `repr()`, which publishes its values.
+`test/run_tests.py::TestIssue67::test_census_emits_only_model_week_counts_and
+_leaks_nothing` and its review-round sibling in `TestIssue67Review` are the
+guards on that, and they stay.
+
+Runs on a durable machine (the transcripts are local, and a CI runner has
+none). Weekly buckets, not daily: a daily series over one account is a
+timeline of when a person was at their desk, and the roster policy only ever
+asks about 4- and 8-week windows anyway.
+
+Subagent transcripts are counted, on purpose: a subagent turn is a real API
+turn against a real model, it is billed, and the roster's question is "what
+does this account run", not "what did a human type at".
+
+`generated_at` is when this script RAN, not when the usage happened — the
+usage is in the week buckets. The roster's freshness check reads it as
+"how long ago did someone last publish a census", which is the question it
+should be asking of a publication timestamp.
+
+NOT stdlib-only: classifying a `message.model` value against the tier ladder
+needs `harness/roster.py`'s `tier_words()`/`load_policy()`, and roster.py
+itself needs PyYAML. That import is LAZY (see `_require_model_id_re()`), so
+importing this module and running `--help` work with no PyYAML installed —
+only building an actual census does, and a machine that lacks it gets one
+named line on stderr and exit 2, never an ImportError traceback. See
+`evals/usage/CENSUS.md` for installing it on the durable machine that runs
+this script.
+
+SKILL USAGE rides the same walk when `--weekly-out` is given: how often each
+skill was invoked, per ISO week, published beside the model census as
+`usage/weekly-local.json` (schema: `harness/skill_usage.py`, the one place it
+is defined). The same contract holds, and the keys are just as
+untrusted: a `Skill` tool call's `input.skill` and a typed
+`<command-name>` are free strings, so a name becomes a key ONLY when it is
+in `skill_allowlist()` — skills that already appear by name in this public
+repo, as a fixture or a non-coverage row for a non-private registry — and
+matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
+typed slash command that is not an allowlisted skill (`/clear`, `/model`)
+is not a skill invocation and is not counted at all.
+
+Usage:
+    python3 scripts/model_usage_census.py --out usage/latest.json \
+        [--weekly-out usage/weekly-local.json]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "harness"))
+# Appended, not inserted: eval_coverage (for the skill allowlist) is the only
+# module wanted from scripts/, and nothing there may shadow anything else.
+sys.path.append(str(REPO_ROOT / "scripts"))
+from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: E402
+import skill_usage  # noqa: E402
+
+DEFAULT_PROJECTS = Path.home() / ".claude" / "projects"
+DEFAULT_WEEKS = 8
+POLICY_PATH = REPO_ROOT / "evals" / "roster-policy.yml"
+
+#: The one message this script prints for a missing PyYAML, everywhere it can
+#: be hit — main()'s guard and the test that shims the import away both key
+#: off this exact string, so it can never drift out of step with itself.
+PYYAML_MISSING_MESSAGE = ("model_usage_census needs PyYAML: "
+                          "python3 -m pip install --user pyyaml")
+
+
+def _model_id_re() -> re.Pattern:
+    """The shape of a model id, and the ONLY shape that becomes a published
+    key. Being lowercase-and-dashes is necessary but not sufficient — a
+    proxy alias or a path-shaped value can be shaped exactly like an id
+    (measured: `claude-home-user-secret-client-northrop-merger`). It must
+    also carry, as one of its dash-separated tokens, a family word from the
+    tier ladder in evals/roster-policy.yml (read via `roster.tier_words`,
+    never hardcoded here), and it is capped at the length a real id needs —
+    about 40 — so a long adjacent string cannot ride in just because it
+    happens to contain a family word somewhere in it.
+
+    `import roster` is LOCAL to this function, not at module level: it is
+    the one place this script needs PyYAML (roster.py's own `import yaml`,
+    to read the tier ladder) — the alternative, hand-rolling family words
+    here, is exactly what NO MODEL IDS/FAMILY WORDS LIVE OUTSIDE
+    roster-policy.yml exists to prevent. Deferring the import means a
+    machine with no PyYAML installed can still import this module and reach
+    `--help`/argument errors; only actually building a census needs it, and
+    `main()` turns that ImportError into one named line, never a traceback.
+    """
+    import roster
+    words = "|".join(re.escape(w) for w in
+                     roster.tier_words(roster.load_policy(POLICY_PATH)))
+    # `\Z`, not `$`: `$` matches just before a trailing newline too, so an
+    # otherwise honest id with one appended would satisfy this pattern and
+    # be published as its own (distinct, newline-carrying) key rather than
+    # falling to `other` (see test/run_tests.py's HOSTILE_MODELS).
+    return re.compile(
+        rf"^(?=.{{1,40}}\Z)claude(?:-[a-z0-9.]{{1,20}})*-(?:{words})"
+        rf"(?:-[a-z0-9.]{{1,20}})*\Z")
+
+
+#: Populated by `_require_model_id_re()` on first use — never at import time.
+MODEL_ID_RE: re.Pattern | None = None
+
+
+def _require_model_id_re() -> re.Pattern:
+    """The module-level MODEL_ID_RE, computed on first call. Raises
+    ImportError, uncaught, if PyYAML (via roster.py) is not installed —
+    callers that can reach a user (main()) must catch it themselves and
+    print PYYAML_MISSING_MESSAGE; callers in a test that already has PyYAML
+    installed never see it raise at all.
+    """
+    global MODEL_ID_RE
+    if MODEL_ID_RE is None:
+        MODEL_ID_RE = _model_id_re()
+    return MODEL_ID_RE
+
+
+#: Where everything else is counted. One key, no detail — the count is the
+#: only part of a non-conforming value that is safe to publish.
+OTHER_KEY = "other"
+
+
+def published_key(model) -> str | None:
+    """The key this `message.model` value may appear under, or None to skip.
+
+    None means "this entry names no model" (absent or empty). Anything else
+    that is not a model-id-shaped string — a dict, a list, an int, an ARN,
+    a path, prose — is counted, but under `OTHER_KEY`.
+    """
+    if model is None or model == "":
+        return None
+    if isinstance(model, str) and _require_model_id_re().match(model):
+        return model
+    return OTHER_KEY
+
+
+def _turn_key(entry: dict, message: dict):
+    """What identifies one API turn across the several entries it writes.
+
+    A single assistant turn is written as several JSONL entries — a thinking
+    block, a text block, one per tool call — all sharing `message.id`. Counting
+    entries measured tool density, not turns (2.5x inflation on an agentic
+    transcript), and the roster's 10% and 2% bars were being decided on it.
+    `requestId` is the fallback for older transcripts; an entry with neither is
+    counted on its own, because there is nothing to fold it into.
+    """
+    for candidate in (message.get("id"), entry.get("requestId")):
+        if isinstance(candidate, str) and candidate:
+            return candidate
+    return None
+
+
+#: The shape of a published skill key: a skill directory basename, lowercase.
+#: Necessary even for an allowlisted name — the allowlist is read from files a
+#: pull request can change, and this is the last check before a public key.
+SKILL_KEY_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+
+#: A typed slash command, as Claude Code records it in the user entry.
+_COMMAND_NAME_RE = re.compile(r"<command-name>([^<]{0,200})</command-name>")
+
+
+def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
+    """The skill names that may become published keys.
+
+    A name qualifies when this public repo already carries it: a skill
+    fixture `scripts/eval_coverage.py` counts under `root/evals`, or a row
+    of `root/evals/non-coverage.yml` for a registry that is not private.
+    Both are read by eval_coverage's own `count_fixtures`/`load_skips`, so
+    "is a fixture" means the same here as in the coverage census. Raises
+    `eval_coverage.CensusRefusal` or ValueError when either cannot be read;
+    the caller fails closed. Needs PyYAML, so the import is lazy.
+    """
+    import eval_coverage
+    import run_eval
+    registries = {entry["name"]: entry
+                  for entry in run_eval._load_registries_config()}
+    fixtures = eval_coverage.count_fixtures(Path(root) / "evals", registries)
+    skips: dict = {}
+    eval_coverage.load_skips(Path(root) / "evals" / "non-coverage.yml",
+                             registries, private=False, into=skips)
+    names = {skill for _registry, skill in fixtures}
+    names |= {skill for registry, skill in skips
+              if registry not in eval_coverage.PRIVATE_REGISTRIES}
+    return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))
+
+
+def _skill_name(raw) -> str | None:
+    """`/adam-coding-anywhere:workflow-path-audit` -> `workflow-path-audit`."""
+    if not isinstance(raw, str):
+        return None
+    name = raw[1:] if raw.startswith("/") else raw
+    return name.rsplit(":", 1)[-1]
+
+
+def skill_key(raw, allowlist: frozenset[str]) -> str:
+    """The key a Skill tool call's `input.skill` is counted under."""
+    name = _skill_name(raw)
+    if name in allowlist and SKILL_KEY_RE.fullmatch(name):
+        return name
+    return OTHER_KEY
+
+
+def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
+    """The allowlisted skill a user entry's slash command names, or None.
+
+    Only the message's own text counts (a string, or `text` items): a
+    `tool_result` can quote a transcript, and its tags were not typed here.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, list):
+        texts = [item["text"] for item in content
+                 if isinstance(item, dict) and item.get("type") == "text"
+                 and isinstance(item.get("text"), str)]
+    else:
+        return None
+    for text in texts:
+        match = _COMMAND_NAME_RE.search(text)
+        if match:
+            name = _skill_name(match.group(1))
+            if name in allowlist and SKILL_KEY_RE.fullmatch(name):
+                return name
+            return None
+    return None
+
+
+def _bump(counts: dict, key: str, week: str) -> None:
+    counts.setdefault(key, {})
+    counts[key][week] = counts[key].get(week, 0) + 1
+
+
+def census_counts(projects_dir: Path, now: datetime,
+                  weeks: int = DEFAULT_WEEKS) -> dict:
+    """{model_id: {iso_week: count}} over the trailing `weeks` ISO weeks.
+
+    One count per assistant TURN that names a model, deduplicated per
+    transcript on `message.id`. Entries outside the window, entries of any
+    other type, entries without a model, and lines that are not JSON at all
+    are all skipped — a transcript being written while this runs will have a
+    torn last line, and that is not a reason to fail.
+    """
+    return census_all(projects_dir, now, weeks)[0]
+
+
+def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
+               allowlist: frozenset[str] | None = None) -> tuple[dict, dict]:
+    """(model counts, skill tally) from ONE walk of the transcripts.
+
+    Model counts are `census_counts`'s. The skill tally is
+    {"invocations": {skill: {iso_week: n}}, "sessions": {skill: {iso_week: n}},
+    "sessions_scanned": n}. Invocations stay empty when `allowlist` is None;
+    otherwise one per `Skill` tool call (deduplicated per transcript on the
+    tool_use `id`) and one per user entry whose typed slash command names an
+    allowlisted skill. `sessions` counts the distinct transcript files that
+    invoked a skill in a week; `sessions_scanned` the transcript files read
+    (those the mtime prefilter kept). Same window as the models.
+    """
+    wanted = set(window_weeks(now, weeks))
+    oldest = window_start(now, weeks)
+    counts: dict[str, dict[str, int]] = {}
+    skills: dict[str, dict[str, int]] = {}
+    sessions: dict[str, dict[str, int]] = {}
+    tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0}
+    #: (st_dev, st_ino) of every transcript already processed. A symlink or a
+    #: hard-linked copy is the SAME underlying file reachable via a second
+    #: path in the walk — reading it twice double-counts every turn in it.
+    #: This is deliberately NOT the same thing as deduping turns globally:
+    #: `seen_turns` below still resets per (unique) file, because two
+    #: genuinely different transcripts can legitimately share a message id
+    #: (a resumed session) and both must still count.
+    seen_files: set[tuple[int, int]] = set()
+    projects_dir = Path(projects_dir)
+    if not projects_dir.is_dir():
+        return counts, tally
+
+    for transcript in sorted(projects_dir.rglob("*.jsonl")):
+        try:
+            stat = transcript.stat()
+        except OSError:
+            continue
+        file_id = (stat.st_dev, stat.st_ino)
+        if file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        # A transcript last written before the window cannot hold an entry
+        # inside it; skipping it unread is the difference between reading
+        # eight weeks of transcripts and reading every one ever made. The
+        # bound carries a whole extra week of slack (window_start), so a
+        # file being appended to across a week boundary is never dropped.
+        if datetime.fromtimestamp(stat.st_mtime, timezone.utc) < oldest:
+            continue
+        seen_turns: set[str] = set()
+        seen_calls: set[str] = set()
+        invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
+        tally["sessions_scanned"] += 1
+        try:
+            with open(transcript, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    kind = entry.get("type")
+                    if kind not in ("assistant", "user"):
+                        continue
+                    message = entry.get("message")
+                    if not isinstance(message, dict):
+                        continue
+                    when = parse_ts(entry.get("timestamp"))
+                    if when is None:
+                        continue
+                    week = iso_week(when)
+                    if week not in wanted:
+                        continue
+                    if kind == "user":
+                        if allowlist is not None:
+                            typed = _typed_skill(message, allowlist)
+                            if typed is not None:
+                                _bump(skills, typed, week)
+                                invoked.add((typed, week))
+                        continue
+                    if allowlist is not None and isinstance(message.get("content"), list):
+                        for item in message["content"]:
+                            if not (isinstance(item, dict)
+                                    and item.get("type") == "tool_use"
+                                    and item.get("name") == "Skill"):
+                                continue
+                            call = item.get("id")
+                            if isinstance(call, str) and call:
+                                if call in seen_calls:
+                                    continue
+                                seen_calls.add(call)
+                            given = item.get("input")
+                            raw = given.get("skill") if isinstance(given, dict) else None
+                            name = skill_key(raw, allowlist)
+                            _bump(skills, name, week)
+                            invoked.add((name, week))
+                    key = published_key(message.get("model"))
+                    if key is None:
+                        continue
+                    turn = _turn_key(entry, message)
+                    if turn is not None:
+                        if turn in seen_turns:
+                            continue
+                        seen_turns.add(turn)
+                    _bump(counts, key, week)
+        except OSError:
+            continue
+        for name, week in invoked:
+            _bump(sessions, name, week)
+    return counts, tally
+
+
+def build_document(projects_dir: Path, now: datetime,
+                   weeks: int = DEFAULT_WEEKS) -> dict:
+    """The published artifact. Exactly three keys — see the module docstring."""
+    return _document(census_counts(projects_dir, now, weeks), now, weeks)
+
+
+def _document(counts: dict, now: datetime, weeks: int) -> dict:
+    return {
+        "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "weeks": window_weeks(now, weeks),
+        "counts": counts,
+    }
+
+
+def build_weekly_document(tally: dict, now: datetime,
+                          weeks: int = DEFAULT_WEEKS) -> dict:
+    """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
+    owns its schema. The window starts at the Monday of its oldest week."""
+    rows = [skill_usage.row(week, "skill", name, n,
+                            tally["sessions"].get(name, {}).get(week, 0))
+            for name, by_week in tally["invocations"].items()
+            for week, n in by_week.items()]
+    oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
+    window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
+    return skill_usage.document(rows, now, window_from, tally["sessions_scanned"])
+
+
+def _write_json(path: Path, document: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(document, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--projects", type=Path, default=DEFAULT_PROJECTS,
+                        help="Claude Code transcript root (default ~/.claude/projects)")
+    parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--weekly-out", type=Path, default=None,
+                        help="also write weekly skill invocations here "
+                             "(published as usage/weekly-local.json)")
+    parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
+                        help="repo whose evals/ fixtures and non-coverage.yml "
+                             "name the publishable skills (default: this "
+                             "script's repo)")
+    parser.add_argument("--now", default=None,
+                        help="ISO-8601 instant to treat as now (tests and "
+                             "scripts/publish_usage_census.sh's test seam); "
+                             "default: the wall clock")
+    args = parser.parse_args()
+
+    try:
+        _require_model_id_re()
+    except ImportError:
+        # PyYAML (via roster.py) is not installed on this machine. Printed
+        # here, not raised: the durable machine that runs this script
+        # (evals/usage/CENSUS.md) installs nothing by default,
+        # and a bare ImportError traceback used to kill the import of this
+        # module before argparse ever ran — even `--help` failed.
+        print(PYYAML_MISSING_MESSAGE, file=sys.stderr)
+        return 2
+
+    if not Path(args.projects).is_dir():
+        # Say so and stop, rather than publishing a clean census of nothing —
+        # never a clean census of nothing on a surface that cannot do the
+        # job. The message names no path: this line reaches a scheduled
+        # task's status report.
+        print("no Claude Code transcript directory on this surface; "
+              "nothing published", file=sys.stderr)
+        return 2
+
+    now = parse_ts(args.now) if args.now else datetime.now(timezone.utc)
+    if now is None:
+        print("--now is not an ISO-8601 instant", file=sys.stderr)
+        return 2
+    allowlist = None
+    if args.weekly_out is not None:
+        import eval_coverage
+        try:
+            allowlist = skill_allowlist(args.skill_allowlist_root)
+        except (eval_coverage.CensusRefusal, ValueError, OSError):
+            # No detail: a refusal message can carry a path, and this line
+            # reaches a scheduled task's status report. Nothing is written.
+            print("skill allowlist could not be read from the evals "
+                  "directory; nothing published", file=sys.stderr)
+            return 2
+    counts, tally = census_all(args.projects, now, args.weeks, allowlist)
+    document = _document(counts, now, args.weeks)
+    _write_json(args.out, document)
+
+    # Non-identifying status line only: counts, and the OUTPUT path the caller
+    # already knows — never a model id, never anything from under --projects.
+    total = sum(sum(by_week.values()) for by_week in document["counts"].values())
+    status = (f"census: {len(document['counts'])} models, {total} assistant turns, "
+              f"{args.weeks} weeks -> {args.out}")
+    if args.weekly_out is not None:
+        _write_json(args.weekly_out, build_weekly_document(tally, now, args.weeks))
+        calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
+        status += f"; {calls} skill invocations -> {args.weekly_out}"
+    print(status)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

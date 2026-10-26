@@ -1,0 +1,12 @@
+{
+  "workflow_run": [
+    {
+      "repo": "example-org/example-site",
+      "workflow": "deploy-preview"
+    },
+    {
+      "repo": "example-org/example-site",
+      "workflow": "deploy-preview.yml"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+# The weekly allowance budget for every automated eval (#68).
+#
+# Adam's standing decision (2026-10-10,
+# https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979):
+# all automated evals together stay within 30% of the Claude subscription's
+# weekly allowance. Every value below is a fraction of that allowance, as the
+# CLI's meter reports it (`unifiedWindows.seven_day.utilization`, 0 to 1), so
+# 0.01 is one point, and points = percent of the weekly allowance.
+#
+# Three layers read this file (docs/how-it-works.md, "The weekly allowance
+# guard"):
+#   * harness/run_eval.py stops starting new trials and judge calls once a
+#     run has spent `per_run_cap` or the account is at
+#     `stop_when_account_above` (the in-run stop);
+#   * scripts/allowance_guard.py refuses a routine fire whose reservation
+#     would take the last seven days of eval spend past `weekly_cap` (the
+#     pre-fire check in routine-eval-fire.yml);
+#   * scripts/plan_scheduled_evals.py plans only as many weekly fires as fit
+#     under `weekly_cap` (routine-eval-weekly.yml).
+#
+# harness/budget.py validates it strictly: exactly these four keys, each a
+# number above 0 and at most 1, and `per_run_cap` no larger than
+# `weekly_cap`. A change here is a spending decision: it is Adam's.
+
+# 30 points: all automated evals together, in any rolling seven days. A
+# rolling window keeps every allowance week under it, wherever the account's
+# own week starts.
+#
+# TEMPORARY: 95 points until the allowance week resets on 2026-10-26 around
+# 17:00 UTC (Adam's decisions of 2026-10-24, 30% to 60%, and 2026-10-25,
+# "Go to 95% this week"; the per-run stop is unchanged). Set it back to 0.30
+# after that reset. Fires made under the raised cap stay in the rolling window
+# for seven days, so fires may be refused for a while after the revert.
+weekly_cap: 0.95
+
+# 3 points: one run stops starting new work once the meter has moved this
+# much since the run's first reading.
+#
+# TEMPORARY: 1.5 points until the same 2026-10-26 reset. The 74 runs ingested
+# by 2026-10-26 10:55 UTC each moved the meter at most 1 point (median 0), so
+# the guard's 3.5-point reservation per fire held about five times what a run
+# spends while Adam asked for more usage before the reset. Set it back to
+# 0.03 with `weekly_cap`.
+per_run_cap: 0.015
+
+# Half a point, added to every run's measured spend: the meter is read as an
+# agent call begins, so the run's last call (and any judge call after it) is
+# never inside the measured delta.
+#
+# TEMPORARY: 0.1 point until the same 2026-10-26 reset. On that morning the
+# guard counted 62 points of eval spend over 92 runs, 46 of them this
+# overrun alone, and charged it again on each of 25 old fires that never
+# produced results, while the account meter itself read 62%. That held about
+# 25 phantom points while Adam asked for all usage that fits before the
+# reset (2026-10-26). `stop_when_account_above` still stops every run at the
+# account's real 95%. Set it back to 0.005 with `weekly_cap`.
+per_run_overrun: 0.001
+
+# 80 points: once the account's own weekly meter reads this high, a run stops
+# starting new work, whatever it has spent, so evals never take the last of
+# the allowance from Adam's own work.
+#
+# TEMPORARY: 95 points until the same 2026-10-26 reset (Adam, 2026-10-25:
+# "Go to 95% this week"). Set it back to 0.80 with `weekly_cap`.
+stop_when_account_above: 0.95

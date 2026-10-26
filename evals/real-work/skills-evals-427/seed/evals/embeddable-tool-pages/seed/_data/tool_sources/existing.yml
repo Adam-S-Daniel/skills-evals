@@ -1,0 +1,4 @@
+# Automation-managed: synchronized alongside the existing app.
+slug: existing
+source_url: https://example.net/counter/
+revision: demonstration-v1

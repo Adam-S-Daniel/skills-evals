@@ -1,0 +1,60 @@
+# Thin caller — copied into a site repo as `.github/workflows/deploy-production.yml`.
+# It owns the trigger + paths-ignore; the build/deploy logic lives in the
+# platform's reusable workflow. Pin `@vX.Y.Z` to a cms-platform release —
+# `platform-bump` opens the bump PR (Dependabot ignores this ref, #244; see
+# docs/SYNC.md).
+name: Deploy to Production
+run-name: >-
+  ${{ github.event_name == 'push'
+        && format('push — {0} @{1}', github.ref_name, github.actor)
+   || format('manual — @{0}', github.actor) }}
+
+on:
+  push:
+    branches: [main]
+    # Customize per site. Skip pushes that can't change what's served from S3
+    # (docs, infra-as-code, tests, dev tooling). Keep this workflow file itself
+    # OUT of the list so caller-only changes still validate via a real run.
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - 'docs/**'
+      - 'e2e/**'
+      - 'tests/**'
+      - 'infrastructure/**'
+      - 'oauth-proxy/**'
+      - 'scripts/**'
+  # Manual force-deploy (workflow_dispatch ignores paths-ignore).
+  workflow_dispatch:
+
+# Reusable workflows are capped by the caller's token permissions — grant here
+# what deploy-production.yml declares it needs.
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+jobs:
+  deploy:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/deploy-production.yml@v0.1.104
+    with:
+      apex_domain: example.com
+      prod_bucket: example-com-production
+      # Archived media PDFs (opt-in; see cms-platform docs/MEDIA-ARCHIVE.md).
+      # Uncomment BOTH lines together once the bootstrap stack has been
+      # redeployed with MediaArchiveBucketName set. `platform_ref` is what
+      # fetches the publish script, and `platform-bump` moves it in lockstep
+      # with the `uses:@` pin above -- so it must equal this file's ref.
+      # scripts/check-platform-pin-consistency.js treats both keys as
+      # optional per-site inputs, so uncommenting them does not trip
+      # workflow-content: DRIFT -- but it separately requires platform_ref
+      # whenever media_archive_bucket is set (this reusable's platform_ref
+      # input defaults to `main`, so leaving it commented out here would
+      # publish PDFs from an unpinned checkout). That is why both lines
+      # must come uncommented together, not just documented as such.
+      # media_archive_bucket: example-com-media-archive
+      # platform_ref: v0.1.104
+    secrets:
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      PRODUCTION_CLOUDFRONT_ID: ${{ secrets.PRODUCTION_CLOUDFRONT_ID }}

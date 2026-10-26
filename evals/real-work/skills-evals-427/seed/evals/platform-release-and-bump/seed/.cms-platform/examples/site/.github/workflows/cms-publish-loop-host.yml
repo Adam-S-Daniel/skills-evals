@@ -1,0 +1,54 @@
+# Thin caller — copied into a site repo as
+# `.github/workflows/cms-publish-loop-host.yml`. Owns the schedule / push
+# triggers + run-name; delegates the host-repo canary publish loop to the
+# platform's reusable workflow. The e2e harness + the cms-recursion-gate /
+# await-prod-deploy / post-failure-comment composites all live in the
+# platform repo. Keep `platform_ref` equal to the `@vX.Y.Z` pin on the
+# `uses:` line.
+#
+# Site identity (CMS_PROD_URL / CMS_APEX) is read from THIS repo's VARS by
+# the reusable workflow.
+name: CMS Publish Loop — Host Repo (canary collection)
+run-name: >-
+  ${{ github.event_name == 'schedule'
+        && format('scheduled — {0}', github.event.schedule)
+   || github.event_name == 'push'
+        && format('push — {0} @{1}', github.ref_name, github.actor)
+   || format('manual — @{0}', github.actor) }}
+
+on:
+  schedule:
+    # 12:00 UTC daily. This loop covers shared-infra changes (admin/**,
+    # playwright.config.js, package*.json, _config.yml) via this daily cron;
+    # on PUSH it triggers ONLY on its OWN surfaces (this caller + the canary
+    # collection fixtures/layouts), NOT the shared infra paths — those fire
+    # cms-publish-loop-prod ALONE on push (prod owns the infra-change canary).
+    # DISJOINT push paths across the three loops = no co-arrival eviction in
+    # the shared `prod-mutating-loop` lane (#70). The shared concurrency group
+    # still serializes any cron/dispatch/push TIME-overlap (queues, never two
+    # loops mutating prod at once).
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/cms-publish-loop-host.yml
+      - _e2e/canary-post.md
+      - _e2e/canary-page.md
+      - _e2e/canary-project.md
+      - _layouts/canary.html
+      - _layouts/default.html
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  host-loop:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/cms-publish-loop-host.yml@v0.1.104
+    with:
+      # Pin to the SAME ref as the `uses:` pin above so the harness matches.
+      platform_ref: v0.1.104
+    secrets:
+      CMS_E2E_PAT: ${{ secrets.CMS_E2E_PAT }}

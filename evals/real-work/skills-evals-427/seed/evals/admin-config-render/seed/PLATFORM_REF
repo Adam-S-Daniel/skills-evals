@@ -1,0 +1,4 @@
+cms-platform v0.1.130 (381824060a448677eb78dc7cda5bf2889271d60f)
+Vendored files, unmodified: scripts/render-decap-config.rb,
+theme/lib/cms-platform-theme/field_library.rb, theme/admin/config.base.yml,
+theme/admin/field_library.yml.

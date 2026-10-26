@@ -1,0 +1,9 @@
+# Workflow expressions and long URLs make a column limit noise in YAML, so
+# line length is off here, matching .editorconfig's YAML opt-out.
+extends: default
+
+rules:
+  line-length: disable
+  truthy:
+    check-keys: false
+  document-start: disable

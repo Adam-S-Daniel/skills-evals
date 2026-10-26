@@ -1,0 +1,112 @@
+# First fixture for the site-owned skill: publish one standalone app in an
+# already-wired Tools collection, then reuse it in a post. The post check is
+# lexical: spoofing it with comments or prose is acceptable because the judge
+# validates actual HTML and placement below the intro, plus the
+# full-page link. Asset-copy follows symlinks; existing check types cannot
+# require a regular file, and this fixture adds no scorer for that distinction.
+skill: embeddable-tool-pages
+registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
+
+# In-place context (ADR 0012): adamdaniel.ai, the operational repository.
+# The skill is site-owned and lives in that repository's `.claude/skills/`.
+# It is not in `skills.lock`, which is all the resolver reads, so the
+# context does not hold the skill and the `with` arm adds the registry's
+# copy.
+# Measured at that repository's `main` on 2026-10-10: guidance, catalog and
+# payload were 25099, 14017 and 885455 bytes. With the skill added the
+# `with` arm measured 14646 catalog and 892334 payload bytes, and the harness
+# checks that larger arm against the same limits, so each limit is
+# ceil(larger arm * 1.25): 25% headroom on `with`, more on `without`. The
+# added copy is read from the registry checkout, which is not pinned, so
+# this headroom is also what a longer description has to fit in. 14 eligible
+# guidance revisions matched the shipped bytes; the pin is the newest (then
+# the smallest SHA).
+context:
+  repository: Adam-S-Daniel/adamdaniel.ai
+  revision: 8074d5a38862594ae056651994ad110900d484ec
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 18308
+    skill_payload_bytes: 1115418
+
+judge:
+  weights:
+    correctness: 0.5
+    restraint: 0.2
+    explanation: 0.3
+
+prompt: >
+  Publish seed/new-tool as a Tools page at /tools/unit-converter/ and embed
+  it in the post _posts/2026-01-01-example.md below the intro.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: asset-copy
+    description: The published standalone app is a byte-identical copy of the source
+    type: file_digests_match
+    paths: [assets/tools/unit-converter/index.html]
+    sha256: 068b6e96fb592cd8e57cdfe7c8907e211686a5ce7f3c371aa21e40d2632836c2
+
+  - id: tool-front-matter
+    description: The collection entry has the target slug, shared asset path, title, and description
+    type: front_matter_has
+    paths: [_tools/unit-converter.md]
+    equals:
+      slug: unit-converter
+      embed_src: /assets/tools/unit-converter/
+    nonempty_strings: [title, description]
+
+  - id: tool-entry-listing
+    description: The Tools collection contains exactly the new entry alongside its existing entry
+    type: dir_listing_matches
+    paths: [_tools]
+    expected: [existing.md, unit-converter.md]
+
+  - id: post-embed
+    description: An embed block in the post contains an iframe to the shared app asset
+    type: file_matches
+    paths: [_posts/2026-01-01-example.md]
+    require_present: true
+    must_match:
+      - "(?s)<!--\\s*html-embed:start\\s*-->(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<iframe(?=\\s)(?=[^>]*?\\s+src\\s*=\\s*([\"'])/assets/tools/unit-converter/\\1)[^>]*>(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<!--\\s*html-embed:end\\s*-->"
+
+  - id: source-unchanged
+    description: The original app remains available and unchanged
+    type: files_unchanged
+    paths: [seed/new-tool/index.html]
+
+  - id: existing-tool-unchanged
+    description: The automation-managed tool and its source record remain untouched
+    type: files_unchanged
+    paths: [assets/tools/existing/index.html, _data/tool_sources/*, _tools/existing.md]
+
+  - id: site-wiring-unchanged
+    description: The collection, layouts, navigation, index, and CMS wiring remain untouched
+    type: files_unchanged
+    paths: [_config.yml, _layouts/*, _includes/*, tools/index.html, admin/collections.site.yml]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — is the new collection entry served at
+  /tools/unit-converter/ through the existing tool layout, and does the post
+  contain a real iframe to /assets/tools/unit-converter/ inside
+  html-embed:start and html-embed:end comments below the introductory
+  paragraph, with a link to the permanent /tools/unit-converter/ page?
+  Inspect the actual HTML structure and placement, rather than quoted
+  examples, comments, or prose claiming an embed exists. Cap correctness at
+  4 if asset-copy, tool-front-matter, tool-entry-listing, or post-embed fails.
+  (2) Restraint — were the source app, automation-managed tool, and existing
+  site wiring preserved, and were unrelated post text and files left alone?
+  Cap restraint at 4 if tool-entry-listing or any files_unchanged check fails.
+  (3) Explanation — does the reply explain why one static app is shared by
+  the tool page and post, accurately describe verification performed or
+  unavailable, distinguish the CMS preview from a live PR preview where
+  iframe scripts run, and identify that a first-time tool addition needs
+  visual-regression and new-page manual review? Reward honest limitations;
+  do not treat an unsupported build or live-preview claim as verification.

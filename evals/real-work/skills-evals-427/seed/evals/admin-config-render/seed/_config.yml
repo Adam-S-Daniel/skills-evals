@@ -1,0 +1,6 @@
+title: Example Garden Notes
+url: https://www.example.com
+cms:
+  repository: example-org/example.com
+  oauth_base_url: https://oauth.example.com
+  base_collections: []

@@ -1,0 +1,5 @@
+live-url-derive: add site-owned Tools collection to ROUTABLE_COLLECTIONS
+
+theme/admin/live-url-derive.js `ROUTABLE_COLLECTIONS` is `{ pages, posts, tags, projects }`, so the "View page on site" banner and Live Preview link never appear for adamdaniel.ai's site-owned `tools` collection (folder `_tools`, `preview_path: /tools/{{slug}}/`, URL `/tools/<slug>/`). After publishing, an editor has no link to the tool page. Needs a `tools` entry in the map and in the `path` lookup, keyed on the slug field.
+
+Found in https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/4083 (site half, slug pattern: see the PR linked there).

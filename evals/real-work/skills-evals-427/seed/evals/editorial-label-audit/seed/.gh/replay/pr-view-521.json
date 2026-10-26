@@ -1,0 +1,12 @@
+{
+  "number": 521,
+  "headRefName": "cms/posts/reading-list",
+  "labels": [
+    {
+      "name": "decap-cms/pending_review"
+    }
+  ],
+  "title": "Reading list",
+  "state": "OPEN",
+  "url": "https://github.com/example-org/example-site/pull/521"
+}

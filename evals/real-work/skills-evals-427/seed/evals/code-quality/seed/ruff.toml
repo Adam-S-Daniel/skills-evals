@@ -1,0 +1,6 @@
+# 100-column house width (see .editorconfig).
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]

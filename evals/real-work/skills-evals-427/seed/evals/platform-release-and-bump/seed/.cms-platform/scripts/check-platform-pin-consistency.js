@@ -1,0 +1,884 @@
+#!/usr/bin/env node
+// Platform-owned ANTI-SKEW guard (issue #29).
+//
+// WHAT
+// A consuming repo references the cms-platform version in many places that can
+// drift out of lockstep — not from Dependabot (it now `ignore`s every
+// cms-platform ref in both ecosystems, #242 + #244) but from a hand-edit, a
+// partially-applied platform-bump run, or a `platform_ref:` input that never
+// got stamped (#220):
+//
+//   - .github/workflows/**/*.yml — reusable-workflow callers
+//       `uses: <owner>/<repo>/.github/workflows/<name>.yml@<ref>`     (the <ref>)
+//     and TAG-pinned composite actions
+//       `uses: <owner>/<repo>/.github/actions/<name>@<ref>`           (the <ref>)
+//     and the `platform_ref:` INPUT each caller passes — the ref the reusable's
+//       own platform checkout obeys, so it decides which platform tree RUNS (#220)
+//   - Gemfile      — `gem "cms-platform-theme", …, tag: "vX.Y.Z"`
+//   - Gemfile.lock — the cms-platform GIT source block's `tag:`
+//   - platform.lock — `platform_ref:` (the SOURCE OF TRUTH)
+//
+// Observed live: adamdaniel.ai pinned @v0.1.0 loop/deploy callers, gem @v0.1.5,
+// and others @v0.1.3/@v0.1.6 at once. Skew is a latent behaviour-bug source (a
+// v0.1.0 reusable running against a v0.1.5 gem) and breaks the "platform moves
+// in lockstep" model.
+//
+// THIS GUARD derives the CANONICAL version from platform.lock `platform_ref`
+// and asserts EVERY platform-version reference equals it. It aggregates ALL
+// violations (does not stop at the first), prints a precise per-file report
+// (file + found value + expected platform_ref), and exits non-zero iff any
+// reference disagrees. When all agree it prints a concise OK summary and exits 0.
+//
+// HOW the workflow refs are read
+//   - The reusable/composite `uses:` STRINGS are read with a real YAML parser
+//     (`yaml`, eemeli) so anchors/aliases resolve and GitHub's evaluated value
+//     is what we check — NOT a regex over raw text.
+//   - NO EXCEPTION, and no comment is read. A composite USED to be the one
+//     carve-out: SHA-pinned, with its version gate in a trailing `# vX.Y.Z`
+//     COMMENT that the YAML parser drops, reached by a deliberate LINE-AWARE
+//     pass. That comment went with the 2026-08-20 fleet-wide retirement of the
+//     action pin comment (it drifted silently and then lied, and Dependabot
+//     rewrote it inconsistently). A composite is TAG-pinned now — the same
+//     carve-out the reusables take — so its version is the structural `<ref>`
+//     and ONE rule covers both. This script reads NO comments at all; do not
+//     re-introduce a comment pass, and do not re-introduce a SHA-pinned
+//     composite, which `fails a composite pinned by SHA, even with a CURRENT
+//     version comment` in e2e/check-platform-pin-consistency.test.js asserts is
+//     a violation regardless of what its comment says.
+//
+// USAGE
+//   node scripts/check-platform-pin-consistency.js [--root DIR]
+//        [--owner OWNER] [--repo REPO] [--lock platform.lock]
+//        [--canonical-workflows DIR] [--require-canonical]
+//   env equivalents: PIN_CHECK_ROOT, PLATFORM_OWNER, PLATFORM_REPO, PLATFORM_LOCK,
+//                    PIN_CANONICAL_WORKFLOWS, PIN_REQUIRE_CANONICAL=1
+//   Defaults: root=cwd, owner/repo derived from platform.lock `platform_repo`
+//             (fallback Adam-S-Daniel/cms-platform), lock=platform.lock.
+//
+// THE GUARD MUST NOT SILENTLY DEGRADE
+// Without a resolvable canonical set this checker used to drop from 96 checks to
+// 61 — losing exactly the workflow-SET and workflow-CONTENT parity checks that
+// police a consumer's `secrets:` map — and STILL print "Pins are consistent."
+// A report that cannot distinguish "verified" from "did not look" is the same
+// defect class fixed in three sibling reporters (the re-arm sweep's 0/0/0
+// summary, the scheduled-run health audit, and `audit-repo-settings.js`'s
+// unqualified OK line — whose `unverifiableKeys`/`repoOkLine`/`cleanScanSummary`
+// vocabulary the `okSummary` helper below mirrors deliberately). So the summary
+// now QUALIFIES itself when parity was skipped, and `--require-canonical` turns
+// an unresolved canonical set into a hard failure for any lane that is supposed
+// to verify parity (the `platform-pin-consistency` reusable passes it).
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+
+// ── Resolve the `yaml` parser robustly ───────────────────────────────────────
+// This script ships in the platform and is run by consumers from a
+// `.cms-platform/` checkout, so `yaml` may live in a sibling node_modules
+// (the repo's e2e/) rather than next to the script. Try the standard
+// resolution, then a few known locations, before failing with guidance.
+function loadYaml() {
+  const candidates = [
+    undefined, // standard node resolution (script's own node_modules chain)
+    path.resolve(__dirname, "..", "e2e", "node_modules"),
+    path.resolve(__dirname, "..", "node_modules"),
+    path.resolve(process.cwd(), "e2e", "node_modules"),
+    path.resolve(process.cwd(), "node_modules"),
+  ];
+  for (const base of candidates) {
+    try {
+      const resolved = base
+        ? require.resolve("yaml", { paths: [base] })
+        : require.resolve("yaml");
+      return require(resolved);
+    } catch {
+      /* try next */
+    }
+  }
+  throw new Error(
+    "Cannot resolve the `yaml` parser. Install it (e.g. `npm install yaml` " +
+      "or run `cd e2e && npm ci`) before running this guard.",
+  );
+}
+const YAML = loadYaml();
+
+// ── CLI / env args ────────────────────────────────────────────────────────────
+function argOf(name, envName, def) {
+  const i = process.argv.indexOf(`--${name}`);
+  if (i !== -1 && process.argv[i + 1]) return process.argv[i + 1];
+  if (envName && process.env[envName]) return process.env[envName];
+  return def;
+}
+
+const ROOT = path.resolve(argOf("root", "PIN_CHECK_ROOT", process.cwd()));
+const LOCK_REL = argOf("lock", "PLATFORM_LOCK", "platform.lock");
+
+// `--require-canonical`: fail loudly instead of degrading. Any lane that is
+// SUPPOSED to verify workflow-set + workflow-content parity (the reusable always
+// checks `examples/site` out, so a skip there means the checkout broke) must not
+// pass with fewer checks. Default OFF, so an ad-hoc local run still exits 0 —
+// only the WORDING of its summary changes.
+const REQUIRE_CANONICAL =
+  process.argv.includes("--require-canonical") || process.env.PIN_REQUIRE_CANONICAL === "1";
+
+// ── platform.lock → canonical version (source of truth) ──────────────────────
+function die(msg) {
+  process.stderr.write(`platform-pin-consistency: ${msg}\n`);
+  process.exit(2);
+}
+
+function readPlatformLock() {
+  const lockPath = path.join(ROOT, LOCK_REL);
+  if (!fs.existsSync(lockPath)) {
+    die(
+      `${LOCK_REL} not found at ${lockPath}. The canonical platform version is ` +
+        `read from platform.lock 'platform_ref:' — a consuming repo must carry it.`,
+    );
+  }
+  let doc;
+  try {
+    doc = YAML.parse(fs.readFileSync(lockPath, "utf8"));
+  } catch (e) {
+    die(`${LOCK_REL} is not parseable YAML: ${e.message}`);
+  }
+  if (!doc || typeof doc !== "object") {
+    die(`${LOCK_REL} is empty or not a mapping; expected a 'platform_ref:' key.`);
+  }
+  const ref = doc.platform_ref;
+  if (!ref || typeof ref !== "string" || !ref.trim()) {
+    die(`${LOCK_REL} has no 'platform_ref:' value (the canonical version).`);
+  }
+  const repoSlug =
+    typeof doc.platform_repo === "string" && doc.platform_repo.trim()
+      ? doc.platform_repo.trim()
+      : null;
+  return { platformRef: ref.trim(), repoSlug };
+}
+
+// This CLI does all of its work at TOP LEVEL (it reads the consumer tree and
+// process.exit()s), so a `require` — the unit test drives the pure summary
+// helpers below with no filesystem — must trigger none of it. Every
+// side-effecting statement hangs off this flag; the helpers stay pure.
+const RUN_AS_CLI = require.main === module;
+
+const { platformRef, repoSlug: lockRepoSlug } = RUN_AS_CLI
+  ? readPlatformLock()
+  : { platformRef: null, repoSlug: null };
+
+// owner/repo: explicit flag/env > platform.lock platform_repo > default.
+const DEFAULT_SLUG = "Adam-S-Daniel/cms-platform";
+const slugFromLock = lockRepoSlug || DEFAULT_SLUG;
+const owner = argOf("owner", "PLATFORM_OWNER", slugFromLock.split("/")[0]);
+const repo = argOf("repo", "PLATFORM_REPO", slugFromLock.split("/")[1] || "cms-platform");
+const SLUG = `${owner}/${repo}`;
+
+// ── Collect violations ────────────────────────────────────────────────────────
+// Each: { file (repo-relative), kind, found, expected, detail }
+const violations = [];
+// Count of references we actually checked (for the OK summary).
+let checked = 0;
+// Did workflow-SET + workflow-CONTENT parity ACTUALLY run? (false = the canonical
+// set could not be resolved, so those checks were skipped — the summary must say
+// so rather than claim consistency it never verified.)
+let parityVerified = false;
+
+function rel(abs) {
+  return path.relative(ROOT, abs).split(path.sep).join("/");
+}
+
+function record(absFile, kind, found, detail) {
+  checked += 1;
+  if (found !== platformRef) {
+    violations.push({ file: rel(absFile), kind, found, expected: platformRef, detail });
+  }
+}
+
+// ── Workflows: parse every .github/workflows/**/*.yml ─────────────────────────
+function listWorkflowFiles() {
+  const dir = path.join(ROOT, ".github", "workflows");
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  (function walk(d) {
+    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (/\.ya?ml$/i.test(ent.name)) out.push(p);
+    }
+  })(dir);
+  return out.sort();
+}
+
+// A `uses:` string that targets THIS platform owner/repo. Returns a classified
+// descriptor, or null if it isn't a cms-platform ref.
+//   reusable: `<owner>/<repo>/.github/workflows/<name>.yml@<ref>`
+//   composite:`<owner>/<repo>/.github/actions/<name>@<sha>`
+function classifyUses(usesStr) {
+  if (typeof usesStr !== "string") return null;
+  const at = usesStr.lastIndexOf("@");
+  if (at === -1) return null;
+  const target = usesStr.slice(0, at);
+  const ref = usesStr.slice(at + 1);
+  const prefix = `${SLUG}/`;
+  if (!target.startsWith(prefix)) return null;
+  const subpath = target.slice(prefix.length);
+  if (/^\.github\/workflows\/.+\.ya?ml$/i.test(subpath)) {
+    return { type: "reusable", ref, subpath };
+  }
+  if (/^\.github\/actions\/.+$/i.test(subpath)) {
+    return { type: "composite", ref, subpath };
+  }
+  // Some other path under the platform repo (e.g. a script ref) — ignore by
+  // default; not part of the version-pin contract.
+  return null;
+}
+
+// Collect every `uses:` scalar AND every literal `platform_ref:` value from the
+// parsed YAML (anchors resolved), via the Document API: visit Pairs whose key is
+// `uses` / `platform_ref`. We also compute the 1-based line of each
+// `platform_ref` value node so a violation can point at it.
+//
+// No comment is read here. Composite refs used to need one — their version lived
+// in a trailing `# vX.Y.Z` that the YAML parser discards — but composites are
+// TAG-pinned now, so the structural value is the whole story.
+//
+// WHY `platform_ref` is in scope (#220): it is the input a reusable's platform
+// checkout does `ref: ${{ inputs.platform_ref }}` with, so it — not the `uses:@`
+// pin — decides WHICH platform tree the job actually runs. It is canonical by
+// definition, not a site-specific `with:` value, which is exactly why the
+// workflow-CONTENT parity check (which deliberately MASKS `with:` VALUES) is
+// blind to it. Live: jodidaniel.com's cms-scheduled-publish-loop carried
+// `uses:@v0.1.72` with `platform_ref: v0.1.59` — 13 releases stale — so the
+// checkout predated the v0.1.70 `install-playwright-browsers` composite and the
+// step failed `Can't find 'action.yml'`, silently, on a scheduled workflow,
+// while every other pin check reported consistent.
+//
+// A `platform_ref` Pair whose value is NOT a plain string is an input
+// DECLARATION, not a pin (`platform_ref: { type: string, default: main }` in the
+// reusables) — skipped. A value carrying a `${{ … }}` expression forwards a
+// parameter and cannot be resolved statically — also skipped.
+function pinNodesWithLines(text) {
+  const doc = YAML.parseDocument(text);
+  const out = [];
+  const platformRefs = [];
+  const lineOf = (node) => text.slice(0, node.range[0]).split("\n").length;
+  YAML.visit(doc, {
+    Pair(_key, pair) {
+      const k = pair.key && pair.key.value;
+      const v = pair.value;
+      if (!v || typeof v.value !== "string" || !v.range) return;
+      if (k === "uses") out.push({ uses: v.value });
+      else if (k === "platform_ref" && !v.value.includes("${{")) {
+        platformRefs.push({ ref: v.value.trim(), line: lineOf(v) });
+      }
+    },
+  });
+  return { out, platformRefs };
+}
+
+// RUN_AS_CLI-guarded: on `require` (the unit test drives the pure helpers) this
+// scan must not walk a tree.
+for (const wf of RUN_AS_CLI ? listWorkflowFiles() : []) {
+  let text;
+  try {
+    text = fs.readFileSync(wf, "utf8");
+  } catch (e) {
+    violations.push({
+      file: rel(wf),
+      kind: "workflow-read",
+      found: `unreadable (${e.message})`,
+      expected: platformRef,
+      detail: "could not read workflow file",
+    });
+    continue;
+  }
+  let nodes;
+  try {
+    nodes = pinNodesWithLines(text);
+  } catch (e) {
+    violations.push({
+      file: rel(wf),
+      kind: "workflow-parse",
+      found: `unparseable YAML (${e.message})`,
+      expected: platformRef,
+      detail: "could not parse workflow YAML",
+    });
+    continue;
+  }
+  for (const { uses } of nodes.out) {
+    const cls = classifyUses(uses);
+    if (!cls) continue; // not a cms-platform ref → ignore
+    // Reusable workflow OR composite action: the pinned ref IS the version, and
+    // it must equal platform_ref. Composites used to be SHA-pinned with the
+    // version carried in a trailing `# vX.Y.Z` comment; that comment was retired
+    // (it drifted silently and Dependabot rewrote it inconsistently), so a
+    // cross-repo composite now takes the same TAG form the reusables already
+    // use. One rule, one thing to read, and no comment to parse.
+    record(wf, `${cls.type} uses:@${cls.subpath}`, cls.ref, `uses: ${uses}`);
+  }
+  // The `platform_ref` INPUT — the ref the reusable's platform checkout obeys (#220).
+  for (const { ref, line } of nodes.platformRefs) {
+    record(wf, `with: platform_ref (line ${line})`, ref, `platform_ref: ${ref}`);
+  }
+}
+
+// ── Gemfile (optional — some consumers have none) ─────────────────────────────
+// `gem "cms-platform-theme", …, tag: "vX.Y.Z"`. Bundler's DSL isn't YAML, so a
+// line/token read is the right tool here (documented). We anchor on the
+// cms-platform-theme gem line + the git source pointing at our slug, then read
+// its `tag:`.
+function checkGemfile() {
+  const gf = path.join(ROOT, "Gemfile");
+  if (!fs.existsSync(gf)) return; // gem-less consumer → not a violation
+  const text = fs.readFileSync(gf, "utf8");
+  // Find the gem line(s) referencing cms-platform-theme on the platform git source.
+  // A gem block can wrap lines, so scan logical statements (collapse continuations
+  // ending in a comma onto the next line).
+  const lines = text.split("\n");
+  let found = false;
+  for (let i = 0; i < lines.length; i++) {
+    let stmt = lines[i];
+    // Join Ruby line continuations (a `,` or `\` at EOL continues the statement).
+    let j = i;
+    while (/[,\\]\s*$/.test(stmt) && j + 1 < lines.length) {
+      j += 1;
+      stmt += " " + lines[j].trim();
+    }
+    if (/gem\s+['"]cms-platform-theme['"]/.test(stmt) && stmt.includes(SLUG)) {
+      found = true;
+      const m = stmt.match(/\btag:\s*['"]([^'"]+)['"]/);
+      if (!m) {
+        violations.push({
+          file: "Gemfile",
+          kind: 'gem "cms-platform-theme" tag:',
+          found: "(no tag: pin)",
+          expected: platformRef,
+          detail: stmt.trim(),
+        });
+        checked += 1;
+      } else {
+        record(gf, 'gem "cms-platform-theme" tag:', m[1], stmt.trim());
+      }
+      i = j;
+    }
+  }
+  return found;
+}
+
+// ── Gemfile.lock (optional) ──────────────────────────────────────────────────
+// The cms-platform GIT source block:
+//   GIT
+//     remote: https://github.com/<owner>/<repo>
+//     revision: <sha>
+//     tag: vX.Y.Z
+// Bundler lockfile is its own format, not YAML → a structured line read of the
+// GIT block whose `remote:` matches our slug (documented; same justification).
+function checkGemfileLock() {
+  const lf = path.join(ROOT, "Gemfile.lock");
+  if (!fs.existsSync(lf)) return;
+  const text = fs.readFileSync(lf, "utf8");
+  const lines = text.split("\n");
+  // Walk top-level sections; a GIT section starts at column 0 with "GIT".
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] !== "GIT") continue;
+    // Collect this section's indented body until the next column-0 line.
+    let remote = null;
+    let tag = null;
+    let tagLine = -1;
+    let k = i + 1;
+    for (; k < lines.length; k++) {
+      const ln = lines[k];
+      if (ln.length && !/^\s/.test(ln)) break; // next top-level section
+      const rm = ln.match(/^\s*remote:\s*(\S+)\s*$/);
+      if (rm) remote = rm[1];
+      const tg = ln.match(/^\s*tag:\s*(\S+)\s*$/);
+      if (tg) {
+        tag = tg[1];
+        tagLine = k;
+      }
+    }
+    const matchesSlug =
+      remote &&
+      (remote === `https://github.com/${SLUG}` ||
+        remote === `https://github.com/${SLUG}.git` ||
+        remote.replace(/\.git$/, "").endsWith(`/${SLUG}`));
+    if (matchesSlug) {
+      if (tag === null) {
+        violations.push({
+          file: "Gemfile.lock",
+          kind: "GIT source tag: (cms-platform)",
+          found: "(no tag: in the cms-platform GIT block)",
+          expected: platformRef,
+          detail: `remote: ${remote}`,
+        });
+        checked += 1;
+      } else {
+        record(lf, "GIT source tag: (cms-platform)", tag, `remote: ${remote} (line ${tagLine + 1})`);
+      }
+    }
+    i = k - 1;
+  }
+}
+
+// ── Workflow-set parity (consumer must carry EXACTLY the platform-dictated set) ─
+// Beyond keeping every platform-version REFERENCE in lockstep, the platform also
+// dictates the consumer workflow SET via examples/site/.github/workflows/. A
+// consumer's .github/workflows/*.yml basenames must EQUAL that canonical set at
+// the pinned ref — no MISSING (a platform-dictated workflow absent) and no EXTRA
+// (a non-dictated workflow lingering). The canonical set is read from the platform
+// checkout the reusable places at .cms-platform/ (so it reflects platform_ref).
+// Skipped with a notice when the canonical dir is absent (a local run without the
+// platform checkout) so this stays a no-op off-CI while the pin checks still run.
+function listYamlBasenames(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile() && /\.ya?ml$/i.test(e.name))
+    .map((e) => e.name);
+}
+
+function resolveCanonicalDir() {
+  return path.resolve(
+    argOf(
+      "canonical-workflows",
+      "PIN_CANONICAL_WORKFLOWS",
+      path.join(ROOT, ".cms-platform", "examples", "site", ".github", "workflows"),
+    ),
+  );
+}
+
+function checkWorkflowSetParity() {
+  const canonicalDir = resolveCanonicalDir();
+  if (!fs.existsSync(canonicalDir)) {
+    const where = rel(canonicalDir) || canonicalDir;
+    process.stdout.write(
+      "platform-pin-consistency: (workflow-set parity skipped — canonical set not found at " +
+        `${where}; pass --canonical-workflows, or run via the ` +
+        "platform-pin-consistency reusable which checks out examples/site).\n",
+    );
+    if (REQUIRE_CANONICAL) {
+      // A lane that asked to VERIFY parity gets a hard failure, not a quieter
+      // OK line: `::error::` (always, so it is visible off-CI too) + a violation
+      // carrying its own `message` so the report skips the pin-bump epilogue.
+      const msg = requireCanonicalError(where);
+      process.stdout.write(`::error title=platform-pin-consistency::${msg}\n`);
+      violations.push({
+        file: ".github/workflows",
+        kind: "workflow-set/content parity: NOT VERIFIED (--require-canonical)",
+        found: `canonical set not resolved at ${where}`,
+        expected: "a resolvable canonical set, so both parity checks actually run",
+        message: msg,
+        detail:
+          "pass --canonical-workflows <platform>/examples/site/.github/workflows (scripts/verify-consumer-pins.sh " +
+          "does), or run via the platform-pin-consistency reusable, which checks examples/site out at platform_ref",
+      });
+    }
+    return;
+  }
+  parityVerified = true;
+  const canonical = new Set(listYamlBasenames(canonicalDir));
+  const consumer = new Set(listYamlBasenames(path.join(ROOT, ".github", "workflows")));
+  checked += 1;
+  for (const name of [...canonical].sort()) {
+    if (!consumer.has(name)) {
+      violations.push({
+        file: `.github/workflows/${name}`,
+        kind: "workflow-set: MISSING (platform-dictated)",
+        found: "absent",
+        expected: `present (canonical @${platformRef})`,
+        detail: `copy the thin caller examples/site/.github/workflows/${name} from the platform`,
+      });
+    }
+  }
+  for (const name of [...consumer].sort()) {
+    if (!canonical.has(name)) {
+      violations.push({
+        file: `.github/workflows/${name}`,
+        kind: "workflow-set: EXTRA (not platform-dictated)",
+        found: "present",
+        expected: "absent (not in the canonical set)",
+        detail:
+          "remove it, or promote it to the platform's examples/site/.github/workflows/ so every consumer carries it",
+      });
+    }
+  }
+}
+
+// Deterministic stringify (recursively key-sorted) so two structurally-equal
+// objects compare equal regardless of source key order / formatting.
+function stableStringify(v) {
+  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+  if (v && typeof v === "object") {
+    return (
+      "{" +
+      Object.keys(v)
+        .sort()
+        .map((k) => JSON.stringify(k) + ":" + stableStringify(v[k]))
+        .join(",") +
+      "}"
+    );
+  }
+  return JSON.stringify(v);
+}
+
+// The CALL INTERFACE of a thin caller — the part that is strictly
+// template-dictated (how it INVOKES the reusable): top-level `permissions`, and
+// per job its `uses` target (version-normalized), its `with` KEY-set, its
+// `secrets` map, and its job-level `permissions`. We DELIBERATELY exclude `on:`
+// triggers, `name`, `run-name`, `concurrency`, `defaults` and `with` VALUES:
+// those are legitimately site-operational (e.g. adamdaniel TRIMS the host-loop's
+// push `paths:` to dodge prod-loop co-arrival eviction #1892; `apex:` is a site
+// value; schedules can differ). What remains is the contract with the reusable —
+// a drift here means the reusable is called WRONG (the sweep startup_failure:
+// the caller dropped the now-required `secrets: CMS_E2E_PAT:` map). Comments +
+// formatting drop out via the YAML parse.
+// Two `with:` inputs are DELIBERATELY OPT-IN per site, and the canonical
+// examples/site template ships them commented out:
+//   deploy-preview.yml    → media_archive_bucket
+//   deploy-production.yml → media_archive_bucket, platform_ref
+// Adopting the private media archive is a PER-SITE decision
+// (docs/MEDIA-ARCHIVE.md) — a site with no archive bucket must deploy EXACTLY
+// as before, which is why the template comments the lines out rather than
+// shipping a default. But `withKeys` below is an EXACT sorted-set match, and a
+// commented-out line drops out of the YAML parse entirely — so a consumer that
+// follows the docs and uncomments them gains a `with:` key the canonical set
+// doesn't have, and reports `workflow-content: DRIFT` on the REQUIRED
+// pin-consistency check. That made the documented opt-in unshippable by ANY
+// consumer at all (jodidaniel.com had to revert its wiring — commit
+// 07e5c4b). So both keys are stripped from BOTH sides (canonical AND
+// consumer) before the compare, for the basename that ships them commented
+// out.
+//
+// This is a DELIBERATE, REVIEWED list — never "any key commented out in the
+// example." Deriving it from the comment text would let a stale `#`-prefixed
+// line silently retire a real guard: comment something out for an unrelated
+// reason (a debugging aid, a half-finished feature) and its key would stop
+// being checked everywhere, with nothing to flag that it happened. A key
+// lands here by someone editing THIS file, never as a side effect of editing
+// the example.
+const OPTIONAL_WITH_KEYS = {
+  "deploy-preview.yml": ["media_archive_bucket"],
+  "deploy-production.yml": ["media_archive_bucket", "platform_ref"],
+};
+
+function structuralShape(text, basename = null) {
+  const YAML = loadYaml();
+  // The version suffix is part of the version. A consumer validating a fix can
+  // be pinned at a PRERELEASE (`v0.1.89-rc.1`) while the canonical examples/site
+  // template at that same ref still pins the last full release — normalizing only
+  // `vX.Y.Z` left `@vREF-rc.1` vs `@vREF` and reported the RC pin as content DRIFT,
+  // which is the pin half of an RC being unusable at all.
+  const normalized = text
+    .replace(/@v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/g, "@vREF")
+    .replace(/\b[0-9a-f]{40}\b/g, "SHA40");
+  const obj = YAML.parse(normalized) || {};
+  const jobs = obj.jobs || {};
+  const shape = { permissions: obj.permissions || null, jobs: {} };
+  const optional = (basename && OPTIONAL_WITH_KEYS[basename]) || [];
+  for (const [jn, job] of Object.entries(jobs)) {
+    const j = job || {};
+    shape.jobs[jn] = {
+      uses: j.uses || null,
+      withKeys: Object.keys((j.with && typeof j.with === "object" && j.with) || {})
+        .filter((k) => !optional.includes(k))
+        .sort(),
+      secrets: j.secrets || null,
+      permissions: j.permissions || null,
+    };
+  }
+  return shape;
+}
+
+// Human-readable facets that differ (so a DRIFT is actionable, not just "differs").
+function shapeFacetDiff(canon, cons) {
+  const out = [];
+  if (stableStringify(canon.permissions) !== stableStringify(cons.permissions)) {
+    out.push("top-level `permissions`");
+  }
+  const cj = Object.keys(canon.jobs || {});
+  const sj = Object.keys(cons.jobs || {});
+  if (stableStringify([...cj].sort()) !== stableStringify([...sj].sort())) {
+    out.push(`job set (canonical [${cj}] vs consumer [${sj}])`);
+  }
+  for (const jn of cj) {
+    const a = (canon.jobs && canon.jobs[jn]) || {};
+    const b = (cons.jobs && cons.jobs[jn]) || {};
+    if (stableStringify(a.uses) !== stableStringify(b.uses)) {
+      out.push(`job \`${jn}\` uses: target (canonical ${JSON.stringify(a.uses)} vs ${JSON.stringify(b.uses)})`);
+    }
+    if (stableStringify(a.withKeys) !== stableStringify(b.withKeys)) {
+      out.push(`job \`${jn}\` with: keys (canonical [${a.withKeys}] vs [${b.withKeys}])`);
+    }
+    if (stableStringify(a.secrets) !== stableStringify(b.secrets)) {
+      out.push(
+        `job \`${jn}\` secrets: map (canonical ${JSON.stringify(a.secrets)} vs ${JSON.stringify(b.secrets)})`,
+      );
+    }
+    if (stableStringify(a.permissions) !== stableStringify(b.permissions)) out.push(`job \`${jn}\` permissions`);
+  }
+  return out;
+}
+
+// CONTENT parity (companion to the SET parity above). A consumer's thin caller
+// must match the canonical examples/site template's CALL INTERFACE — same `uses`
+// target, same `with` KEYS, same `secrets` map, same permissions — modulo
+// version refs and site-specific `with` VALUES. The version-pin checks above
+// only compare the `@ref`/`tag` STRINGS; they are blind to a caller whose BODY
+// drifted — e.g. jodidaniel's sweep caller, which dropped the now-required
+// `secrets: CMS_E2E_PAT:` map and `startup_failure`s the reusable. This catches
+// that class (and any missing/extra `with` key, wrong `uses` target, drifted
+// permissions) WITHOUT false-positiving on a legit site value, a stale comment,
+// or a deliberately site-tuned `on:` trigger (excluded — see structuralShape).
+function checkWorkflowContentParity() {
+  const canonicalDir = resolveCanonicalDir();
+  if (!fs.existsSync(canonicalDir)) return; // set-parity already emitted the skip notice
+  const consumerDir = path.join(ROOT, ".github", "workflows");
+  for (const name of listYamlBasenames(canonicalDir).sort()) {
+    const consumerFile = path.join(consumerDir, name);
+    if (!fs.existsSync(consumerFile)) continue; // MISSING — already flagged by set-parity
+    checked += 1;
+    let canon;
+    let cons;
+    try {
+      canon = structuralShape(fs.readFileSync(path.join(canonicalDir, name), "utf8"), name);
+      cons = structuralShape(fs.readFileSync(consumerFile, "utf8"), name);
+    } catch (e) {
+      violations.push({
+        file: `.github/workflows/${name}`,
+        kind: "workflow-content: UNPARSEABLE",
+        found: String(e.message || e),
+        expected: "valid YAML matching the canonical caller",
+        detail: "the caller (or canonical) failed to parse",
+      });
+      continue;
+    }
+    if (stableStringify(canon) === stableStringify(cons)) continue;
+    const facets = shapeFacetDiff(canon, cons);
+    violations.push({
+      file: `.github/workflows/${name}`,
+      kind: "workflow-content: DRIFT (thin caller structurally differs from canonical examples/site)",
+      found: `consumer differs in: ${facets.join("; ") || "(structure)"}`,
+      expected: `match canonical examples/site/.github/workflows/${name}`,
+      detail:
+        `re-copy the thin caller's call interface from examples/site/ (keep your own @ref pins, ` +
+        `site-specific with: VALUES, and any deliberately site-tuned on: triggers — those are ` +
+        `normalized/masked/excluded before compare; this flags a CALL-INTERFACE drift: a changed ` +
+        `uses target, a missing/extra with: key, a drifted secrets: map (the sweep ` +
+        `startup_failure class), or changed permissions).`,
+    });
+  }
+}
+
+// ── media_archive_bucket ⇒ platform_ref pairing (production caller only) ─────
+// The exemption above removes `platform_ref` from the workflow-content
+// key-set compare on `deploy-production.yml`, which was the ONLY thing that
+// forced it to be present alongside `media_archive_bucket` — so the pairing
+// has to be asserted explicitly, or it stops being enforced at all.
+//
+// Why the pairing matters: `.github/workflows/deploy-production.yml`'s
+// reusable declares `platform_ref` with `default: main` (its own
+// `on.workflow_call.inputs.platform_ref`) — not a pin, `main` itself. The
+// `media_archive_bucket != ''` steps check the platform out at `platform_ref`
+// and run `publish-opted-in-pdfs.sh` from that checkout. So a production
+// caller that sets `media_archive_bucket` WITHOUT also setting `platform_ref`
+// publishes PDFs to the LIVE site using an UNPINNED `main` checkout of the
+// platform — every push runs whatever the publish script happens to be on
+// `main` at that instant, not the release the rest of the caller is pinned
+// to. This is exactly why the canonical example's comment says "Uncomment
+// BOTH lines together."
+function checkOptionalInputPairing() {
+  const file = path.join(ROOT, ".github", "workflows", "deploy-production.yml");
+  if (!fs.existsSync(file)) return; // no production caller here → nothing to pair
+  let doc;
+  try {
+    doc = YAML.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return; // malformed YAML is already reported by the main workflow scan above
+  }
+  if (!doc || typeof doc !== "object" || !doc.jobs || typeof doc.jobs !== "object") return;
+  checked += 1;
+  for (const [jobName, job] of Object.entries(doc.jobs)) {
+    const w = job && typeof job === "object" ? job.with : null;
+    if (!w || typeof w !== "object") continue;
+    const bucket = w.media_archive_bucket;
+    const hasBucket = typeof bucket === "string" && bucket.trim() !== "";
+    if (!hasBucket) continue; // bucket unset/empty → opt-in not adopted, nothing to pair
+    const ref = w.platform_ref;
+    const hasRef = typeof ref === "string" && ref.trim() !== "";
+    if (hasRef) continue; // paired correctly
+    violations.push({
+      file: ".github/workflows/deploy-production.yml",
+      kind: "workflow-content: media_archive_bucket without platform_ref",
+      found: `job \`${jobName}\` sets media_archive_bucket: ${JSON.stringify(bucket)} with no platform_ref`,
+      expected: "platform_ref: <same ref as the uses:@ pin> alongside media_archive_bucket",
+      detail:
+        `the reusable's platform_ref input DEFAULTS TO 'main', and the media_archive_bucket != '' ` +
+        `steps check the platform out at platform_ref to run publish-opted-in-pdfs.sh -- so as configured, ` +
+        `this job would publish archived PDFs to the live site from an UNPINNED main checkout of the ` +
+        `platform. Fix: add platform_ref: set to the same ref as this job's uses:@ pin (see the canonical ` +
+        `example's "Uncomment BOTH lines together" comment).`,
+    });
+  }
+}
+
+// ── Preview-media probe sentinel (issue #84) ─────────────────────────────────
+// `e2e/preview-media-resolves.spec.js`'s PROBE_PATH points at a committed
+// `assets/images/uploads/e2e-preview-media-probe.png` — the `preview-media`
+// gate fetches it on the deployed preview to prove the flat `media_folder`
+// resolves. A consumer missing it only "passes" preview-media by never
+// tripping the gate's media-salient-change detector, then 404s the first time
+// it does (bit jodidaniel.com on the v0.1.30 bump). This is a pure
+// delivery-artifact check — file existence + byte/sha match, not a code-shape
+// lint (no AST needed). The 92-char base64 constant is embedded here (rather
+// than read from the platform checkout) so this check works under the
+// reusable's sparse checkout, which brings in only this script +
+// examples/site/.github/workflows.
+const PROBE_MEDIA_REL = "assets/images/uploads/e2e-preview-media-probe.png";
+const PROBE_MEDIA_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+const PROBE_MEDIA_SHA1 = "62a5f8f47fec02344e5bf9061888262f677cf5d6";
+
+function gitBlobSha1(buf) {
+  const header = Buffer.from(`blob ${buf.length}\0`);
+  return crypto.createHash("sha1").update(Buffer.concat([header, buf])).digest("hex");
+}
+
+function checkMediaProbeSentinel() {
+  const probePath = path.join(ROOT, PROBE_MEDIA_REL);
+  checked += 1;
+  if (!fs.existsSync(probePath)) {
+    violations.push({
+      file: PROBE_MEDIA_REL,
+      kind: "preview-media sentinel: MISSING",
+      found: "absent",
+      expected: `present, git-blob sha1 ${PROBE_MEDIA_SHA1}`,
+      // Own `::error`/report advice: the fix is committing a PNG, not bumping a
+      // pin, so this must NOT inherit the pin-phrased default (issue #84).
+      message:
+        `preview-media sentinel MISSING — commit the canonical 69-byte probe PNG at ` +
+        `${PROBE_MEDIA_REL} (git-blob sha1 ${PROBE_MEDIA_SHA1}; see issue #84)`,
+      detail:
+        `preview-media.yml's salient-change gate fetches this exact path on the deployed ` +
+        `preview (see e2e/preview-media-resolves.spec.js PROBE_PATH, issue #84); seed it with ` +
+        `the canonical 1x1 PNG (base64 ${PROBE_MEDIA_PNG_BASE64}).`,
+    });
+    return;
+  }
+  const bytes = fs.readFileSync(probePath);
+  const foundSha1 = gitBlobSha1(bytes);
+  if (foundSha1 !== PROBE_MEDIA_SHA1) {
+    violations.push({
+      file: PROBE_MEDIA_REL,
+      kind: "preview-media sentinel: WRONG-BYTES",
+      found: `git-blob sha1 ${foundSha1} (${bytes.length} bytes)`,
+      expected: `git-blob sha1 ${PROBE_MEDIA_SHA1} (69 bytes)`,
+      // Own `::error`/report advice (issue #84) — recommit the PNG, not a pin bump.
+      message:
+        `preview-media sentinel WRONG-BYTES — replace ${PROBE_MEDIA_REL} with the canonical ` +
+        `69-byte probe PNG (git-blob sha1 ${PROBE_MEDIA_SHA1}, found ${foundSha1}; see issue #84)`,
+      detail:
+        `must be byte-identical to the canonical sentinel (see ` +
+        `e2e/preview-media-resolves.spec.js PROBE_PATH, issue #84).`,
+    });
+  }
+}
+
+// ── Summary lines (PURE; exported for the unit test) ─────────────────────────
+// Mirrors `audit-repo-settings.js`'s `repoOkLine`/`cleanScanSummary` house
+// pattern: with nothing unverifiable the sentence is BYTE-IDENTICAL to what it
+// has always been (the unit test asserts it with `toBe` on the literal — that is
+// the half a refactor is most likely to regress); with parity unverified it says
+// what it did NOT check, and never the words "Pins are consistent".
+function okSummary({ checked, root, platformRef, lockRel, parityVerified }) {
+  const head =
+    `platform-pin-consistency: OK — all ${checked} platform-consistency check(s) ` +
+    `in ${root} pass for platform_ref ${platformRef} ` +
+    `(canonical, from ${lockRel}).`;
+  if (parityVerified) return `${head} Pins are consistent.`;
+  return (
+    `${head} Workflow-SET and workflow-CONTENT parity were NOT VERIFIED — the canonical ` +
+    `set was not resolved, so this run did NOT check the consumer's workflow set or any ` +
+    `thin caller's call interface (uses target / with keys / secrets map / permissions). ` +
+    `Pass --canonical-workflows <platform>/examples/site/.github/workflows (or run via the ` +
+    `platform-pin-consistency reusable, which checks it out), and --require-canonical to make ` +
+    `an unresolved set a hard failure instead of this notice. Pin references are consistent; ` +
+    `parity is UNVERIFIED.`
+  );
+}
+
+// The `--require-canonical` failure text. Names the flag and the reason so the
+// output says WHY it failed rather than only that it did.
+function requireCanonicalError(where) {
+  return (
+    `workflow-SET and workflow-CONTENT parity NOT VERIFIED — the canonical set was not found ` +
+    `at ${where}, and --require-canonical was passed. A lane that is supposed to verify parity ` +
+    `must FAIL rather than pass with fewer checks (this guard used to drop from 96 checks to 61 ` +
+    `and still report a clean, consistent verdict). Pass --canonical-workflows ` +
+    `<platform>/examples/site/.github/workflows, or run via the platform-pin-consistency ` +
+    `reusable, which checks examples/site out at platform_ref.`
+  );
+}
+
+// Requireable for the unit test (see RUN_AS_CLI above): pure, no filesystem.
+module.exports = { okSummary, requireCanonicalError, structuralShape };
+
+if (RUN_AS_CLI) {
+  checkGemfile();
+  checkGemfileLock();
+  checkWorkflowSetParity();
+  checkWorkflowContentParity();
+  checkOptionalInputPairing();
+  checkMediaProbeSentinel();
+
+  // ── Report ──────────────────────────────────────────────────────────────────
+  if (violations.length === 0) {
+    // Exit code UNCHANGED when parity was merely SKIPPED (no --require-canonical):
+    // a canonical set we could not resolve is not skew, so it must not break an
+    // existing caller. Only the wording above distinguishes the two runs.
+    process.stdout.write(
+      `${okSummary({
+        checked,
+        root: rel(ROOT) || ".",
+        platformRef,
+        lockRel: LOCK_REL,
+        parityVerified,
+      })}\n`,
+    );
+    process.exit(0);
+  }
+
+  const isCI = !!process.env.GITHUB_ACTIONS;
+  process.stderr.write(
+    `platform-pin-consistency: FAIL — ${violations.length} consistency check(s) failed ` +
+      `against the canonical platform_ref ${platformRef} (from ${LOCK_REL}).\n\n`,
+  );
+  for (const v of violations) {
+    // GitHub annotation (file-scoped) when in Actions; always a human line too.
+    // A violation may carry its OWN `message` (the sentinel does — its fix is
+    // committing a PNG, not bumping a pin); fall back to the pin-phrased default.
+    if (isCI) {
+      const annotation =
+        v.message ||
+        `${v.kind} pins '${v.found}' but platform.lock platform_ref is '${v.expected}'`;
+      process.stderr.write(`::error file=${v.file}::${annotation}\n`);
+    }
+    process.stderr.write(
+      `  ${v.file}\n    ${v.kind}\n      found:    ${v.found}\n      expected: ${v.expected}\n`,
+    );
+    if (v.detail) process.stderr.write(`      detail:   ${v.detail}\n`);
+  }
+  // The pin-bump epilogue only applies to VERSION-pin violations; a sentinel
+  // violation carries its own fix in `message`/`detail` above (commit a PNG, not
+  // bump a pin), so only emit it when a pin-class violation (no own message) is present.
+  if (violations.some((v) => !v.message)) {
+    process.stderr.write(
+      `\nFix: bring every platform-version reference above to ${platformRef} (the platform.lock ` +
+        `platform_ref). Bump the workflow @ref pins (reusables AND composites) + the ` +
+        `with: platform_ref inputs, and the Gemfile/Gemfile.lock tag, all to a SINGLE release. ` +
+        `(platform-bump moves every reference atomically; Dependabot ignores all ` +
+        `cms-platform refs, #242 + #244 — a hand-edit, a partially-applied bump, or a ` +
+        `stale platform_ref input is what this guard catches.)\n`,
+    );
+  }
+  process.exit(1);
+}

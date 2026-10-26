@@ -1,0 +1,22 @@
+# Production deploy. Fires on a push to main — which, for a CMS entry, means
+# after the editorial-workflow PR auto-merges.
+name: deploy-production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: example-org/cms-platform/.github/workflows/deploy-production.yml@v0.1.104
+    with:
+      platform_ref: v0.1.104

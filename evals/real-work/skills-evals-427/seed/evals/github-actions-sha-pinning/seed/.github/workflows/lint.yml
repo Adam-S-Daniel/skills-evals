@@ -1,0 +1,13 @@
+name: Lint
+
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/local-lint
+      - uses: docker://alpine:3.20
+        with:
+          args: echo lint-done

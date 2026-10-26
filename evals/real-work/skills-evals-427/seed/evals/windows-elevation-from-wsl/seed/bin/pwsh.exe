@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# pwsh.exe (PowerShell 7) is launched from WSL the same way and holds the same
+# filtered token, so it behaves identically here.
+exec "$(dirname "$0")/powershell.exe" "$@"

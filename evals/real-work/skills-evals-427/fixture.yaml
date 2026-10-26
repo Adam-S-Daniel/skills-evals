@@ -1,0 +1,62 @@
+# Real-work fixture: skills-evals#427, scaffolded by scripts/scaffold_real_work.py.
+# https://github.com/Adam-S-Daniel/skills-evals/pull/427.
+# DRAFT. The prompt and interface_strings below were written by a model in
+# the eval routine; a person confirms them before removing `draft: true`.
+#   base  b5077efd80d7c4ba24012cb3ad0d3c693b6d1cf5 (merge-first-parent)
+#   merge fc106e1dccdca872351425a85238ffc798d61c28
+# Checker overlay: the merge commit's test/workflow_path_audit_case.py, test/issues/test_issue_wpa_companion_skip_pair.py, test/issues/test_issue_wpa_moved_test_dir.py, test/issues/test_issue_wpa_workflow_doc_in_step.py, test/issues/test_issue_board_feed.py, evals/workflow-path-audit/companion-skip-pair/seed/test/util.test.js, evals/workflow-path-audit/workflow-doc-in-step/seed/test/util.test.js, evals/workflow-path-audit/required-check-routing/seed/test/index.test.js, evals/workflow-path-audit/moved-test-dir/seed/tests/e2e/home.spec.js, evals/workflow-path-audit/moved-test-dir/seed/tests/unit/util.test.js.
+# Trimmed from the seed: .github/workflows/eval.yml, DESIGN.md, evals/ci-watcher-loops/seed/bin/gh, evals/cms-stuck-pr-triage/seed/bin/gh, evals/consumer-repo-provisioning/seed/bin/gh, evals/debug-github-workflows/git-identity/seed/bin/gh, evals/debug-github-workflows/secret-name/seed/bin/gh, evals/debug-github-workflows/swallowed-failure/seed/bin/gh, evals/debug-github-workflows/wrong-branch/seed/bin/gh, evals/editorial-label-audit/seed/bin/gh, evals/github-actions-repo-settings/drift-diagnosis/seed/bin/gh, evals/github-actions-repo-settings/onboarding/seed/bin/gh, evals/orchestrator-scenarios/brief-wrong-fact/seed/bin/gh, evals/orchestrator-scenarios/newest-gate-failed/seed/bin/gh, evals/orchestrator-scenarios/obsolete-published-head/seed/bin/gh, evals/orchestrator-scenarios/owner-decision-pending/seed/bin/gh, evals/orchestrator-scenarios/permission-classifier-denial/seed/bin/gh, evals/platform-release-and-bump/seed/bin/gh, evals/real-work/_agent-guidance-196/checker, evals/real-work/_agent-guidance-196/seed, evals/real-work/_agent-guidance-196/solution.patch, evals/real-work/cms-platform-221/checker, evals/real-work/cms-platform-221/seed, evals/real-work/cms-platform-221/solution.patch, evals/real-work/cms-platform-693/checker, evals/real-work/cms-platform-693/seed, evals/real-work/cms-platform-693/solution.patch, evals/real-work/cms-platform-760/checker, evals/real-work/cms-platform-760/seed, evals/real-work/cms-platform-760/solution.patch, evals/real-work/cms-platform-761/checker, evals/real-work/cms-platform-761/seed, evals/real-work/cms-platform-761/solution.patch, evals/review-bash-ci-reliability/empty-repo-discovery/seed/bin/gh, evals/vendor-release-impact-issues/closed-duplicate/seed/bin/gh, test/run_tests.py.
+# Guidance provenance: 18 eligible byte-matching revisions; selected greatest commit timestamp, then smallest full SHA.
+
+subject: any
+draft: true
+strip_agent_context: true
+prompt: |
+  This is the fifth skill from #422. Improve mode (`scripts/propose_skill_edit.py`) counts only nested fixtures, and workflow-path-audit had one flat fixture. Move that fixture and add three more, so the skill has four.
+
+  ## What
+
+  **The move.** The flat fixture (fixture key `""`) becomes a nested one, so the pooling alias can record the rename. Its new directory is named last in the interface paragraph below.
+
+  **New fixtures.** Each one measures a SKILL.md claim the reference fixture does not:
+
+  - `companion-skip-pair`: the required workflow's inverted-filter twin is deleted and the gating moves inside the required workflow.
+  - `moved-test-dir`: renamed paths, configs reached only indirectly, and the trap of a broad `.github/**` filter.
+  - `workflow-doc-in-step`: AGENTS.md's workflow table must follow the workflows' new filters, and no second doc may appear.
+
+  All data is invented. No fixture pins a model.
+
+  `scripts/board_feed.py`'s trend line accepts both the old flat key and the new one, so history carries over.
+
+  Make this change.
+
+  ## Interface the reviewer's tests use
+
+  The hidden tests are the three `test/issues/test_issue_wpa_*.py` modules, which share `test/workflow_path_audit_case.py`, and the trend test of the board feed tests. They read the fixture directories `evals/workflow-path-audit/companion-skip-pair`, `evals/workflow-path-audit/moved-test-dir`, `evals/workflow-path-audit/workflow-doc-in-step`, plus the moved one at `evals/workflow-path-audit/required-check-routing`; every one has a `fixture.yaml` and a `seed/`. Each fixture's objective checks carry these ids, in this order.
+
+  companion-skip-pair: required-check-gates-inside-one-workflow; then companion-skip-workflow-removed; then docs-change-still-reports-the-required-check; then source-change-skips-the-docs-site; then workflows-still-parse; then event-only-workflows-unfiltered; then ruleset-unchanged; then project-files-unchanged.
+
+  moved-test-dir: moved-spec-runs-e2e; then server-script-runs-e2e; then own-workflow-edit-runs-itself; then sibling-workflow-edit-runs-only-itself; then unit-test-change-skips-e2e; then prose-change-runs-nothing; then lockfile-change-runs-every-installer; then workflows-still-parse; then event-only-workflows-unfiltered; then project-files-unchanged.
+
+  workflow-doc-in-step: docs-change-builds-only-the-docs; then source-change-runs-only-the-tests; then lockfile-change-runs-only-the-tests; then agents-md-change-runs-nothing; then tests-row-names-its-paths; then docs-site-row-names-its-paths; then agents-md-keeps-the-rest; then workflows-still-parse; then event-only-workflows-unfiltered; then no-second-workflow-doc.
+
+  The trend test uses two fixture keys: the old `workflow-path-audit`, then `workflow-path-audit/required-check-routing`.
+context:
+  repository: Adam-S-Daniel/skills-evals
+  revision: b5077efd80d7c4ba24012cb3ad0d3c693b6d1cf5
+  guidance_revision: 445ca3711ef4cb8e64e620c4eccba0a8e761d913
+  budget: {skill_payload_bytes: 1, guidance_bytes: 31529, skill_catalog_bytes: 1}
+interface_strings: [evals/workflow-path-audit/required-check-routing, evals/workflow-path-audit/companion-skip-pair, evals/workflow-path-audit/moved-test-dir, evals/workflow-path-audit/workflow-doc-in-step, workflow-path-audit/required-check-routing, required-check-gates-inside-one-workflow, companion-skip-workflow-removed, docs-change-still-reports-the-required-check, source-change-skips-the-docs-site, workflows-still-parse, event-only-workflows-unfiltered, ruleset-unchanged, project-files-unchanged, moved-spec-runs-e2e, server-script-runs-e2e, own-workflow-edit-runs-itself, sibling-workflow-edit-runs-only-itself, unit-test-change-skips-e2e, prose-change-runs-nothing, lockfile-change-runs-every-installer, docs-change-builds-only-the-docs, source-change-runs-only-the-tests, lockfile-change-runs-only-the-tests, agents-md-change-runs-nothing, tests-row-names-its-paths, docs-site-row-names-its-paths, agents-md-keeps-the-rest, no-second-workflow-doc, test/workflow_path_audit_case.py, test/issues/test_issue_wpa_*.py]
+objective_checks:
+- id: hidden-tests
+  type: repo_tests
+  description: The pull request's own tests, hidden from the agent
+  overlay: checker
+  argv: [python3, -m, pytest, -q, -p, 'no:cacheprovider']
+  fail_to_pass:
+  - [test/issues/test_issue_wpa_companion_skip_pair.py]
+  - [test/issues/test_issue_wpa_moved_test_dir.py]
+  - [test/issues/test_issue_wpa_workflow_doc_in_step.py]
+  - ['test/issues/test_issue_board_feed.py::BoardFeedTests::test_trend_follows_the_reference_fixture_across_its_move_to_nested']
+  pass_to_pass:
+  - [test/issues/test_issue_board_feed.py, -k, not test_trend_follows_the_reference_fixture_across_its_move_to_nested]
