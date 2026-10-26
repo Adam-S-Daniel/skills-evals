@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T22YFBPkdxmooc3xfNF9AT",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100; ls vendor",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T22YFBPkdxmooc3xfNF9AT",
+      "is_error": false,
+      "output": "1d07004 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode\n...",
+      "output_chars": 325,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SNcCZVbKeukUCPxNeZQZC9",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json | head -200",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SNcCZVbKeukUCPxNeZQZC9",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 2189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019mQHMtRtqHNMdUSibQA4or",
+      "name": "Bash",
+      "input": "for f in README.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .ripgreprc .bashrc .profile .zshrc .zprofile .bash_profile .gitconfig; do echo \"=== ...",
+      "input_chars": 261,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019mQHMtRtqHNMdUSibQA4or",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 2328,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XLrqfuFEJguf1krbeNSW4G",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-sessionstart-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook no longer runs for forked sessions (ExampleCLI 4.2.0 reports source \"fork\")\n\n## Summary\n\nExam...",
+      "input_chars": 3215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XLrqfuFEJguf1krbeNSW4G",
+      "is_error": false,
+      "output": "01-sessionstart-hook-misses-forked-sessions.md\n02-readme-synced-skill-invocation-name.md",
+      "output_chars": 88,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

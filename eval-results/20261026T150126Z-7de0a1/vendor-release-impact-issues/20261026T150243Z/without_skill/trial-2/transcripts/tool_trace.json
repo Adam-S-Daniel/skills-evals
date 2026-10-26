@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016jZipaDiVtpag1AiaxQKMq",
+      "name": "Bash",
+      "input": "git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016jZipaDiVtpag1AiaxQKMq",
+      "is_error": false,
+      "output": "dc9053f initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F5AZPtSy6J8Tm7jPfjk3bU",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md vendor/RELEASES.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .ripgreprc .gitconfig; do echo \"=== $f\"; cat \"$f\"; done...",
+      "input_chars": 250,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F5AZPtSy6J8Tm7jPfjk3bU",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 3631,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013iG6mqoMTvLZ7rkXjucExj",
+      "name": "Bash",
+      "input": "cat vendor/releases.json; grep -rn \"model\\|synced\\|review-checklist\\|watch\" --exclude-dir=.git . 2><path> | grep -v vendor/",
+      "input_chars": 126,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013iG6mqoMTvLZ7rkXjucExj",
+      "is_error": false,
+      "output": "{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n    },\n    \"4.2.0\": {\n      \"published_at\": \"2026-07-14T09:47Z\",\n      \"created_at\": \"20...",
+      "output_chars": 709,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VfmQWowjBCm6wFL18nPGMc",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook stops logging forked sessions on ExampleCLI 4.2.0+\n\n## Summary\n\nExampleCLI v4.2.0 changed th...",
+      "input_chars": 3413,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VfmQWowjBCm6wFL18nPGMc",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-forked-sessions.md\n02-readme-synced-skill-invocation-name.md",
+      "output_chars": 89,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
