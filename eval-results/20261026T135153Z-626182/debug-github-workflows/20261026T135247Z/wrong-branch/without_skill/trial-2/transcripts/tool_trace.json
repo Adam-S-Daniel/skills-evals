@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019dEsLpsihSFmTYV6DAUASG",
+      "name": "Bash",
+      "input": "git status | head -5; git log --oneline -8; ls -a; ls .github/workflows 2><path>; which gh",
+      "input_chars": 93,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019dEsLpsihSFmTYV6DAUASG",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n7e32891 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprof...",
+      "output_chars": 371,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QN65EzqHEzJ4covyF21niG",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md | head -30; ls bin src test; cat .gitmodules; file bin/gh",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QN65EzqHEzJ4covyF21niG",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 651,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KJtdhwtokmFeKCj2VaAmS1",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -5; python3 -m unittest discover -s test 2>&1 | tail -8; cat src/sequence.py test/test_current.py; git log --stat --format=%h\\ %s | head -20",
+      "input_chars": 189,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V2UHrfJUvtGVjRAcWP8aTr",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 30,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KJtdhwtokmFeKCj2VaAmS1",
+      "is_error": false,
+      "output": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n.\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\ndef next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_...",
+      "output_chars": 1590,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V2UHrfJUvtGVjRAcWP8aTr",
+      "is_error": false,
+      "output": "1\t#!<path> python3\n2\t\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n3\t\n4\tPoint GH_REPLAY_DIR at a directory of responses recorded from a real\n5\trepository and this replays them, keyed by the NORMALIZED command line, so a\n6\tsession can be re-run on a machine with no ...",
+      "output_chars": 59752,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DF9Ri2jA61byG69C4CxUt7",
+      "name": "Bash",
+      "input": "cd <path> && cat replay/run-view-77001.log replay/run-list.json; cat replay/api/repos/example-org/example-service/check-runs/99001/annotations.json replay/api/repos/example-org/example-service/compare...",
+      "input_chars": 255,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DF9Ri2jA61byG69C4CxUt7",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 2344,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
