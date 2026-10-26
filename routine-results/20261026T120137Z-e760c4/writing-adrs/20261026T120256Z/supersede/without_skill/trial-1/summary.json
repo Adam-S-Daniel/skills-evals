@@ -1,0 +1,380 @@
+{
+  "skill": "writing-adrs",
+  "arm": "without_skill",
+  "timestamp": "20261026T120256Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0889317,
+    "num_turns": 8,
+    "duration_ms": 22547,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 13167,
+      "cache_read_input_tokens": 141098,
+      "output_tokens": 2201,
+      "output_tokens_details": {
+        "thinking_tokens": 164
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 13167,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 418,
+          "cache_read_input_tokens": 39161,
+          "cache_creation_input_tokens": 1820,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1820
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "new-adr-0004-is-a-house-format-entry",
+      "passed": true,
+      "detail": "docs/decisions/0004-keep-the-newest-14-snapshots.md matches"
+    },
+    {
+      "id": "new-adr-0004-names-0002",
+      "passed": true,
+      "detail": "docs/decisions/0004-keep-the-newest-14-snapshots.md matches"
+    },
+    {
+      "id": "adr-0002-status-says-superseded-by-0004",
+      "passed": true,
+      "detail": "docs/decisions/0002-prune-snapshots-older-than-30-days.md matches"
+    },
+    {
+      "id": "adr-0002-keeps-what-it-recorded",
+      "passed": true,
+      "detail": "docs/decisions/0002-prune-snapshots-older-than-30-days.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-row-for-0002-says-superseded-by-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "index-rows-for-0001-and-0003-kept",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "decision-log-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/0001-take-snapshots-with-pg-basebackup.md, docs/decisions/0002-prune-snapshots-older-than-30-days.md, docs/decisions/0003-store-snapshots-on-a-separate-volume.md, docs/decisions/0004-keep-the-newest-14-snapshots.md, docs/decisions/README.md)"
+    },
+    {
+      "id": "script-comment-points-at-0004",
+      "passed": true,
+      "detail": "scripts/prune-snapshots.sh matches"
+    },
+    {
+      "id": "script-adr-pointers-resolve",
+      "passed": true,
+      "detail": "all link targets exist (scripts/prune-snapshots.sh)"
+    },
+    {
+      "id": "script-still-keeps-the-newest-14",
+      "passed": true,
+      "detail": "scripts/prune-snapshots.sh matches"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": true,
+      "detail": "4 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-take-snapshots-with-pg-basebackup.md, docs/decisions/0003-store-snapshots-on-a-separate-volume.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "replacement-explains-the-reversal",
+        "score": 10,
+        "rationale": "The new ADR's Context describes the silent snapshot-job failure while age-based pruning kept deleting without pre-announcing the decision, the Decision states the actual policy (keep newest 14 by count via timestamp sort), it discusses both named alternatives (age rule plus alert; never pruning) with reasons for rejection, gives honest positive and negative consequences, and the index/status plainly mark it as superseding 0002."
+      },
+      {
+        "name": "audit-trail-preserved",
+        "score": 10,
+        "rationale": "ADR 0002's original Context/Decision/Consequences are untouched with only its Status changed to \"Superseded by 0004\", and the index row and script comment now consistently show 0002 superseded, 0004 in force, and the script pointing at 0004."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "The agent left ADRs 0001 and 0003 and their index rows, CHANGELOG.md, and the script's behavior (keep=14 logic) untouched, and wrote no extraneous ADR for the routine CHANGELOG typo fix."
+      }
+    ],
+    "overall": 10.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-4-8"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1179,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 2201,
+      "cache_read_input_tokens": 141098,
+      "cache_creation_input_tokens": 13167,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.00760434570281532,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "supersede",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "f65fb39a66418c284dbe146b5559520b87b4333761b7a5200e02aafa9337f088",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261026T120137Z-e760c4",
+    "session_id": "cse_01UdYRqkU3HiHzCWSm2isAz9",
+    "harness_commit": "d865782dd96252eedcd31bc5e2be94647c34520b",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T12:02:56Z",
+    "ended_at": "2026-10-26T12:06:29Z",
+    "meter": {
+      "snapshot_count": 8,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T12:02:56Z",
+      "to_at": "2026-10-26T12:05:41.257Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.21,
+          "to": 0.22,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.61,
+          "to": 0.62,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01UdYRqkU3HiHzCWSm2isAz9",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T12:04:27Z",
+      "ended_at": "2026-10-26T12:06:14Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T12:04:27Z",
+          "ended_at": "2026-10-26T12:04:52Z",
+          "duration_ms": 24281,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-26T12:06:06Z",
+          "ended_at": "2026-10-26T12:06:14Z",
+          "duration_ms": 7519,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T12:04:27Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793019600,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.21,
+                  "resetsAt": 1793019600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.62,
+                  "resetsAt": 1793034000,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 24281,
+        "num_turns": 8,
+        "cost_usd": 0.0889317,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1179,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001279
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 2201,
+            "cache_read_input_tokens": 141098,
+            "cache_creation_input_tokens": 13167,
+            "cost_usd": 0.08880380000000002
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13167
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 7519,
+        "num_turns": 1,
+        "cost_usd": 0.10138180000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 3828,
+            "output_tokens": 27,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0003963
+          },
+          "claude-opus-4-8": {
+            "input_tokens": 2,
+            "output_tokens": 403,
+            "cache_read_input_tokens": 27661,
+            "cache_creation_input_tokens": 7707,
+            "cost_usd": 0.1009855
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7707
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
