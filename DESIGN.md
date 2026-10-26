@@ -2317,7 +2317,7 @@ arm's own workspace. The inventory includes explicit parent directories:
 | `trusted-git-` | [harness/workspace_git.py](harness/workspace_git.py) private metadata, allocated with `mkdir` |
 | `scaffold-`, `scaffold-context-`, `.scaffold-` | [scripts/scaffold_real_work.py](scripts/scaffold_real_work.py) candidate, context Git stores, and destination staging |
 | `claude-probe-home-` | [scripts/probe_model_defaults.py](scripts/probe_model_defaults.py) isolated CLI profile |
-| `skill-edit-guard-`, `propose-skill-edit-` | [scripts/propose_skill_edit.py](scripts/propose_skill_edit.py) |
+| `skill-edit-guard-`, `propose-skill-edit-` | [scripts/propose_skill_edit.py](scripts/propose_skill_edit.py); [scripts/propose_guidance_edit.py](scripts/propose_guidance_edit.py) under `propose-skill-edit-guidance-` |
 | `scoring-guidance-`, `scoring-skill-` | [harness/run_eval.py](harness/run_eval.py) objective-only scoring copies |
 | `mine-real-work-` | [scripts/mine_real_work.py](scripts/mine_real_work.py) atomic output staging file |
 | `.gh-label-`, `.gh-timeline-` | [harness/fakes/gh](harness/fakes/gh) atomic local state files |
