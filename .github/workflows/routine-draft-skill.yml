@@ -73,6 +73,16 @@ jobs:
         working-directory: skills-evals
         run: |
           set -euo pipefail
+          # A glob refspec that matches no branch fails the fetch, so look
+          # first: ls-remote exits 2 when nothing matches, and any other
+          # nonzero code is a real failure.
+          rc=0
+          git ls-remote --exit-code --heads origin 'claude/draft-skill-*' > /dev/null || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "no claude/draft-skill-* branches yet"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
           git fetch --no-tags --depth=1 origin \
             '+refs/heads/claude/draft-skill-*:refs/remotes/origin/claude/draft-skill-*'
 
