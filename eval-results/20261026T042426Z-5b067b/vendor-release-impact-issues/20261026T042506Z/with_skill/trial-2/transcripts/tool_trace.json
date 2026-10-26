@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0192jCrkPWxzf7frdfnB5gBg",
+      "name": "Skill",
+      "input": "vendor-release-impact-issues",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0192jCrkPWxzf7frdfnB5gBg",
+      "is_error": false,
+      "output": "Launching skill: vendor-release-impact-issues",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cukevx1q4Gd8Z6CddhmsRc",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; ls -la; ls -R vendor | head -50",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cukevx1q4Gd8Z6CddhmsRc",
+      "is_error": true,
+      "output": "The server-side auto mode classifier gave no verdict (error), so auto mode cannot determine the safety of Bash. This is a transient failure of the check, not a judgment about the action: a later response may get a verdict. You may try the action again once, as-is. Repeated attempts are slowed by a g...",
+      "output_chars": 605,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011WUPHSNYLS3zgEVPbuMQSz",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; ls -la; find vendor -type f | head -50",
+      "input_chars": 67,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011WUPHSNYLS3zgEVPbuMQSz",
+      "is_error": false,
+      "output": "357477c initial commit\ntotal 40\ndrwxr-xr-x 8 root root 4096 Oct 26 04:26 .\ndrwxrwxrwt 9 root root 4096 Oct 26 04:25 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:24 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:24 .bashrc\ndrwxr-xr-x 4 root root 4096 Oct 26 04:26 .claude\ndrwxr-xr-x 2 root root 4096 ...",
+      "output_chars": 1110,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HaUiUVzmNoqr24uMTYXnbF",
+      "name": "Bash",
+      "input": "cat README.md AGENTS.md; ls -la .example-cli .github/* hooks .claude/*; cat vendor/RELEASES.md; cat vendor/releases.json",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HaUiUVzmNoqr24uMTYXnbF",
+      "is_error": true,
+      "output": "The server-side auto mode classifier gave no verdict (error), so auto mode cannot determine the safety of Bash. This is a transient failure of the check, not a judgment about the action: a later response may get a verdict. You may try the action again once, as-is. Repeated attempts are slowed by a g...",
+      "output_chars": 605,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017pcjmHi3kPxwP3wwgwfvuj",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 42,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017pcjmHi3kPxwP3wwgwfvuj",
+      "is_error": false,
+      "output": "1\t# ExampleCLI release notes\n2\t\n3\t## v4.3.0\n4\t\n5\t[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n6\t\n7\t- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n8\t  recognized` to stderr when the...",
+      "output_chars": 1661,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R8gLS4nBUH8CuKwAgdK6XN",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 44,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R8gLS4nBUH8CuKwAgdK6XN",
+      "is_error": false,
+      "output": "1\t{\n2\t  \"example-cli\": {\n3\t    \"4.1.0\": {\n4\t      \"published_at\": \"2026-06-02T14:03Z\",\n5\t      \"created_at\": \"2026-06-02T14:02Z\",\n6\t      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n7\t      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n8\t    },\n9\t    \"4.2.0\": {\n10\t      \"published_at\": \"2026-07-14T09:47Z\",\n11...",
+      "output_chars": 680,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NTcFtYj4ZT4iZzgFifiaKw",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 33,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NTcFtYj4ZT4iZzgFifiaKw",
+      "is_error": false,
+      "output": "1\t# example-repo\n2\t\n3\tUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\n4\tdevelopment and CI checks; see `.example-cli/settings.json` for the hook\n5\tconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n6\t\n7\tWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 669,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H3uVBRmAWzGC9rpGwp96wj",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 36,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H3uVBRmAWzGC9rpGwp96wj",
+      "is_error": true,
+      "output": "EISDIR: illegal operation on a directory, read '<path>'",
+      "output_chars": 85,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017rcnvCDPH7hPoGx9tBSjLb",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 29,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017rcnvCDPH7hPoGx9tBSjLb",
+      "is_error": true,
+      "output": "EISDIR: illegal operation on a directory, read '<path>'",
+      "output_chars": 78,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LqfKy1Hzbm5TnDK3muj7pm",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 31,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LqfKy1Hzbm5TnDK3muj7pm",
+      "is_error": true,
+      "output": "EISDIR: illegal operation on a directory, read '<path>'",
+      "output_chars": 80,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GaA7pvJLBgCjgKNbr45MML",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GaA7pvJLBgCjgKNbr45MML",
+      "is_error": false,
+      "output": "1\t{\n2\t  \"hooks\": {\n3\t    \"SessionStart\": [\n4\t      {\n5\t        \"matcher\": \"startup|resume\",\n6\t        \"hooks\": [\n7\t          {\n8\t            \"type\": \"command\",\n9\t            \"command\": \"bash hooks/session-start.sh\"\n10\t          }\n11\t        ]\n12\t      }\n13\t    ]\n14\t  }\n15\t}\n16\t",
+      "output_chars": 278,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0193zENNs1NyQBefoPYgYqTA",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 46,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0193zENNs1NyQBefoPYgYqTA",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Runs on every SessionStart event matched by .example-cli/settings.json's\n3\t# \"startup|resume\" matcher. Logs the session source so the team can audit\n4\t# which sessions start cold vs. resume a previous one.\n5\tset -euo pipefail\n6\techo \"session-start: source=${EXAMPLE_CLI_SOURCE:-un...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AmX5EmqBoaAZHBxgb2ckSw",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AmX5EmqBoaAZHBxgb2ckSw",
+      "is_error": false,
+      "output": "1\tname: CI\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tjobs:\n9\t  test:\n10\t    runs-on: ubuntu-latest\n11\t    steps:\n12\t      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n13\t      - name: Install ExampleCLI\n14\t        run: npm install -g example-cli@4.1.0\n15\t ...",
+      "output_chars": 397,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VAFSmTDbMQkSh1pgWBfZgj",
+      "name": "Bash",
+      "input": "git ls-files; grep -rn \"model\\|synced\\|plugin\\|verbose\" --exclude-dir=.git --exclude-dir=vendor . | head -30",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VAFSmTDbMQkSh1pgWBfZgj",
+      "is_error": true,
+      "output": "The server-side auto mode classifier gave no verdict (error), so auto mode cannot determine the safety of Bash. This is a transient failure of the check, not a judgment about the action: a later response may get a verdict. You may try the action again once, as-is. Repeated attempts are slowed by a g...",
+      "output_chars": 605,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015hp1969kAfGa2L7Kapd9Td",
+      "name": "ToolSearch",
+      "input": "grep glob search files",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015hp1969kAfGa2L7Kapd9Td",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014gXonsSLH2iaLk1VtxgPXF",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 38,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014gXonsSLH2iaLk1VtxgPXF",
+      "is_error": true,
+      "output": "EISDIR: illegal operation on a directory, read '<path>'",
+      "output_chars": 87,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013aBwcKktUGXbJRpH1bkAbh",
+      "name": "Bash",
+      "input": "git ls-files; grep -rniE \"model|synced|plugin|verbose|fork\" --exclude-dir=.git --exclude-dir=vendor --exclude-dir=.claude . | head -30",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013aBwcKktUGXbJRpH1bkAbh",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Pe...",
+      "output_chars": 746,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A1mYcsUm4FBufb6gPBBr3P",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-hooks-fork-source.md <<'EOF'\n# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart hook matches startup|resume\nFound in a review of `vendor/RELEASES.md...",
+      "input_chars": 4055,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A1mYcsUm4FBufb6gPBBr3P",
+      "is_error": false,
+      "output": "01-session-hooks-fork-source.md\n02-synced-skills-renamed.md",
+      "output_chars": 59,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

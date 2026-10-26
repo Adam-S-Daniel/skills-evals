@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012JSsA8G95Fa8CZg7T4gWux",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -R vendor | head -50",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012JSsA8G95Fa8CZg7T4gWux",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nvendor:\nRELEASES.md\nreleases.json",
+      "output_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012mhtgqFnmuEtUcWNXboUyX",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -100; cat .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012mhtgqFnmuEtUcWNXboUyX",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3741,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NksLLwE4FrZcQY28tiNpxE",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-fork-sessions.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions (ExampleCLI v4.2.0)\n\n## Background\n\nExampleCLI v4.2.0 chan...",
+      "input_chars": 2144,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NksLLwE4FrZcQY28tiNpxE",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-fork-sessions.md\n02-synced-skills-renamed-update-docs.md",
+      "output_chars": 85,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

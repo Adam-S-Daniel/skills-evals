@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hm4LvXA4Jiin5H4S9KR2wP",
+      "name": "Skill",
+      "input": "vendor-release-impact-issues",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hm4LvXA4Jiin5H4S9KR2wP",
+      "is_error": false,
+      "output": "Launching skill: vendor-release-impact-issues",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LzX3an24mCjQ8g5jkuR3Qa",
+      "name": "Bash",
+      "input": "ls -la && ls -R vendor | head -50 && git log --oneline | head",
+      "input_chars": 61,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LzX3an24mCjQ8g5jkuR3Qa",
+      "is_error": false,
+      "output": "total 40\ndrwxr-xr-x 8 root root 4096 Oct 26 04:25 .\ndrwxrwxrwt 9 root root 4096 Oct 26 04:25 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:24 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:24 .bashrc\ndrwxr-xr-x 4 root root 4096 Oct 26 04:25 .claude\ndrwxr-xr-x 2 root root 4096 Oct 25 21:39 .example-c...",
+      "output_chars": 1104,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011N1uZzL2MNMikqk6jCFoEX",
+      "name": "Bash",
+      "input": "cat README.md AGENTS.md; cat vendor/RELEASES.md; head -c 3000 vendor/releases.json; ls -la .example-cli hooks .github .github/*; cat .gitmodules 2>&1 | head -3",
+      "input_chars": 159,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011N1uZzL2MNMikqk6jCFoEX",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-start.sh`) match...",
+      "output_chars": 3546,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QL4WobT1ci1p1xkk4gLQ9q",
+      "name": "Bash",
+      "input": "cat .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh; ls .claude .claude/skills; grep -rn \"model\" --exclude-dir=.git --exclude-dir=vendor . 2><path> | head",
+      "input_chars": 184,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QL4WobT1ci1p1xkk4gLQ9q",
+      "is_error": false,
+      "output": "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/session-start.sh\"\n          }\n        ]\n      }\n    ]\n  }\n}\nname: CI\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\nj...",
+      "output_chars": 991,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JBgAPYu4o3WrMyZj1pSEZn",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re, json\nsrc = open('vendor/RELEASES.md').read()\ntimes = json.load(open('vendor/releases.json'))['example-cli']\nrel = {}\nfor sec in re.split(r'^#...",
+      "input_chars": 4733,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JBgAPYu4o3WrMyZj1pSEZn",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher startup|resume skips forks\n\nFound in a review of `vendor/RELEASES.md` against this repo (group: session-start hooks). Not yet verified against this repo.\n\n## ExampleCLI changes\n\n> Session-start hooks now report source `\"fork\"` for f...",
+      "output_chars": 1605,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CNZn5KZSZ6cwzsExoDaRZj",
+      "name": "Bash",
+      "input": "sed -i 's/pinned to 4\\.1\\.0 in/pinned to {{4.1.0}} in/; s/past 4\\.1\\.0,/past 4.1.0,/; s/on 4\\.1\\.0 (the CI pin)/on {{4.1.0}} (the CI pin)/' $TMPDIR/gen.py && sed -i 's/CI pin past 4\\.1\\.0/CI pin past ...",
+      "input_chars": 288,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CNZn5KZSZ6cwzsExoDaRZj",
+      "is_error": false,
+      "output": "issues/01-session-hooks-fork-source.md:16:- CI is pinned to 4.1.0 [2026-06-02T14:03Z] in `.github/workflows/ci.yml`, so CI is unaffected until the pin moves; local developer installs on 4.2.0 or later may already differ.\nissues/01-session-hooks-fork-source.md:23:- [ ] Before moving the CI pin past 4...",
+      "output_chars": 614,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

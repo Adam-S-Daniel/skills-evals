@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RkUgRYNpc1UNQQfLtamyxt",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && ls issues 2><path>",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RkUgRYNpc1UNQQfLtamyxt",
+      "is_error": true,
+      "output": "Exit code 2\n.example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nRELEASES.md\nreleases.json",
+      "output_chars": 172,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DJxb4JaPS8qkZjUsPnvQYU",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -150; cat README.md .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DJxb4JaPS8qkZjUsPnvQYU",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3741,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016Hg3d7axDZxCMMYhtckwKy",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-fork-source.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions (ExampleCLI 4.2.0)\n\n## Context\n\nExampleCLI v4.2.0 release no...",
+      "input_chars": 2874,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016Hg3d7axDZxCMMYhtckwKy",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-fork-source.md\n02-synced-skills-renamed-with-prefix.md",
+      "output_chars": 83,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
