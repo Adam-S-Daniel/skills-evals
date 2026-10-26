@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K5NkD1ZHVfiMTWk2m6MXzu",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K5NkD1ZHVfiMTWk2m6MXzu",
+      "is_error": false,
+      "output": "aff2bcf initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SjL8hhkd1HMw7NicnbFRhj",
+      "name": "Bash",
+      "input": "for f in README.md vendor/RELEASES.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .idea .vscode .ripgreprc .bashrc .zshrc .profile .zprofile .bash_...",
+      "input_chars": 286,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SjL8hhkd1HMw7NicnbFRhj",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 3791,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0143LbCERFMTbjoTmUfAHDF3",
+      "name": "Bash",
+      "input": "cat vendor/releases.json; ls -la; grep -rn \"model\\|claude-example\\|synced\\|review-checklist\" --exclude-dir=.git . 2><path>",
+      "input_chars": 125,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0143LbCERFMTbjoTmUfAHDF3",
+      "is_error": true,
+      "output": "Exit code 2\n{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n    },\n    \"4.2.0\": {\n      \"published_at\": \"2026-07-14T09:47Z\",\n      \"crea...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TQgDLYEynzsDut72rx3CZw",
+      "name": "Bash",
+      "input": "find .claude -maxdepth 3 | head; git status --short",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TQgDLYEynzsDut72rx3CZw",
+      "is_error": false,
+      "output": ".claude\n.claude/.cc-writes\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc",
+      "output_chars": 165,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BDPnp5Zmvi8TPbxjTUcM7t",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-sessionstart-hook-skips-forked-sessions.md <<'EOF'\n# SessionStart audit hook no longer logs forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI [v4.2.0](ht...",
+      "input_chars": 3134,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BDPnp5Zmvi8TPbxjTUcM7t",
+      "is_error": false,
+      "output": "01-sessionstart-hook-skips-forked-sessions.md\n02-synced-skills-renamed-synced-prefix.md",
+      "output_chars": 87,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
