@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YMavwjHzqsqP9SFCF8ywEK",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md && ls docs/decisions && cat scripts/retry.sh && head -30 CHANGELOG.md && git log --oneline | head",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YMavwjHzqsqP9SFCF8ywEK",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from `0001` and zero-padded to four di...",
+      "output_chars": 2315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012CZxtpYX3r8yaQvmTiBBJe",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003-*.md",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012CZxtpYX3r8yaQvmTiBBJe",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Uw3LW3AMPyyCGMFEfCdF3y",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 202...",
+      "input_chars": 1551,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014sdyYwRD4A1LcVDgsggoKE",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 40,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Uw3LW3AMPyyCGMFEfCdF3y",
+      "is_error": false,
+      "output": "|-----|-------|--------|\n| [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process memory | Accepted |\n| [0002](0002-poll-fulfillment-service-every-30s.md) | Poll the fulfillment service every 30 seconds | Superseded-by: 0003 |\n| [0003](0003-poll-fulfillment-service...",
+      "output_chars": 519,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014sdyYwRD4A1LcVDgsggoKE",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 80,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

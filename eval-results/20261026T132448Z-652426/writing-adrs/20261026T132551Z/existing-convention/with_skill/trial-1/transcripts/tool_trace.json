@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XsbeNPFmJVTmBJPf1FJdYG",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XsbeNPFmJVTmBJPf1FJdYG",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M3nJUquKmAVFXJ1gZgGh75",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && ls docs/decisions 2><path> && cat scripts/retry.sh && cat CHANGELOG.md | head -20",
+      "input_chars": 116,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M3nJUquKmAVFXJ1gZgGh75",
+      "is_error": false,
+      "output": "bddb92e initial commit\n0001-cache-order-status-in-redis.md\n0002-poll-fulfillment-service-every-30s.md\n0003-poll-fulfillment-service-every-10s.md\nREADME.md\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# Added after the 2026-03 outage (PR #41): a singl...",
+      "output_chars": 1293,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MGzfrvPXEV8Wb1cMmAJzmY",
+      "name": "Bash",
+      "input": "cd <path> && cat README.md 0003-*.md && grep -rn \"retry\" --include=* -il .. ../../scripts ../../AGENTS.md | head",
+      "input_chars": 144,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MGzfrvPXEV8Wb1cMmAJzmY",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from `0001` and zero-padded to four di...",
+      "output_chars": 1671,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XcovN1UrVo7yuyxExzGijJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 103,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JRK3s8Ugy3seHMSP5pNXNo",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XcovN1UrVo7yuyxExzGijJ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 199,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JRK3s8Ugy3seHMSP5pNXNo",
+      "is_error": true,
+      "output": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: | Accepted |\n</tool_use_error>",
+      "output_chars": 270,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DPiFY9BCLR9h2fDTYtnYjx",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012yPEodipGMGGmqczDEafdH",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 40,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DPiFY9BCLR9h2fDTYtnYjx",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012yPEodipGMGGmqczDEafdH",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 80,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
