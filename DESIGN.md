@@ -1399,7 +1399,7 @@ Not every skill takes the same eval, and some take none. Classify first:
   reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
   covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
   the shared `harness/fakes/gh` every other Class B fixture reuses came
-  from. `debug-github-workflows` has one covered slice:
+  from. `debug-github-workflows` has four covered slices. The first is
   [`evals/debug-github-workflows/wrong-branch/`](evals/debug-github-workflows/wrong-branch/)
   (issue [#76](https://github.com/Adam-S-Daniel/skills-evals/issues/76)). Main
   invokes a missing test module while an unmerged branch already fixes its
@@ -1412,8 +1412,20 @@ Not every skill takes the same eval, and some take none. Classify first:
   project/instrument files. The independent judge assesses
   whether those tokens express the correct cause and merge direction; token
   coverage alone is not semantic correctness. No A/B calibration or measured
-  improvement is claimed. Exit-128,
-  token/auth and misleading-success patterns remain uncovered.
+  improvement is claimed. Three more slices cover the skill's other failure
+  patterns, each with a test module under `test/issues/test_issue_76_*.py`:
+  [`swallowed-failure/`](evals/debug-github-workflows/swallowed-failure/)
+  (a green run whose `mapfile < <(gh ...)` swallowed a failed listing; two
+  `command_succeeds` probes run the final script against a scripted gh, one
+  where the listing works and one where it fails),
+  [`git-identity/`](evals/debug-github-workflows/git-identity/) (a bare exit
+  128 from a test script that commits with no git identity; probes run the
+  final suite with git forbidden to guess an identity, and with a broken
+  changelog to show the tests still run) and
+  [`secret-name/`](evals/debug-github-workflows/secret-name/) (a workflow
+  reads a secret the repository does not have, and gh's own hint points at
+  `github.token`; checks require the secret listing and the existing name).
+  None of them has an A/B calibration yet.
   [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
   now has its first Class B fixture:
   a consumer startup failure with a required Actions secret missing and the
@@ -1718,8 +1730,7 @@ the reference they point at.
 
 Backfill order, by usage × decidability × incident material:
 `cms-stuck-pr-triage` (builds the fake-`gh` machinery every Class B eval
-reuses), `debug-github-workflows` (the wrong-branch slice above has shipped;
-its remaining patterns are still deferred), then `adam-writing-style` as the
+reuses), `debug-github-workflows` (four slices have shipped, above), then `adam-writing-style` as the
 Class C pilot. (`github-actions-sha-pinning` — fully decidable, including the
 cms-platform tag carve-out — has shipped: `evals/github-actions-sha-pinning/`.
 `review-bash-ci-reliability`, which headed this list because the incident

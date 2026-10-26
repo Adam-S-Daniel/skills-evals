@@ -62,16 +62,24 @@ evals/
     why-no-comment-trail/  # "why did we do X?": record the relayed reason as an ADR
     trigger-eval-set.json  # reviewed should/should-not-trigger queries for
                            # propose_skill_edit.py --trigger-eval-set
-  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
-    fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
-    seed/                  # a release pipeline with the findings baked in
+  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings, four fixtures
+    release-pipeline/      # six findings and two decoys in a release pipeline's shell
+      fixture.yaml         # prompt, objective checks (file_matches over the seed scripts), rubric
+      seed/                # a release pipeline with the findings baked in
+    drift-report-capture/  # diff and grep captures abort a drift report under set -e
+    test-runner-assertions/  # a test runner's helpers abort the run on a failing assertion
+    empty-repo-discovery/  # a failed gh listing reads as "nothing to audit" and goes green
+      checker/             # hidden probe the repo_tests checks lay over the workspace
   ci-watcher-loops/        # Class B: dispatch, captured run id and bounded timeline polling
     fixture.yaml           # ordered-log, parsed shell capture, conclusion and restraint checks
     seed/                  # consumer site and shared fake gh with call-count payloads
-  debug-github-workflows/  # Class B: one wrong-branch diagnosis fixture
+  debug-github-workflows/  # Class B: four diagnosis fixtures
     wrong-branch/          # main invokes an obsolete test module; an unmerged branch has the fix
       fixture.yaml         # replay-read, affirmative-reply and file-restraint checks
       seed/                # Python service, shared gh symlink and scrubbed run/branch responses
+    swallowed-failure/     # a green run whose process substitution hid a failed gh listing
+    git-identity/          # a bare exit 128 from a test script that commits without a git identity
+    secret-name/           # a workflow reads a secret name the repository does not have
   embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
     fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
     seed/                  # a wired Tools collection, an existing tool, and a standalone app
@@ -86,8 +94,18 @@ evals/
     seed/                  # platform lint configs, the vendored lint-staged.sh, a small Go module
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
-    fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
-    seed/                  # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
+    issue-hygiene/         # quote fencing, publish times, backlinks, title placeholders
+      fixture.yaml         # prompt, objective checks (quote/link/title hygiene), rubric
+      seed/                # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
+    closed-duplicate/      # a finding already tracked in a CLOSED issue: search, link, don't refile
+      fixture.yaml         # gh-log search check, link/duplicate checks, instrument guard, rubric
+      seed/                # 4.2.0 notes, a consumer repo, shared gh symlink and issue payloads
+    stamps-skip-quotes/    # publish-time stamps go on the agent's prose, never in quotes or titles
+      fixture.yaml         # verbatim-quote, unstamped-quote/title and prose-stamp checks, rubric
+      seed/                # 4.1.0-4.3.0 notes whose bullets name versions, a consumer repo
+    closing-keywords/      # a tracking PR body and commit message free of closing keywords
+      fixture.yaml         # PR-file keyword/quote bans, issue quote, tracking-row checks, rubric
+      seed/                # 4.4.0 conventional-changelog notes ("fixes #88"), a consumer repo
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py

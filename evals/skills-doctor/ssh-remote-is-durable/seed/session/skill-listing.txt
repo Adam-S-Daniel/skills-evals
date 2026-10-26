@@ -1,0 +1,7 @@
+adam-anything-anywhere:finding-unknowns
+adam-anything-anywhere:writing-adrs
+adam-coding-anywhere:debug-github-workflows
+adam-coding-anywhere:disarm-inherited-reach
+adam-coding-anywhere:skills-doctor
+adam-coding-anywhere:workflow-path-audit
+standup-notes

@@ -254,6 +254,7 @@ class WorkflowShapeTests(unittest.TestCase):
             "permission-contents": "read"})
         self.assertEqual(self.steps[checkout]["with"], {
             "repository": "Adam-S-Daniel/adam-agentskills-private",
+            "ref": "persistent/lessons",
             "path": "lessons-repo", "persist-credentials": False,
             "sparse-checkout": "lessons",
             "token": "${{ steps.lessons-token.outputs.token }}"})
@@ -579,9 +580,8 @@ class ValidateStepTests(unittest.TestCase):
             "private_registry_skill": {"skill": "adam-writing-style"},
         }, expect="is not an adam-agentskills skill")
         self._refuse_all(no_holdout, {
-            # One nested fixture each.
-            "one_fixture_skill": {"skill": "debug-github-workflows"},
-            "one_fixture_skill_2": {"skill": "skills-doctor"},
+            # Two nested fixtures.
+            "two_fixture_skill": {"skill": "github-actions-repo-settings"},
         }, expect="fewer than 3 nested fixtures")
         self._refuse_all(good, {
             "holdout_not_a_fixture": {"holdout": "no-such-holdout-xyz"},
