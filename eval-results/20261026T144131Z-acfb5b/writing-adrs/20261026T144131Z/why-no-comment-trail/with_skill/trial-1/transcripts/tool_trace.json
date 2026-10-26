@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011rfPXLVipzFkq5VB1sUu84",
+      "name": "Bash",
+      "input": "cat scripts/export-ledger.sh; echo ----; ls docs/decisions; cat docs/decisions/README.md; echo ----; cat CHANGELOG.md | head -30",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MsPBrj37z1uyfGuE56XAGy",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011rfPXLVipzFkq5VB1sUu84",
+      "is_error": false,
+      "output": "#!<path> bash\n# export-ledger.sh: write one day's general-ledger entries as a CSV file for\n# the bank's reconciliation service.\n#\n# Usage: export-ledger.sh YYYY-MM-DD\nset -euo pipefail\n\nday=\"${1:?usage: export-ledger.sh YYYY-MM-DD}\"\nout=\"${EXPORT_DIR:-/var/exports}/ledger-$day.csv\"\n\n# Amounts are in...",
+      "output_chars": 1985,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MsPBrj37z1uyfGuE56XAGy",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013scjeLJFHs8YcuzBCknqou",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-write-amounts-as-integer-cents.md; git log --oneline | head",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013scjeLJFHs8YcuzBCknqou",
+      "is_error": false,
+      "output": "# 0002. Write amounts as integer cents, not decimal strings\n\n- **Status:** Accepted\n- **Date:** 2025-10-01\n\n## Context\n\nThe ledger stores amounts as integer cents. Formatting them as decimal\nstrings went through a float and produced off-by-one-cent values on a few\nlarge entries.\n\n## Decision\n\nWrite ...",
+      "output_chars": 754,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J6YHH1Q5RWWgYyktrbPA1o",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0003-end-export-lines-with-crlf.md <<'EOF'\n# 0003. End every export line with CRLF, not LF\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\nThe bank's reconciliation im...",
+      "input_chars": 2172,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J6YHH1Q5RWWgYyktrbPA1o",
+      "is_error": false,
+      "output": "diff --git a/CHANGELOG.md b/CHANGELOG.md\nindex e242110..1cbd008 100644\n--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1,5 +1,10 @@\n # Changelog\n \n+## Unreleased\n+\n+- Documented why `scripts/export-ledger.sh` ends every line with CRLF\n+  (ADR 0003); no change to the file it writes.\n+\n ## 1.4.0 - 2026-03-0...",
+      "output_chars": 1503,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
