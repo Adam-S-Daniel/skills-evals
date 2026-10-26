@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RFYMkYMpUN4J9fyfEXF27N",
+      "name": "Skill",
+      "input": "ci-job-performance",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RFYMkYMpUN4J9fyfEXF27N",
+      "is_error": false,
+      "output": "Launching skill: ci-job-performance",
+      "output_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S99Mhtd3LNPZ8FEGo7jZmn",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S99Mhtd3LNPZ8FEGo7jZmn",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    name: e2e (${{ matrix.browser }})\n14\t    runs-on: ubuntu-latest\n15\t    timeout-minutes: 20\n16\t    strategy:\n17\t      fail-fast: false\n18\t      matrix:\n19\t       ...",
+      "output_chars": 1463,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RcXaVuc3gBTvLNzj5PP7N8",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 12 --json databaseId,conclusion,event,createdAt 2>&1 | head -30",
+      "input_chars": 130,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RcXaVuc3gBTvLNzj5PP7N8",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 866,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012KQzGgroLohjM73YBRdDz5",
+      "name": "Bash",
+      "input": "for id in $(gh run list -R example-org/example-repo --workflow e2e.yml --limit 12 --json databaseId --jq '.[].databaseId'); do echo \"== $id\"; gh run view $id -R example-org/example-repo --json jobs --...",
+      "input_chars": 428,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012KQzGgroLohjM73YBRdDz5",
+      "is_error": true,
+      "output": "Exit code 1\n== [\ngh: Not Found (HTTP 404)\n== {\ngh: Not Found (HTTP 404)\n== \"attempt\":\ngh: Not Found (HTTP 404)\n== 1,\ngh: Not Found (HTTP 404)\n== \"conclusion\":\ngh: Not Found (HTTP 404)\n== \"success\",\ngh: Not Found (HTTP 404)\n== \"createdAt\":\ngh: Not Found (HTTP 404)\n== \"2026-10-22T17:19:24Z\",\ngh: Not F...",
+      "output_chars": 10039,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KD2Q9U1WxTHSpRRBK71nmQ",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 12 --json databaseId,createdAt > $TMPDIR/runs.json; python3 -I -c \"\nimport json,sys;[print(r['databaseId'],r['createdAt']) for r in j...",
+      "input_chars": 247,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KD2Q9U1WxTHSpRRBK71nmQ",
+      "is_error": false,
+      "output": "72004 2026-10-22T17:19:24Z\n72003 2026-10-21T09:33:50Z\n72002 2026-10-20T13:48:09Z\n72001 2026-10-19T10:05:41Z\n71004 2026-10-15T16:27:12Z\n71003 2026-10-14T11:02:56Z\n71002 2026-10-13T15:41:27Z\n71001 2026-10-12T09:14:03Z",
+      "output_chars": 215,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014UvX12r81FBvJ6LrbYVSCq",
+      "name": "Bash",
+      "input": "for id in 72004 72003 72002 72001 71004 71003 71002 71001; do gh run view $id -R example-org/example-repo --json jobs > $TMPDIR/r$id.json 2>&1; done; python3 -I - \"$TMPDIR\" <<'E'\nimport json,sys,datet...",
+      "input_chars": 848,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014UvX12r81FBvJ6LrbYVSCq",
+      "is_error": false,
+      "output": "72004 e2e (chromium) 93 ['Restore browser cache=5s/success', 'Install browser OS dependencies=25s/success', 'Install browser=0s/skipped', 'Run Playwright tests=44s/success', 'Post Restore browser cache=1s/success']\n72004 e2e (firefox) 99 ['Restore browser cache=6s/success', 'Install browser OS depen...",
+      "output_chars": 4222,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UzQyqKm8t3XjBF5ziuxdLH",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UzQyqKm8t3XjBF5ziuxdLH",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
