@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ShbQjj1Q6wLSZtfT57BJ5p",
+      "name": "Bash",
+      "input": "pwd; ls -la; git remote -v; ls <path> 2>&1 | head -30; which gh",
+      "input_chars": 67,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ShbQjj1Q6wLSZtfT57BJ5p",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 13:02 .\ndrwx------ 6 root root 4096 Oct 26 13:01 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:19 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 03:19 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 13:02 .claude\ndrwxr-xr-x 3 root root 4096 Oct 25 21:39 .gh...",
+      "output_chars": 1022,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VAWJwmeYivQErnprLNudRo",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -R bin .gh .claude | head -40; cat bin/gh | head -50",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VAWJwmeYivQErnprLNudRo",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 4326,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018EcpgmZA16a3TeXLn3wAXk",
+      "name": "Bash",
+      "input": "cd .gh/replay/api/repos/example-org; for f in $(find . -type f | sort); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018EcpgmZA16a3TeXLn3wAXk",
+      "is_error": false,
+      "output": "== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n== ./service-alpha/actions/permissions/fork-pr-contr...",
+      "output_chars": 3749,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
