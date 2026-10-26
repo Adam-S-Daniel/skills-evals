@@ -147,7 +147,7 @@ class PolicyTests(unittest.TestCase):
             "min_cli_versions": 2, "ceiling_fraction": 0.90, "judge_ceiling": 9.0,
             "floor_fraction": 0.10, "bootstrap_resamples": 2000,
             "retire_looks": [5, 10, 20],
-            "retirement_mode": "proposal"})
+            "retirement_mode": "auto"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -1356,7 +1356,7 @@ class ComputeGatesTests(unittest.TestCase):
         entry = doc["skills"]["flat"]["cells"][0]["runs"]["with"][0]
         self.assertEqual(entry["run"]["billing"], "api")
         self.assertTrue((self.tree / entry["report"]["path"]).is_file())
-        self.assertEqual(doc["retirement_mode"], "proposal")
+        self.assertEqual(doc["retirement_mode"], "auto")
         self.assertNotIn("previous", doc)
 
     def test_five_runs_are_pending_and_ten_retire(self):

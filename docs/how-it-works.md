@@ -231,20 +231,25 @@ Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
 then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
 `retire` (no benefit on every fixture and roster model, at two fixed looks)
-gets, in `retirement_mode: proposal` (the committed value in
-`evals/gate-policy.yml`), one skills-evals issue that is filed or updated and
-that a human acts on; once that issue is closed, the skill is not proposed
-again. In `auto` mode the script instead opens a removal pull
-request in adam-agentskills that auto-merges with no human review
-([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
-one at a time. That branch carries everything the registry's required checks
-read — the layout pin in its `scripts/plugin_layout.json`, the README skill
-table and, when the plugin is locked, a `skills.lock` re-pin — produced by
-the registry's own generators rather than reimplemented here. Auto mode is
-built but not wired: it needs a write credential for adam-agentskills and a
-registry checkout with full history (the lock re-pin reads the commit the
-lock pins, so a shallow one is refused), and the workflow exits 2 if the
-policy is switched to `auto` before that exists. Preview either mode with
+gets, in `retirement_mode: auto` (the committed value in
+`evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
+labeled `agent-authored`, that auto-merges (merge commit) with no human
+review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
+adam-agentskills ADR 0021), one loop pull request at a time: nothing is
+opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
+request is open there, and a closed `retire-skill/<skill>` one means the
+skill is decided. That branch carries everything the registry's required
+checks read — the skill gone, the plugin's major version raised, a
+`docs/skill-impact.md` entry, the layout pin in its
+`scripts/plugin_layout.json`, the README skill table and, when the plugin is
+locked, a `skills.lock` re-pin — produced by the registry's own generators
+rather than reimplemented here. The job checks out the registry with full
+history (the lock re-pin reads the commit the lock pins) and writes with the
+improvement gate's GitHub App token. Without that token, or for a skill whose
+plugin runs code (its removal would wait on plugin-runtime-review), it falls
+back to `proposal`: one skills-evals issue that is filed or updated and that
+a human acts on; once that issue is closed, the skill is not proposed
+again. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
 A fixture moved into a named subdirectory with its content unchanged keeps

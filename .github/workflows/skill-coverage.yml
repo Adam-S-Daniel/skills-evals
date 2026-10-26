@@ -177,19 +177,23 @@ jobs:
   # pooled results and act on a `retire` one. Only the schedule runs it, and
   # scripts/retire_skill.py refuses any other event as well. It reads the
   # results branch and the public registries (no private checkout, so a
-  # private-registry skill has no tested digest and never retires) and
-  # writes only skills-evals issues, with this repository's own token.
+  # skill in adam-agentskills-private has no tested digest and never
+  # retires; adam-agentskills ADR 0021 decision 7).
   #
-  # AUTO MODE IS NOT WIRED. `--allow-mode proposal` makes the script exit 2
-  # if evals/gate-policy.yml is switched to `retirement_mode: auto`, rather
-  # than doing nothing quietly. Auto mode pushes a branch to adam-agentskills
-  # and opens an auto-merging pull request there (ADR 0014), which needs a
-  # write credential for that repository that does not exist yet: a GitHub
-  # App with contents and pull-requests write on adam-agentskills alone,
-  # minted with actions/create-github-app-token immediately before a
-  # checkout that keeps its credentials, and passed to the script as
-  # GH_TOKEN. Adding it, and the matching repo-settings and adam-agentskills
-  # ADRs, is the owner's call.
+  # In `retirement_mode: auto` (evals/gate-policy.yml, the one switch; ADR
+  # 0014 and adam-agentskills ADR 0021) a `retire` verdict becomes a ready
+  # removal pull request in adam-agentskills, labeled `agent-authored`, with
+  # auto-merge (merge commit, --match-head-commit) enabled. Its writes use an
+  # installation token of the skills-evals GitHub App that
+  # routine-improve-gate.yml uses (secrets EVAL_IMPROVE_APP_CLIENT_ID and
+  # EVAL_IMPROVE_APP_PEM; adam-agentskills only, contents and pull-requests
+  # write), minted under continue-on-error in the step right before the one
+  # that uses it and passed as REGISTRY_TOKEN; skills-evals issues still use
+  # this job's own token. With no token (either secret unset, or the mint
+  # failed) the script gets `--fallback-to-proposal` and files the issue
+  # instead, as it does for a skill whose plugin runs code. It opens nothing
+  # while any loop pull request (an improvement, a new skill or a removal)
+  # is open there; scripts/retire_skill.py's LOOP_PREFIXES names the heads.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -211,18 +215,18 @@ jobs:
           persist-credentials: false
 
       - name: Check out adam-agentskills
-        # Shallow is enough for `proposal`, the committed mode, which only
-        # reads the tree to locate the skill. Wiring `auto` needs
-        # `fetch-depth: 0` as well as a write credential: the removal branch
-        # re-pins `skills.lock`, and both that re-pin and its
-        # `--check-current` read the commit the lock pins, which a shallow
-        # clone does not contain. retire_skill.py refuses a shallow checkout
-        # in auto mode rather than pushing a branch the registry's required
-        # checks would reject (ADR 0014, decision 5).
+        # Full history for auto mode: the removal branch re-pins
+        # `skills.lock`, and both that re-pin and its `--check-current` read
+        # the commit the lock pins, which a shallow clone does not contain.
+        # retire_skill.py refuses a shallow checkout in auto mode rather
+        # than pushing a branch the registry's required checks would reject
+        # (ADR 0014, decision 5). No credential is kept: the push
+        # authenticates with the App token, in the step that pushes.
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: registry-agentskills
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out cms-platform
@@ -277,18 +281,55 @@ jobs:
           path: ${{ runner.temp }}/gates/
           if-no-files-found: error
 
-      - name: File or update the retirement issue
+      - name: Are the GitHub App's secrets configured?
+        id: credential
+        env:
+          PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: |
+          if [ "$PR_CREDENTIAL_SET" = "true" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Minted only now, after the verdicts, and only for the next step. A
+      # failed mint leaves the token empty, and the next step falls back to
+      # proposal mode instead of failing the job.
+      - name: Mint the GitHub App token for adam-agentskills
+        id: app-token
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Act on the skill retirement verdict
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          set -euo pipefail
+          modes=(--allow-mode proposal)
+          if [ -n "$REGISTRY_TOKEN" ]; then
+            modes+=(--allow-mode auto)
+          else
+            echo "::notice::no adam-agentskills write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
+            modes+=(--fallback-to-proposal)
+          fi
           python3 scripts/retire_skill.py \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
             --usage "$GITHUB_WORKSPACE/eval-results/usage/weekly-local.json" \
-            --allow-mode proposal
+            --date "$(date -u +%F)" \
+            "${modes[@]}"
 
       - name: File or update the guidance retirement issue
         # One section at a time, in proposal mode: an issue in this

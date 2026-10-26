@@ -3,9 +3,10 @@
 
 Adam's decisions: build automatic removal (2026-10-25); removal pull requests
 auto-merge with no human review (2026-10-25, ADR 0014); results are not
-signed, the gate guards against honest mistakes (2026-10-26);
-`retirement_mode` stays `proposal`, where a retire verdict files or updates
-an issue instead of opening a pull request.
+signed, the gate guards against honest mistakes (2026-10-26); removal pull
+requests auto-merge with no human (2026-10-26, adam-agentskills ADR 0021),
+so the committed `retirement_mode` is `auto`, lowered to `proposal` (an
+issue) when the skill's plugin runs code or the workflow has no write token.
 
 Hermetic: a hand-written gates document, registry checkouts in a temporary
 directory (local git only), and a fake `gh` and `push`; no network, no clock.
@@ -181,15 +182,21 @@ def make_registry(root: Path, skills=((PLUGIN, SKILL), (PLUGIN, KEPT)),
 
 
 class FakeGitHub:
-    """Records every call; answers the two reads from canned data."""
+    """Records every call; answers the reads from canned data: open pull
+    requests, closed ones (the `state=closed` search), issues, and the
+    auto-merge read-back."""
 
-    def __init__(self, prs=(), issues=()):
+    def __init__(self, prs=(), issues=(), closed=(), merge_method="MERGE"):
         self.prs, self.issues, self.calls, self.pushes = list(prs), list(issues), [], []
+        self.closed, self.merge_method = list(closed), merge_method
 
     def gh(self, args, stdin=None):
         self.calls.append((list(args), stdin))
         if args[:2] == ["api", "--paginate"] and "/pulls?" in args[2]:
-            return "".join(json.dumps(p) + "\n" for p in self.prs)
+            prs = self.closed if "state=closed" in args[2] else self.prs
+            return "".join(json.dumps(p) + "\n" for p in prs)
+        if args[:2] == ["pr", "view"]:
+            return self.merge_method + "\n"
         if args[:2] == ["api", "--paginate"] and "/issues?" in args[2]:
             return "".join(json.dumps(i) + "\n" for i in self.issues)
         if args[:2] == ["pr", "create"]:
@@ -311,9 +318,11 @@ class ProposalTests(Base):
         block["retirement_mode"] = "sometimes"
         return block
 
-    def test_the_committed_policy_stays_proposal(self):
+    def test_the_committed_policy_is_auto(self):
+        """Adam, 2026-10-26: removal pull requests auto-merge, no human."""
         doc = yaml.safe_load((ROOT / "evals" / "gate-policy.yml").read_text())
-        self.assertEqual(doc["skills"]["retirement_mode"], "proposal")
+        self.assertEqual(doc["skills"]["retirement_mode"], "auto")
+        self.assertEqual(doc["guidance"]["retirement_mode"], "proposal")
 
 
 class AutoTests(Base):
@@ -336,35 +345,195 @@ class AutoTests(Base):
             "scripts/plugin_layout.json", "README.md", "skills.lock"]))
         for rel in (f"plugins/{PLUGIN}/plugin.json",
                     f"plugins/{PLUGIN}/.claude-plugin/plugin.json"):
-            self.assertEqual(json.loads((self.registry / rel).read_text())["version"], "1.2.8")
+            self.assertEqual(json.loads((self.registry / rel).read_text())["version"], "2.0.0")
         self.assertEqual(fake.pushes, [(self.registry.resolve(), branch)])
-        writes = fake.writes()
+        url = "https://github.com/Adam-S-Daniel/adam-agentskills/pull/999"
+        head = git(self.registry, "rev-parse", "HEAD").strip()
+        writes = [args for args, _ in fake.calls if args[:2] != ["api", "--paginate"]]
         self.assertEqual(writes[0][:6], ["pr", "create", "-R",
                                          "Adam-S-Daniel/adam-agentskills", "--base", "main"])
         self.assertIn(branch, writes[0])
-        self.assertEqual(writes[1], ["pr", "merge",
-                                     "https://github.com/Adam-S-Daniel/adam-agentskills/pull/999",
-                                     "-R", "Adam-S-Daniel/adam-agentskills", "--auto", "--merge"])
+        self.assertNotIn("--draft", writes[0])
+        self.assertEqual(writes[1], ["api", "-X", "POST",
+                                     "repos/Adam-S-Daniel/adam-agentskills/issues/999/labels",
+                                     "-f", "labels[]=agent-authored"])
+        self.assertEqual(writes[2], ["pr", "merge", url, "-R", "Adam-S-Daniel/adam-agentskills",
+                                     "--auto", "--merge", "--match-head-commit", head])
+        self.assertEqual(writes[3][:3], ["pr", "view", url])
+        self.assertEqual(len(writes), 4)
         body = next(stdin for args, stdin in fake.calls if args[:2] == ["pr", "create"])
         self.assertIn("no human review", body)
         self.assertIn("0014-removal-pull-requests-merge-without-review.md", body)
-        self.assertIn("1.2.7 -> 1.2.8", body)
+        self.assertIn("0021-automated-skill-changes-merge-without-review.md", body)
+        self.assertIn("1.2.7 -> 2.0.0", body)
+        self.assertTrue(body.endswith(retire_skill.AGENT_MARKER + "\n"))
         self.assertFalse(any(args[0] == "issue" for args in writes))
+        for message in git(self.registry, "log", "--format=%B%x00", "main..HEAD").split("\0"):
+            if message.strip():
+                self.assertTrue(message.strip().endswith("Agent: claude-code"), message)
 
-    def test_one_open_removal_pr_at_a_time(self):
-        fake = FakeGitHub(prs=[{"number": 3, "head": "retire-skill/other-skill",
-                                "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/3"}])
-        code, _, err, fake = self.run_main(gates_doc("auto"), fake=fake)
-        self.assertEqual(code, 2)
-        self.assertIn("already open", err)
-        self.assertIn("/pull/3", err)
+    def test_any_open_loop_pr_holds_the_slot_and_nothing_is_opened(self):
+        for head in ("retire-skill/other-skill", "eval-improve/other-skill",
+                     "draft-skill/new-skill"):
+            with self.subTest(head=head):
+                fake = FakeGitHub(prs=[{"number": 3, "head": head, "url":
+                                        "https://github.com/Adam-S-Daniel/adam-agentskills/pull/3"}])
+                code, out, err, fake = self.run_main(gates_doc("auto"), fake=fake)
+                self.assertEqual(code, 0, err)
+                self.assertIn("already open", out)
+                self.assertIn("waits", out)
+                self.assertIn("/pull/3", out)
+                self.assertEqual(fake.writes(), [])
+                self.assertEqual(fake.pushes, [])
+                self.assertUntouched()
+
+    def test_a_closed_removal_pr_means_the_skill_is_decided(self):
+        fake = FakeGitHub(closed=[{"number": 8, "head": f"retire-skill/{SKILL}", "url":
+                                   "https://github.com/Adam-S-Daniel/adam-agentskills/pull/8"}])
+        code, out, err, fake = self.run_main(gates_doc("auto"), fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already decided", out)
+        self.assertIn("/pull/8", out)
         self.assertEqual(fake.writes(), [])
         self.assertEqual(fake.pushes, [])
         self.assertUntouched()
+        search = [args[2] for args, _ in fake.calls if "state=closed" in args[2]]
+        self.assertEqual(search, ["repos/Adam-S-Daniel/adam-agentskills/pulls?state=closed"
+                                  f"&per_page=100&head=Adam-S-Daniel:retire-skill/{SKILL}"])
+
+    def test_a_closed_pr_from_another_head_does_not_decide(self):
+        fake = FakeGitHub(closed=[{"number": 8, "head": "retire-skill/other-skill", "url": "u"}])
+        code, _, err, fake = self.run_main(gates_doc("auto"), fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1)
+
+    def test_a_plugin_that_runs_code_falls_back_to_the_issue(self):
+        cases = {"hooks dir": lambda r: (r / "plugins" / PLUGIN / "hooks").mkdir(),
+                 "bin dir": lambda r: (r / "plugins" / PLUGIN / "bin").mkdir(),
+                 "package file": lambda r: (r / "plugins" / PLUGIN / "package.json")
+                 .write_text("{}\n"),
+                 "manifest hooks key": lambda r: (r / "plugins" / PLUGIN / "plugin.json")
+                 .write_text(json.dumps({"name": PLUGIN, "version": "1.2.7",
+                                         "hooks": "./hooks/hooks.json"}, indent=2) + "\n")}
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                registry = make_registry(self.tmp / name.replace(" ", "-"))
+                mutate(registry)
+                git(registry, "add", "-A")
+                git(registry, "commit", "-q", "--allow-empty", "-m", "runtime")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), *BOTH, registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 0, err)
+                self.assertIn("lowered to proposal", err)
+                writes = fake.writes()
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(writes[0][:2], ["issue", "create"])
+                body = fake.calls[-1][1]
+                self.assertIn("`retirement_mode: auto`, but the skill's plugin runs code", body)
+                self.assertEqual(fake.pushes, [])
+                self.assertEqual(git(registry, "branch", "--show-current").strip(), "main")
+
+    def test_a_plugin_without_runtime_paths_is_not_lowered(self):
+        registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
+        action = retire_skill.plan(gates_doc("auto"), registries, FakeGitHub().gh,
+                                   allowed=("auto", "proposal"))
+        self.assertEqual(action["action"], "removal")
+        self.assertNotIn("mode_reason", action)
+
+    def test_a_runtime_plugin_with_only_auto_allowed_is_refused(self):
+        (self.registry / "plugins" / PLUGIN / "bin").mkdir()
+        (self.registry / "plugins" / PLUGIN / "bin" / "tool").write_text("x\n")
+        git(self.registry, "add", "-A")
+        git(self.registry, "commit", "-qm", "bin")
+        code, _, err, fake = self.run_main(gates_doc("auto"))
+        self.assertEqual(code, 2)
+        self.assertIn("falls back to proposal", err)
+        self.assertEqual(fake.writes(), [])
+
+    def test_no_credential_falls_back_to_the_issue(self):
+        code, _, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
+                                           "--fallback-to-proposal")
+        self.assertEqual(code, 0, err)
+        self.assertIn("lowered to proposal", err)
+        self.assertEqual([w[:2] for w in fake.writes()], [["issue", "create"]])
+        self.assertIn("no write credential for adam-agentskills", fake.calls[-1][1])
+        self.assertEqual(fake.pushes, [])
+        self.assertUntouched()
+
+    def test_the_fallback_does_not_touch_a_proposal_or_an_allowed_auto(self):
+        code, _, err, fake = self.run_main(gates_doc("proposal"), "--allow-mode", "proposal",
+                                           "--fallback-to-proposal")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("lowered", err)
+        self.assertIn("sets `retirement_mode: proposal`", fake.calls[-1][1])
+        code, _, err, fake = self.run_main(gates_doc("auto"), *BOTH, "--fallback-to-proposal")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1)
+
+    def test_a_label_failure_stops_before_auto_merge(self):
+        fake = FakeGitHub()
+        real = fake.gh
+
+        def gh(args, stdin=None):
+            if args[:3] == ["api", "-X", "POST"]:
+                fake.calls.append((list(args), stdin))
+                raise retire_skill.RetireError("gh api exited 1")
+            return real(args, stdin)
+        fake.gh = gh
+        code, _, err, fake = self.run_main(gates_doc("auto"), fake=fake)
+        self.assertEqual(code, 2)
+        self.assertIn("gh api exited 1", err)
+        self.assertFalse(any(args[:2] == ["pr", "merge"] for args, _ in fake.calls))
+
+    def test_auto_merge_that_did_not_take_is_refused(self):
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           fake=FakeGitHub(merge_method="SQUASH"))
+        self.assertEqual(code, 2)
+        self.assertIn("auto-merge (merge commit) is not enabled", err)
+
+    def test_a_create_that_prints_no_pr_url_stops_there(self):
+        fake = FakeGitHub()
+        real = fake.gh
+
+        def gh(args, stdin=None):
+            out = real(args, stdin)
+            return "https://github.com/someone/else/pull/1\n" if args[:2] == ["pr", "create"] \
+                else out
+        fake.gh = gh
+        code, _, err, fake = self.run_main(gates_doc("auto"), fake=fake)
+        self.assertEqual(code, 2)
+        self.assertIn("no pull request URL", err)
+        self.assertFalse(any(args[:2] == ["pr", "merge"] or args[:3] == ["api", "-X", "POST"]
+                             for args, _ in fake.calls))
+
+    def test_registry_writes_go_through_registry_gh(self):
+        reads, writes = FakeGitHub(), FakeGitHub()
+        argv = ["--gates", str(self.write_gates(gates_doc("auto"))),
+                "--registry", f"adam-agentskills={self.registry}", "--allow-mode", "auto"]
+        code = retire_skill.main(argv, env=AUTO_ENV, gh=reads.gh, push=reads.push,
+                                 registry_gh=writes.gh, out=io.StringIO())
+        self.assertEqual(code, 0)
+        self.assertEqual(reads.writes(), [])
+        self.assertTrue(all(args[:2] == ["api", "--paginate"] for args, _ in reads.calls))
+        self.assertEqual([args[:2] for args, _ in writes.calls],
+                         [["pr", "create"], ["api", "-X"], ["pr", "merge"], ["pr", "view"]])
+
+    def test_the_date_flag_dates_the_impact_entry(self):
+        code, _, err, _ = self.run_main(gates_doc("auto"), "--date", "2026-10-27")
+        self.assertEqual(code, 0, err)
+        text = (self.registry / "docs" / "skill-impact.md").read_text()
+        self.assertIn(f"\n---\n\n## 2026-10-27 — {PLUGIN}/{SKILL} — remove\n", text)
+        for bad in ("2026-1-27", "20261027", "2026-10-27\n"):
+            with self.subTest(bad=bad):
+                code, _, err, _ = self.run_main(gates_doc("auto"), "--date", bad)
+                self.assertEqual(code, 2)
+                self.assertIn("--date", err)
 
     def test_other_open_prs_do_not_hold_the_slot(self):
         fake = FakeGitHub(prs=[{"number": 4, "head": "claude/retire-skill-docs", "url": "u"},
-                               {"number": 5, "head": "main-retire-skill/x", "url": "u"}])
+                               {"number": 5, "head": "main-retire-skill/x", "url": "u"},
+                               {"number": 6, "head": "claude/eval-improve-x", "url": "u"},
+                               {"number": 7, "head": "draft-skill", "url": "u"}])
         code, _, err, fake = self.run_main(gates_doc("auto"), fake=fake)
         self.assertEqual(code, 0, err)
         self.assertEqual(len(fake.pushes), 1)
@@ -510,14 +679,20 @@ class DryRunTests(Base):
         self.assertIn(["git", "push", "origin"], heads)
         self.assertIn(["gh", "pr", "create"], heads)
         self.assertIn(["gh", "pr", "merge"], heads)
-        self.assertEqual(plan["would_run"][-1][-2:], ["--auto", "--merge"])
+        merge = next(c for c in plan["would_run"] if c[:3] == ["gh", "pr", "merge"])
+        self.assertEqual(merge[-4:], ["--auto", "--merge", "--match-head-commit",
+                                      "<removal head sha>"])
+        self.assertIn(["gh", "api", "-X"], heads)
+        self.assertIn(["git", "merge-base", "--is-ancestor"], heads)
         self.assertIn("## 2026-10-25 —", plan["impact_entry"])
 
     def test_dry_run_still_honors_the_one_open_pr_limit(self):
-        fake = FakeGitHub(prs=[{"number": 3, "head": "retire-skill/x", "url": "u"}])
-        code, _, err, _ = self.run_main(gates_doc("auto"), "--dry-run", *BOTH, fake=fake)
-        self.assertEqual(code, 2)
-        self.assertIn("already open", err)
+        fake = FakeGitHub(prs=[{"number": 3, "head": "eval-improve/x", "url": "u"}])
+        code, out, err, _ = self.run_main(gates_doc("auto"), "--dry-run", *BOTH, fake=fake)
+        self.assertEqual(code, 0, err)
+        plan = json.loads(out)
+        self.assertEqual((plan["action"], plan["would_run"]), ("none", []))
+        self.assertIn("already open", plan["reason"])
 
 
 class UsageLineTests(Base):
@@ -929,26 +1104,70 @@ class MutationTests(Base):
             git(repo, "commit", "-q", "--allow-empty", "-m", "x")
             git(repo, "remote", "add", "origin", str(Path(tmp) / "missing"))
             with self.assertRaises(retire_skill.RetireError) as caught:
-                retire_skill.default_push(repo, "b")
+                retire_skill.default_push(repo, "b", "a-token")
             self.assertRegex(str(caught.exception), r"^git push exited \d+$")
+            with self.assertRaises(retire_skill.RetireError) as caught:
+                retire_skill.default_push(repo, "b")
+            self.assertIn("no REGISTRY_TOKEN", str(caught.exception))
+
+    def test_a_push_is_verified_against_the_fetched_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, good, other = Path(tmp) / "r", Path(tmp) / "good.git", Path(tmp) / "other.git"
+            for bare in (good, other):
+                subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            git(repo, "commit", "-q", "--allow-empty", "-m", "x")
+            git(repo, "remote", "add", "origin", str(good))
+            retire_skill.default_push(repo, "retire-skill/x", "a-token")
+            self.assertEqual(git(good, "rev-parse", "refs/heads/retire-skill/x"),
+                             git(repo, "rev-parse", "HEAD"))
+            # The push lands in one repository and the fetch reads another, as
+            # a refused commit with a "successful" push looks.
+            git(repo, "commit", "-q", "--allow-empty", "-m", "y")
+            git(repo, "remote", "set-url", "--push", "origin", str(other))
+            with self.assertRaises(retire_skill.RetireError) as caught:
+                retire_skill.default_push(repo, "retire-skill/x", "a-token")
+            self.assertIn("does not hold the removal commit", str(caught.exception))
+
+    def test_the_push_token_is_an_env_header_never_an_argument(self):
+        env = retire_skill._auth_env("a-token")
+        self.assertEqual(env["GIT_CONFIG_KEY_0"], "http.https://github.com/.extraheader")
+        self.assertEqual(env["GIT_CONFIG_VALUE_0"],
+                         "AUTHORIZATION: basic eC1hY2Nlc3MtdG9rZW46YS10b2tlbg==")
 
 
 class SkillImpactTests(unittest.TestCase):
     def test_entry_text(self):
         entry = retire_skill.impact_entry(
             gates_doc("auto"), SKILL, PLUGIN,
-            "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/123")
+            "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/123",
+            ("1.2.7", "2.0.0"), "2026-10-27")
         self.assertEqual(entry, (
-            f"## 2026-10-25 — {PLUGIN}/{SKILL} — remove\n\n"
-            "- Motivation: skills-evals#70's retirement verdict is `retire`: every cell "
-            "(2 fixture(s) x 2 roster model(s)) shows no benefit at two fixed looks.\n"
-            f"- Change: `plugins/{PLUGIN}/skills/{SKILL}/` removed and the `{PLUGIN}` "
-            "patch version raised, by skills-evals' scheduled retirement (workflow run "
+            f"## 2026-10-27 — {PLUGIN}/{SKILL} — remove\n\n"
+            "- Motivation: the retirement verdict is `retire` "
+            "([skills-evals#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)): "
+            "every cell (2 fixture(s) x 2 roster model(s)) shows no benefit at two fixed "
+            "looks.\n"
+            f"- Change: `plugins/{PLUGIN}/skills/{SKILL}/` removed, the skill dropped from "
+            f"`scripts/plugin_layout.json` and the README table, bundle `{PLUGIN}` 1.2.7 -> "
+            "2.0.0 (a removal is a breaking change), by skills-evals' "
+            "`scripts/retire_skill.py` (workflow run "
             "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/123).\n"
-            "- Eval: pooled runs as of 20261025T120000Z, policy evals/gate-policy.yml; "
-            "fixtures basic, edge; per-cell bounds in the pull request.\n"
-            "- Outcome: auto-merges once required checks pass, with no human review "
-            "(skills-evals ADR 0014, Adam's 2026-10-25 decision).\n"))
+            "- Eval: n=84 pooled arm runs (with vs without the skill) as of "
+            f"20261025T120000Z, fixtures evals/{SKILL}/basic, evals/{SKILL}/edge, policy "
+            "evals/gate-policy.yml; per-cell bounds in the pull request.\n"
+            "- Outcome: pending merge; auto-merges once required checks pass, with no "
+            "human review ([ADR 0021](https://github.com/Adam-S-Daniel/adam-agentskills/"
+            "blob/main/docs/decisions/0021-automated-skill-changes-merge-without-review.md)).\n"))
+
+    def test_entry_dates_default_to_as_of_and_flat_fixtures_name_the_skill(self):
+        doc = gates_doc("auto", verdicts={SKILL: {"verdict": "retire", "reason": "r",
+                                                  "cells": [cell(None, m) for m in MODELS]}})
+        entry = retire_skill.impact_entry(doc, SKILL, PLUGIN, None, ("1.0.0", "2.0.0"))
+        self.assertTrue(entry.startswith(f"## 2026-10-25 — {PLUGIN}/{SKILL} — remove\n"))
+        self.assertIn(f"fixtures evals/{SKILL}, policy", entry)
+        self.assertIn("(its scheduled workflow)", entry)
+        self.assertIn("n=42 pooled", entry)
 
     def test_entry_goes_newest_first_after_the_rule(self):
         text = retire_skill.insert_entry(IMPACT, "## NEW — remove\n\n- x\n")
@@ -981,7 +1200,10 @@ class SkillImpactTests(unittest.TestCase):
             self.assertIn("## 2026-10-23", text)
 
     def test_bump(self):
-        self.assertEqual(retire_skill.bump("1.2.9"), "1.2.10")
+        """A removal raises the major version (the registry's practice for
+        removing a skill: sync-skills, 1.1.0 -> 2.0.0)."""
+        self.assertEqual(retire_skill.bump("1.2.9"), "2.0.0")
+        self.assertEqual(retire_skill.bump("9.0.0"), "10.0.0")
         for bad in ("1.2", "v1.2.3", None, "1.2.3-rc1"):
             with self.assertRaises(retire_skill.RetireError):
                 retire_skill.bump(bad)
@@ -999,6 +1221,33 @@ class GitHubCallTests(unittest.TestCase):
                 with self.assertRaises(retire_skill.RetireError) as caught:
                     retire_skill.default_gh(["api", "x"])
             self.assertEqual(str(caught.exception), "gh api exited 4")
+
+    def test_a_token_replaces_gh_token_for_that_call_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_gh = Path(tmp) / "gh"
+            fake_gh.write_text('#!/bin/sh\nprintf %s "$GH_TOKEN"\n')
+            fake_gh.chmod(0o755)
+            import os
+            from unittest import mock
+            with mock.patch.dict(os.environ, {"PATH": f"{tmp}:{os.environ['PATH']}",
+                                              "GH_TOKEN": "repo-token"}):
+                self.assertEqual(retire_skill.default_gh(["api", "x"], token="app-token"),
+                                 "app-token")
+                self.assertEqual(retire_skill.default_gh(["api", "x"]), "repo-token")
+
+    def test_without_registry_token_a_registry_write_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = make_registry(Path(tmp) / "r")
+            path = Path(tmp) / "gates.json"
+            path.write_text(json.dumps(gates_doc("auto")))
+            reads = FakeGitHub()
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = retire_skill.main(
+                    ["--gates", str(path), "--registry", f"adam-agentskills={registry}",
+                     "--allow-mode", "auto"], env=AUTO_ENV, gh=reads.gh, out=io.StringIO())
+            self.assertEqual(code, 2)
+            self.assertIn("no REGISTRY_TOKEN to push with", err.getvalue())
 
 
 class RegistryCheckTests(AutoTests):
@@ -1241,11 +1490,18 @@ class RegistryCheckTests(AutoTests):
                 self.assertEqual(fake.pushes, [])
                 self.assertEqual(calls(registry), [])
 
+    # A hook in the skill's own plugin lowers the removal to an issue
+    # (AutoTests.test_a_plugin_that_runs_code_falls_back_to_the_issue); one
+    # in ANOTHER plugin that names a path inside the skill is still refused.
+    HOOKED = "adam-coding-local"
+
     def test_a_hook_naming_a_path_inside_the_skill_is_refused(self):
-        for rel in (f"plugins/{PLUGIN}/hooks/hooks.json",
-                    f"plugins/{PLUGIN}/.claude-plugin/plugin.json"):
+        for rel in (f"plugins/{self.HOOKED}/hooks/hooks.json",
+                    f"plugins/{self.HOOKED}/.claude-plugin/plugin.json"):
             with self.subTest(rel):
-                registry = make_registry(self.tmp / f"hooked-{rel.count('claude')}")
+                registry = make_registry(self.tmp / f"hooked-{rel.count('claude')}",
+                                         skills=((PLUGIN, SKILL), (PLUGIN, KEPT),
+                                                 (self.HOOKED, "local-skill")))
                 path = registry / rel
                 path.parent.mkdir(parents=True, exist_ok=True)
                 hook = {"type": "command",
@@ -1267,8 +1523,10 @@ class RegistryCheckTests(AutoTests):
                 self.assertEqual(fake.pushes, [])
 
     def test_a_hook_naming_another_skill_does_not_refuse(self):
-        registry = make_registry(self.tmp / "hooked-elsewhere")
-        path = registry / "plugins" / PLUGIN / "hooks" / "hooks.json"
+        registry = make_registry(self.tmp / "hooked-elsewhere",
+                                 skills=((PLUGIN, SKILL), (PLUGIN, KEPT),
+                                         (self.HOOKED, "local-skill")))
+        path = registry / "plugins" / self.HOOKED / "hooks" / "hooks.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
             {"type": "command",
@@ -1431,13 +1689,39 @@ class WorkflowTests(unittest.TestCase):
             if "run" in step:
                 self.assertNotIn("${{", step["run"])
 
-    def test_acts_in_proposal_mode_only_with_the_repo_token(self):
-        act = next(s for s in self.job["steps"]
-                   if "scripts/retire_skill.py" in s.get("run", ""))
-        self.assertEqual(act["env"], {"GH_TOKEN": "${{ github.token }}"})
-        self.assertIn("--allow-mode proposal", act["run"])
-        self.assertNotIn("--allow-mode auto", act["run"])
+    def test_auto_mode_is_wired_with_the_app_token_and_a_proposal_fallback(self):
+        steps = self.job["steps"]
+        act = next(s for s in steps if "scripts/retire_skill.py" in s.get("run", ""))
+        self.assertEqual(act["env"], {"GH_TOKEN": "${{ github.token }}",
+                                      "REGISTRY_TOKEN": "${{ steps.app-token.outputs.token }}"})
+        self.assertIn("modes=(--allow-mode proposal)", act["run"])
+        self.assertIn('if [ -n "$REGISTRY_TOKEN" ]; then\n  modes+=(--allow-mode auto)',
+                      act["run"])
+        self.assertIn("modes+=(--fallback-to-proposal)", act["run"])
+        self.assertIn('--date "$(date -u +%F)"', act["run"])
         self.assertNotIn("--dry-run", act["run"])
+        mint = steps[steps.index(act) - 1]
+        self.assertEqual(mint["id"], "app-token")
+        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+        self.assertIs(mint["continue-on-error"], True)
+        self.assertEqual(mint["if"], "steps.credential.outputs.present == 'true'")
+        self.assertEqual(mint["with"], {
+            "client-id": "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.EVAL_IMPROVE_APP_PEM }}",
+            "owner": "Adam-S-Daniel", "repositories": "adam-agentskills",
+            "permission-contents": "write", "permission-pull-requests": "write"})
+        credential = steps[steps.index(mint) - 1]
+        self.assertEqual(credential["id"], "credential")
+        self.assertEqual(credential["env"], {"PR_CREDENTIAL_SET": (
+            "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && "
+            "secrets.EVAL_IMPROVE_APP_PEM != '' }}")})
+        # The token reaches one step: no other step or the job names it.
+        named = [s for s in steps if "app-token" in json.dumps(s)]
+        self.assertEqual(named, [mint, act])
+        self.assertNotIn("env", self.job)
+        registry = next(s for s in steps if s.get("with", {}).get("repository")
+                        == "Adam-S-Daniel/adam-agentskills")
+        self.assertEqual(registry["with"]["fetch-depth"], 0)
         compute = next(s for s in self.job["steps"]
                        if "scripts/compute_gates.py" in s.get("run", ""))
         self.assertLess(self.job["steps"].index(compute), self.job["steps"].index(act))

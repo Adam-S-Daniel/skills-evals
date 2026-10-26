@@ -16,7 +16,20 @@ compute_gates lets one skill retire per evaluation; two `retire` verdicts
 here are refused, never a pick.
 
 THE MODE is the gates file's `retirement_mode` (from evals/gate-policy.yml;
-anything but `auto` is `proposal`):
+anything but `auto` is `proposal`), lowered to `proposal` in two cases (the
+removal path's `effective_mode`, as scripts/improve_gate.py lowers an
+improvement to a draft):
+
+  * the skill's plugin runs code (improve_gate.py's `auto_refusal`: a
+    `hooks/` or `bin/` directory, a settings or package file, or a manifest
+    `hooks` or `settings` key). Removing one of its skills would wait on
+    adam-agentskills' plugin-runtime-review, which auto-merge cannot approve
+    (adam-agentskills ADR 0021, decision 4);
+  * the caller has no write credential for adam-agentskills this run
+    (`--fallback-to-proposal` without `--allow-mode auto`): the scheduled
+    workflow passes it when the GitHub App token was not minted.
+
+The issue says why, and a human removes.
 
   * `proposal`: an issue in skills-evals, found by a marker comment in its
     body (`ISSUE_MARKER`) on an issue `github-actions[bot]` opened, is
@@ -24,14 +37,19 @@ anything but `auto` is `proposal`):
     updated, and a closed one means the skill is already decided, so nothing
     is filed again. A human removes. An issue anyone else wrote is ignored,
     whatever it quotes.
-  * `auto` (Adam, 2026-10-25; docs/decisions/0014): a branch
-    `retire-skill/<skill>` is prepared in the adam-agentskills checkout; it
-    is pushed, a pull request is opened, and auto-merge (merge commit) is
-    enabled. No human review, so the branch must pass the registry's
-    required checks on its own. Its first commit deletes
-    `plugins/<plugin>/skills/<skill>/`, raises the plugin's patch version in
-    both manifests (adam-agentskills ADR 0009), adds a `docs/skill-impact.md`
-    entry, drops the skill from `scripts/plugin_layout.json` (the ADR 0013
+  * `auto` (Adam, 2026-10-25; docs/decisions/0014 and adam-agentskills ADR
+    0021): a branch `retire-skill/<skill>` is prepared in the
+    adam-agentskills checkout; it is pushed (and the push verified with
+    `git merge-base --is-ancestor`), a ready pull request is opened, labeled
+    `agent-authored`, and auto-merge (merge commit, `--match-head-commit`)
+    is enabled and read back. No human review, so the branch must pass the
+    registry's required checks on its own. Its first commit deletes
+    `plugins/<plugin>/skills/<skill>/`, raises the plugin's MAJOR version in
+    both manifests (adam-agentskills ADR 0009 requires a raise; removing a
+    skill breaks every consumer that calls it, which the registry has bumped
+    as major before, `adam-coding-local` 1.1.0 -> 2.0.0 for `sync-skills`),
+    adds a `docs/skill-impact.md` entry, drops the skill from
+    `scripts/plugin_layout.json` (the ADR 0013
     layout its tests pin) and regenerates the README skill table with the
     registry's own `scripts/generate_readme_table.py`. When `skills.lock`
     locks the plugin, a second commit re-pins it to the first with the
@@ -39,13 +57,23 @@ anything but `auto` is `proposal`):
     `--check-current` must then pass (the order that script documents:
     content, commit, re-pin, commit). The two registry scripts run with a
     scrubbed environment (no token reaches them), from the checkout's
-    default branch, which the registry's own CI already runs.
+    default branch, which the registry's own CI already runs. Registry
+    writes use the token in `REGISTRY_TOKEN` (the App's), never `GH_TOKEN`
+    (this repository's, for the issue path).
 
 `--allow-mode` lists the modes the caller has wired (default: `proposal`
-only, the safe one; auto must be named). The scheduled workflow allows only
-`proposal`, since auto mode needs a write credential for adam-agentskills
-that does not exist yet; a gates file in a mode not allowed exits 2 rather
-than doing nothing quietly.
+only, the safe one; auto must be named). A gates file in a mode not allowed
+exits 2 rather than doing nothing quietly, unless `--fallback-to-proposal`
+lowers auto to proposal.
+
+AUTO MODE OPENS NOTHING (exit 0, nothing written) while any loop pull
+request is open in adam-agentskills (head `eval-improve/`, `draft-skill/` or
+`retire-skill/`; the slot routine-improve-gate.yml's `registry-pr` job
+checks): all three write the bundle version, `docs/skill-impact.md` and
+`skills.lock`, so a second would conflict once the first merged
+(adam-agentskills ADR 0021, decision 5). Nor while a closed pull request
+from `retire-skill/<skill>` exists: a person closed it, so the skill is
+decided, as a closed issue decides a proposal.
 
 REFUSALS (exit 2, nothing written):
 
@@ -55,17 +83,15 @@ REFUSALS (exit 2, nothing written):
   * in auto mode, any run that is not `--dry-run` outside GitHub Actions
     (`GITHUB_ACTIONS` must be `true`) on the default branch (`GITHUB_REF`
     must be `refs/heads/main`);
-  * in auto mode, while any removal pull request (head `retire-skill/...`) is
-    open in adam-agentskills: at most one at a time, and an open one holds
-    the slot whatever the newest verdict says;
   * in auto mode, a shallow adam-agentskills checkout (the lock re-pin and
     its check read the commit the lock pins, which a shallow clone lacks), a
     skill that is its plugin's last (emptying a plugin is a registry
     decision, and the lock generator refuses it), a
     `scripts/plugin_layout.json` that does not list the skill under its
     plugin, a skill whose removal that registry's `plugin-runtime-review`
-    gate would hold for the owner (a `hooks/` or `bin/` directory in the
-    skill, or a hook naming a path inside it), which auto-merge cannot
+    gate would hold for the owner although its plugin runs no code (a
+    `hooks/` or `bin/` directory in the skill, or another plugin's hook
+    naming a path inside it), which auto-merge cannot
     approve, a skill `scripts/skills_waivers.yml` waives a finding under
     (the waiver goes stale with it and `check_skills.py` exits 1), or a
     skill defining a test that a tracked source elsewhere cites by name (the
@@ -78,15 +104,24 @@ REFUSALS (exit 2, nothing written):
     checkout. In proposal mode the issue says so instead, since a human
     removes.
 
+Only adam-agentskills is ever written. The private registry,
+adam-agentskills-private, is never a target (adam-agentskills ADR 0021,
+decision 7): the scheduled job does not check it out, so a skill there has
+no tested digest and never reaches `retire`, and a `--registry` copy found
+anywhere but adam-agentskills is refused in auto mode.
+
 `--dry-run` reads (the gates file, the checkouts, and open pull requests or
 issues through `gh`), writes nothing, and prints the plan as JSON: the
 action, the issue or pull request text, and the commands it would run.
 
-Every GitHub call goes through one function, `gh(args, stdin)` (the `gh`
-CLI), and every push through `push(checkout, branch)`, both injectable, so
-tests need no network. An error from `gh` is reported by its exit code
+Every GitHub call goes through one of two functions, `gh(args, stdin)` (the
+`gh` CLI with `GH_TOKEN`: reads, and skills-evals issues) and
+`registry_gh(args, stdin)` (with `REGISTRY_TOKEN`: adam-agentskills
+writes), and every push through `push(checkout, branch)`, all injectable,
+so tests need no network. An error from `gh` is reported by its exit code
 only, never its output. Deterministic: no clock; the skill-impact date is
-the gates file's `as_of`.
+`--date` (the workflow passes the run's UTC date), else the gates file's
+`as_of`.
 
 `--usage` is the published `usage/weekly-local.json`; the issue body names
 the skill's invocations over the four weeks ending at the gates file's
@@ -129,6 +164,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import json
 import os
 import re
@@ -149,11 +185,29 @@ import compute_gates  # noqa: E402
 import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
+import improve_gate  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
 EVALS_REPO = "Adam-S-Daniel/skills-evals"
 BRANCH_PREFIX = "retire-skill/"
+#: Every loop pull request's head in adam-agentskills: improvement, new
+#: skill, removal. One open at a time across all three (ADR 0021,
+#: decision 5; routine-improve-gate.yml's registry-pr job checks the same).
+LOOP_PREFIXES = ("eval-improve/", "draft-skill/", BRANCH_PREFIX)
+#: The fleet label and marker for a contribution an agent made on Adam's
+#: behalf (_agent-guidance ADR 0023), as the improvement gate writes them.
+AGENT_LABEL = "agent-authored"
+AGENT_MARKER = improve_gate.AGENT_MARKER
+AGENT_TRAILER = "Agent: claude-code"
+REGISTRY_ADR = improve_gate.REGISTRY_ADR
+#: The environment variable holding the adam-agentskills write token (the
+#: skills-evals GitHub App's installation token, minted by the workflow).
+REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
+PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
+NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
+                 "GitHub App token was not minted)")
+DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
 IMPACT_FILE = "docs/skill-impact.md"
 LAYOUT_FILE = "scripts/plugin_layout.json"
@@ -180,22 +234,45 @@ class RetireError(Exception):
     """A refusal: nothing is written."""
 
 
-def default_gh(args: list, stdin: str | None = None) -> str:
+def default_gh(args: list, stdin: str | None = None, token: str | None = None) -> str:
     """Run `gh` and return its stdout; its output is never echoed on failure,
-    since an API error body can carry data a public log must not."""
+    since an API error body can carry data a public log must not. `token`,
+    when given, replaces GH_TOKEN for this call only."""
+    env = {**os.environ, "GH_TOKEN": token} if token else None
     proc = subprocess.run(["gh", *args], input=stdin, capture_output=True,
-                          text=True, check=False)
+                          text=True, check=False, env=env)
     if proc.returncode != 0:
         raise RetireError(f"gh {args[0]} exited {proc.returncode}")
     return proc.stdout
 
 
-def default_push(checkout: Path, branch: str) -> None:
-    proc = subprocess.run(["git", "-C", str(checkout), "push", "origin",
-                           f"HEAD:refs/heads/{branch}"],
-                          capture_output=True, text=True, check=False)
-    if proc.returncode != 0:
-        raise RetireError(f"git push exited {proc.returncode}")
+def _auth_env(token: str) -> dict:
+    """git's environment with `token` as an HTTP header for github.com, set
+    through GIT_CONFIG_* so it never appears in an argv or .git/config."""
+    header = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    return {**os.environ, "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {header}",
+            "GIT_TERMINAL_PROMPT": "0"}
+
+
+def default_push(checkout: Path, branch: str, token: str | None = None) -> None:
+    """Push HEAD to `branch`, then prove it landed: a refused commit can
+    still leave `git push` reporting success, so the pushed ref is fetched
+    back and HEAD must be its ancestor (the fleet's push rule)."""
+    if not token:
+        raise RetireError(f"no {REGISTRY_TOKEN_ENV} to push with")
+    env = _auth_env(token)
+    for args in (["push", "origin", f"HEAD:refs/heads/{branch}"],
+                 ["fetch", "-q", "--no-tags", "origin",
+                  f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
+                 ["merge-base", "--is-ancestor", "HEAD", f"refs/remotes/origin/{branch}"]):
+        proc = subprocess.run(["git", "-C", str(checkout), *args], capture_output=True,
+                              text=True, check=False, env=env)
+        if proc.returncode != 0:
+            raise RetireError(f"git {args[0]} exited {proc.returncode}"
+                              + (": the pushed branch does not hold the removal commit"
+                                 if args[0] == "merge-base" else ""))
 
 
 def _git(checkout: Path, *args: str) -> str:
@@ -332,12 +409,31 @@ def _json_lines(text: str) -> list:
     return out
 
 
-def open_removal_prs(gh) -> list:
+def open_loop_prs(gh) -> list:
+    """Open adam-agentskills pull requests whose head is any loop's."""
     text = gh(["api", "--paginate",
                f"repos/{REGISTRY_REPO}/pulls?state=open&per_page=100",
                "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url}"])
     return [p for p in _json_lines(text)
-            if isinstance(p.get("head"), str) and p["head"].startswith(BRANCH_PREFIX)]
+            if isinstance(p.get("head"), str) and p["head"].startswith(LOOP_PREFIXES)]
+
+
+def closed_removal_prs(gh, skill: str) -> list:
+    """Closed adam-agentskills pull requests from `retire-skill/<skill>`."""
+    owner = REGISTRY_REPO.split("/")[0]
+    text = gh(["api", "--paginate",
+               f"repos/{REGISTRY_REPO}/pulls?state=closed&per_page=100"
+               f"&head={owner}:{BRANCH_PREFIX}{skill}",
+               "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url}"])
+    return [p for p in _json_lines(text) if p.get("head") == f"{BRANCH_PREFIX}{skill}"]
+
+
+def runtime_refusal(checkout: Path, plugin: str) -> str | None:
+    """improve_gate.py's `auto_refusal`: why `plugin` runs code, or None."""
+    try:
+        return improve_gate.auto_refusal(checkout, plugin)
+    except improve_gate.Rejected as exc:
+        raise RetireError(str(exc)) from None
 
 
 def existing_issues(gh, skill: str) -> dict:
@@ -388,21 +484,34 @@ def _date(as_of: str) -> str:
     return f"{as_of[0:4]}-{as_of[4:6]}-{as_of[6:8]}"
 
 
-def impact_entry(gates: dict, skill: str, plugin: str, run_url: str | None) -> str:
+def _runs(cells) -> int:
+    return sum(c[arm]["runs"] for c in cells for arm in ("with", "without")
+               if isinstance(c.get(arm), dict) and type(c[arm].get("runs")) is int)
+
+
+def impact_entry(gates: dict, skill: str, plugin: str, run_url: str | None,
+                 versions: tuple, date: str | None = None) -> str:
+    """The registry's entry format (docs/skill-impact.md, "Entry format"):
+    the date the removal is opened, one line each, links in full since the
+    file lives in another repository."""
     cells = gates["skills"][skill]["cells"]
     fixtures = sorted({c.get("fixture") or "(flat)" for c in cells})
-    where = f"workflow run {run_url}" if run_url else "the scheduled workflow"
-    return (f"## {_date(gates['as_of'])} — {plugin}/{skill} — remove\n\n"
-            f"- Motivation: skills-evals#70's retirement verdict is `retire`: every cell "
+    paths = [f"evals/{skill}" if f == "(flat)" else f"evals/{skill}/{f}" for f in fixtures]
+    where = f"workflow run {run_url}" if run_url else "its scheduled workflow"
+    return (f"## {date or _date(gates['as_of'])} — {plugin}/{skill} — remove\n\n"
+            f"- Motivation: the retirement verdict is `retire` "
+            f"([skills-evals#70](https://github.com/{EVALS_REPO}/issues/70)): every cell "
             f"({len(fixtures)} fixture(s) x {len(gates['roster_models'])} roster model(s)) "
             f"shows no benefit at two fixed looks.\n"
-            f"- Change: `plugins/{plugin}/skills/{skill}/` removed and the "
-            f"`{plugin}` patch version raised, by skills-evals' scheduled retirement "
-            f"({where}).\n"
-            f"- Eval: pooled runs as of {gates['as_of']}, policy evals/gate-policy.yml; "
-            f"fixtures {', '.join(fixtures)}; per-cell bounds in the pull request.\n"
-            f"- Outcome: auto-merges once required checks pass, with no human review "
-            f"(skills-evals ADR 0014, Adam's 2026-10-25 decision).\n")
+            f"- Change: `plugins/{plugin}/skills/{skill}/` removed, the skill dropped from "
+            f"`{LAYOUT_FILE}` and the README table, bundle `{plugin}` {versions[0]} -> "
+            f"{versions[1]} (a removal is a breaking change), by skills-evals' "
+            f"`scripts/retire_skill.py` ({where}).\n"
+            f"- Eval: n={_runs(cells)} pooled arm runs (with vs without the skill) as of "
+            f"{gates['as_of']}, fixtures {', '.join(paths)}, "
+            f"policy evals/gate-policy.yml; per-cell bounds in the pull request.\n"
+            f"- Outcome: pending merge; auto-merges once required checks pass, with no "
+            f"human review ([ADR 0021]({REGISTRY_ADR})).\n")
 
 
 def insert_entry(text: str, entry: str) -> str:
@@ -418,11 +527,13 @@ def insert_entry(text: str, entry: str) -> str:
 
 
 def bump(version: str) -> str:
+    """The next MAJOR version: a removal breaks every consumer that calls the
+    skill. check_plugin_versions.py asks only that it rise; the registry
+    bumped major for its last skill removal (sync-skills, 1.1.0 -> 2.0.0)."""
     match = VERSION_RE.fullmatch(version) if isinstance(version, str) else None
     if not match:
         raise RetireError("a plugin version is not MAJOR.MINOR.PATCH")
-    major, minor, patch = map(int, match.groups())
-    return f"{major}.{minor}.{patch + 1}"
+    return f"{int(match.group(1)) + 1}.0.0"
 
 
 def manifest_versions(checkout: Path, plugin: str) -> dict:
@@ -657,16 +768,21 @@ def run_registry_script(checkout: Path, script: str, *args: str) -> None:
         raise RetireError(" ".join([script, *args, "exited", str(proc.returncode)]))
 
 
-def _issue_body(gates, skill, location, problem, run_url, usage=None) -> str:
+def _issue_body(gates, skill, location, problem, run_url, usage=None,
+                mode_reason=None) -> str:
     where = (f"`{location['path']}` in {REGISTRY_REPO}" if location
              else f"not located: {problem}")
     run = f"\nWorkflow run: {run_url}\n" if run_url else ""
+    why = (f"`evals/gate-policy.yml` sets `retirement_mode: auto`, but {mode_reason}, "
+           "so no removal pull request is opened and a human removes it"
+           if mode_reason else
+           "`evals/gate-policy.yml` sets `retirement_mode: proposal`, so a human "
+           "removes it")
     return (f"{ISSUE_MARKER.format(skill=skill)}\n"
             f"The retirement verdict for `{skill}` is **retire** as of "
             f"{gates['as_of']}: {gates['skills'][skill].get('reason')}.\n\n"
             f"{usage_line(usage, skill, gates['as_of'])}\n\n"
-            f"`evals/gate-policy.yml` sets `retirement_mode: proposal`, so a human "
-            f"removes it. Copy: {where}.\n\n{evidence(gates, skill)}\n{run}\n"
+            f"{why}. Copy: {where}.\n\n{evidence(gates, skill)}\n{run}\n"
             "Filed by scripts/retire_skill.py on the scheduled workflow (#70).\n")
 
 
@@ -682,48 +798,78 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
             f"Version bumps:\n{bumps}\n\nAdds a `{IMPACT_FILE}` entry, drops the skill "
             f"from `{LAYOUT_FILE}` and regenerates the `{README_FILE}` skill table."
             f"{lock}\n\n"
-            f"This pull request auto-merges once required checks pass, with no human "
-            f"review, by Adam's 2026-10-25 decision ([skills-evals ADR 0014]({ADR})).\n"
+            f"This pull request auto-merges (merge commit) once required checks pass, "
+            f"with no human review, by Adam's 2026-10-25 decision "
+            f"([skills-evals ADR 0014]({ADR}); [ADR 0021]({REGISTRY_ADR})). To decline "
+            f"the removal, close it: a closed `{BRANCH_PREFIX}{skill}` pull request means "
+            f"the skill is decided, and none is opened again.\n"
             f"{run}\nOpened by skills-evals' scripts/retire_skill.py on its scheduled "
-            "workflow.\n")
+            f"workflow.\n\n{AGENT_MARKER}\n")
+
+
+def _lowered(mode_reason: str, allowed) -> str:
+    """`proposal`, the mode auto falls back to; RetireError when the caller
+    has not allowed it either."""
+    if "proposal" not in allowed:
+        raise RetireError(f"retirement_mode auto falls back to proposal ({mode_reason}), "
+                          f"which this caller has not wired (allowed: {', '.join(allowed)})")
+    return "proposal"
 
 
 def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
-         allowed=("proposal",), usage: dict | None = None) -> dict:
+         allowed=("proposal",), usage: dict | None = None, fallback: bool = False,
+         date: str | None = None) -> dict:
     """What to do, read-only. RetireError for a refusal."""
     skill = retiring(gates)
     mode = mode_of(gates)
     if skill is None:
         return {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
+    mode_reason = None
+    if mode == "auto" and "auto" not in allowed and fallback:
+        mode_reason = NO_CREDENTIAL
+        mode = _lowered(mode_reason, allowed)
     if mode not in allowed:
         raise RetireError(f"retirement_mode is {mode}, which this caller has not wired "
                           f"(allowed: {', '.join(allowed)})")
+    if mode == "auto":
+        location = locate(registries, skill)
+        checkout = Path(registries[TARGET]["path"])
+        mode_reason = runtime_refusal(checkout, location["plugin"])
+        if mode_reason:
+            mode = _lowered(mode_reason, allowed)
     if mode == "proposal":
         try:
             location, problem = locate(registries, skill), None
         except RetireError as exc:
             location, problem = None, str(exc)
         issues = existing_issues(gh, skill)
+        lowered = {"mode_reason": mode_reason} if mode_reason else {}
         if not issues["open"] and issues["closed"]:
-            return {"action": "none", "mode": mode, "skill": skill,
+            return {"action": "none", "mode": mode, "skill": skill, **lowered,
                     "issue": issues["closed"][0],
                     "reason": f"{skill} is already decided: issue "
                               f"#{issues['closed'][0]} is closed, so none is filed again"}
         number = issues["open"][0] if issues["open"] else None
         return {"action": "update-issue" if number else "create-issue", "mode": mode,
-                "skill": skill, "issue": number,
+                "skill": skill, "issue": number, **lowered,
                 "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
-                "body": _issue_body(gates, skill, location, problem, run_url, usage)}
-    prs = open_removal_prs(gh)
+                "body": _issue_body(gates, skill, location, problem, run_url, usage, mode_reason)}
+    prs = open_loop_prs(gh)
     if prs:
-        raise RetireError("a removal pull request is already open: "
-                          + ", ".join(str(p.get("url")) for p in prs))
-    location = locate(registries, skill)
-    checkout = Path(registries[TARGET]["path"])
+        return {"action": "none", "mode": mode, "skill": skill,
+                "reason": "a loop pull request is already open in "
+                          f"{REGISTRY_REPO}, so this removal waits for it: "
+                          + ", ".join(str(p.get("url")) for p in prs)}
+    closed = closed_removal_prs(gh, skill)
+    if closed:
+        return {"action": "none", "mode": mode, "skill": skill,
+                "reason": f"{skill} is already decided: removal pull request "
+                          f"{closed[0].get('url')} is closed, so none is opened again"}
     versions = manifest_versions(checkout, location["plugin"])
     check_registry(checkout, location, skill)
     repin = lock_relevant(checkout, location["plugin"])
-    entry = impact_entry(gates, skill, location["plugin"], run_url)
+    entry = impact_entry(gates, skill, location["plugin"], run_url,
+                         next(iter(versions.values())), date)
     return {"action": "removal", "mode": mode, "skill": skill, **location,
             "branch": f"{BRANCH_PREFIX}{skill}", "versions": versions,
             "impact_entry": entry, "repin": repin,
@@ -780,8 +926,10 @@ def prepare_branch(checkout: Path, action: dict) -> None:
 
 
 def _commit(checkout: Path, message: str) -> None:
+    """A commit by the bot identity, with the fleet's agent trailer (as the
+    improvement gate's commits carry it)."""
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
-         "commit", "-q", "-m", message)
+         "commit", "-q", "-m", f"{message}\n\n{AGENT_TRAILER}")
 
 
 def commands(action: dict) -> list:
@@ -806,14 +954,24 @@ def commands(action: dict) -> list:
                    ["python3", LOCK_GENERATOR, "--check-current"],
                    ["git", "commit"]] if action.get("repin") else []),
                 ["git", "push", "origin", f"HEAD:refs/heads/{action['branch']}"],
+                ["git", "merge-base", "--is-ancestor", "HEAD",
+                 f"refs/remotes/origin/{action['branch']}"],
                 ["gh", "pr", "create", "-R", REGISTRY_REPO, "--base", "main",
                  "--head", action["branch"], "--title", action["title"], "--body-file", "-"],
+                ["gh", "api", "-X", "POST",
+                 f"repos/{REGISTRY_REPO}/issues/<new pull request number>/labels",
+                 "-f", f"labels[]={AGENT_LABEL}"],
                 ["gh", "pr", "merge", "<new pull request url>", "-R", REGISTRY_REPO,
-                 "--auto", "--merge"]]
+                 "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
+                ["gh", "pr", "view", "<new pull request url>", "-R", REGISTRY_REPO,
+                 "--json", "autoMergeRequest"]]
     return []
 
 
-def execute(action: dict, registries: dict, gh, push, env) -> str:
+def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> str:
+    """Make the plan's writes: skills-evals issues through `gh`,
+    adam-agentskills writes through `registry_gh` (default `gh`)."""
+    registry_gh = registry_gh or gh
     kind = action["action"]
     if kind == "none":
         return action["reason"]
@@ -826,11 +984,25 @@ def execute(action: dict, registries: dict, gh, push, env) -> str:
     check_auto_env(env)
     checkout = Path(registries[TARGET]["path"])
     prepare_branch(checkout, action)
+    head = _git(checkout, "rev-parse", "HEAD").strip()
     push(checkout, action["branch"])
-    url = gh(["pr", "create", "-R", REGISTRY_REPO, "--base", "main",
-              "--head", action["branch"], "--title", action["title"],
-              "--body-file", "-"], action["body"]).strip()
-    gh(["pr", "merge", url, "-R", REGISTRY_REPO, "--auto", "--merge"])
+    url = registry_gh(["pr", "create", "-R", REGISTRY_REPO, "--base", "main",
+                       "--head", action["branch"], "--title", action["title"],
+                       "--body-file", "-"], action["body"]).strip()
+    match = PR_URL_RE.fullmatch(url)
+    if not match:
+        raise RetireError("creating the pull request printed no pull request URL")
+    # Labeled before auto-merge: a pull request that could not be marked as
+    # the loop's stays open for a person instead of merging.
+    registry_gh(["api", "-X", "POST", f"repos/{REGISTRY_REPO}/issues/{match.group(1)}/labels",
+                 "-f", f"labels[]={AGENT_LABEL}"])
+    registry_gh(["pr", "merge", url, "-R", REGISTRY_REPO, "--auto", "--merge",
+                 "--match-head-commit", head])
+    method = registry_gh(["pr", "view", url, "-R", REGISTRY_REPO, "--json",
+                          "autoMergeRequest", "--jq",
+                          '.autoMergeRequest.mergeMethod // ""']).strip()
+    if method != "MERGE":
+        raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
     return f"opened {url} with auto-merge"
 
 
@@ -1005,8 +1177,7 @@ def guidance_impact_entry(gates: dict, section: str, run_url: str | None) -> str
     verdict = guidance_block(gates)[section]
     cells = verdict["cells"]
     fixtures = sorted({c.get("fixture") or "(flat)" for c in cells})
-    runs = sum(c.get(arm, {}).get("runs", 0) for c in cells for arm in ("with", "without")
-               if isinstance(c.get(arm), dict) and type(c[arm].get("runs")) is int)
+    runs = _runs(cells)
     where = f"workflow run {run_url}" if run_url else "the scheduled workflow"
     return (f"## {_date(gates['as_of'])} — {section} — remove\n"
             f"- Motivation: skills-evals#124's retirement verdict is `retire`: the whole "
@@ -1211,14 +1382,31 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env) -> str:
     gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge"])
     return f"opened {url} with auto-merge"
 
-def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push,
-         out=sys.stdout) -> int:
+def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
+         registry_gh=None, out=sys.stdout) -> int:
     env = os.environ if env is None else env
+    token = env.get(REGISTRY_TOKEN_ENV) or None
+    if push is None:
+        def push(checkout, branch):
+            default_push(checkout, branch, token)
+    if registry_gh is None and gh is not default_gh:
+        registry_gh = gh  # an injected gh (a test's fake) answers both
+    elif registry_gh is None:
+        def registry_gh(args, stdin=None):
+            if not token:
+                raise RetireError(f"no {REGISTRY_TOKEN_ENV} for an adam-agentskills write")
+            return default_gh(args, stdin, token)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gates", required=True, type=Path)
     parser.add_argument("--registry", action="append", metavar="NAME=PATH")
     parser.add_argument("--allow-mode", action="append", choices=("auto", "proposal"))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--fallback-to-proposal", action="store_true",
+                        help="this caller has no adam-agentskills write credential: a "
+                             "gates file in auto mode files the issue instead of exiting 2")
+    parser.add_argument("--date", metavar="YYYY-MM-DD",
+                        help="the skill-impact entry's date (default: the gates file's "
+                             "as_of date)")
     parser.add_argument("--target", choices=("skill", "guidance"), default="skill",
                         help="act on the skills' verdicts (default) or the guidance "
                              "sections' (#124)")
@@ -1234,6 +1422,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
     try:
         if not args.dry_run:
             check_event(env)
+        if args.date is not None and not DATE_RE.fullmatch(args.date):
+            raise RetireError("--date is not YYYY-MM-DD")
         gates = load_gates(args.gates)
         registries = compute_gates.flag_registries(args.registry)
         allowed = tuple(args.allow_mode or ("proposal",))
@@ -1251,13 +1441,17 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=default_push
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)
         usage = skill_usage.load(args.usage) if args.usage is not None else None
-        action = plan(gates, registries, gh, run_url, allowed, usage)
+        action = plan(gates, registries, gh, run_url, allowed, usage,
+                      fallback=args.fallback_to_proposal, date=args.date)
         if args.dry_run:
             out.write(json.dumps({"dry_run": True, **action,
                                   "would_run": commands(action)},
                                  indent=2, sort_keys=True) + "\n")
             return 0
-        out.write(execute(action, registries, gh, push, env) + "\n")
+        if action.get("mode_reason"):
+            print(f"retire_skill: auto lowered to proposal: {action['mode_reason']}",
+                  file=sys.stderr)
+        out.write(execute(action, registries, gh, push, env, registry_gh) + "\n")
     except (RetireError, ValueError) as exc:
         print(f"retire_skill: {exc}", file=sys.stderr)
         return 2
