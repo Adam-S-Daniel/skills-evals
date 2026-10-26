@@ -85,8 +85,9 @@ evals/
     seed/                  # platform lint configs, the vendored lint-staged.sh, a small Go module
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
-    fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
-    seed/                  # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
+    issue-hygiene/         # quote fencing, publish times, backlinks, title placeholders
+      fixture.yaml         # prompt, objective checks (quote/link/title hygiene), rubric
+      seed/                # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py

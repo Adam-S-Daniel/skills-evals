@@ -286,9 +286,9 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `root-cause` 0.5, `which-copy-the-model-reads` 0.3, `restraint` 0.2.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adam-agentskills`. Class B. No real run yet.
 
-### vendor-release-impact-issues
+### vendor-release-impact-issues/issue-hygiene
 
-- `vendor-release-impact-issues` (registry: `adam-agentskills`) — [evals/vendor-release-impact-issues](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/vendor-release-impact-issues)
+- `vendor-release-impact-issues` (registry: `adam-agentskills`) — [evals/vendor-release-impact-issues/issue-hygiene](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/vendor-release-impact-issues/issue-hygiene)
 - Turn a vendor CLI's release notes (ExampleCLI 4.1.0 to 4.3.0) into drafted GitHub issues for a small repo that consumes it. Five real findings are baked in, mixed with decoys. Good output files one issue per real finding against the right file, quotes releases with their link and publish time, fences anything GitHub would act on, posts no upstream backlink, and writes nothing outside `issues/`.
 - Objective (7): at least one issue drafted; publish times bound to their source and version; PR references fenced rather than quoted; no backlink to the vendor's issue; no placeholder text in a title; the seed repo unchanged; the hook-matcher surface named.
 - Judge: weighted — `correctness` 0.5, `hygiene` 0.3, `restraint` 0.2.
