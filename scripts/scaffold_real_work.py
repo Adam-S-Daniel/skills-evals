@@ -1711,12 +1711,15 @@ def promote(root: Path, promotions: list[tuple[str, int]], as_of: str) -> list[s
 
 def allowance_state(tree: Path, now):
     """The allowance guard's accounting for `now` (scripts/allowance_guard.py):
-    its one network read, the successful fires of the last seven days and of
-    the last PENDING_FULL_HOLD, isolated here so tests pass the state in."""
+    its one network read, the successful fires since the account's weekly
+    reset (`window_start`) and of the last PENDING_FULL_HOLD, isolated here
+    so tests pass the state in."""
     import allowance_guard  # noqa: PLC0415
 
     limits = allowance_guard.budget_file.load_budget(None)
-    return allowance_guard.account(tree, limits, now, allowance_guard._live_fires(now))
+    since = allowance_guard.window_start(now)
+    return allowance_guard.account(tree, limits, now,
+                                   allowance_guard._live_fires(now, since), since=since)
 
 
 def _read_lines(path: Path) -> list[str]:

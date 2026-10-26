@@ -14,8 +14,9 @@ this script is the layer that runs BEFORE any spend:
          `room` itself, at each fire's historical cost, so the weekly sweep
          plans only what fits.
 
-What counts, over the last seven days (rolling, so every allowance week stays
-under the cap wherever the account's own week starts):
+What counts, since the account's last weekly reset (`window_start`, at most
+seven days back; until 2026-10-26 it was a rolling seven days, which charged
+one week's sanctioned push to the next):
 
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
@@ -104,6 +105,10 @@ import improve_outcomes  # noqa: E402
 RUN_ID_RE = re.compile(r"(?P<stamp>[0-9]{8}T[0-9]{6}Z)-[0-9a-f]{6}")
 DEST_ROOT = "routine-results"
 WINDOW = timedelta(days=7)
+#: One weekly reset of the account's allowance (every meter snapshot of the
+#: week ending then read `seven_day.resetsAt` 2026-10-26T17:00:00Z); the
+#: others are whole weeks from it. Update it if the account's reset moves.
+ACCOUNT_WEEK_RESET = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
 #: A fire without results younger than this is held at the full reservation;
 #: an older one failed or never started, and is charged per_run_overrun only.
 #: It was 24 hours until 2026-10-26, when fires whose routine never started
@@ -243,14 +248,17 @@ def improve_charge(tree: Path, limits: dict) -> float:
     return IMPROVE_FIRE_UNITS * eval_fire_cost(tree, limits)
 
 
-def ingested_runs(tree: Path, now: datetime) -> list[Path]:
+def ingested_runs(tree: Path, now: datetime,
+                  since: datetime | None = None) -> list[Path]:
     """The run directories under `<tree>/routine-results/` whose run id's
-    timestamp is in the seven days up to `now` (a later one, from a clock
-    ahead of this one, counts too: the safe direction)."""
+    timestamp is at or after `since` (default: seven days before `now`; a
+    later one, from a clock ahead of this one, counts too: the safe
+    direction)."""
     root = tree / DEST_ROOT
     if not root.is_dir():
         return []
-    since = now - WINDOW
+    if since is None:
+        since = now - WINDOW
     found = []
     for run_dir in sorted(root.iterdir()):
         match = RUN_ID_RE.fullmatch(run_dir.name)
@@ -303,6 +311,21 @@ def _number(value) -> bool:
         and math.isfinite(value)
 
 
+def window_start(now: datetime) -> datetime:
+    """When the window the cap applies to began: the account's last weekly
+    reset at or before `now`.
+
+    Adam's caps are per allowance week (Adam, 2026-10-26: the budget follows
+    "the weekly reset day/time on my account"), so a sanctioned push in one
+    week is not charged to the next. The reset is a fixed instant every seven
+    days, `ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, which is
+    1 PM Eastern in summer time and 12 PM after the clocks change. It is
+    taken from this code, not from the meter snapshots on the bot-written
+    results branch, so a forged `resetsAt` cannot shorten the window."""
+    weeks = (now - ACCOUNT_WEEK_RESET) // WINDOW
+    return ACCOUNT_WEEK_RESET + weeks * WINDOW
+
+
 def pace(runs: list[Path], limits: dict, now: datetime):
     """`(pace_room, utilization, week_elapsed)` from the newest snapshot, or
     `(0.0, None, None)` when there is none usable: the allowance below
@@ -330,11 +353,12 @@ def pace(runs: list[Path], limits: dict, now: datetime):
 
 
 def account(tree: Path, limits: dict, now: datetime,
-            fires: tuple[int, int], improve: tuple[int, int] = (0, 0)) -> dict:
+            fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
+            since: datetime | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
-    account_used, week_elapsed, improve_fires, improve_charge} for the seven
-    days up to `now`, given
-    `fires`, a pair: the successful fires of the last seven days and of the
+    account_used, week_elapsed, improve_fires, improve_charge} for the
+    window from `since` (default `window_start`) up to `now`, given
+    `fires`, a pair: the successful fires of that window and of the
     last `PENDING_FULL_HOLD`. An ingested run is matched to a fire by its run
     id's timestamp (the fire workflow stamps it at fire time), so a run from
     the last `PENDING_FULL_HOLD` frees one recent fire and runs older than
@@ -355,7 +379,9 @@ def account(tree: Path, limits: dict, now: datetime,
     # Improve fires are among the fires; they never produce routine-results.
     fires_7d = max(0, fires_7d - improve_7d)
     fires_24h = max(0, fires_24h - improve_24h)
-    runs = ingested_runs(tree, now)
+    if since is None:
+        since = window_start(now)
+    runs = ingested_runs(tree, now, since)
     reserve = budget_file.run_reservation(limits)
     spent = sum(run_cost(run_dir, limits) for run_dir in runs)
     unresulted = max(0, fires_7d - len(runs))
@@ -457,7 +483,7 @@ def describe(state: dict) -> str:
             f"{state['runs']} ingested run(s), pending {points(state['pending'])} "
             f"points over {max(0, state['fires'] - state['runs'])} fire(s) without "
             f"results ({state['recent']} from the last {hold_hours}h held in full), this run reserves {points(state['reservation'])}, cap "
-            f"{points(state['cap'])} (last 7 days)")
+            f"{points(state['cap'])} (since the account's weekly reset, at most 7 days)")
     if state.get("improve_fires"):
         line += (f"; {state['improve_fires']} improve fire(s) held at "
                  f"{points(state['improve_charge'])} points each")
@@ -477,25 +503,29 @@ def check(state: dict, mode: str = "eval") -> bool:
     return fits(state) >= 1
 
 
-def _live_fires(now: datetime) -> tuple[int, int]:
-    """(successful fires in the last seven days, in the last `PENDING_FULL_HOLD`)."""
+def _live_fires(now: datetime, since: datetime | None = None) -> tuple[int, int]:
+    """(successful fires since `since`, default seven days before `now`; in
+    the last `PENDING_FULL_HOLD`)."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
     api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
-    return (count_successful_fires(repo, now - WINDOW, token, api=api),
+    return (count_successful_fires(repo, since or now - WINDOW, token, api=api),
             count_successful_fires(repo, now - PENDING_FULL_HOLD, token, api=api))
 
 
-def improve_counts(runs: list, now: datetime) -> tuple[int, int]:
-    """(successful improve fires in the last seven days, in the last
-    `PENDING_FULL_HOLD`) among the runs API's rows."""
+def improve_counts(runs: list, now: datetime,
+                   since: datetime | None = None) -> tuple[int, int]:
+    """(successful improve fires since `since`, default seven days before
+    `now`; in the last `PENDING_FULL_HOLD`) among the runs API's rows."""
+    since = since or now - WINDOW
     fires = [f for f in improve_outcomes.improve_fires(runs) if f["conclusion"] == "success"]
-    return (sum(1 for f in fires if f["started"] >= now - WINDOW),
+    return (sum(1 for f in fires if f["started"] >= since),
             sum(1 for f in fires if f["started"] >= now - PENDING_FULL_HOLD))
 
 
-def _live_improve(now: datetime) -> tuple[int, int]:
-    """`improve_counts` of the fire runs of the last seven days."""
+def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
+    """`improve_counts` of the fire runs since `since` (default the last
+    seven days)."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
     api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
@@ -505,7 +535,7 @@ def _live_improve(now: datetime) -> tuple[int, int]:
             get=lambda path, tok, **kw: improve_outcomes.github_get(path, tok, api=api, **kw))
     except improve_outcomes.EvidenceError as exc:
         raise GuardError(str(exc)) from None
-    return improve_counts(runs, now)
+    return improve_counts(runs, now, since)
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
@@ -526,9 +556,11 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     now = now or datetime.now(timezone.utc)
     try:
         limits = budget_file.load_budget(args.budget)
+        since = window_start(now)
         state = account(args.results_tree, limits, now,
-                        (fire_count or _live_fires)(now),
-                        (improve_count or _live_improve)(now))
+                        fire_count(now) if fire_count else _live_fires(now, since),
+                        improve_count(now) if improve_count else _live_improve(now, since),
+                        since)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")

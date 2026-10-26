@@ -856,9 +856,11 @@ def gather(args, now: datetime) -> dict:
         evidence = fetch_evidence(os.environ.get("GH_TOKEN", ""), now)
     records = outcomes_mod.outcomes(evidence["fire_runs"], evidence["improve_branches"], now)
     prs, removal = registry_prs(evidence["registry_prs"])
+    since = guard.window_start(now)
     state = guard.account(args.results_tree, limits, now,
-                          _fire_pair(evidence["fire_runs"], now),
-                          guard.improve_counts(evidence["fire_runs"], now))
+                          _fire_pair(evidence["fire_runs"], now, since),
+                          guard.improve_counts(evidence["fire_runs"], now, since),
+                          since)
     print(guard.describe(state))
     skills = skill_contexts(evals_dir, args.results_tree,
                             compute_gates.parse_as_of(args.as_of), registries,
@@ -878,12 +880,14 @@ def gather(args, now: datetime) -> dict:
             "lessons": read_lessons(args.lessons)}
 
 
-def _fire_pair(runs: list, now: datetime) -> tuple:
-    """(successful fires in the last week, in the guard's hold) from the rows."""
+def _fire_pair(runs: list, now: datetime, since: datetime | None = None) -> tuple:
+    """(successful fires since `since`, default the last week; in the guard's
+    hold) from the rows."""
     times = [outcomes_mod.parse_time(r.get("run_started_at") or r.get("created_at"))
              for r in runs if isinstance(r, dict) and r.get("conclusion") == "success"]
     times = [t for t in times if t is not None]
-    return (sum(1 for t in times if t >= now - guard.WINDOW),
+    since = since or now - guard.WINDOW
+    return (sum(1 for t in times if t >= since),
             sum(1 for t in times if t >= now - guard.PENDING_FULL_HOLD))
 
 
