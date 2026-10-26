@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QRD7XYis8HmjWLtCPBANXw",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QRD7XYis8HmjWLtCPBANXw",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018LayCgcesGhaBNWMpuqFsV",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md; ls docs/decisions; cat scripts/prune-snapshots.sh CHANGELOG.md",
+      "input_chars": 172,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018LayCgcesGhaBNWMpuqFsV",
+      "is_error": false,
+      "output": "b462815 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 3315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Bhv9fPaYZfaSctbJaXvPp2",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-prune-snapshots-older-than-30-days.md; echo ----; cat docs/decisions/0003-store-snapshots-on-a-separate-volume.md; git status --short",
+      "input_chars": 157,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Bhv9fPaYZfaSctbJaXvPp2",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 1768,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YPxmdTC1y6yLuKbuzajsCj",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots, not the last 30 days\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[0002](0002-pru...",
+      "input_chars": 3118,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YPxmdTC1y6yLuKbuzajsCj",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2972,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QTC13W1kpK2G9PXjDkf6Sp",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/prune-snapshots.sh'; s=open(p).read()\ns=s.replace(\"# prune its way down to nothing. See docs/decisions/0004-keep-the-newest-14-snapshots.md.\\n\",\"# prune its way down to no...",
+      "input_chars": 372,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QTC13W1kpK2G9PXjDkf6Sp",
+      "is_error": false,
+      "output": "#!<path> bash\n# prune-snapshots.sh: keep the newest 14 snapshots and delete the rest.\n#\n# Counting snapshots instead of days means a stalled snapshot job can never\n# prune its way down to nothing. See\n# docs/decisions/0004-keep-the-newest-14-snapshots.md.\nset -euo pipefail",
+      "output_chars": 279,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
