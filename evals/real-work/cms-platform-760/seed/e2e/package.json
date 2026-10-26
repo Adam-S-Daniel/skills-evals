@@ -1,0 +1,33 @@
+{
+  "name": "cms-platform-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright e2e harness for cms-platform sites. Self-contained: a consuming site checks the platform out into .cms-platform/ and runs `cd .cms-platform/e2e && npm ci && npx playwright test` against its deployed URLs (passed via CMS_BASE_URL / CMS_PROD_URL / CMS_APEX / CMS_REPO / TARGET env vars). For platform development on a bare checkout (no consuming site), `npm run test:unit` runs just the pure-Node *.test.js unit/lint suite — no webServer, no browsers, no env vars needed.",
+  "scripts": {
+    "test": "playwright test",
+    "test:unit": "playwright test --config=playwright.unit.config.js",
+    "test:regression-video": "playwright test --config=playwright.regression.config.js"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "acorn": "8.18.0",
+    "acorn-walk": "8.3.5",
+    "decap-cms-core": "3.17.1",
+    "decap-server": "^3.11.3",
+    "immutable": "3.8.4",
+    "markdown-it": "15.0.2",
+    "pngjs": "^7.0.0",
+    "postcss": "8.5.28",
+    "serve": "^14.2.6",
+    "yaml": "2.9.1"
+  },
+  "overrides": {
+    "@hapi/joi": "npm:joi@17.13.7",
+    "decap-cms-core": {
+      "immutable": "$immutable",
+      "react": "19.1.0",
+      "react-dom": "19.1.0"
+    }
+  }
+}

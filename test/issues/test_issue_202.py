@@ -472,9 +472,18 @@ class _RosterFixture(unittest.TestCase):
     #: What the published block and every reason name as the source.
     SOURCE = "claude-code-cli 2.1.283"
 
-    @staticmethod
-    def _policy(**overrides):
+    #: The shipped policy since 2026-10-25 retires a superseded arm at once
+    #: (buffer 0) and measures 2-week windows. These tests exercise the
+    #: buffer and the 4/8-week windows, which the machinery keeps, so they
+    #: pin the values the machinery was written against; the shipped values
+    #: are asserted in `TestShippedPolicyFollowsCurrentUse`.
+    MACHINERY_POLICY = {"superseded_exit_weeks": 1, "arm_enter_window_weeks": 4,
+                        "arm_exit_window_weeks": 8}
+
+    @classmethod
+    def _policy(cls, **overrides):
         policy = roster.load_policy(POLICY)
+        policy.update(cls.MACHINERY_POLICY)
         policy.update(overrides)
         return policy
 
@@ -1107,11 +1116,48 @@ class TestNoDocumentStillRecognizesARename(_RosterFixture):
         self.assertIn("which holds the seat", why)
 
 
+class TestShippedPolicyFollowsCurrentUse(_RosterFixture):
+    """The owner's decision of 2026-10-25: a superseded model retires on the
+    first roster run that sees it replaced, whatever the census says, and the
+    enter/exit windows are 2 weeks. Uses the shipped policy unmodified."""
+
+    def _shipped(self):
+        return roster.load_policy(POLICY)
+
+    def test_the_shipped_windows_are_two_weeks_and_exit_is_not_shorter(self):
+        policy = self._shipped()
+        self.assertEqual(policy["arm_enter_window_weeks"], 2)
+        self.assertEqual(policy["arm_exit_window_weeks"], 2)
+        self.assertGreaterEqual(policy["arm_exit_window_weeks"],
+                                policy["arm_enter_window_weeks"])
+        roster.validate_policy(policy)
+
+    def test_a_superseded_arm_retires_whatever_the_census_says(self):
+        policy = self._shipped()
+        self.assertEqual(policy["superseded_exit_weeks"], 0)
+        stale = self._census(generated_at="2026-07-01T06:00:00Z")
+        thin = {"generated_at": "2026-09-22T06:00:00Z", "weeks": [],
+                "counts": {"claude-opus-5": {"2026-W39": 1}}}
+        # The census is fresh and healthy in the third case: opus-5 still
+        # carries the whole tier's usage and is retired anyway.
+        for label, census in (("stale", stale), ("thin", thin),
+                              ("healthy", self._census())):
+            with self.subTest(census=label):
+                result, _ = self._compute(defaults=self.DEFAULTS, census=census,
+                                          policy=policy)
+                self.assertNotIn("claude-opus-5", self._arms(result))
+                self.assertIn("claude-opus-5-5", self._arms(result))
+                why = self._reason(result, "claude-opus-5", "retired_since_last")
+                self.assertIn("superseded by `claude-opus-5-5`", why)
+                self.assertIn("`superseded_exit_weeks` is 0", why)
+
+
 class TestSupersededExitWeeksPolicy(unittest.TestCase):
 
-    def test_the_shipped_policy_sets_one_week(self):
+    def test_the_shipped_policy_sets_no_buffer(self):
+        # 0 since the owner's decision of 2026-10-25.
         policy = roster.load_policy(POLICY)
-        self.assertEqual(policy["superseded_exit_weeks"], 1)
+        self.assertEqual(policy["superseded_exit_weeks"], 0)
         roster.validate_policy(policy)
         self.assertIn("#202", POLICY.read_text(encoding="utf-8"))
 

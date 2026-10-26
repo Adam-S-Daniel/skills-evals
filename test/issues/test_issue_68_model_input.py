@@ -479,7 +479,7 @@ class FireStepModelTests(unittest.TestCase):
     def test_the_summary_names_the_model_only_when_set(self):
         self.fire(MODEL="")
         self.assertNotIn("Model", self.summary.read_text())
-        arm = arm_ids()[2]
+        arm = arm_ids()[-1]
         self.fire(MODEL=arm)
         self.assertIn(f"- Model: `{arm}`", self.summary.read_text())
 

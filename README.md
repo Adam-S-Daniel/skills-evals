@@ -127,7 +127,7 @@ evals/
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence / agents-only probe workspaces
   real-work/               # subject: any, draft: real pull requests replayed (decision Q4)
-    <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196
+    <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196, cms-platform-761, cms-platform-760
       fixture.yaml         # the issue as the prompt, a repo_tests check, interface_strings
       seed/                # the base tree: agent context, subject paths and other specs trimmed
       checker/             # the pull request's own test file, hidden from the agent
@@ -677,7 +677,7 @@ could not make a local check over it safe
 second is subordinate to the first:
 
 1. **Usage seats.** Every available model at or above the entry bar — 10% of
-   rankable, attributable census turns over the trailing 4 weeks — is an arm,
+   rankable, attributable census turns over the trailing enter window (2 weeks) — is an arm,
    with its share in its reason.
 2. **Newest per *qualifying* tier.** In a tier rule 1 already seated somebody
    in, the newest available model past the cooling-off is an arm too,
@@ -729,17 +729,19 @@ another previous arm in it is still seated this run, or there is no usable
 census): the seat goes to the default **at once, with no cooling-off**, and
 rules 1 and 2 do not apply there. The default's own previous seat does not
 keep its tier on the roster: once nothing else does, a seated default gets
-the ordinary exit check (2% over 8 weeks) and can retire — measured on the
+the ordinary exit check (2% over the 2-week exit window) and can retire — measured on the
 TIER's combined share, every model of the default's family in it, not its
 own, so a tier sitting between the 2% exit and 10% entry bars keeps an arm
 while the fleet moves from one version to the next (#203 round 2). A default
 governs the models of its own family word only: a peer family in the same
 rung (`[fable, mythos]`, a different access programme) keeps rules 1 and 2. A
 model the default supersedes earns no seat from its usage; a previous arm it
-supersedes keeps its seat until `superseded_exit_weeks` (1) complete ISO
+supersedes retires on the first roster run that sees it superseded, whatever
+the census says (`superseded_exit_weeks` is 0 since the owner's 2026-10-25
+decision; a positive value would keep its seat until that many complete ISO
 weeks have passed since its successor's `created_at` **and** its share over
 those weeks is under the 2% exit bar, with a stale or too-thin census holding
-it as before — held under its DATED id too (#203 probe round 5, R5-3): a
+it) — a previous arm is recognized under its DATED id too (#203 probe round 5, R5-3): a
 previous arm published under `<base>-YYYYMMDD` is still a previous arm once
 `<base>` appears in the catalogue. A model newer than the default earns no
 new seat; one that is already a previous arm gets the ordinary exit check

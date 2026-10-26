@@ -13,3 +13,7 @@ __pycache__/
 roster/
 usage/
 !/evals/usage/
+
+# A real-work seed's installed gems (seed_prep's bundler `deps:` and CI's
+# "Install real-work fixture gems" step), never committed.
+evals/real-work/*/seed/**/vendor/bundle/

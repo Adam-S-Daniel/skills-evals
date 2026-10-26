@@ -826,7 +826,8 @@ def build(candidates: Path, key: str, clone: Path, spec_path: Path, dest: Path,
 
 def _walk(root: Path):
     for directory, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d != "node_modules"]
+        # Installed dependency trees (CI installs them into the seeds), not content.
+        dirnames[:] = [d for d in dirnames if d not in ("node_modules", "vendor")]
         for name in dirnames + filenames:
             yield Path(directory) / name
 

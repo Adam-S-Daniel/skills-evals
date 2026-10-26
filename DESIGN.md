@@ -396,6 +396,22 @@ The named refusals are `invalid_context`, `duplicate_key`,
 From the owner's answers to the open questions in the real-work fixture
 design, recorded verbatim:
 
+  Ruby entries use `{manager: bundler, dir: <directory holding Gemfile and
+  Gemfile.lock>}`, at most one: setup runs `bundle install --quiet` there,
+  frozen to the committed `Gemfile.lock`, into the reserved `vendor/bundle`
+  beside the Gemfile (a preexisting one fails closed), with bundler's own
+  config and cache in a temporary home. The scorer then runs the checker
+  with `GEM_HOME` at the one `vendor/bundle/ruby/<api>` directory the
+  install made, so a plain `ruby` sees those gems first and Ruby's own
+  bundled gems (minitest, rexml) still load, the way the repository's own CI
+  runs the same spec against globally installed gems; `-rbundler/setup`
+  would hide the bundled gems. The `BUNDLE_*` variables are set too, so
+  `bundle exec` works. The sandbox binds an external Ruby's library symlinks
+  by name and the install prefix the binary was built for (asked of the
+  binary, `_ruby_prefix`), since a relocated Ruby keeps that prefix in
+  RUNPATH and `$LOAD_PATH`. The agent arm does not receive these variables
+  yet: an agent that wants to run such a spec installs or points at the
+  gems itself, as the original author did.
 - **Q1, the 60 s cap:** "Select tests (Recommended)". `command_succeeds`
   keeps its 60 s cap; a fixture runs only the pull request's own selected
   test files or cases.
@@ -1969,8 +1985,8 @@ and a peer family in the same rung keeps rules 1 to 3. A
 superseded model gets no usage seat; a superseded previous arm is retired once
 `superseded_exit_weeks` complete ISO weeks have passed since the default's
 `created_at` and its share over the most recent such weeks is under the exit
-bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
-applies to it). A model newer than the default earns no new seat, and a
+bar (a stale or too-thin census holds it, and the exit-window rule no longer
+applies to it; the shipped buffer has been 0 since 2026-10-25, so it retires at once). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
 sight — held under its dated id too (#203 probe round 5, R5-3): a previous
 arm published under `<base>-YYYYMMDD` is still a previous arm once `<base>`
@@ -2293,7 +2309,7 @@ arm's own workspace. The inventory includes explicit parent directories:
 | `skills-evals-` | [harness/run_eval.py](harness/run_eval.py) guidance arms (`ARM_WORKSPACE_PREFIX`) |
 | `guidance-bridge-canary-` | [harness/run_canary.py](harness/run_canary.py) |
 | `propagation-` | [harness/run_propagation.py](harness/run_propagation.py), including `propagation-selftest-` |
-| `scoring-seed-`, `deps-python-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
+| `scoring-seed-`, `deps-python-`, `deps-bundler-`, `deps-cache-` | [harness/seed_prep.py](harness/seed_prep.py) |
 | `objective-repo-tests-` | [harness/scorers/repo_tests.py](harness/scorers/repo_tests.py) |
 | `objective-command-` | [harness/scorers/commands.py](harness/scorers/commands.py) |
 | `local-eval-guard-` | [scripts/local_eval.py](scripts/local_eval.py) |

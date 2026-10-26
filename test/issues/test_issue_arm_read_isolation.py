@@ -605,7 +605,7 @@ class ReadDenySettingsTests(_TempLayout):
             rules += [f"Read(/{path})", f"Read(/{path}/**)"]
         rules += [f"Read(/{self.tmp}/{prefix}*)" for prefix in (
             "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
-            "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
+            "scoring-seed-", "deps-python-", "deps-bundler-", "deps-cache-", "objective-repo-tests-",
             "objective-command-", "local-eval-guard-", "sink-mutation-",
             "trusted-git-", "scaffold-", "scaffold-context-", "claude-probe-home-",
             "skill-edit-guard-", "propose-skill-edit-", "scoring-guidance-",
@@ -1172,7 +1172,7 @@ class RunAgentReadIsolationTests(_TempLayout):
 class ReviewedTempPrefixTests(_TempLayout):
     PREFIXES = (
         "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
-        "scoring-seed-", "deps-python-", "deps-cache-", "objective-repo-tests-",
+        "scoring-seed-", "deps-python-", "deps-bundler-", "deps-cache-", "objective-repo-tests-",
         "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
         "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
         "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",

@@ -2445,6 +2445,11 @@ class TestIssue97(unittest.TestCase):
     HARNESS_TIMEOUT_SINKS = {
         ("harness/scorers/commands.py", "_sandbox_prefix", "subprocess.run",
          "PROBE_TIMEOUT_S"): (1, (("constant", "PROBE_TIMEOUT_S"),)),
+        # The compiled-prefix probe for a Ruby outside /usr (a relocated
+        # `/opt/ruby-<v>`): one short-lived child, bounded by the same probe
+        # constant as the sandbox probe.
+        ("harness/scorers/commands.py", "_ruby_prefix", "<popen>.communicate",
+         "PROBE_TIMEOUT_S"): (1, (("constant", "PROBE_TIMEOUT_S"),)),
         ("harness/scorers/commands.py", "_stop_process", "<popen>.wait",
          "CLEANUP_TIMEOUT_S"): (1, (("constant", "CLEANUP_TIMEOUT_S"),)),
         ("harness/scorers/commands.py", "_run_command", "<popen>.wait",
@@ -2995,6 +3000,8 @@ class TestIssue97(unittest.TestCase):
     SINK_DRIVERS = {
         ("harness/scorers/commands.py", "_sandbox_prefix"):
             ("const", "PROBE_TIMEOUT_S"),
+        ("harness/scorers/commands.py", "_ruby_prefix"):
+            ("const", "PROBE_TIMEOUT_S"),
         ("harness/scorers/commands.py", "_stop_process"):
             ("const", "CLEANUP_TIMEOUT_S"),
         ("harness/scorers/commands.py", "_run_command"):
@@ -3078,6 +3085,8 @@ class TestIssue97(unittest.TestCase):
                 kwargs["arm"] = {"name": "without_skill", knob: value}
         if name == "_sandbox_prefix":
             return fn(tmp, tmp, {})
+        if name == "_ruby_prefix":
+            return fn(tmp / "ruby", tmp, None)
         if name == "_stop_process":
             # Never signal a real process in this direct-call driver.
             with mock.patch("os.killpg"):

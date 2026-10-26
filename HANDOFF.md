@@ -114,6 +114,10 @@ once it merges, the next roster run proposes `claude-opus-5-5` immediately
 as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
 `claude-opus-5` for a one-week buffer (`superseded_exit_weeks: 1`) before
 proposing its retirement.
+**Amended 2026-10-25 by the owner:** `superseded_exit_weeks` is now 0 (a
+superseded model retires on the first roster run that sees it superseded) and
+the enter/exit windows are 2/2 weeks, so the roster reflects what is in use
+now; `roster-refresh.yml` recomputes it every Monday.
 Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned,
 with the version and models recorded per arm in `summary.json` (`harness`,
 `models_used`, `judge_models_used`) — ADR 0002's update.

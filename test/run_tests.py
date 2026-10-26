@@ -116,9 +116,16 @@ SHIPPED_POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
 #: those tests read POSITIVE_COOLING_OFF_POLICY instead of the shipped file.
 TEST_COOLING_OFF_DAYS = 7
 
+#: Likewise the thresholds the owner changed on 2026-10-25 (4- and 8-week
+#: windows, a 1-week superseded buffer; shipped 2, 2 and 0). The machinery is
+#: kept, so those tests keep reading the values they were written against.
+TEST_POLICY_LINES = {"arm_enter_window_weeks": 4, "arm_exit_window_weeks": 8,
+                     "superseded_exit_weeks": 1}
+
 
 def _write_positive_cooling_off_policy() -> Path:
-    """The shipped policy, byte for byte, but for `cooling_off_days`.
+    """The shipped policy, byte for byte, but for `cooling_off_days` and the
+    `TEST_POLICY_LINES` thresholds.
 
     Derived from the shipped file at import rather than committed as a copy,
     so every other threshold — and every comment a test reads — can never
@@ -132,9 +139,14 @@ def _write_positive_cooling_off_policy() -> Path:
                            "`cooling_off_days:` line to substitute")
     tmp = Path(tempfile.mkdtemp(prefix="roster-policy-"))
     atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    text = pattern.sub(f"cooling_off_days: {TEST_COOLING_OFF_DAYS}", text)
+    for key, value in TEST_POLICY_LINES.items():
+        text, n = re.subn(rf"^{key}: \d+$", f"{key}: {value}", text, flags=re.MULTILINE)
+        if n != 1:
+            raise RuntimeError(f"{SHIPPED_POLICY} does not carry exactly one "
+                               f"`{key}:` line to substitute")
     path = tmp / "roster-policy.yml"
-    path.write_text(pattern.sub(f"cooling_off_days: {TEST_COOLING_OFF_DAYS}", text),
-                    encoding="utf-8")
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -6592,9 +6604,9 @@ class TestIssue67(unittest.TestCase):
         # 0 since the owner's decision of 2026-09-27 (#202).
         self.assertEqual(policy["cooling_off_days"], 0)
         self.assertEqual(policy["arm_enter_usage_pct"], 10)
-        self.assertEqual(policy["arm_enter_window_weeks"], 4)
+        self.assertEqual(policy["arm_enter_window_weeks"], 2)
         self.assertEqual(policy["arm_exit_usage_pct"], 2)
-        self.assertEqual(policy["arm_exit_window_weeks"], 8)
+        self.assertEqual(policy["arm_exit_window_weeks"], 2)
         self.assertEqual(policy["census_max_age_days"], 14)
         self.assertEqual(policy["min_ranked_turns"], 20)
         self.assertEqual(policy["min_ranked_share"], 0.01)
@@ -6950,8 +6962,11 @@ class TestIssue67Review(unittest.TestCase):
                 [self._assistant(v, "2026-09-03T10:00:00Z")
                  for v in self.HOSTILE_MODELS.values()],
                 mtime=self.NOW)
+            # --now pins the window: with the real clock, the 2026-09-03
+            # transcript fell out of the 8-week window on 2026-10-26.
             argv = ["model_usage_census.py", "--projects", str(projects),
-                    "--out", str(out), "--weeks", "8"]
+                    "--out", str(out), "--weeks", "8",
+                    "--now", self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ")]
             stdout, stderr = io.StringIO(), io.StringIO()
             with mock.patch.object(sys, "argv", argv), \
                  contextlib.redirect_stdout(stdout), \
