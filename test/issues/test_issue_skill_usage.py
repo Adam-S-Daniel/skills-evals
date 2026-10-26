@@ -333,7 +333,10 @@ class PublisherTests(unittest.TestCase):
         self.env = {"PATH": os.environ.get("PATH", ""), "HOME": str(self.tmp / "home"),
                     "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
                     "GIT_TERMINAL_PROMPT": "0", "SKILLS_EVALS_URL": self.origin.as_uri(),
-                    "CENSUS_NOW": NOW_TEXT}
+                    "CENSUS_NOW": NOW_TEXT, "USAGE_HOOK_LOGS": "",
+                    "USAGE_EVENTS_URL": (self.tmp / "events.git").as_uri()}
+        self.git("init", "--bare", "--quiet", str(self.tmp / "events.git"))
+        self.git("config", "maintenance.auto", "false", cwd=self.tmp / "events.git")
         self.seed()
         self.projects = self.tmp / "projects"
         write_transcript(self.projects / "-home-example-proj" / "s.jsonl", [

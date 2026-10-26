@@ -32,7 +32,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "test" / "issues"))
 import model_usage_census as census  # noqa: E402
 from test_issue_skill_usage import (  # noqa: E402
-    ALLOW, NOW, NOW_TEXT, skill_call, typed, write_transcript)
+    ALLOW, NOW, NOW_TEXT, PublisherTests, skill_call, typed, write_transcript)
 
 SESSION = "00000000-1111-4222-8333-444444444444"
 
@@ -398,6 +398,224 @@ class HookTests(unittest.TestCase):
             self.assertEqual(census.default_hook_log(), "/x/runs.jsonl")
         with mock.patch.dict(os.environ, {"AGENT_CHECKS_LOG": "", "XDG_STATE_HOME": "/s"}):
             self.assertEqual(census.default_hook_log(), "/s/agent-checks/runs.jsonl")
+
+
+class MergeTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="usage-merge-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.store = self.tmp / "store"
+        self.store.mkdir()
+
+    def write(self, *records):
+        path = self.tmp / "events.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+        return path
+
+    def record(self, event_id, ts, machine="example-host"):
+        return {"v": 1, "id": event_id, "ts": ts, "kind": "skill", "machine": machine}
+
+    def test_records_merge_by_id_into_month_and_machine_files_sorted_by_ts(self):
+        target = self.store / "events" / "2026-09" / "example-host.jsonl"
+        target.parent.mkdir(parents=True)
+        foreign = '{"id": "kept", "ts": "2026-09-02T00:00:00.000Z", "note": "by hand"}'
+        target.write_text(foreign + "\nnot json\n", encoding="utf-8")
+        events = self.write(self.record("b", "2026-09-03T00:00:00.000Z"),
+                            self.record("kept", "2026-09-09T00:00:00.000Z"),
+                            self.record("a", "2026-09-01T00:00:00.000Z"),
+                            self.record("c", "2026-08-31T23:00:00.000Z"),
+                            self.record("d", "2026-09-01T00:00:00.000Z", "other-host"))
+        self.assertEqual(census.merge_events(events, self.store), 4)
+        lines = target.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(lines[0], "not json")          # no ts sorts first, kept
+        self.assertEqual([json.loads(line)["id"] for line in lines[1:]], ["a", "kept", "b"])
+        self.assertIn(foreign, lines)
+        self.assertTrue((self.store / "events" / "2026-08" / "example-host.jsonl").is_file())
+        self.assertTrue((self.store / "events" / "2026-09" / "other-host.jsonl").is_file())
+        before = target.read_bytes()
+        self.assertEqual(census.merge_events(events, self.store), 0)
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_malformed_records_and_escaping_paths_are_refused(self):
+        for bad in (self.record("a", "2026-09-01T00:00:00Z", "../x"),
+                    self.record("a", "yesterday"), {"id": 7, "ts": "2026-09-01",
+                                                    "machine": "h"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                census.merge_events(self.write(bad), self.store)
+        (self.store / "events").mkdir()
+        (self.tmp / "lessons").mkdir()
+        (self.store / "events" / "2026-09").symlink_to(self.tmp / "lessons")
+        with self.assertRaises(ValueError):
+            census.merge_events(self.write(self.record("a", "2026-09-01T00:00:00Z")),
+                                self.store)
+        self.assertEqual(list((self.tmp / "lessons").iterdir()), [])
+
+
+class PrivatePublishTests(unittest.TestCase):
+    """The private half of scripts/publish_usage_census.sh, through the same
+    seams as test_issue_skill_usage's PublisherTests (whose setUp, seed and
+    helpers this borrows), plus USAGE_EVENTS_URL: a local bare repository."""
+
+    SCRIPT, BRANCH = PublisherTests.SCRIPT, PublisherTests.BRANCH
+    EVENTS = "persistent/usage-events"
+    setUp, git, seed, run_script, head = (
+        PublisherTests.setUp, PublisherTests.git, PublisherTests.seed,
+        PublisherTests.run_script, PublisherTests.head)
+
+    def events_url(self):
+        return self.env["USAGE_EVENTS_URL"]
+
+    def events_origin(self):
+        return self.tmp / "events.git"
+
+    def events_head(self):
+        return subprocess.run(["git", "rev-parse", "--verify", "-q", self.EVENTS],
+                              cwd=self.events_origin(), capture_output=True,
+                              text=True).stdout.strip()
+
+    def tree(self):
+        return self.git("ls-tree", "-r", "--name-only", self.EVENTS,
+                        cwd=self.events_origin()).splitlines()
+
+    def records(self):
+        path = f"events/2026-09/{census.machine_name()}.jsonl"
+        text = self.git("show", f"{self.EVENTS}:{path}", cwd=self.events_origin())
+        return [json.loads(line) for line in text.splitlines()]
+
+    def test_a_missing_branch_is_created_with_a_readme_and_the_records(self):
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("published; private events: 2 new of 2, branch created", proc.stdout)
+        self.assertEqual(sorted(self.tree()),
+                         ["README.md", f"events/2026-09/{census.machine_name()}.jsonl"])
+        readme = self.git("show", f"{self.EVENTS}:README.md", cwd=self.events_origin())
+        for phrase in ("Private", "last 8 weeks", "No ruleset"):
+            self.assertIn(phrase, readme)
+        self.assertEqual([r["id"] for r in self.records()], ["toolu_01", "toolu_02"])
+        self.assertEqual(self.git("log", "-1", "--format=%s", self.EVENTS,
+                                  cwd=self.events_origin()), "usage events [skip ci]")
+        printed = proc.stdout + proc.stderr
+        for forbidden in ("toolu_01", "workflow-path-audit", "123456789012",
+                          census.machine_name(), str(self.tmp)):
+            self.assertNotIn(forbidden, printed)
+
+    def test_a_second_run_is_idempotent_and_a_third_adds_only_new_ids(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.events_head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("private events: 0 new of 2", proc.stdout)
+        self.assertEqual(self.events_head(), first)
+        write_transcript(self.projects / "-home-example-proj" / "t.jsonl",
+                         [skill_call("finding-unknowns", "toolu_09",
+                                     when="2026-09-02T10:00:00Z")])
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("private events: 1 new of 3", proc.stdout)
+        self.assertEqual([r["id"] for r in self.records()],
+                         ["toolu_09", "toolu_01", "toolu_02"])
+        self.assertEqual(self.git("rev-list", "--count", self.EVENTS,
+                                  cwd=self.events_origin()), "2")
+
+    def test_a_dry_run_pushes_no_events(self):
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("2 new of 2, dry run", proc.stdout)
+        self.assertEqual(self.events_head(), "")
+
+    def test_a_private_failure_does_not_block_the_public_publish(self):
+        before = self.head()
+        self.env["USAGE_EVENTS_URL"] = (self.tmp / "no-such-repo.git").as_uri()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertNotEqual(self.head(), before)
+        self.assertIn("; published; private events: not published", proc.stdout)
+        self.assertEqual(proc.stderr.strip(),
+                         "usage census: private events not published (reach)")
+
+    def seed_events_branch(self, link=False):
+        seed = self.tmp / "events-seed"
+        self.git("init", "--quiet", "-b", self.EVENTS, str(seed))
+        (seed / "lessons").mkdir()
+        (seed / "lessons" / "note.md").write_text("invented\n", encoding="utf-8")
+        if link:
+            (seed / "events").mkdir()
+            (seed / "events" / "2026-09").symlink_to("../lessons")
+        self.git("add", "-A", cwd=seed)
+        self.git("commit", "--quiet", "-m", "seed", cwd=seed)
+        self.git("push", "--quiet", self.events_url(), self.EVENTS, cwd=seed)
+
+    def assert_refused(self, proc, step, before_events, before_public):
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stderr.strip(),
+                         f"usage census: private events not published ({step})")
+        self.assertEqual(self.events_head(), before_events)
+        self.assertNotEqual(self.head(), before_public)
+
+    def test_an_existing_branch_is_kept_and_lessons_is_never_touched(self):
+        self.seed_events_branch()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("private events: 2 new of 2", proc.stdout)
+        self.assertNotIn("branch created", proc.stdout)
+        self.assertEqual(sorted(self.tree()),
+                         [f"events/2026-09/{census.machine_name()}.jsonl",
+                          "lessons/note.md"])
+
+    def test_a_linked_events_directory_is_refused(self):
+        self.seed_events_branch(link=True)
+        before = self.events_head(), self.head()
+        self.assert_refused(self.run_script(), "merge", *before)
+
+    def test_a_staged_path_outside_events_is_refused(self):
+        """The guard after the merge: a stand-in interpreter that, for the
+        merge step only, also writes under lessons/."""
+        self.seed_events_branch()
+        wrapper = self.tmp / "python-wrapper"
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "${1:-}" = "-" ] && [ -d "${4:-}/.git" ]; then\n'
+            '  echo invented > "$4/lessons/extra.md"\n'
+            "fi\n"
+            f'exec {sys.executable} "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        self.env["PYTHON"] = str(wrapper)
+        before = self.events_head(), self.head()
+        self.assert_refused(self.run_script(), "unexpected staged paths", *before)
+
+    def test_wsl_adds_windows_and_cowork_roots_and_windows_hook_logs(self):
+        users = self.tmp / "users"
+        home = Path(self.env["HOME"])
+        entries = [skill_call("workflow-path-audit", "toolu_a", model="claude-opus-5",
+                              message_id="m_a")]
+        write_transcript(home / ".claude" / "projects" / "p" / "a.jsonl", entries)
+        write_transcript(users / "example" / ".claude" / "projects" / "p" / "a.jsonl",
+                         entries + [skill_call("finding-unknowns", "toolu_b")])
+        cowork = (users / "example" / "AppData" / "Local" / "Claude-Data" / "claude_x" /
+                  "local-agent-mode-sessions" / "s1" / "deep" / ".claude" / "projects")
+        for copy in ("one", "two"):
+            write_transcript(cowork / copy / "c.jsonl",
+                             [skill_call("workflow-path-audit", "toolu_c")])
+        log = users / "example" / ".local" / "state" / "agent-checks" / "runs.jsonl"
+        log.parent.mkdir(parents=True)
+        log.write_text(hook_line() + "\n", encoding="utf-8")
+        env = {k: v for k, v in self.env.items() if k != "USAGE_HOOK_LOGS"}
+        env.update(WSL_DISTRO_NAME="Example", WSL_USERS_DIR=str(users))
+        proc = subprocess.run(["bash", str(self.SCRIPT)], env=env, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("1 models, 1 assistant turns, 3 skill invocations, 1 hook runs",
+                      proc.stdout)
+        # One record per id, whichever root saw it first. The stand-in Windows
+        # root is not under /mnt/<letter>, so it reads as `wsl` here;
+        # MultiRootTests.test_root_kinds covers that rule.
+        roots = {r["id"]: r["root"] for r in self.records()}
+        self.assertEqual(len(self.records()), 4)
+        self.assertEqual({k: v for k, v in roots.items() if k.startswith("toolu")},
+                         {"toolu_a": "wsl", "toolu_b": "wsl", "toolu_c": "cowork"})
+        hooks = [r for r in self.records() if r["kind"] == "hook"]
+        self.assertEqual([r["root"] for r in hooks], ["wsl"])
 
 
 if __name__ == "__main__":

@@ -721,6 +721,70 @@ def build_weekly_document(tally: dict, now: datetime,
                                 None if hooks is None else hooks["runs_scanned"])
 
 
+#: Where the private store keeps records: events/<YYYY-MM>/<machine>.jsonl.
+EVENTS_DIR = "events"
+_MONTH_RE = re.compile(r"[0-9]{4}-[0-9]{2}")
+
+
+def merge_events(events_path, store) -> int:
+    """Add each record of `events_path` (this script's `--events-out`) to
+    `store`/events/<YYYY-MM>/<machine>.jsonl unless its id is already there.
+
+    Existing lines are kept byte for byte, whatever they hold; a file that
+    gains a record is rewritten sorted by `ts` (stable, so equal stamps keep
+    their order). Returns how many records were added. ValueError for a
+    malformed record or a target path that goes through a symbolic link
+    (the store is a clone of a branch, and a committed link could point the
+    write at `lessons/` or outside the clone). PRIVATE:
+    `scripts/publish_usage_census.sh` calls this only on its clone of the
+    private `persistent/usage-events` branch, and prints only the count.
+    """
+    store = Path(store).resolve()
+    groups: dict = {}
+    with open(events_path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            if not (isinstance(event, dict) and isinstance(event.get("id"), str)
+                    and isinstance(event.get("ts"), str)
+                    and isinstance(event.get("machine"), str)
+                    and _MONTH_RE.fullmatch(event["ts"][:7])
+                    and MACHINE_RE.fullmatch(event["machine"])):
+                raise ValueError("an event record is malformed")
+            groups.setdefault((event["ts"][:7], event["machine"]), []).append(event)
+    added = 0
+    for (month, machine), batch in sorted(groups.items()):
+        path = store / EVENTS_DIR / month / f"{machine}.jsonl"
+        if path.resolve() != path:
+            raise ValueError("an event file's path goes through a link")
+        kept, ids = [], set()
+        if path.exists():
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                if not raw.strip():
+                    continue
+                try:
+                    old = json.loads(raw)
+                except ValueError:
+                    old = None
+                old = old if isinstance(old, dict) else {}
+                if isinstance(old.get("id"), str):
+                    ids.add(old["id"])
+                kept.append((old["ts"] if isinstance(old.get("ts"), str) else "", raw))
+        new = []
+        for event in batch:
+            if event["id"] not in ids:
+                ids.add(event["id"])
+                new.append((event["ts"], json.dumps(event, sort_keys=True)))
+        if not new:
+            continue
+        added += len(new)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = sorted(kept + new, key=lambda pair: pair[0])
+        path.write_text("".join(raw + "\n" for _, raw in lines), encoding="utf-8")
+    return added
+
+
 def write_events(path: Path, events: list) -> None:
     """JSON lines, sorted by timestamp (then id). PRIVATE: see the docstring."""
     path.parent.mkdir(parents=True, exist_ok=True)
