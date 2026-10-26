@@ -474,6 +474,132 @@ class BandTests(unittest.TestCase):
         self.assertEqual(plan_week.read_lessons(None), [])
 
 
+CHECKLIST_SKILL = """---
+name: example-checks
+description: Rules: never do x.
+---
+
+# Example checks
+
+Intro line.
+
+## Checklist
+
+### 1. Pipes
+
+```bash
+# not a heading: inside a fence
+cmd | tail
+```
+
+- Never pipe a watch into tail.
+- Always read PIPESTATUS.
+"""
+
+PROSE_SKILL = """---
+name: example-prose
+description: Write things.
+---
+
+# Example prose
+
+Read the room first, then decide.
+
+## How to write
+
+Open with the point.
+Say why it matters.
+Close with the next step.
+
+## Rules
+
+- Keep it short.
+"""
+
+
+class TriggerLaneTests(unittest.TestCase):
+    """Skills that almost never trigger (usage tracking, 2026-10-26): a
+    trigger item when a reviewed trigger set exists, a fixture item to write
+    one when not, and hook candidates in the summary."""
+
+    @staticmethod
+    def triggers(**sets):
+        return {name: {"trigger_set": has, "hook_candidate": name == "rules"}
+                for name, has in sets.items()}
+
+    def test_fresh_near_zero_usage_gets_a_trigger_item_unknown_gets_none(self):
+        triggers = self.triggers(quiet=True, silent=False, rules=False, unknown=True,
+                                 busy=True, retiring=True)
+        weights = {"quiet": 1, "silent": 0, "rules": 0, "unknown": None, "busy": 2,
+                   "retiring": 0}
+        skills = {"few": skill(fixtures=2), "retiring": skill(verdict="retire")}
+        plan = plan_week.build_plan(ctx(skills=skills, triggers=triggers,
+                                        skill_weights=weights,
+                                        cells=[cell("evals/b", "heavy", "missing", empty=2)]),
+                                    NOW)
+        got = [(w["kind"], w["skill"], w["change_type"], w.get("route")) for w in plan["work"]]
+        self.assertEqual(got, [
+            ("needs-trigger-set", "rules", "fixture", "issue"),
+            ("needs-trigger-set", "silent", "fixture", "issue"),
+            ("trigger-optimize", "quiet", "trigger", plan_week.TRIGGER_ROUTE),
+            ("needs-fixtures", "few", "fixture", "issue"),
+            ("fixture-broken", "b", "fixture", "issue")])
+        self.assertEqual(plan["work"][1]["trigger_set"], "evals/silent/trigger-eval-set.json")
+        self.assertTrue(plan["work"][0]["hook_candidate"])
+        self.assertFalse(any(f["mode"] == "improve" and f["skill"] == "quiet"
+                             for f in plan["fires"]))
+        self.assertEqual(plan["hook_candidates"], ["rules"])
+        lines = "\n".join(plan_week.summary_lines(plan))
+        self.assertIn("Hook candidates (mostly checklist or rules sections): rules", lines)
+        self.assertIn("trigger-optimize 1", lines)
+
+    def test_trigger_skills_do_not_move_the_improve_neutral_weight(self):
+        skills = {"a": skill(headroom=0.5), "b": skill(headroom=0.3)}
+        weights = {"a": 2.0, "b": None, "c": 50.0, "d": 60.0}
+        plan = plan_week.build_plan(ctx(skills=skills, room=1.0, improve_charge=0.01,
+                                        skill_weights=weights,
+                                        triggers=self.triggers(c=False, d=False)), NOW)
+        # The neutral weight is the median of a and b's known weights (2), so
+        # b's tie breaks on headroom; c's 50 would have put b first.
+        self.assertEqual([f["skill"] for f in plan["fires"]], ["a", "b"])
+
+    def test_hook_candidate_heuristic(self):
+        self.assertTrue(plan_week.hook_candidate(CHECKLIST_SKILL))
+        self.assertFalse(plan_week.hook_candidate(PROSE_SKILL))
+        self.assertFalse(plan_week.hook_candidate(""))
+        # A fenced line that looks like a heading does not close the section.
+        fenced = "## Rules\n\n```\n# comment\n```\n- a\n- b\n\n## Notes\n\nc\n"
+        self.assertTrue(plan_week.hook_candidate(fenced))
+        # A ruleset is not a rules section.
+        self.assertFalse(plan_week.hook_candidate("## Ruleset\n\n- a\n- b\n"))
+
+    def test_trigger_contexts_read_the_registry_and_the_evals_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            skills = base / "registry" / "plugins" / "p" / "skills"
+            for name, text in (("example-checks", CHECKLIST_SKILL),
+                               ("example-prose", PROSE_SKILL)):
+                (skills / name).mkdir(parents=True)
+                (skills / name / "SKILL.md").write_text(text)
+            (skills / "linked").mkdir()
+            (skills / "linked" / "SKILL.md").symlink_to(skills / "example-prose" / "SKILL.md")
+            evals = base / "evals"
+            (evals / "example-prose").mkdir(parents=True)
+            (evals / "example-prose" / "trigger-eval-set.json").write_text("[]")
+            got = plan_week.trigger_contexts(
+                evals, {"adam-agentskills": {"path": str(base / "registry")}})
+            self.assertEqual(got, {
+                "example-checks": {"trigger_set": False, "hook_candidate": True},
+                "example-prose": {"trigger_set": True, "hook_candidate": False}})
+            self.assertEqual(plan_week.trigger_contexts(evals, {}), {})
+
+    def test_the_trigger_route_is_documented(self):
+        text = (ROOT / "docs" / "how-it-works.md").read_text()
+        self.assertIn("### The trigger lane", text)
+        self.assertIn(plan_week.TRIGGER_ROUTE, text)
+        self.assertIn("--trigger-eval-set evals/<skill>/trigger-eval-set.json", text)
+
+
 class DispatchLegTests(unittest.TestCase):
 
     def test_in_flight_and_waiting(self):

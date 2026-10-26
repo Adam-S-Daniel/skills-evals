@@ -194,6 +194,37 @@ from lesson proposals) are listed in the plan, not fired; each carries a
 `change_type`. The dispatch job fires one leg at a time, waits while three
 fires are in flight, and spaces fires a minute apart; improve fires go last.
 
+### The trigger lane
+
+Usage tracking (2026-10-26) counted about 55 skill calls in eight weeks over
+about 72,000 model turns: most skills almost never trigger, so a skill's
+description is probably the biggest lever. Every adam-agentskills skill whose
+usage weight is fresh and at most one call in four weeks (an unknown weight
+is neutral and gets nothing) becomes a work item, placed just before the
+improve work items:
+
+- **`trigger-optimize`** (change type `trigger`) when
+  `evals/<skill>/trigger-eval-set.json` exists. It is routed
+  **needs routine prompt change**, not fired: improve mode's payload is
+  exactly `run_id`, `mode`, `skill`, `trials` and `holdout`, and the
+  routine's saved prompt (not in this repository) decides the loop's flags.
+  To fire it, Adam would add to the prompt's IMPROVE MODE: "When
+  `evals/<skill>/trigger-eval-set.json` exists in the skills-evals checkout,
+  pass `--trigger-eval-set evals/<skill>/trigger-eval-set.json` to
+  `scripts/propose_skill_edit.py`." That alone makes every improve fire of
+  such a skill use the reviewed set. A trigger-only fire for a skill that is
+  not improve-eligible would also need a payload field from
+  `routine-eval-fire.yml` and a description-only option in
+  `propose_skill_edit.py`; neither exists. Once fired, a trigger fire would
+  be charged and ordered as an improve fire.
+- **`needs-trigger-set`** (change type `fixture`) when there is no set: write
+  one, a JSON list of `{query, should_trigger}` objects.
+
+The plan also lists **hook candidates** (Adam: hooks first): skills whose
+SKILL.md has at least half its non-blank body lines under a heading naming a
+checklist, rules or checks. That heuristic is cheap and misses rules written
+as prose.
+
 ### Skill retirement (#70)
 
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs

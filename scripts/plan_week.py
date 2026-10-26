@@ -93,7 +93,20 @@ of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
 Every item carries `change_type`: `skill-edit` for an improve fire,
-`fixture`, or `agent-check`.
+`fixture`, `agent-check`, or `trigger`.
+
+THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
+weeks over about 72,000 model turns, so most skills almost never trigger).
+Every adam-agentskills skill whose usage weight is fresh (known) and at most
+`TRIGGER_MAX_WEIGHT` gets a work item: `trigger-optimize` (change type
+`trigger`) when it has a reviewed evals/<skill>/trigger-eval-set.json, or
+`needs-trigger-set` (change type `fixture`) to write one. Neither is a
+fire: improve mode's payload cannot ask for description optimization with
+that set, so a trigger item is routed "needs routine prompt change"
+(docs/how-it-works.md, "The trigger lane"). Trigger items sit just before
+the improve work items. Skills whose SKILL.md is mostly checklist or rules
+sections (`hook_candidate`) are listed as `hook_candidates` and in the
+summary, since a git hook may serve them better.
 
 OUTPUT. `--out` gets the whole plan as JSON; $GITHUB_OUTPUT gets `matrix=`
 (the fires, improve fires last so a long improve run never holds up the
@@ -155,6 +168,18 @@ EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
 LESSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+#: The trigger lane: a skill whose fresh usage weight (invocations over
+#: skill_usage.weight's four weeks) is at most this rarely triggers at all.
+TRIGGER_MAX_WEIGHT = 1
+TRIGGER_SET = "trigger-eval-set.json"
+#: What the routine would need before a trigger item can be fired (see
+#: docs/how-it-works.md, "The trigger lane").
+TRIGGER_ROUTE = "needs routine prompt change"
+#: A hook candidate: at least this share of its SKILL.md body's non-blank
+#: lines sits under a heading naming a checklist, rules or checks.
+HOOK_RULE_SHARE = 0.5
+HOOK_HEADING_RE = re.compile(r"\b(?:checklist|rules|checks)\b", re.IGNORECASE)
+MARKDOWN_HEADING_RE = re.compile(r"(#{1,6})\s+(.*)")
 STAMP = "%Y%m%dT%H%M%SZ"
 
 
@@ -356,8 +381,8 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     """(improve fires, work items, per-skill status). Improve fires and
     needs-fixtures items are ordered by skill usage weight, heaviest first
     (`neutral_weights` of ctx["skill_weights"]), then train headroom."""
-    weights = neutral_weights(ctx.get("skill_weights")
-                              or {name: None for name in ctx["skills"]})
+    raw = ctx.get("skill_weights") or {}
+    weights = neutral_weights({name: raw.get(name) for name in ctx["skills"]})
     fires, work, status = [], [], {}
     for name, skill in sorted(ctx["skills"].items()):
         evidence = skill["evidence"]
@@ -388,6 +413,66 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "order": (-weights.get(name, 1.0), -headroom)})
     work.sort(key=lambda w: (-weights.get(w["skill"], 1.0), -(w["headroom"] or 0.0), w["skill"]))
     return fires, work, status
+
+
+def hook_candidate(text: str) -> bool:
+    """Whether a SKILL.md is mostly mechanical rules, so a git hook may
+    serve better than a skill (Adam, 2026-10-26: hooks first). A cheap
+    heuristic: at least HOOK_RULE_SHARE of the body's non-blank lines
+    (frontmatter left out, fenced code counted) sit under a heading whose
+    text has the word checklist, rules or checks, down to the next heading
+    of the same or a higher level."""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        ends = [i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"]
+        lines = lines[ends[0] + 1:] if ends else lines
+    total = under = 0
+    fence, level = False, None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("```", "~~~")):
+            fence = not fence
+        heading = None if fence else MARKDOWN_HEADING_RE.fullmatch(stripped)
+        if heading:
+            depth = len(heading.group(1))
+            if level is not None and depth <= level:
+                level = None
+            if level is None and HOOK_HEADING_RE.search(heading.group(2)):
+                level = depth
+            continue
+        if stripped:
+            total += 1
+            under += level is not None
+    return bool(total) and under / total >= HOOK_RULE_SHARE
+
+
+def trigger_items(ctx: dict) -> tuple:
+    """(work items, hook candidates) for the trigger lane. A skill of
+    ctx["triggers"] (every adam-agentskills skill) whose usage weight is
+    known, so fresh, and at most TRIGGER_MAX_WEIGHT gets a `trigger` item
+    when evals/<skill>/trigger-eval-set.json exists, routed TRIGGER_ROUTE
+    because no fire can ask for description optimization yet, or else a
+    `fixture` item to write that set. An unknown weight is neutral: no
+    item. A skill owned by retirement gets none. Least used first."""
+    weights = ctx.get("skill_weights") or {}
+    work = []
+    for name, info in sorted(ctx.get("triggers", {}).items()):
+        weight = weights.get(name)
+        if weight is None or weight > TRIGGER_MAX_WEIGHT \
+                or ctx["skills"].get(name, {}).get("verdict") in ("retire", "retire-pending"):
+            continue
+        path = f"evals/{name}/{TRIGGER_SET}"
+        if info["trigger_set"]:
+            item = {"kind": "trigger-optimize", "change_type": "trigger",
+                    "route": TRIGGER_ROUTE}
+        else:
+            item = {"kind": "needs-trigger-set", "change_type": "fixture", "route": "issue"}
+        work.append({**item, "skill": name, "weight": weight, "trigger_set": path,
+                     "hook_candidate": info["hook_candidate"]})
+    work.sort(key=lambda w: (w["weight"], w["skill"]))
+    hooks = sorted(name for name, info in ctx.get("triggers", {}).items()
+                   if info["hook_candidate"])
+    return work, hooks
 
 
 def lesson_items(lessons: list) -> list:
@@ -447,6 +532,7 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure."""
     bands, work = eval_items(ctx, now)
     improve, needs, status = improve_items(ctx, now)
+    triggers, hooks = trigger_items(ctx)
     bands["improve"].extend(improve)
     chosen = allocate(bands, ctx["room"], max_fires)
     # Improve fires last: a long improve run in flight never holds up evals.
@@ -460,8 +546,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
             "points_per_usd": ctx.get("points_per_usd"), "fires": fires,
             "unplanned": {band: len(items) for band, items in bands.items()},
-            "work": lesson_items(ctx.get("lessons", [])) + needs + work,
-            "skills": status,
+            # Hook items first, trigger items just before improve's.
+            "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
+            "skills": status, "hook_candidates": hooks,
             # An eval leg sends no skill: the fire workflow refuses one.
             "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "fixture",
                                                          "eval_key", "model", "holdout")},
@@ -732,6 +819,28 @@ def skill_weights(tree: Path, skills: list, now: datetime) -> dict:
     return out
 
 
+def trigger_contexts(evals_dir: Path, registries: dict) -> dict:
+    """{skill: {"trigger_set", "hook_candidate"}} for every skill of the
+    adam-agentskills checkout (`plugins/*/skills/<skill>/SKILL.md`, the one
+    registry the routine improves); {} without one."""
+    entry = registries.get("adam-agentskills")
+    if not entry:
+        return {}
+    out = {}
+    for path in sorted(Path(entry["path"]).glob("plugins/*/skills/*/SKILL.md")):
+        name = path.parent.name
+        if not outcomes_mod.SKILL_RE.fullmatch(name) or path.is_symlink():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        found = evals_dir / name / TRIGGER_SET
+        out[name] = {"trigger_set": found.is_file() and not found.is_symlink(),
+                     "hook_candidate": hook_candidate(text)}
+    return out
+
+
 def gather(args, now: datetime) -> dict:
     import compute_gates
     evals_dir = args.evals_dir
@@ -754,6 +863,7 @@ def gather(args, now: datetime) -> dict:
     skills = skill_contexts(evals_dir, args.results_tree,
                             compute_gates.parse_as_of(args.as_of), registries,
                             gates_doc, records, prs, evidence["on_hold"], now)
+    triggers = trigger_contexts(evals_dir, registries)
     return {"policy": gates_doc["policy"], "reservation": state["reservation"],
             "overrun": limits["per_run_overrun"], "improve_charge": state["improve_charge"],
             "room": guard.room(state),
@@ -762,7 +872,9 @@ def gather(args, now: datetime) -> dict:
             "removal_prs": removal,
             "cells": eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now),
             "skills": skills,
-            "skill_weights": skill_weights(args.results_tree, sorted(skills), now),
+            "triggers": triggers,
+            "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
+                                           now),
             "lessons": read_lessons(args.lessons)}
 
 
@@ -791,6 +903,8 @@ def summary_lines(plan: dict) -> list:
                                    or "none"))
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
+    lines.append("Hook candidates (mostly checklist or rules sections): "
+                 + (", ".join(plan.get("hook_candidates", [])) or "none"))
     return lines
 
 
