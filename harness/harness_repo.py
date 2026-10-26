@@ -6,7 +6,8 @@ shared git directory and its main work tree. Every git call here reads that
 trusted checkout or discovers context metadata to fence from an arm; none
 ever runs on an agent workspace, which goes through
 `workspace_git` instead. Hardened like `context.py`: a fixed git binary, no
-hooks, no system or global configuration, no replace refs, and no ambient
+hooks, no fsmonitor, untracked cache or attributes file, no system or global configuration,
+no replace refs, and no ambient
 `GIT_*` variable (a `GIT_DIR` would point the reads elsewhere).
 """
 from __future__ import annotations
@@ -17,6 +18,28 @@ from pathlib import Path
 
 GIT = "/usr/bin/git"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
+
+
+#: The one log read: every file added under routine-results/, with its
+#: commit's id, committer time and committer email and, from `--raw
+#: --no-abbrev`, its mode and full blob id. Only the first-parent chain is
+#: walked, in topological (parent) order, oldest first, never by date, and a
+#: merge is diffed against its first parent: a side branch merged in with a
+#: backdated committer date can never come first (#70, round 6). No diff
+#: driver, text conversion or signature check runs.
+INGEST_LOG = ("log", "--first-parent", "--topo-order", "--diff-merges=first-parent",
+              "--no-renames", "--no-ext-diff", "--no-textconv",
+              "--no-show-signature", "--diff-filter=A", "--reverse",
+              "--format=%x01%H %cI %ce", "--raw", "--no-abbrev", "-z", "--",
+              "routine-results/")
+#: Whether a results checkout is shallow: its log would then not reach the
+#: commit that first added a run.
+IS_SHALLOW = ("rev-parse", "--is-shallow-repository")
+_SHA = frozenset("0123456789abcdef")
+
+
+def _is_sha(value: str) -> bool:
+    return len(value) in (40, 64) and set(value) <= _SHA
 
 
 class HarnessGitReadError(ValueError):
@@ -39,11 +62,43 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
          "--get-regexp", r"^include(if\..*)?\.path$"),
         ("config", "--local", "--includes", "--get", "core.worktree"),
         ("rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"),
-    ):
+        # run_eval.fixture_digest (#70): a fixture directory's tracked entries
+        # and its untracked files, and the whole repository's entries for a
+        # symlink's target. Never `ls-files -m`, which runs clean filters.
+        ("ls-files", "-s", "-z", "--", "."),
+        ("ls-files", "-o", "--exclude-standard", "-z", "--", "."),
+        ("ls-files", "-s", "-z", "--", ":/"),
+        # scripts/routine_ingest_times.py (#70): when each routine-results
+        # file was first added to a results checkout, oldest first, and
+        # whether that checkout is shallow.
+        INGEST_LOG, IS_SHALLOW,
+        # scripts/compute_gates.py (#70): whether a fire's commit is on
+        # main, `merge-base --is-ancestor <sha> <sha>` with two full ids.
+    ) and not (len(args) == 4 and args[:2] == ("merge-base", "--is-ancestor")
+               and _is_sha(args[2]) and _is_sha(args[3])):
         raise HarnessGitReadError("harness metadata permits only audited Git reads")
-    return subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", str(cwd),
-                           *args], env=_env(), stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True)
+    # No hook, no index helper and no attributes file: a checkout's own
+    # core.fsmonitor, untracked cache or core.attributesFile would run or
+    # trust code from that checkout. Output is UTF-8 with surrogate escapes,
+    # never the locale's encoding.
+    return subprocess.run([GIT, "-c", "core.hooksPath=/dev/null",
+                           "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+                           "-c", "core.attributesFile=/dev/null",
+                           "-C", str(cwd), *args], env=_env(), stdin=subprocess.DEVNULL,
+                          capture_output=True, encoding="utf-8", errors="surrogateescape")
+
+
+def is_ancestor(commit: str, descendant: str, cwd: Path) -> bool | None:
+    """Whether `commit` is an ancestor of (or is) `descendant`, both full
+    object ids, in `cwd`'s repository; None when git cannot say (an unknown
+    object, no repository)."""
+    if not (_is_sha(commit) and _is_sha(descendant)):
+        return None
+    try:
+        result = _git("merge-base", "--is-ancestor", commit, descendant, cwd=cwd)
+    except OSError:
+        return None
+    return {0: True, 1: False}.get(result.returncode)
 
 
 def _git_out(*args: str, cwd: Path) -> str | None:

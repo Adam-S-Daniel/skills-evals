@@ -192,14 +192,44 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
     def test_harness_metadata_git_refuses_write_and_unreviewed_read_shapes(self):
         from unittest import mock
         import harness_repo
+        sha = 'a' * 40
         for args in (('config', 'core.worktree', '/tmp/other'),
-                     ('fetch', 'origin'), ('rev-parse', '--show-toplevel')):
+                     ('fetch', 'origin'), ('rev-parse', '--show-toplevel'),
+                     # #70: merge-base only as --is-ancestor of two full ids.
+                     ('merge-base', '--is-ancestor', 'HEAD', sha),
+                     ('merge-base', '--is-ancestor', sha, 'main'),
+                     ('merge-base', '--is-ancestor', sha[:39], sha),
+                     ('merge-base', '--is-ancestor', 'A' * 40, sha),
+                     ('merge-base', '--is-ancestor', '--', sha, sha),
+                     ('merge-base', sha, sha), ('merge-base', '--all', sha, sha)):
             for reader in (harness_repo._git, harness_repo._git_out):
                 with self.subTest(args=args, reader=reader.__name__), \
                         mock.patch.object(harness_repo.subprocess, 'run') as spawn:
                     with self.assertRaisesRegex(harness_repo.HarnessGitReadError, 'audited'):
                         reader(*args, cwd=self.repo)
                     spawn.assert_not_called()
+
+    def test_is_ancestor_answers_only_for_two_full_object_ids(self):
+        import harness_repo
+        env = {**os.environ, 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.com']
+        shas = []
+        for n in ('one', 'two'):
+            subprocess.run(git + ['commit', '-q', '--allow-empty', '-m', n], cwd=self.repo,
+                           check=True, env=env)
+            shas.append(subprocess.run(git + ['rev-parse', 'HEAD'], cwd=self.repo, check=True,
+                                       capture_output=True, text=True).stdout.strip())
+        one, two = shas
+        self.assertIs(harness_repo.is_ancestor(one, two, self.repo), True)
+        self.assertIs(harness_repo.is_ancestor(two, two, self.repo), True)
+        self.assertIs(harness_repo.is_ancestor(two, one, self.repo), False)
+        # An unknown object, a short or symbolic name, or no repository.
+        self.assertIsNone(harness_repo.is_ancestor('1' * 40, two, self.repo))
+        self.assertIsNone(harness_repo.is_ancestor(one[:12], two, self.repo))
+        self.assertIsNone(harness_repo.is_ancestor(one, 'HEAD', self.repo))
+        nowhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, nowhere)
+        self.assertIsNone(harness_repo.is_ancestor(one, two, nowhere))
 
     def test_context_git_object_view_refuses_write_and_unreviewed_read_shapes(self):
         from unittest import mock
@@ -502,9 +532,12 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                          and isinstance(node.func.value, ast.Name)
                          and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
                 self.assertEqual(len(sinks), 1)
-                expected = ast.parse('subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", "-C", '
-                                     'str(cwd), *args], env=_env(), stdin=subprocess.DEVNULL, '
-                                     'capture_output=True, text=True)', mode='eval').body
+                expected = ast.parse('subprocess.run([GIT, "-c", "core.hooksPath=/dev/null", '
+                                     '"-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", '
+                                     '"-c", "core.attributesFile=/dev/null", '
+                                     '"-C", str(cwd), *args], env=_env(), stdin=subprocess.DEVNULL, '
+                                     'capture_output=True, encoding="utf-8", errors="surrogateescape")',
+                                     mode='eval').body
                 self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
                 allowed_reads.add(id(sinks[0]))
             bindings = {}
@@ -591,12 +624,23 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             # ADR 0012 fences both linked-worktree and shared context metadata.
             ('run_eval.py', 'used_paths',
              ('rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'), ('cwd',)),
+            # #70: a fixture directory's tracked and untracked entries, and
+            # the checkout's, for its digest.
+            ('run_eval.py', 'fixture_digest', ('ls-files', '-s', '-z', '--', '.'), ('cwd',)),
+            ('run_eval.py', 'fixture_digest',
+             ('ls-files', '-o', '--exclude-standard', '-z', '--', '.'), ('cwd',)),
+            ('run_eval.py', '_tracked_blobs', ('ls-files', '-s', '-z', '--', ':/'), ('cwd',)),
         ])
         self.assertCountEqual(direct_calls, [
             ('_git_out', (ast.dump(ast.parse('_git(*args)', mode='eval').body.args[0]),), ('cwd',)),
             ('harness_clone_root', tuple(ast.dump(ast.Constant(value=value)) for value in
                                        ('config', '-z', '--local', '--includes', '--show-origin',
                                         '--get-regexp', r'^include(if\..*)?\.path$')), ('cwd',)),
+            # #70: compute_gates asks whether a fire's commit is on main.
+            ('is_ancestor', (ast.dump(ast.Constant(value='merge-base')),
+                             ast.dump(ast.Constant(value='--is-ancestor')),
+                             ast.dump(ast.Name(id='commit', ctx=ast.Load())),
+                             ast.dump(ast.Name(id='descendant', ctx=ast.Load()))), ('cwd',)),
         ])
 
     def test_skill_arm_records_named_error_and_skips_judge(self):

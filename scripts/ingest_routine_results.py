@@ -19,23 +19,41 @@ What a branch must look like to be ingested:
   * every added path has one of the shapes the harness writes
     (`parse_result_path`): `<key>/<timestamp>/report.md`,
     `<key>/<timestamp>/[<fixture>/]<arm>[/trial-<k>]/summary.json` and the
-    same arm directory's `transcripts/tool_trace.json`. Anything else,
-    `raw.json` included, rejects the whole branch;
+    same arm directory's `transcripts/tool_trace.json`, and, at the run id
+    directory's top, `vouch.json` holding exactly {"mac": <64 hex>}
+    (scripts/write_vouch.py). Anything else, `raw.json` included, rejects
+    the whole branch;
   * every file is under its size cap, valid UTF-8 with no control
     characters, and passes its schema (`check_summary`, `check_tool_trace`,
     `check_report`).
 
+  * its `vouch.json` MAC VERIFIES (#70, round 5): with VOUCH_KEY (the
+    repository secret, given to this one step and read from the
+    environment, never argv), the nonce is re-derived for the branch's run
+    id (`write_vouch.derive_nonce`) and the MAC recomputed over exactly the
+    files to be staged (`write_vouch.mac`), compared in constant time. No
+    VOUCH_KEY, no vouch.json, or another MAC rejects the branch. The nonce
+    went only to the routine, so a forged or rewritten branch, even one that
+    raced the routine's push, cannot carry a MAC that verifies. This check
+    is last, after every shape and schema check, and before anything is
+    staged.
+
 A rejected branch stages nothing. An accepted one is written to
 `<out>/routine-results/<run id>/<path below the run id>`, a deterministic
 path the `place` subcommand then copies onto a `persistent/eval-results`
-checkout, refusing to overwrite a file that differs.
+checkout. Ingestion is WRITE-ONCE per run id (#70, round 4): a run id whose
+directory is already there is refused unless the branch holds exactly the
+files already ingested, byte for byte (a re-run of the same ingest, which
+changes nothing). Adding files to an ingested run would let a later push
+change what the run says. Only a branch whose MAC verified reaches `place`,
+so a forged push claims no run id (round 5, N2).
 
 Subcommands (all output is `key=value` lines of already-validated values,
 for $GITHUB_OUTPUT):
 
   resolve  --event-name NAME --event-path PATH
   validate --repo DIR --base REF --source REF --branch NAME
-           [--expect-sha SHA] --out DIR
+           [--expect-sha SHA | --at-sha SHA] --out DIR   (VOUCH_KEY in env)
   place    --staged DIR --tree DIR
 """
 
@@ -43,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hmac
 import json
 import math
 import os
@@ -51,6 +70,10 @@ import subprocess
 from fractions import Fraction
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import write_vouch  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Names and shapes.
@@ -98,6 +121,10 @@ KEEP_LONG_TERM = frozenset({"summary.json", "report.md"})
 SIZE_CAPS = {"summary.json": 64 * 1024, "tool_trace.json": 192 * 1024,
              "report.md": 64 * 1024}
 MAX_FILES = 256
+#: A routine run's proof that it is the run its fire started (#70).
+VOUCH_FILE = "vouch.json"
+VOUCH_CAP = 256
+MAC_RE = re.compile(r"[0-9a-f]{64}")
 MAX_TOTAL_BYTES = 4 * 1024 * 1024
 
 #: Bounds for a free-form JSON value (agent usage, aggregates, guidance
@@ -295,7 +322,7 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "installed", "decoy", "hook_returncode", "guard",
     "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
                                       "context_subject", "arm_context") + ("run", "usage") + (
-    "judge_selection",)
+    "judge_selection", "fixture_digest", "judge_conditional")
 #: A summary's `judge_selection` (#371): which model judges the arm, and the
 #: rule that chose it. Null when the run selected no judge.
 JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
@@ -465,6 +492,10 @@ SUBJECT_KEYS = {
 }
 ARM_CONTEXT_KEYS = ("skills", "skills_digest", "guidance_bytes",
                     "guidance_digest", "subject_present")
+#: Optional in arm_context (#70, round 5): the digest of the arm's skills
+#: other than the subject, which compute_gates pairs the two arms by. Older
+#: summaries lack it; their cells cannot be paired.
+ARM_CONTEXT_OPTIONAL = ("others_digest",)
 
 
 def _pattern(value, where, pattern, *, null=False):
@@ -584,7 +615,10 @@ def check_in_place(doc, where: str, parts: dict) -> None:
             raise Rejected(f"{where}: context_subject extent is inconsistent")
 
     arm = doc["arm_context"]
-    _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS, ARM_CONTEXT_KEYS)
+    _object(arm, f"{where}: arm_context", ARM_CONTEXT_KEYS + ARM_CONTEXT_OPTIONAL,
+            ARM_CONTEXT_KEYS)
+    if "others_digest" in arm:
+        _pattern(arm["others_digest"], f"{where}: others digest", DIGEST_RE)
     _integer(arm["skills"], f"{where}: arm_context.skills", 0, 4096)
     if doc["arm"] == "with_skill" and doc["role"] == "with" \
             and arm["skills"] == 0:
@@ -1057,6 +1091,10 @@ def check_summary(doc, where: str, parts: dict) -> None:
         raise Rejected(f"{where}: a skipped judge beside a judge model or a "
                        "judge call")
 
+    if "fixture_digest" in doc:
+        _pattern(doc["fixture_digest"], f"{where}: fixture_digest", DIGEST_RE)
+    if "judge_conditional" in doc and not isinstance(doc["judge_conditional"], bool):
+        raise Rejected(f"{where}: judge_conditional must be true or false")
     for field in ("errors", "scored"):
         if field in doc:
             _integer(doc[field], f"{where}: {field}", 0, MAX_TRIALS)
@@ -1202,7 +1240,11 @@ def added_files(repo: str, base: str, tip: str,
 # Subcommands.
 
 def validate(repo: str, base: str, source: str, branch: str,
-             expect_sha: str | None, out: Path) -> dict:
+             expect_sha: str | None, out: Path, vouch_key: bytes | None = None,
+             at_sha: str | None = None) -> dict:
+    """Validate `source` (or, with `at_sha`, that commit, which must be on
+    it) and stage its results under `out` (module docstring). `vouch_key`
+    is VOUCH_KEY's bytes; None rejects every branch."""
     match = BRANCH_RE.fullmatch(branch)
     if not match:
         raise Rejected("branch name is not claude/eval-<run id>")
@@ -1214,6 +1256,15 @@ def validate(repo: str, base: str, source: str, branch: str,
         if tip != expect_sha:
             raise Rejected("the branch moved since the push that triggered "
                            "this run; that newer push triggers its own ingest")
+    if at_sha is not None:
+        # A dispatch re-ingest names the commit to ingest (round 5): one the
+        # routine pushed before a later push moved the branch on.
+        if not SHA_RE.fullmatch(at_sha):
+            raise Rejected("the sha to ingest is not a 40-hex commit id")
+        if subprocess.run(["git", "-C", repo, "merge-base", "--is-ancestor", at_sha, tip],
+                          capture_output=True, check=False).returncode != 0:
+            raise Rejected("the sha to ingest is not on the branch")
+        tip = resolve_commit(repo, at_sha)
     base_sha = resolve_commit(repo, base)
     merge_base = git(repo, "merge-base", base_sha, tip).decode().strip()
     if not SHA_RE.fullmatch(merge_base):
@@ -1226,12 +1277,24 @@ def validate(repo: str, base: str, source: str, branch: str,
         raise Rejected(f"the branch adds more than {MAX_FILES} files")
     prefix = f"{LEGACY_ROOTS.get((run_id, tip), SOURCE_ROOT)}/{run_id}/"
 
-    staged, total = [], 0
+    staged, total, vouch = [], 0, None
     for name, _, oid in files:
         if not name.startswith(prefix):
             raise Rejected(f"{name!r}: not under {prefix!r}")
         rel = name[len(prefix):]
         where = repr(name)
+        if rel == VOUCH_FILE:
+            size = int(git(repo, "cat-file", "-s", oid).decode().strip())
+            if size > VOUCH_CAP:
+                raise Rejected(f"{where}: {size} bytes is over the {VOUCH_FILE} cap")
+            data = git(repo, "cat-file", "blob", oid)
+            doc = load_json(decode_text(data, where), where)
+            if not isinstance(doc, dict) or set(doc) != {"mac"} \
+                    or not isinstance(doc["mac"], str) or not MAC_RE.fullmatch(doc["mac"]):
+                raise Rejected(f"{where}: must be exactly {{\"mac\": <64 hex>}}")
+            total += size
+            vouch = (rel, data, doc["mac"])
+            continue
         parts = parse_result_path(rel)
         kind = parts["kind"]
         size = int(git(repo, "cat-file", "-s", oid).decode().strip())
@@ -1255,6 +1318,18 @@ def validate(repo: str, base: str, source: str, branch: str,
     if not any(rel.endswith("summary.json") for rel, _ in staged) \
             and "summary.json" in KEEP_LONG_TERM:
         raise Rejected("the branch carries no summary.json")
+    # Last, before anything is staged: the MAC over exactly what is staged.
+    if not vouch_key:
+        raise Rejected("VOUCH_KEY is not set, so no branch can be verified; "
+                       "nothing is ingested")
+    if vouch is None:
+        raise Rejected(f"the branch carries no {VOUCH_FILE}; nothing is ingested")
+    nonce = write_vouch.derive_nonce(vouch_key, run_id)
+    if not hmac.compare_digest(write_vouch.mac(nonce, dict(staged)), vouch[2]):
+        raise Rejected(f"{VOUCH_FILE}'s MAC does not match the results; nothing is ingested")
+    # Staged re-serialized, so compute_gates reads one exact shape whatever
+    # spacing the routine wrote (round 6, R6-4).
+    staged.append((vouch[0], (json.dumps({"mac": vouch[2]}) + "\n").encode("ascii")))
 
     dest = out / DEST_ROOT / run_id
     if out.exists() and any(out.iterdir()):
@@ -1267,11 +1342,27 @@ def validate(repo: str, base: str, source: str, branch: str,
 
 
 def place(staged: Path, tree: Path) -> dict:
-    """Copy every staged file onto `tree`. A file already there with the
-    same bytes is left alone; one with different bytes is a conflict and
-    nothing is written. No path component in `tree` may be a symlink."""
+    """Copy every staged file onto `tree`, write-once per run id (module
+    docstring): a run id directory already in `tree` is refused unless it
+    holds exactly the staged files with the same bytes, which changes
+    nothing. No path component in `tree` may be a symlink."""
     plan = []
     tree_root = tree.resolve()
+    staged_runs = staged / DEST_ROOT
+    for run in sorted(staged_runs.iterdir()) if staged_runs.is_dir() else []:
+        existing = tree / DEST_ROOT / run.name
+        if existing.is_symlink():
+            raise Rejected(f"{run.name!r}: the destination path has a symlink")
+        if existing.exists():
+            def files(root):
+                return {p.relative_to(root): p for p in root.rglob("*")
+                        if p.is_file() or p.is_symlink()}
+            ours, theirs = files(run), files(existing)
+            if set(ours) != set(theirs) or any(
+                    theirs[k].is_symlink() or theirs[k].read_bytes() != ours[k].read_bytes()
+                    for k in ours):
+                raise Rejected(f"run {run.name!r} is already ingested; ingestion is "
+                               "write-once per run id")
     for path in sorted(p for p in staged.rglob("*") if p.is_file()):
         if path.is_symlink():
             raise Rejected("staged file is a symlink")
@@ -1321,12 +1412,19 @@ def resolve(event_name: str, event_path: str, branch_re: re.Pattern = BRANCH_RE,
         if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
             raise Rejected("the triggering push has no valid head sha")
     elif event_name == "workflow_dispatch":
-        branch, sha = (event.get("inputs") or {}).get("branch"), ""
+        inputs = event.get("inputs") or {}
+        branch, sha = inputs.get("branch"), ""
+        at_sha = inputs.get("sha") or ""
+        if not isinstance(at_sha, str) or (at_sha and not SHA_RE.fullmatch(at_sha)):
+            raise Rejected("the dispatch's sha is not a 40-hex commit id")
     else:
         raise Rejected("unsupported event")
     if not isinstance(branch, str) or not branch_re.fullmatch(branch):
         raise Rejected(f"branch is not {shape}")
-    return {"branch": branch, "sha": sha, **branch_re.fullmatch(branch).groupdict()}
+    out = {"branch": branch, "sha": sha, **branch_re.fullmatch(branch).groupdict()}
+    if event_name == "workflow_dispatch" and at_sha:
+        out["at_sha"] = at_sha
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1341,6 +1439,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--source", required=True)
     p.add_argument("--branch", required=True)
     p.add_argument("--expect-sha", default="")
+    p.add_argument("--at-sha", default="")
     p.add_argument("--out", required=True, type=Path)
     p = sub.add_parser("place")
     p.add_argument("--staged", required=True, type=Path)
@@ -1350,8 +1449,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "resolve":
             result = resolve(args.event_name, args.event_path)
         elif args.command == "validate":
+            if args.expect_sha and args.at_sha:
+                raise Rejected("give --expect-sha or --at-sha, not both")
+            key = os.environ.get("VOUCH_KEY", "")
             result = validate(args.repo, args.base, args.source, args.branch,
-                              args.expect_sha or None, args.out)
+                              args.expect_sha or None, args.out,
+                              key.encode("utf-8") if key else None, args.at_sha or None)
         else:
             result = place(args.staged, args.tree)
     except Rejected as exc:

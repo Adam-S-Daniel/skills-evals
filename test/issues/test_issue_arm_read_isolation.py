@@ -134,6 +134,13 @@ class _TempLayout(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         os.environ.pop("SKILLS_EVALS_MOUNTINFO", None)
+        # The system temp directory the scratch fence always reads (R9-1),
+        # here this layout's own, so no host /tmp entry reaches a result.
+        system_tmp = mock.patch.object(run_eval, "SYSTEM_TMP", self.tmp)
+        system_tmp.start()
+        self.addCleanup(system_tmp.stop)
+        for name in ("CLAUDE_TMPDIR", "CLAUDE_CODE_TMPDIR"):
+            os.environ.pop(name, None)
 
     def settings(self, path_env: str = "", **kwargs) -> dict:
         kwargs.setdefault("profiles", [self.home / ".claude"])
@@ -590,7 +597,8 @@ class ReadDenySettingsTests(_TempLayout):
         results.mkdir()
         leftover = self.tmp / "skills-evals-with_guidance-old"
         leftover.mkdir()
-        settings = self.settings(outputs=[results])
+        with mock.patch.object(run_eval.os, "getuid", return_value=1000):
+            settings = self.settings(outputs=[results])
         rules = []
         for path in (self.worktree, self.clone, self.repos, self.registry,
                      self.guidance, results, archive, self.home):
@@ -603,6 +611,13 @@ class ReadDenySettingsTests(_TempLayout):
             "skill-edit-guard-", "propose-skill-edit-", "scoring-guidance-",
             "scoring-skill-", "mine-real-work-", ".scaffold-", ".gh-label-",
             ".gh-timeline-", "usage-census-")]
+        # Every Claude Code scratch root but this uid's, and this uid's whole
+        # with no session to spare (#70, round 8, R8-5).
+        for pattern in run_eval._complement_patterns("claude-1000"):
+            if pattern.startswith("claude-"):
+                rules += ([f"Read(/{self.tmp}/{pattern})"] if "*" in pattern else
+                          [f"Read(/{self.tmp}/{pattern})", f"Read(/{self.tmp}/{pattern}/**)"])
+        rules += [f"Read(/{self.tmp}/claude-1000)", f"Read(/{self.tmp}/claude-1000/**)"]
         self.assertEqual(settings["sandbox"]["filesystem"], {
             "denyRead": [str(self.worktree), str(self.clone), str(self.repos),
                          str(self.registry), str(self.guidance), str(results),
@@ -681,6 +696,73 @@ class ReadDenySettingsTests(_TempLayout):
         self.assertIn(str(self.home), settings["sandbox"]["filesystem"]["denyRead"])
         self.assertIn(str(self.home / ".claude"),
                       settings["sandbox"]["filesystem"]["denyRead"])
+
+    def test_claude_code_scratch_roots_are_denied_but_the_arms_own_session(self):
+        # #70, round 8 (R8-5): on a routine, the session running the harness
+        # keeps its scratchpad, background task output and saved tool
+        # results under TMPDIR/claude-<uid>/<its project name>/. Every
+        # claude-* root is denied; in this uid's, the Read tool keeps only
+        # the arm's own session's directory (its CLI may write there).
+        projects = self.home / ".claude" / "projects"
+        own_name = "-tmp-workspace-abc"
+        scratch = self.tmp / "claude-1000"
+        files = [scratch / "-home-user" / "sess" / "scratchpad" / "notes.txt",
+                 scratch / "-home-user" / "sess" / "tasks" / "b1.output",
+                 scratch / f"{own_name}-longer" / "x",
+                 self.tmp / "claude-1001" / "-home-user" / "y",
+                 self.tmp / "claude-x" / "z"]
+        mine = scratch / own_name / "s1" / "tasks" / "t.output"
+        for path in (*files, mine):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+        with mock.patch.object(run_eval.os, "getuid", return_value=1000):
+            settings = self.settings(session_dir=projects / own_name)
+        rules = read_rule_paths(settings)
+        for path in (*files, scratch / "later", scratch / "-home-user-2" / "f",
+                     self.tmp / "claude-1000x" / "f", self.tmp / "claude-2" / "f",
+                     self.tmp / "Claude-1000" / "-home-user" / "f"):
+            self.assertTrue(covers(rules, path), path)
+        self.assertFalse(covers(rules, mine))
+        # Commands lose every existing claude-* root whole.
+        deny = settings["sandbox"]["filesystem"]["denyRead"]
+        for path in (scratch, self.tmp / "claude-1001", self.tmp / "claude-x"):
+            self.assertIn(str(path), deny)
+        # With no session to spare, this uid's is denied whole too.
+        with mock.patch.object(run_eval.os, "getuid", return_value=1000):
+            rules = read_rule_paths(self.settings())
+        self.assertTrue(covers(rules, mine))
+        # CLAUDE_TMPDIR and CLAUDE_CODE_TMPDIR, when set, are fenced the
+        # same way (R9-1).
+        for name in ("CLAUDE_TMPDIR", "CLAUDE_CODE_TMPDIR"):
+            with self.subTest(var=name):
+                other = self.root / f"cli-tmp-{name}"
+                (other / "claude-1000" / "-home-user").mkdir(parents=True)
+                with mock.patch.object(run_eval.os, "getuid", return_value=1000), \
+                        mock.patch.dict(os.environ, {name: str(other)}):
+                    settings = self.settings(session_dir=projects / own_name)
+                self.assertTrue(covers(read_rule_paths(settings),
+                                       other / "claude-1000" / "-home-user" / "f"))
+                self.assertIn(str(other / "claude-1000"),
+                              settings["sandbox"]["filesystem"]["denyRead"])
+
+    def test_the_system_temp_directory_is_fenced_whatever_tmpdir_says(self):
+        # Round 9's reproducer: with TMPDIR=/tmp/claude the scratch fence
+        # read only /tmp/claude, so /tmp/claude-0 stayed open.
+        tmpdir = self.tmp / "claude"
+        tmpdir.mkdir()
+        transcript = self.tmp / "claude-1000" / "-home-user" / "sess" / "tasks" / "b.output"
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text("", encoding="utf-8")
+        with mock.patch.object(run_eval.os, "getuid", return_value=1000):
+            settings = self.settings(tmp_root=tmpdir)
+        self.assertTrue(covers(read_rule_paths(settings), transcript))
+        self.assertIn(str(self.tmp / "claude-1000"),
+                      settings["sandbox"]["filesystem"]["denyRead"])
+        # Without the system root it would be open: the fence is what does it.
+        with mock.patch.object(run_eval, "SYSTEM_TMP", tmpdir), \
+                mock.patch.object(run_eval.os, "getuid", return_value=1000):
+            self.assertFalse(covers(read_rule_paths(self.settings(tmp_root=tmpdir)),
+                                    transcript))
 
     def test_a_session_created_after_the_settings_is_denied_too(self):
         # Structural, not a list of what existed: every other name, now or

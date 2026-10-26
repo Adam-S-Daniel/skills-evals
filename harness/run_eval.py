@@ -167,6 +167,115 @@ def load_fixture(eval_dir: Path) -> dict:
     return context.load_fixture_yaml(path.read_bytes(), path)
 
 
+def fixture_digest(eval_dir: Path) -> str | None:
+    """The fixture's content digest, `fixture_digest` in every skill summary
+    (#70: runs pool only when their fixtures are identical), or None, and the
+    summary then carries no digest, when the directory is not in a Git
+    checkout or does not match what is staged there. The sha256 of `git
+    ls-files -s -z -- .` in the fixture directory: each tracked file's mode,
+    blob sha and path relative to that directory. An ignored file (a
+    `node_modules` that scripts/dev_setup.sh installs under a seed, say) does
+    not count. A symlink (mode 120000) must point at a regular file tracked
+    in the same checkout, and folds in that target's blob sha, so a change to
+    the target is a change to the fixture; one pointing at anything else (a
+    tracked symlink, an untracked or ignored file, a directory, a path
+    outside the checkout) gives None.
+
+    Matching what is staged is checked here, never by `git ls-files -m`,
+    which runs the checkout's own clean filters (`.gitattributes` plus
+    `filter.<name>.clean` is code from the checkout): each tracked working
+    file, or symlink's target text, is hashed in Python as a Git blob and
+    compared with its staged sha, and its executable bit with its mode. Any
+    mismatch, an untracked file that is not ignored (`ls-files -o
+    --exclude-standard`), an unmerged entry, a submodule, or a symlink to a
+    directory gives None. A checkout that converts line endings or checks
+    symlinks out as text therefore has no digest. Git's output is read as
+    UTF-8 with surrogate escapes, never in the locale's encoding."""
+    root = Path(eval_dir)
+    out = _git_out("ls-files", "-s", "-z", "--", ".", cwd=root)
+    if not out:
+        return None
+    if _git_out("ls-files", "-o", "--exclude-standard", "-z", "--", ".",
+                cwd=root) != "":
+        return None
+    entries, everything = [], None
+    for entry in out.split("\0"):
+        if not entry:
+            continue
+        info, _, path = entry.partition("\t")
+        mode, sha, stage = info.split(" ")
+        if stage != "0" or mode not in ("100644", "100755", "120000") \
+                or not _matches_blob(root / path, mode, sha):
+            return None
+        line = f"{mode} {sha} {path}"
+        if mode == "120000":
+            if everything is None:
+                everything = _tracked_blobs(root)
+            target = _symlink_target(root / path)
+            if target is None:
+                return None
+            resolved = os.path.normpath(os.path.join(os.path.dirname(path), target))
+            if (root / path).is_dir() or any(
+                    key.startswith(resolved + os.sep) for key in everything):
+                return None  # a symlink to a directory (N3)
+            found = everything.get(resolved)
+            if found is None:
+                # Its target is a tracked symlink, an untracked or ignored
+                # file, or outside the checkout (N4): not content Git pins.
+                return None
+            line += f" -> {found}"
+        entries.append(line)
+    return hashlib.sha256("\0".join(sorted(entries))
+                          .encode("utf-8", "surrogateescape")).hexdigest()
+
+
+def _matches_blob(path: Path, mode: str, sha: str) -> bool:
+    """Whether the working copy at `path` is the staged blob `sha` of
+    `mode`: a regular file's bytes (and its executable bit), or a symlink's
+    target text, hashed as Git hashes a blob (SHA-1, or SHA-256 in a
+    SHA-256 repository)."""
+    try:
+        info = path.lstat()
+        if mode == "120000":
+            data = (os.fsencode(os.readlink(path)) if stat.S_ISLNK(info.st_mode)
+                    else path.read_bytes())
+        else:
+            if not stat.S_ISREG(info.st_mode) \
+                    or bool(info.st_mode & 0o100) != (mode == "100755"):
+                return False
+            data = path.read_bytes()
+    except OSError:
+        return False
+    algorithm = {40: hashlib.sha1, 64: hashlib.sha256}.get(len(sha))
+    if algorithm is None:
+        return False
+    return algorithm(b"blob %d\0" % len(data) + data).hexdigest() == sha
+
+
+def _tracked_blobs(root: Path) -> dict:
+    """{path relative to `root`: blob sha} of every regular file tracked in
+    `root`'s checkout (`ls-files -s -- :/`, whose paths are relative to it)."""
+    out = _git_out("ls-files", "-s", "-z", "--", ":/", cwd=root) or ""
+    blobs = {}
+    for entry in out.split("\0"):
+        info, _, path = entry.partition("\t")
+        fields = info.split(" ")
+        if len(fields) == 3 and fields[0] in ("100644", "100755"):
+            blobs[os.path.normpath(path)] = fields[1]
+    return blobs
+
+
+def _symlink_target(path: Path) -> str | None:
+    """A symlink's target text: the link's, or a checkout that wrote it as a
+    plain file holds it as the file's text."""
+    try:
+        if path.is_symlink():
+            return os.readlink(path)
+        return path.read_bytes().decode("utf-8", "surrogateescape")
+    except OSError:
+        return None
+
+
 # Every timeout knob a fixture can set, as (key, path-to-its-mapping). Each is
 # read with `.get(key, <default>)`, which returns the VALUE whenever the key is
 # PRESENT — so an explicit YAML null (`guard:` / `  timeout_s:`) yielded None
@@ -1768,6 +1877,61 @@ def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
     return denied, rules
 
 
+# Claude Code's own scratch root under a temp directory, `claude-<uid>`: on
+# a routine, the session that runs the harness keeps its scratchpad, its
+# background tasks' output and its saved tool results there, under a
+# directory named like its `~/.claude/projects/` one (#70, round 8, R8-5).
+CLI_SCRATCH_PREFIX = "claude-"
+# The system's default temp directory, fenced whatever TMPDIR says: a
+# session started with another TMPDIR, or a harness run under one, must not
+# leave the default root's `claude-*` open (#70, round 9, R9-1).
+SYSTEM_TMP = Path("/tmp")
+# The variables that move the CLI's scratch root (R8-5, R9-1).
+CLI_TMPDIR_VARS = ("CLAUDE_TMPDIR", "CLAUDE_CODE_TMPDIR")
+
+
+def _cli_scratch_rules(tmp_roots, session_dir: Path | None, protected: list[Path],
+                       needed: list[Path], guarded=()):
+    """The sandbox `denyRead` paths and Read deny rules for every Claude Code
+    scratch root (`CLI_SCRATCH_PREFIX`) under each of `tmp_roots`. Every
+    `claude-*` name but this uid's is denied, present or future; in this
+    uid's, Read rules spare only the arm's own session's directory (named
+    as `session_dir`, its `~/.claude/projects/<workspace>`), as
+    `_profile_read_rules` spares it in a profile, since the arm's own CLI
+    may keep its scratch there; commands are denied every existing one
+    whole (directories; a symlinked one only by the Read rules)."""
+    own = f"{CLI_SCRATCH_PREFIX}{os.getuid()}" if hasattr(os, "getuid") else None
+    denied, rules = [], []
+    for root in dict.fromkeys(Path(r).resolve() for r in tmp_roots):
+        base = _glob_escape(str(root))
+        if own is None:
+            rules.append(f"Read(/{base}/{_glob_escape(CLI_SCRATCH_PREFIX)}*)")
+        else:
+            for pattern in _complement_patterns(own):
+                if not pattern.startswith(CLI_SCRATCH_PREFIX):
+                    continue
+                if "*" in pattern:
+                    rules.append(f"Read(/{base}/{pattern})")
+                else:
+                    rules += _read_rules(f"{base}/{_glob_escape(pattern)}")
+            keep = root / own / session_dir.name if session_dir is not None else None
+            for rule in _profile_read_rules(root / own, keep, protected, needed,
+                                            guarded, root):
+                if rule not in rules:
+                    rules.append(rule)
+        try:
+            entries = sorted(os.listdir(root))
+        except OSError:
+            entries = []
+        # Directories only: the CLI's `claude-<hex>-cwd` files beside them
+        # are its shells' working-directory notes, written from inside the
+        # sandbox, and hold no transcript.
+        denied += [root / name for name in entries if name.startswith(CLI_SCRATCH_PREFIX)
+                   and (root / name).is_dir() and not (root / name).is_symlink()
+                   and not any(_within(n, root / name) for n in needed)]
+    return denied, rules
+
+
 # The `--settings` value is one argv element; Linux caps one at 128 KiB
 # (E2BIG). Well under it, and a settings object this large means the rules
 # went wrong somewhere.
@@ -1843,6 +2007,16 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     tmp_denied, tmp_rules = _harness_temp_rules(
         tmp_root, Path(workspace).resolve() if workspace is not None else None,
         protected, needed, compact_profiles)
+    # The CLI's scratch root is under its temp directory: the TMPDIR this
+    # process inherited from the session that runs it, the system default
+    # (`SYSTEM_TMP`), or one `CLI_TMPDIR_VARS` names; every one is fenced.
+    cli_tmp = [Path(os.environ[name]) for name in CLI_TMPDIR_VARS
+               if os.path.isabs(os.environ.get(name) or "")]
+    scratch_denied, scratch_rules = _cli_scratch_rules(
+        [tmp_root, SYSTEM_TMP, *cli_tmp], keep, protected, needed,
+        [p for _, p in denied])
+    tmp_denied = [*tmp_denied, *(p for p in scratch_denied if p not in tmp_denied)]
+    tmp_rules = [*tmp_rules, *(r for r in scratch_rules if r not in tmp_rules)]
     read_rules = []
     for _, path in denied:
         # What a spared symlink in HOME or a profile must not lead to: every
@@ -5021,6 +5195,12 @@ def _in_place_record(plan: dict, role: str) -> dict:
         "context_subject": plan["subject"].record(),
         "arm_context": {"skills": len(expected),
                         "skills_digest": delivery.skills_digest(expected),
+                        # #70, round 5: the skills other than the subject,
+                        # the same set in both arms of one comparison.
+                        "others_digest": delivery.skills_digest(
+                            {name: digest for name, digest in expected.items()
+                             if skill_subject is None
+                             or name != f"{skill_subject.bundle}:{skill_subject.skill}"}),
                         "guidance_bytes": len(payload),
                         "guidance_digest": hashlib.sha256(payload).hexdigest(),
                         "subject_present": role == "with"},
@@ -5285,6 +5465,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     # Which model judges this arm and why (#371): on every summary of the
     # trial, a skipped or errored one included.
     extra["judge_selection"] = judge_selection
+    if "_fixture_digest" in fixture:
+        extra["fixture_digest"] = fixture["_fixture_digest"]
+    # Whether this trial's judge call waited on its pair's objective result
+    # (`_judge_hold`), so it may be skipped: #70 reads judge figures only
+    # from runs judged unconditionally.
+    extra["judge_conditional"] = hold is not None
     if plan is not None:
         extra.update(_in_place_record(plan, _ROLES[arm_name]))
     if fixture.get("_real_work"):
@@ -5590,6 +5776,8 @@ def _aggregate_arm(arm_name: str, item: dict, args: argparse.Namespace,
     arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
                         item["name"]) / arm_name
     label = {"fixture": item["name"]} if item["name"] else {}
+    if "_fixture_digest" in fixture:
+        label["fixture_digest"] = fixture["_fixture_digest"]
     if args.trials == 1:
         written = [_read_summary(arm_dir)]
         return written, aggregate_trials(written, [_trial_tool_errors(arm_dir)])
@@ -5603,6 +5791,8 @@ def _aggregate_arm(arm_name: str, item: dict, args: argparse.Namespace,
                    else None, None,
                    extra={**label, **stats,
                           "judge_selection": written[0].get("judge_selection"),
+                          **({"judge_conditional": written[0]["judge_conditional"]}
+                             if "judge_conditional" in written[0] else {}),
                           **(_in_place_record(plan, _ROLES[arm_name])
                              if plan else {})},
                    harness_version=getattr(args, "harness_version", None),
@@ -7202,8 +7392,10 @@ def main() -> int:
                                  fixture_name=name)
             return 2
 
-        prepared.append({"fixture": fixture, "seed": eval_dir / SEED_DIR,
-                         "name": name})
+        digest = fixture_digest(eval_dir)
+        prepared.append({"fixture": ({**fixture, "_fixture_digest": digest}
+                                     if digest is not None else fixture),
+                         "seed": eval_dir / SEED_DIR, "name": name})
 
     # Resolved and validated before ANY arm starts, including objective-only:
     # a bad --registry/$SKILLS_EVALS_REGISTRIES override used to be silently
