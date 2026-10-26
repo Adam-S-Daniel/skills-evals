@@ -1546,7 +1546,8 @@ class TestIssue97(unittest.TestCase):
         # ambient: the harness reads it itself and never passes it on.
         skill_log = tmp / "skill-argv.jsonl"
         skill_eval = tmp / "skill-eval"
-        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit", skill_eval)
+        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit"
+                        / "required-check-routing", skill_eval)
         skill_fixture = yaml.safe_load(
             (skill_eval / "fixture.yaml").read_text(encoding="utf-8"))
         skill_fixture["env"] = {"FAKE_CLAUDE_MODE": "agent",
@@ -3877,7 +3878,7 @@ class TestIssue97(unittest.TestCase):
         # objective-only run died with a bare ImportError traceback on a
         # machine without the parser, for a code path that never parses
         # markdown. The import is at its one call site now.
-        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit"
+        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
         baseline, _ = self._run_main([skill_dir, "--arm", "objective-only"])
         blocked = dict(sys.modules)
         blocked["markdown_it"] = None
@@ -4014,7 +4015,8 @@ class TestIssue97(unittest.TestCase):
                          "the weekly routine owns scheduled evals; eval.yml stays manual")
         inputs = (triggers["workflow_dispatch"] or {}).get("inputs") or {}
         self.assertIn("fixture", inputs)
-        self.assertEqual(inputs["fixture"].get("default"), "evals/workflow-path-audit",
+        self.assertEqual(inputs["fixture"].get("default"),
+                         "evals/workflow-path-audit/required-check-routing",
                          "manual dispatch keeps its default")
         self.assertFalse(inputs["fixture"].get("required"),
                          "manual dispatch can omit the fixture input")
@@ -4103,7 +4105,7 @@ class TestIssue97(unittest.TestCase):
             with self.subTest(event=event):
                 proc = self._run_validation(event)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                self.assertEqual(proc.selected, "evals/workflow-path-audit")
+                self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
 
     # Every value the step must refuse, driven through the real `run:` block.
     # Two shapes of refusal, both exit 1 before the token exchange: a value
@@ -4115,20 +4117,22 @@ class TestIssue97(unittest.TestCase):
         "evals/nope",
         "evals",
         "evals/guidance",
-        "evals/workflow-path-audit/seed",
+        # a skill directory of nested fixtures names no single fixture (#66)
+        "evals/workflow-path-audit",
+        "evals/workflow-path-audit/required-check-routing/seed",
         123,                                    # a JSON number, not a string
         # path shapes that are not the committed spelling
         "../../etc/passwd",
         "/etc",
         "/tmp/x",
-        "./evals/workflow-path-audit",
+        "./evals/workflow-path-audit/required-check-routing",
         "evals//workflow-path-audit",
-        "evals/../evals/workflow-path-audit",
-        "evals/workflow-path-audit/",
+        "evals/../evals/workflow-path-audit/required-check-routing",
+        "evals/workflow-path-audit/required-check-routing/",
         # whitespace-decorated
-        "evals/workflow-path-audit ",
-        "evals/workflow-path-audit\t",
-        "evals/workflow-path-audit\r",
+        "evals/workflow-path-audit/required-check-routing ",
+        "evals/workflow-path-audit/required-check-routing\t",
+        "evals/workflow-path-audit/required-check-routing\r",
         # shell metacharacters (inert here — every use is quoted — but the
         # gate refuses them on shape rather than relying on that)
         "; rm -rf /",
@@ -4145,13 +4149,13 @@ class TestIssue97(unittest.TestCase):
         # real bearer was minted and the WIF preflight spent a call before the
         # run step failed on "no such fixture.yaml". The header promises the
         # opposite, twice.
-        "/etc/passwd\nevals/workflow-path-audit",
-        "evals/workflow-path-audit\nevals/guidance/_delivery",
-        "evals/workflow-path-audit\n$(id)",
+        "/etc/passwd\nevals/workflow-path-audit/required-check-routing",
+        "evals/workflow-path-audit/required-check-routing\nevals/guidance/_delivery",
+        "evals/workflow-path-audit/required-check-routing\n$(id)",
         # structured JSON: jq renders these across lines, so they are
         # multi-line too
-        ["evals/workflow-path-audit"],
-        {"fixture": "evals/workflow-path-audit"},
+        ["evals/workflow-path-audit/required-check-routing"],
+        {"fixture": "evals/workflow-path-audit/required-check-routing"},
     )
 
     def test_the_validation_step_rejects_anything_that_names_no_fixture(self):
@@ -4229,12 +4233,12 @@ class TestIssue97(unittest.TestCase):
         # match a committed path — but the gate never saw the byte it would
         # refuse, which is not what this workflow's header says it does.
         for label, value in (
-            ("leading", self.NUL + "evals/workflow-path-audit"),
-            ("trailing", "evals/workflow-path-audit" + self.NUL),
+            ("leading", self.NUL + "evals/workflow-path-audit/required-check-routing"),
+            ("trailing", "evals/workflow-path-audit/required-check-routing" + self.NUL),
             # Collapses to a COMMITTED name once the NUL is dropped — the
             # shape that was accepted.
             ("embedded, collapsing to a committed name",
-             "evals/workflow" + self.NUL + "-path-audit"),
+             "evals/workflow" + self.NUL + "-path-audit/required-check-routing"),
             # Collapses to nothing committed: refused before, refused now, but
             # by the NUL rule rather than by accident.
             ("embedded, collapsing to nothing committed",
@@ -4260,9 +4264,9 @@ class TestIssue97(unittest.TestCase):
         # The accepted rows are unchanged: the gate runs before the
         # substitution and a value with no NUL never reaches it.
         proc = self._run_validation(
-            {"inputs": {"fixture": "evals/workflow-path-audit"}})
+            {"inputs": {"fixture": "evals/workflow-path-audit/required-check-routing"}})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.selected, "evals/workflow-path-audit")
+        self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
 
     @staticmethod
     def _commit_selection_tree(root: Path) -> None:

@@ -55,7 +55,8 @@ POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
 EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
 PROPAGATION_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
 FAKE_CLAUDE = TEST_DIR / "fake-claude"
-EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
+# A nested fixture: its arms are written under its own name (#66).
+EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
 FAKE_VERSION_LINE = "fake-claude 0.0.0 (hermetic test stub)"
 
 sys.path.insert(0, str(HARNESS_DIR))
@@ -539,7 +540,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         run_dir = self._run_dir(skill)
         for arm in ("with_skill", "without_skill"):
             with self.subTest(arm=arm):
-                summary = json.loads((run_dir / arm / "summary.json")
+                summary = json.loads((run_dir / EVAL_DIR.name / arm / "summary.json")
                                      .read_text(encoding="utf-8"))
                 self.assertEqual(summary["harness"],
                                  {"name": "claude-code",
@@ -569,7 +570,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         proc = self._run(EVAL_DIR, "--arm", "without_skill",
                          env_extra={"CLAUDE_BIN": str(wrapper)})
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        summary = json.loads((self._run_dir(skill) / "without_skill" /
+        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["error"]["type"], "nonzero_exit")
         self.assertEqual(summary["harness"]["version"], FAKE_VERSION_LINE)
@@ -604,7 +605,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
                          env_extra={"CLAUDE_BIN": str(wrapper)})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("exit 9", proc.stderr)
-        summary = json.loads((self._run_dir(skill) / "without_skill" /
+        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["harness"], {"name": "claude-code", "version": None,
                                               "permission_mode": "auto", "effort": None})
@@ -627,7 +628,7 @@ class TestJudgeModelsOnTheExceptionPath(_RunEvalEndToEnd):
             f"os.execv({str(FAKE_CLAUDE)!r}, [{str(FAKE_CLAUDE)!r}] + sys.argv[1:])"))
         proc = self._run(EVAL_DIR, "--arm", "without_skill",
                          env_extra={"CLAUDE_BIN": str(wrapper)})
-        summary = json.loads((self._run_dir(skill) / "without_skill" /
+        summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
         self.assertIn("error", summary["judge"] or {}, proc.stdout + proc.stderr)
         self.assertEqual(summary["judge_models_used"], [judge_model])
