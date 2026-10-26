@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M1PNUH7woL7CfdUR12s7VZ",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M1PNUH7woL7CfdUR12s7VZ",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011cR6bB2MB6cgm4fQvueFNn",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls -R . | grep -v '^./.git' | head -50; cat scripts/retry.sh; cat CHANGELOG.md",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011cR6bB2MB6cgm4fQvueFNn",
+      "is_error": false,
+      "output": "58a460a initial commit\n.:\nAGENTS.md\nCHANGELOG.md\nREADME.md\nscripts\n\n./scripts:\nretry.sh\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# Added after the 2026-03 outage (PR #41): a single 503 from\n# https://example.com/api/orders was retried in a tight ...",
+      "output_chars": 1226,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017RJVAmbDdQHimdr1cZm31U",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 171,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017RJVAmbDdQHimdr1cZm31U",
+      "is_error": false,
+      "output": "1\t# Architecture Decision Records\n2\t\n3\tThis folder captures **why** non-obvious decisions were made in this repo \u2014\n4\tcontext that isn't in the code, that `git blame` won't surface, and that a\n5\tcontributor a year from now would otherwise re-derive (badly).\n6\t\n7\tEach ADR is one Markdown file, `NNNN-k...",
+      "output_chars": 3686,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PxmdiZKHtfLMjbakVjeQA1",
+      "name": "Bash",
+      "input": "cat README.md; git status --short; git branch --show-current",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PxmdiZKHtfLMjbakVjeQA1",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? ....",
+      "output_chars": 325,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014vdV1QZpS3LK4hxZyrXMmZ",
+      "name": "Bash",
+      "input": "mkdir -p docs/decisions && cat > docs/decisions/README.md <<'EOF'\n# Architecture Decision Records\n\nThis folder captures **why** non-obvious decisions were made in this repo:\ncontext that isn't in the ...",
+      "input_chars": 3829,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014vdV1QZpS3LK4hxZyrXMmZ",
+      "is_error": false,
+      "output": " AGENTS.md        | 5 +++++\n scripts/retry.sh | 1 +\n 2 files changed, 6 insertions(+)",
+      "output_chars": 85,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
