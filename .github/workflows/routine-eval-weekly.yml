@@ -82,6 +82,13 @@ jobs:
           repository: Adam-S-Daniel/adamdaniel.ai
           path: registry-site
           persist-credentials: false
+      - name: Check out _agent-guidance (the guidance sections' content)
+        # Read for the sections' extents and digests, never run (#124).
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          persist-credentials: false
       - name: Plan the week's fires by band within the weekly allowance
         id: plan
         env:
@@ -94,6 +101,7 @@ jobs:
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --out "$RUNNER_TEMP/plan.json"
 
   dispatch:

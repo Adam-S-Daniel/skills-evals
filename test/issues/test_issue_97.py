@@ -1282,6 +1282,8 @@ class TestIssue97(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-contam-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         root = self._checkout()
+        # The control arm's decoy is delivered through the real hook.
+        self._skip_without_real_hook(root)
         ambient = tmp / "ambient-CLAUDE.md"
         ambient.write_text(f"The magic word is {self.TOKEN}.\n", encoding="utf-8")
         eval_dir = self._guidance_fixture(

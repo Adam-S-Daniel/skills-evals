@@ -591,6 +591,75 @@ class PlanCommandTests(unittest.TestCase):
             self.assertEqual(plan_week.model_weights(base, ["a", "b"]), {"a": 0.75, "b": 0.25})
 
 
+GUIDANCE_FIXTURE = "evals/guidance/anything-you-name-gets-its-link/handoff"
+
+
+class GuidanceFixtureTests(unittest.TestCase):
+    """Scheduled guidance-section fixtures (#124) are eval cells keyed by
+    their section, never a skill: the verdict document's `guidance` half is
+    their evidence, and skill-only logic skips them."""
+
+    def test_guidance_cells_read_the_section_verdict_and_name_no_skill(self):
+        self.assertIn(GUIDANCE_FIXTURE, plan_week.schedule.scheduled_fixtures(
+            ROOT / "evals" / "scheduled.yml",
+            plan_week.schedule.committed_fixtures(ROOT)))
+        run = {"timestamp": "20261020T100000Z-abc123"}
+        gates_doc = {"roster_models": ["m"], "skills": {}, "guidance": {
+            "anything-you-name-gets-its-link": {"cells": [
+                {"fixture": "handoff", "model": "m", "class": "insufficient",
+                 "cost_usd": 2.0, "runs": {"with": [run], "without": [run]}}]}}}
+        cells = plan_week.eval_cells(ROOT / "evals", gates_doc, [], NOW)
+        mine = [c for c in cells if c["fixture"] == GUIDANCE_FIXTURE]
+        self.assertEqual(len(mine), 1)
+        self.assertEqual((mine[0]["skill"], mine[0]["section"], mine[0]["class"],
+                          mine[0]["with_runs"], mine[0]["usd_per_fire"]),
+                         ("", "anything-you-name-gets-its-link", "insufficient", 1, 2.0))
+        other = next(c for c in cells if c["fixture"].startswith("evals/guidance/")
+                     and c["fixture"] != GUIDANCE_FIXTURE)
+        self.assertEqual((other["skill"], other["class"]), ("", "missing"))
+        self.assertTrue(all(c["section"] is None and c["skill"] for c in cells
+                            if not c["fixture"].startswith("evals/guidance/")))
+
+    def test_guidance_cells_plan_eval_fires_and_skip_skill_logic(self):
+        section = "anything-you-name-gets-its-link"
+        cells = [{**cell(GUIDANCE_FIXTURE, "heavy", "missing"), "skill": "",
+                  "section": section},
+                 {**cell("evals/guidance/s/x", "heavy", "missing", empty=2), "skill": "",
+                  "section": "s"}]
+        # A removal PR named like the section is a skill's, not this cell's.
+        plan = plan_week.build_plan(ctx(cells=cells, removal_prs=[section, ""]), NOW)
+        self.assertEqual([(f["band"], f["mode"], f["fixture"], f["eval_key"])
+                          for f in plan["fires"]],
+                         [("missing", "eval", GUIDANCE_FIXTURE,
+                           "guidance/anything-you-name-gets-its-link/handoff")])
+        self.assertEqual(plan["matrix"]["include"][0]["skill"], "")
+        self.assertEqual(plan["work"], [{"kind": "fixture-broken", "change_type": "fixture",
+                                         "skill": "", "section": "s",
+                                         "fixture": "evals/guidance/s/x", "model": "heavy",
+                                         "route": "issue"}])
+
+    def test_the_plan_command_names_no_guidance_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "tree").mkdir()
+            evidence = base / "evidence.json"
+            evidence.write_text(json.dumps({"fire_runs": [], "improve_branches": [],
+                                            "registry_prs": [], "on_hold": []}))
+            plan_file = base / "plan.json"
+            out = io.StringIO()
+            with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": "",
+                                              "GITHUB_STEP_SUMMARY": ""}), \
+                 contextlib.redirect_stdout(out):
+                code = plan_week.main(["plan", "--results-tree", str(base / "tree"),
+                                       "--as-of", "2026-10-26T12:00:00+00:00",
+                                       "--evidence", str(evidence), "--max-fires", "30",
+                                       "--out", str(plan_file)])
+            self.assertEqual(code, 0, out.getvalue())
+            plan = json.loads(plan_file.read_text())
+            self.assertNotIn("guidance", plan["skills"])
+            self.assertFalse(any(w.get("skill") == "guidance" for w in plan["work"]))
+
+
 class DocsTests(unittest.TestCase):
 
     def test_adr_0010_records_the_2026_10_26_addendum(self):

@@ -18,7 +18,10 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
+# Spelled with `.parent`, not `.parents[2]`: run_tests.py's suite-fork scan
+# reads `.parent` statically, so `_loop_dirs`' python3 target stays provably
+# scripts/scaffold_real_work.py rather than an unknown, possibly the runner.
+ROOT = Path(__file__).resolve().parent.parent.parent
 SCRIPT = ROOT / "scripts" / "dev_setup.sh"
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
 CI_PREFIX = "skills-evals/"

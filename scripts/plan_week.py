@@ -3,8 +3,8 @@
 improve, by priority band, inside the weekly allowance (G5, G6).
 
     plan_week.py plan --results-tree DIR --as-of TIME [--registry NAME=PATH ...]
-                      [--evidence FILE] [--lessons DIR] [--max-fires 30]
-                      [--out FILE]
+                      [--guidance DIR] [--evidence FILE] [--lessons DIR]
+                      [--max-fires 30] [--out FILE]
     plan_week.py validate-fire        (the matrix leg's env; exit 0 or 1)
     plan_week.py wait-slot [--max-wait SECONDS]
 
@@ -18,6 +18,16 @@ routine-eval-fire.yml dispatch in eval mode with that `model`, both arms, one
 trial. A cell's evidence is scripts/compute_gates.py's verdict document,
 computed here over the results tree, so the cells are pooled exactly as the
 retirement verdict pools them.
+
+GUIDANCE FIXTURES (#124). A scheduled `evals/guidance/<section>/<name>`
+fixture (`subject: guidance`) is a cell like any other, fired in eval mode
+on its path, but it names a section, not a skill: its evidence is the
+section's in-situ cells in the verdict document's `guidance` half
+(results/guidance/<section>/..., classified by arm `mode`), and its cell
+carries `section` and an empty `skill`. Skill-only logic skips it: the
+removal-PR safety band, improve eligibility and skill usage weight. The
+section's expected extent needs `--guidance`, an _agent-guidance checkout;
+without one every guidance cell that has runs stays insufficient.
 
 THE BANDS (rule D), in order:
 
@@ -310,13 +320,16 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                 "change_type": None, "weight": weights.get(cell["model"], 0.0)}
         least = min(cell["with_runs"], cell["without_runs"])
         newest = _stamp_time(cell["newest"])
-        if cell["skill"] in removal:
+        if not cell.get("section") and cell["skill"] in removal:
             bands["safety"].append({**item, "band": "safety", "order": ()})
         elif cell["class"] == "missing":
             if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
-                work.append({"kind": "fixture-broken", "change_type": "fixture",
-                             "skill": cell["skill"], "fixture": cell["fixture"],
-                             "model": cell["model"], "route": "issue"})
+                broken = {"kind": "fixture-broken", "change_type": "fixture",
+                          "skill": cell["skill"], "fixture": cell["fixture"],
+                          "model": cell["model"], "route": "issue"}
+                if cell.get("section"):
+                    broken["section"] = cell["section"]
+                work.append(broken)
             else:
                 bands["missing"].append({**item, "band": "missing",
                                          "order": (-item["weight"],)})
@@ -521,13 +534,24 @@ def points_per_usd(tree: Path, gates_doc: dict, limits: dict) -> float | None:
     return points / spent if spent and points else None
 
 
-def _fixture_skill(evals_dir: Path, fixture: str) -> str:
+def _fixture_subject(evals_dir: Path, fixture: str) -> tuple:
+    """("skill", skill name) for a skill fixture, or ("guidance", section id)
+    for a guidance-section fixture, `evals/guidance/<section>/<name>` with
+    `subject: guidance` and that `section:` (compute_gates.expected_guidance)."""
     import yaml
     doc = yaml.safe_load((evals_dir.parent / fixture / "fixture.yaml").read_text(encoding="utf-8"))
-    skill = doc.get("skill") if isinstance(doc, dict) else None
+    doc = doc if isinstance(doc, dict) else {}
+    parts = fixture.split("/")
+    if doc.get("subject") == "guidance":
+        section = doc.get("section")
+        if len(parts) != 4 or parts[1] != "guidance" or not isinstance(section, str) \
+                or parts[2] != section or section.startswith("_"):
+            raise PlanError("a scheduled guidance fixture is not under its section")
+        return "guidance", section
+    skill = doc.get("skill")
     if not isinstance(skill, str):
         raise PlanError("a scheduled fixture names no skill")
-    return skill
+    return "skill", skill
 
 
 def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
@@ -545,10 +569,16 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             fired.setdefault(key, []).append(started)
     cells = []
     for fixture in scheduled:
-        skill = _fixture_skill(evals_dir, fixture)
+        subject, ident = _fixture_subject(evals_dir, fixture)
         parts = fixture.split("/")
-        name = parts[2] if len(parts) == 3 else None
-        verdict = gates_doc["skills"].get(skill, {})
+        if subject == "guidance":
+            # Pooled by section (results/guidance/<id>/...), in-situ cells.
+            skill, section, name = "", ident, parts[3]
+            verdict = (gates_doc.get("guidance") or {}).get(section, {})
+        else:
+            skill, section = ident, None
+            name = parts[2] if len(parts) == 3 else None
+            verdict = gates_doc["skills"].get(skill, {})
         for model in gates_doc["roster_models"]:
             cell = next((c for c in verdict.get("cells", [])
                          if c.get("fixture") == name and c.get("model") == model), None)
@@ -560,7 +590,8 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             newest_time = _stamp_time(newest)
             cls = cell["class"] if cell else "missing"
             cells.append({
-                "skill": skill, "fixture": fixture, "model": model, "class": cls,
+                "skill": skill, "section": section, "fixture": fixture, "model": model,
+                "class": cls,
                 "with_runs": len(runs.get("with", [])),
                 "without_runs": len(runs.get("without", [])), "newest": newest,
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
@@ -582,6 +613,9 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
     roster_changed = _git_time(evals_dir.parent, "evals/roster.yml")
     out = {}
     for directory in sorted(p for p in evals_dir.iterdir() if p.is_dir()):
+        if directory.name == "guidance":
+            # Guidance sections, not a skill: no improve loop, no usage weight.
+            continue
         expected = compute_gates.expected_content(evals_dir, directory.name, registries)
         if not expected:
             continue
@@ -705,7 +739,8 @@ def gather(args, now: datetime) -> dict:
     limits = guard.budget_file.load_budget(args.budget)
     gates_doc = compute_gates.compute(args.results_tree, evals_dir / "roster.yml",
                                       evals_dir / "gate-policy.yml", evals_dir,
-                                      compute_gates.parse_as_of(args.as_of), registries)
+                                      compute_gates.parse_as_of(args.as_of), registries,
+                                      args.guidance)
     if args.evidence is not None:
         evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
     else:
@@ -833,6 +868,8 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--as-of", required=True)
     p.add_argument("--registry", action="append", metavar="NAME=PATH")
     p.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
+    p.add_argument("--guidance", type=Path, default=None,
+                   help="an _agent-guidance checkout: the guidance sections' content")
     p.add_argument("--budget", type=Path, default=None)
     p.add_argument("--evidence", type=Path, default=None)
     p.add_argument("--lessons", type=Path, default=None)
