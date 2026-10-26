@@ -1281,6 +1281,70 @@ class RegistryCheckTests(AutoTests):
                 self.assertIn("skills_waivers.yml", err)
                 self.assertEqual(fake.pushes, [])
 
+    def cite(self, name, citing_rel, citing_text, *, define_elsewhere=None):
+        registry = make_registry(self.tmp / name)
+        tests = registry / "plugins" / PLUGIN / "skills" / SKILL / "scripts"
+        tests.mkdir()
+        (tests / "test_example.py").write_text(
+            "class Suite:\n    def test_only_the_skill_defines_this(self):\n        pass\n")
+        (registry / citing_rel).parent.mkdir(parents=True, exist_ok=True)
+        (registry / citing_rel).write_text(citing_text)
+        if define_elsewhere:
+            (registry / define_elsewhere).write_text(
+                "def test_only_the_skill_defines_this():\n    pass\n")
+        git(registry, "add", "-A")
+        git(registry, "commit", "-qm", name)
+        return registry
+
+    def test_a_citation_of_a_test_only_the_skill_defines_is_refused(self):
+        # adam-agentskills' test_every_test_this_repo_cites_by_name_exists
+        # fails on a non-test source citing a test nothing defines. Measured:
+        # removing skills-doctor leaves .claude/hooks/skills-bootstrap.sh
+        # citing a test that lives only in that skill.
+        for rel in (".claude/hooks/bootstrap.sh", "scripts/helper.py"):
+            with self.subTest(rel):
+                registry = self.cite(f"cited-{rel.count('hooks')}", rel,
+                                     "# test_only_the_skill_defines_this pins this.\n")
+                code, _, err, fake = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 2)
+                self.assertIn(rel, err)
+                self.assertIn("test_only_the_skill_defines_this", err)
+                self.assertEqual(fake.pushes, [])
+                self.assertEqual(calls(registry), [])
+
+    def test_citations_that_survive_the_removal_do_not_refuse(self):
+        cases = {
+            # the registry's check does not scan test modules
+            "cited only from a test module": ("scripts/test_other.py",
+                                              "# test_only_the_skill_defines_this\n", None),
+            # another module defines the same name, so it still resolves
+            "defined elsewhere too": ("scripts/helper.py",
+                                      "# test_only_the_skill_defines_this\n",
+                                      "scripts/test_dupe.py"),
+            # nor Markdown
+            "cited from docs": ("docs/notes.md", "test_only_the_skill_defines_this\n", None),
+        }
+        for name, (rel, text, elsewhere) in cases.items():
+            with self.subTest(name):
+                registry = self.cite(name.replace(" ", "-"), rel, text,
+                                     define_elsewhere=elsewhere)
+                code, _, err, _ = self.run_main(
+                    gates_doc("auto"), registries=[f"adam-agentskills={registry}"])
+                self.assertEqual(code, 0, err)
+
+    def test_a_skill_python_file_that_does_not_parse_is_refused(self):
+        registry = make_registry(self.tmp / "unparseable")
+        bad = registry / "plugins" / PLUGIN / "skills" / SKILL / "broken.py"
+        bad.write_text("def (:\n")
+        git(registry, "add", "-A")
+        git(registry, "commit", "-qm", "unparseable")
+        code, _, err, fake = self.run_main(gates_doc("auto"),
+                                           registries=[f"adam-agentskills={registry}"])
+        self.assertEqual(code, 2)
+        self.assertIn("cannot parse", err)
+        self.assertEqual(fake.pushes, [])
+
     def test_a_proposal_is_filed_whatever_the_registry_checkout_looks_like(self):
         # The registry preconditions are auto-mode's: in proposal mode a human
         # removes, so a shallow or last-skill checkout must still file.

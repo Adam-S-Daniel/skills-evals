@@ -66,8 +66,10 @@ REFUSALS (exit 2, nothing written):
     plugin, a skill whose removal that registry's `plugin-runtime-review`
     gate would hold for the owner (a `hooks/` or `bin/` directory in the
     skill, or a hook naming a path inside it), which auto-merge cannot
-    approve, or a skill `scripts/skills_waivers.yml` waives a finding under
-    (the waiver goes stale with it and `check_skills.py` exits 1);
+    approve, a skill `scripts/skills_waivers.yml` waives a finding under
+    (the waiver goes stale with it and `check_skills.py` exits 1), or a
+    skill defining a test that a tracked source elsewhere cites by name (the
+    registry's citation test would fail on the dangling name);
   * in auto mode, a skill whose basename is not found exactly once across
     every `--registry` checkout given, or whose one copy is not a real
     `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills: none
@@ -93,6 +95,7 @@ The gate guards against honest mistakes, not forged results (Adam,
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -466,6 +469,56 @@ def check_registry(checkout: Path, location: dict, skill: str) -> None:
         raise RetireError(f"{TARGET} has no {LOCK_GENERATOR}")
     runtime_gated(checkout, location["path"], skill)
     waived_paths(checkout, location["path"], skill)
+    dangling_citations(checkout, location["path"], skill)
+
+
+TEST_NAME_RE = re.compile(r"\btest_[a-z0-9_]+")
+
+
+def _defined_tests(checkout: Path, rels) -> set:
+    """Function names (parsed, never grepped) and module stems of `rels`."""
+    names = set()
+    for rel in rels:
+        if not rel.endswith(".py"):
+            continue
+        names.add(Path(rel).stem)
+        try:
+            tree = ast.parse((checkout / rel).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+            raise RetireError(f"cannot parse {rel}") from None
+        names |= {node.name for node in ast.walk(tree)
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return {n for n in names if n.startswith("test_")}
+
+
+def dangling_citations(checkout: Path, path: str, skill: str) -> None:
+    """RetireError when a tracked source outside the skill cites, by name, a
+    test that only the skill defines. adam-agentskills'
+    test_every_test_this_repo_cites_by_name_exists scans every tracked
+    non-test `*.py` and `*.sh` for `test_...` tokens and fails on one no
+    tracked module defines, so removing the skill would turn that citation
+    into a failing required check. Rewording someone's comment is not a
+    removal's job; a human does that."""
+    inside = _git(checkout, "ls-files", "-z", "--", path).split("\0")
+    gone = _defined_tests(checkout, [r for r in inside if r])
+    if not gone:
+        return
+    outside = [r for r in _git(checkout, "ls-files", "-z", "--", "*.py", "*.sh")
+               .split("\0") if r and not (r == path or r.startswith(f"{path}/"))]
+    gone -= _defined_tests(checkout, outside)
+    for rel in outside:
+        if Path(rel).name.startswith("test_"):
+            continue
+        try:
+            text = (checkout / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            raise RetireError(f"cannot read {rel}") from None
+        cited = sorted(set(TEST_NAME_RE.findall(text)) & gone)
+        if cited:
+            raise RetireError(f"{rel} cites {cited[0]}, a test only {skill} defines; "
+                              "removing the skill leaves that citation dangling, which "
+                              f"{TARGET}' test_every_test_this_repo_cites_by_name_exists "
+                              "fails on")
 
 
 def waived_paths(checkout: Path, path: str, skill: str) -> None:
@@ -473,8 +526,8 @@ def waived_paths(checkout: Path, path: str, skill: str) -> None:
     the skill: that waiver matches nothing once the skill is gone, and
     check_skills.py reports a `stale-waiver` and exits 1, so the pull request
     could never merge. Removing the waiver with the skill means editing a
-    commented YAML file, which this does not do; the proposal path (a human)
-    handles it. The file is parsed, never grepped — its comments name skills
+    commented YAML file, which this does not do; a human does that. The
+    file is parsed, never grepped — its comments name skills
     and would read as waivers."""
     contained(checkout, [WAIVERS_FILE])
     file = checkout / WAIVERS_FILE

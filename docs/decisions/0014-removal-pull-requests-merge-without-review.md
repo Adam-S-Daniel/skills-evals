@@ -65,7 +65,14 @@ compute_gates lets one skill retire per evaluation (harness/gates.py).
    when the checkout cannot support it: a shallow clone (the lock reads the
    commit it pins), a skill that is its plugin's last (emptying a plugin is
    a registry decision, which the lock generator refuses too), a layout file
-   that does not list the skill, or a generator that exits non-zero.
+   that does not list the skill, a generator that exits non-zero, a skill
+   whose removal the registry's `plugin-runtime-review` gate would hold for
+   the owner (auto-merge cannot approve it), a skill a
+   `scripts/skills_waivers.yml` waiver covers (the waiver would go stale),
+   or a skill defining a test that a tracked source elsewhere cites by name
+   (the registry's citation test would fail; removing `skills-doctor` today
+   is one, through `.claude/hooks/skills-bootstrap.sh`). A refusal exits 2
+   and writes nothing, so the run goes red and a human removes the skill.
 6. In `retirement_mode: proposal` (the committed value), a `retire` verdict
    files or updates one skills-evals issue instead, and a human removes.
    One issue per skill, ever: only issues `github-actions[bot]` opened
