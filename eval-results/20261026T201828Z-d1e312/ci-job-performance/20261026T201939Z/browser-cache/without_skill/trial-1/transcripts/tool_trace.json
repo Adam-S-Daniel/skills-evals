@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cs1pJBa8NJ4XnNVUBD5Yi7",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml --limit 20",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cs1pJBa8NJ4XnNVUBD5Yi7",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GTnQ5HibYf2DABpRMDkSdq",
+      "name": "Bash",
+      "input": "for r in 71002 71004 72001 72002 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs --jq '.jobs[] | \"\\(.name) \\(.startedAt) \\(.completedAt)\", (.steps[] | select(.name|test(...",
+      "input_chars": 315,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GTnQ5HibYf2DABpRMDkSdq",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (46.6KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71002\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-13T15:41:27Z\",\n  \"databaseId\": 71002,\n  \"displayTitle\": \"Bump eslint to 9.38.0\",\n  \"event\": \"push\",\n  \"headBr...",
+      "output_chars": 2217,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VdsE1AntiCzTG1gdrtr5kH",
+      "name": "Bash",
+      "input": "for r in 71002 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs > $TMPDIR/$r.json; done; python3 -I - <<'E'\nimport json,os,datetime as d\nt=lambda s:d.datetime.f...",
+      "input_chars": 753,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VdsE1AntiCzTG1gdrtr5kH",
+      "is_error": false,
+      "output": "== 71002\ne2e (chromium) | total 93s ; Install browser OS dependencies=19s/success ; Install browser=10s/success ; Run Playwright tests=44s/success\ne2e (firefox) | total 105s ; Install browser OS dependencies=26s/success ; Install browser=4s/success ; Run Playwright tests=58s/success\ne2e (webkit) | t...",
+      "output_chars": 3409,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014kpdnCEJQEv83t43PcyU6C",
+      "name": "Bash",
+      "input": "python3 -I - <<'E'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Only chromium benefits: its download (~10s...",
+      "input_chars": 454,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014kpdnCEJQEv83t43PcyU6C",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 3 +++\n 1 file changed, 3 insertions(+)",
+      "output_chars": 67,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
