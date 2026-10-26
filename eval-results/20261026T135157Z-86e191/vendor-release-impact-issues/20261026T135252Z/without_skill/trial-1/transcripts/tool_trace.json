@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HHEQ4c2sNHu6dxXv7QJJbG",
+      "name": "Bash",
+      "input": "cd <path>; git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100; cat vendor/* 2><path> | head -300",
+      "input_chars": 148,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HHEQ4c2sNHu6dxXv7QJJbG",
+      "is_error": false,
+      "output": "233fd29 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode\n...",
+      "output_chars": 2484,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DtMYRvxyAt3f2UzYrecHbU",
+      "name": "Bash",
+      "input": "cd <path>; for f in README.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .ripgreprc .bashrc .profile .zshrc .zprofile .bash_profile .gitconfig; do...",
+      "input_chars": 312,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DtMYRvxyAt3f2UzYrecHbU",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 2189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CYQAD7HNnBckRD56SuCwqa",
+      "name": "Bash",
+      "input": "cd <path>; git ls-files; for f in .mcp.json .gitmodules .ripgreprc; do echo \"== $f\"; git show HEAD:$f 2>&1 | head -20; done; grep -rn \"model\\|synced\\|fork\" --exclude-dir=.git . 2><path> | grep -v vend...",
+      "input_chars": 223,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CYQAD7HNnBckRD56SuCwqa",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\n== .mcp.json\nfatal: path '.mcp.json' exists on disk, but not in 'HEAD'\n== .gitmodules\nfatal: path '.gitmodules' exists on disk, but not in 'HEAD'\n== .ripgreprc\nfatal...",
+      "output_chars": 443,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C6FFEDRVupapNahkygvFH6",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-session-start-hook-skips-forked-sessions.md <<'EOF'\n# SessionStart hook no longer runs for forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI v4.2...",
+      "input_chars": 3301,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C6FFEDRVupapNahkygvFH6",
+      "is_error": false,
+      "output": "01-session-start-hook-skips-forked-sessions.md\n02-synced-skills-renamed-synced-prefix.md",
+      "output_chars": 88,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

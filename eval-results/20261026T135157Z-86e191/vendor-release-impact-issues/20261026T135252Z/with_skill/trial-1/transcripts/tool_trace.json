@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DUQrVwgPBUusXwXG1msMQm",
+      "name": "Skill",
+      "input": "vendor-release-impact-issues",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DUQrVwgPBUusXwXG1msMQm",
+      "is_error": false,
+      "output": "Launching skill: vendor-release-impact-issues",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RGiwCpU8JHmCGk3TiqcsCy",
+      "name": "Bash",
+      "input": "cd <path>; git log --oneline | head; find . -path ./.git -prune -o -type f -print | grep -v '^./.claude/skills' | head -100; ls issues 2><path>",
+      "input_chars": 163,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RGiwCpU8JHmCGk3TiqcsCy",
+      "is_error": true,
+      "output": "Exit code 2\n64cd567 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodule...",
+      "output_chars": 311,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018dsFMwjDHaTePcjCsq819n",
+      "name": "Bash",
+      "input": "cd <path>; for f in hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json README.md AGENTS.md .mcp.json .gitmodules vendor/RELEASES.md vendor/releases.json; do echo \"=== $f\"; cat ...",
+      "input_chars": 276,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018dsFMwjDHaTePcjCsq819n",
+      "is_error": false,
+      "output": "=== hooks/session-start.sh\n#!<path> bash\n# Runs on every SessionStart event matched by .example-cli/settings.json's\n# \"startup|resume\" matcher. Logs the session source so the team can audit\n# which sessions start cold vs. resume a previous one.\nset -euo pipefail\necho \"session-start: source=${EXAMPLE...",
+      "output_chars": 4213,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WdZQpb7rDeLcvHk5AUBinE",
+      "name": "Bash",
+      "input": "cd <path>; for f in .bashrc .gitconfig .zprofile .ripgreprc .profile .zshrc .bash_profile; do echo \"=== $f\"; head -c 3000 \"$f\"; done; grep -rIl -i 'model\\|example-cli\\|watch' --exclude-dir=.git . 2><p...",
+      "input_chars": 224,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WdZQpb7rDeLcvHk5AUBinE",
+      "is_error": true,
+      "output": "Exit code 2\n=== .bashrc\nhead: cannot open '.bashrc' for reading: Permission denied\n=== .gitconfig\nhead: cannot open '.gitconfig' for reading: Permission denied\n=== .zprofile\nhead: cannot open '.zprofile' for reading: Permission denied\n=== .ripgreprc\nhead: cannot open '.ripgreprc' for reading: Permis...",
+      "output_chars": 699,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WdHyjGBYiDnxLjqDzaRhHr",
+      "name": "Bash",
+      "input": "mkdir -p <path><redacted>/scratchpad && cat > <path><redacted><path> <<'EOF'\nimport json, re, sys\nsrc = open(sys.argv[1]).read()\nout = {}; ver = None; cur = None\nfor line in src.splitlines():\n    m = ...",
+      "input_chars": 1026,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WdHyjGBYiDnxLjqDzaRhHr",
+      "is_error": false,
+      "output": "4.3.0/1\tThe CLI now prints `[example-cli:unrecognized_model] warning: model ID not recognized` to stderr when the configured `--model` value is not recognized.\n4.3.0/2\tFixed a memory leak in long-running `watch` sessions.\n4.3.0/3\tUpdate checker now retries with backoff on transient network errors.\n4...",
+      "output_chars": 1177,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Rvvjzdydi3bVB58QNmPhf7",
+      "name": "Bash",
+      "input": "cat > <path><redacted><path> <<'EOF'\nimport json, re, sys, os\nbullets = json.load(open(sys.argv[1])); rel = json.load(open(sys.argv[2]))['example-cli']; outdir = sys.argv[3]\nURL = 'https://github.com/...",
+      "input_chars": 5701,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Rvvjzdydi3bVB58QNmPhf7",
+      "is_error": false,
+      "output": "issues/01-session-start-fork-source.md\nissues/02-synced-skills-prefixed-names.md\n# ExampleCLI 4.2.0 session-start hooks report source \"fork\": SessionStart matcher is startup|resume\n\nFound while reviewing the ExampleCLI release notes vendored in `vendor/RELEASES.md` against this repo. Not yet verifie...",
+      "output_chars": 4598,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015siUe2Afv4hwx8mUevQ6Tj",
+      "name": "Bash",
+      "input": "S=<path><redacted>/scratchpad && python3 - \"$S/gen.py\" <<'EOF'\nimport sys; p=sys.argv[1]; s=open(p).read()\ns=s.replace(\"may no longer resolve and the documented `<path>`-style name may be needed inste...",
+      "input_chars": 643,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015siUe2Afv4hwx8mUevQ6Tj",
+      "is_error": false,
+      "output": "issues/01-session-start-fork-source.md\nissues/02-synced-skills-prefixed-names.md\nissues/02-synced-skills-prefixed-names.md:13:- `README.md` (\"Synced skills\") tells contributors to \"Invoke a synced skill by its bare name, e.g. `<path>`\". From 4.2.0 [2026-07-14T09:47Z] on, synced skills are named `syn...",
+      "output_chars": 874,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

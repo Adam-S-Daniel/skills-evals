@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EizbSvQkb7RyTYR1WeHTAe",
+      "name": "Skill",
+      "input": "vendor-release-impact-issues",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EizbSvQkb7RyTYR1WeHTAe",
+      "is_error": false,
+      "output": "Launching skill: vendor-release-impact-issues",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016vhhq8CqDZPTHW7Qs1GL2x",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | grep -v '^./.claude/skills' | head -100; ls issues 2><path>",
+      "input_chars": 135,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016vhhq8CqDZPTHW7Qs1GL2x",
+      "is_error": true,
+      "output": "Exit code 2\nf968c4a initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodule...",
+      "output_chars": 311,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DhAiTpHcbsA11wmqJqZtVz",
+      "name": "Bash",
+      "input": "for f in hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json README.md AGENTS.md .mcp.json .gitmodules vendor/RELEASES.md vendor/releases.json; do echo \"=== $f\"; cat \"$f\"; done;...",
+      "input_chars": 248,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DhAiTpHcbsA11wmqJqZtVz",
+      "is_error": false,
+      "output": "=== hooks/session-start.sh\n#!<path> bash\n# Runs on every SessionStart event matched by .example-cli/settings.json's\n# \"startup|resume\" matcher. Logs the session source so the team can audit\n# which sessions start cold vs. resume a previous one.\nset -euo pipefail\necho \"session-start: source=${EXAMPLE...",
+      "output_chars": 4213,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U8G73LDDoRGcEuP1VoGZxs",
+      "name": "Bash",
+      "input": "mkdir -p <path><redacted>/scratchpad && cat > <path><redacted><path> <<'EOF'\nimport re, json, sys\nsrc = open(sys.argv[1]).read()\nout = {}; ver = None; cur = None\nfor line in src.splitlines():\n    m = ...",
+      "input_chars": 1021,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U8G73LDDoRGcEuP1VoGZxs",
+      "is_error": false,
+      "output": "{\n \"4.3.0/1\": [\n  \"The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\",\n  \"recognized` to stderr when the configured `--model` value is not\",\n  \"recognized.\"\n ],\n \"4.3.0/2\": [\n  \"Fixed a memory leak in long-running `watch` sessions.\"\n ],\n \"4.3.0/3\": [\n  \"Update checker now re...",
+      "output_chars": 1409,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017dCaFMfjzm9pMcametkrcU",
+      "name": "Bash",
+      "input": "cat > <path><redacted><path> <<'EOF'\nimport json, re, sys, os\nbullets = json.load(open(sys.argv[1])); times = json.load(open(sys.argv[2]))[\"example-cli\"]; outdir = sys.argv[3]\nREL = \"https://github.co...",
+      "input_chars": 5889,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017dCaFMfjzm9pMcametkrcU",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher startup|resume may skip forks\n\nFound while reviewing ExampleCLI release notes 4.1.0 [2026-06-02T14:03Z]\u20134.3.0 [2026-08-25T02:16Z] (`vendor/RELEASES.md`) against this repo; change group: session-start hook source. Not yet verified ag...",
+      "output_chars": 4629,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0146r6qNzVvBmd2QZuPC9SjG",
+      "name": "Bash",
+      "input": "S=<path><redacted>/scratchpad; cd <path> && sed -i 's/Before {{4.2.0}} forks were logged as `resume`; after it they may be missing/Before {{4.2.0}} forks were presumably logged as `resume`; after it t...",
+      "input_chars": 772,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0146r6qNzVvBmd2QZuPC9SjG",
+      "is_error": false,
+      "output": "issues/01-session-start-fork-source.md True 97\nissues/02-synced-skill-names.md True 99\n15:- `hooks/session-start.sh`: logs `source=${EXAMPLE_CLI_SOURCE:-unknown}` to `.example-cli/session-start.log` to audit \"which sessions start cold vs. resume a previous one\". Before 4.2.0 forks were presumably lo...",
+      "output_chars": 604,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

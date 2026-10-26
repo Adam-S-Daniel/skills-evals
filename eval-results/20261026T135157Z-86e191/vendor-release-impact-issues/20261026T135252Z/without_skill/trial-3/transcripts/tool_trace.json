@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TWDoKRqtTRPh7TxZb6c6zX",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TWDoKRqtTRPh7TxZb6c6zX",
+      "is_error": false,
+      "output": "88c1317 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0184mtJKuEKCsNKj6FEX14vH",
+      "name": "Bash",
+      "input": "for f in README.md vendor/RELEASES.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .ripgreprc .idea .vscode; do echo \"=== $f\"; cat \"$f\"; done; wc -c...",
+      "input_chars": 256,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0184mtJKuEKCsNKj6FEX14vH",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 4124,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EVJpHpd9KmDFVRsw2Ko7f2",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook stops firing for forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI v4.2.0 change...",
+      "input_chars": 3132,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EVJpHpd9KmDFVRsw2Ko7f2",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-forked-sessions.md\n02-synced-skills-renamed-synced-prefix.md",
+      "output_chars": 89,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
