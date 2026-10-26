@@ -104,10 +104,34 @@ jobs:
           repositories: adam-agentskills-private
           permission-contents: read
 
+      # persistent/lessons exists only once the BOXY miner has pushed a
+      # lesson; until then there is nothing to draft, which is not an error.
+      # ls-remote exits 2 when the branch is absent; any other nonzero code
+      # fails the step.
+      - name: Look for the lessons branch
+        id: lessons-branch
+        env:
+          LESSONS_TOKEN: ${{ steps.lessons-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$LESSONS_TOKEN" | base64 -w0)"
+          rc=0
+          git -c "http.extraHeader=Authorization: basic $auth" ls-remote --exit-code --heads \
+            https://github.com/Adam-S-Daniel/adam-agentskills-private.git persistent/lessons \
+            > /dev/null || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "no persistent/lessons branch yet: nothing to draft"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
       # lessons/ for the proposals, from persistent/lessons: the BOXY miner
       # writes there because main is PR-only (skills-evals#423, ADR 0015).
       # Credentials not kept.
       - name: Check out the lessons (adam-agentskills-private)
+        if: steps.lessons-branch.outputs.present == 'true'
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills-private
@@ -169,6 +193,8 @@ jobs:
         working-directory: skills-evals
         run: |
           set -euo pipefail
+          # No lessons branch yet: an empty lessons/ selects nothing.
+          mkdir -p ../adam-agentskills-private-lessons/lessons
           drafted="${RUNNER_TEMP:?}/drafted-subjects.txt"
           python3 scripts/draft_new_skill.py drafted-subjects --repo . > "$drafted"
           python3 scripts/draft_new_skill.py select \

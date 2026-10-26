@@ -184,6 +184,11 @@ class CallerTests(unittest.TestCase):
         secrets = [p for p, v in strings(self.doc) if "secrets." in v]
         self.assertEqual(len(secrets), 1)
         users = [p for p, v in strings(self.doc) if "steps.lessons-token" in v]
+        # One env use, the lessons-branch probe; the rest are checkouts.
+        probes = [u for u in users if u[4] == "env"]
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(self.jobs["select"]["steps"][int(probes[0][3])]["id"], "lessons-branch")
+        users = [u for u in users if u[4] == "with"]
         self.assertEqual(len(users), 2)
         holders = [self.jobs["select"]["steps"][int(u[3])]["with"] for u in users]
         for holder in holders:
@@ -283,6 +288,31 @@ class CallerStepTests(unittest.TestCase):
         if not self.log.exists():
             return []
         return [json.loads(l) for l in self.log.read_text().splitlines()]
+
+    def test_a_missing_lessons_branch_skips_the_checkout_without_failing(self):
+        # persistent/lessons exists only after the miner's first push
+        # (run 40404287379 failed checking it out).
+        checkout = step(self.doc, "select", "Check out the lessons (adam-agentskills-private)")
+        self.assertEqual(checkout["if"], "steps.lessons-branch.outputs.present == 'true'")
+        self.assertIn("mkdir -p ../adam-agentskills-private-lessons/lessons",
+                      step(self.doc, "select", "Select one new-skill proposal")["run"])
+        git = self.tmp / "bin" / "git"
+        git.write_text('#!/bin/sh\necho "$*" >> "$FAKE_GIT_LOG"\nexit "$FAKE_GIT_EXIT"\n',
+                       encoding="utf-8")
+        git.chmod(git.stat().st_mode | stat.S_IXUSR)
+        for code, rc, present in (("2", 0, "false"), ("0", 0, "true"), ("128", 128, None)):
+            with self.subTest(code=code):
+                out = self.tmp / f"out-{code}"
+                log = self.tmp / f"git-{code}.log"
+                done = self.run_step("Look for the lessons branch", GITHUB_OUTPUT=str(out),
+                                     LESSONS_TOKEN="example-not-a-token",
+                                     FAKE_GIT_EXIT=code, FAKE_GIT_LOG=str(log))
+                self.assertEqual(done.returncode, rc, done.stderr)
+                self.assertNotIn("example-not-a-token", done.stdout + done.stderr)
+                self.assertIn("persistent/lessons", log.read_text())
+                self.assertNotIn("example-not-a-token", log.read_text())
+                written = out.read_text() if out.exists() else ""
+                self.assertEqual(written, f"present={present}\n" if present else "")
 
     def test_dispatch_sends_the_proposal_and_the_declined_flag(self):
         for flag, sent in (("0", "false"), ("1", "true")):
