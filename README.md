@@ -67,10 +67,13 @@ evals/
   ci-watcher-loops/        # Class B: dispatch, captured run id and bounded timeline polling
     fixture.yaml           # ordered-log, parsed shell capture, conclusion and restraint checks
     seed/                  # consumer site and shared fake gh with call-count payloads
-  debug-github-workflows/  # Class B: one wrong-branch diagnosis fixture
+  debug-github-workflows/  # Class B: four diagnosis fixtures
     wrong-branch/          # main invokes an obsolete test module; an unmerged branch has the fix
       fixture.yaml         # replay-read, affirmative-reply and file-restraint checks
       seed/                # Python service, shared gh symlink and scrubbed run/branch responses
+    swallowed-failure/     # a green run whose process substitution hid a failed gh listing
+    git-identity/          # a bare exit 128 from a test script that commits without a git identity
+    secret-name/           # a workflow reads a secret name the repository does not have
   embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
     fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
     seed/                  # a wired Tools collection, an existing tool, and a standalone app
