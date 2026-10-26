@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Rhxta6EX2n6kDgnPD78ejh",
+      "name": "Bash",
+      "input": "pwd; ls -a; git remote -v; ls <path> 2>&1 | head; which gh; gh auth status 2>&1 | head -5",
+      "input_chars": 93,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Rhxta6EX2n6kDgnPD78ejh",
+      "is_error": false,
+      "output": "<path>\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\nrepo-settings.yml\n<path>\ngh: Not Found (HTTP 404)",
+      "output_chars": 259,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016gb2hLUvbb2CH6qzeGbS7L",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; cat bin/gh | head -40; ls .gh",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016gb2hLUvbb2CH6qzeGbS7L",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 3097,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MPtk8B72zUZ46FcTvwQqfd",
+      "name": "Bash",
+      "input": "for r in service-alpha service-beta; do echo \"== $r\"; gh api repos/example-org/$r/actions/permissions; gh api repos/example-org/$r/actions/permissions/fork-pr-contributor-approval; gh api repos/exampl...",
+      "input_chars": 228,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MPtk8B72zUZ46FcTvwQqfd",
+      "is_error": false,
+      "output": "== service-alpha\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n{\n  \"approval_policy\": \"all_external_contributors\"\n}\n[\n  {\n    \"enforcement\": \"active\",\n    \"id\": 7201,\n    \"name\": \"default branch protection\",\n    \"target\": \"branch\"\n  },\n  {\n    \"enforcement\": \"act...",
+      "output_chars": 649,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019YTquqYr3U9ESFaJtnhxaK",
+      "name": "Bash",
+      "input": "for p in alpha/7201 alpha/7302 beta/7202; do echo \"== $p\"; gh api repos/example-org/service-${p%/*}<path>${p#*/}; done 2>&1",
+      "input_chars": 127,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019YTquqYr3U9ESFaJtnhxaK",
+      "is_error": false,
+      "output": "== alpha/7201\n{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n    }\n  ],\n  \"conditions\": {\n    \"ref_name\": {\n      \"exclude\": [],\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ]\n    }\n  },\n  \"enforcement\": \"active\",\n  \"id\": 7...",
+      "output_chars": 2517,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
