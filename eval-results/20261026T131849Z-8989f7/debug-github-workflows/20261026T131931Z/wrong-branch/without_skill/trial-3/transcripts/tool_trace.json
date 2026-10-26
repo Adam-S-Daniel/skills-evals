@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MESFXsC4wa5A8BneMhHBEr",
+      "name": "Bash",
+      "input": "git status | head -5 && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 91,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MESFXsC4wa5A8BneMhHBEr",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\nbbae383 initial commit\nf0be913 Import example service\ntotal 40\ndrwxr-xr-x 9 root root 4096 Oct 26 13:22 .\ndrwxrwxrwt 9 root root 4096 Oct 26 13:22 ..\ncrw-rw-rw- 1 root root 1, 3 O...",
+      "output_chars": 1210,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018M7Czz8hcC2n4dzik4dRKi",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml && find .gh bin src test .claude -type f | head -50",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018M7Czz8hcC2n4dzik4dRKi",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 1505,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SwG5u8MvWcfnDzcpXVtH5r",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; echo ----; cat .gh/replay/run-view-77001.log; echo ----; cat .gh/replay/api/repos/example-org/example-service/check-runs/99001/annotations.json; echo ----; ca...",
+      "input_chars": 330,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SwG5u8MvWcfnDzcpXVtH5r",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n----\ntest\tRun unit tests\t2026-01-07T...",
+      "output_chars": 2624,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Me6BNhVPKNv23PcgRz6qUg",
+      "name": "Bash",
+      "input": "echo \"== CI command ==\"; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo \"== proposed fix ==\"; python3 -m unittest discover -s test; echo \"exit=$?\"; git log --all --oneline -- test/ .github...",
+      "input_chars": 234,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Me6BNhVPKNv23PcgRz6qUg",
+      "is_error": false,
+      "output": "== CI command ==\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent ...",
+      "output_chars": 1821,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0174Kg6TMXP5zfaViXA32mh7",
+      "name": "Bash",
+      "input": "git branch -a --contains 0933504; git show 0933504 --stat; git show 0933504 -- .github test | head -40",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0174Kg6TMXP5zfaViXA32mh7",
+      "is_error": false,
+      "output": "  fix/ci-test-discovery\n  remotes/origin/fix/ci-test-discovery\ncommit 093350486ff3efc5013d0416a70a4c6e1886778a\nAuthor: <redacted> <<email>>\nDate:   Thu Jan 1 00:00:00 2026 +0000\n\n    Use current test discovery\n\n .github/workflows/ci.yml | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\ncommit 09...",
+      "output_chars": 854,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
