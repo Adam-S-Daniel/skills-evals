@@ -77,7 +77,7 @@ class EventTests(unittest.TestCase):
         self.assertEqual(records, [{
             "v": 1, "id": "toolu_01", "ts": "2026-09-03T10:00:00.000Z", "kind": "skill",
             "name": "adam-coding-anywhere:workflow-path-audit", "surface": "local",
-            "machine": census.machine_name(), "session_id": SESSION,
+            "root": "wsl", "machine": census.machine_name(), "session_id": SESSION,
             "session_title": None, "cwd_repo": None, "branch": "feature/example"}])
 
     def test_a_typed_command_uses_the_entry_uuid_and_drops_the_slash(self):
@@ -176,6 +176,100 @@ class EventTests(unittest.TestCase):
         self.assertNotIn(SESSION.encode(), outputs["events"][1])
 
 
+class MultiRootTests(unittest.TestCase):
+    """Several transcript roots: WSL, Windows (seen from WSL) and Cowork."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="usage-roots-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.wsl = self.tmp / "wsl" / ".claude" / "projects"
+        self.windows = self.tmp / "win" / ".claude" / "projects"
+        self.cowork = (self.tmp / "Claude-Data" / "claude_example" /
+                       "local-agent-mode-sessions" / "s1" / ".claude" / "projects")
+
+    def entries(self, call="toolu_01", message_id="msg_01", uuid="u-01"):
+        return [skill_call("workflow-path-audit", call, model="claude-opus-5",
+                           message_id=message_id),
+                dict(typed("<command-name>/finding-unknowns</command-name>"), uuid=uuid)]
+
+    def run_census(self, *roots):
+        events: list = []
+        models, tally = census.census_all(list(roots), NOW, 8, ALLOW, events)
+        return models, tally["invocations"], events
+
+    def test_a_session_under_two_roots_counts_once(self):
+        write_transcript(self.wsl / "p" / "a.jsonl", self.entries())
+        write_transcript(self.windows / "p" / "a.jsonl", self.entries())
+        models, skills, events = self.run_census(self.wsl, self.windows)
+        self.assertEqual(models, {"claude-opus-5": {"2026-W36": 1}})
+        self.assertEqual(skills, {"workflow-path-audit": {"2026-W36": 1},
+                                  "finding-unknowns": {"2026-W36": 1}})
+        self.assertEqual({e["root"] for e in events}, {"wsl"})
+
+    def test_different_sessions_in_each_root_all_count(self):
+        write_transcript(self.wsl / "p" / "a.jsonl", self.entries())
+        write_transcript(self.windows / "p" / "b.jsonl",
+                         self.entries("toolu_02", "msg_02", "u-02"))
+        models, skills, _ = self.run_census(self.wsl, self.windows)
+        self.assertEqual(models, {"claude-opus-5": {"2026-W36": 2}})
+        self.assertEqual(skills["workflow-path-audit"], {"2026-W36": 2})
+
+    def test_a_cowork_session_stored_twice_counts_once(self):
+        write_transcript(self.cowork / "p" / "one.jsonl", self.entries())
+        write_transcript(self.cowork / "q" / "two.jsonl", self.entries())
+        models, skills, events = self.run_census(self.cowork)
+        self.assertEqual(models, {"claude-opus-5": {"2026-W36": 1}})
+        self.assertEqual(skills["finding-unknowns"], {"2026-W36": 1})
+        self.assertEqual([e["root"] for e in events], ["cowork", "cowork"])
+
+    def test_a_resumed_session_in_one_ordinary_root_still_counts_twice(self):
+        write_transcript(self.wsl / "p" / "a.jsonl", self.entries())
+        write_transcript(self.wsl / "p" / "b.jsonl", self.entries())
+        models, skills, _ = self.run_census(self.wsl)
+        self.assertEqual(models, {"claude-opus-5": {"2026-W36": 2}})
+        self.assertEqual(skills["workflow-path-audit"], {"2026-W36": 2})
+
+    def test_root_kinds(self):
+        self.assertEqual(census.root_kind("/home/example/.claude/projects"), "wsl")
+        self.assertEqual(census.root_kind("/mnt/c/Users/example/.claude/projects"),
+                         "windows")
+        self.assertEqual(census.root_kind(
+            "/mnt/c/Users/example/AppData/Local/Claude-Data/claude_x/"
+            "local-agent-mode-sessions/s/.claude/projects"), "cowork")
+        self.assertEqual(census.root_kind("/mnt/data/projects"), "wsl")
+
+    def test_old_plugin_prefixes_reduce_to_the_skill(self):
+        write_transcript(self.wsl / "p" / "a.jsonl", [
+            skill_call("adam:workflow-path-audit", "toolu_a"),
+            skill_call("adam-local:finding-unknowns", "toolu_b")])
+        _, skills, events = self.run_census(self.wsl)
+        self.assertEqual(skills, {"workflow-path-audit": {"2026-W36": 1},
+                                  "finding-unknowns": {"2026-W36": 1}})
+        self.assertEqual(sorted(e["name"] for e in events),
+                         ["adam-local:finding-unknowns", "adam:workflow-path-audit"])
+
+    def test_the_cli_takes_repeated_and_separated_roots(self):
+        write_transcript(self.wsl / "p" / "a.jsonl", self.entries())
+        write_transcript(self.windows / "p" / "b.jsonl",
+                         self.entries("toolu_02", "msg_02", "u-02"))
+        write_transcript(self.cowork / "p" / "c.jsonl",
+                         self.entries("toolu_03", "msg_03", "u-03"))
+        out = self.tmp / "latest.json"
+        argv = ["model_usage_census.py", "--projects",
+                os.pathsep.join([str(self.wsl), str(self.tmp / "absent")]),
+                "--projects", str(self.windows), "--projects", str(self.cowork),
+                "--out", str(out), "--now", NOW_TEXT]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+            self.assertEqual(census.main(), 0)
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["counts"],
+                         {"claude-opus-5": {"2026-W36": 3}})
+        argv[2:3] = [str(self.tmp / "absent")]
+        argv = argv[:3] + argv[7:]
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(sys, "stderr", io.StringIO()):
+            self.assertEqual(census.main(), 2)
+
+
 PUBLIC = frozenset({"Adam-S-Daniel/skills-evals", "example-owner/public-widgets"})
 
 
@@ -268,7 +362,8 @@ class HookTests(unittest.TestCase):
             "v": 1, "id": hashlib.sha256(f"example-host\n{line}".encode()).hexdigest(),
             "ts": "2026-09-03T10:00:00.000Z", "kind": "hook", "event": "pre-commit",
             "repo": "example-owner/public-widgets", "checks": ["lint-a", "lint-b"],
-            "failed": ["lint-a"], "surface": "local", "machine": "example-host"}])
+            "failed": ["lint-a"], "surface": "local", "root": "wsl",
+            "machine": "example-host"}])
 
     def test_public_repos_are_the_non_private_registries_plus_two(self):
         repos = census.public_repos()

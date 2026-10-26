@@ -347,7 +347,7 @@ def _event_ts(when: datetime) -> str:
 
 
 def _skill_event(entry: dict, when: datetime, event_id, name: str,
-                 cache: dict, machine: str) -> dict:
+                 cache: dict, machine: str, root: str) -> dict:
     """One private record of a skill invocation. `session_title` is filled
     in when the whole transcript has been read."""
     ts = _event_ts(when)
@@ -356,7 +356,8 @@ def _skill_event(entry: dict, when: datetime, event_id, name: str,
         # No tool-use id or entry uuid: an id that is still stable across runs.
         event_id = hashlib.sha256(f"{session}\n{ts}\n{name}".encode("utf-8")).hexdigest()
     return {"v": 1, "id": _text(event_id), "ts": ts, "kind": "skill",
-            "name": name[:EVENT_TEXT_CAP], "surface": "local", "machine": machine,
+            "name": name[:EVENT_TEXT_CAP], "surface": "local", "root": root,
+            "machine": machine,
             "session_id": session, "session_title": None,
             "cwd_repo": cwd_repo(entry.get("cwd"), cache),
             "branch": _text(entry.get("gitBranch"))}
@@ -497,14 +498,32 @@ def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
                                    "kind": "hook", "event": run["event"],
                                    "repo": run["repo"], "checks": run["checks"],
                                    "failed": run["failed"], "surface": "local",
-                                   "machine": machine})
+                                   "root": root_kind(path), "machine": machine})
     return {"rows": rows, "runs_scanned": len(seen)} if read else None
 
 
-def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
+def root_kind(path) -> str:
+    """Which transcript root `path` is, for the private records: `cowork`
+    (the desktop app's Cowork sandbox), `windows` (a Windows drive seen from
+    WSL, `/mnt/<letter>/...`) or `wsl` (this side's own home)."""
+    parts = Path(path).parts
+    if "local-agent-mode-sessions" in parts:
+        return "cowork"
+    if len(parts) > 2 and parts[:2] == ("/", "mnt") and len(parts[2]) == 1:
+        return "windows"
+    return "wsl"
+
+
+def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
                allowlist: frozenset[str] | None = None,
                events: list | None = None) -> tuple[dict, dict]:
     """(model counts, skill tally) from ONE walk of the transcripts.
+
+    `projects_dir` is one transcript root or a list of them (WSL, Windows,
+    Cowork). A turn, Skill call or typed command whose id an EARLIER root
+    already counted is skipped, so a session stored under two roots counts
+    once. Inside one Cowork root the ids are deduplicated across files too:
+    the desktop app stores each Cowork session twice.
 
     Model counts are `census_counts`'s. The skill tally is
     {"invocations": {skill: {iso_week: n}}, "sessions": {skill: {iso_week: n}},
@@ -529,18 +548,43 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
     #: hard-linked copy is the SAME underlying file reachable via a second
     #: path in the walk — reading it twice double-counts every turn in it.
     #: This is deliberately NOT the same thing as deduping turns globally:
-    #: `seen_turns` below still resets per (unique) file, because two
-    #: genuinely different transcripts can legitimately share a message id
-    #: (a resumed session) and both must still count.
+    #: inside one non-Cowork root `seen` below still resets per (unique)
+    #: file, because two genuinely different transcripts can legitimately
+    #: share a message id (a resumed session) and both must still count.
     seen_files: set[tuple[int, int]] = set()
-    projects_dir = Path(projects_dir)
-    if not projects_dir.is_dir():
-        return counts, tally
+    roots = ([Path(projects_dir)] if isinstance(projects_dir, (str, Path))
+             else [Path(root) for root in projects_dir])
     record = events is not None and allowlist is not None
     machine = machine_name() if record else ""
     repos: dict = {}
+    #: ("t"|"c"|"u", id) of every turn, Skill call and typed entry counted
+    #: under an earlier root.
+    claimed: set[tuple[str, str]] = set()
+    for root in roots:
+        if root.is_dir():
+            claimed |= _census_root(root, wanted, oldest, counts, tally, seen_files,
+                                    claimed, allowlist, events if record else None,
+                                    repos, machine)
+    return counts, tally
 
-    for transcript in sorted(projects_dir.rglob("*.jsonl")):
+
+def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
+                 tally: dict, seen_files: set, claimed: set, allowlist,
+                 events: list | None, repos: dict, machine: str) -> set:
+    """Walk one transcript root into `counts` and `tally`; return the ids it
+    counted. See census_all."""
+    skills, sessions = tally["invocations"], tally["sessions"]
+    record = events is not None
+    kind_of_root = root_kind(root)
+    this_root: set[tuple[str, str]] = set()
+
+    def fresh(key) -> bool:
+        if key in claimed or key in seen:
+            return False
+        seen.add(key)
+        return True
+
+    for transcript in sorted(root.rglob("*.jsonl")):
         try:
             stat = transcript.stat()
         except OSError:
@@ -556,8 +600,7 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
         # file being appended to across a week boundary is never dropped.
         if datetime.fromtimestamp(stat.st_mtime, timezone.utc) < oldest:
             continue
-        seen_turns: set[str] = set()
-        seen_calls: set[str] = set()
+        seen = this_root if kind_of_root == "cowork" else set()
         invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
         file_events: list[dict] = []
         title = None
@@ -593,6 +636,10 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                     if kind == "user":
                         if allowlist is not None:
                             typed = _typed_skill(message, allowlist)
+                            uuid = entry.get("uuid")
+                            if typed is not None and isinstance(uuid, str) and uuid \
+                                    and not fresh(("u", uuid)):
+                                typed = None
                             if typed is not None:
                                 _bump(skills, typed, week)
                                 invoked.add((typed, week))
@@ -601,7 +648,7 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                                     file_events.append(_skill_event(
                                         entry, when, entry.get("uuid"),
                                         raw[1:] if raw.startswith("/") else raw,
-                                        repos, machine))
+                                        repos, machine, kind_of_root))
                         continue
                     if allowlist is not None and isinstance(message.get("content"), list):
                         for item in message["content"]:
@@ -610,10 +657,9 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                                     and item.get("name") == "Skill"):
                                 continue
                             call = item.get("id")
-                            if isinstance(call, str) and call:
-                                if call in seen_calls:
-                                    continue
-                                seen_calls.add(call)
+                            if isinstance(call, str) and call \
+                                    and not fresh(("c", call)):
+                                continue
                             given = item.get("input")
                             raw = given.get("skill") if isinstance(given, dict) else None
                             name = skill_key(raw, allowlist)
@@ -621,15 +667,14 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
                             invoked.add((name, week))
                             if record and _text(raw):
                                 file_events.append(_skill_event(
-                                    entry, when, call, raw, repos, machine))
+                                    entry, when, call, raw, repos, machine,
+                                    kind_of_root))
                     key = published_key(message.get("model"))
                     if key is None:
                         continue
                     turn = _turn_key(entry, message)
-                    if turn is not None:
-                        if turn in seen_turns:
-                            continue
-                        seen_turns.add(turn)
+                    if turn is not None and not fresh(("t", turn)):
+                        continue
                     _bump(counts, key, week)
         except OSError:
             continue
@@ -639,7 +684,9 @@ def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
             event["session_title"] = title
         if record:
             events.extend(file_events)
-    return counts, tally
+        if seen is not this_root:
+            this_root |= seen
+    return this_root
 
 
 def build_document(projects_dir: Path, now: datetime,
@@ -691,8 +738,10 @@ def _write_json(path: Path, document: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--projects", type=Path, default=DEFAULT_PROJECTS,
-                        help="Claude Code transcript root (default ~/.claude/projects)")
+    parser.add_argument("--projects", action="append", default=None,
+                        help="Claude Code transcript root; repeat it, or separate "
+                             "roots with the OS path separator, for several "
+                             "(default ~/.claude/projects)")
     parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--weekly-out", type=Path, default=None,
@@ -726,7 +775,10 @@ def main() -> int:
         print(PYYAML_MISSING_MESSAGE, file=sys.stderr)
         return 2
 
-    if not Path(args.projects).is_dir():
+    roots = ([DEFAULT_PROJECTS] if args.projects is None else
+             [Path(part) for value in args.projects
+              for part in value.split(os.pathsep) if part])
+    if not any(root.is_dir() for root in roots):
         # Say so and stop, rather than publishing a clean census of nothing —
         # never a clean census of nothing on a surface that cannot do the
         # job. The message names no path: this line reaches a scheduled
@@ -753,7 +805,7 @@ def main() -> int:
                   "directory; nothing published", file=sys.stderr)
             return 2
     events = [] if args.events_out is not None else None
-    counts, tally = census_all(args.projects, now, args.weeks, allowlist, events)
+    counts, tally = census_all(roots, now, args.weeks, allowlist, events)
     hooks = None
     if allowlist is not None:
         paths = ([default_hook_log()] if args.hook_logs is None
