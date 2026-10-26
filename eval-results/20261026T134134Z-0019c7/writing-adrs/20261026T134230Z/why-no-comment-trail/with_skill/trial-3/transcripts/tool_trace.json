@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M3Br3jA8KFn5kw71wSDhFo",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M3Br3jA8KFn5kw71wSDhFo",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X1Xb2RqjdroxK7GJEC2REC",
+      "name": "Bash",
+      "input": "ls -R docs; cat docs/decisions/*.md; cat scripts/export-ledger.sh; head -30 CHANGELOG.md; git log --oneline | head",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X1Xb2RqjdroxK7GJEC2REC",
+      "is_error": false,
+      "output": "docs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# 0001. Export after the ledger closes, not at midnight\n\n- **Status:** Accepted\n- **Date:** 2025-09-15\n\n## Context\n\nLate postings for a day keep arriving until the ledger closes a...",
+      "output_chars": 3546,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015KU7v5s58eBsLrdWqGDarJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 73,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LSieMRmSzswZPoaVDeBtFf",
+      "name": "Bash",
+      "input": "echo '| [0003](0003-end-export-lines-with-crlf.md) | End export lines with CRLF, not LF | Accepted |' >> docs/decisions/README.md && python3 - <<'EOF'\np='scripts/export-ledger.sh'\ns=open(p).read()\nold...",
+      "input_chars": 452,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015KU7v5s58eBsLrdWqGDarJ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LSieMRmSzswZPoaVDeBtFf",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..4baabf8 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1430,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

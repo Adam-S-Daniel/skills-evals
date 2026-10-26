@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Snitjq2WhgdSV9SBKotQwm",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Snitjq2WhgdSV9SBKotQwm",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BMxJxLVRqpfh5Mh4JrEBSj",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls -R docs; cat docs/decisions/*.md; cat scripts/export-ledger.sh; cat CHANGELOG.md",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BMxJxLVRqpfh5Mh4JrEBSj",
+      "is_error": false,
+      "output": "0eb2c82 initial commit\ndocs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n# 0001. Export after the ledger closes, not at midnight\n\n- **Status:** Accepted\n- **Date:** 2025-09-15\n\n## Context\n\nLate postings for a day keep arriving un...",
+      "output_chars": 3546,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VTVPrEffmMrZXAL4badEEQ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 73,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LbK6fB5M8jcsL1awifwB1y",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WMgsbgaQxANa4oo6kwjjYL",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 48,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VTVPrEffmMrZXAL4badEEQ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LbK6fB5M8jcsL1awifwB1y",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WMgsbgaQxANa4oo6kwjjYL",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 88,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

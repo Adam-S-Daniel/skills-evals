@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0183AWYZ3rBdKFBaEVELavuU",
+      "name": "Bash",
+      "input": "git status --short && ls -R docs scripts && cat docs/decisions/README.md && ls docs/decisions && cat scripts/export-ledger.sh && head -30 CHANGELOG.md",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0183AWYZ3rBdKFBaEVELavuU",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndocs:\ndecisions\n\ndocs/decisions:\n0001-export-after-the-ledger-closes.md\n0002-write-amounts-as-integer-cents.md\nREADME.md\n\nscripts:\nexport-ledger.sh\n# Architectur...",
+      "output_chars": 2262,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C6BXRAM4skWsavydcx5Jcm",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-write-amounts-as-integer-cents.md && git log --oneline | head",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C6BXRAM4skWsavydcx5Jcm",
+      "is_error": false,
+      "output": "# 0002. Write amounts as integer cents, not decimal strings\n\n- **Status:** Accepted\n- **Date:** 2025-10-01\n\n## Context\n\nThe ledger stores amounts as integer cents. Formatting them as decimal\nstrings went through a float and produced off-by-one-cent values on a few\nlarge entries.\n\n## Decision\n\nWrite ...",
+      "output_chars": 754,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017kSL7rVFihqr4xk76vG8Lu",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 73,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PiBLwLab57xgDonJMkTps6",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/README.md'\ns=open(p).read()\ns=s.rstrip('\\n')+'\\n| [0003](0003-end-export-lines-with-crlf.md) | End export lines with CRLF, not LF | Accepted |\\n'\nopen(p,'w').write(...",
+      "input_chars": 582,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017kSL7rVFihqr4xk76vG8Lu",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PiBLwLab57xgDonJMkTps6",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex 73997e6..4baabf8 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -26,3 +26,4 @@ Then come these sections, in this order:\n |-----|-------|--------|\n | [0001](0001-export-after-the-ledger-closes.md) | Export...",
+      "output_chars": 1147,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
