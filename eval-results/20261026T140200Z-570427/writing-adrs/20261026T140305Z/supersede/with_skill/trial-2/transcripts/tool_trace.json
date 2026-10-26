@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011AKTn6R7ws8f14suA3W7dp",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011AKTn6R7ws8f14suA3W7dp",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019fN1wrFrfTQdVSNCkJn3Ec",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && ls -R docs scripts 2><path>; cat docs/decisions/README.md; cat CHANGELOG.md | head -30",
+      "input_chars": 121,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019fN1wrFrfTQdVSNCkJn3Ec",
+      "is_error": false,
+      "output": "9220a27 initial commit\ndocs:\ndecisions\n\ndocs/decisions:\n0001-take-snapshots-with-pg-basebackup.md\n0002-prune-snapshots-older-than-30-days.md\n0003-store-snapshots-on-a-separate-volume.md\nREADME.md\n\nscripts:\nprune-snapshots.sh\n# Architecture decisions\n\nThis log records the choices a reader of the code...",
+      "output_chars": 1672,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KPyyHZh3ANoCrceFpVyEJ7",
+      "name": "Bash",
+      "input": "cat docs/decisions/0002-*.md scripts/prune-snapshots.sh; cat docs/decisions/0003-*.md | head -30",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KPyyHZh3ANoCrceFpVyEJ7",
+      "is_error": false,
+      "output": "# 0002. Prune snapshots older than 30 days\n\n- **Status:** Accepted\n- **Date:** 2025-11-18\n\n## Context\n\nNightly snapshots accumulate on the backup volume until something deletes\nthem. The volume holds roughly four months of snapshots, and nobody has\never asked to restore from one more than two weeks ...",
+      "output_chars": 2804,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GvdBDSgyqA2C3vmWmQ8Lt4",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots, not those from the last 30 days\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[000...",
+      "input_chars": 2186,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GvdBDSgyqA2C3vmWmQ8Lt4",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2290,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
