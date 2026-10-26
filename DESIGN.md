@@ -917,6 +917,16 @@ is objectively decidable from the resulting files alone.
   filter on a required check leaves it missing and deadlocks the merge, which
   is the non-obvious thing the skill carries.
 
+That fixture is now `evals/workflow-path-audit/required-check-routing`, one of
+four nested fixtures (#66) so improve mode can hold one out. The other three
+each measure a claim it cannot reach: `companion-skip-pair` (an inherited
+same-name skip workflow beside a path-filtered required check),
+`moved-test-dir` (a filter left on a moved directory, a script reached only
+through a config, the workflow's own file and a sibling's), and
+`workflow-doc-in-step` (the repo's existing workflow table kept in step, with
+no second doc). The skill's lockfile rule INSIDE an early-skip gate stays
+judge-only: `changeset_triggers` replays `on:` blocks, never a gate's regex.
+
 ## Open decisions (defaults proposed — confirm or override)
 
 - **Harness language:** Python — CHOSEN and implemented for the objective scorer.

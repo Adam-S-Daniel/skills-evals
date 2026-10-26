@@ -43,6 +43,9 @@ evals/
     required-check-routing/  # the original fixture; the scheduled run's default
       fixture.yaml         # prompt, arms, objective checks, judge rubric
       seed/                # workspace the agent starts from (unfiltered workflows)
+    companion-skip-pair/   # an inherited same-name skip workflow beside a required check
+    moved-test-dir/        # a filter left pointing at a directory the tests moved out of
+    workflow-doc-in-step/  # the repo's own workflow table kept in step with the filters
   github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
     fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
     seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
@@ -250,10 +253,11 @@ measurements from different runs.
 
 ## Running
 
-Objective-only (no agent invocation — scores a workspace as-is):
+Objective-only (no agent invocation — scores a workspace as-is; it scores one
+fixture, so name a nested one or pass `--fixture NAME`):
 
 ```bash
-python3 harness/run_eval.py evals/workflow-path-audit --arm objective-only
+python3 harness/run_eval.py evals/workflow-path-audit/required-check-routing --arm objective-only
 ```
 
 Full A/B run (spawns the Claude Code CLI headlessly for each arm, scores with

@@ -3878,7 +3878,7 @@ class TestIssue97(unittest.TestCase):
         # objective-only run died with a bare ImportError traceback on a
         # machine without the parser, for a code path that never parses
         # markdown. The import is at its one call site now.
-        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit"
+        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit" / "required-check-routing"
         baseline, _ = self._run_main([skill_dir, "--arm", "objective-only"])
         blocked = dict(sys.modules)
         blocked["markdown_it"] = None
