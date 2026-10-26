@@ -172,3 +172,101 @@ jobs:
           python3 scripts/scaffold_skill_gaps.py automate \
             --artifact "$RUNNER_TEMP/skill-coverage" \
             --run-id "$RUN_ID" --main-sha "$MAIN_SHA" --write
+
+  # Skill retirement (#70, part 2): compute every skill's verdict from the
+  # pooled results and act on a `retire` one. Only the schedule runs it, and
+  # scripts/retire_skill.py refuses any other event as well. It reads the
+  # results branch and the public registries (no private checkout, so a
+  # private-registry skill has no tested digest and never retires) and
+  # writes only skills-evals issues, with this repository's own token.
+  #
+  # AUTO MODE IS NOT WIRED. `--allow-mode proposal` makes the script exit 2
+  # if evals/gate-policy.yml is switched to `retirement_mode: auto`, rather
+  # than doing nothing quietly. Auto mode pushes a branch to adam-agentskills
+  # and opens an auto-merging pull request there (ADR 0014), which needs a
+  # write credential for that repository that does not exist yet: a GitHub
+  # App with contents and pull-requests write on adam-agentskills alone,
+  # minted with actions/create-github-app-token immediately before a
+  # checkout that keeps its credentials, and passed to the script as
+  # GH_TOKEN. Adding it, and the matching repo-settings and adam-agentskills
+  # ADRs, is the owner's call.
+  retirement:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@v7.0.1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Check out adam-agentskills
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: registry-agentskills
+          persist-credentials: false
+
+      - name: Check out cms-platform
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: registry-cms
+          persist-credentials: false
+
+      - name: Check out adamdaniel.ai
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: registry-site
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the offline verdict dependency
+        run: python3 -m pip install pyyaml==6.0.3
+
+      - name: Compute the retirement verdicts
+        working-directory: skills-evals
+        run: |
+          as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
+          python3 scripts/compute_gates.py \
+            --results-tree "$GITHUB_WORKSPACE/eval-results" \
+            --roster evals/roster.yml --policy evals/gate-policy.yml \
+            --as-of "$as_of" \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --out "$RUNNER_TEMP/gates/latest.json"
+
+      - name: Upload the verdicts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gates
+          path: ${{ runner.temp }}/gates/
+          if-no-files-found: error
+
+      - name: File or update the retirement issue
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/retire_skill.py \
+            --gates "$RUNNER_TEMP/gates/latest.json" \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --allow-mode proposal
