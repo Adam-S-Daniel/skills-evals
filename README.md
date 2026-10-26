@@ -61,9 +61,14 @@ evals/
     why-no-comment-trail/  # "why did we do X?": record the relayed reason as an ADR
     trigger-eval-set.json  # reviewed should/should-not-trigger queries for
                            # propose_skill_edit.py --trigger-eval-set
-  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
-    fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
-    seed/                  # a release pipeline with the findings baked in
+  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings, four fixtures
+    release-pipeline/      # six findings and two decoys in a release pipeline's shell
+      fixture.yaml         # prompt, objective checks (file_matches over the seed scripts), rubric
+      seed/                # a release pipeline with the findings baked in
+    drift-report-capture/  # diff and grep captures abort a drift report under set -e
+    test-runner-assertions/  # a test runner's helpers abort the run on a failing assertion
+    empty-repo-discovery/  # a failed gh listing reads as "nothing to audit" and goes green
+      checker/             # hidden probe the repo_tests checks lay over the workspace
   ci-watcher-loops/        # Class B: dispatch, captured run id and bounded timeline polling
     fixture.yaml           # ordered-log, parsed shell capture, conclusion and restraint checks
     seed/                  # consumer site and shared fake gh with call-count payloads
