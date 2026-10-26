@@ -25,41 +25,18 @@
 # 30 points: all automated evals together, in any rolling seven days. A
 # rolling window keeps every allowance week under it, wherever the account's
 # own week starts.
-#
-# TEMPORARY: 95 points until the allowance week resets on 2026-10-26 around
-# 17:00 UTC (Adam's decisions of 2026-10-24, 30% to 60%, and 2026-10-25,
-# "Go to 95% this week"; the per-run stop is unchanged). Set it back to 0.30
-# after that reset. Fires made under the raised cap stay in the rolling window
-# for seven days, so fires may be refused for a while after the revert.
-weekly_cap: 0.95
+weekly_cap: 0.30
 
 # 3 points: one run stops starting new work once the meter has moved this
 # much since the run's first reading.
-#
-# TEMPORARY: 1.5 points until the same 2026-10-26 reset. The 74 runs ingested
-# by 2026-10-26 10:55 UTC each moved the meter at most 1 point (median 0), so
-# the guard's 3.5-point reservation per fire held about five times what a run
-# spends while Adam asked for more usage before the reset. Set it back to
-# 0.03 with `weekly_cap`.
-per_run_cap: 0.015
+per_run_cap: 0.03
 
 # Half a point, added to every run's measured spend: the meter is read as an
 # agent call begins, so the run's last call (and any judge call after it) is
 # never inside the measured delta.
-#
-# TEMPORARY: 0.1 point until the same 2026-10-26 reset. On that morning the
-# guard counted 62 points of eval spend over 92 runs, 46 of them this
-# overrun alone, and charged it again on each of 25 old fires that never
-# produced results, while the account meter itself read 62%. That held about
-# 25 phantom points while Adam asked for all usage that fits before the
-# reset (2026-10-26). `stop_when_account_above` still stops every run at the
-# account's real 95%. Set it back to 0.005 with `weekly_cap`.
-per_run_overrun: 0.001
+per_run_overrun: 0.005
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of
 # the allowance from Adam's own work.
-#
-# TEMPORARY: 95 points until the same 2026-10-26 reset (Adam, 2026-10-25:
-# "Go to 95% this week"). Set it back to 0.80 with `weekly_cap`.
-stop_when_account_above: 0.95
+stop_when_account_above: 0.80
