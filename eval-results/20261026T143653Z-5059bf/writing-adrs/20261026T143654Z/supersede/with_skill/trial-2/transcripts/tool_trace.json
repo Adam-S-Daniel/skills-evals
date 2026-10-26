@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K7eHngPNKEKsxiABTZkWdb",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K7eHngPNKEKsxiABTZkWdb",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QYd6WbnSGEvzUdn87S8puv",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md 2><path>; ls docs/decisions; cat scripts/*.sh CHANGELOG.md",
+      "input_chars": 170,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QYd6WbnSGEvzUdn87S8puv",
+      "is_error": true,
+      "output": "Exit code 1\nbwrap: Can't mkdir <path>: Read-only file system",
+      "output_chars": 77,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JqVRSnb7Rib2RzMERU4MKK",
+      "name": "Bash",
+      "input": "git -C <path> log --oneline | head -20; find <path> -path '*/.git' -prune -o -type f -print",
+      "input_chars": 125,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JqVRSnb7Rib2RzMERU4MKK",
+      "is_error": false,
+      "output": "4cbd911 initial commit\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>\n<path>",
+      "output_chars": 997,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019tC9ZYqg5yATbWd2EVuEUE",
+      "name": "Bash",
+      "input": "cd <path>; for f in README.md CHANGELOG.md scripts/prune-snapshots.sh docs/decisions/*.md; do echo \"=== $f\"; cat \"$f\"; done; git status",
+      "input_chars": 152,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019tC9ZYqg5yATbWd2EVuEUE",
+      "is_error": false,
+      "output": "=== README.md\n# Snapshot Keeper\n\nSnapshot Keeper takes a nightly snapshot of the application database and\nkeeps a rolling set of them on the backup volume. See\n`scripts/prune-snapshots.sh` for which snapshots are deleted, and when.\n=== CHANGELOG.md\n# Changelog\n\n## 2.1.0 - 2026-06-09\n\n- `scripts/prun...",
+      "output_chars": 5944,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Huvxfw9bS6LZpSihfUpnNJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JWB3xqsVCaw6jf5xTiyi5H",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\np='docs/decisions/0002-prune-snapshots-older-than-30-days.md'\ns=open(p).read().replace('- **Status:** Accepted','- **Status:** Superseded by 0004',1); open(p,'w').write(s)\n...",
+      "input_chars": 957,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Huvxfw9bS6LZpSihfUpnNJ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 171,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JWB3xqsVCaw6jf5xTiyi5H",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2651,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JoNcz41DmKxVe7k76QrbAB",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/0004-keep-the-newest-14-snapshots.md'\ns=open(p).read()\ns=s[:s.index('\\n## References')]+'\\n'\ns=s.replace(\"\"\"`scripts/prune-snapshots.sh` keeps the newest 14 snapsho...",
+      "input_chars": 689,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JoNcz41DmKxVe7k76QrbAB",
+      "is_error": false,
+      "output": "rule would still delete the last good snapshot behind it.\n\nNever pruning at all was rejected for the same reason as in 0002: the backup\nvolume fills in about four months.\n\n M docs/decisions/0002-prune-snapshots-older-than-30-days.md\n M docs/decisions/README.md\n M scripts/prune-snapshots.sh\n?? docs/d...",
+      "output_chars": 345,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

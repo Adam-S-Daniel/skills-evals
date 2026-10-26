@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MnviF4oxTviFtay5VQ4U1h",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md && for f in docs/decisions/*.md; do echo \"=== $f\"; cat \"$f\"; done; cat CHANGELOG.md; cat sc...",
+      "input_chars": 210,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MnviF4oxTviFtay5VQ4U1h",
+      "is_error": false,
+      "output": "2b26b68 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 7013,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TUgEcVd3gKDHt1tF58ZtE7",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[0002](0002-prune-snapshots-older-tha...",
+      "input_chars": 2416,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TUgEcVd3gKDHt1tF58ZtE7",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2999,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
