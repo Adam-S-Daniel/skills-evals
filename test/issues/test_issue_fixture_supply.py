@@ -62,7 +62,7 @@ GIT_ENV = {
 
 
 def candidate(key, **changes):
-    row = {"key": key, "answer_leak": {"flag": False}, "closing_issues": [],
+    row = {"key": key, "answer_leak": {"flag": False}, "closing_issues": [1],
            "files_truncated": False, "touches": [], "merged_at": "2026-09-01T00:00:00Z"}
     row.update(changes)
     return row
@@ -94,6 +94,8 @@ class PickTests(unittest.TestCase):
             candidate("example-org__widget__5", answer_leak={}),
             candidate("example-org__widget__6", closing_issues=[1, 2]),
             candidate("example-org__widget__7", files_truncated=True),
+            candidate("example-org__widget__9", closing_issues=[]),
+            candidate("example-org__skills-evals__10"),       # this repository
             candidate("not a key"),
             "not a row",
             candidate("example-org__widget__8"),

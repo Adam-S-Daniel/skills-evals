@@ -168,6 +168,10 @@ MAX_YAML_BYTES = 256 * 1024
 MAX_PATCH_BYTES = 1024 * 1024
 
 FIXTURE_FILE = "fixture.yaml"
+#: This repository. A scaffold of its own pull request would seed a copy of
+#: its fixtures, so the picker skips it (skills-evals#433).
+SELF_REPO = "skills-evals"
+NO_ISSUE_REJECTED = "the pull request closes no issue, and every fixture snapshots one"
 SNAPSHOT_FILE = "issue-before-fix.txt"
 PATCH_FILE = "solution.patch"
 CHECKER_DIR = "checker"
@@ -913,6 +917,10 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
     problems += [f"seed: {v}" for v in seed_prep.agent_context_violations(seed)]
     problems += [f"seed carries the evaluated path {rel}" for rel in EVALUATED_PATHS
                  if os.path.lexists(seed / rel)]
+    # A seed of this repository carries its own fixtures, which the census
+    # and the fixture budget tests then count twice (skills-evals#433).
+    if any(path.name == FIXTURE_FILE for path in _walk(seed)):
+        problems.append(f"seed carries an eval {FIXTURE_FILE}")
     try:
         hits = answer_leak.leaked_runs(
             fixture["prompt"], "\n".join(answer_leak.fixture_added_lines(fixture_dir)),
@@ -1068,7 +1076,8 @@ def gate_snapshot(fixture_dir: Path, fixture_id: str,
                   fleet: tuple[list[str], list[str]], *,
                   repositories: dict[str, Path] | None = None) -> None:
     """Recompute the issue snapshot from GitHub and require the branch's to
-    be the same bytes and times, or absent when there is no closing issue."""
+    be the same bytes and times; a pull request with no closing issue is
+    refused."""
     text = (fixture_dir / FIXTURE_FILE).read_text(encoding="utf-8")
     found = [m for line in text.splitlines() if (m := SOURCE_LINE_RE.fullmatch(line))]
     if len(found) != 1:
@@ -1104,7 +1113,9 @@ def _gate_snapshot_bytes(fixture_dir: Path, fixture: dict, expected: dict | None
         if named is not None or os.path.lexists(path) or answer_leak.SNAPSHOT_KEY in fixture:
             raise ingest.Rejected("the branch carries an issue snapshot, but the pull request "
                                   "has no closing issue")
-        return
+        # Every committed fixture snapshots its issue (the leak test's
+        # baseline), so one without could never merge (skills-evals#433).
+        raise ingest.Rejected(NO_ISSUE_REJECTED)
     if named != expected["issue"]:
         raise ingest.Rejected("fixture.yaml's header names another issue than the one the "
                               "pull request closes")
@@ -1535,8 +1546,9 @@ def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], lim
     A candidate is skipped when the routine would refuse it or has it already:
     a key that does not parse or names a fixture id out of bounds, a body that
     quotes the diff (the miner's answer_leak flag; LEAK_POLICY rejects it at
-    build), several closing issues (the fire refuses them), a truncated file
-    list, an existing `evals/real-work/<id>/`, an existing
+    build), no closing issue (the fixture must snapshot one) or several (the
+    fire refuses them), a pull request of this repository (SELF_REPO), a
+    truncated file list, an existing `evals/real-work/<id>/`, an existing
     `claude/scaffold-<id>` branch, or a fire within REFIRE_AFTER_DAYS. The
     rest rank by their subject skills (SUBJECT_BY_TOUCH): most used first
     (`usage`, a count per skill; none is known today, so every count is 0),
@@ -1559,7 +1571,9 @@ def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], lim
         if not isinstance(leak, dict) or leak.get("flag") is not False:
             continue
         issues = row.get("closing_issues")
-        if not isinstance(issues, list) or len(issues) > 1 or row.get("files_truncated"):
+        if not isinstance(issues, list) or len(issues) != 1 or row.get("files_truncated"):
+            continue
+        if match["name"] == SELF_REPO:
             continue
         if (evals / "real-work" / fixture_id).exists() \
                 or f"claude/scaffold-{fixture_id}" in branches or key in fired:
