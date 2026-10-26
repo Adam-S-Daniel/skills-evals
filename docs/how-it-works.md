@@ -270,9 +270,9 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `convention_fidelity` 0.5, `date_priority` 0.3, `restraint` 0.2.
 - Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
 
-### review-bash-ci-reliability
+### review-bash-ci-reliability/release-pipeline
 
-- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability)
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/release-pipeline](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/release-pipeline)
 - Review a release pipeline's shell for reliability problems and fix them (seeded with an exit-status swallow via process substitution, a broken-pipe-prone `grep -q`, a swallowed `gh api` failure, missing git identity/signing setup, an unguarded `jq` dependency). Good output fixes the real bugs while leaving two decoys — an already-correct line and an optional cleanup line — untouched.
 - Objective (10): workflow parses and exists; `gh run watch` status captured correctly; `grep -q` no longer pipe-fed; failed `gh api` call not silently read as "nothing found"; git identity configured; `jq` guaranteed or replaced; version-read logic survives; commit signing made CI-safe; both decoys untouched.
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
