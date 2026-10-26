@@ -520,6 +520,53 @@ class DryRunTests(Base):
         self.assertIn("already open", err)
 
 
+class UsageLineTests(Base):
+    """The issue names the skill's recent invocations from --usage, and the
+    decision does not depend on it."""
+
+    def usage(self, generated_at="2026-10-25T06:00:00Z", rows=None):
+        rows = rows if rows is not None else [
+            {"week": "2026-10-19", "kind": "skill", "name": SKILL, "repo": None,
+             "surface": "local", "invocations": 3, "sessions": 2, "blocked": None,
+             "overridden": None, "outcome": None},
+            {"week": "2026-10-19", "kind": "hook", "name": SKILL, "repo": None,
+             "surface": "local", "invocations": 50, "sessions": None, "blocked": 0,
+             "overridden": None, "outcome": None}]
+        path = self.tmp / "weekly-local.json"
+        path.write_text(json.dumps({"generated_at": generated_at, "schema": 1,
+                                    "sources": [], "rows": rows}))
+        return str(path)
+
+    def body(self, *extra):
+        code, _, err, fake = self.run_main(gates_doc("proposal"), *extra)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(fake.writes()[0][:2], ["issue", "create"])
+        return fake.calls[-1][1]
+
+    def test_a_fresh_census_gives_the_count(self):
+        self.assertIn("Recent use: 3 local invocation(s) in the four weeks to "
+                      "20261025T120000Z", self.body("--usage", self.usage()))
+
+    def test_a_skill_absent_from_a_fresh_census_is_zero(self):
+        self.assertIn("Recent use: 0 local invocation(s)",
+                      self.body("--usage", self.usage(rows=[])))
+
+    def test_no_stale_or_unreadable_census_is_unknown(self):
+        for extra in ((), ("--usage", self.usage(generated_at="2026-10-01T00:00:00Z")),
+                      ("--usage", str(self.tmp / "absent.json"))):
+            with self.subTest(extra=extra):
+                self.assertIn("Recent use: unknown (no fresh usage census).",
+                              self.body(*extra))
+
+    def test_the_workflow_passes_the_published_census(self):
+        doc = yaml.safe_load((ROOT / ".github" / "workflows" / "skill-coverage.yml")
+                             .read_text(encoding="utf-8"))
+        act = next(s for s in doc["jobs"]["retirement"]["steps"]
+                   if "scripts/retire_skill.py" in s.get("run", ""))
+        self.assertIn('--usage "$GITHUB_WORKSPACE/eval-results/usage/weekly-local.json"',
+                      act["run"])
+
+
 class IssueHistoryTests(Base):
     """Finding 2 (and 11): one issue per skill, ever, and only the bot's."""
 

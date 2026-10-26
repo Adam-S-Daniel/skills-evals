@@ -181,8 +181,8 @@ scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
   refresh_models.py        # GET /v1/models -> availability document (the one network call)
-  model_usage_census.py    # local transcripts -> {model: {iso week: count}}, and the same per skill
-  publish_usage_census.sh  # runs the census on the owner's machine, pushes it to persistent/eval-results
+  model_usage_census.py    # local transcripts and hook logs -> weekly model, skill and hook counts
+  publish_usage_census.sh  # runs the census on the owner's machine: counts to persistent/eval-results, private events to adam-agentskills-private
   local_eval.py            # guarded local runner: N trials of one skill fixture under the owner's /login,
                            # results outside every repo, a "local exhibit, not badge input"
   local_eval_guard.py      # the credential rules local_eval.py and its launch-time guard launcher share

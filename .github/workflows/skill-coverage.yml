@@ -287,6 +287,7 @@ jobs:
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --usage "$GITHUB_WORKSPACE/eval-results/usage/weekly-local.json" \
             --allow-mode proposal
 
       - name: File or update the guidance retirement issue
