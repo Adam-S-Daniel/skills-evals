@@ -88,6 +88,15 @@ evals/
     issue-hygiene/         # quote fencing, publish times, backlinks, title placeholders
       fixture.yaml         # prompt, objective checks (quote/link/title hygiene), rubric
       seed/                # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
+    closed-duplicate/      # a finding already tracked in a CLOSED issue: search, link, don't refile
+      fixture.yaml         # gh-log search check, link/duplicate checks, instrument guard, rubric
+      seed/                # 4.2.0 notes, a consumer repo, shared gh symlink and issue payloads
+    stamps-skip-quotes/    # publish-time stamps go on the agent's prose, never in quotes or titles
+      fixture.yaml         # verbatim-quote, unstamped-quote/title and prose-stamp checks, rubric
+      seed/                # 4.1.0-4.3.0 notes whose bullets name versions, a consumer repo
+    closing-keywords/      # a tracking PR body and commit message free of closing keywords
+      fixture.yaml         # PR-file keyword/quote bans, issue quote, tracking-row checks, rubric
+      seed/                # 4.4.0 conventional-changelog notes ("fixes #88"), a consumer repo
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
