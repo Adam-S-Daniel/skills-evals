@@ -566,3 +566,68 @@ routine's saved prompt is still unchanged.
   (and `skill` and `holdout` empty in the other modes). It sends
   exactly five keys built by jq: `run_id`, `mode`, `skill`, `trials` and
   `holdout` (null when empty). Still dispatch only, with no schedule.
+
+## Automatic merge addendum (2026-10-26)
+
+Adam, 2026-10-26: the loop merges accepted changes automatically, with no
+human in the loop. This supersedes, for an accepted improvement, every
+"a person reviews and merges" above: the routine improve mode addendum's
+"opens a draft. It never merges", and the "Review before merging" line of the
+report `propose_skill_edit.py` writes (the gate's pull-request body says it is
+superseded). The registry side of the exception is adam-agentskills
+[ADR 0021](https://github.com/Adam-S-Daniel/adam-agentskills/blob/main/docs/decisions/0021-automated-skill-changes-merge-without-review.md),
+which covers removals ([ADR 0014](0014-removal-pull-requests-merge-without-review.md))
+too. Built red-first with fakes and against a real adam-agentskills checkout;
+no routine run and no real pull request.
+
+- **One setting.** `evals/improve-policy.yml` holds
+  `improve_merge_mode: auto|draft`, committed as `auto`. A missing key is
+  `auto`; an unreadable file, an unknown value or another key is `draft`.
+  It is a separate file because `evals/gate-policy.yml` is the retirement
+  verdict's, parsed strictly by `harness/gates.py` and copied into every
+  gates file.
+- **The gate builds the whole registry change, with no credential.**
+  `scripts/improve_gate.py prepare` works on a checkout of adam-agentskills'
+  default branch tip (fetched anonymously, before the App token is minted):
+  the validated patch, a `PURPOSE.md` stub when the skill has none, the
+  plugin's patch version in both manifests (adam-agentskills ADR 0009), a
+  `docs/skill-impact.md` `edit` entry carrying the record's objective scores
+  per fixture, and the README table (the registry's own
+  `scripts/generate_readme_table.py`); then, when the registry's
+  `generate_skills_lock.py --check-current` says the lock no longer
+  describes the bundle, a second commit re-pinning `skills.lock` to the
+  first. That is what the registry's required checks and its AGENTS.md ask
+  of a skill edit; run against a real checkout, its consistency, manifest,
+  README, lock, version, privacy and agent checks pass, as does its pytest
+  suite. The pull request is based on the tip rather than the measured sha
+  so the version bump is above what it merges into; `prepare` refuses when
+  the skill's directory changed between the two, since what would merge is
+  then not what was measured.
+- **Auto mode opens a ready pull request and enables auto-merge.** The
+  pull request is labeled `agent-authored` and `eval-improve`, its body
+  carries the record's report and ends with the fleet's agent marker, and
+  `gh pr merge --auto --merge` is enabled after the labels and read back.
+  adam-agentskills' required checks still gate the merge.
+- **Draft when the plugin runs code.** A skill whose plugin has a `hooks/`
+  or `bin/` directory, a settings or package file, or a manifest `hooks` or
+  `settings` key always gets a draft: a hook can name any file under the
+  plugin root, and plugin-runtime-review needs the owner's approval, which
+  an automatic merge must never wait on or bypass. Every path the change
+  touches must be the skill's directory, `docs/skill-impact.md`, the two
+  manifests, `README.md` or `skills.lock`, or `prepare` refuses.
+- **One loop pull request at a time.** Improvements and removals write the
+  same bundle version, `docs/skill-impact.md` and `skills.lock`, so a
+  second open one would conflict once the first merged. The gate opens
+  nothing while any `eval-improve/*` or `retire-skill/*` pull request is
+  open in adam-agentskills (`scripts/retire_skill.py` checks only its own
+  prefix).
+- **The credential is unchanged.** Contents: write and Pull requests: write
+  on adam-agentskills cover pushing, opening, labeling and enabling
+  auto-merge. The `eval-improve` label must exist there first. While either App
+  secret is unset, the job still skips.
+- **Not changed here.** Decision 4 of
+  [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md) ties
+  any scheduled loop to three human-reviewed loop pull requests; an
+  auto-merged one does not count toward them, so that gate needs its own
+  decision. The fleet rule "PR + auto-merge is not a sanctioned bot-write
+  path" needs a repo-settings ADR.

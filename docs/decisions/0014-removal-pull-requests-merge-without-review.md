@@ -83,3 +83,16 @@ compute_gates lets one skill retire per evaluation (harness/gates.py).
   adam-agentskills can remove one. The gate guards against honest mistakes
   (a changed fixture or skill, errored trials, a copy of a run ingested
   twice), not forgery (Adam, 2026-10-26).
+
+## Addendum (2026-10-26): the adam-agentskills exception
+
+The adam-agentskills half of the exception this record asks for is
+[ADR 0021](https://github.com/Adam-S-Daniel/adam-agentskills/blob/main/docs/decisions/0021-automated-skill-changes-merge-without-review.md),
+"Automated skill changes merge without review", which covers removals and
+accepted improvements alike (Adam, 2026-10-25 for removals and 2026-10-26
+for improvements; the improvement side is [ADR 0005](0005-improvement-loop-reuses-skill-creator.md)'s
+automatic merge addendum). The repo-settings half is still to be written,
+and `retirement_mode` stays `proposal`. The improvement gate opens nothing
+while a `retire-skill/*` pull request is open, since both write the bundle
+version, `docs/skill-impact.md` and `skills.lock`; `retire_skill.py`'s own
+slot check still looks only at `retire-skill/*`.
