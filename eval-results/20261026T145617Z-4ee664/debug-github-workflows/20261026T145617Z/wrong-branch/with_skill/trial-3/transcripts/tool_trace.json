@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015zhAEsS1GSUSmSpJx6rC7x",
+      "name": "Bash",
+      "input": "git status | head -5 && git log --oneline -10 && ls -a && ls .github/workflows 2><path> && gh run list --branch main -L 5 2>&1 | head",
+      "input_chars": 136,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015zhAEsS1GSUSmSpJx6rC7x",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n869f9d7 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprof...",
+      "output_chars": 577,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0189imS8pqQCssZAm873Kqub",
+      "name": "Bash",
+      "input": "gh run list --branch main -L 5 2>&1; which gh; cat .github/workflows/ci.yml; cat README.md; find bin src test -type f | head -50",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0189imS8pqQCssZAm873Kqub",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 77001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"1111111111111111111111111111111111111111\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\n    \"url\": \"https://example.com/example-org/example-service/act...",
+      "output_chars": 987,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011DZJMbjGbFJCnHyDB4ySGY",
+      "name": "Bash",
+      "input": "cat bin/gh; echo ----; cat src/sequence.py test/test_current.py; echo ----; git show --stat HEAD HEAD~1 | head -40",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011DZJMbjGbFJCnHyDB4ySGY",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.3KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this...",
+      "output_chars": 2195,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B8AX6t7a2UCMKcdNPeiHwd",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; echo ----; git show --stat HEAD HEAD~1 | head -40; gh run view 77001 --log-failed 2>&1 | tail -40",
+      "input_chars": 139,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B8AX6t7a2UCMKcdNPeiHwd",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n----\ncommit 869f9d7c2f6637ba2e1dc73b...",
+      "output_chars": 2474,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DR2N3A6ZwNjRqeLS5bWoF3",
+      "name": "Bash",
+      "input": "gh api repos/example-org/example-service/compare/main...fix/ci-test-discovery 2>&1 | head -40; gh api repos/example-org/example-service/check-runs/99001/annotations 2>&1; echo ----; python3 -m unittes...",
+      "input_chars": 291,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DR2N3A6ZwNjRqeLS5bWoF3",
+      "is_error": false,
+      "output": "{\n  \"url\": \"https://example.net/repos/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"html_url\": \"https://example.com/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"status\": \"ahead\",\n  \"ahead_by\": 1,\n  \"behind_by\": 0,\n  \"total_commits\": 1,\n  \"base_commit\"...",
+      "output_chars": 1591,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QRhUUVRad5XEwzo7NShqY2",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test 2>&1 | tail -3; python3 -m unittest test.test_current 2>&1 | tail -3; ls test src",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QRhUUVRad5XEwzo7NShqY2",
+      "is_error": false,
+      "output": "Ran 1 test in 0.000s\n\nOK\nRan 1 test in 0.000s\n\nFAILED (errors=1)\nsrc:\n__pycache__\nsequence.py\n\ntest:\n__pycache__\ntest_current.py",
+      "output_chars": 128,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
