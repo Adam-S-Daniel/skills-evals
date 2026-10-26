@@ -156,6 +156,22 @@ Known gaps:
   successfully, so two dispatched at the same moment do not see each other.
   The weekly plan accounts for its own fires up front.
 
+### Skill retirement (#70)
+
+Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
+`scripts/compute_gates.py` over the results branch and the public registries,
+then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
+`retire` (no benefit on every fixture and roster model, at two fixed looks)
+gets, in `retirement_mode: proposal` (the committed value in
+`evals/gate-policy.yml`), one skills-evals issue that is filed or updated and
+that a human acts on. In `auto` mode the script instead opens a removal pull
+request in adam-agentskills that auto-merges with no human review
+([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
+one at a time. Auto mode is built but not wired: it needs a write credential
+for adam-agentskills, and the workflow exits 2 if the policy is switched to
+`auto` before that exists. Preview either mode with
+`python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected

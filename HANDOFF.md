@@ -35,9 +35,14 @@ September pause, and is not updated any more.
   runs, with thresholds in `evals/gate-policy.yml`. Results are not signed:
   Adam decided on 2026-10-26 that the gate guards against honest mistakes
   only, since anyone who can write results can also remove a skill. Part 2
-  opens removal PRs that auto-merge with no human review (Adam, 2026-10-25),
-  which needs exception ADRs here, in repo-settings and in adam-agentskills,
-  plus an adversarial round.
+  is built: `scripts/retire_skill.py`, run daily by `skill-coverage.yml`'s
+  schedule-only `retirement` job, files or updates an issue in `proposal`
+  mode (the committed `retirement_mode`) and, in `auto` mode, opens one
+  removal PR at a time that auto-merges with no human review (Adam,
+  2026-10-25; [ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md)).
+  Before switching to `auto`: an adam-agentskills write credential for the
+  job (none exists, so the workflow allows only `proposal`), the matching
+  ADRs in repo-settings and adam-agentskills, and an adversarial round.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in
