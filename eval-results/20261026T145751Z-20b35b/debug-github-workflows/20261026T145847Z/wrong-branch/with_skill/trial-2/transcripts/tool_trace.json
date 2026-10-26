@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EMdhfA1VmZHuRuLQb6aTTS",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EMdhfA1VmZHuRuLQb6aTTS",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E5vZw5PpQwEfLN46pwN2Dn",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls .github/workflows 2><path>",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E5vZw5PpQwEfLN46pwN2Dn",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\nb46e30b initial commit\nf0be913 Import example service\nci.yml",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V3DCWGqePj232KxKqUxZay",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; git remote -v; command -v gh; git show --stat HEAD | head -30; ls",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V3DCWGqePj232KxKqUxZay",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1723,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CorGZmeX5vTjyTEziHQFph",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; echo ---; cat .gh/replay/run-list.json; echo ---; find . -path ./.git -prune -o -name '*.json' -path '*example-service/*' -print | grep -E 'annotations|compare|jobs'...",
+      "input_chars": 282,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CorGZmeX5vTjyTEziHQFph",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 3898,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QDFA9v8UFd6fsKE1DawVVL",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test 2>&1 | tail -8; git log --oneline --all -- test | head",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QDFA9v8UFd6fsKE1DawVVL",
+      "is_error": false,
+      "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\nf0be913 Import example service",
+      "output_chars": 128,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

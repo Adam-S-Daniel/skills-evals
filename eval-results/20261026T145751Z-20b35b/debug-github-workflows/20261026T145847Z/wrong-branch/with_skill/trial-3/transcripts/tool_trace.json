@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AkdcKT11cnKjNpsXUvKSHE",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AkdcKT11cnKjNpsXUvKSHE",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W7y69d92zkpdFjYM4fTvfw",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls .github/workflows 2><path>",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W7y69d92zkpdFjYM4fTvfw",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n9b04907 initial commit\nf0be913 Import example service\nci.yml",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VdGYwur5ZixcELZbRo8Jan",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; git remote -v; cat .gitmodules; git show --stat HEAD | head -30; ls",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VdGYwur5ZixcELZbRo8Jan",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1728,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E3u9szZoMzVATx8EhZoLeQ",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log .gh/replay/run-list.json; find . -path ./.git -prune -o -path ./.gh -prune -o -path ./.claude -prune -o -type f -print | grep -E '^./(src|test)'; cat test/*.py | head...",
+      "input_chars": 316,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012mBaKXVSSpGjzUKCQPjqTi",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/example-org/example-service/check-runs/99001/annotations.json .gh/replay/api/repos/example-org/example-service/compare/main...fix/ci-test-discovery.json 2><path> || find .gh -...",
+      "input_chars": 227,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E3u9szZoMzVATx8EhZoLeQ",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 2047,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012mBaKXVSSpGjzUKCQPjqTi",
+      "is_error": false,
+      "output": "[\n  {\n    \"path\": \".github/workflows/ci.yml\",\n    \"start_line\": 19,\n    \"end_line\": 19,\n    \"annotation_level\": \"failure\",\n    \"title\": \"Unit test import failed\",\n    \"message\": \"ModuleNotFoundError: No module named 'test.test_legacy'\\nProcess completed with exit code 1.\"\n  }\n]\n{\n  \"url\": \"https://e...",
+      "output_chars": 1321,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01912XyeQmJVXUccEphnRfFC",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test 2>&1 | tail -5; ls test/__init__.py 2>&1 | tail -1",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01912XyeQmJVXUccEphnRfFC",
+      "is_error": false,
+      "output": ".\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\nls: cannot access 'test/__init__.py': No such file or directory",
+      "output_chars": 161,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
