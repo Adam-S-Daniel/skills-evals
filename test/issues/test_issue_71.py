@@ -442,10 +442,16 @@ class RefusalTests(PipelineCase):
     def test_a_flat_single_fixture_skill_exits_2(self):
         rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
         self.assertEqual(rc, 0)  # sanity: writing-adrs itself plans fine
+        # A synthetic flat skill: workflow-path-audit, the example this used
+        # to name, has nested fixtures enough to plan since 2026-10-26.
+        evals = self.tmp / "evals"
+        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit"
+                        / "required-check-routing", evals / "workflow-path-audit")
         argv = self.argv()
         argv[0] = "workflow-path-audit"
         buf = io.StringIO()
         with mock.patch.dict(os.environ, self.env, clear=True), \
+                mock.patch.object(pse, "EVALS_DIR", evals), \
                 contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
