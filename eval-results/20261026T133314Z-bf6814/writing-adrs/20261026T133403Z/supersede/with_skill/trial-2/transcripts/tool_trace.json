@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015VcQo6mgrgEoqEih4U5rwC",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015VcQo6mgrgEoqEih4U5rwC",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017vwc15bFkURNfWeSHqs8Fk",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md; ls docs/decisions; cat scripts/prune-snapshots.sh CHANGELOG.md",
+      "input_chars": 172,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017vwc15bFkURNfWeSHqs8Fk",
+      "is_error": false,
+      "output": "3395bcb initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/prune-snapshots.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./CHANGELOG.md\n./docs/decisions/0002-prune-snapshots-older-than-30-days.md\n./docs/decisions/README.md\n./docs/decisions/0001-take-sna...",
+      "output_chars": 3315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011kecJFD1axmKGAZiFZrKPv",
+      "name": "Bash",
+      "input": "cat docs/decisions/000*.md; git status",
+      "input_chars": 38,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011kecJFD1axmKGAZiFZrKPv",
+      "is_error": false,
+      "output": "# 0001. Take snapshots with pg_basebackup, not pg_dump\n\n- **Status:** Accepted\n- **Date:** 2025-11-04\n\n## Context\n\nThe application database is about 40 GB. A logical dump of it takes over\ntwo hours and holds a long-running transaction open the whole time, which\nbloats the busiest tables while the du...",
+      "output_chars": 2808,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M6EPLUou6TZyBNQHg8Xift",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-keep-the-newest-14-snapshots.md <<'EOF'\n# 0004. Keep the newest 14 snapshots, not 30 days of them\n\n- **Status:** Accepted\n- **Date:** 2026-10-26\n\n## Context\n\n[0002](0002-prun...",
+      "input_chars": 2950,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M6EPLUou6TZyBNQHg8Xift",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/0002-prune-snapshots-older-than-30-days.md b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\nindex d50741d..a5f4eec 100644\n--- a/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n+++ b/docs/decisions/0002-prune-snapshots-older-than-30-days.md\n@@ -1,6 +1,...",
+      "output_chars": 2714,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R7FHcvTmUeLEGVcGdBeBxV",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport pathlib\np=pathlib.Path('scripts/prune-snapshots.sh')\nt=p.read_text().replace('# prune its way down to nothing; see\\n# docs/decisions/0004-keep-the-newest-14-snapshots.md.\\n','...",
+      "input_chars": 291,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R7FHcvTmUeLEGVcGdBeBxV",
+      "is_error": false,
+      "output": "#!<path> bash\n# prune-snapshots.sh: keep the newest 14 snapshots and delete the rest.\n#\n# Counting snapshots rather than days means a stalled snapshot job cannot\n# prune its way down to nothing.\nset -euo pipefail\n\nsnapshot_dir=\"${SNAPSHOT_DIR:-/var/backups/snapshots}\"",
+      "output_chars": 274,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
