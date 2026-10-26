@@ -20,8 +20,7 @@ September pause, and is not updated any more.
   the weekly allowance, at most 3% per run, and nothing fires once the
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
-  Until the 2026-10-26 reset only, the cap and the account stop are both
-  95%. A successful fire with no results holds a full reservation for 2
+  A successful fire with no results holds a full reservation for 2
   hours, then only the overrun
   ([#412](https://github.com/Adam-S-Daniel/skills-evals/pull/412)).
 - **Roster:** `claude-sonnet-5-5` and `claude-opus-5-5`, judged by
