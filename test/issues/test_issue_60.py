@@ -644,7 +644,7 @@ class WorkflowTests(unittest.TestCase):
                        Loader=yaml.BaseLoader)
         path = ".github/workflows/skill-coverage.yml"
         self.assertIn(path, ci["on"]["push"]["paths"])
-        salient = next(step for step in ci["jobs"]["test"]["steps"]
+        salient = next(step for step in ci["jobs"]["suite"]["steps"]
                        if step.get("id") == "salient")
         self.assertIn(path, salient["env"]["SALIENT_PATHS"].splitlines())
 

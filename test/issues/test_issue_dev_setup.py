@@ -29,7 +29,7 @@ CI_PREFIX = "skills-evals/"
 
 def _test_steps() -> list[dict]:
     doc = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
-    return doc["jobs"]["test"]["steps"]
+    return doc["jobs"]["suite"]["steps"]
 
 
 def _run_script(*args: str) -> subprocess.CompletedProcess:

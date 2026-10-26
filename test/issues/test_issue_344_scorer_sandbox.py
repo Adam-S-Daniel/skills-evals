@@ -541,7 +541,7 @@ class CiProvisioningTests(unittest.TestCase):
     def test_test_job_provisions_and_probes_bubblewrap_before_the_suite(self):
         import yaml
         workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-        steps = workflow["jobs"]["test"]["steps"]
+        steps = workflow["jobs"]["suite"]["steps"]
         names = [step.get("name") for step in steps]
         suite = names.index("Run tests")
         provision = names.index("Provide bubblewrap for the scorer sandbox")
