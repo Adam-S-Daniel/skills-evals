@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PM5GjWZFUbPeFAVsvvxW9W",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls -a; ls .github/workflows 2><path>; which gh",
+      "input_chars": 95,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PM5GjWZFUbPeFAVsvvxW9W",
+      "is_error": true,
+      "output": "Exit code 1\nbwrap: Can't find source path <path>: No such file or directory",
+      "output_chars": 107,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YJs87sQZPxsL8nAFmFQV5J",
+      "name": "Bash",
+      "input": "pwd; git log --oneline -5",
+      "input_chars": 25,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VDCdPTwoUEC7N5HYHn49s7",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 23,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VDCdPTwoUEC7N5HYHn49s7",
+      "is_error": true,
+      "output": "EISDIR: illegal operation on a directory, read '<path>'",
+      "output_chars": 72,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YJs87sQZPxsL8nAFmFQV5J",
+      "is_error": false,
+      "output": "<path>\n865fe2a initial commit\nf0be913 Import example service",
+      "output_chars": 77,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LXEVT5N1Moj4rmZb9KHf37",
+      "name": "Bash",
+      "input": "git status -sb | head; ls -a; ls .github/workflows 2><path>; git show --stat HEAD | head -30; which gh",
+      "input_chars": 105,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LXEVT5N1Moj4rmZb9KHf37",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\nsrc\ntest\nci.yml\ncommit 865...",
+      "output_chars": 1550,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DLLWHbNJEajkd7THyZRPar",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml README.md; ls -R src test; cat .gh/replay/run-view-77001.log .gh/replay/run-list.json .gh/replay/run-view-77001.json; git show HEAD~1 --stat | head -20",
+      "input_chars": 180,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DLLWHbNJEajkd7THyZRPar",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 2988,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LAZSSDGvmBYEL8M97tm7da",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -4; python3 -m unittest discover -s test 2>&1 | tail -4; cat src/sequence.py test/test_current.py; cd .gh/../ ; find . -path ./.git -prune -o -name '*....",
+      "input_chars": 317,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LAZSSDGvmBYEL8M97tm7da",
+      "is_error": true,
+      "output": "Exit code 1\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n----------------------------------------------------------------------\nRan 1 test in 0.013s\n\nOK\ndef next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence im...",
+      "output_chars": 662,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XQmRcguc2EcNtfFzfGtc4g",
+      "name": "Bash",
+      "input": "cd .gh/replay/api/repos/example-org/example-service; cat compare/main...fix/ci-test-discovery.json branches/fix/ci-test-discovery.json",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XQmRcguc2EcNtfFzfGtc4g",
+      "is_error": false,
+      "output": "{\n  \"url\": \"https://example.net/repos/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"html_url\": \"https://example.com/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"status\": \"ahead\",\n  \"ahead_by\": 1,\n  \"behind_by\": 0,\n  \"total_commits\": 1,\n  \"base_commit\"...",
+      "output_chars": 1292,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

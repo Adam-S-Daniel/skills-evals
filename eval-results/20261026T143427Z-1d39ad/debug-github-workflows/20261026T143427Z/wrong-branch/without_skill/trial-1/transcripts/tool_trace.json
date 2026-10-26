@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DfDxVSamHdChg5rQPdzAEP",
+      "name": "Bash",
+      "input": "git status -sb | head -20 && git log --oneline -15 && ls -a && ls .github/workflows 2><path>",
+      "input_chars": 95,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q1yb9VjMiaVRiw1giCHQEd",
+      "name": "Bash",
+      "input": "(gh run list --branch main --limit 8 2>&1 | head -20)",
+      "input_chars": 53,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DfDxVSamHdChg5rQPdzAEP",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n9b60f55 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile...",
+      "output_chars": 366,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q1yb9VjMiaVRiw1giCHQEd",
+      "is_error": true,
+      "output": "Exit code 1\nbwrap: Can't get type of source <path>: No such file or directory",
+      "output_chars": 109,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L1puhZwSroeaKWyk3aAED5",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml && cat README.md | head -40 && ls bin src test && git show --stat HEAD | head -30",
+      "input_chars": 110,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L1puhZwSroeaKWyk3aAED5",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1786,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014gxuAZQo6NGv8rZuoRBYDx",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -8; echo ---; python3 -m unittest discover -s test 2>&1 | tail -8; echo ---; cat .gh/replay/run-view-77001.log; echo ---; git log --oneline --all -- te...",
+      "input_chars": 268,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014gxuAZQo6NGv8rZuoRBYDx",
+      "is_error": false,
+      "output": "    module = __import__(module_name)\nModuleNotFoundError: No module named 'test.test_legacy'\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n---\n.\n----------------------------------------------------------------------\nRan 1 test in 0.0...",
+      "output_chars": 1263,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MPxnsCaRgWYuxkoBm1RTvu",
+      "name": "Bash",
+      "input": "git branch -a | cat; git show 0933504 --stat --format='%h %an %s' | cat; git show 0933504 -- .github | cat; git log --oneline --all --graph | head; cat .gh/replay/api/repos/example-org/example-service...",
+      "input_chars": 280,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MPxnsCaRgWYuxkoBm1RTvu",
+      "is_error": false,
+      "output": "  fix/ci-test-discovery\n* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/fix/ci-test-discovery\n  remotes/origin/main\n0933504 fixture Use current test discovery\n\n .github/workflows/ci.yml | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\ncommit 093350486ff3efc5013d0416a70a4c6e1886778a...",
+      "output_chars": 1952,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
