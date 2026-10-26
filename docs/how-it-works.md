@@ -295,6 +295,21 @@ promote. No per-skill usage count exists, so the ranking uses fixture
 counts alone. Real-work fixtures (`subject: any`) are not counted by
 improve's fixture minimum.
 
+### Lessons from real sessions (2026-10-26)
+
+Once a day on Adam's own computer, never in the cloud
+([ADR 0015](decisions/0015-mine-real-sessions-only-on-adams-own-computer.md)),
+`scripts/run_session_miner.sh` reads the Claude Code sessions written since
+the last run, keeps real work, and records where the agent was corrected,
+interrupted, failed the same tool call repeatedly, turned CI red after a push
+or stopped unfinished. Each record is a short redacted excerpt with a hashed
+session id. Records are grouped into proposal files on adam-agentskills-private's
+`persistent/lessons` branch: a new git-hook check when one could enforce the
+lesson, otherwise a skill or guidance edit, a new skill, a memory note, or a
+fixture candidate that a fixture writer turns into an eval. The layout and
+schema are in that repo's `lessons/README.md`. Commands: DESIGN.md, "Lessons
+from real sessions".
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected

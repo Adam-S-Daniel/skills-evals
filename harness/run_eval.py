@@ -1816,15 +1816,17 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
 # propagation legs, scoring copies, `deps:` caches, objective-command
 # scratch and `workspace_git`'s private metadata copies (`trusted-git-`,
 # every workspace's own included: the arm may neither read nor alter the
-# Git state the harness trusts). Leftovers from a crashed run, or a
-# concurrent one, are denied.
+# Git state the harness trusts), and the session miner's clone of the
+# lesson records and its classify calls (ADR 0015). Leftovers from a crashed
+# run, or a concurrent one, are denied.
 HARNESS_TEMP_PREFIXES = (
     "workspace-", "skills-evals-", "guidance-bridge-canary-", "propagation-",
     "scoring-seed-", "deps-python-", "deps-bundler-", "deps-cache-", "objective-repo-tests-",
     "objective-command-", "local-eval-guard-", "sink-mutation-", "trusted-git-",
     "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
     "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
-    ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-")
+    ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-",
+    "session-miner-", "lesson-classify-")
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,

@@ -1532,6 +1532,47 @@ decisions (Adam, 2026-10-06)".
   candidate records its merge date, so pre- and post-cutoff fixtures are
   reported separately rather than excluded.
 
+### Lessons from real sessions (2026-10-26, ADR 0015)
+
+The third mined source is Adam's own Claude Code sessions, and it is mined
+only on his own computer ([ADR 0015](docs/decisions/0015-mine-real-sessions-only-on-adams-own-computer.md)).
+`scripts/mine_sessions.py` keeps real-work sessions, turns corrections,
+redirections, stated rules, interruptions, repeated tool failures, red CI
+after a push and unfinished endings into short redacted **lesson records**,
+and routes them into **proposal files**: `agent-check` first when a git hook
+could enforce the lesson, else `skill-edit`, `new-skill`, `guidance-edit`,
+`memory-note` or `fixture-candidate`. A fixture candidate is a concrete
+failure tied to a skill or guidance section, and the input a fixture writer
+on that machine expands (`mine_sessions.py locate <session hash>` finds the
+transcript). Records and proposals land on adam-agentskills-private's
+`persistent/lessons` branch; that repo's `lessons/README.md` holds both
+schemas. Tests: `test/issues/test_issue_session_miner.py`, invented
+transcripts only.
+
+Daily run, from WSL, after a dry run first (`PRIVACY_DENYLIST_FILE` is a file
+outside every repo; `WIN_HOME` is the Windows profile as a WSL path, which
+also locates the desktop app's data; without it the script asks `cmd.exe`):
+
+```bash
+export PRIVACY_DENYLIST_FILE="$HOME/.config/privacy-denylist.txt"
+export WIN_HOME=/mnt/c/Users/<user>
+bash ~/repos/skills-evals/scripts/run_session_miner.sh --dry-run
+bash ~/repos/skills-evals/scripts/run_session_miner.sh
+```
+
+Scheduled like the usage census (`evals/usage/CENSUS.md`, Option B or C), for
+example in WSL cron:
+
+```cron
+17 7 * * * PRIVACY_DENYLIST_FILE="$HOME/.config/privacy-denylist.txt" WIN_HOME=/mnt/c/Users/<user> bash "$HOME/repos/skills-evals/scripts/run_session_miner.sh" >> "$HOME/.cache/session-miner.log" 2>&1
+```
+
+The script clones skills-evals `main` fresh, so the local checkout's branch
+does not matter; it pushes with the private clone's remote and the git
+credentials WSL already has, and moves its state file
+(`~/.local/state/session-miner/state.json`) into place only after the push is
+verified. `--file-issues` is off until Adam has rated a sample of records.
+
 ### The scaffolder and its gate
 
 Q6 puts the scaffolder's model call in the ADR 0010 routine and gives
