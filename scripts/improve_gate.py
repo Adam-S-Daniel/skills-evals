@@ -602,15 +602,15 @@ this file is recorded in `docs/skill-impact.md`.
 """
 
 
-def _registry_script(tree: Path, *args: str) -> int:
-    """Run one of the registry's own scripts in its checkout. It is the
-    default branch's copy (the tree is its tip), the same code the
-    registry's CI runs, and this step holds no credential."""
-    script = _no_symlink(tree, args[0])
+def _registry_script(tree: Path, rel: str) -> None:
+    """Refuse unless `rel` is a regular file of the registry checkout. The
+    callers then run it there: it is the default branch's copy (the tree is
+    its tip), the same code the registry's CI runs, and the step holds no
+    credential. Each call spells its argv in full, so the suite's
+    fork scan can tell it is not this repository's test runner."""
+    script = _no_symlink(tree, rel)
     if not script.is_file():
-        raise Rejected(f"{args[0]}: not in the registry checkout")
-    return subprocess.run([sys.executable, *args], cwd=tree,
-                          capture_output=True, check=False).returncode
+        raise Rejected(f"{rel}: not in the registry checkout")
 
 
 def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
@@ -661,7 +661,9 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
     impact.write_text(insert_entry(text, impact_entry(
         record, plugin, run_id, versions, purpose_added, mode)), encoding="utf-8")
     _no_symlink(tree, README)
-    if _registry_script(tree, "scripts/generate_readme_table.py") != 0:
+    _registry_script(tree, "scripts/generate_readme_table.py")
+    if subprocess.run([sys.executable, "scripts/generate_readme_table.py"],
+                      cwd=tree, capture_output=True, check=False).returncode:
         raise Rejected("the registry's README table did not regenerate")
     ingest.git(repo, "add", "-A", "--", skill_dir, IMPACT_FILE, README,
                *(f"plugins/{plugin}/{name}" for name in MANIFESTS))
@@ -677,11 +679,15 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
     # describes the current bundle").
     if (tree / LOCK).exists():
         _no_symlink(tree, LOCK)
-        current = _registry_script(tree, "scripts/generate_skills_lock.py",
-                                   "--check-current")
+        _registry_script(tree, "scripts/generate_skills_lock.py")
+        current = subprocess.run(
+            [sys.executable, "scripts/generate_skills_lock.py", "--check-current"],
+            cwd=tree, capture_output=True, check=False).returncode
         if current == 1:
-            if _registry_script(tree, "scripts/generate_skills_lock.py",
-                                "--repin", "--repo", ".") != 0:
+            if subprocess.run(
+                    [sys.executable, "scripts/generate_skills_lock.py", "--repin",
+                     "--repo", "."],
+                    cwd=tree, capture_output=True, check=False).returncode:
                 raise Rejected("the registry's skills.lock did not re-pin")
             ingest.git(repo, "add", "--", LOCK)
             ingest.git(repo, *COMMIT_IDENTITY, "commit", "-q", "-m",
