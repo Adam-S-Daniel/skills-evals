@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BkuDt2cXPZpkYmvbw6NrN1",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BkuDt2cXPZpkYmvbw6NrN1",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/synced/00000000...",
+      "output_chars": 996,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NuGBZkN53mMy47mXEjLLZz",
+      "name": "Bash",
+      "input": "git log --oneline | head; for f in README.md session/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json; do echo \"=== $f\"; cat \"$f\"; done; ls -la session...",
+      "input_chars": 253,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NuGBZkN53mMy47mXEjLLZz",
+      "is_error": false,
+      "output": "d91cd60 initial commit\n=== README.md\n# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.loc...",
+      "output_chars": 3832,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ryd1edTa1yGrwpGtuHLVZS",
+      "name": "Bash",
+      "input": "B=session/skills/synced/0*; for f in registry/plugins/adam/skills/writing-adrs/SKILL.md session/skills/writing-adrs/SKILL.md $B/writing-adrs/SKILL.md; do echo \"=== $f\"; cat $f; done; echo; sha256sum $...",
+      "input_chars": 339,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ryd1edTa1yGrwpGtuHLVZS",
+      "is_error": false,
+      "output": "=== registry/plugins/adam/skills/writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n##...",
+      "output_chars": 2811,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NHH1CwG5DwahXv8oRmqBh8",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:skills-doctor",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NHH1CwG5DwahXv8oRmqBh8",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:skills-doctor",
+      "output_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F3bMC2LvT5QaHffrWbeHYq",
+      "name": "Bash",
+      "input": "S=<path>; ls $S $S/scripts; cd <path>; env -u CLAUDE_CODE_REMOTE_SESSION_ID -u SKILLS_BOOTSTRAP_FORCE CLAUDE_CODE_ENTRYPOINT=cli python3 -I $S/scripts/check_provenance.py --help 2>&1 | head -40",
+      "input_chars": 344,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F3bMC2LvT5QaHffrWbeHYq",
+      "is_error": false,
+      "output": "<path>:\nPURPOSE.md\nSKILL.md\nscripts\n\n<path>:\ncheck_provenance.py\ntest_check_provenance.py\nusage: check_provenance.py [-h] [--skills-dir DIR] [--lock PATH]\n                           [--project-dir DIR] [--account-channel]\n                           [--settings PATH]\n\nAttribute every skill in the per...",
+      "output_chars": 2274,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HrouqVzmFcuW3upEizp6ZW",
+      "name": "Bash",
+      "input": "S=<path>; W=<path>; P=$(mktemp -d); H=$(mktemp -d); cd $P; env -u CLAUDE_CODE_REMOTE_SESSION_ID -u SKILLS_BOOTSTRAP_FORCE -u CLAUDE_CODE_ACCOUNT_UUID HOME=$H CLAUDE_CODE_ENTRYPOINT=cli python3 -I $S/c...",
+      "input_chars": 471,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HrouqVzmFcuW3upEizp6ZW",
+      "is_error": false,
+      "output": "provenance: 2 on disk, 2 hook-installed, 0 unattributed, 0 not in the store \u2014 record present \u2014 surface unsure \u2014 1 finding\n\nRECORD   <path>\n  present \u2014 2 install(s) recorded. The rows below are the hook's own account\n  of what it wrote, not an inference from the filesystem; the integrity column\n  is ...",
+      "output_chars": 3466,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AQEPAZh4Q6MmExdC7UfYgz",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AQEPAZh4Q6MmExdC7UfYgz",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
