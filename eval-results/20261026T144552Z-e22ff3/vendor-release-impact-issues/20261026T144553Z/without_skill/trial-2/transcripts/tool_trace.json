@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016cDsoLS7QrQrqoLGQQ3M4H",
+      "name": "Bash",
+      "input": "git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016cDsoLS7QrQrqoLGQQ3M4H",
+      "is_error": false,
+      "output": "f53da5d initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PGdrndj3ysNNqP8RuCnp3F",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md vendor/RELEASES.md .example-cli/settings.json hooks/session-start.sh .github/workflows/ci.yml .mcp.json .gitmodules; do echo \"=== $f\"; cat \"$f\"; done; wc -c vendor/release...",
+      "input_chars": 228,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PGdrndj3ysNNqP8RuCnp3F",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 3531,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ELZRRmmvMsyZm8K2yoztnm",
+      "name": "Bash",
+      "input": "cat vendor/releases.json; echo; grep -rn --exclude-dir=.git -iE \"model|watch|synced|fork|resume|4\\.[0-9]\" . 2><path> | grep -v \"^./vendor\"; git ls-files",
+      "input_chars": 155,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ELZRRmmvMsyZm8K2yoztnm",
+      "is_error": false,
+      "output": "{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n    },\n    \"4.2.0\": {\n      \"published_at\": \"2026-07-14T09:47Z\",\n      \"created_at\": \"20...",
+      "output_chars": 1365,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RawhHzAYn8ciEG9UfEM3TS",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook no longer runs for forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI v4.2.0 chan...",
+      "input_chars": 5632,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RawhHzAYn8ciEG9UfEM3TS",
+      "is_error": true,
+      "output": "Exit code 1\nbwrap: Can't find source path <path>: No such file or directory",
+      "output_chars": 107,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KL9UMq25aPanAM39PHwhpy",
+      "name": "Bash",
+      "input": "ls issues 2>&1",
+      "input_chars": 14,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KL9UMq25aPanAM39PHwhpy",
+      "is_error": true,
+      "output": "Exit code 2\nls: cannot access 'issues': No such file or directory",
+      "output_chars": 65,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DuDU7qNgRMooQ89fnsBGNv",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Fopa2b6Bg69G4g63jnnTEw",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 72,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BaYeCYnMkiopXBVz4hfGEZ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DuDU7qNgRMooQ89fnsBGNv",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 174,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Fopa2b6Bg69G4g63jnnTEw",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 168,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BaYeCYnMkiopXBVz4hfGEZ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 156,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

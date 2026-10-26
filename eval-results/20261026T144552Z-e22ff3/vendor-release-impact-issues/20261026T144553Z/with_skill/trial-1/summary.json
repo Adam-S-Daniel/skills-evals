@@ -1,0 +1,343 @@
+{
+  "skill": "vendor-release-impact-issues",
+  "arm": "with_skill",
+  "timestamp": "20261026T144553Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.3866892,
+    "num_turns": 8,
+    "duration_ms": 80170,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 23437,
+      "cache_read_input_tokens": 281813,
+      "output_tokens": 7126,
+      "output_tokens_details": {
+        "thinking_tokens": 1929
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 23437,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1057,
+          "cache_read_input_tokens": 50041,
+          "cache_creation_input_tokens": 883,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 883
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "at-least-one-issue-drafted",
+      "passed": true,
+      "detail": "2 file(s) matched ['issues/*.md']"
+    },
+    {
+      "id": "publish-times-source-and-version-bound",
+      "passed": true,
+      "detail": "issues/01-hook-source-fork.md, issues/02-synced-skill-names.md matches"
+    },
+    {
+      "id": "pr-refs-fenced-not-quoted",
+      "passed": true,
+      "detail": "issues/01-hook-source-fork.md, issues/02-synced-skill-names.md matches"
+    },
+    {
+      "id": "no-upstream-issue-backlink",
+      "passed": true,
+      "detail": "issues/01-hook-source-fork.md, issues/02-synced-skill-names.md matches"
+    },
+    {
+      "id": "no-placeholder-in-title",
+      "passed": true,
+      "detail": "issues/01-hook-source-fork.md, issues/02-synced-skill-names.md matches"
+    },
+    {
+      "id": "seed-repo-unchanged",
+      "passed": true,
+      "detail": "unchanged (.example-cli/settings.json, .github/workflows/ci.yml, AGENTS.md, README.md, hooks/session-start.sh, vendor/RELEASES.md, vendor/releases.json)"
+    },
+    {
+      "id": "hook-matcher-surface-named",
+      "passed": true,
+      "detail": "issues/01-hook-source-fork.md, issues/02-synced-skill-names.md matches"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1266,
+      "output_tokens": 256,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 14,
+      "output_tokens": 7126,
+      "cache_read_input_tokens": 281813,
+      "cache_creation_input_tokens": 23437,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.004848492571166442,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "opus",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "f3dc89b3c1f2e142e0a1183e2316e1fad83c73d772911db550f719c6b6558fb5",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "workstation",
+    "location": "cloud",
+    "id": "20261026T144552Z-e22ff3",
+    "session_id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+    "harness_commit": "c0987d52f732d19356731d9082d74376d327e4e6",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T14:45:53Z",
+    "ended_at": "2026-10-26T14:53:38Z",
+    "meter": {
+      "snapshot_count": 12,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T14:45:53Z",
+      "to_at": "2026-10-26T14:53:34.315Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.58,
+          "to": 0.65,
+          "delta": 0.07,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.78,
+          "to": 0.79,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T14:45:53Z",
+      "ended_at": "2026-10-26T14:47:17Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T14:45:53Z",
+          "ended_at": "2026-10-26T14:47:17Z",
+          "duration_ms": 83537,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T14:45:53Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.78,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.58,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.78,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-26T14:47:14.002Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.78,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.59,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.78,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 83537,
+        "num_turns": 8,
+        "cost_usd": 0.3866892,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1266,
+            "output_tokens": 256,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0002546
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 14,
+            "output_tokens": 7126,
+            "cache_read_input_tokens": 281813,
+            "cache_creation_input_tokens": 23437,
+            "cost_usd": 0.3864346
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 23437
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
