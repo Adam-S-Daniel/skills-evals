@@ -1,0 +1,384 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261026T144225Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.19981569999999998,
+    "num_turns": 7,
+    "duration_ms": 34597,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 15862,
+      "cache_read_input_tokens": 146405,
+      "output_tokens": 2174,
+      "output_tokens_details": {
+        "thinking_tokens": 350
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 15862,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 532,
+          "cache_read_input_tokens": 41661,
+          "cache_creation_input_tokens": 1688,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1688
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "adr-0004-house-format-sections-in-order",
+      "passed": true,
+      "detail": "docs/decisions/0004-cap-upstream-retries-with-exponential-backoff.md matches"
+    },
+    {
+      "id": "index-gained-a-row-for-0004",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": true,
+      "detail": "scripts/retry.sh matches"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/README.md)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": true,
+      "detail": "4 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-cache-order-status-in-redis.md, docs/decisions/0002-poll-fulfillment-service-every-30s.md, docs/decisions/0003-poll-fulfillment-service-every-10s.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 9,
+        "rationale": "Context describes the 2026-03 outage without pre-announcing the cap, the Decision states the policy actually in retry.sh (\u22645 attempts, 1s/2s/4s/8s exponential backoff), both named alternatives (retry forever, fail fast) are discussed with reasons for rejection, and consequences honestly cover the worker-time bound as well as the cost that long outages surface as failures."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 10,
+        "rationale": "Both the ADR title and the index row read 'Cap upstream retries at 5 attempts with exponential backoff' \u2014 an imperative verb plus object naming what was decided, not a noun phrase or past-tense narration."
+      },
+      {
+        "name": "restraint",
+        "score": 10,
+        "rationale": "The diff only adds ADR 0004 plus its index row and trims retry.sh's comment; ADRs 0001-0003, existing README rows, and CHANGELOG.md are untouched, and no spurious second ADR was written for the routine dependency-removal/typo fix."
+      }
+    ],
+    "overall": 9.5
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.310 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-4-8"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1177,
+      "output_tokens": 18,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 2174,
+      "cache_read_input_tokens": 146405,
+      "cache_creation_input_tokens": 15862,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.007214266740721065,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "existing-convention",
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-opus-4-8",
+    "rule": "fixture-pin",
+    "arm_tier": "opus",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "f18a9fefe96132eb9832d44b3ce1a08d0709046d2784867922055f156762eafb",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "workstation",
+    "location": "cloud",
+    "id": "20261026T144224Z-f0b188",
+    "session_id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+    "harness_commit": "c0987d52f732d19356731d9082d74376d327e4e6",
+    "cli_version": "2.1.310 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-26T14:42:25Z",
+    "ended_at": "2026-10-26T14:48:09Z",
+    "meter": {
+      "snapshot_count": 9,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "judge": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "guard": "the call is made without --verbose, so it prints no meter event, and no call is added to read the meter",
+        "run_end": "no call the harness makes prints a meter event after its last agent call has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-26T14:42:25Z",
+      "to_at": "2026-10-26T14:45:48Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 7
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.55,
+          "to": 0.58,
+          "delta": 0.03,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.78,
+          "to": 0.78,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01AYkCVGd2DezBNUPvvSFikh",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-26T14:43:39Z",
+      "ended_at": "2026-10-26T14:47:18Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-26T14:43:39Z",
+          "ended_at": "2026-10-26T14:44:17Z",
+          "duration_ms": 37762,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-26T14:46:54Z",
+          "ended_at": "2026-10-26T14:47:18Z",
+          "duration_ms": 24484,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-26T14:43:39Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.78,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.56,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.78,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-26T14:44:14.125Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793034000,
+              "rateLimitType": "seven_day",
+              "utilization": 0.78,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.57,
+                  "resetsAt": 1793037600,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.78,
+                  "resetsAt": 1793034000,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 37762,
+        "num_turns": 7,
+        "cost_usd": 0.19981569999999998,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1177,
+            "output_tokens": 18,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00012670000000000002
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 2174,
+            "cache_read_input_tokens": 146405,
+            "cache_creation_input_tokens": 15862,
+            "cost_usd": 0.19968899999999998
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 15862
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 24484,
+        "num_turns": 1,
+        "cost_usd": 0.12778,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 3680,
+            "output_tokens": 24,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0003800000000000001
+          },
+          "claude-opus-4-8": {
+            "input_tokens": 2,
+            "output_tokens": 1419,
+            "cache_read_input_tokens": 27450,
+            "cache_creation_input_tokens": 7819,
+            "cost_usd": 0.1274
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7819
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3Q2QdonRQhUym99pWvzht",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && git status && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md && ls docs/decisions && cat scripts/retry.sh CHANGELOG.md",
+      "input_chars": 180,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3Q2QdonRQhUym99pWvzht",
+      "is_error": false,
+      "output": "8ff9b78 initial commit\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"gi...",
+      "output_chars": 2995,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VyoMDzwmebwqnhYnUNfxQb",
+      "name": "Bash",
+      "input": "cat docs/decisions/000*.md README.md",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VyoMDzwmebwqnhYnUNfxQb",
+      "is_error": false,
+      "output": "# 0001. Cache order status in Redis, not in-process memory\n\n## Status\n\nAccepted\n\n## Context\n\nOrder Sync runs as multiple worker processes behind a load balancer. Each\nworker polled the fulfillment service independently and kept the last-seen\nstatus in memory, so a request routed to a different worke...",
+      "output_chars": 2051,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DpqcDqT4Rs31R6uLfoPoQo",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-with-capped-exponential-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 2026-03 ou...",
+      "input_chars": 1762,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DpqcDqT4Rs31R6uLfoPoQo",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex f1454d8..dbddad1 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -21,3 +21,4 @@ these sections, in this order:\n | [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process m...",
+      "output_chars": 1158,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DiQ9AAChrpbAxdyVLuY9Lb",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/0004-retry-with-capped-exponential-backoff.md'\ns=open(p).read()\ns=s.replace(\"\"\"Retry transient upstream failures at most 5 times with exponential backoff\n(1s, 2s, 4...",
+      "input_chars": 488,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DiQ9AAChrpbAxdyVLuY9Lb",
+      "is_error": false,
+      "output": "## Decision\n\nMake at most 5 attempts at a failing upstream call, backing off\nexponentially between them (1s, 2s, 4s, 8s), implemented once in `scripts/retry.sh` (PR #41) and\nused by every poller.\n\n## Consequences\n\nA persistent upstream failure now costs a worker about 15 seconds of\nsleeping before i...",
+      "output_chars": 555,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018WP6BwuH4pyr6qGMyw5gwD",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/0004-retry-with-capped-exponential-backoff.md'\ns=open(p).read()\ns=s.replace(\"\"\"Make at most 5 attempts at a failing upstream call, backing off\nexponentially between...",
+      "input_chars": 563,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018WP6BwuH4pyr6qGMyw5gwD",
+      "is_error": false,
+      "output": " M docs/decisions/README.md\n M scripts/retry.sh\n?? docs/decisions/0004-retry-with-capped-exponential-backoff.md",
+      "output_chars": 111,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
