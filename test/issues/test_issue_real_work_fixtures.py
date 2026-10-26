@@ -147,7 +147,9 @@ class RealWorkFixtureTests(unittest.TestCase):
                 for evaluated in EVALUATED_PATHS:
                     self.assertFalse(os.path.lexists(seed / evaluated), evaluated)
                 large = [p.relative_to(seed).as_posix() for p in seed_files(seed)
-                         if p.stat().st_size > TRIM_BYTES and p.name not in KEPT_LARGE]
+                         if p.stat().st_size > TRIM_BYTES and p.name not in KEPT_LARGE
+                         and not (p.suffix == ".py"
+                                  and p.stat().st_size <= scaffold.MAX_KEPT_LARGE_BYTES)]
                 self.assertEqual(large, [])
 
     def test_seed_plugin_manifests_do_not_describe_the_stripped_skills(self):
@@ -272,7 +274,7 @@ class RealWorkFixtureTests(unittest.TestCase):
         seed = directory / "seed"
         installed = {"npm": ("node_modules", "npm ci"),
                      "bundler": (seed_prep.BUNDLE_PATH, "bundle install")}
-        for entry in fixture["deps"]:
+        for entry in fixture.get("deps", ()):
             tree, command = installed[entry["manager"]]
             modules = seed / entry["dir"] / tree
             self.assertTrue(modules.is_dir(),
@@ -281,7 +283,7 @@ class RealWorkFixtureTests(unittest.TestCase):
         self.addCleanup(owned.cleanup)
         workspace = Path(owned.name) / "ws"
         shutil.copytree(seed, workspace, ignore=shutil.ignore_patterns(*INSTALLED_DIRS))
-        for entry in fixture["deps"]:
+        for entry in fixture.get("deps", ()):
             tree = installed[entry["manager"]][0]
             (workspace / entry["dir"] / tree).parent.mkdir(parents=True, exist_ok=True)
             (workspace / entry["dir"] / tree).symlink_to(

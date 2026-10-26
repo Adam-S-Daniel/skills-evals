@@ -1270,6 +1270,22 @@ class GateSnapshotTests(_GateCase):
         with self.assertRaisesRegex(ingest.Rejected, "no closing issue"):
             self.gate()
 
+    def test_a_pull_request_with_no_closing_issue_is_rejected(self):
+        # The fixture tests require every fixture to snapshot its issue, so a
+        # clean no-issue scaffold could never merge (skills-evals#433).
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ingest.Rejected, scaffold.NO_ISSUE_REJECTED):
+                scaffold._gate_snapshot_bytes(Path(tmp), {}, None, None)
+
+    def test_a_seed_carrying_eval_fixtures_is_rejected(self):
+        # A seed of skills-evals copies its fixtures, which the census then
+        # counts twice (skills-evals#433).
+        def nested(where):
+            (where / "seed" / "evals" / "toy").mkdir(parents=True)
+            (where / "seed" / "evals" / "toy" / "fixture.yaml").write_text(
+                "skill: toy\n", encoding="utf-8")
+        self.assertRejected("seed carries an eval fixture.yaml", nested)
+
     def test_a_header_naming_another_pull_request_is_rejected(self):
         self.assertRejected("header",
                             self.edit("fixture.yaml", "https://github.com/example/toy/pull/7,",
