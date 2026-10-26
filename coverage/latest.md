@@ -3,10 +3,10 @@
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
 | adam-agentskills | 20 | 12 | 8 | 0 |
-| cms-platform | 14 | 10 | 4 | 0 |
+| cms-platform | 13 | 10 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 1 | 1 | 0 | 0 |
-| **Total** | 36 | 24 | 12 | 0 |
+| **Total** | 35 | 24 | 11 | 0 |
 
 ## adam-agentskills
 
@@ -49,7 +49,6 @@
 |  | platform-release-and-bump | covered | 1 |  |
 |  | post-failure-comment | covered | 1 |  |
 |  | preview-environments | skipped | 0 | staleness is the failure mode, not procedure quality |
-|  | sveltia-cms-playwright-demo | skipped | 0 | historical reference to retired tech |
 |  | test-canary | skipped | 0 | internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms) |
 
 ## adamdaniel.ai
@@ -68,6 +67,6 @@ None.
 
 ## Fixture metadata readiness
 
-- Fixtures: 41; draft: 9.
-- Context declared: 16; missing: 25; guidance unproven: 0.
+- Fixtures: 43; draft: 11.
+- Context declared: 18; missing: 25; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.

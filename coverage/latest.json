@@ -1,17 +1,15 @@
 {
+  "fixture_readiness": {
+    "context_declared": 18,
+    "context_missing": 25,
+    "draft": 11,
+    "guidance_unproven": 0,
+    "paired_context_delivery_verified": false,
+    "total": 43
+  },
+  "generated_at": "2026-10-26T11:31:02Z",
   "include_private_names": false,
   "problems": [],
-  "publication": {
-    "as_of": "2026-10-25T13:14:58Z",
-    "guidance_revision": "29d1ae92330c5f34056447e12ff9a74007c2e52a",
-    "public_registry_revisions": {
-      "adam-agentskills": "2deb5e3a18f1e8c5db9679f9db289eb0088a2956",
-      "adamdaniel.ai": "386b396a584c1336f1cfe43555d557be46e94fa9",
-      "cms-platform": "a3747f203e52ac5ee3f65eb6c4cffba5ecd94585"
-    },
-    "repository_revision": "a56c3802aa079b14a091debf8ed0d2f71a3e7ae1",
-    "run_id": "40196696887"
-  },
   "registries": [
     {
       "counts": {
@@ -185,15 +183,14 @@
           "skill": "rename-pdfs",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adam-agentskills"
+      ]
     },
     {
       "counts": {
         "covered": 10,
         "gap": 0,
-        "skipped": 4,
-        "total": 14
+        "skipped": 3,
+        "total": 13
       },
       "layout": "skills/*/SKILL.md",
       "name": "cms-platform",
@@ -299,21 +296,12 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "historical reference to retired tech",
-          "registry": "cms-platform",
-          "skill": "sveltia-cms-playwright-demo",
-          "status": "skipped"
-        },
-        {
-          "bundle": null,
-          "fixtures": 0,
           "reason": "internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
           "registry": "cms-platform",
           "skill": "test-canary",
           "status": "skipped"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/cms-platform"
+      ]
     },
     {
       "counts": {
@@ -335,8 +323,7 @@
           "skill": "embeddable-tool-pages",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai"
+      ]
     },
     {
       "counts": {
@@ -352,11 +339,13 @@
       "skills": []
     }
   ],
-  "schema": 1,
+  "schema": 2,
+  "status": "complete",
   "totals": {
     "covered": 24,
     "gap": 0,
-    "skipped": 12,
-    "total": 36
-  }
+    "skipped": 11,
+    "total": 35
+  },
+  "unresolved": []
 }
