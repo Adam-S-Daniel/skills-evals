@@ -351,7 +351,9 @@ class GuidanceProfileTests(_StandIn):
                        "policy-limits.json.signature.json": 65536,
                        "policy-limits.json.stamp.json": 4096,
                        "remote-settings.json.synced-at": 4096,
-                       "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024}
+                       "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024,
+                       # CLI 2.1.311: a built-in plugin's store, every session.
+                       "plugins/store/cc-plugin-agents-md_builtin-b049b47b3618.json": 65536}
 
     def _remove(self, path: Path) -> None:
         if path.is_dir() and not path.is_symlink():
@@ -461,12 +463,23 @@ class SharedProfileTests(_StandIn):
                     "todos/t.json",
                     # The writes measured under plugins/: small markers.
                     "plugins/cache/m/p/1/.orphaned_at", "plugins/.last_inuse_sweep",
-                    "plugins/plugin-directory-cache-v2.json"):
+                    "plugins/plugin-directory-cache-v2.json",
+                    "plugins/store/cc-plugin-agents-md_builtin-b049b47b3618.json"):
             with self.subTest(rel=rel):
                 self.log.unlink(missing_ok=True)
                 out = self.run_arm("write_config",
                                    env={"HD_TARGET": str(self.home / ".claude" / rel)})
                 self.assertNotIn("error", out, out)
+
+    def test_a_third_party_plugin_store_stays_watched(self):
+        for rel in ("plugins/store/cc-plugin-p_m-0123.json", "plugins/store/other.json"):
+            with self.subTest(rel=rel):
+                self.log.unlink(missing_ok=True)
+                out = self.run_arm("write_config",
+                                   env={"HD_TARGET": str(self.home / ".claude" / rel)})
+                self.assertEqual(out["error"], "agent_wrote_agent_config")
+                self.assertIn(f"$CLAUDE_CONFIG_DIR/{rel}", out["detail"])
+                shutil.rmtree(self.home / ".claude", ignore_errors=True)
 
 
 class VanishedPathTests(_StandIn):
