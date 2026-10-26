@@ -25,8 +25,7 @@ under the cap wherever the account's own week starts):
     a window reset, a run of one agent call, an unreadable summary). Every
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
-  * pending: successful runs of routine-eval-fire.yml in the window (less
-    sentinel runs, which send nothing; #70, round 8) that
+  * pending: successful runs of routine-eval-fire.yml in the window that
     have no ingested results yet. One younger than `PENDING_FULL_HOLD` (24
     hours) is reserved at `per_run_cap + per_run_overrun`; an older one is
     charged `per_run_overrun` only for the rest of the week. A routine run
@@ -96,15 +95,6 @@ PENDING_FULL_HOLD = timedelta(hours=24)
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024
 FIRE_WORKFLOW = "routine-eval-fire.yml"
-#: A sentinel run's title (routine-eval-fire.yml's `run-name`; `mode` is a
-#: choice input, so only a sentinel dispatch renders it). A sentinel sends
-#: nothing to the routine and spends nothing, so it is no pending fire
-#: (#70, round 8).
-SENTINEL_TITLE_PREFIX = "Fire eval routine: mode=sentinel "
-#: Runs read per page, and pages read at most, to find the sentinels; runs
-#: past them are counted as fires, the safe direction.
-PAGE_SIZE = 100
-MAX_PAGES = 10
 #: Float noise, not spend: the meter's readings carry six decimals
 #: (run_eval._meter_delta rounds to them), so a sum within this of the cap is
 #: an exact fit. 0.3 - 0.2 is 0.0999... in floats.
@@ -326,54 +316,36 @@ def fits(state: dict) -> int:
 def count_successful_fires(repo: str, since: datetime, token: str,
                            api: str = "https://api.github.com",
                            opener=urllib.request.urlopen) -> int:
-    """Successful runs of routine-eval-fire.yml created at or after `since`,
-    less the sentinel runs among them (`SENTINEL_TITLE_PREFIX`): the one
-    network call, paged, isolated so tests never make it. The count is the
-    API's `total_count` less the sentinels found in at most `MAX_PAGES`
-    pages, so a run not read counts as a fire (the safe direction). Any
-    failure is a GuardError carrying at most the HTTP status code."""
+    """Successful runs of routine-eval-fire.yml created at or after `since`:
+    the one network call, isolated so tests never make it. Any failure is a
+    GuardError carrying at most the HTTP status code."""
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", repo or ""):
         raise GuardError("repository name is missing or malformed")
-    total, sentinels, seen = None, set(), 0
-    for page in range(1, MAX_PAGES + 1):
-        query = urllib.parse.urlencode({
-            "created": ">=" + since.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "status": "success", "per_page": str(PAGE_SIZE), "page": str(page)})
-        request = urllib.request.Request(
-            f"{api}/repos/{repo}/actions/workflows/{FIRE_WORKFLOW}/runs?{query}",
-            headers={"Authorization": f"Bearer {token}",
-                     "Accept": "application/vnd.github+json",
-                     "X-GitHub-Api-Version": "2022-11-28"})
-        try:
-            with opener(request, timeout=30) as response:
-                status = getattr(response, "status", 200)
-                body = response.read(4 * 1024 * 1024)
-        except urllib.error.HTTPError as exc:
-            raise GuardError(f"the workflow runs API answered {exc.code}") from None
-        except (urllib.error.URLError, OSError, ValueError):
-            raise GuardError("the workflow runs API could not be reached") from None
-        if status != 200:
-            raise GuardError(f"the workflow runs API answered {status}")
-        try:
-            doc = json.loads(body)
-            count, runs = doc.get("total_count"), doc.get("workflow_runs")
-        except (ValueError, AttributeError, UnicodeDecodeError):
-            raise GuardError("the workflow runs API answered 200 with an unreadable body") from None
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0 \
-                or not isinstance(runs, list) \
-                or not all(isinstance(r, dict) and isinstance(r.get("display_title"), str)
-                           and isinstance(r.get("id"), int) for r in runs):
-            raise GuardError("the workflow runs API answered 200 with an unreadable body")
-        # The first page's total: a run created since only adds to later
-        # pages' totals, never to what is charged.
-        total = count if total is None else total
-        seen += len(runs)
-        # By id: a run created mid-read shifts the pages, so one can be read twice.
-        sentinels |= {r["id"] for r in runs
-                      if r["display_title"].startswith(SENTINEL_TITLE_PREFIX)}
-        if len(runs) < PAGE_SIZE or seen >= total:
-            break
-    return max(0, total - len(sentinels))
+    query = urllib.parse.urlencode({
+        "created": ">=" + since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": "success", "per_page": "1"})
+    request = urllib.request.Request(
+        f"{api}/repos/{repo}/actions/workflows/{FIRE_WORKFLOW}/runs?{query}",
+        headers={"Authorization": f"Bearer {token}",
+                 "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with opener(request, timeout=30) as response:
+            status = getattr(response, "status", 200)
+            body = response.read(1024 * 1024)
+    except urllib.error.HTTPError as exc:
+        raise GuardError(f"the workflow runs API answered {exc.code}") from None
+    except (urllib.error.URLError, OSError, ValueError):
+        raise GuardError("the workflow runs API could not be reached") from None
+    if status != 200:
+        raise GuardError(f"the workflow runs API answered {status}")
+    try:
+        total = json.loads(body).get("total_count")
+    except (ValueError, AttributeError, UnicodeDecodeError):
+        raise GuardError("the workflow runs API answered 200 with an unreadable body") from None
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        raise GuardError("the workflow runs API answered 200 with an unreadable body")
+    return total
 
 
 def fires_that_fit(tree: Path, limits: dict, now: datetime,

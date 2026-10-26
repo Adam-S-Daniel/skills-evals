@@ -37,10 +37,9 @@ POOLED EVIDENCE (Adam, 2026-10-25), replacing #70's four weekly sweeps.
     a tie, or no such pair, chooses none and the cell is `insufficient`. So
     a without arm from older guidance cannot be pooled against a with arm
     from newer guidance. The arm context cannot be computed from main (it
-    is the frozen context a run deployed), so no single run's self-report
-    chooses it (round 4, B2): a forger must outnumber the real pair's runs,
-    each through a fire of its own, and an honest context change counts
-    once its pair outnumbers the old one.
+    is the frozen context a run deployed), so the pair with the most runs
+    chooses it, and an honest context change counts once its pair
+    outnumbers the old one.
     Any key unknown (no registry given, the skill not found in one, the
     fixture not tracked in Git) makes the cell `insufficient`; there is no
     pool-everything fallback.
@@ -137,19 +136,7 @@ A CELL'S CLASS (`_classify`), first match wins:
 
 STATELESS CONFIRMATION AT FIXED LOOKS (`classify_cell`, round-2 review,
 2026-10-25). Nothing is carried from an earlier evaluation. Each arm's
-counted runs are ordered by (`order_time`, path): a routine run's
-`order_time` is the creation time of the fire that vouches for it
-(scripts/compute_gates.py, "ROUTINE EVIDENCE IS VOUCHED FOR"), which a run
-cannot choose; a `results/` run's is its timestamp. No fire vouches for a
-`results/` run, so a cell whose class would be `no-benefit` or
-`no-benefit-pending` on any of them is `insufficient` instead: `results/`
-evidence can keep a skill, never retire one. Likewise a cell with a
-trusted fire whose results never verified (scripts/compute_gates.py's
-`unlanded`, round 6) is `insufficient` once that fire is past the
-policy's `unlanded_fire_grace_hours` and at most `no-benefit-pending`
-before (`_block_on_unlanded`); `waived_fires` exempts named run ids. A cell
-whose bytes were copied elsewhere (`polluted`) is at most `insufficient`.
-The class is computed at
+counted runs are ordered by (timestamp, path). The class is computed at
 every reachable look: each of `retire_looks` <= the smaller arm's counted
 runs, on each arm's first N runs. `benefit` may be declared at any count, on
 the whole pool. Otherwise the largest look decides: a class other than
@@ -159,8 +146,8 @@ largest reachable looks is `no-benefit`; `no-benefit` at the largest alone
 So nothing retires before ten counted runs per arm, and since every look is
 within the current pooling key, new content starts over. Before the first
 look the whole pool's class stands. scripts/compute_gates.py reads no run
-stamped after its `--as-of`, so a future-dated run cannot choose the pool,
-its context key or its order. A run is named by `run_key`,
+stamped after its `--as-of`, so an evaluation can be repeated as of a
+time. A run is named by `run_key`,
 `<path>#<fixture>#<role>`.
 
 THE VERDICT (`retirement`), over every fixture on main x every current roster
@@ -191,11 +178,9 @@ KNOWN LIMITS, left for a later part:
 
 from __future__ import annotations
 
-import datetime as _dt
 import json
 import math
 import random
-import re
 from pathlib import Path
 
 import yaml
@@ -205,11 +190,6 @@ DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "evals" / "gate-policy
 RESULTS_BLOB = ("https://github.com/Adam-S-Daniel/skills-evals/blob/"
                 "persistent/eval-results/")
 MODES = ("auto", "proposal")
-#: How long a trusted fire may go without a verified ingested run before its
-#: cell is insufficient (round 6, R6-2); before that, at most pending.
-DEFAULT_UNLANDED_GRACE_HOURS = 72
-#: A routine run id (scripts/compute_gates.RUN_ID_RE).
-WAIVED_RUN_ID_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}")
 #: The bootstrap's seed: fixed, so the same runs give the same bounds.
 BOOTSTRAP_SEED = 70
 #: Scored trials an arm of one run needs to count (#70's 3).
@@ -284,8 +264,7 @@ def parse_gate_policy(text: str) -> dict:
         raise GatePolicyError("gate policy must be a mapping with one key, skills")
     block = document["skills"]
     unknown = sorted(set(block) - set(SKILL_KEYS)
-                     - {"retire_looks", "retirement_mode", "unlanded_fire_grace_hours",
-                        "waived_fires", "fire_sequence_from", "waived_fire_numbers"})
+                     - {"retire_looks", "retirement_mode"})
     if unknown:
         raise GatePolicyError(f"gate policy skills has unknown keys {unknown}")
     skills = {}
@@ -305,60 +284,7 @@ def parse_gate_policy(text: str) -> dict:
     skills["retire_looks"] = list(looks)
     mode = block.get("retirement_mode")
     skills["retirement_mode"] = mode if mode in MODES else "proposal"
-    grace = block.get("unlanded_fire_grace_hours", DEFAULT_UNLANDED_GRACE_HOURS)
-    if not _number(0, 24 * 365, low_open=True)(grace):
-        raise GatePolicyError("gate policy skills.unlanded_fire_grace_hours must be a "
-                              "number of hours above 0 and at most a year")
-    skills["unlanded_fire_grace_hours"] = grace
-    skills["waived_fires"] = _waivers(block.get("waived_fires", []), "run_id",
-                                      WAIVED_RUN_ID_RE.fullmatch, "a routine run id")
-    # Round 7, R7-1: the first routine-eval-fire.yml run_number whose
-    # sequence must have no gap. Required: there is no safe default.
-    start = block.get("fire_sequence_from")
-    if not _count(1)(start):
-        raise GatePolicyError("gate policy skills.fire_sequence_from must be a "
-                              "routine-eval-fire.yml run number, an integer of at least 1")
-    skills["fire_sequence_from"] = start
-    skills["waived_fire_numbers"] = _waivers(block.get("waived_fire_numbers", []), "number",
-                                             _count(1), "a run number")
     return {"skills": skills}
-
-
-def _waivers(value, key: str, valid, words_key: str) -> list:
-    """A waiver list: `waived_fires` (round 6, R6-2; `key` "run_id": run
-    ids the owner knows will never land) or `waived_fire_numbers` (round 7,
-    R7-1; `key` "number": fire run numbers known gone), each {key,
-    "reason", "date"}, or GatePolicyError."""
-    name = "waived_fires" if key == "run_id" else "waived_fire_numbers"
-    words = (f"gate policy skills.{name} must be a list of {{{key}, reason, date}}: "
-             f"{words_key}, a non-empty reason and a YYYY-MM-DD date, each {key} once")
-    if not isinstance(value, list):
-        raise GatePolicyError(words)
-    out, seen = [], set()
-    for entry in value:
-        if not isinstance(entry, dict) or set(entry) != {key, "reason", "date"} \
-                or not (isinstance(entry[key], str) or key == "number") \
-                or not valid(entry[key]) \
-                or entry[key] in seen \
-                or not isinstance(entry["reason"], str) or not entry["reason"].strip() \
-                or not _is_date(entry["date"]):
-            raise GatePolicyError(words)
-        seen.add(entry[key])
-        out.append({key: entry[key], "reason": entry["reason"], "date": str(entry["date"])})
-    return out
-
-
-def _is_date(value) -> bool:
-    """A YYYY-MM-DD date: YAML's own date, or that string."""
-    if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
-        return True
-    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
-        return False
-    try:
-        _dt.date.fromisoformat(value)
-    except ValueError:
-        return False
-    return True
 
 
 def load_gate_policy(path: Path | None = None) -> dict:
@@ -910,19 +836,12 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
         reason = (f"no-benefit at the {looks[-1]['n']}-run look; it must also be "
                   "no-benefit at the next look")
     errored = sum(r["numbers"]["errored_trials"] for r in with_runs + without_runs)
-    unvouched = sum(1 for r in with_runs + without_runs if r.get("vouched") is False)
     if cls in ("no-benefit", "no-benefit-pending") and (errored or NO_CHECKS_REASON in skipped):
         # An agent's errors can only help keep: dropping or scoring around
         # them would compare only the trials that went well.
         cls, reason = "insufficient", (f"{cls} on the numbers, but the cell has "
                                        f"{errored} agent-errored trial(s) or a run "
                                        "skipped as anomalous, so it cannot retire")
-    elif cls in ("no-benefit", "no-benefit-pending") and unvouched:
-        # results/ is not vouched for (persistent/eval-results is guarded
-        # against deletion only), so it can keep a skill, never retire one.
-        cls, reason = "insufficient", (f"{cls} on the numbers, but {unvouched} run(s) "
-                                       "are results/ evidence no fire vouches for, "
-                                       "which can keep a skill but never retire it")
     return {**full, "class": cls, "reason": reason, "full_class": full["class"],
             "looks": looks, "judge_carried": judge_carried, "skipped": skipped}
 
@@ -931,9 +850,8 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
 # Pooling and the verdict.
 
 def _order(run: dict) -> tuple:
-    """A run's place: its `order_time` (compute_gates sets it to a routine
-    run's vouching fire's creation time), else its timestamp; then its path."""
-    return run.get("order_time") or run["timestamp"], run["path"]
+    """A run's place: its timestamp, then its path."""
+    return run["timestamp"], run["path"]
 
 
 def _joint_context(with_runs: list, without_runs: list, models: list):
@@ -1007,42 +925,6 @@ def _run_entry(run: dict) -> dict:
             "cost_usd": numbers["cost_usd"]}
 
 
-def _block_on_unlanded(cell: dict, unlanded: list, missing: list,
-                       no_sentinel: bool = False) -> dict:
-    """`cell` with no-benefit refused while evidence for it may be missing
-    (scripts/compute_gates.py): a trusted fire for it with no verified
-    ingested run (round 6, R6-2) or a verified run of it no trusted fire
-    names (round 7, R7-1) makes it `insufficient` once overdue, at most
-    `no-benefit-pending` before; a gap in the fire workflow's run numbers
-    (`missing`, R7-1), or no trusted sentinel fire to end the sequence
-    (`no_sentinel`, round 8, R8-1), makes every such cell `insufficient`.
-    Any other class stands."""
-    if no_sentinel and cell["class"] in ("no-benefit", "no-benefit-pending"):
-        cell = {**cell, "class": "insufficient",
-                "reason": "no trusted routine-eval-fire.yml sentinel fire at or after "
-                          "--as-of ends the run number sequence, so deleted fires cannot "
-                          "be ruled out and no-benefit is refused"}
-    if missing and cell["class"] in ("no-benefit", "no-benefit-pending"):
-        cell = {**cell, "class": "insufficient",
-                "reason": "routine-eval-fire.yml run numbers are missing from the sequence "
-                          f"({', '.join(map(str, missing))}), so no-benefit is refused"}
-    if not unlanded:
-        return cell
-    cell = {**cell, "unlanded_fires": [u["run_id"] for u in unlanded]}
-    if cell["class"] not in ("no-benefit", "no-benefit-pending"):
-        return cell
-    overdue = [u["run_id"] for u in unlanded if u["overdue"]]
-    if overdue:
-        return {**cell, "class": "insufficient",
-                "reason": "evidence is missing: trusted fires past the grace window with no "
-                          "verified ingested run, or verified runs no trusted fire names "
-                          f"({', '.join(overdue)}), so no-benefit is refused"}
-    young = ", ".join(u["run_id"] for u in unlanded)
-    return {**cell, "class": "no-benefit-pending",
-            "reason": f"trusted fires have no verified ingested run yet ({young}), so "
-                      "no-benefit waits for them"}
-
-
 def retirement(index: dict, models: list, skill: str, policy: dict,
                expected: dict) -> dict:
     """The verdict for `skill` over every fixture on main (`expected`, see
@@ -1055,13 +937,7 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         prime(runs)
         used.update(run_key(r) for r in runs)
         missing = sorted(k for k, v in pool["key"].items() if v is None)
-        if [skill, fixture or "", model] in index.get("polluted", []) and pool["on_model"]:
-            # Round 5, B3: this cell's bytes were copied into another cell
-            # or tree. Copies can stall a cell, never move its verdict.
-            cell = {"class": "insufficient", "looks": [],
-                    "reason": "this cell's run bytes were copied into another cell or "
-                              "tree (pollution), so it is at most insufficient"}
-        elif not pool["on_model"]:
+        if not pool["on_model"]:
             cell = {"class": "missing", "reason": "no run on this model", "looks": []}
         elif missing:
             cell = {"class": "insufficient", "looks": [],
@@ -1069,10 +945,6 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         else:
             carried = any(r["judge_carried"] for r in runs)
             cell = classify_cell(arms["with"], arms["without"], policy, carried)
-        cell = _block_on_unlanded(cell, [
-            u for u in index.get("unlanded", [])
-            if (u["skill"], u["fixture"], u["model"]) == (skill, fixture or "", model)],
-            index.get("missing_fire_numbers", []), index.get("no_sentinel", False))
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
                       **cell,
                       "cost_usd": _finite_sum([r["numbers"]["cost_usd"] for r in runs]),

@@ -12,10 +12,10 @@ name: Fire eval routine
 # * Every dispatch input is read from $GITHUB_EVENT_PATH as data, never
 #   interpolated into a `run:` block (the rendered command is echoed into a
 #   public log), and validated before the bearer is ever in a step's env.
-# * Three routine modes and a sentinel (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
+# * Two modes (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
 #   (Recommended)"). `eval`, the default, sends exactly five fields: mode,
-#   run_id, fixture, arms, trials, then `model` only when that input is set
-#   (#68, #372 U4; see below), and last `vouch_nonce` (#70, see below). `scaffold` sends exactly four: mode,
+#   run_id, fixture, arms, trials, and a sixth, `model`, only when that input
+#   is set (#68, #372 U4; see below). `scaffold` sends exactly four: mode,
 #   run_id, candidate (a miner key, OWNER__REPO__PR) and issue_snapshot, and
 #   the routine turns that one candidate into one draft real-work fixture on
 #   its own branch.
@@ -33,29 +33,16 @@ name: Fire eval routine
 #   trials in eval and improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
 #   every value.
-# * `model` (#68's first slice, #372 U4) is valid in eval mode only, and
-#   required there (#70, round 8, R8-3): the sweep dispatches each fixture
-#   once per roster arm. It must be the `id` of an arm in evals/roster.yml
-#   on the default branch, checked by scripts/roster_arm.py, which parses
-#   the YAML with the harness's own reader; the judge is not an arm. A
-#   refusal is a fixed message that never echoes the input. An eval payload
-#   always carries `model`, after `trials` and before `vouch_nonce`.
-#   `run-name` is rendered from the inputs alone, so requiring it is what
-#   makes every eval fire's title name the cell it is for
-#   (scripts/compute_gates.py); the weekly caller (routine-eval-weekly.yml)
-#   resolves it (`roster_arm.py --resolve`: the fixture's pin, else the
-#   roster's first arm) and passes it. The routine's saved prompt turns the
-#   payload's `model` into the runner's model flag; that prompt is not in
-#   this repo.
-# * `sentinel` mode (#70, round 8, R8-1) validates (every text input
-#   empty), then checks out nothing more, skips the allowance guard and the
-#   fire step, and succeeds: no curl, no nonce, nothing sent to the routine.
-#   Its run is the retirement gates' high-water mark: part 2 dispatches one
-#   and waits for it to succeed before computing, and compute_gates reads
-#   every run number below the first trusted sentinel created at or after
-#   `--as-of`, so deleting the newest fires leaves a gap. Its title says
-#   `mode=sentinel`; scripts/allowance_guard.py counts no sentinel as a
-#   pending fire.
+# * `model` (#68's first slice, #372 U4) is optional and valid in eval mode
+#   only: the sweep dispatches each fixture once per roster arm. When set it
+#   must be the `id` of an arm in evals/roster.yml on the default branch,
+#   checked by scripts/roster_arm.py, which parses the YAML with the
+#   harness's own reader; the judge is not an arm. A refusal is a fixed
+#   message that never echoes the input. The payload gains `model` as its
+#   last key only then, so with it empty the payload is byte for byte what
+#   it was and the weekly caller (routine-eval-weekly.yml, which sets no
+#   model) is unaffected. The routine's saved prompt turns the payload's
+#   `model` into the runner's model flag; that prompt is not in this repo.
 # * Scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow
 #   precomputes (Recommended)"): a routine session refuses GitHub GraphQL,
 #   and an issue's body revisions have no REST read, so after validation,
@@ -82,11 +69,10 @@ name: Fire eval routine
 #   job summary only after it matches the documented shape.
 # * The weekly allowance guard (#68; Adam, 2026-10-10: all automated evals
 #   within 30% of the weekly allowance): after validation and before the
-#   fire, in every mode but sentinel, scripts/allowance_guard.py check
-#   reads the ingested runs of the last seven days from a read-only checkout
-#   of persistent/eval-results, counts this workflow's successful runs in the
-#   same window (sentinels aside) with the job's token (hence `actions:
-#   read`), and refuses the
+#   fire, in every mode, scripts/allowance_guard.py check reads the ingested
+#   runs of the last seven days from a read-only checkout of
+#   persistent/eval-results, counts this workflow's successful runs in the
+#   same window with the job's token (hence `actions: read`), and refuses the
 #   fire unless spent + pending + this run's reservation stays within
 #   evals/budget.yml's weekly_cap. An API error refuses too (fail closed). Its
 #   log line is numbers only. See docs/how-it-works.md, "The weekly allowance
@@ -102,47 +88,6 @@ name: Fire eval routine
 #   repository.
 #
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
-#
-# * `run-name` (#70) carries the inputs the retirement gates need, since
-#   the Actions runs API does not return dispatch inputs:
-#   scripts/compute_gates.py reads a fire's mode, fixture, model, arms and
-#   trials from its display title (`FIRE_TITLE_RE`) to vouch for the
-#   routine run it started. It is not a shell, so this is not the `run:`
-#   interpolation case; an unexpected value only makes a title that vouches
-#   for nothing.
-# * The vouch nonce (#70, rounds 4 and 5): in eval mode the fire step
-#   derives nonce = HMAC-SHA256(VOUCH_KEY, run id) as hex (the repository
-#   secret VOUCH_KEY; scripts/write_vouch.py's `derive_nonce`), masks it,
-#   and sends it to the routine as the payload's one optional key
-#   `vouch_nonce` (the bare 64 lowercase hex, nothing else). It is never
-#   printed and NOTHING about it is published: not the nonce, not a hash of
-#   it. The routine pipes it to scripts/write_vouch.py, which writes
-#   `eval-results/<run id>/vouch.json` = {"mac": HMAC(nonce, manifest of its
-#   results)}; that is in the routine's prompt, not in fire text, which the
-#   routine treats as untrusted data. routine-eval-ingest.yml re-derives the
-#   nonce from VOUCH_KEY and ingests nothing whose MAC does not verify. The
-#   step still emits `::notice title=routine-vouch::run_id=<run id>`, which
-#   part 2 reads from the run's annotations into compute_gates' `--fires`.
-#   Without VOUCH_KEY the payload has no `vouch_nonce` and the eval still
-#   runs, but its results cannot be ingested.
-#   The request body goes to curl from a file (`--data-binary @file`), and
-#   the nonce to jq through its environment, so neither is in any argv.
-#   MERGE ORDER: the routine's prompt refuses an eval payload with any key
-#   outside its list. BEFORE this workflow change merges, the routine
-#   prompt must accept `vouch_nonce` and run scripts/write_vouch.py, and
-#   the VOUCH_KEY repository secret must exist; otherwise every eval fire
-#   is refused, or no eval result can be ingested. The prompt's two lines:
-#     Accept the optional eval payload key `vouch_nonce` (exactly 64
-#     lowercase hex); never print, log, echo or commit it.
-#     The moment the harness exits, before reading any report, trace or
-#     other arm output, run `printf %s "$VOUCH_NONCE" | python3
-#     scripts/write_vouch.py eval-results/<run id>`, then unset VOUCH_NONCE,
-#     and commit the vouch.json it wrote with the results.
-#   Running write_vouch first keeps the nonce out of the routine's context
-#   once it reads output an agent arm could have shaped (round 6, R6-3).
-
-run-name: >-
-  Fire eval routine: mode=${{ inputs.mode }} fixture=${{ inputs.fixture }} model=${{ inputs.model }} arms=${{ inputs.arms }} trials=${{ inputs.trials }}
 
 on:
   workflow_dispatch:
@@ -151,11 +96,10 @@ on:
         description: >-
           eval runs a fixture; scaffold turns one miner candidate into a
           draft real-work fixture; improve runs the improvement loop on
-          one skill; sentinel validates and fires nothing (the retirement
-          gates' run-number high-water mark).
+          one skill.
         required: true
         type: choice
-        options: [eval, scaffold, improve, sentinel]
+        options: [eval, scaffold, improve]
         default: eval
       candidate:
         description: >-
@@ -185,8 +129,9 @@ on:
         type: string
       model:
         description: >-
-          Eval mode only, required there (leave empty otherwise): the id
-          of one arm in evals/roster.yml, e.g. claude-opus-5-5.
+          Eval mode only, optional (leave empty otherwise): the id of one
+          arm in evals/roster.yml, e.g. claude-opus-5-5. Empty keeps the
+          fixture's pin or the roster's first arm.
         required: false
         type: string
       arms:
@@ -288,14 +233,14 @@ jobs:
           esac
 
           case "$mode" in
-            eval|scaffold|sentinel)
+            eval|scaffold)
               if [ -n "$skill" ] || [ -n "$holdout" ]; then
                 echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve"
                 exit 1
               fi ;;
           esac
           case "$mode" in
-            scaffold|improve|sentinel)
+            scaffold|improve)
               if [ -n "$model" ]; then
                 echo "::error::input 'model' must be empty unless the mode is eval"
                 exit 1
@@ -334,15 +279,8 @@ jobs:
                 echo "::error::input 'holdout' is longer than 128 characters or has characters outside [A-Za-z0-9._-]"
                 exit 1
               fi ;;
-            sentinel)
-              # Every text input empty (checked above for skill, holdout
-              # and model), so its title carries no fixture or model.
-              if [ -n "$fixture" ] || [ -n "$candidate" ]; then
-                echo "::error::inputs 'fixture' and 'candidate' must be empty in sentinel mode"
-                exit 1
-              fi ;;
             *)
-              echo "::error::input 'mode' must be eval, scaffold, improve or sentinel"
+              echo "::error::input 'mode' must be eval, scaffold or improve"
               exit 1 ;;
           esac
 
@@ -374,17 +312,12 @@ jobs:
             # check comes first so no value with a leading `-` reaches a
             # command line; the script reads its first argument literally
             # too, and its own refusal is the same fixed text.
-            # Required (#70, round 8, R8-3): `run-name` is rendered from the
-            # inputs alone, so only a dispatch that names its model has a
-            # title that says which cell its results are for.
-            if [ -z "$model" ]; then
-              echo "::error::input 'model' is required in eval mode (an arm of evals/roster.yml)"
-              exit 1
-            fi
-            if ! [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
-               || ! python3 scripts/roster_arm.py "$model"; then
-              echo "::error::input 'model' is not an arm of the committed evals/roster.yml"
-              exit 1
+            if [ -n "$model" ]; then
+              if ! [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
+                 || ! python3 scripts/roster_arm.py "$model"; then
+                echo "::error::input 'model' is not an arm of the committed evals/roster.yml"
+                exit 1
+              fi
             fi
           fi
 
@@ -427,8 +360,6 @@ jobs:
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
           elif [ "$mode" = improve ]; then
             echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
-          elif [ "$mode" = sentinel ]; then
-            echo "mode: sentinel (nothing is checked out, charged or sent)"
           else
             echo "mode: eval, fixture: ${fixture}, arms: ${arms}, trials: ${trials}, model: ${model:-none}"
           fi
@@ -437,7 +368,6 @@ jobs:
       # only: the bot-written branch is untrusted, nothing from it runs, and
       # only routine-results/ is checked out.
       - name: Check out persistent/eval-results (the ingested runs)
-        if: steps.validate.outputs.mode != 'sentinel'
         uses: actions/checkout@v7.0.1
         with:
           ref: persistent/eval-results
@@ -445,13 +375,12 @@ jobs:
           persist-credentials: false
           sparse-checkout: routine-results
 
-      # Every mode but sentinel, before the fire: refused (exit 1, numbers-only log) when
+      # Every mode, before the fire: refused (exit 1, numbers-only log) when
       # this run's reservation would take the last seven days past the weekly
       # cap, or when the spend cannot be read. The job's read-only token,
       # never the bearer.
       - name: Check the weekly allowance
         id: allowance
-        if: steps.validate.outputs.mode != 'sentinel'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/allowance_guard.py check --results-tree eval-results-branch
@@ -490,8 +419,6 @@ jobs:
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
       - name: Fire the eval routine
-        # A sentinel ends here, a success that sent nothing (#70, round 8).
-        if: steps.validate.outputs.mode != 'sentinel'
         env:
           FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_014cqgegCtJUqXYjAKmkr4J5/fire
           EVAL_ROUTINE_FIRE_BEARER: ${{ secrets.EVAL_ROUTINE_FIRE_BEARER }}
@@ -505,7 +432,6 @@ jobs:
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
           MODEL: ${{ steps.validate.outputs.model }}
           ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
-          VOUCH_KEY: ${{ secrets.VOUCH_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${EVAL_ROUTINE_FIRE_BEARER:-}" ]; then
@@ -531,32 +457,12 @@ jobs:
                 '{text: ({mode: "scaffold", run_id: $run_id, candidate: $candidate,
                           issue_snapshot: $snapshot[0]} | tojson)}')" ;;
             eval)
-              # The vouch nonce: HMAC-SHA256(VOUCH_KEY, run id), masked, sent
-              # in the payload only (to jq through its environment, never
-              # argv), never printed, and nothing about it published.
-              nonce=""
-              if [ -n "${VOUCH_KEY:-}" ]; then
-                nonce="$(python3 -c 'import hashlib, hmac, os
-          print(hmac.new(os.environ["VOUCH_KEY"].encode(), os.environ["RUN_ID"].encode(),
-                         hashlib.sha256).hexdigest())')"
-                if ! [[ "$nonce" =~ ^[0-9a-f]{64}$ ]]; then
-                  echo "::error::the vouch nonce has an unexpected shape"
-                  exit 1
-                fi
-                echo "::add-mask::${nonce}"
-              else
-                echo "::warning::repository secret VOUCH_KEY is not set: this eval runs, but its results cannot be ingested"
-              fi
-              body="$(VOUCH_NONCE="$nonce" jq -n -c \
+              body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
                 --arg arms "$ARMS" --argjson trials "$TRIALS" \
                 --arg model "${MODEL:-}" \
                 '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials}
-                         + (if $model == "" then {} else {model: $model} end)
-                         + (if $ENV.VOUCH_NONCE == "" then {} else {vouch_nonce: $ENV.VOUCH_NONCE} end)
-                         | tojson)}')"
-              unset nonce
-              echo "::notice title=routine-vouch::run_id=${RUN_ID}" ;;
+                         + (if $model == "" then {} else {model: $model} end) | tojson)}')" ;;
             improve)
               # Exactly five keys; an empty holdout is null, never "".
               body="$(jq -n -c \
@@ -575,11 +481,7 @@ jobs:
             exit 1
           fi
           response="$(mktemp)"
-          body_file="$(mktemp)"
-          trap 'rm -f "$response" "$body_file"' EXIT
-          # The body (which can hold the vouch nonce) goes to curl from a
-          # file, never argv (#70, round 5, N6).
-          printf '%s' "$body" > "$body_file"
+          trap 'rm -f "$response"' EXIT
           # The bearer goes to curl on stdin (`-H @-`), so it is never in
           # argv, where any process on the runner could read it.
           status="$(printf 'Authorization: Bearer %s\n' "$EVAL_ROUTINE_FIRE_BEARER" \
@@ -588,7 +490,7 @@ jobs:
                 --header @- \
                 --header 'anthropic-version: 2023-06-01' \
                 --header 'Content-Type: application/json' \
-                --data-binary "@${body_file}" \
+                --data-binary "$body" \
                 --output "$response" --write-out '%{http_code}')" || status="000"
           echo "fire API status: ${status}"
           if [ "$status" != "200" ]; then

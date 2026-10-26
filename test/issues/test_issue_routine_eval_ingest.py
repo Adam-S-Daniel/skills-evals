@@ -58,15 +58,11 @@ from lockfile_pins import lock_problem  # noqa: E402
 import cli_json  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
-import write_vouch  # noqa: E402
 
 RUN_ID = "20261006T194256Z-f944ea"
 BRANCH = f"claude/eval-{RUN_ID}"
 STAMP = "20261006T194334Z"
 MARKER = "do-not-echo-this-marker"
-#: The test VOUCH_KEY (#70, round 5); a real one is a repository secret.
-KEY = b"test-only-vouch-key-example"
-RUN_DIR_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}")
 
 GIT_ENV = {
     "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
@@ -203,18 +199,8 @@ class GitCase(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
 
-    def commit(self, files: dict[str, bytes] | None = None, *, vouch=True) -> str:
-        """Commit `files` (the good ones by default). With `vouch`, each run
-        directory is first given the vouch.json the routine writes
-        (scripts/write_vouch.py, with the nonce the fire derives from KEY)."""
+    def commit(self, files: dict[str, bytes] | None = None) -> str:
         self.write(good_files() if files is None else files)
-        if vouch:
-            for root in (ingest.SOURCE_ROOT, "results"):
-                for run_dir in sorted((self.repo / root).glob("*")):
-                    if run_dir.is_dir() and RUN_DIR_RE.fullmatch(run_dir.name):
-                        with contextlib.suppress(ValueError):
-                            write_vouch.write(run_dir,
-                                              write_vouch.derive_nonce(KEY, run_dir.name))
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "results")
         return self.git("rev-parse", "HEAD")
@@ -222,7 +208,7 @@ class GitCase(unittest.TestCase):
     def validate(self, branch=BRANCH, expect=None, out=None):
         out = out or self.tmp / "staged"
         return ingest.validate(str(self.repo), "main", branch, branch, expect,
-                               out, KEY)
+                               out)
 
     def assertRejected(self, pattern=None, **kwargs):
         with self.assertRaises(ingest.Rejected) as caught:
@@ -243,150 +229,14 @@ class AcceptTests(GitCase):
         sha = self.commit(files)
         out = self.tmp / "staged"
         result = self.validate(expect=sha, out=out)
-        self.assertEqual(result, {"run_id": RUN_ID, "sha": sha, "files": "4"})
+        self.assertEqual(result, {"run_id": RUN_ID, "sha": sha, "files": "3"})
         staged = {str(p.relative_to(out)): p.read_bytes()
                   for p in out.rglob("*") if p.is_file()}
         prefix = f"{ingest.SOURCE_ROOT}/"
         expected = {"routine-results/" + name[len(prefix):]: data
                     for name, data in files.items()
                     if not name.endswith("tool_trace.json")}
-        vouch = f"{ingest.SOURCE_ROOT}/{RUN_ID}/vouch.json"
-        expected[f"routine-results/{RUN_ID}/vouch.json"] = (self.repo / vouch).read_bytes()
         self.assertEqual(staged, expected)
-
-    def test_the_mac_covers_exactly_the_staged_results(self):
-        # #70, round 5: vouch.json is {"mac": HMAC(nonce, manifest)}, the
-        # nonce being HMAC(VOUCH_KEY, run id); the MAC is over the kept files.
-        self.commit()
-        out = self.tmp / "staged"
-        self.validate(out=out)
-        run = out / "routine-results" / RUN_ID
-        kept = {p.relative_to(run).as_posix(): p.read_bytes()
-                for p in run.rglob("*") if p.is_file() and p.name != "vouch.json"}
-        self.assertNotIn("tool_trace.json", " ".join(kept))
-        self.assertEqual(json.loads((run / "vouch.json").read_text()),
-                         {"mac": write_vouch.mac(write_vouch.derive_nonce(KEY, RUN_ID), kept)})
-
-    def test_vouch_json_is_staged_in_one_canonical_shape(self):
-        # Round 6, R6-4: whatever spacing the routine wrote, the staged file
-        # is json.dumps({"mac": mac}) + "\n", the one shape compute_gates reads.
-        run_dir = self.repo / ingest.SOURCE_ROOT / RUN_ID
-        for case, form in (("no space, no newline", '{"mac":"%s"}'),
-                           ("spaced", '{ "mac" : "%s" }\n'),
-                           ("canonical", '{"mac": "%s"}\n')):
-            with self.subTest(case=case):
-                self.git("checkout", "-q", "-B", BRANCH, "main")
-                self.write(good_files())
-                write_vouch.write(run_dir, write_vouch.derive_nonce(KEY, RUN_ID))
-                mac = json.loads((run_dir / "vouch.json").read_text())["mac"]
-                (run_dir / "vouch.json").write_text(form % mac, encoding="utf-8")
-                self.commit({}, vouch=False)
-                out = self.tmp / case.replace(" ", "-").replace(",", "")
-                self.validate(out=out)
-                self.assertEqual((out / "routine-results" / RUN_ID / "vouch.json").read_bytes(),
-                                 (json.dumps({"mac": mac}) + "\n").encode())
-
-    def test_a_branch_without_a_matching_mac_is_rejected(self):
-        name = f"eval-results/{RUN_ID}/vouch.json"
-        cases = {
-            "no vouch.json": ({}, "carries no vouch.json"),
-            "a made-up MAC": ({name: json.dumps({"mac": "ab" * 32}).encode()},
-                              "MAC does not match"),
-        }
-        for case, (extra, pattern) in cases.items():
-            with self.subTest(case=case):
-                self.git("checkout", "-q", "-B", BRANCH, "main")
-                self.commit({**good_files(), **extra}, vouch=False)
-                self.assertRejected(pattern)
-
-    def test_a_mac_under_another_key_or_run_id_is_rejected(self):
-        run_dir = self.repo / ingest.SOURCE_ROOT / RUN_ID
-        for case, nonce in (("another key", write_vouch.derive_nonce(b"another-key", RUN_ID)),
-                            ("another run id", write_vouch.derive_nonce(
-                                KEY, "20261006T192432Z-93755e"))):
-            with self.subTest(case=case):
-                self.git("checkout", "-q", "-B", BRANCH, "main")
-                self.write(good_files())
-                write_vouch.write(run_dir, nonce)
-                self.commit({}, vouch=False)
-                self.assertRejected("MAC does not match")
-
-    def test_without_vouch_key_nothing_is_ingested(self):
-        self.commit()
-        for key in (None, b""):
-            with self.subTest(key=key):
-                with self.assertRaisesRegex(ingest.Rejected, "VOUCH_KEY is not set"):
-                    ingest.validate(str(self.repo), "main", BRANCH, BRANCH, None,
-                                    self.tmp / "staged", key)
-                self.assertFalse((self.tmp / "staged").exists())
-
-    def test_a_forged_fast_forward_of_a_vouched_run_is_rejected(self):
-        # Reviewer round 5 (test_race): a forger reads the public vouch.json
-        # and pushes a fast-forward that rewrites a summary. The MAC was over
-        # the routine's bytes and remaking it needs the nonce, so the forged
-        # tip is rejected, and a dispatch naming the routine's own commit
-        # (`sha`) still ingests the real bytes.
-        real = self.commit()
-        name = next(k for k in good_files() if k.endswith("with_skill/summary.json"))
-        forged = json.dumps(json.loads((self.repo / name).read_bytes()), indent=1).encode()
-        tip = self.commit({name: forged}, vouch=False)
-        self.assertNotEqual(real, tip)
-        self.assertRejected("MAC does not match")
-        out = self.tmp / "staged"
-        result = ingest.validate(str(self.repo), "main", BRANCH, BRANCH, None, out,
-                                 KEY, real)
-        self.assertEqual(result["sha"], real)
-        self.assertEqual((out / "routine-results" / name[len("eval-results/"):])
-                         .read_bytes(), good_files()[name])
-
-    def test_a_dispatch_sha_must_be_on_the_branch(self):
-        self.commit()
-        self.git("checkout", "-q", "-b", "elsewhere", "main")
-        stray = self.commit({"eval-results/x": b"x"}, vouch=False)
-        for sha, pattern in ((stray, "not on the branch"), ("zz" * 20, "40-hex")):
-            with self.subTest(sha=sha):
-                with self.assertRaisesRegex(ingest.Rejected, pattern):
-                    ingest.validate(str(self.repo), "main", BRANCH, BRANCH, None,
-                                    self.tmp / "staged", KEY, sha)
-
-    def test_a_forged_pre_push_claims_no_run_id(self):
-        # N2: write-once runs only after the MAC check. A forger who pushes
-        # first is rejected before anything is staged, so `place` is never
-        # reached for it, and the routine's real push is then placed.
-        tree = self.tmp / "tree"
-        tree.mkdir()
-        name = next(k for k in good_files() if k.endswith("with_skill/summary.json"))
-        forged = {**good_files(),
-                  name: json.dumps(json.loads(good_files()[name]), indent=1).encode(),
-                  f"eval-results/{RUN_ID}/vouch.json": json.dumps({"mac": "ab" * 32}).encode()}
-        self.commit(forged, vouch=False)
-        self.assertRejected("MAC does not match")
-        self.git("checkout", "-q", "-B", BRANCH, "main")
-        self.commit()
-        out = self.tmp / "real"
-        self.validate(out=out)
-        ingest.place(out, tree)
-        self.assertEqual((tree / "routine-results" / name[len("eval-results/"):])
-                         .read_bytes(), good_files()[name])
-
-    def test_a_vouch_file_of_any_other_shape_rejects_the_branch(self):
-        for name, data in (("upper-case mac", {"mac": "AB" * 32}),
-                           ("short mac", {"mac": "ab"}),
-                           ("a nonce", {"nonce": "ab" * 32}),
-                           ("an extra key", {"mac": "ab" * 32, "x": 1}),
-                           ("a list", ["ab" * 32]),
-                           ("too large", {"mac": "ab" * 32, "pad": "x" * 300})):
-            with self.subTest(name=name):
-                self.git("checkout", "-q", "-B", BRANCH, "main")
-                self.commit({**good_files(),
-                             f"eval-results/{RUN_ID}/vouch.json": json.dumps(data).encode()},
-                            vouch=False)
-                self.assertRejected("vouch.json")
-        # Anywhere but the run id directory's top it is not a result path.
-        self.git("checkout", "-q", "-B", BRANCH, "main")
-        self.commit({**good_files(), f"eval-results/{RUN_ID}/demo/vouch.json":
-                     json.dumps({"mac": "ab" * 32}).encode()})
-        self.assertRejected()
 
     def test_legacy_root_only_for_its_own_run(self):
         legacy = "20261006T192432Z-93755e"
@@ -398,7 +248,7 @@ class AcceptTests(GitCase):
                            for n, d in good_files().items()})
         with mock.patch.object(ingest, "LEGACY_ROOTS", {(legacy, sha): "results"}):
             result = ingest.validate(str(self.repo), "main", branch, branch, None,
-                                     self.tmp / "staged", KEY)
+                                     self.tmp / "staged")
             self.git("commit", "-q", "--allow-empty", "-m", "Repush the same run")
             with self.assertRaisesRegex(ingest.Rejected, "not under"):
                 ingest.validate(str(self.repo), "main", branch, branch, None,
@@ -417,7 +267,7 @@ class AcceptTests(GitCase):
                 self.git("reset", "-q", "--hard", "main")
                 self.commit({f"{base}/with_skill/summary.json":
                              json.dumps(doc).encode()})
-                self.assertEqual(self.validate(out=self.tmp / name)["files"], "2")
+                self.assertEqual(self.validate(out=self.tmp / name)["files"], "1")
 
     def test_rejects_contradictory_token_accounting(self):
         base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
@@ -501,7 +351,7 @@ class AcceptTests(GitCase):
                 self.commit({f"{base}/with_skill/summary.json":
                              json.dumps(doc).encode()})
                 out = self.tmp / name.replace(" ", "-")
-                self.assertEqual(self.validate(out=out)["files"], "2")
+                self.assertEqual(self.validate(out=out)["files"], "1")
 
     def test_an_incomplete_or_unresolved_accounting_without_a_share_is_accepted(self):
         base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
@@ -518,7 +368,7 @@ class AcceptTests(GitCase):
                 self.git("reset", "-q", "--hard", "main")
                 self.commit({f"{base}/with_skill/summary.json":
                              json.dumps(doc).encode()})
-                self.assertEqual(self.validate(out=self.tmp / name)["files"], "2")
+                self.assertEqual(self.validate(out=self.tmp / name)["files"], "1")
 
     def test_trials_and_guidance_keys_are_accepted(self):
         base = f"eval-results/{RUN_ID}"
@@ -533,7 +383,7 @@ class AcceptTests(GitCase):
             "summary.json": json.dumps(trial).encode(),
             f"{base}/guidance/security/{STAMP}/with_guidance/summary.json":
                 json.dumps(guidance).encode()})
-        self.assertEqual(self.validate()["files"], "3")
+        self.assertEqual(self.validate()["files"], "2")
 
     def test_keep_long_term_is_summary_and_report_only(self):
         # Owner's answer (2026-10-06): "summary + report only". A trace is
@@ -544,18 +394,17 @@ class AcceptTests(GitCase):
         self.validate()
         kept = sorted(p.name for p in (self.tmp / "staged").rglob("*")
                       if p.is_file())
-        self.assertEqual(kept, ["report.md", "summary.json", "summary.json", "vouch.json"])
+        self.assertEqual(kept, ["report.md", "summary.json", "summary.json"])
 
     def test_keep_long_term_is_the_one_allowlist(self):
-        # The routine's MAC (write_vouch) reads the same allowlist.
+        self.commit()
         with mock.patch.object(ingest, "KEEP_LONG_TERM",
                                frozenset({"summary.json", "tool_trace.json"})):
-            self.commit()
             self.validate()
         kept = sorted(p.name for p in (self.tmp / "staged").rglob("*")
                       if p.is_file())
         self.assertEqual(kept, ["summary.json", "summary.json",
-                                "tool_trace.json", "tool_trace.json", "vouch.json"])
+                                "tool_trace.json", "tool_trace.json"])
 
     def test_real_routine_branches_parse(self):
         # The two path shapes the routine really pushed on 2026-10-06.
@@ -601,7 +450,7 @@ class HarnessWriterTests(GitCase):
         self.write({f"{ingest.SOURCE_ROOT}/{RUN_ID}/writing-adrs/{STAMP}/"
                     "report.md": REPORT.encode()})
         sha = self.commit({})
-        self.assertEqual(self.validate(expect=sha)["files"], "4")
+        self.assertEqual(self.validate(expect=sha)["files"], "3")
 
 
 class InPlaceSemanticConsistencyTests(unittest.TestCase):
@@ -675,6 +524,18 @@ class InPlaceSemanticConsistencyTests(unittest.TestCase):
         doc["context"]["guidance"]["hook_digest"] = None
         with self.assertRaisesRegex(ingest.Rejected, "hook digest"):
             self.check(doc)
+
+    def test_others_digest_is_optional_and_a_digest(self):
+        # #70: compute_gates pairs the arms by it; older summaries lack it.
+        for role in ("with", "without"):
+            doc = self.record(role)
+            doc["arm_context"]["others_digest"] = "8" * 64
+            self.check(doc)
+            for bad in ("8" * 63, "A" * 64, 7, None):
+                doc["arm_context"]["others_digest"] = bad
+                with self.subTest(role=role, bad=bad), \
+                        self.assertRaisesRegex(ingest.Rejected, "others digest: malformed"):
+                    self.check(doc)
 
     def test_rejects_with_skill_arm_with_no_installed_skills(self):
         doc = self.record("with")
@@ -771,7 +632,7 @@ class RejectPathTests(GitCase):
                      for n, d in good_files().items()})
         with self.assertRaisesRegex(ingest.Rejected, "not under"):
             ingest.validate(str(self.repo), "main", branch, branch, None,
-                            self.tmp / "staged", KEY)
+                            self.tmp / "staged")
 
     def test_untrusted_paths_are_escaped_in_messages(self):
         files = good_files()
@@ -801,7 +662,7 @@ class RejectPathTests(GitCase):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ingest.Rejected, "branch name"):
                     ingest.validate(str(self.repo), "main", BRANCH, name, None,
-                                    self.tmp / "staged", KEY)
+                                    self.tmp / "staged")
 
     def test_rejects_a_moved_branch(self):
         self.commit()
@@ -988,33 +849,6 @@ class RejectContentTests(GitCase):
         self.commit(files)
         self.assertRejected("eval title")
 
-    def test_cli_reads_vouch_key_from_its_environment_only(self):
-        sha = self.commit()
-        argv = ["validate", "--repo", str(self.repo), "--base", "main",
-                "--source", BRANCH, "--branch", BRANCH]
-
-        def run(env, *extra, out="staged"):
-            err, std = io.StringIO(), io.StringIO()
-            with mock.patch.dict(os.environ, env), contextlib.redirect_stderr(err), \
-                    contextlib.redirect_stdout(std):
-                code = ingest.main([*argv, *extra, "--out", str(self.tmp / out)])
-            return code, std.getvalue(), err.getvalue()
-
-        code, _, err = run({"VOUCH_KEY": ""}, out="nokey")
-        self.assertEqual((code, "VOUCH_KEY is not set" in err), (1, True))
-        code, std, err = run({"VOUCH_KEY": KEY.decode()}, out="key")
-        self.assertEqual(code, 0, err)
-        self.assertIn(f"sha={sha}", std)
-        self.assertNotIn(KEY.decode(), std + err)
-        nonce = write_vouch.derive_nonce(KEY, RUN_ID)
-        self.assertNotIn(nonce, std + err)
-        code, _, err = run({"VOUCH_KEY": KEY.decode()}, "--at-sha", sha, out="at")
-        self.assertEqual(code, 0, err)
-        code, _, err = run({"VOUCH_KEY": KEY.decode()}, "--at-sha", sha,
-                           "--expect-sha", sha, out="both")
-        self.assertEqual(code, 1)
-        self.assertIn("not both", err)
-
     def test_cli_rejection_never_quotes_content(self):
         files = good_files()
         name = next(n for n in files if n.endswith("with_skill/summary.json"))
@@ -1030,88 +864,6 @@ class RejectContentTests(GitCase):
         self.assertEqual(code, 1)
         self.assertIn("rejected:", err.getvalue())
         self.assertNotIn(MARKER, err.getvalue())
-
-
-class WriteVouchTests(GitCase):
-    """scripts/write_vouch.py, the routine's half of the MAC (#70, round 5)."""
-
-    def run_dir(self) -> Path:
-        self.write(good_files())
-        return self.repo / ingest.SOURCE_ROOT / RUN_ID
-
-    def main(self, args, stdin):
-        out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(sys, "stdin", io.StringIO(stdin)), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = write_vouch.main(args)
-        return code, out.getvalue() + err.getvalue()
-
-    def test_the_nonce_is_the_hmac_of_the_run_id_under_the_key(self):
-        import hashlib
-        import hmac
-        self.assertEqual(write_vouch.derive_nonce(KEY, RUN_ID),
-                         hmac.new(KEY, RUN_ID.encode(), hashlib.sha256).hexdigest())
-
-    def test_the_manifest_is_sorted_paths_and_sha256_nul_separated(self):
-        import hashlib
-        files = {"b/summary.json": b"2", "a/report.md": b"1"}
-        self.assertEqual(write_vouch.manifest(files),
-                         b"a/report.md\0" + hashlib.sha256(b"1").hexdigest().encode() + b"\0"
-                         + b"b/summary.json\0" + hashlib.sha256(b"2").hexdigest().encode()
-                         + b"\0")
-        # Path and content are separated, so moving bytes between them changes it.
-        self.assertNotEqual(write_vouch.manifest({"ab": b""}),
-                            write_vouch.manifest({"a": b"b"}))
-
-    def test_it_reads_the_nonce_from_stdin_and_never_prints_it(self):
-        run_dir = self.run_dir()
-        nonce = write_vouch.derive_nonce(KEY, RUN_ID)
-        for stdin in (nonce, nonce + "\n"):
-            with self.subTest(newline=stdin.endswith("\n")):
-                code, output = self.main([str(run_dir)], stdin)
-                self.assertEqual(code, 0, output)
-                self.assertNotIn(nonce, output)
-                doc = json.loads((run_dir / "vouch.json").read_text())
-                self.assertEqual(set(doc), {"mac"})
-                self.assertNotIn(nonce, (run_dir / "vouch.json").read_text())
-        # What it wrote is what the ingester verifies.
-        self.commit({}, vouch=False)
-        self.assertEqual(self.validate()["run_id"], RUN_ID)
-
-    def test_bad_input_exits_2_and_writes_nothing(self):
-        run_dir = self.run_dir()
-        nonce = write_vouch.derive_nonce(KEY, RUN_ID)
-        cases = {
-            "upper case": ([str(run_dir)], nonce.upper()),
-            "short": ([str(run_dir)], nonce[:-1]),
-            "two newlines": ([str(run_dir)], nonce + "\n\n"),
-            "empty": ([str(run_dir)], ""),
-            "nonce in argv": ([str(run_dir), nonce], ""),
-            "no directory": ([str(self.tmp / "absent")], nonce),
-        }
-        for case, (args, stdin) in cases.items():
-            with self.subTest(case=case):
-                code, output = self.main(args, stdin)
-                self.assertEqual(code, 2)
-                self.assertFalse((run_dir / "vouch.json").exists())
-                self.assertNotIn(nonce, output)
-
-    def test_a_symlink_in_the_run_directory_is_refused(self):
-        run_dir = self.run_dir()
-        (run_dir / "demo").mkdir()
-        (run_dir / "demo" / "report.md").symlink_to(self.repo / "README.md")
-        code, output = self.main([str(run_dir)], write_vouch.derive_nonce(KEY, RUN_ID))
-        self.assertEqual(code, 2)
-        self.assertIn("symlink", output)
-        self.assertFalse((run_dir / "vouch.json").exists())
-
-    def test_files_the_ingester_drops_are_not_covered(self):
-        run_dir = self.run_dir()
-        covered = write_vouch.vouched_files(run_dir)
-        self.assertTrue(covered)
-        self.assertTrue(all(Path(rel).name in ingest.KEEP_LONG_TERM for rel in covered))
-        (run_dir / "scratch.txt").write_bytes(b"not a result")
-        self.assertEqual(write_vouch.vouched_files(run_dir), covered)
 
 
 class ResolveTests(unittest.TestCase):
@@ -1138,17 +890,6 @@ class ResolveTests(unittest.TestCase):
             self.resolve("workflow_dispatch", {"inputs": {"branch": BRANCH}}),
             {"branch": BRANCH, "sha": "", "run_id": RUN_ID})
 
-    def test_a_dispatch_may_name_the_sha_to_ingest(self):
-        # #70, round 5: a re-ingest of a run whose branch a later push moved.
-        self.assertEqual(
-            self.resolve("workflow_dispatch",
-                         {"inputs": {"branch": BRANCH, "sha": "b" * 40}}),
-            {"branch": BRANCH, "sha": "", "run_id": RUN_ID, "at_sha": "b" * 40})
-        # A push names its own head; a `sha` beside it is not read.
-        event = self.run_event()
-        event["inputs"] = {"sha": "b" * 40}
-        self.assertNotIn("at_sha", self.resolve("workflow_run", event))
-
     def test_rejections(self):
         cases = [
             ("workflow_run", self.run_event(event="pull_request")),
@@ -1159,9 +900,6 @@ class ResolveTests(unittest.TestCase):
             ("workflow_run", self.run_event(head_branch="main")),
             ("workflow_dispatch", {"inputs": {"branch": "claude/eval-$(id)"}}),
             ("workflow_dispatch", {"inputs": {}}),
-            ("workflow_dispatch", {"inputs": {"branch": BRANCH, "sha": "abc"}}),
-            ("workflow_dispatch", {"inputs": {"branch": BRANCH, "sha": "A" * 40}}),
-            ("workflow_dispatch", {"inputs": {"branch": BRANCH, "sha": ["a" * 40]}}),
             ("push", {"ref": "refs/heads/" + BRANCH}),
         ]
         for name, event in cases:
@@ -1195,33 +933,9 @@ class PlaceTests(unittest.TestCase):
         target = self.tree / "routine-results" / RUN_ID / "report.md"
         target.parent.mkdir(parents=True)
         target.write_text("earlier\n", encoding="utf-8")
-        with self.assertRaisesRegex(ingest.Rejected, "write-once"):
+        with self.assertRaisesRegex(ingest.Rejected, "different content"):
             ingest.place(self.staged, self.tree)
         self.assertEqual(target.read_text(encoding="utf-8"), "earlier\n")
-
-    def test_an_ingested_run_takes_no_new_files(self):
-        # Round 4's reproducer: a later push into an ingested run id added
-        # files beside the first ingest, even with every old file matching.
-        ingest.place(self.staged, self.tree)
-        extra = self.staged / "routine-results" / RUN_ID / "demo" / "report.md"
-        extra.parent.mkdir(parents=True)
-        extra.write_text(REPORT, encoding="utf-8")
-        with self.assertRaisesRegex(ingest.Rejected, "already ingested; ingestion is write-once"):
-            ingest.place(self.staged, self.tree)
-        self.assertFalse((self.tree / "routine-results" / RUN_ID / "demo").exists())
-        # A run with fewer files than were ingested is refused too.
-        extra.unlink()
-        (self.tree / "routine-results" / RUN_ID / "more.md").write_text("x", encoding="utf-8")
-        with self.assertRaisesRegex(ingest.Rejected, "write-once"):
-            ingest.place(self.staged, self.tree)
-
-    def test_another_run_id_beside_an_ingested_one_is_placed(self):
-        ingest.place(self.staged, self.tree)
-        other = "20261007T000000Z-abcdef"
-        (self.staged / "routine-results" / RUN_ID).rename(
-            self.staged / "routine-results" / other)
-        self.assertEqual(ingest.place(self.staged, self.tree),
-                         {"changed": "true", "added": "1"})
 
     def test_refuses_a_symlink_in_the_destination(self):
         outside = self.tmp / "outside"
@@ -1270,28 +984,13 @@ class WorkflowShapeTests(unittest.TestCase):
         cls.signal = load(SIGNAL)
         cls.job = cls.ingest["jobs"]["ingest"]
 
-    def test_only_the_validate_step_holds_vouch_key(self):
-        # #70, round 5: the MAC is checked there; no other step (and no job
-        # env) can read the key, and the validate step's only use of it is
-        # the ingester reading its environment.
-        self.assertNotIn("VOUCH_KEY", json.dumps(self.job.get("env") or {}))
-        self.assertNotIn("VOUCH_KEY", json.dumps(self.ingest.get("env") or {}))
-        holders = [step.get("id") or step.get("name") for step in self.job["steps"]
-                   if "VOUCH_KEY" in json.dumps(step)]
-        self.assertEqual(holders, ["validate"])
-        step = next(s for s in self.job["steps"] if s.get("id") == "validate")
-        self.assertEqual(step["env"]["VOUCH_KEY"], "${{ secrets.VOUCH_KEY }}")
-        self.assertNotIn("VOUCH_KEY", step["run"])
-        self.assertIn('--at-sha "${AT_SHA:-}"', step["run"])
-        self.assertEqual(step["env"]["AT_SHA"], "${{ steps.resolve.outputs.at_sha }}")
-
     def test_the_writing_job_runs_on_workflow_run_of_the_signal(self):
         on = triggers(self.ingest)
         self.assertEqual(set(on), {"workflow_run", "workflow_dispatch"})
         self.assertEqual(on["workflow_run"]["workflows"], [self.signal["name"]])
         self.assertEqual(on["workflow_run"]["types"], ["completed"])
         self.assertEqual(on["workflow_run"]["branches"], ["claude/eval-*"])
-        self.assertEqual(set(on["workflow_dispatch"]["inputs"]), {"branch", "sha"})
+        self.assertEqual(set(on["workflow_dispatch"]["inputs"]), {"branch"})
 
     def test_signal_is_a_filtered_push_with_no_reach(self):
         on = triggers(self.signal)

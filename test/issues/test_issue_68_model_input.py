@@ -163,44 +163,6 @@ class RosterArmScriptTests(unittest.TestCase):
         proc = self.run_script("claude-opus-5-5", roster=tmp / "absent.yml")
         self.assertEqual(proc.returncode, 1)
 
-    def test_resolve_is_the_fixture_pin_else_the_roster_first_arm(self):
-        # #70, rounds 7 and 8: the model the weekly caller passes as the
-        # fire's required `model`, and plan_scheduled_evals.py revalidates.
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, tmp)
-        roster = tmp / "roster.yml"
-        roster.write_text('arms:\n  - id: "claude-first"\n  - id: "claude-second"\n',
-                          encoding="utf-8")
-        fixture_dir = REPO_ROOT / base.FIXTURE
-        pin = yaml.safe_load((fixture_dir / "fixture.yaml").read_text(encoding="utf-8"))
-        pin = pin.get("model") if isinstance(pin, dict) else None
-        proc = self.run_script("--resolve", base.FIXTURE, roster=roster)
-        self.assertEqual((proc.returncode, proc.stdout), (0, f"{pin or 'claude-first'}\n"))
-        sys.path.insert(0, str(REPO_ROOT / "scripts"))
-        import roster_arm
-        (tmp / "evals" / "pinned").mkdir(parents=True)
-        (tmp / "evals" / "pinned" / "fixture.yaml").write_text(
-            "skill: s\nprompt: p\nmodel: claude-pinned\n", encoding="utf-8")
-        (tmp / "evals" / "plain").mkdir(parents=True)
-        (tmp / "evals" / "plain" / "fixture.yaml").write_text(
-            "skill: s\nprompt: p\n", encoding="utf-8")
-        self.assertEqual(roster_arm.resolve("evals/pinned", roster, tmp), "claude-pinned")
-        self.assertEqual(roster_arm.resolve("evals/plain", roster, tmp), "claude-first")
-        empty = tmp / "empty.yml"
-        empty.write_text("schema: 1\n", encoding="utf-8")
-        self.assertIsNone(roster_arm.resolve("evals/plain", empty, tmp))
-        proc = self.run_script("--resolve", base.FIXTURE, roster=tmp / "absent.yml")
-        if not pin:
-            self.assertEqual((proc.returncode, proc.stdout), (1, ""))
-            self.assertEqual(proc.stderr, roster_arm.NO_MODEL + "\n")
-        # `--resolve` takes exactly a fixture and an optional --roster.
-        for argv in (("--resolve",), ("--resolve", base.FIXTURE, "x"),
-                     ("--resolve", base.FIXTURE, "--rost", str(roster))):
-            with self.subTest(argv=argv):
-                proc = self.run_script(*argv)
-                self.assertEqual(proc.returncode, 1)
-                self.assertEqual(proc.stdout, "")
-
     def test_a_substring_or_a_comment_in_the_roster_is_not_an_arm(self):
         # The roster text mentions ids in comments and `reason:` prose; only
         # a parsed `arms[].id` counts.
@@ -256,18 +218,12 @@ class ValidateStepModelTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(values["model"], arm)
 
-    def test_an_empty_or_absent_model_is_refused_in_eval_mode(self):
-        # #70, round 8 (R8-3): `run-name` is rendered from the inputs, so an
-        # eval fire with no `model` input has a title naming no cell. It is
-        # refused, never resolved behind its title's back.
+    def test_an_empty_or_absent_model_is_an_empty_output(self):
         for extra in ({}, {"model": ""}):
             with self.subTest(extra=extra):
                 proc, values = self.run_step(self.eval_inputs(**extra))
-                self.assertNotEqual(proc.returncode, 0)
-                self.assertEqual(values, {})
-                self.assertIn("::error::input 'model' is required in eval mode",
-                              proc.stdout + proc.stderr)
-                self.assertNotIn("::notice::", proc.stdout + proc.stderr)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(values["model"], "")
 
     def test_an_unknown_model_fails_with_the_fixed_message_and_no_echo(self):
         for bad in ("claude-nonexistent-9", "claude-fable-5-1", self.arm + "x",
@@ -401,14 +357,13 @@ class FireStepModelTests(unittest.TestCase):
     def fire(self, unset=(), **overrides):
         self.summary.write_text("", encoding="utf-8")
         (self.log / "argv.json").unlink(missing_ok=True)
-        (self.log / "body").unlink(missing_ok=True)
         env = {
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.tmp), "FIRE_URL": self.url,
             "EVAL_ROUTINE_FIRE_BEARER": "sk-ant-oat01-FAKE-BEARER-FOR-TESTS",
             "RUN_ID": "20261006T120000Z-a1b2c3", "FIXTURE": base.FIXTURE,
             "ARMS": "both", "TRIALS": "2", "MODE": "eval", "CANDIDATE": "",
-            "SKILL": "", "HOLDOUT": "", "MODEL": "", "VOUCH_KEY": "",
+            "SKILL": "", "HOLDOUT": "", "MODEL": "",
             "ISSUE_SNAPSHOT_FILE": str(self.snapshot),
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log), "FAKE_CURL_STATUS": "200",
@@ -422,43 +377,23 @@ class FireStepModelTests(unittest.TestCase):
         proc = subprocess.run(["bash", "-c", self.script], cwd=self.tmp, env=env,
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        # curl reads the body from `--data-binary @<file>` (#70, round 5).
-        return (self.log / "body").read_text()
+        argv = json.loads((self.log / "argv.json").read_text())
+        return argv[argv.index("--data-binary") + 1]
 
-    @staticmethod
-    def without_vouch(sent: str) -> str:
-        """The data binary with #70's trailing `vouch_nonce` key removed,
-        re-encoded as jq -c encodes it."""
-        text = json.loads(json.loads(sent)["text"])
-        assert list(text)[-1] == "vouch_nonce", list(text)
-        text.pop("vouch_nonce")
-        return json.dumps({"text": json.dumps(text, separators=(",", ":"))},
-                          separators=(",", ":"))
-
-    def test_an_empty_model_leaves_the_eval_payload_as_it_was(self):
-        # Without VOUCH_KEY the payload is byte for byte the legacy one;
-        # with it, the one difference is the trailing `vouch_nonce`.
+    def test_an_empty_model_leaves_the_eval_payload_byte_identical(self):
         self.assertEqual(self.fire(MODEL=""), LEGACY_DATA_BINARY)
-        self.assertEqual(self.without_vouch(self.fire(MODEL="", VOUCH_KEY=base.VOUCH_KEY)),
-                         LEGACY_DATA_BINARY)
 
-    def test_an_unset_model_variable_leaves_it_as_it_was_too(self):
+    def test_an_unset_model_variable_leaves_it_byte_identical_too(self):
         # A caller that predates the input never sets MODEL at all.
         self.assertEqual(self.fire(unset=("MODEL",)), LEGACY_DATA_BINARY)
-        self.assertEqual(self.without_vouch(self.fire(unset=("MODEL",),
-                                                      VOUCH_KEY=base.VOUCH_KEY)),
-                         LEGACY_DATA_BINARY)
 
     def test_a_set_model_is_carried_as_the_last_key(self):
         arm = arm_ids()[1]
-        text = json.loads(json.loads(self.fire(MODEL=arm))["text"])
+        sent = self.fire(MODEL=arm)
+        text = json.loads(json.loads(sent)["text"])
         self.assertEqual(list(text), ["mode", "run_id", "fixture", "arms",
                                       "trials", "model"])
         self.assertEqual(text["model"], arm)
-        # The vouch nonce, when there is one, follows it.
-        text = json.loads(json.loads(self.fire(MODEL=arm, VOUCH_KEY=base.VOUCH_KEY))["text"])
-        self.assertEqual(list(text), ["mode", "run_id", "fixture", "arms",
-                                      "trials", "model", "vouch_nonce"])
 
     def test_the_model_is_json_encoded_by_jq(self):
         tricky = 'x", "evil": "1'

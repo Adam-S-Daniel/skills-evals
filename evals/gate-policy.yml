@@ -12,72 +12,17 @@
 # at which a cell may be classified `no-benefit`, and it must be so at the
 # two largest it has reached (so at least ten runs per arm).
 #
-# Evidence is trusted fail-closed (scripts/compute_gates.py): a routine run
-# counts only when its vouch.json MAC (scripts/write_vouch.py, keyed by the
-# VOUCH_KEY secret through a nonce only the routine receives) verifies, both
-# in the ingester and again in compute_gates over the files its first
-# ingest added, so the job that runs compute_gates needs VOUCH_KEY in its
-# environment (without it no routine run counts), and exactly one trusted
-# fire names its run id: a first attempt of a
-# successful routine-eval-fire.yml dispatch on main, at a commit that is an
-# ancestor of `--main-sha`, whose display title names the run's fixture,
-# model, arms and trials. Its run id lies in the 48 hours before the
-# results commit that first added it, and only the files that commit added
-# are read, each still the blob it added (`--fires`, `--ingest-times`,
-# `--main-sha`; that commit is the first on the branch's first-parent
-# chain, in parent order, committed as the ingest identity). At most one arm
-# run per run id, model and role; looks are
-# ordered by the fire's time. Without all three, no routine run counts.
-# Fires from before the keyed vouch existed vouch for nothing, so routine
-# evidence restarts from the first fire after that change. No fire vouches
-# for `results/`, so it can keep a skill and never retire one; bytes copied
-# between cells or trees make their source cell at most insufficient.
-# Pollution from `results/` can drop a `keep` to `insufficient`, but it can
-# never cause a `retire`.
-#
-# A trusted fire whose results never land blocks no-benefit for its cell:
-# the cell is `insufficient` once the fire is older than
-# `unlanded_fire_grace_hours`, and at most `no-benefit-pending` before that.
-# Blocking an ingest, or squatting a run id, can then only stall a cell.
-# A run whose MAC verifies but that no one trusted fire names (its fire
-# re-run, deleted, cancelled or doubled since) makes its own cell
-# `insufficient` the same way, so removing a fire after its results are
-# public cannot choose the evidence. `waived_fires` lists run ids the owner
-# knows will never land or count, each with a reason and a date; a waived
-# run id blocks nothing. compute_gates lists what blocks under
-# `needs_waiver`.
-#
-# Part 2 builds `--fires` from EVERY run of routine-eval-fire.yml, each
-# record read from `/actions/runs/{id}/attempts/1` (a re-run changes the
-# run's latest attempt, never attempt 1, and only attempt 1 is trusted).
-# Part 2 first dispatches routine-eval-fire.yml in `sentinel` mode (it
-# validates, publishes nothing to the routine and succeeds) and waits for it
-# to succeed, then computes with `--as-of` = the scheduled run's own
-# `created_at`, never a commit date. Any gap in the `run_number`s from
-# `fire_sequence_from` up to the first trusted sentinel created at or after
-# `--as-of` (a deleted run, the newest ones included) makes every
-# no-benefit cell `insufficient`, unless `waived_fire_numbers` names the
-# number with a reason and a date; no such sentinel does the same. Raise
-# `fire_sequence_from` to the first run number after this change merges.
-# A run first ingested after `--as-of` has not landed: its fire blocks by
-# the grace rule above.
-#
-# `auto` mode requires an update restriction on `persistent/eval-results`
-# (repo-settings' fleet.yml) whose ONLY bypass is a dedicated GitHub App
-# identity that the ingest workflow pushes as: the first-ingest rule reads
-# that branch's history, and a rewritten history, or a file edited in
-# place, rewrites what a run first held. `github.token` cannot be the
-# bypass, since any workflow in the repository can push with it. Part 2,
-# which opens the removal PR, adds that restriction and App, and checks out
-# main with `fetch-depth: 0` so compute_gates' ancestry check can see each
-# fire's commit.
+# Every validated run counts, from `results/` and `routine-results/` alike
+# (scripts/compute_gates.py): the gate guards against honest mistakes (a
+# changed fixture or skill, a different guidance or skill set between the
+# arms, errored trials, a copy of a run ingested twice), not against forged
+# results, since anyone who can write the results can also remove a skill.
 #
 # `retirement_mode` is `auto` (a `retire` verdict opens the removal PR) or
 # `proposal` (an issue is filed and a human removes). A missing or invalid
 # value is `proposal`. Part 2 opens a removal PR only from the scheduled
-# workflow, never from a dispatched or pull-request run. It is `proposal`
-# until part 2's update restriction on persistent/eval-results and its
-# dedicated App identity exist (above); switch it to `auto` only then.
+# workflow, never from a dispatched or pull-request run. It is `proposal`;
+# switching it to `auto` is the owner's call.
 skills:
   objective_margin: 0.05
   judge_margin: 0.5
@@ -92,7 +37,3 @@ skills:
   bootstrap_resamples: 2000
   retire_looks: [5, 10, 20]
   retirement_mode: proposal
-  unlanded_fire_grace_hours: 72
-  waived_fires: []
-  fire_sequence_from: 1
-  waived_fire_numbers: []

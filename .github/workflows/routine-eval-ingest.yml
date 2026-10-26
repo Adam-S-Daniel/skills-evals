@@ -36,18 +36,7 @@ name: Ingest routine eval results
 # * The source branch is NOT deleted after ingest: that is an owner decision
 #   still open.
 # * `workflow_dispatch` re-ingests a branch by name (for a missed or failed
-#   run), optionally at an explicit `sha` on it: the commit the routine
-#   pushed, when a later push moved the branch on (#70, round 5). Only the
-#   default branch's copy may run, as for the fire workflow.
-# * The MAC (#70, round 5): the routine writes `eval-results/<run id>/vouch.json`
-#   = {"mac": HMAC(nonce, manifest)} (scripts/write_vouch.py), with the nonce
-#   routine-eval-fire.yml derived as HMAC-SHA256(VOUCH_KEY, run id) and sent
-#   to the routine alone. The validate step, and only it, gets VOUCH_KEY (a
-#   repository secret, in its environment, never argv); it re-derives the
-#   nonce, recomputes the MAC over exactly the files it would stage, and
-#   stages nothing, so claims no run id, unless it matches. A forged branch,
-#   or one rewritten after the routine pushed, cannot carry a MAC that
-#   verifies, since the nonce was never published.
+#   run); only the default branch's copy may run, as for the fire workflow.
 
 on:
   workflow_run:
@@ -60,11 +49,6 @@ on:
       branch:
         description: The routine results branch, claude/eval-<run id>.
         required: true
-        type: string
-      sha:
-        description: Optional. The commit on that branch to ingest (40 hex); empty ingests its tip.
-        required: false
-        default: ""
         type: string
 
 permissions: {}
@@ -119,16 +103,13 @@ jobs:
         env:
           BRANCH: ${{ steps.resolve.outputs.branch }}
           SHA: ${{ steps.resolve.outputs.sha }}
-          AT_SHA: ${{ steps.resolve.outputs.at_sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          # The one step that holds the key: it verifies the MAC.
-          VOUCH_KEY: ${{ secrets.VOUCH_KEY }}
         run: |
           set -euo pipefail
           python3 scripts/ingest_routine_results.py validate \
             --repo . --base "refs/remotes/origin/${DEFAULT_BRANCH}" \
             --source refs/ingest/source --branch "$BRANCH" \
-            --expect-sha "$SHA" --at-sha "${AT_SHA:-}" --out "$RUNNER_TEMP/staged" \
+            --expect-sha "$SHA" --out "$RUNNER_TEMP/staged" \
             > "$RUNNER_TEMP/validate.out"
           cat "$RUNNER_TEMP/validate.out" >> "$GITHUB_OUTPUT"
 

@@ -54,7 +54,6 @@ and run by test/run_tests.py; also runnable on its own with
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -76,20 +75,9 @@ WORKFLOW = WORKFLOWS / "routine-eval-fire.yml"
 sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
 
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-import write_vouch  # noqa: E402
-
 SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
-VOUCH_REF = "secrets.VOUCH_KEY"
-#: The test VOUCH_KEY (#70, round 5); a real one is a repository secret.
-VOUCH_KEY = "test-only-vouch-key-example"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
-#: An arm of the committed roster: eval mode requires one (#70, round 8).
-#: Read from the roster so a weekly roster change cannot break the test.
-MODEL = yaml.safe_load(
-    (REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8")
-)["arms"][0]["id"]
 CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 # A skill with at least three committed fixtures, and one of them.
 SKILL = "writing-adrs"
@@ -144,30 +132,6 @@ class WorkflowShapeTests(unittest.TestCase):
         cls.job = cls.doc["jobs"]["fire"]
         cls.steps = cls.job["steps"]
 
-    def test_the_run_name_names_mode_fixture_and_model_only(self):
-        # #70's gates read a fire's fixture and model from its display title,
-        # since the Actions runs API does not return dispatch inputs:
-        # scripts/compute_gates.py's FIRE_TITLE_RE parses exactly this.
-        self.assertEqual(self.doc["run-name"],
-                         "Fire eval routine: mode=${{ inputs.mode }} "
-                         "fixture=${{ inputs.fixture }} model=${{ inputs.model }} "
-                         "arms=${{ inputs.arms }} trials=${{ inputs.trials }}")
-        sys.path.insert(0, str(REPO_ROOT / "scripts"))
-        import compute_gates
-        rendered = self.doc["run-name"]
-        for name, value in (("mode", "eval"), ("fixture", FIXTURE), ("model", ""),
-                            ("arms", "both"), ("trials", "3")):
-            rendered = rendered.replace(f"${{{{ inputs.{name} }}}}", value)
-        found = compute_gates.FIRE_TITLE_RE.fullmatch(rendered)
-        self.assertEqual(found.groups(), ("eval", FIXTURE, "", "both", "3"))
-        # A sentinel's title (#70, round 8): no fixture, no model.
-        rendered = self.doc["run-name"]
-        for name, value in (("mode", "sentinel"), ("fixture", ""), ("model", ""),
-                            ("arms", "both"), ("trials", "1")):
-            rendered = rendered.replace(f"${{{{ inputs.{name} }}}}", value)
-        found = compute_gates.FIRE_TITLE_RE.fullmatch(rendered)
-        self.assertEqual(found.groups(), ("sentinel", "", "", "both", "1"))
-
     def test_only_workflow_dispatch(self):
         on = triggers(self.doc)
         self.assertIsInstance(on, dict)
@@ -180,7 +144,7 @@ class WorkflowShapeTests(unittest.TestCase):
                           "model", "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
-                         ["eval", "scaffold", "improve", "sentinel"])
+                         ["eval", "scaffold", "improve"])
         self.assertEqual(inputs["mode"]["default"], "eval")
         self.assertEqual(inputs["candidate"]["type"], "string")
         # Required in scaffold mode only, so the form cannot require it; the
@@ -247,13 +211,8 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(hits, [("jobs", "fire", "steps", fire, "env",
                                  "EVAL_ROUTINE_FIRE_BEARER")])
         self.assertNotIn("secrets.", self.steps[fire]["run"])
-        # #70, round 5: VOUCH_KEY, from which the fire derives the nonce,
-        # is the one other secret, and only the fire step's env holds it.
-        vouch = [p for p, v in scalars(self.doc) if VOUCH_REF in v]
-        self.assertEqual(vouch, [("jobs", "fire", "steps", fire, "env", "VOUCH_KEY")])
-        self.assertEqual(self.steps[fire]["env"]["VOUCH_KEY"], "${{ secrets.VOUCH_KEY }}")
         mentions = [p for p, v in scalars(self.doc) if "secrets." in v]
-        self.assertEqual(mentions, hits + vouch, "no other secret is referenced")
+        self.assertEqual(mentions, hits, "no other secret is referenced")
 
     def test_validation_step_runs_before_the_fire_step(self):
         ids = [s.get("id") for s in self.steps]
@@ -335,19 +294,6 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertLess(installs[0], ids.index("validate"))
         self.assertNotIn("env", self.steps[installs[0]])
 
-    def test_a_sentinel_runs_no_step_after_validation(self):
-        # #70, round 8 (R8-1): a sentinel validates and succeeds; it checks
-        # out nothing more, is not charged, and sends nothing (no curl, no
-        # nonce). Every later step is skipped for it by its own `if:`.
-        at = [s.get("id") for s in self.steps].index("validate")
-        for step in self.steps[at + 1:]:
-            with self.subTest(step=step.get("name")):
-                self.assertIn(step.get("if"), (
-                    "steps.validate.outputs.mode != 'sentinel'",
-                    "steps.validate.outputs.mode == 'scaffold'"))
-        fire = next(s for s in self.steps if s.get("name") == "Fire the eval routine")
-        self.assertEqual(fire["if"], "steps.validate.outputs.mode != 'sentinel'")
-
     def test_checkout_does_not_persist_credentials(self):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
@@ -391,7 +337,7 @@ class ValidateStepTests(unittest.TestCase):
 
     def test_accepts_a_committed_fixture(self):
         proc, values = self.run_step(
-            {"mode": "eval", "candidate": "", "fixture": FIXTURE, "model": MODEL,
+            {"mode": "eval", "candidate": "", "fixture": FIXTURE,
              "arms": "with", "trials": "3"})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(values["mode"], "eval")
@@ -404,33 +350,9 @@ class ValidateStepTests(unittest.TestCase):
     def test_an_absent_candidate_reads_as_empty_in_eval_mode(self):
         # A string input with no default may be left out of the event.
         proc, values = self.run_step(
-            {"mode": "eval", "fixture": FIXTURE, "model": MODEL, "arms": "both",
-             "trials": "1"})
+            {"mode": "eval", "fixture": FIXTURE, "arms": "both", "trials": "1"})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(values["candidate"], "")
-
-    def test_accepts_a_sentinel_with_every_text_input_empty(self):
-        # #70, round 8 (R8-1): the retirement gates' high-water mark.
-        for extra in ({}, {"candidate": "", "fixture": "", "skill": "", "holdout": "",
-                           "model": ""}):
-            with self.subTest(extra=extra):
-                proc, values = self.run_step({"mode": "sentinel", "arms": "both",
-                                              "trials": "1", **extra})
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                self.assertEqual(values["mode"], "sentinel")
-                self.assertEqual({values[k] for k in ("candidate", "fixture", "skill",
-                                                      "holdout", "model")}, {""})
-                self.assertIn("mode: sentinel", proc.stdout)
-
-    def test_refuses_any_text_input_in_sentinel_mode(self):
-        self._refuse_all({"mode": "sentinel", "arms": "both", "trials": "1"}, {
-            "fixture_given": {"fixture": FIXTURE},
-            "candidate_given": {"candidate": CANDIDATE},
-            "skill_given": {"skill": SKILL},
-            "holdout_given": {"holdout": "x"},
-            "model_given": {"model": MODEL},
-            "whitespace_fixture": {"fixture": " "},
-        })
 
     def test_accepts_a_scaffold_candidate(self):
         for candidate in (CANDIDATE, "jodidaniel__jodidaniel.com__1",
@@ -488,7 +410,7 @@ class ValidateStepTests(unittest.TestCase):
         self._refuse_all(good, cases)
 
     def test_refuses_a_candidate_in_eval_mode(self):
-        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE, "model": MODEL,
+        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
                 "arms": "both", "trials": "1"}
         self._refuse_all(good, {
             "candidate_in_eval": {"candidate": CANDIDATE},
@@ -626,7 +548,7 @@ class ValidateStepTests(unittest.TestCase):
         })
 
     def test_refuses_improve_inputs_in_other_modes(self):
-        eval_good = {"mode": "eval", "candidate": "", "fixture": FIXTURE, "model": MODEL,
+        eval_good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
                      "arms": "both", "trials": "1"}
         scaffold_good = {"mode": "scaffold", "candidate": CANDIDATE,
                          "fixture": "", "arms": "both", "trials": "1"}
@@ -658,7 +580,7 @@ class ValidateStepTests(unittest.TestCase):
                     self.assertNotIn(bad.strip(), proc.stdout + proc.stderr)
 
     def test_refuses_bad_inputs_without_echoing_them(self):
-        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE, "model": MODEL,
+        good = {"mode": "eval", "candidate": "", "fixture": FIXTURE,
                 "arms": "both", "trials": "1"}
         cases = {
             "dotdot": {"fixture": "evals/../evals/writing-adrs/bootstrap"},
@@ -780,15 +702,6 @@ log = os.environ["FAKE_CURL_LOG"]
 args = sys.argv[1:]
 with open(os.path.join(log, "argv.json"), "w") as f:
     json.dump(args, f)
-# The body arrives as `--data-binary @<file>` (#70, round 5, N6); keep a copy
-# before the step's trap removes the file.
-data = args[args.index("--data-binary") + 1]
-with open(os.path.join(log, "body"), "w") as f:
-    if data.startswith("@"):
-        with open(data[1:]) as src:
-            f.write(src.read())
-    else:
-        f.write(data)
 with open(os.path.join(log, "stdin"), "w") as f:
     f.write(sys.stdin.read())
 with open(os.path.join(log, "calls"), "a") as f:
@@ -842,7 +755,6 @@ class FireStepTests(unittest.TestCase):
         self.summary.write_text("", encoding="utf-8")
         (self.log / "calls").unlink(missing_ok=True)
         (self.log / "argv.json").unlink(missing_ok=True)
-        (self.log / "body").unlink(missing_ok=True)
         env = {
             "FAKE_CURL_EXIT": str(curl_exit),
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
@@ -856,16 +768,11 @@ class FireStepTests(unittest.TestCase):
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log),
             "FAKE_CURL_STATUS": status, "FAKE_CURL_BODY": body,
-            "VOUCH_KEY": VOUCH_KEY,
             **overrides,
         }
         return subprocess.run(["bash", "-c", self.script], cwd=self.tmp,
                               env=env, capture_output=True, text=True,
                               timeout=60)
-
-    def sent_body(self) -> str:
-        """The request body curl read from its `--data-binary @<file>`."""
-        return (self.log / "body").read_text()
 
     def ok_body(self, **extra):
         return json.dumps({
@@ -916,15 +823,12 @@ class FireStepTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--header") + 1], "@-")
         self.assertEqual((self.log / "stdin").read_text(),
                          f"Authorization: Bearer {self.BEARER}\n")
-        body = json.loads(self.sent_body())
+        body = json.loads(argv[argv.index("--data-binary") + 1])
         self.assertEqual(set(body), {"text"})
-        payload = json.loads(body["text"])
-        nonce = payload.pop("vouch_nonce")
-        self.assertEqual(payload, {
+        self.assertEqual(json.loads(body["text"]), {
             "mode": "eval",
             "run_id": "20261006T120000Z-a1b2c3", "fixture": FIXTURE,
             "arms": "both", "trials": 2})
-        self.assertRegex(nonce, r"^[0-9a-f]{64}$")
         out = proc.stdout + proc.stderr
         self.assertNotIn(self.BEARER, out)
         self.assertNotIn("BODY-SENTINEL", out)
@@ -933,83 +837,6 @@ class FireStepTests(unittest.TestCase):
         summary = self.summary.read_text()
         self.assertIn(f"https://claude.ai/code/{self.SESSION}", summary)
         self.assertIn("claude/eval-20261006T120000Z-a1b2c3", summary)
-
-    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
-    def test_eval_sends_the_hmac_nonce_it_never_prints_or_publishes(self):
-        # #70, round 5: nonce = HMAC-SHA256(VOUCH_KEY, run id); the routine
-        # pipes it to write_vouch.py. Nothing about it is public: the notice
-        # is the run id alone (no hash, which would let a forger check a
-        # guess), and the nonce is masked.
-        jq = self.bin / "jq"
-        jq.write_text(FAKE_JQ, encoding="utf-8")
-        jq.chmod(jq.stat().st_mode | stat.S_IXUSR)
-        nonces = []
-        for run_id in ("20261006T120000Z-a1b2c3", "20261006T120001Z-a1b2c4"):
-            with self.subTest(run_id=run_id):
-                (self.log / "jq.jsonl").unlink(missing_ok=True)
-                proc = self.run_step("200", self.ok_body(), RUN_ID=run_id,
-                                     REAL_JQ=shutil.which("jq"))
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                payload = json.loads(json.loads(self.sent_body())["text"])
-                # One bare string: the routine's prompt refuses unlisted keys,
-                # and no instruction rides in fire text.
-                self.assertEqual(list(payload)[-1], "vouch_nonce")
-                nonce = payload["vouch_nonce"]
-                self.assertEqual(nonce, write_vouch.derive_nonce(VOUCH_KEY.encode(), run_id))
-                out = proc.stdout + proc.stderr
-                self.assertNotIn(nonce, out.replace(f"::add-mask::{nonce}", ""))
-                self.assertIn(f"::add-mask::{nonce}", proc.stdout.splitlines())
-                self.assertNotIn(nonce, self.summary.read_text())
-                self.assertNotIn(VOUCH_KEY, out + self.summary.read_text())
-                notices = [l for l in proc.stdout.splitlines() if "routine-vouch" in l]
-                self.assertEqual(notices, [f"::notice title=routine-vouch::run_id={run_id}"])
-                self.assertNotIn(hashlib.sha256(nonce.encode()).hexdigest(), out)
-                # Neither curl's argv nor any jq argv carries the body or nonce.
-                argv = json.loads((self.log / "argv.json").read_text())
-                self.assertFalse(any(nonce in a for a in argv))
-                self.assertTrue(argv[argv.index("--data-binary") + 1].startswith("@"))
-                calls = [json.loads(l) for l in
-                         (self.log / "jq.jsonl").read_text().splitlines()]
-                self.assertTrue(calls)
-                self.assertFalse(any(nonce in a for c in calls for a in c["argv"]))
-                nonces.append(nonce)
-        self.assertNotEqual(*nonces)
-
-    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
-    def test_without_vouch_key_the_eval_runs_with_no_nonce(self):
-        for env in ({"VOUCH_KEY": ""},):
-            with self.subTest(env=env):
-                proc = self.run_step("200", self.ok_body(), **env)
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                payload = json.loads(json.loads(self.sent_body())["text"])
-                self.assertEqual(payload, {
-                    "mode": "eval", "run_id": "20261006T120000Z-a1b2c3",
-                    "fixture": FIXTURE, "arms": "both", "trials": 2})
-                self.assertIn("::warning::repository secret VOUCH_KEY is not set",
-                              proc.stdout)
-                self.assertNotIn("add-mask", proc.stdout)
-
-    def test_the_header_states_the_prompt_must_accept_vouch_nonce_first(self):
-        header = WORKFLOW.read_text(encoding="utf-8").split("\nrun-name:", 1)[0]
-        flat = " ".join(line.lstrip("# ") for line in header.splitlines())
-        self.assertIn("BEFORE this workflow change merges", flat)
-        self.assertIn("must accept `vouch_nonce` and run scripts/write_vouch.py", flat)
-        self.assertIn("the VOUCH_KEY repository secret must exist", flat)
-        self.assertNotIn("nonce_sha256", header)
-        # Round 6, R6-3: write_vouch runs before the routine reads any arm
-        # output, so the nonce is used before anything an arm shaped is read.
-        self.assertIn("The moment the harness exits, before reading any report, trace or "
-                      "other arm output, run `printf %s \"$VOUCH_NONCE\" | python3 "
-                      "scripts/write_vouch.py eval-results/<run id>`", flat)
-
-    def test_only_eval_mode_makes_a_nonce(self):
-        for mode, extra in (("scaffold", {"CANDIDATE": CANDIDATE}),
-                            ("improve", {"SKILL": SKILL, "HOLDOUT": HOLDOUT})):
-            with self.subTest(mode=mode):
-                proc = self.run_step("200", self.ok_body(), MODE=mode, **extra)
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                self.assertNotIn("routine-vouch", proc.stdout)
-                self.assertNotIn("add-mask", proc.stdout)
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_scaffold_sends_exactly_mode_run_id_candidate_and_snapshot(self):
@@ -1023,7 +850,7 @@ class FireStepTests(unittest.TestCase):
         self.assertFalse(any(self.BEARER in a for a in argv))
         self.assertEqual((self.log / "stdin").read_text(),
                          f"Authorization: Bearer {self.BEARER}\n")
-        body = json.loads(self.sent_body())
+        body = json.loads(argv[argv.index("--data-binary") + 1])
         self.assertEqual(set(body), {"text"})
         payload = json.loads(body["text"])
         self.assertEqual(payload, {"mode": "scaffold",
@@ -1042,7 +869,7 @@ class FireStepTests(unittest.TestCase):
 
     def sent_payload(self):
         argv = json.loads((self.log / "argv.json").read_text())
-        return json.loads(json.loads(self.sent_body())["text"])
+        return json.loads(json.loads(argv[argv.index("--data-binary") + 1])["text"])
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_scaffold_carries_the_snapshot_object_as_json(self):
@@ -1096,7 +923,7 @@ class FireStepTests(unittest.TestCase):
         proc = self.run_step("200", self.ok_body(), MODE="scaffold", CANDIDATE=CANDIDATE)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         argv = json.loads((self.log / "argv.json").read_text())
-        base = len(json.loads(self.sent_body())["text"].encode("utf-8"))
+        base = len(json.loads(argv[argv.index("--data-binary") + 1])["text"].encode("utf-8"))
         for extra, ok in ((65536 - base, True), (65536 - base + 1, False)):
             with self.subTest(extra=extra):
                 (self.log / "calls").unlink(missing_ok=True)
@@ -1145,7 +972,7 @@ class FireStepTests(unittest.TestCase):
                 self.assertFalse(any(self.BEARER in a for a in argv))
                 self.assertEqual((self.log / "stdin").read_text(),
                                  f"Authorization: Bearer {self.BEARER}\n")
-                body = json.loads(self.sent_body())
+                body = json.loads(argv[argv.index("--data-binary") + 1])
                 self.assertEqual(set(body), {"text"})
                 payload = json.loads(body["text"])
                 self.assertEqual(payload, {
@@ -1183,7 +1010,7 @@ class FireStepTests(unittest.TestCase):
                 proc = self.run_step("200", self.ok_body(), MODE=mode, **extra)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 argv = json.loads((self.log / "argv.json").read_text())
-                body = json.loads(self.sent_body())
+                body = json.loads(argv[argv.index("--data-binary") + 1])
                 payload = json.loads(body["text"])
                 self.assertEqual(payload[key], tricky)
                 self.assertNotIn("evil", payload)
@@ -1201,7 +1028,7 @@ class FireStepTests(unittest.TestCase):
                                      REAL_JQ=shutil.which("jq"), **extra)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 argv = json.loads((self.log / "argv.json").read_text())
-                sent = self.sent_body()
+                sent = argv[argv.index("--data-binary") + 1]
                 calls = [json.loads(l) for l in
                          (self.log / "jq.jsonl").read_text().splitlines()]
                 builders = [c for c in calls if c["argv"][:2] == ["-n", "-c"]]
@@ -1219,9 +1046,7 @@ class FireStepTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_an_unknown_mode_never_calls_the_api(self):
-        # A sentinel never reaches this step (its `if:`), and would be
-        # refused here too.
-        for mode in ("", "improved", "Scaffold", "Improve", "sentinel"):
+        for mode in ("", "improved", "Scaffold", "Improve"):
             with self.subTest(mode=mode):
                 proc = self.run_step("200", self.ok_body(), MODE=mode)
                 self.assertNotEqual(proc.returncode, 0)

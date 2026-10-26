@@ -1877,62 +1877,6 @@ def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
     return denied, rules
 
 
-# Claude Code's own scratch root under a temp directory, `claude-<uid>`: on
-# a routine, the session that runs the harness keeps its scratchpad, its
-# background tasks' output and its saved tool results there, under a
-# directory named like its `~/.claude/projects/` one (#70, round 8, R8-5).
-CLI_SCRATCH_PREFIX = "claude-"
-# The system's default temp directory, fenced whatever TMPDIR says: a
-# session started with another TMPDIR, or a harness run under one, must not
-# leave the default root's `claude-*` open (#70, round 9, R9-1).
-SYSTEM_TMP = Path("/tmp")
-# The variables that move the CLI's scratch root (R8-5, R9-1).
-CLI_TMPDIR_VARS = ("CLAUDE_TMPDIR", "CLAUDE_CODE_TMPDIR")
-
-
-def _cli_scratch_rules(tmp_roots, session_dir: Path | None, protected: list[Path],
-                       needed: list[Path], guarded=()):
-    """The sandbox `denyRead` paths and Read deny rules for every Claude Code
-    scratch root (`CLI_SCRATCH_PREFIX`) under each of `tmp_roots`.
-
-    One Read rule per root denies every `claude-*` name, present or future,
-    this uid's included: a carve-out for the arm's own session there takes
-    one complement pattern per character of its name, at every root, which
-    pushed an arm's settings past `MAX_SETTINGS_BYTES` (#70, round 10). So
-    the Read tool cannot read the arm's own background-task output there;
-    its commands still can. For commands, every existing `claude-*`
-    directory is denied whole, but this uid's, where each existing entry
-    except the arm's own session's directory (named as `session_dir`, its
-    `~/.claude/projects/<workspace>`) is denied: the arm's own CLI may write
-    there from inside the sandbox. A symlinked entry is left to the Read
-    rule. `protected` and `guarded` are unused: no rule here spares a
-    symlink."""
-    own = f"{CLI_SCRATCH_PREFIX}{os.getuid()}" if hasattr(os, "getuid") else None
-    mine = session_dir.name if session_dir is not None else None
-    denied, rules = [], []
-
-    def entries(path, dirs_only):
-        try:
-            names = sorted(os.listdir(path))
-        except OSError:
-            return []
-        return [path / name for name in names
-                if not (path / name).is_symlink()
-                and ((path / name).is_dir() or not dirs_only)
-                and not any(_within(n, path / name) for n in needed)]
-
-    for root in dict.fromkeys(Path(r).resolve() for r in tmp_roots):
-        rules.append(f"Read(/{_glob_escape(str(root))}/{_glob_escape(CLI_SCRATCH_PREFIX)}*)")
-        for path in entries(root, True):
-            if not path.name.startswith(CLI_SCRATCH_PREFIX):
-                continue
-            if path.name == own and mine is not None:
-                denied += [child for child in entries(path, False) if child.name != mine]
-            else:
-                denied.append(path)
-    return denied, rules
-
-
 # The `--settings` value is one argv element; Linux caps one at 128 KiB
 # (E2BIG). Well under it, and a settings object this large means the rules
 # went wrong somewhere.
@@ -2008,16 +1952,6 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     tmp_denied, tmp_rules = _harness_temp_rules(
         tmp_root, Path(workspace).resolve() if workspace is not None else None,
         protected, needed, compact_profiles)
-    # The CLI's scratch root is under its temp directory: the TMPDIR this
-    # process inherited from the session that runs it, the system default
-    # (`SYSTEM_TMP`), or one `CLI_TMPDIR_VARS` names; every one is fenced.
-    cli_tmp = [Path(os.environ[name]) for name in CLI_TMPDIR_VARS
-               if os.path.isabs(os.environ.get(name) or "")]
-    scratch_denied, scratch_rules = _cli_scratch_rules(
-        [tmp_root, SYSTEM_TMP, *cli_tmp], keep, protected, needed,
-        [p for _, p in denied])
-    tmp_denied = [*tmp_denied, *(p for p in scratch_denied if p not in tmp_denied)]
-    tmp_rules = [*tmp_rules, *(r for r in scratch_rules if r not in tmp_rules)]
     read_rules = []
     for _, path in denied:
         # What a spared symlink in HOME or a profile must not lead to: every

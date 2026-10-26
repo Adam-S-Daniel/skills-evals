@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 """Plan only reviewed scheduled fixtures, or the single dispatch fixture.
 
-`--validate FIXTURE KEY SLOT` also refuses a fixture whose resolved model
-(scripts/roster_arm.py's `resolve`: its `model:` pin, else the roster's first
-arm) is not an arm of the roster (`--roster`, default the committed
-evals/roster.yml): the fire workflow requires that model (#70, round 8), so a
-scheduled fixture pinned to a model the roster dropped is caught here, before
-any dispatch.
-
 With `--allowance-tree` (a checkout of persistent/eval-results), the plan is
 cut to the fires that fit under the weekly allowance cap (#68,
 scripts/allowance_guard.py), in the schedule's order, and `count=<n>` is
@@ -136,9 +129,6 @@ def main():
                              "weekly_cap (#68)")
     parser.add_argument("--budget", type=Path, metavar="PATH",
                         help="the budget file (default: evals/budget.yml)")
-    parser.add_argument("--roster", type=Path, metavar="PATH",
-                        help="the roster --validate checks the resolved model "
-                             "against (default: the committed evals/roster.yml)")
     args = parser.parse_args()
     root = Path.cwd()
     try:
@@ -149,12 +139,6 @@ def main():
             expected = validate_fixture(fixture, committed_fixtures(root))
             if key != expected or not re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", slot) or int(slot) > 255:
                 raise ValueError("matrix key or slot does not match a validated fixture")
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
-            import roster_arm
-            roster = args.roster or roster_arm.run_eval.TRUSTED_ROSTER
-            model = roster_arm.resolve(fixture, roster, root)
-            if model is None or not roster_arm.is_arm(model, roster):
-                raise ValueError("the fixture's resolved model is not a roster arm")
             print(f"eval_key={expected}")
         else:
             if args.max_fixtures is not None and args.max_fixtures < 1:

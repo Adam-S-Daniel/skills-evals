@@ -39,7 +39,6 @@ import sys
 import tempfile
 import unittest
 import urllib.error
-import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -770,20 +769,19 @@ class LiveFiresTests(unittest.TestCase):
         def opener(request, timeout):
             seen.append(request.full_url)
             total = 5 if "2026-10-13T15" in request.full_url else 2
-            return FireCountTests.Response(json.dumps({"total_count": total,
-                                                       "workflow_runs": []}).encode())
+            return FireCountTests.Response(json.dumps({"total_count": total}).encode())
         self.assertEqual(self.live(opener), (5, 2))
         self.assertEqual(len(seen), 2)
         self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
         self.assertIn("created=%3E%3D2026-10-19T15%3A30%3A00Z", seen[1])
-        self.assertTrue(all("per_page=100" in url and "status=success" in url for url in seen))
+        self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
 
     def test_a_failed_24_hour_count_fails_closed(self):
         def opener(request, timeout):
             if "2026-10-19T15" in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
                                              io.BytesIO(b"private-body-marker"))
-            return FireCountTests.Response(b'{"total_count": 5, "workflow_runs": []}')
+            return FireCountTests.Response(b'{"total_count": 5}')
         with self.assertRaises(guard.GuardError) as caught:
             self.live(opener)
         self.assertEqual(str(caught.exception), "the workflow runs API answered 502")
@@ -832,46 +830,6 @@ class FireCountTests(unittest.TestCase):
         self.assertIn("status=success", request.full_url)
         self.assertEqual(request.get_header("Authorization"), "Bearer tok")
 
-    @staticmethod
-    def runs(titles, start=1):
-        return [{"id": start + i, "display_title": t} for i, t in enumerate(titles)]
-
-    def test_sentinel_runs_are_not_fires(self):
-        # #70, round 8 (R8-1): a sentinel sends nothing and spends nothing,
-        # so it is no pending fire.
-        sentinel = "Fire eval routine: mode=sentinel fixture= model= arms=both trials=1"
-        fire = "Fire eval routine: mode=eval fixture=evals/x model=m arms=both trials=1"
-        look_alike = "Fire eval routine: mode=sentinelx fixture= model= arms=both trials=1"
-
-        def opener(request, timeout):
-            return self.Response(json.dumps({"total_count": 4, "workflow_runs": self.runs(
-                [sentinel, fire, sentinel, look_alike])}).encode())
-        self.assertEqual(self.count(opener), 2)
-
-    def test_it_pages_to_find_sentinels_and_counts_unread_runs_as_fires(self):
-        sentinel = "Fire eval routine: mode=sentinel fixture= model= arms=both trials=1"
-        pages = []
-
-        def opener(request, timeout):
-            page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(
-                request.full_url).query)["page"][0])
-            pages.append(page)
-            # 1,050 runs, a sentinel first on every page; the guard reads
-            # ten pages at most, so the last 50 are fires, read or not.
-            size = min(100, 1050 - 100 * (page - 1))
-            titles = [sentinel] + ["x"] * (size - 1)
-            return self.Response(json.dumps({"total_count": 1050, "workflow_runs":
-                                             self.runs(titles, 100 * page)}).encode())
-        self.assertEqual(self.count(opener), 1040)
-        self.assertEqual(pages, list(range(1, 11)))
-        # A run read twice (the pages shifted) is one sentinel, not two.
-        pages.clear()
-
-        def shifted(request, timeout):
-            return self.Response(json.dumps({"total_count": 3, "workflow_runs": [
-                {"id": 7, "display_title": sentinel}] * 3}).encode())
-        self.assertEqual(self.count(shifted), 2)
-
     def test_an_http_error_names_only_its_status(self):
         def opener(request, timeout):
             raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", {},
@@ -884,11 +842,7 @@ class FireCountTests(unittest.TestCase):
         def unreachable(request, timeout):
             raise urllib.error.URLError("down")
         bodies = (b"not json", b'{"total_count": -1}', b'{"total_count": true}',
-                  b'["private-body-marker"]', b"{}", b'{"total_count": 4}',
-                  b'{"total_count": 4, "workflow_runs": {}}',
-                  b'{"total_count": 1, "workflow_runs": [{"id": 1}]}',
-                  b'{"total_count": 1, "workflow_runs": [{"display_title": "x"}]}',
-                  b'{"total_count": 1, "workflow_runs": ["private-body-marker"]}')
+                  b'["private-body-marker"]', b"{}")
         openers = [unreachable] + [
             (lambda body: lambda request, timeout: self.Response(body))(body)
             for body in bodies]
@@ -1170,9 +1124,8 @@ class WorkflowTests(unittest.TestCase):
         ids = [s.get("id") for s in steps]
         at = ids.index("allowance")
         step = steps[at]
-        # Every mode but sentinel (#70, round 8), which sends nothing and so
-        # spends nothing; the job token only, never the bearer.
-        self.assertEqual(step["if"], "steps.validate.outputs.mode != 'sentinel'")
+        # Every mode: no `if:`; the job token only, never the bearer.
+        self.assertNotIn("if", step)
         self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}"})
         self.assertEqual(step["run"], "python3 scripts/allowance_guard.py check "
                                       "--results-tree eval-results-branch")

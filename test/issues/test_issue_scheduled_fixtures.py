@@ -42,7 +42,6 @@ def module(name, path):
 planner = module("scheduled_plan", ROOT / "scripts/plan_scheduled_evals.py")
 sys.path.insert(0, str(ROOT / "scripts"))
 import allowance_guard  # noqa: E402
-import roster_arm  # noqa: E402
 badge = module("scheduled_badge", ROOT / "scripts/make_badge.py")
 
 
@@ -541,44 +540,6 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                         env=selected, text=True, capture_output=True)
                 self.assertNotEqual(result.returncode, 0)
 
-    def test_validate_refuses_a_fixture_whose_resolved_model_is_no_arm(self):
-        # #70, round 8 (R8-4): the fire workflow requires an arm as `model`,
-        # so the weekly dispatch revalidates the model the fixture resolves to.
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            subprocess.run(["git", "init", "-q", str(base)], check=True)
-            for name, text in (("plain", "skill: x\n"), ("pinned", "skill: x\nmodel: arm-b\n"),
-                               ("stale", "skill: x\nmodel: dropped-arm\n")):
-                path = base / "evals" / name / "fixture.yaml"
-                path.parent.mkdir(parents=True)
-                path.write_text(text)
-                subprocess.run(["git", "-C", str(base), "add", str(path)], check=True)
-            roster = base / "roster.yml"
-            roster.write_text("arms:\n  - id: arm-a\n  - id: arm-b\n")
-            empty = base / "empty.yml"
-            empty.write_text("arms: []\n")
-
-            def validate(name, roster_path):
-                argv = ["plan_scheduled_evals.py", "--validate", f"evals/{name}", name, "0",
-                        "--roster", str(roster_path)]
-                captured = io.StringIO()
-                with mock.patch.object(sys, "argv", argv), \
-                     mock.patch.object(Path, "cwd", return_value=base), \
-                     contextlib.redirect_stdout(captured):
-                    return planner.main(), captured.getvalue()
-            for name, roster_path, code in (("plain", roster, 0), ("pinned", roster, 0),
-                                            ("stale", roster, 1), ("plain", empty, 1),
-                                            ("pinned", empty, 1)):
-                with self.subTest(name=name, roster=roster_path.name):
-                    got, out = validate(name, roster_path)
-                    self.assertEqual(got, code, out)
-                    if code:
-                        self.assertEqual(out, "::error::Invalid eval plan or committed "
-                                              "fixture selection\n")
-                        self.assertNotIn("dropped-arm", out)
-                    else:
-                        self.assertEqual(out, f"eval_key={name}\n")
-
     def test_planner_refuses_31_fires_before_writing_a_matrix(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "output"
@@ -621,18 +582,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            # #70, round 7: the model the run will use, resolved here, so
-            # the fire's title names it (an eval title naming none gates
-            # nothing).
-            model = roster_arm.resolve(EXPECTED[0], roster_arm.run_eval.TRUSTED_ROSTER)
-            self.assertTrue(model)
             self.assertEqual(json.loads(capture.read_text()),
                              ["workflow", "run", "routine-eval-fire.yml", "--repo",
                               "example.com/sample", "--ref", "main", "--raw-field",
                               "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
-                              "--raw-field", "arms=both", "--raw-field", "trials=1",
-                              "--raw-field", f"model={model}"])
-
+                              "--raw-field", "arms=both", "--raw-field", "trials=1"])
             env["FAIL_DISPATCH"] = "1"
             result = subprocess.run(["bash", str(command)], cwd=ROOT, env=env,
                                     text=True, capture_output=True)
