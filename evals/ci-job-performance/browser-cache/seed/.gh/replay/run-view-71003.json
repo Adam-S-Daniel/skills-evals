@@ -1,0 +1,269 @@
+{
+  "attempt": 1,
+  "conclusion": "success",
+  "createdAt": "2026-10-14T11:02:56Z",
+  "databaseId": 71003,
+  "displayTitle": "Fix footer link on the about page",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "c71e5a0c71e5a0c71e5a0c71e5a0c71e5a0c71e5",
+  "name": "e2e",
+  "number": 23,
+  "startedAt": "2026-10-14T11:02:56Z",
+  "status": "completed",
+  "updatedAt": "2026-10-14T11:04:52Z",
+  "url": "https://example.com/example-org/example-repo/actions/runs/71003",
+  "workflowDatabaseId": 4401,
+  "workflowName": "e2e",
+  "jobs": [
+    {
+      "databaseId": 810031,
+      "name": "e2e (chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-14T11:03:01Z",
+      "completedAt": "2026-10-14T11:04:23Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/71003/job/810031",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-14T11:03:01Z",
+          "completedAt": "2026-10-14T11:03:03Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-14T11:03:03Z",
+          "completedAt": "2026-10-14T11:03:04Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-14T11:03:04Z",
+          "completedAt": "2026-10-14T11:03:08Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-14T11:03:08Z",
+          "completedAt": "2026-10-14T11:03:16Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-14T11:03:16Z",
+          "completedAt": "2026-10-14T11:03:33Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-14T11:03:33Z",
+          "completedAt": "2026-10-14T11:03:44Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-14T11:03:44Z",
+          "completedAt": "2026-10-14T11:04:22Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-14T11:04:22Z",
+          "completedAt": "2026-10-14T11:04:23Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-14T11:04:23Z",
+          "completedAt": "2026-10-14T11:04:23Z"
+        }
+      ]
+    },
+    {
+      "databaseId": 810032,
+      "name": "e2e (firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-14T11:03:07Z",
+      "completedAt": "2026-10-14T11:04:52Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/71003/job/810032",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-14T11:03:07Z",
+          "completedAt": "2026-10-14T11:03:08Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-14T11:03:08Z",
+          "completedAt": "2026-10-14T11:03:10Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-14T11:03:10Z",
+          "completedAt": "2026-10-14T11:03:14Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-14T11:03:14Z",
+          "completedAt": "2026-10-14T11:03:26Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-14T11:03:26Z",
+          "completedAt": "2026-10-14T11:03:46Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-14T11:03:46Z",
+          "completedAt": "2026-10-14T11:03:51Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-14T11:03:51Z",
+          "completedAt": "2026-10-14T11:04:51Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-14T11:04:51Z",
+          "completedAt": "2026-10-14T11:04:52Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-14T11:04:52Z",
+          "completedAt": "2026-10-14T11:04:52Z"
+        }
+      ]
+    },
+    {
+      "databaseId": 810033,
+      "name": "e2e (webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-14T11:03:02Z",
+      "completedAt": "2026-10-14T11:04:33Z",
+      "url": "https://example.com/example-org/example-repo/actions/runs/71003/job/810033",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-10-14T11:03:02Z",
+          "completedAt": "2026-10-14T11:03:03Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-10-14T11:03:03Z",
+          "completedAt": "2026-10-14T11:03:05Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-10-14T11:03:05Z",
+          "completedAt": "2026-10-14T11:03:09Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-10-14T11:03:09Z",
+          "completedAt": "2026-10-14T11:03:21Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-10-14T11:03:21Z",
+          "completedAt": "2026-10-14T11:03:42Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-10-14T11:03:42Z",
+          "completedAt": "2026-10-14T11:03:48Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-10-14T11:03:48Z",
+          "completedAt": "2026-10-14T11:04:33Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-10-14T11:04:33Z",
+          "completedAt": "2026-10-14T11:04:33Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "startedAt": "2026-10-14T11:04:33Z",
+          "completedAt": "2026-10-14T11:04:33Z"
+        }
+      ]
+    }
+  ]
+}

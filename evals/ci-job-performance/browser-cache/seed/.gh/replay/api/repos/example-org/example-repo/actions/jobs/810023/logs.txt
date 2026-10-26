@@ -1,0 +1,62 @@
+2026-10-13T15:41:34.1125100Z Current runner version: '2.329.0'
+2026-10-13T15:41:34.1225100Z ##[group]Runner Image Provisioner
+2026-10-13T15:41:34.1225100Z Hosted Compute Agent
+2026-10-13T15:41:34.1225100Z ##[endgroup]
+2026-10-13T15:41:34.1225100Z ##[group]Operating System
+2026-10-13T15:41:34.1225100Z Ubuntu
+2026-10-13T15:41:34.1225100Z 24.04.3
+2026-10-13T15:41:34.1225100Z LTS
+2026-10-13T15:41:34.1225100Z ##[endgroup]
+2026-10-13T15:41:34.4225100Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+2026-10-13T15:41:34.6225100Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+2026-10-13T15:41:34.9225100Z Complete job name: e2e (webkit)
+2026-10-13T15:41:35.5643560Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+2026-10-13T15:41:35.5743560Z ##[endgroup]
+2026-10-13T15:41:35.6243560Z Syncing repository: example-org/example-repo
+2026-10-13T15:41:36.0243560Z Fetching the repository
+2026-10-13T15:41:36.6243560Z Checking out the ref
+2026-10-13T15:41:36.6253970Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+2026-10-13T15:41:36.6353970Z ##[endgroup]
+2026-10-13T15:41:37.0353970Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+2026-10-13T15:41:37.1353970Z Environment details
+2026-10-13T15:41:38.5353970Z Cache hit for: node-cache-Linux-x64-npm-e2e
+2026-10-13T15:41:39.6353970Z Cache restored successfully
+2026-10-13T15:41:42.2847180Z ##[group]Run npm ci
+2026-10-13T15:41:42.2847180Z npm ci
+2026-10-13T15:41:42.2847180Z shell: /usr/bin/bash -e {0}
+2026-10-13T15:41:42.2847180Z env:
+2026-10-13T15:41:42.2847180Z   BROWSER: webkit
+2026-10-13T15:41:42.2847180Z ##[endgroup]
+2026-10-13T15:41:48.7847180Z 
+2026-10-13T15:41:48.9847180Z added 3 packages, and audited 4 packages in 2s
+2026-10-13T15:41:49.0847180Z found 0 vulnerabilities
+2026-10-13T15:41:51.4726400Z ##[group]Run npx playwright install-deps "$BROWSER"
+2026-10-13T15:41:51.4726400Z npx playwright install-deps "$BROWSER"
+2026-10-13T15:41:51.4726400Z ##[endgroup]
+2026-10-13T15:41:52.6726400Z Installing dependencies...
+2026-10-13T15:41:52.7726400Z Switching to root user to install dependencies...
+2026-10-13T15:41:53.5726400Z Hit:1 http://example.net/ubuntu noble InRelease
+2026-10-13T15:41:53.8726400Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+2026-10-13T15:41:55.7726400Z Fetched 4,812 kB in 2s (2,406 kB/s)
+2026-10-13T15:41:57.3726400Z Reading package lists...
+2026-10-13T15:41:58.5726400Z 0 upgraded, 58 newly installed, 0 to remove and 18 not upgraded.
+2026-10-13T15:41:58.5726400Z Need to get 98.6 MB of archives.
+2026-10-13T15:42:11.9752540Z Setting up libgtk-3-0t64:amd64 (3.24.41-4ubuntu1.3) ...
+2026-10-13T15:42:12.3752540Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+2026-10-13T15:42:13.8752540Z ##[group]Run npx playwright install "$BROWSER"
+2026-10-13T15:42:13.8752540Z npx playwright install "$BROWSER"
+2026-10-13T15:42:13.8752540Z ##[endgroup]
+2026-10-13T15:42:14.1752540Z Downloading WebKit 26.0 (playwright build v2215) from https://example.net/playwright/builds/webkit/2215/webkit-ubuntu-24.04.zip
+2026-10-13T15:42:19.1166830Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 92.1 MiB
+2026-10-13T15:42:19.2166830Z WebKit 26.0 (playwright build v2215) downloaded to /home/runner/.cache/ms-playwright/webkit-2215
+2026-10-13T15:42:19.4166830Z ##[group]Run npx playwright test --project="$BROWSER"
+2026-10-13T15:42:19.4166830Z npx playwright test --project="$BROWSER"
+2026-10-13T15:42:19.4166830Z ##[endgroup]
+2026-10-13T15:42:20.8166830Z 
+2026-10-13T15:42:20.8166830Z Running 8 tests using 2 workers
+2026-10-13T15:43:09.9879350Z 
+2026-10-13T15:43:10.0879350Z   8 passed (50.0s)
+2026-10-13T15:43:11.5879350Z Post job cleanup.
+2026-10-13T15:43:11.6879350Z /usr/bin/git version
+2026-10-13T15:43:11.6879350Z git version 2.51.0
+2026-10-13T15:43:12.3726680Z Cleaning up orphan processes

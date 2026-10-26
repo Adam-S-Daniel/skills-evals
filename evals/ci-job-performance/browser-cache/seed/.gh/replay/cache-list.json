@@ -1,0 +1,34 @@
+[
+  {
+    "id": 3301,
+    "key": "playwright-Linux-chromium-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b",
+    "ref": "refs/heads/main",
+    "sizeInBytes": 287519539,
+    "createdAt": "2026-10-19T10:07:24Z",
+    "lastAccessedAt": "2026-10-22T17:20:01Z"
+  },
+  {
+    "id": 3302,
+    "key": "playwright-Linux-firefox-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b",
+    "ref": "refs/heads/main",
+    "sizeInBytes": 101502156,
+    "createdAt": "2026-10-19T10:07:19Z",
+    "lastAccessedAt": "2026-10-22T17:19:58Z"
+  },
+  {
+    "id": 3303,
+    "key": "playwright-Linux-webkit-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b",
+    "ref": "refs/heads/main",
+    "sizeInBytes": 96573849,
+    "createdAt": "2026-10-19T10:07:12Z",
+    "lastAccessedAt": "2026-10-22T17:19:55Z"
+  },
+  {
+    "id": 3290,
+    "key": "node-cache-Linux-x64-npm-e2e",
+    "ref": "refs/heads/main",
+    "sizeInBytes": 4183552,
+    "createdAt": "2026-10-12T09:15:40Z",
+    "lastAccessedAt": "2026-10-22T17:19:41Z"
+  }
+]

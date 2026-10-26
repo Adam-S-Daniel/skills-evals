@@ -1,0 +1,284 @@
+{
+  "total_count": 3,
+  "jobs": [
+    {
+      "id": 810041,
+      "run_id": 71004,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "e2b8d93e2b8d93e2b8d93e2b8d93e2b8d93e2b8d",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/71004/job/810041",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-15T16:27:12Z",
+      "started_at": "2026-10-15T16:27:24Z",
+      "completed_at": "2026-10-15T16:28:57Z",
+      "name": "e2e (chromium)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-15T16:27:24Z",
+          "completed_at": "2026-10-15T16:27:26Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-15T16:27:26Z",
+          "completed_at": "2026-10-15T16:27:27Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-15T16:27:27Z",
+          "completed_at": "2026-10-15T16:27:30Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-15T16:27:30Z",
+          "completed_at": "2026-10-15T16:27:39Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-15T16:27:39Z",
+          "completed_at": "2026-10-15T16:27:59Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-15T16:27:59Z",
+          "completed_at": "2026-10-15T16:28:11Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-15T16:28:11Z",
+          "completed_at": "2026-10-15T16:28:56Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-15T16:28:56Z",
+          "completed_at": "2026-10-15T16:28:57Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-15T16:28:57Z",
+          "completed_at": "2026-10-15T16:28:57Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1477",
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 810042,
+      "run_id": 71004,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "e2b8d93e2b8d93e2b8d93e2b8d93e2b8d93e2b8d",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/71004/job/810042",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-15T16:27:12Z",
+      "started_at": "2026-10-15T16:27:18Z",
+      "completed_at": "2026-10-15T16:28:56Z",
+      "name": "e2e (firefox)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-15T16:27:18Z",
+          "completed_at": "2026-10-15T16:27:20Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-15T16:27:20Z",
+          "completed_at": "2026-10-15T16:27:22Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-15T16:27:22Z",
+          "completed_at": "2026-10-15T16:27:26Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-15T16:27:26Z",
+          "completed_at": "2026-10-15T16:27:36Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-15T16:27:36Z",
+          "completed_at": "2026-10-15T16:27:58Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-15T16:27:58Z",
+          "completed_at": "2026-10-15T16:28:02Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-15T16:28:02Z",
+          "completed_at": "2026-10-15T16:28:55Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-15T16:28:55Z",
+          "completed_at": "2026-10-15T16:28:56Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-15T16:28:56Z",
+          "completed_at": "2026-10-15T16:28:56Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1478",
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 810043,
+      "run_id": 71004,
+      "workflow_name": "e2e",
+      "head_branch": "main",
+      "head_sha": "e2b8d93e2b8d93e2b8d93e2b8d93e2b8d93e2b8d",
+      "html_url": "https://example.com/example-org/example-repo/actions/runs/71004/job/810043",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-15T16:27:12Z",
+      "started_at": "2026-10-15T16:27:24Z",
+      "completed_at": "2026-10-15T16:29:01Z",
+      "name": "e2e (webkit)",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-15T16:27:24Z",
+          "completed_at": "2026-10-15T16:27:26Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-15T16:27:26Z",
+          "completed_at": "2026-10-15T16:27:28Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-15T16:27:28Z",
+          "completed_at": "2026-10-15T16:27:32Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-15T16:27:32Z",
+          "completed_at": "2026-10-15T16:27:43Z"
+        },
+        {
+          "name": "Install browser OS dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-15T16:27:43Z",
+          "completed_at": "2026-10-15T16:28:03Z"
+        },
+        {
+          "name": "Install browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-15T16:28:03Z",
+          "completed_at": "2026-10-15T16:28:09Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-15T16:28:09Z",
+          "completed_at": "2026-10-15T16:29:00Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-15T16:29:00Z",
+          "completed_at": "2026-10-15T16:29:01Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-15T16:29:01Z",
+          "completed_at": "2026-10-15T16:29:01Z"
+        }
+      ],
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_name": "GitHub Actions 1479",
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
