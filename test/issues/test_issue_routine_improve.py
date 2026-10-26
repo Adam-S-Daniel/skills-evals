@@ -936,9 +936,14 @@ class FireCheckTests(unittest.TestCase):
         self.assert_rejected("adam-writing-style", gate.FIRE_NOT_ROUTINE_REGISTRY)
 
     def test_refuses_too_few_fixtures(self):
-        for skill in ("github-actions-repo-settings", "skills-doctor"):
-            with self.subTest(skill=skill):
-                self.assert_rejected(skill, gate._fire_too_few())
+        # Synthetic layouts, so the case does not move when a real skill
+        # gains fixtures; every count below MIN_FIXTURES is refused.
+        url, sk = gate.REGISTRY_URL, "zqx-synthetic"
+        for count in range(1, pse.MIN_FIXTURES):
+            fixtures = {f"{sk}/f{n}": {"skill": sk, "registry": url}
+                        for n in range(count)}
+            with self.subTest(count=count), self._evals(fixtures):
+                self.assert_rejected(sk, gate._fire_too_few())
 
     def test_refuses_a_holdout_that_is_not_a_fixture_of_the_skill(self):
         for holdout in ("no-such-holdout-xyz", "proposal-bio", "..", "."):
