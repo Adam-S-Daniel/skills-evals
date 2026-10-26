@@ -6962,8 +6962,11 @@ class TestIssue67Review(unittest.TestCase):
                 [self._assistant(v, "2026-09-03T10:00:00Z")
                  for v in self.HOSTILE_MODELS.values()],
                 mtime=self.NOW)
+            # --now pins the window: with the real clock, the 2026-09-03
+            # transcript fell out of the 8-week window on 2026-10-26.
             argv = ["model_usage_census.py", "--projects", str(projects),
-                    "--out", str(out), "--weeks", "8"]
+                    "--out", str(out), "--weeks", "8",
+                    "--now", self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ")]
             stdout, stderr = io.StringIO(), io.StringIO()
             with mock.patch.object(sys, "argv", argv), \
                  contextlib.redirect_stdout(stdout), \

@@ -479,7 +479,11 @@ class DryRunTests(PipelineCase):
         plan = json.loads(out)
         self.assertEqual(plan["validation"], "existing-convention")
         self.assertEqual(plan["train"], ["bootstrap", "supersede"])
-        self.assertEqual(plan["models"]["arm"], "claude-sonnet-5")
+        # The committed roster's first arm, read rather than named: the roster
+        # changes whenever the vendor default does.
+        import yaml
+        roster = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+        self.assertEqual(plan["models"]["arm"], roster["arms"][0]["id"])
         self.assertFalse(self.results.exists())
 
 
