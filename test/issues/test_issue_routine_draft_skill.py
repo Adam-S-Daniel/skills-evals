@@ -217,17 +217,21 @@ class CallerTests(unittest.TestCase):
             env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
                    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
                    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
-            run = lambda *a, **k: subprocess.run(a, check=True, env=env, capture_output=True, **k)
-            run("git", "init", "-q", "-b", "main", str(up))
-            run("git", "-C", str(up), "commit", "-q", "--allow-empty", "-m", "base")
-            run("git", "clone", "-q", f"file://{up}", str(down))
+            subprocess.run(["git", "init", "-q", "-b", "main", str(up)],
+                           check=True, env=env, capture_output=True)
+            subprocess.run(["git", "-C", str(up), "commit", "-q", "--allow-empty", "-m", "base"],
+                           check=True, env=env, capture_output=True)
+            subprocess.run(["git", "clone", "-q", f"file://{up}", str(down)],
+                           check=True, env=env, capture_output=True)
             done = subprocess.run(["bash", "-c", fetch], cwd=down, env=env, capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stderr)
-            run("git", "-C", str(up), "branch", "claude/draft-skill-20261026T000000Z-abcdef")
+            subprocess.run(["git", "-C", str(up), "branch", "claude/draft-skill-20261026T000000Z-abcdef"],
+                           check=True, env=env, capture_output=True)
             done = subprocess.run(["bash", "-c", fetch], cwd=down, env=env, capture_output=True, text=True)
             self.assertEqual(done.returncode, 0, done.stderr)
-            refs = run("git", "-C", str(down), "for-each-ref", "--format=%(refname)",
-                       "refs/remotes/origin/claude/", text=True).stdout.split()
+            refs = subprocess.run(["git", "-C", str(down), "for-each-ref", "--format=%(refname)",
+                                   "refs/remotes/origin/claude/"],
+                                  check=True, env=env, capture_output=True, text=True).stdout.split()
             self.assertEqual(refs, ["refs/remotes/origin/claude/draft-skill-20261026T000000Z-abcdef"])
         outputs = self.jobs["select"]["outputs"]
         self.assertEqual(set(outputs), {"proposal", "count", "hook_declined", "fits"})
