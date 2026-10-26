@@ -37,7 +37,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parent.parent.parent
 HARNESS = REPO / "harness"
 SKILL_DIR = REPO / "evals" / "review-bash-ci-reliability"
 FIXTURE_DIR = SKILL_DIR / "test-runner-assertions"
