@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C1UcnYWhZoWtRopuVFMniK",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls; ls .github/workflows 2><path>; which gh",
+      "input_chars": 92,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C1UcnYWhZoWtRopuVFMniK",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n5b62159 initial commit\nf0be913 Import example service\nREADME.md\nbin\nsrc\ntest\nci.yml\n<path>",
+      "output_chars": 238,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JfjMVqRTceL9Dw9HqtD61n",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md | head -30; find src test bin -type f | head -50; gh run list --limit 5 2>&1 | head",
+      "input_chars": 127,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JfjMVqRTceL9Dw9HqtD61n",
+      "is_error": true,
+      "output": "Exit code 1\nbwrap: Can't mkdir <path>: Read-only file system",
+      "output_chars": 87,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PHm31dZ8Hm5tqDmPJNW3qX",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; head -30 README.md; find src test bin -type f | head -50",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PHm31dZ8Hm5tqDmPJNW3qX",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 551,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CvuNMgX1t9oZKX4FkWdAFa",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; python3 -m unittest test.test_legacy 2>&1 | tail -5; python3 -m unittest discover -s test 2>&1 | tail -15; git log --stat --format=%s | head -20",
+      "input_chars": 186,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CvuNMgX1t9oZKX4FkWdAFa",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n\n-----------------------------------...",
+      "output_chars": 1583,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HEC4pCm4YQtqFreLSP2EWP",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; cat .gh/replay/run-list.json | head -20",
+      "input_chars": 74,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HEC4pCm4YQtqFreLSP2EWP",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 1022,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
