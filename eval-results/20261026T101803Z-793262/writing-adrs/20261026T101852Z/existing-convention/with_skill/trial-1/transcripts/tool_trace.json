@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KXyNjhxpR8h5HcpLMGvjrS",
+      "name": "Skill",
+      "input": "writing-adrs",
+      "input_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KXyNjhxpR8h5HcpLMGvjrS",
+      "is_error": false,
+      "output": "Launching skill: writing-adrs",
+      "output_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MT9t7AnfwWjTwhW6k2iZyS",
+      "name": "Bash",
+      "input": "ls docs/decisions 2>&1; cat docs/decisions/README.md 2>&1; cat scripts/retry.sh; git log --oneline | head -20; head -30 CHANGELOG.md",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MT9t7AnfwWjTwhW6k2iZyS",
+      "is_error": false,
+      "output": "0001-cache-order-status-in-redis.md\n0002-poll-fulfillment-service-every-30s.md\n0003-poll-fulfillment-service-every-10s.md\nREADME.md\n# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job...",
+      "output_chars": 2315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X2jb4Dy5DcfGLf6zM3Dh5t",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003-*.md",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X2jb4Dy5DcfGLf6zM3Dh5t",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012evP8nSFRdi4GBMUNekXNR",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 202...",
+      "input_chars": 1922,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012evP8nSFRdi4GBMUNekXNR",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex f1454d8..77ab0f1 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -21,3 +21,4 @@ these sections, in this order:\n | [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process m...",
+      "output_chars": 1294,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

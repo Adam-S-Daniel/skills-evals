@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HcMiBTGqBRCmY9hF9WLpu8",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md && ls docs/decisions && cat scripts/retry.sh && git log --oneline | head && head -20 CHANGELOG.md",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HcMiBTGqBRCmY9hF9WLpu8",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from `0001` and zero-padded to four di...",
+      "output_chars": 2315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016EcYvfMbbNS33QE4B1cEzQ",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003*.md",
+      "input_chars": 27,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016EcYvfMbbNS33QE4B1cEzQ",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qm9Pdz75wPMxRayKcGjFrk",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 202...",
+      "input_chars": 1429,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qm9Pdz75wPMxRayKcGjFrk",
+      "is_error": false,
+      "output": "| [0002](0002-poll-fulfillment-service-every-30s.md) | Poll the fulfillment service every 30 seconds | Superseded-by: 0003 |\n| [0003](0003-poll-fulfillment-service-every-10s.md) | Poll the fulfillment service every 10 seconds | Accepted |\n| [0004](0004-retry-transient-failures-with-capped-backoff.md...",
+      "output_chars": 382,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
