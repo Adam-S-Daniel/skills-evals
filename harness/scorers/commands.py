@@ -35,8 +35,16 @@ INTERPRETERS = {name: (f"/usr/bin/{name}", f"/bin/{name}")
 
 
 def _fixed_interpreter(name: str) -> str | None:
-    return next((path for path in INTERPRETERS[name]
-                 if os.path.isfile(path) and os.access(path, os.X_OK)), None)
+    """The candidate's resolved path, only when it stays inside the system mounts."""
+    roots = [Path(root).resolve() for root in SYSTEM_MOUNTS if Path(root).exists()]
+    for path in INTERPRETERS[name]:
+        # A symlink such as /usr/bin/python3 -> /etc/alternatives/python3 dangles
+        # in the sandbox, which binds neither /etc/alternatives nor its target.
+        resolved = Path(os.path.realpath(path))
+        if (resolved.is_file() and os.access(resolved, os.X_OK)
+                and any(resolved.is_relative_to(root) for root in roots)):
+            return str(resolved)
+    return None
 
 
 def _executable(workspace: Path, name: str) -> str | None:
@@ -102,7 +110,19 @@ def _environment(root: Path, workspace: Path | None = None, read_denied=()) -> d
     refusal = private_bin / "claude"
     refusal.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
     refusal.chmod(0o700)
-    path = ":".join((str(private_bin), *SYSTEM_PATH))
+    # A script's bare `python3` finds the resolved interpreter here, not the
+    # system symlink that dangles in the sandbox. It follows private_bin, so
+    # anything a scorer inserts right after private_bin still wins.
+    resolved_bin = root / "resolved-bin"
+    resolved = {name: fixed for name in ("node", "python3", "ruby")
+                if (fixed := _fixed_interpreter(name)) is not None
+                and fixed not in INTERPRETERS[name]}
+    if resolved:
+        resolved_bin.mkdir(mode=0o700)
+        for name, fixed in resolved.items():
+            (resolved_bin / name).symlink_to(fixed)
+    path = ":".join((str(private_bin), *([str(resolved_bin)] if resolved else []),
+                     *SYSTEM_PATH))
     for name in ("node", "python3", "ruby"):
         if _fixed_interpreter(name) is not None:
             continue
