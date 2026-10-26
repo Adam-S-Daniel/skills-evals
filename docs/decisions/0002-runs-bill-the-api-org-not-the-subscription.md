@@ -1,5 +1,7 @@
 # 0002. Real runs bill the API organisation; subscription credentials are not adopted
 
+> Note: ADR 0002 is also used by [0002-roster-follows-vendor-defaults.md](0002-roster-follows-vendor-defaults.md) (the roster follows vendor defaults); the two are distinct decisions, numbered in parallel by mistake.
+
 - Status: accepted (2026-09-23)
 - **Decision 1 superseded for routine runs only by
   [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
