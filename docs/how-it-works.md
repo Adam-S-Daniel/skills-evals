@@ -176,7 +176,7 @@ for adam-agentskills, and the workflow exits 2 if the policy is switched to
 ### Draft mode: new skills from lessons, hooks first
 
 The session miner writes redacted lesson proposals to
-adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json`.
+adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
 Draft mode is what consumes the `new-skill` kind:
 
 1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). One proposal:
