@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EnnsuzC9HnEKxnA2XjtWhU",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml -L 20",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EnnsuzC9HnEKxnA2XjtWhU",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A7JAq2euT3quHTn2xYGVrz",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs -q '.jobs[] | .name as $n | [$n, .startedAt, .completedAt] , (.steps[]...",
+      "input_chars": 344,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A7JAq2euT3quHTn2xYGVrz",
+      "is_error": false,
+      "output": "== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"headBranch\": \"main\",\n  \"headSha\": \"3f6c1e23f6c1e23f6c1e23f6c1e23f6c1e23f6c1\",\n  \"name\": \"e2e\",\n  \"number\": 21,\n  ...",
+      "output_chars": 7541,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S7ULznCyCfcvU4Ss57UFCR",
+      "name": "Bash",
+      "input": "cd $TMPDIR; for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs > $r.json; done\npython3 -I - <<'E'\nimport json,datetime as d\np=lambda s:...",
+      "input_chars": 721,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S7ULznCyCfcvU4Ss57UFCR",
+      "is_error": false,
+      "output": "71001 e2e (chromium)     total=93s | Install browser OS dependencies=24s | Install browser=11s | Run Playwright tests=42s\n71001 e2e (firefox)      total=97s | Install browser OS dependencies=20s | Install browser=5s | Run Playwright tests=51s\n71001 e2e (webkit)       total=94s | Install browser OS d...",
+      "output_chars": 3669,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MXt2PEiJZbGhkDogWvh7fP",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QhmS3qpunu2LnzBkvaajNs",
+      "name": "Bash",
+      "input": "git diff --stat",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MXt2PEiJZbGhkDogWvh7fP",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 89,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QhmS3qpunu2LnzBkvaajNs",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 4 ++++\n 1 file changed, 4 insertions(+)",
+      "output_chars": 68,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VZ7hEoqQSeDyBJdqs9H99S",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml -L 20",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VZ7hEoqQSeDyBJdqs9H99S",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KdjUc11bAkUdXQJ3PQFVDj",
+      "name": "Bash",
+      "input": "for r in 71002 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs -q '.jobs[] | \"\\(.name) \\(.startedAt) \\(.completedAt)\", (.steps[] | select(.name|t...",
+      "input_chars": 304,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KdjUc11bAkUdXQJ3PQFVDj",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.5KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71002\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-13T15:41:27Z\",\n  \"databaseId\": 71002,\n  \"displayTitle\": \"Bump eslint to 9.38.0\",\n  \"event\": \"push\",\n  \"headBr...",
+      "output_chars": 2217,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V3NrECqGE4EL5NYc74rdtT",
+      "name": "Bash",
+      "input": "for r in 71002 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs | jq -r '.jobs[] | .name as $n | .steps[] | select(.name|test(\"cache|Install|Run P...",
+      "input_chars": 307,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V3NrECqGE4EL5NYc74rdtT",
+      "is_error": false,
+      "output": "== 71002\ne2e (chromium) | Install dependencies | 10s | success\ne2e (chromium) | Install browser OS dependencies | 19s | success\ne2e (chromium) | Install browser | 10s | success\ne2e (chromium) | Run Playwright tests | 44s | success\ne2e (firefox) | Install dependencies | 9s | success\ne2e (firefox) | I...",
+      "output_chars": 5288,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SEQBz2xsckTHMDu5Bi6vUW",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015sw5E4Xao3vXNeRf2BKCmC",
+      "name": "Bash",
+      "input": "git diff --stat",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SEQBz2xsckTHMDu5Bi6vUW",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 89,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015sw5E4Xao3vXNeRf2BKCmC",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 3 +++\n 1 file changed, 3 insertions(+)",
+      "output_chars": 67,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

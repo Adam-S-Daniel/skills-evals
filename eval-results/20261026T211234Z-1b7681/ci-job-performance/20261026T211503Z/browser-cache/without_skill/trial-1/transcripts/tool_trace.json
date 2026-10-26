@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GqG1jjb95v9jNn8NtpscfK",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml -L 20",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GqG1jjb95v9jNn8NtpscfK",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0176ogZwk82vmDnrWephJTTb",
+      "name": "Bash",
+      "input": "for r in 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs -q '.jobs[] | \"\\(.name) \\(.startedAt) \\(.completedAt)\", (.steps[] | select(.name|t...",
+      "input_chars": 302,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0176ogZwk82vmDnrWephJTTb",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.5KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71003\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-14T11:02:56Z\",\n  \"databaseId\": 71003,\n  \"displayTitle\": \"Fix footer link on the about page\",\n  \"event\": \"push...",
+      "output_chars": 2176,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VFxCJf29Fwb689o3dWxt4s",
+      "name": "Bash",
+      "input": "for r in 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs | jq -r '.jobs[] | .name as $n | .steps[] | select(.name|test(\"cache|Install|Playw...",
+      "input_chars": 309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VFxCJf29Fwb689o3dWxt4s",
+      "is_error": false,
+      "output": "== 71003\ne2e (chromium) | Install dependencies | 8s | success\ne2e (chromium) | Install browser OS dependencies | 17s | success\ne2e (chromium) | Install browser | 11s | success\ne2e (chromium) | Run Playwright tests | 38s | success\ne2e (firefox) | Install dependencies | 12s | success\ne2e (firefox) | I...",
+      "output_chars": 5289,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019ooSLDBqAYvV8jyQZwxy2G",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019ooSLDBqAYvV8jyQZwxy2G",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 89,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

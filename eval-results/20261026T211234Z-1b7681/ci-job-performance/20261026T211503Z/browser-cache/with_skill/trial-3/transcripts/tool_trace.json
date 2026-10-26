@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HDJS9P7PY58jPYZTxhzCUh",
+      "name": "Skill",
+      "input": "ci-job-performance",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HDJS9P7PY58jPYZTxhzCUh",
+      "is_error": false,
+      "output": "Launching skill: ci-job-performance",
+      "output_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Mkrw5SUv5FgYXyKimZjRsK",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Mkrw5SUv5FgYXyKimZjRsK",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    name: e2e (${{ matrix.browser }})\n14\t    runs-on: ubuntu-latest\n15\t    timeout-minutes: 20\n16\t    strategy:\n17\t      fail-fast: false\n18\t      matrix:\n19\t       ...",
+      "output_chars": 1463,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015fhYLWeWoHcivBQK1CAiuh",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 20 --json databaseId,conclusion,createdAt,headBranch",
+      "input_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015fhYLWeWoHcivBQK1CAiuh",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 4504,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0139ZTf6fMz9WN5r5prK7wUm",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs --jq '.jobs[] | .name as $j | .steps[] | select(.name|test(\"browser|Br...",
+      "input_chars": 336,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0139ZTf6fMz9WN5r5prK7wUm",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (73.4KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"...",
+      "output_chars": 2223,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DyKDnbgesH1cgBdghQ6yyp",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs > $TMPDIR/$r.json; done; python3 -I - <<'E'\nimport json,os,datetime as d\nt=os.enviro...",
+      "input_chars": 827,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DyKDnbgesH1cgBdghQ6yyp",
+      "is_error": false,
+      "output": "71001 e2e (chromium) 93 ['Install browser=24s/success', 'Install browser=11s/success', 'Run Playwri=42s/success']\n71001 e2e (firefox) 97 ['Install browser=20s/success', 'Install browser=5s/success', 'Run Playwri=51s/success']\n71001 e2e (webkit) 94 ['Install browser=17s/success', 'Install browser=7s/...",
+      "output_chars": 3322,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MHNm18y6hdgVZDNUjqBcz5",
+      "name": "Bash",
+      "input": "python3 -I - <<'E'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Measured on runs 71001-72004: a cache hit ...",
+      "input_chars": 600,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MHNm18y6hdgVZDNUjqBcz5",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 6 +++++-\n 1 file changed, 5 insertions(+), 1 deletion(-)",
+      "output_chars": 85,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
