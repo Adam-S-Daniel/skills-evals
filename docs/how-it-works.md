@@ -173,6 +173,48 @@ for adam-agentskills, and the workflow exits 2 if the policy is switched to
 `auto` before that exists. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
+### Draft mode: new skills from lessons, hooks first
+
+The session miner writes redacted lesson proposals to
+adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json`.
+Draft mode is what consumes the `new-skill` kind:
+
+1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). One proposal:
+   the most evidence, then the newest, then by name; never a subject that
+   is already a skill, already has `evals/<subject>/`, or was drafted
+   before (any `claude/draft-skill-*` branch). It dispatches
+   `routine-eval-fire.yml` in draft mode only when one fire fits the
+   weekly allowance guard.
+2. **Triage, hooks first** (Adam, 2026-10-26: "I want the first choice to
+   be git hooks whenever possible"). The routine first asks whether the
+   lesson can be enforced mechanically: a check in the fleet's
+   `.githooks/agent-checks` runner (_agent-guidance ADR 0021, enforced by
+   the required `agent-checks` CI job) or a PreToolUse guard. If so it
+   drafts **no skill**: it records `decision: hook-first` with a check
+   sketch, and the gate opens a `Hook proposal: <subject>` issue here,
+   labeled `hook-proposal`, for the agent-checks lane. Only a lesson that
+   cannot be checked becomes a skill; guidance text comes last of all.
+3. **Draft and measure.** Otherwise the routine drafts the skill with
+   Anthropic's skill-creator (pinned commit) plus four fixtures modeled on
+   `evals/writing-adrs/`, then `scripts/draft_new_skill.py measure` runs
+   both arms on them. It is accepted only if every fixture produced both
+   arms, the with-skill arm passed every objective check on at least one
+   fixture, and the with-skill pass rate beats the without-skill rate.
+   The record says why the lesson was not a hook (`triage`).
+4. **Gate** (`routine-draft-skill-gate.yml`). The routine always pushes
+   `claude/draft-skill-<run id>`; the gate validates it from the default
+   branch without running it. Accepted: a draft pull request in
+   adam-agentskills with the skill, then a draft pull request here with
+   only `evals/<subject>/` (merge the skill first). Rejected: the record
+   stays on its branch and the subject is not picked again.
+
+**The decline path.** When the agent-checks lane finds a hook proposal
+cannot be checked at commit time, it closes the issue as not planned. The
+picker then re-admits that subject with `hook_declined`, and the routine
+skips triage and drafts a skill. The routine's saved prompt for this mode
+is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
+approves changes to it.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected
