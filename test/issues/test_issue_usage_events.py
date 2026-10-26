@@ -31,8 +31,10 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "test" / "issues"))
 import model_usage_census as census  # noqa: E402
+import test_issue_skill_usage  # noqa: E402
 from test_issue_skill_usage import (  # noqa: E402
-    ALLOW, NOW, NOW_TEXT, PublisherTests, skill_call, typed, write_transcript)
+    ALLOW, NOW, NOW_TEXT, skill_call, typed, write_transcript)
+
 
 SESSION = "00000000-1111-4222-8333-444444444444"
 
@@ -457,11 +459,16 @@ class PrivatePublishTests(unittest.TestCase):
     seams as test_issue_skill_usage's PublisherTests (whose setUp, seed and
     helpers this borrows), plus USAGE_EVENTS_URL: a local bare repository."""
 
-    SCRIPT, BRANCH = PublisherTests.SCRIPT, PublisherTests.BRANCH
+    # Reached through its module, never bound by name here: a TestCase class
+    # in this module's namespace is collected a second time, and
+    # test/run_tests.py's suite-coverage check rejects the extra copies.
+    _base = test_issue_skill_usage.PublisherTests.__dict__
+    SCRIPT, BRANCH = _base["SCRIPT"], _base["BRANCH"]
     EVENTS = "persistent/usage-events"
     setUp, git, seed, run_script, head = (
-        PublisherTests.setUp, PublisherTests.git, PublisherTests.seed,
-        PublisherTests.run_script, PublisherTests.head)
+        _base["setUp"], _base["git"], _base["seed"],
+        _base["run_script"], _base["head"])
+    del _base
 
     def events_url(self):
         return self.env["USAGE_EVENTS_URL"]
