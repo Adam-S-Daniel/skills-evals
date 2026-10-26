@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012x7NhznLyADQ2B1ucW17Vr",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012x7NhznLyADQ2B1ucW17Vr",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/synced/00000000...",
+      "output_chars": 996,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DpwHXGKq2HHd5WrvfCicFT",
+      "name": "Bash",
+      "input": "cat README.md; echo ====; cat session/skills.lock; echo ====; cat session/skills/.skills-bootstrap-installed.json; echo ====; cat session/skills/synced/*/manifest.json; echo ====; ls -la session/skill...",
+      "input_chars": 297,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DpwHXGKq2HHd5WrvfCicFT",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 3301,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dm4z7ZqFQnzZrSavYhZtG9",
+      "name": "Bash",
+      "input": "for f in registry/plugins/adam/skills/writing-adrs/SKILL.md session/skills/writing-adrs/SKILL.md session/skills/synced/*<path>; do echo \"=== $f\"; cat \"$f\"; done; echo; sha256sum $(find session registr...",
+      "input_chars": 476,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dm4z7ZqFQnzZrSavYhZtG9",
+      "is_error": false,
+      "output": "=== registry/plugins/adam/skills/writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n##...",
+      "output_chars": 2090,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BaeDkNpeb7TwWUHuYML4U7",
+      "name": "Bash",
+      "input": "d=<path>; ls -R $d; grep -n -i -E 'synced|shadow|anthropic-skills|manifest|digest' -r $d | head -60",
+      "input_chars": 223,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BaeDkNpeb7TwWUHuYML4U7",
+      "is_error": false,
+      "output": "<path>:\nPURPOSE.md\nSKILL.md\nscripts\n\n<path>:\ncheck_provenance.py\ntest_check_provenance.py\n<path>:7:  `synced/manifest.json`, `claude plugin list`), attribute every skill to the\n<path>:9:  record rather than guessing, and flag silent shadowing and dangling payload\n<path>:17:  Claude Code only. Reads ...",
+      "output_chars": 13716,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A1rHa5wuV1vvrfhciQNaGP",
+      "name": "Bash",
+      "input": "d=<path>; sed -n 95,160p $d/SKILL.md; echo ----; sed -n 280,400p $d/SKILL.md; echo ----; sed -n 450,490p $d/SKILL.md; python3 -I $d/scripts/check_provenance.py --help 2>&1 | head -30",
+      "input_chars": 306,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A1rHa5wuV1vvrfhciQNaGP",
+      "is_error": false,
+      "output": "expectation the rest of this skill can only describe, never verdict.\n\n## 3. Collect the actual\n\nSeven independent signals: the five commands below, the session's own skill\nlisting, and on a terminal the `--account-channel` check. Gather them all \u2014\neach one is blind to something the others see.\n\n```b...",
+      "output_chars": 14408,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LYMEKrydojrzE2KCRYL3rD",
+      "name": "Bash",
+      "input": "d=<path>; md5sum $(find session -type f) > $TMPDIR/before; CLAUDE_CODE_ACCOUNT_UUID=00000000-0000-4000-8000-000000000002 python3 -I $d/scripts/check_provenance.py --skills-dir session/skills --lock se...",
+      "input_chars": 460,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LYMEKrydojrzE2KCRYL3rD",
+      "is_error": false,
+      "output": "provenance: 2 on disk, 2 hook-installed, 0 unattributed, 0 not in the store \u2014 record present \u2014 surface unsure \u2014 1 finding\n\nRECORD   session/skills/.skills-bootstrap-installed.json\n  present \u2014 2 install(s) recorded. The rows below are the hook's own account\n  of what it wrote, not an inference from t...",
+      "output_chars": 3260,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B2tdf9iXYw6qo7ip156Rzr",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B2tdf9iXYw6qo7ip156Rzr",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014xVbVTAdo56ZkzXxqj6QVR",
+      "name": "Bash",
+      "input": "git status --short",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014xVbVTAdo56ZkzXxqj6QVR",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? FINDINGS.md",
+      "output_chars": 153,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
