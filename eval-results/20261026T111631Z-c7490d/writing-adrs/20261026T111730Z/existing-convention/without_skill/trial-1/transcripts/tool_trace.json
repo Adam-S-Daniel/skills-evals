@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017hKHoXvHegbVL5aK1sPFS2",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print && cat docs/decisions/README.md && ls docs/decisions && cat scripts/retry.sh CHANGELOG.md",
+      "input_chars": 176,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017hKHoXvHegbVL5aK1sPFS2",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n422f22...",
+      "output_chars": 2995,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DTEX6GNjjmnsx9ktDqk8zA",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003*.md docs/decisions/0002*.md; git log -1 --format='%an %ad'",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DTEX6GNjjmnsx9ktDqk8zA",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 1157,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PfDvSLVdZxuNEiYBNT2fsr",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 202...",
+      "input_chars": 1715,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PfDvSLVdZxuNEiYBNT2fsr",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex f1454d8..77ab0f1 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -21,3 +21,4 @@ these sections, in this order:\n | [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process m...",
+      "output_chars": 1924,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XsDJ8H7s5cboMmnw1Am7gS",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='docs/decisions/0004-retry-transient-failures-with-capped-backoff.md'\ns=open(p).read()\ns=s.replace(\"\"\"capped at 5 attempts\nwith exponential backoff (1s, 2s, 4s, 8s, 16s), and keep ...",
+      "input_chars": 481,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XsDJ8H7s5cboMmnw1Am7gS",
+      "is_error": false,
+      "output": "# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 2026-03 outage (PR #41), a single 503 from the fulfillment service\nwas retried in a tight loop with no cap and no delay. It pinned a worker for\n40 minutes and starved the queue behind i...",
+      "output_chars": 1055,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017xdXHjAYvF6JfCAp9WGY3f",
+      "name": "Bash",
+      "input": "sed -i 's/^A stuck upstream call now costs a worker about 15 seconds of waiting$/A persistently failing upstream call now costs a worker about 15 seconds of/; s/^before it gives up, instead of pinning...",
+      "input_chars": 362,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017xdXHjAYvF6JfCAp9WGY3f",
+      "is_error": false,
+      "output": "## Consequences\n\nA persistently failing upstream call now costs a worker about 15 seconds of\nbackoff before it gives up, instead of pinning it indefinitely. Outages longer than\nthat surface as failures rather than being ridden out silently. Backoff\nlogic lives in one place, so changing the policy me...",
+      "output_chars": 341,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
