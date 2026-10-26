@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012SW1DZszvzGYAv5cLcCT9P",
+      "name": "Bash",
+      "input": "pwd; ls -la; git remote -v; git log --oneline -3; ls <path> <path> 2>&1 | head -50",
+      "input_chars": 93,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012SW1DZszvzGYAv5cLcCT9P",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 14:43 .\ndrwx------ 6 root root 4096 Oct 26 14:43 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 14:43 .claude\ndrwxr-xr-x 3 root root 4096 Oct 26 14:31 .gh...",
+      "output_chars": 2396,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UAzu23sp8UiSMumnT8WjsP",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -R bin .gh .claude | head -40; cat bin/*",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UAzu23sp8UiSMumnT8WjsP",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (54.7KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2217,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XynD4jKMxEZ9RubcshoNy8",
+      "name": "Bash",
+      "input": "cd .gh/replay/api/repos/example-org; find . -type f | sort; for f in $(find . -type f -name '*.json' | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 146,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XynD4jKMxEZ9RubcshoNy8",
+      "is_error": false,
+      "output": "./service-alpha.json\n./service-alpha/actions/permissions.json\n./service-alpha/actions/permissions/fork-pr-contributor-approval.json\n./service-alpha/rulesets.json\n./service-alpha/rulesets/7201.json\n./service-alpha/rulesets/7302.json\n./service-beta.json\n./service-beta/actions/permissions.json\n./servic...",
+      "output_chars": 4184,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

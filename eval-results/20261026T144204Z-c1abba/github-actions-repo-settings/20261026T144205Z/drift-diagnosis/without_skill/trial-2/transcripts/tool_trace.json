@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VSPPFvhAmNyG6837QvxoWN",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git remote -v; ls <path> <path> 2>&1 | head -50",
+      "input_chars": 109,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VSPPFvhAmNyG6837QvxoWN",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Oct 26 14:44 .\ndrwx------ 6 root root 4096 Oct 26 14:44 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 26 09:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 14:44 .claude\ndrwxr-xr-x 3 root root 4096 Oct 26 14:31 .gh...",
+      "output_chars": 2395,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MGomef17t2QgNYZsGGHJ63",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md repo-settings.yml; ls -la bin .gh .claude; cat bin/*; git log --oneline | head",
+      "input_chars": 130,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MGomef17t2QgNYZsGGHJ63",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (54.5KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2203,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RgsU4JEVgG77j4AhDKLSac",
+      "name": "Bash",
+      "input": "cd <path>; sed -n 1,60p bin/gh; find .gh | head -50; echo $GH_REPLAY_DIR; which gh",
+      "input_chars": 109,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RgsU4JEVgG77j4AhDKLSac",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 5079,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013hF2dVTyQ6NHKVwB2joKmd",
+      "name": "Bash",
+      "input": "cd <path>; for f in $(find . -name '*.json' | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 149,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013hF2dVTyQ6NHKVwB2joKmd",
+      "is_error": false,
+      "output": "=== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n=== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== ./service-alpha/actions/permissions/fork-pr-co...",
+      "output_chars": 3760,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
