@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K7bxHwHxu61bug8gLhWMow",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K7bxHwHxu61bug8gLhWMow",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012RCW1nhPYfiWLcaDz5vU7R",
+      "name": "Bash",
+      "input": "git status -sb && git log --oneline -10 && ls -a && ls .github/workflows && cat .github/workflows/*",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012RCW1nhPYfiWLcaDz5vU7R",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n00fb0ce initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.j...",
+      "output_chars": 693,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M5iaFoQWZDsS7vwpc5ggwZ",
+      "name": "Bash",
+      "input": "git remote -v; find bin src test .gh -type f | head -50; cat README.md; for f in $(find src test bin -type f -name '*'); do echo \"== $f\"; cat \"$f\"; done",
+      "input_chars": 152,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M5iaFoQWZDsS7vwpc5ggwZ",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\norigin\t<path> (fetch)\norigin\t<path> (push)\nbin/gh\nsrc/sequence.py\ntest/test_current.py\n.gh/replay/auth-status.txt\n.gh/replay/run-view-77001.json\n.gh/replay/api/repos/example-org/example-ser...",
+      "output_chars": 2208,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Uc2Bgn9eqEDbEusxbLXNmx",
+      "name": "Bash",
+      "input": "cd <path> && cat run-view-77001.log; echo; cat api/repos/example-org/example-service/check-runs/99001/annotations.json; echo; cat run-list.json | head -40; echo; cat \"api/repos/example-org/example-ser...",
+      "input_chars": 286,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Uc2Bgn9eqEDbEusxbLXNmx",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 2347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RuWymVKQqV3KFkNUKg81HG",
+      "name": "Bash",
+      "input": "cd <path> && git log --all --oneline; git log -p --follow --oneline -- test .github | head -60; echo ---; python3 -B -m unittest test.test_legacy 2>&1 | tail -5; echo \"exit=$?\"; echo ---; python3 -B -...",
+      "input_chars": 259,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RuWymVKQqV3KFkNUKg81HG",
+      "is_error": false,
+      "output": "00fb0ce initial commit\n0933504 Use current test discovery\nf0be913 Import example service\nfatal: --follow requires exactly one pathspec\n---\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\nexit=0\n---\n.\n------------------------------------...",
+      "output_chars": 359,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A212T6V6omrA8YmEthpLrb",
+      "name": "Bash",
+      "input": "git log --all --stat --format='%h %d %s' | head -40; git branch -a",
+      "input_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A212T6V6omrA8YmEthpLrb",
+      "is_error": false,
+      "output": "00fb0ce  (HEAD -> main) initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   |   35 +\n .../example-org...",
+      "output_chars": 1697,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

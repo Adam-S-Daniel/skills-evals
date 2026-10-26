@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PTtjDUy9NgU8V8FPK6ox6z",
+      "name": "Bash",
+      "input": "git status && git log --oneline -10 && ls -a && ls .github/workflows 2><path>",
+      "input_chars": 80,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PTtjDUy9NgU8V8FPK6ox6z",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.claude/\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track...",
+      "output_chars": 521,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VEDXmgDuCNBVGUVa3X5968",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml README.md; find bin src test .gh -type f | head -50; git show --stat HEAD | head -30",
+      "input_chars": 113,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VEDXmgDuCNBVGUVa3X5968",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 2735,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MzPf2KSUMqeAfJArfhmef6",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; echo ---; cat .gh/replay/run-list.json .gh/replay/api/repos/example-org/example-service/check-runs/99001/annotations.json .gh/replay/api/repos/example-org/example-se...",
+      "input_chars": 385,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MzPf2KSUMqeAfJArfhmef6",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 3046,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GJQiunV6TicZymbzr3Ea3F",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -4; echo \"== discover\"; python3 -m unittest discover -s test 2>&1 | tail -4; git log --all --oneline -- 'test/*' ; ls test",
+      "input_chars": 171,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GJQiunV6TicZymbzr3Ea3F",
+      "is_error": false,
+      "output": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n== discover\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK\nf0be913 Import example service\n__pycache__\ntest_current.py",
+      "output_chars": 277,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
