@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ARjiwNcp43uJJLMtDSJvJ6",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor issues 2>&1 | head -50",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ARjiwNcp43uJJLMtDSJvJ6",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nls: cannot access 'issues': No such file or directory\nvendor:\ntotal 16\ndrwxr-xr-x 2 root root 4096 Oct 25 21:39 .\ndrwxr-xr-x 8 root root 4096 Oct 26 00:19 ..\n-rw-r--...",
+      "output_chars": 400,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ls4UoAeZYdvrw3Qkx24g1j",
+      "name": "Bash",
+      "input": "for f in vendor/* .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh; do echo \"=== $f\"; cat $f; done",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ls4UoAeZYdvrw3Qkx24g1j",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr w...",
+      "output_chars": 3890,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017seqr72gxX7orLR497f6YE",
+      "name": "Bash",
+      "input": "mkdir issues && cat > issues/01-session-start-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions after ExampleCLI v4.2.0\n\n## Context\n\nExampleCLI v4.2.0 chan...",
+      "input_chars": 3459,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017seqr72gxX7orLR497f6YE",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-forked-sessions.md\n02-synced-skills-renamed-with-synced-prefix.md",
+      "output_chars": 94,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

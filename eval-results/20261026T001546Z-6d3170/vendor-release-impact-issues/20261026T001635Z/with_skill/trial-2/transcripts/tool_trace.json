@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0152tkbMUCeWQK1tHN8iKxKF",
+      "name": "Skill",
+      "input": "vendor-release-impact-issues",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0152tkbMUCeWQK1tHN8iKxKF",
+      "is_error": false,
+      "output": "Launching skill: vendor-release-impact-issues",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W9XJTFMmoB8AQQxg1238Ge",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -R vendor | head -50",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W9XJTFMmoB8AQQxg1238Ge",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nvendor:\nRELEASES.md\nreleases.json",
+      "output_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TQX3KRNknHe43CHU8qaBs7",
+      "name": "Bash",
+      "input": "cat .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh; cat vendor/RELEASES.md; head -c 3000 vendor/releases.json; git log --oneline | head",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TQX3KRNknHe43CHU8qaBs7",
+      "is_error": false,
+      "output": "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/session-start.sh\"\n          }\n        ]\n      }\n    ]\n  }\n}\nname: CI\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\nj...",
+      "output_chars": 3764,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J1eDgwJMJvDG4unMqUn3Jc",
+      "name": "Bash",
+      "input": "mkdir -p issues && S=<path><redacted>/scratchpad && cat > $S/gen.py <<'EOF'\nimport json,re,sys\nroot=sys.argv[1]\ntimes={v:d[\"published_at\"] for v,d in json.load(open(root+\"<path>\"))[\"example-cli\"].item...",
+      "input_chars": 4471,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J1eDgwJMJvDG4unMqUn3Jc",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 hooks report source \"fork\": session hooks match startup|resume\n\nFound in a review of the vendored ExampleCLI release notes (group: session-start hook source). Not yet verified against this repo.\n\n## ExampleCLI change\n\n> Session-start hooks now report source `\"fork\"` for forked ses...",
+      "output_chars": 3784,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
