@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cc8qMwGaMbymVDxRvR8FK3",
+      "name": "Bash",
+      "input": "git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && cat AGENTS.md",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cc8qMwGaMbymVDxRvR8FK3",
+      "is_error": false,
+      "output": "28b4955 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode\n...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WQVYasHPFJtUibqa6gJ886",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules .ripgreprc .gitconfig .bashrc .zshrc .profil...",
+      "input_chars": 281,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WQVYasHPFJtUibqa6gJ886",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr w...",
+      "output_chars": 4422,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019rnZkwz3amNLPWcebtUW1e",
+      "name": "Bash",
+      "input": "git ls-files && git show --stat HEAD | head -30; grep -rn \"skill\" --exclude-dir=.git . 2><path>",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019rnZkwz3amNLPWcebtUW1e",
+      "is_error": true,
+      "output": "Exit code 2\n.example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\ncommit 28b4955afc23fac59d2df5d688c6aa3d75f9e5cd\nAuthor: <redacted> <<email>>\nDate:   Mon Oct 26 15:08:40 2026 +0000\n\n    initial commit\n\n .example-cli/se...",
+      "output_chars": 881,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P9Bj8UY2CPuj9qRfvRjaAa",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook no longer runs for forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI 4.2.0 chang...",
+      "input_chars": 4765,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P9Bj8UY2CPuj9qRfvRjaAa",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-forked-sessions.md\n02-synced-skills-renamed-synced-prefix.md\n03-bump-ci-example-cli-from-4-1-0.md",
+      "output_chars": 126,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
