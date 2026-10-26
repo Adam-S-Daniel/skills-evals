@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0182f1Vc6Tw2XrQjcq7obcnz",
+      "name": "Bash",
+      "input": "ls -la && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0182f1Vc6Tw2XrQjcq7obcnz",
+      "is_error": false,
+      "output": "total 32\ndrwxr-xr-x 6 root root 4096 Oct 26 09:51 .\ndrwx------ 6 root root 4096 Oct 26 09:51 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 09:51 .claude\ndrwxr-xr-x 3 root root 4096 Oct 25 21:39 .gh\ndrwxr-...",
+      "output_chars": 1926,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013tGZbriTNzunhXtms1cUpF",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml bin/gh; ls -R .claude; for f in $(find .gh -type f); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013tGZbriTNzunhXtms1cUpF",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2192,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EQTCaV9sESeXNMvJS9TT8F",
+      "name": "Bash",
+      "input": "ls -R .claude; for f in $(find .gh -type f | sort); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EQTCaV9sESeXNMvJS9TT8F",
+      "is_error": false,
+      "output": ".claude:\n== .gh/replay/api/repos/example-org/service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n== .gh/replay/api/repos/example-org/service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_r...",
+      "output_chars": 4099,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011TfQGzKtzpFQTkccAzvgTy",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:github-actions-repo-settings",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011TfQGzKtzpFQTkccAzvgTy",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:github-actions-repo-settings",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HK8tn9WEcWTkRuYyuSDsKa",
+      "name": "Bash",
+      "input": "cd <path> && cat assets/repo-settings.schema.md; grep -n \"admin_bypass\\|manage\\|allowed_merge\\|other ruleset\\|bypass_mode\" scripts/repo_settings.py | head -60",
+      "input_chars": 297,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HK8tn9WEcWTkRuYyuSDsKa",
+      "is_error": false,
+      "output": "# repo-settings config schema\n\n`repo_settings.py` reads a YAML document describing the **desired** state of a\nrepo's Actions-security settings and default-branch protection. Branch\nprotection is expressed as a **GitHub repository ruleset** (the modern\nreplacement for classic branch protection, and t...",
+      "output_chars": 6881,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014HxjAz3qcxorSVkZyKQhqu",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay; for r in example-org/service-alpha example-org/service-beta; do echo \"== $r\"; gh api repos/$r --jq '{private,default_branch}'; gh api repos/$r...",
+      "input_chars": 364,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014HxjAz3qcxorSVkZyKQhqu",
+      "is_error": false,
+      "output": "== example-org/service-alpha\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n{\n  \"approval_policy\": \"all_external_contributors\"\n}\n[\n  {\n    \"enforcement\": \"active\",\n    \"...",
+      "output_chars": 862,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

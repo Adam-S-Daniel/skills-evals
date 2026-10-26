@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014SYuB9vv4XTfzAL3cYxWzL",
+      "name": "Bash",
+      "input": "ls -la && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014SYuB9vv4XTfzAL3cYxWzL",
+      "is_error": false,
+      "output": "total 32\ndrwxr-xr-x 6 root root 4096 Oct 26 09:53 .\ndrwx------ 6 root root 4096 Oct 26 09:53 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 09:53 .claude\ndrwxr-xr-x 3 root root 4096 Oct 25 21:39 .gh\ndrwxr-...",
+      "output_chars": 1926,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TrMr4Ntc7yq199D5JoKaTD",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; echo ----; cat bin/gh; ls .claude -R",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TrMr4Ntc7yq199D5JoKaTD",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (54.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2197,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HfbUBetwwkBwpWT1SGG5cR",
+      "name": "Bash",
+      "input": "cd <path> && for f in $(find . -name '*.json' | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 151,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HfbUBetwwkBwpWT1SGG5cR",
+      "is_error": false,
+      "output": "=== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n=== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== ./service-alpha/actions/permissions/fork-pr-co...",
+      "output_chars": 3760,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0183FEyE3TYGpPLbQVmjEtBC",
+      "name": "Bash",
+      "input": "cd <path> && which gh; echo $GH_REPLAY_DIR; ls -a .gh .gh/replay; for r in service-alpha service-beta; do for p in \"\" <path> <path> /rulesets; do echo \"== $r$p\"; gh api repos/example-org/$r$p; echo \" ...",
+      "input_chars": 302,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0183FEyE3TYGpPLbQVmjEtBC",
+      "is_error": false,
+      "output": "<path>\n<path>\n.gh:\n.\n..\nreplay\n\n.gh/replay:\n.\n..\napi\n== service-alpha\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n rc=0\n== service-alpha/actions/permissions\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n rc=0\n== ...",
+      "output_chars": 1266,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AB7wg6t1N6x9B9fj763WLw",
+      "name": "Bash",
+      "input": "for p in service-alpha/rulesets/7201 service-alpha/rulesets/7302 service-beta/rulesets/7202; do gh api repos/example-org/$p --jq '[.id,.name,.enforcement,(.bypass_actors|tostring),([.rules[].type]|joi...",
+      "input_chars": 304,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AB7wg6t1N6x9B9fj763WLw",
+      "is_error": false,
+      "output": "{\n  \"bypass_actors\": [\n    {\n      \"actor_id\": 5,\n      \"actor_type\": \"RepositoryRole\",\n      \"bypass_mode\": \"always\"\n    }\n  ],\n  \"conditions\": {\n    \"ref_name\": {\n      \"exclude\": [],\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ]\n    }\n  },\n  \"enforcement\": \"active\",\n  \"id\": 7201,\n  \"name\":...",
+      "output_chars": 2476,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KwFPU2MhY6tfu2yfiBANFe",
+      "name": "Bash",
+      "input": "ls -la && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KwFPU2MhY6tfu2yfiBANFe",
+      "is_error": false,
+      "output": "total 32\ndrwxr-xr-x 6 root root 4096 Oct 26 09:50 .\ndrwx------ 6 root root 4096 Oct 26 09:50 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 02:45 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 09:50 .claude\ndrwxr-xr-x 3 root root 4096 Oct 25 21:39 .gh\ndrwxr-...",
+      "output_chars": 1926,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TVPnpCXsSWKAz9BHu3Ky9E",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; echo ---; cat bin/gh; echo ---; ls -R .claude; for f in $(find .gh -type f); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 145,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TVPnpCXsSWKAz9BHu3Ky9E",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2196,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DyPmiCubdiMp51TfgSPytW",
+      "name": "Bash",
+      "input": "ls -R .claude; for f in $(find .gh -type f | sort); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DyPmiCubdiMp51TfgSPytW",
+      "is_error": false,
+      "output": ".claude:\n== .gh/replay/api/repos/example-org/service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n== .gh/replay/api/repos/example-org/service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_r...",
+      "output_chars": 4099,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AhZRxKAbiDb75aTfNXvnKE",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:github-actions-repo-settings",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AhZRxKAbiDb75aTfNXvnKE",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:github-actions-repo-settings",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015jSjEPXXzUSiyVYnTRSmac",
+      "name": "Bash",
+      "input": "cd <path> && cat assets/repo-settings.schema.md; grep -n \"admin_bypass\\|manage\\|allowed_merge\\|def diff\\|other ruleset\\|unmanaged\" scripts/repo_settings.py | head -60",
+      "input_chars": 305,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015jSjEPXXzUSiyVYnTRSmac",
+      "is_error": false,
+      "output": "# repo-settings config schema\n\n`repo_settings.py` reads a YAML document describing the **desired** state of a\nrepo's Actions-security settings and default-branch protection. Branch\nprotection is expressed as a **GitHub repository ruleset** (the modern\nreplacement for classic branch protection, and t...",
+      "output_chars": 6631,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Labv5goELXsjFEVUHwWKN6",
+      "name": "Bash",
+      "input": "grep -n \"GH_REPLAY_DIR\\|environ\" bin/gh | head; S=<path>; PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay python3 -I $S diff --config repo-settings.yml; echo \"exit=$?\"",
+      "input_chars": 333,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Labv5goELXsjFEVUHwWKN6",
+      "is_error": false,
+      "output": "4:Point GH_REPLAY_DIR at a directory of responses recorded from a real\n9:  * READS are answered from GH_REPLAY_DIR, keyed by the normalized argv\n47:command can move a record out of the tree a reader looks at. (GH_REPLAY_DIR\n435:    repo = last(flags, \"--repo\") or os.environ.get(\"GH_REPO\", \"OWNER/REP...",
+      "output_chars": 1034,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
