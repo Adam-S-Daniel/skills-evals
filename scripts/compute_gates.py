@@ -192,8 +192,13 @@ def _summaries(tree: Path) -> dict:
 
 
 def _fixture_class(evals_dir: Path, skill: str, fixture, trials: list) -> tuple:
-    """(judge-carried, has objective checks or None when unknown)."""
+    """(judge-carried, has objective checks or None when unknown). A fixture
+    moved under `gates.FIXTURE_ALIASES` is read at its new name, which it
+    pools with only while the content is the same."""
     path = evals_dir / skill / (fixture or "") / run_eval.FIXTURE_FILE
+    alias = gates.FIXTURE_ALIASES.get((skill, fixture or ""))
+    if alias is not None and not path.is_file():
+        path = evals_dir / skill / alias / run_eval.FIXTURE_FILE
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError):

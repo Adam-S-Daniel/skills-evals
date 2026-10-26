@@ -14,7 +14,9 @@ POOLED EVIDENCE (Adam, 2026-10-25), replacing #70's four weekly sweeps.
     (`--roster`). A cell with no run is `missing`; runs of a fixture no
     longer on main, or of a model no longer on the roster, are not read: the
     roster follows current use (Adam, 2026-10-25), so a superseded model
-    leaves at once and no evidence is asked of it. The arm
+    leaves at once and no evidence is asked of it. A fixture moved to a
+    new name with its content unchanged keeps its runs (`FIXTURE_ALIASES`,
+    digest-checked by `pooled_fixture`). The arm
     model is the REQUESTED one: `cross_model.model`, which
     harness/run_eval.py writes from the arm's own `--model`
     (`_write_summary`'s `agent_model`) and `run_eval._arm_model` reads back;
@@ -217,6 +219,16 @@ INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable",
 INFRASTRUCTURE_DETAIL_PREFIX = "scorer_sandbox_unavailable exit="
 #: Why a run with a scored trial that has no check result does not count.
 NO_CHECKS_REASON = "a trial without objective checks on a fixture that has them"
+#: Fixtures moved from the flat `evals/<skill>/` into a named subdirectory
+#: with their content unchanged (#422, #427): {(skill, old name, "" for
+#: flat): new name}. A run recorded under the old name pools with the new
+#: one only while its `fixture_digest` equals the new fixture's digest on
+#: main (`pooled_fixture`), so an alias never joins different content.
+FIXTURE_ALIASES = {
+    ("review-bash-ci-reliability", ""): "release-pipeline",
+    ("vendor-release-impact-issues", ""): "issue-hygiene",
+    ("workflow-path-audit", ""): "required-check-routing",
+}
 
 
 class GatePolicyError(ValueError):
@@ -902,16 +914,29 @@ def _joint_context(with_runs: list, without_runs: list, models: list):
     return candidates[0][1:]
 
 
+def pooled_fixture(run: dict, skill: str, expected: dict) -> str:
+    """The fixture on main a run of `skill` counts for: its own name ("" for
+    flat), or its `FIXTURE_ALIASES` target when the old name is no longer on
+    main and the run's fixture digest equals the target's there."""
+    name = run["fixture"] or ""
+    target = FIXTURE_ALIASES.get((skill, name))
+    if target is None or name in expected or target not in expected:
+        return name
+    digest = expected[target].get("fixture_digest")
+    return target if digest is not None and run["fixture_digest"] == digest else name
+
+
 def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
     """Which arm runs each (fixture, model) cell of `skill` holds, each arm
     pooled by its own key against the content on main (module docstring).
     `expected` maps each fixture on main ("" for a flat one) to its
-    {"fixture_digest", "tested_digest"}, either None when unknown. The one
-    place runs are grouped; swap it to change the window."""
+    {"fixture_digest", "tested_digest"}, either None when unknown. A run's
+    fixture is `pooled_fixture`'s. The one place runs are grouped; swap it
+    to change the window."""
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
-        mine = [r for r in own if (r["fixture"] or "") == fixture]
+        mine = [r for r in own if pooled_fixture(r, skill, expected) == fixture]
         tested, fdig = main.get("tested_digest"), main.get("fixture_digest")
         current_with = [r for r in mine if r["role"] == "with" and tested is not None
                         and r["tested_digest"] == tested and fdig is not None

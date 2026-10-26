@@ -216,6 +216,12 @@ lock pins, so a shallow one is refused), and the workflow exits 2 if the
 policy is switched to `auto` before that exists. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
+A fixture moved into a named subdirectory with its content unchanged keeps
+its evidence: `FIXTURE_ALIASES` in `harness/gates.py` maps the old name (""
+for a flat fixture) to the new one, and an old run pools with it only while
+its `fixture_digest` equals the new fixture's on main. It lists the three
+fixtures nested on 2026-10-26 (#422, #427).
+
 ### Draft mode: new skills from lessons, hooks first
 
 The session miner writes redacted lesson proposals to
