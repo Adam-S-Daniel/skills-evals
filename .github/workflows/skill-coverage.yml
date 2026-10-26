@@ -211,6 +211,14 @@ jobs:
           persist-credentials: false
 
       - name: Check out adam-agentskills
+        # Shallow is enough for `proposal`, the committed mode, which only
+        # reads the tree to locate the skill. Wiring `auto` needs
+        # `fetch-depth: 0` as well as a write credential: the removal branch
+        # re-pins `skills.lock`, and both that re-pin and its
+        # `--check-current` read the commit the lock pins, which a shallow
+        # clone does not contain. retire_skill.py refuses a shallow checkout
+        # in auto mode rather than pushing a branch the registry's required
+        # checks would reject (ADR 0014, decision 5).
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills

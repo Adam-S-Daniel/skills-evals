@@ -48,7 +48,7 @@ _ADAMDANIEL_AI = (25099, 14017, 885455)
 MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     "evals/workflow-path-audit": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
-    "evals/review-bash-ci-reliability": (_CMS_PLATFORM, _CMS_PLATFORM),
+    "evals/review-bash-ci-reliability/release-pipeline": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/skills-doctor/bucketed-account-store": ((25099, 6115, 644882),) * 2,
     "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI, _ADAMDANIEL_AI),
     "evals/writing-adrs/bootstrap": (_CMS_PLATFORM, _CMS_PLATFORM),

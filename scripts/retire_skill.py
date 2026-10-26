@@ -25,11 +25,21 @@ anything but `auto` is `proposal`):
     is filed again. A human removes. An issue anyone else wrote is ignored,
     whatever it quotes.
   * `auto` (Adam, 2026-10-25; docs/decisions/0014): a branch
-    `retire-skill/<skill>` is prepared in the adam-agentskills checkout that
-    deletes `plugins/<plugin>/skills/<skill>/`, raises the plugin's patch
-    version in both manifests (adam-agentskills ADR 0009) and adds a
-    `docs/skill-impact.md` entry; it is pushed, a pull request is opened, and
-    auto-merge (merge commit) is enabled. No human review.
+    `retire-skill/<skill>` is prepared in the adam-agentskills checkout; it
+    is pushed, a pull request is opened, and auto-merge (merge commit) is
+    enabled. No human review, so the branch must pass the registry's
+    required checks on its own. Its first commit deletes
+    `plugins/<plugin>/skills/<skill>/`, raises the plugin's patch version in
+    both manifests (adam-agentskills ADR 0009), adds a `docs/skill-impact.md`
+    entry, drops the skill from `scripts/plugin_layout.json` (the ADR 0013
+    layout its tests pin) and regenerates the README skill table with the
+    registry's own `scripts/generate_readme_table.py`. When `skills.lock`
+    locks the plugin, a second commit re-pins it to the first with the
+    registry's `scripts/generate_skills_lock.py --repin`, and
+    `--check-current` must then pass (the order that script documents:
+    content, commit, re-pin, commit). The two registry scripts run with a
+    scrubbed environment (no token reaches them), from the checkout's
+    default branch, which the registry's own CI already runs.
 
 `--allow-mode` lists the modes the caller has wired (default: `proposal`
 only, the safe one; auto must be named). The scheduled workflow allows only
@@ -48,6 +58,18 @@ REFUSALS (exit 2, nothing written):
   * in auto mode, while any removal pull request (head `retire-skill/...`) is
     open in adam-agentskills: at most one at a time, and an open one holds
     the slot whatever the newest verdict says;
+  * in auto mode, a shallow adam-agentskills checkout (the lock re-pin and
+    its check read the commit the lock pins, which a shallow clone lacks), a
+    skill that is its plugin's last (emptying a plugin is a registry
+    decision, and the lock generator refuses it), a
+    `scripts/plugin_layout.json` that does not list the skill under its
+    plugin, a skill whose removal that registry's `plugin-runtime-review`
+    gate would hold for the owner (a `hooks/` or `bin/` directory in the
+    skill, or a hook naming a path inside it), which auto-merge cannot
+    approve, a skill `scripts/skills_waivers.yml` waives a finding under
+    (the waiver goes stale with it and `check_skills.py` exits 1), or a
+    skill defining a test that a tracked source elsewhere cites by name (the
+    registry's citation test would fail on the dangling name);
   * in auto mode, a skill whose basename is not found exactly once across
     every `--registry` checkout given, or whose one copy is not a real
     `plugins/<plugin>/skills/<skill>/` directory of adam-agentskills: none
@@ -101,12 +123,15 @@ One action per evaluation: a `retire` first, else the first
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
@@ -124,6 +149,12 @@ EVALS_REPO = "Adam-S-Daniel/skills-evals"
 BRANCH_PREFIX = "retire-skill/"
 ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
 IMPACT_FILE = "docs/skill-impact.md"
+LAYOUT_FILE = "scripts/plugin_layout.json"
+README_FILE = "README.md"
+LOCK_FILE = "skills.lock"
+README_GENERATOR = "scripts/generate_readme_table.py"
+LOCK_GENERATOR = "scripts/generate_skills_lock.py"
+WAIVERS_FILE = "scripts/skills_waivers.yml"
 MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json")
 ADR = ("https://github.com/Adam-S-Daniel/skills-evals/blob/main/docs/decisions/"
        "0014-removal-pull-requests-merge-without-review.md")
@@ -406,6 +437,208 @@ def manifest_versions(checkout: Path, plugin: str) -> dict:
     return out
 
 
+def layout_without(checkout: Path, plugin: str, skill: str) -> str:
+    """`scripts/plugin_layout.json`'s text with `skill` dropped from
+    `plugin`, in the registry's canonical form (json.dumps, indent 2, one
+    trailing newline). RetireError unless the file lists the skill under the
+    plugin, or when the skill is the plugin's last."""
+    contained(checkout, ["scripts", LAYOUT_FILE])
+    try:
+        doc = json.loads((checkout / LAYOUT_FILE).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise RetireError(f"cannot read {LAYOUT_FILE}") from None
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    entry = plugins.get(plugin) if isinstance(plugins, dict) else None
+    skills = entry.get("skills") if isinstance(entry, dict) else None
+    if not isinstance(skills, list) or skills.count(skill) != 1:
+        raise RetireError(f"{LAYOUT_FILE} does not list {skill} once under {plugin}")
+    if len(skills) == 1:
+        raise RetireError(f"{skill} is {plugin}'s last skill; emptying a plugin is a "
+                          "registry decision, not a retirement")
+    entry["skills"] = [s for s in skills if s != skill]
+    return json.dumps(doc, indent=2) + "\n"
+
+
+def lock_relevant(checkout: Path, plugin: str) -> bool:
+    """Whether `skills.lock` locks `plugin`, so removing one of its skills
+    makes the lock stale (adam-agentskills CI's `--check-current`)."""
+    contained(checkout, [LOCK_FILE])
+    path = checkout / LOCK_FILE
+    if not path.exists():
+        return False
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise RetireError(f"cannot read {LOCK_FILE}") from None
+    bundles = doc.get("bundles") if isinstance(doc, dict) else None
+    skills = doc.get("skills") if isinstance(doc, dict) else None
+    if not isinstance(bundles, list) or not isinstance(skills, dict):
+        raise RetireError(f"{LOCK_FILE} has no bundles list or skills map")
+    return plugin in bundles or any(isinstance(k, str) and k.startswith(f"{plugin}/")
+                                    for k in skills)
+
+
+def check_registry(checkout: Path, location: dict, skill: str) -> None:
+    """The auto-mode preconditions on the checkout itself; RetireError
+    otherwise. Read-only, so a dry run refuses the same way."""
+    if _git(checkout, "rev-parse", "--is-shallow-repository").strip() != "false":
+        raise RetireError(f"the {TARGET} checkout is shallow; the lock re-pin needs "
+                          "full history (fetch-depth: 0)")
+    plugin = location["plugin"]
+    skills_dir = checkout / "plugins" / plugin / "skills"
+    others = [p for p in skills_dir.iterdir() if p.name != skill
+              and (p.is_dir() or p.is_symlink())]
+    if not others:
+        raise RetireError(f"{skill} is {plugin}'s last skill; emptying a plugin is a "
+                          "registry decision, not a retirement")
+    layout_without(checkout, plugin, skill)
+    contained(checkout, [README_FILE, README_GENERATOR, LOCK_GENERATOR])
+    for rel in (README_FILE, README_GENERATOR):
+        if not (checkout / rel).is_file():
+            raise RetireError(f"{TARGET} has no {rel}")
+    if lock_relevant(checkout, plugin) and not (checkout / LOCK_GENERATOR).is_file():
+        raise RetireError(f"{TARGET} has no {LOCK_GENERATOR}")
+    runtime_gated(checkout, location["path"], skill)
+    waived_paths(checkout, location["path"], skill)
+    dangling_citations(checkout, location["path"], skill)
+
+
+TEST_NAME_RE = re.compile(r"\btest_[a-z0-9_]+")
+
+
+def _defined_tests(checkout: Path, rels) -> set:
+    """Function names (parsed, never grepped) and module stems of `rels`."""
+    names = set()
+    for rel in rels:
+        if not rel.endswith(".py"):
+            continue
+        names.add(Path(rel).stem)
+        try:
+            tree = ast.parse((checkout / rel).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, SyntaxError, ValueError):
+            raise RetireError(f"cannot parse {rel}") from None
+        names |= {node.name for node in ast.walk(tree)
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return {n for n in names if n.startswith("test_")}
+
+
+def dangling_citations(checkout: Path, path: str, skill: str) -> None:
+    """RetireError when a tracked source outside the skill cites, by name, a
+    test that only the skill defines. adam-agentskills'
+    test_every_test_this_repo_cites_by_name_exists scans every tracked
+    non-test `*.py` and `*.sh` for `test_...` tokens and fails on one no
+    tracked module defines, so removing the skill would turn that citation
+    into a failing required check. Rewording someone's comment is not a
+    removal's job; a human does that."""
+    inside = _git(checkout, "ls-files", "-z", "--", path).split("\0")
+    gone = _defined_tests(checkout, [r for r in inside if r])
+    if not gone:
+        return
+    outside = [r for r in _git(checkout, "ls-files", "-z", "--", "*.py", "*.sh")
+               .split("\0") if r and not (r == path or r.startswith(f"{path}/"))]
+    gone -= _defined_tests(checkout, outside)
+    for rel in outside:
+        if Path(rel).name.startswith("test_"):
+            continue
+        try:
+            text = (checkout / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            raise RetireError(f"cannot read {rel}") from None
+        cited = sorted(set(TEST_NAME_RE.findall(text)) & gone)
+        if cited:
+            raise RetireError(f"{rel} cites {cited[0]}, a test only {skill} defines; "
+                              "removing the skill leaves that citation dangling, which "
+                              f"{TARGET}' test_every_test_this_repo_cites_by_name_exists "
+                              "fails on")
+
+
+def waived_paths(checkout: Path, path: str, skill: str) -> None:
+    """RetireError when `scripts/skills_waivers.yml` waives a finding inside
+    the skill: that waiver matches nothing once the skill is gone, and
+    check_skills.py reports a `stale-waiver` and exits 1, so the pull request
+    could never merge. Removing the waiver with the skill means editing a
+    commented YAML file, which this does not do; a human does that. The
+    file is parsed, never grepped — its comments name skills
+    and would read as waivers."""
+    contained(checkout, [WAIVERS_FILE])
+    file = checkout / WAIVERS_FILE
+    if not file.exists():
+        return
+    try:
+        doc = yaml.safe_load(file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        raise RetireError(f"cannot read {WAIVERS_FILE}") from None
+    waivers = (doc or {}).get("waivers") if isinstance(doc, dict) else None
+    if waivers is None:
+        waivers = []
+    if not isinstance(waivers, list):
+        raise RetireError(f"{WAIVERS_FILE}: waivers is not a list")
+    for waiver in waivers:
+        where = waiver.get("path") if isinstance(waiver, dict) else None
+        if isinstance(where, str) and (where == path or where.startswith(f"{path}/")):
+            raise RetireError(f"{WAIVERS_FILE} waives a finding under {skill}; that "
+                              "waiver goes stale when the skill does and check_skills.py "
+                              "would exit 1, so a human retires the waiver with the skill")
+
+
+def runtime_gated(checkout: Path, path: str, skill: str) -> None:
+    """RetireError when deleting this skill would be a plugin RUNTIME change
+    in adam-agentskills' sense (its ADR 0016 gate): a `hooks/` or `bin/`
+    directory inside the skill, or a hook naming a path inside it. Such a
+    pull request waits on the `plugin-runtime-review` environment for the
+    owner's approval, which auto-merge cannot supply, so the branch would sit
+    open forever and hold the one removal slot. No skill ships either today;
+    this refuses the day one does, rather than wedging the queue."""
+    for name in ("hooks", "bin"):
+        if (checkout / path / name).exists():
+            raise RetireError(f"{skill} ships a {name}/ directory, so removing it is a "
+                              "plugin runtime change: adam-agentskills' "
+                              "plugin-runtime-review gate holds such a pull request for "
+                              "the owner, and auto-merge cannot approve it")
+    needle = f"skills/{skill}/"
+    for config in sorted(checkout.glob("plugins/*/hooks/*.json")) + [
+            checkout / f"plugins/{p}/{m}" for p in
+            sorted(d.name for d in (checkout / "plugins").iterdir() if d.is_dir())
+            for m in MANIFESTS]:
+        if config.is_symlink() or not config.is_file():
+            continue
+        try:
+            text = config.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            raise RetireError(f"cannot read {config.relative_to(checkout).as_posix()}") \
+                from None
+        if needle in text:
+            raise RetireError(
+                f"{config.relative_to(checkout).as_posix()} names a path inside {skill}, "
+                "so removing it is a plugin runtime change: adam-agentskills' "
+                "plugin-runtime-review gate holds such a pull request for the owner, and "
+                "auto-merge cannot approve it")
+
+
+def run_registry_script(checkout: Path, script: str, *args: str) -> None:
+    """Run one of the registry's own scripts in its checkout, with a scrubbed
+    environment: no token or other secret from this workflow reaches it, and
+    no bytecode is written into the checkout. Reported by exit code only."""
+    contained(checkout, ["scripts", script])
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "LANG": "C.UTF-8",
+           "HOME": os.environ.get("HOME", "/nonexistent"),
+           "PYTHONDONTWRITEBYTECODE": "1"}
+    # Each target is spelled literally at its call so the suite's spawn audit
+    # (run_tests.py, S-B-a-2) can prove it is not the test runner.
+    if script == README_GENERATOR:
+        proc = subprocess.run([sys.executable, "scripts/generate_readme_table.py", *args],
+                              cwd=str(checkout), env=env, capture_output=True, text=True,
+                              check=False)
+    elif script == LOCK_GENERATOR:
+        proc = subprocess.run([sys.executable, "scripts/generate_skills_lock.py", *args],
+                              cwd=str(checkout), env=env, capture_output=True, text=True,
+                              check=False)
+    else:
+        raise RetireError(f"{script} is not a registry script this tool runs")
+    if proc.returncode != 0:
+        raise RetireError(" ".join([script, *args, "exited", str(proc.returncode)]))
+
+
 def _issue_body(gates, skill, location, problem, run_url) -> str:
     where = (f"`{location['path']}` in {REGISTRY_REPO}" if location
              else f"not located: {problem}")
@@ -418,14 +651,18 @@ def _issue_body(gates, skill, location, problem, run_url) -> str:
             "Filed by scripts/retire_skill.py on the scheduled workflow (#70).\n")
 
 
-def _pr_body(gates, skill, location, versions, run_url) -> str:
+def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
     bumps = "\n".join(f"- `{p}`: {old} -> {new}" for p, (old, new) in versions.items())
+    lock = (f" A second commit re-pins `{LOCK_FILE}` to the removal commit."
+            if repin else "")
     run = f"\nWorkflow run: {run_url}\n" if run_url else ""
     return (f"Removes `{location['path']}`: its retirement verdict in "
             f"[skills-evals#70](https://github.com/{EVALS_REPO}/issues/70) is "
             f"**retire** as of {gates['as_of']} "
             f"({gates['skills'][skill].get('reason')}).\n\n{evidence(gates, skill)}\n\n"
-            f"Version bumps:\n{bumps}\n\nAdds a `{IMPACT_FILE}` entry.\n\n"
+            f"Version bumps:\n{bumps}\n\nAdds a `{IMPACT_FILE}` entry, drops the skill "
+            f"from `{LAYOUT_FILE}` and regenerates the `{README_FILE}` skill table."
+            f"{lock}\n\n"
             f"This pull request auto-merges once required checks pass, with no human "
             f"review, by Adam's 2026-10-25 decision ([skills-evals ADR 0014]({ADR})).\n"
             f"{run}\nOpened by skills-evals' scripts/retire_skill.py on its scheduled "
@@ -465,22 +702,27 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     location = locate(registries, skill)
     checkout = Path(registries[TARGET]["path"])
     versions = manifest_versions(checkout, location["plugin"])
+    check_registry(checkout, location, skill)
+    repin = lock_relevant(checkout, location["plugin"])
     entry = impact_entry(gates, skill, location["plugin"], run_url)
     return {"action": "removal", "mode": mode, "skill": skill, **location,
             "branch": f"{BRANCH_PREFIX}{skill}", "versions": versions,
-            "impact_entry": entry,
+            "impact_entry": entry, "repin": repin,
             "title": f"Remove {location['plugin']}/{skill}: no benefit (skills-evals#70)",
-            "body": _pr_body(gates, skill, location, versions, run_url)}
+            "body": _pr_body(gates, skill, location, versions, run_url, repin)}
 
 
 def prepare_branch(checkout: Path, action: dict) -> None:
-    """The removal commit on a new branch of `checkout`, which must be clean."""
+    """The removal commit, and the lock re-pin when the plugin is locked, on
+    a new branch of `checkout`, which must be clean."""
     if _git(checkout, "status", "--porcelain"):
         raise RetireError(f"the {TARGET} checkout has uncommitted changes")
     contained(checkout, ["plugins", f"plugins/{action['plugin']}",
                          f"plugins/{action['plugin']}/skills", action["path"],
                          f"plugins/{action['plugin']}/.claude-plugin", *action["versions"],
                          "docs", IMPACT_FILE])
+    check_registry(checkout, action, action["skill"])
+    layout = layout_without(checkout, action["plugin"], action["skill"])
     _git(checkout, "checkout", "-b", action["branch"])
     _git(checkout, "rm", "-r", "-q", "--", action["path"])
     for rel, (old, new) in action["versions"].items():
@@ -499,12 +741,28 @@ def prepare_branch(checkout: Path, action: dict) -> None:
     except (OSError, UnicodeDecodeError):
         raise RetireError(f"cannot read {IMPACT_FILE}") from None
     impact.write_text(insert_entry(text, action["impact_entry"]), encoding="utf-8")
-    _git(checkout, "add", "--", IMPACT_FILE, *action["versions"])
+    (checkout / LAYOUT_FILE).write_text(layout, encoding="utf-8")
+    run_registry_script(checkout, README_GENERATOR)
+    _git(checkout, "add", "--", IMPACT_FILE, LAYOUT_FILE, README_FILE, *action["versions"])
+    _commit(checkout,
+            f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
+            "skills-evals#70's scheduled retirement found no benefit in every cell at "
+            "two fixed looks.")
+    if action.get("repin"):
+        run_registry_script(checkout, LOCK_GENERATOR, "--repin")
+        run_registry_script(checkout, LOCK_GENERATOR, "--check-current")
+        _git(checkout, "add", "--", LOCK_FILE)
+        _commit(checkout, f"Re-pin skills.lock after removing {action['plugin']}/"
+                          f"{action['skill']}\n\n"
+                          "The lock pinned a commit that still has the skill, so its "
+                          "--check-current would fail; it now pins the removal commit.")
+    if _git(checkout, "status", "--porcelain"):
+        raise RetireError(f"the {TARGET} checkout has changes the removal did not commit")
+
+
+def _commit(checkout: Path, message: str) -> None:
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
-         "commit", "-q", "-m",
-         f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
-         "skills-evals#70's scheduled retirement found no benefit in every cell at "
-         "two fixed looks.")
+         "commit", "-q", "-m", message)
 
 
 def commands(action: dict) -> list:
@@ -522,7 +780,12 @@ def commands(action: dict) -> list:
                 *[["edit", rel, f"version {old} -> {new}"]
                   for rel, (old, new) in action["versions"].items()],
                 ["edit", IMPACT_FILE, "insert the entry"],
+                ["edit", LAYOUT_FILE, f"drop {action['skill']}"],
+                ["python3", README_GENERATOR],
                 ["git", "commit"],
+                *([["python3", LOCK_GENERATOR, "--repin"],
+                   ["python3", LOCK_GENERATOR, "--check-current"],
+                   ["git", "commit"]] if action.get("repin") else []),
                 ["git", "push", "origin", f"HEAD:refs/heads/{action['branch']}"],
                 ["gh", "pr", "create", "-R", REGISTRY_REPO, "--base", "main",
                  "--head", action["branch"], "--title", action["title"], "--body-file", "-"],

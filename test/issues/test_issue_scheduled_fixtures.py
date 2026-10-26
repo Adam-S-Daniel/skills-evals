@@ -24,7 +24,7 @@ WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
 REVIEWED = ["evals/workflow-path-audit", "evals/embeddable-tool-pages",
-            "evals/review-bash-ci-reliability",
+            "evals/review-bash-ci-reliability/release-pipeline",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
             "evals/writing-adrs/bootstrap",

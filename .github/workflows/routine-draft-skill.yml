@@ -94,17 +94,28 @@ jobs:
           repositories: adam-agentskills-private
           permission-contents: read
 
-      # lessons/ for the proposals, plugins/ so a private skill's name is
-      # never drafted again. Credentials not kept.
+      # lessons/ for the proposals, from persistent/lessons: the BOXY miner
+      # writes there because main is PR-only (skills-evals#423, ADR 0015).
+      # Credentials not kept.
       - name: Check out the lessons (adam-agentskills-private)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/lessons
+          path: adam-agentskills-private-lessons
+          persist-credentials: false
+          sparse-checkout: lessons
+          token: ${{ steps.lessons-token.outputs.token }}
+
+      # plugins/ from the default branch, so a private skill's name is never
+      # drafted again. Credentials not kept.
+      - name: Check out the private skills (adam-agentskills-private)
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/adam-agentskills-private
           path: adam-agentskills-private
           persist-credentials: false
-          sparse-checkout: |
-            lessons
-            plugins
+          sparse-checkout: plugins
           token: ${{ steps.lessons-token.outputs.token }}
 
       - name: Check out adam-agentskills
@@ -151,7 +162,7 @@ jobs:
           drafted="${RUNNER_TEMP:?}/drafted-subjects.txt"
           python3 scripts/draft_new_skill.py drafted-subjects --repo . > "$drafted"
           python3 scripts/draft_new_skill.py select \
-            --lessons ../adam-agentskills-private/lessons \
+            --lessons ../adam-agentskills-private-lessons/lessons \
             --registry adam-agentskills=../adam-agentskills \
             --registry adam-agentskills-private=../adam-agentskills-private \
             --evals evals --drafted "$drafted" \

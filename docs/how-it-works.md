@@ -206,15 +206,20 @@ that a human acts on; once that issue is closed, the skill is not proposed
 again. In `auto` mode the script instead opens a removal pull
 request in adam-agentskills that auto-merges with no human review
 ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md)),
-one at a time. Auto mode is built but not wired: it needs a write credential
-for adam-agentskills, and the workflow exits 2 if the policy is switched to
-`auto` before that exists. Preview either mode with
+one at a time. That branch carries everything the registry's required checks
+read — the layout pin in its `scripts/plugin_layout.json`, the README skill
+table and, when the plugin is locked, a `skills.lock` re-pin — produced by
+the registry's own generators rather than reimplemented here. Auto mode is
+built but not wired: it needs a write credential for adam-agentskills and a
+registry checkout with full history (the lock re-pin reads the commit the
+lock pins, so a shallow one is refused), and the workflow exits 2 if the
+policy is switched to `auto` before that exists. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
 ### Draft mode: new skills from lessons, hooks first
 
 The session miner writes redacted lesson proposals to
-adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json`.
+adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
 Draft mode is what consumes the `new-skill` kind:
 
 1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). One proposal:
@@ -423,11 +428,35 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `convention_fidelity` 0.5, `date_priority` 0.3, `restraint` 0.2.
 - Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
 
-### review-bash-ci-reliability
+### review-bash-ci-reliability/release-pipeline
 
-- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability)
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/release-pipeline](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/release-pipeline)
 - Review a release pipeline's shell for reliability problems and fix them (seeded with an exit-status swallow via process substitution, a broken-pipe-prone `grep -q`, a swallowed `gh api` failure, missing git identity/signing setup, an unguarded `jq` dependency). Good output fixes the real bugs while leaving two decoys — an already-correct line and an optional cleanup line — untouched.
 - Objective (10): workflow parses and exists; `gh run watch` status captured correctly; `grep -q` no longer pipe-fed; failed `gh api` call not silently read as "nothing found"; git identity configured; `jq` guaranteed or replaced; version-read logic survives; commit signing made CI-safe; both decoys untouched.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
+### review-bash-ci-reliability/drift-report-capture
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/drift-report-capture](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/drift-report-capture)
+- Review a config-drift check whose `diff` and `grep | head | cut` captures abort it under `set -euo pipefail` on a normal result (checklist item 7). Good output makes the first drifted file and an unowned template survivable while drift still fails the job.
+- Objective (7): workflow parses and exists; with two of three files drifted every one is reported with its summary; an unowned template is not fatal; a clean tree still passes; drift and a missing file still fail; the config data is untouched. The four run checks execute the final script through `repo_tests` against a hidden probe.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
+### review-bash-ci-reliability/test-runner-assertions
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/test-runner-assertions](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/test-runner-assertions)
+- Review a green shell test runner whose `grep`, `cmp` and script-under-test captures kill the whole run on a failing assertion (item 7's test-harness paragraph). Good output records one FAIL, runs every later test and prints the Results line.
+- Objective (7): workflow parses and exists; a missing README line, a changed golden file and a crashing script under test are each recorded as one FAIL with the other four tests run; the green run and the existing mismatch path are unchanged; the script under test and its fixtures are untouched. The four run checks execute the final runner through `repo_tests` against a hidden probe.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
+### review-bash-ci-reliability/empty-repo-discovery
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/empty-repo-discovery](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/empty-repo-discovery)
+- Review a nightly visibility audit that reads `gh repo list` through process substitution and exits 0 on an empty result, so a failed listing goes green (item 3). Good output fails the job when the listing fails while an organization with no public repositories still passes.
+- Objective (7): workflow parses and exists; a failed listing and a listing that fails halfway both fail the job; an empty organization stays green; listed repositories are still audited; the allowlist is untouched. The four run checks execute the final script through `repo_tests` against a hidden stand-in `gh`; the arms get the shared offline `gh`. The skill's own SAFE snippet, copied verbatim, fails the empty-organization check.
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
@@ -439,9 +468,9 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `root-cause` 0.5, `which-copy-the-model-reads` 0.3, `restraint` 0.2.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/adam-agentskills`. Class B. No real run yet.
 
-### vendor-release-impact-issues
+### vendor-release-impact-issues/issue-hygiene
 
-- `vendor-release-impact-issues` (registry: `adam-agentskills`) — [evals/vendor-release-impact-issues](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/vendor-release-impact-issues)
+- `vendor-release-impact-issues` (registry: `adam-agentskills`) — [evals/vendor-release-impact-issues/issue-hygiene](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/vendor-release-impact-issues/issue-hygiene)
 - Turn a vendor CLI's release notes (ExampleCLI 4.1.0 to 4.3.0) into drafted GitHub issues for a small repo that consumes it. Five real findings are baked in, mixed with decoys. Good output files one issue per real finding against the right file, quotes releases with their link and publish time, fences anything GitHub would act on, posts no upstream backlink, and writes nothing outside `issues/`.
 - Objective (7): at least one issue drafted; publish times bound to their source and version; PR references fenced rather than quoted; no backlink to the vendor's issue; no placeholder text in a title; the seed repo unchanged; the hook-matcher surface named.
 - Judge: weighted — `correctness` 0.5, `hygiene` 0.3, `restraint` 0.2.

@@ -172,7 +172,7 @@ class CallerTests(unittest.TestCase):
         self.assertIn("needs.select.outputs.count == '1'", self.jobs["dispatch"]["if"])
         self.assertIn("needs.select.outputs.fits == 'yes'", self.jobs["dispatch"]["if"])
 
-    def test_the_lessons_token_is_read_only_and_reaches_one_checkout(self):
+    def test_the_lessons_token_is_read_only_and_reaches_two_checkouts(self):
         mint = step(self.doc, "select", "Mint the read-only token for the lessons")
         self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
         self.assertEqual(mint["with"], {
@@ -184,10 +184,16 @@ class CallerTests(unittest.TestCase):
         secrets = [p for p, v in strings(self.doc) if "secrets." in v]
         self.assertEqual(len(secrets), 1)
         users = [p for p, v in strings(self.doc) if "steps.lessons-token" in v]
-        self.assertEqual(len(users), 1)
-        holder = self.jobs["select"]["steps"][int(users[0][3])]
-        self.assertEqual(holder["with"]["repository"], "Adam-S-Daniel/adam-agentskills-private")
-        self.assertEqual(holder["with"]["sparse-checkout"].split(), ["lessons", "plugins"])
+        self.assertEqual(len(users), 2)
+        holders = [self.jobs["select"]["steps"][int(u[3])]["with"] for u in users]
+        for holder in holders:
+            self.assertEqual(holder["repository"], "Adam-S-Daniel/adam-agentskills-private")
+        # The miner writes proposals to persistent/lessons (main is PR-only);
+        # the private skills come from the default branch.
+        self.assertEqual(
+            sorted((h.get("ref", ""), h["sparse-checkout"], h["path"]) for h in holders),
+            sorted([("persistent/lessons", "lessons", "adam-agentskills-private-lessons"),
+                    ("", "plugins", "adam-agentskills-private")]))
 
     def test_select_reads_drafted_branches_declines_and_both_registries(self):
         body = step(self.doc, "select", "Select one new-skill proposal")["run"]
@@ -195,6 +201,7 @@ class CallerTests(unittest.TestCase):
                        "draft_new_skill.py select",
                        "--registry adam-agentskills=../adam-agentskills",
                        "--registry adam-agentskills-private=../adam-agentskills-private",
+                       "--lessons ../adam-agentskills-private-lessons/lessons",
                        "--evals evals --drafted",
                        '--hook-declined "$RUNNER_TEMP/hook-declined.txt"'):
             self.assertIn(needle, body)
