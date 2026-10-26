@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Udy2x86e5vtrLsP7n5tu9",
+      "name": "Bash",
+      "input": "pwd; ls -la; echo ---; cat scripts/reaper.sh; echo ---; ls -la checkout | head -50; cat checkout/.git/config 2><path> || (test -f checkout/.git && cat checkout/.git)",
+      "input_chars": 168,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Udy2x86e5vtrLsP7n5tu9",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 7 root root 4096 Oct 26 10:41 .\ndrwx------ 6 root root 4096 Oct 26 10:41 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 23 05:30 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Oct 23 05:30 .bashrc\ndrwxr-xr-x 3 root root 4096 Oct 26 10:41 .claude\ndrwxr-xr-x 8 root root 4096 Oct 26 10:41 .gi...",
+      "output_chars": 1614,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LS2dBZVaWootyfe2j66fW6",
+      "name": "Bash",
+      "input": "cd <path>; ls -la checkout/scripts scratch-wt; cat checkout/scripts/reaper.sh; echo ---; cat checkout/README.md; cat checkout/.gitattributes; echo ---; git -C checkout log --oneline | head; git -C che...",
+      "input_chars": 394,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LS2dBZVaWootyfe2j66fW6",
+      "is_error": false,
+      "output": "checkout/scripts:\ntotal 12\ndrwxr-xr-x 2 root root 4096 Oct 26 10:41 .\ndrwxr-xr-x 4 root root 4096 Oct 26 10:41 ..\n-rwxr-xr-x 1 root root 1195 Oct 26 10:41 reaper.sh\n\nscratch-wt:\ntotal 24\ndrwxr-xr-x 3 root root 4096 Oct 26 10:41 .\ndrwxr-xr-x 7 root root 4096 Oct 26 10:41 ..\n-rw-r--r-- 1 root root   7...",
+      "output_chars": 3546,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EgRThQa4XCNTdXBF7SUCm2",
+      "name": "Bash",
+      "input": "set -e\nREAL=<path>\nT=\"$(mktemp -d \"$TMPDIR/reaper-test.XXXXXX\")\"\ngit clone -q --no-hardlinks \"$REAL/checkout\" \"$T/tree\"\ngit -C \"$T/tree\" remote remove origin\n# also drop upstream tracking that referen...",
+      "input_chars": 999,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EgRThQa4XCNTdXBF7SUCm2",
+      "is_error": false,
+      "output": "== sandbox: <path>\n-- remotes (expect empty):\n-- config:\n[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n-- alternates (expect none):\nnone\n-- worktrees (expect none):\nnone\n-- any reference to real path in .git:\n<path>\n<path>\n-- git dir:\n<path>\n0a289bb8c985...",
+      "output_chars": 613,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011fNu7Y6iVnr2oiCCyQN725",
+      "name": "Bash",
+      "input": "REAL=<path>\nT=\"$(cat \"$TMPDIR/reaper-test.path\")\"\ncd \"$T/tree\" && WORKSPACE=\"$T\" ./scripts/reaper.sh; rc=$?\necho \"reaper exit: $rc\"\ncd \"$T\"\necho \"-- sandbox log:\"; cat \"$T/.reaper-invocations.log\"\nech...",
+      "input_chars": 879,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011fNu7Y6iVnr2oiCCyQN725",
+      "is_error": false,
+      "output": "reaper: rotation complete in <path>\nreaper exit: 0\n-- sandbox log:\nreaper ran in <path>\n<path>\n\n-- sandbox commits:\n461ac56 reaper: rotate expired snapshots\n0a289bb initial import\n-- sandbox status:\n.git\n.gitattributes\n.reaper-ran\nscripts\n== real repo untouched?\ncheckout HEAD unchanged\ncheckout work...",
+      "output_chars": 703,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
