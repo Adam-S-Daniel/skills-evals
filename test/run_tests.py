@@ -39148,12 +39148,19 @@ class TestPublishUsageCensus(unittest.TestCase):
         seed.mkdir()
         self.git("init", "--quiet", "-b", "main", cwd=seed)
         (seed / "scripts").mkdir()
-        shutil.copy(REPO_ROOT / "scripts" / "model_usage_census.py",
-                    seed / "scripts")
+        for script in ("model_usage_census.py", "eval_coverage.py"):
+            shutil.copy(REPO_ROOT / "scripts" / script, seed / "scripts")
         shutil.copytree(HARNESS_DIR, seed / "harness",
                         ignore=shutil.ignore_patterns("__pycache__"))
         (seed / "evals").mkdir()
-        shutil.copy(REPO_ROOT / "evals" / "roster-policy.yml", seed / "evals")
+        for name in ("roster-policy.yml", "non-coverage.yml"):
+            shutil.copy(REPO_ROOT / "evals" / name, seed / "evals")
+        # The skill allowlist needs one skill fixture to read.
+        (seed / "evals" / "workflow-path-audit").mkdir()
+        (seed / "evals" / "workflow-path-audit" / "fixture.yaml").write_text(
+            "skill: workflow-path-audit\n"
+            "registry: https://github.com/Adam-S-Daniel/adam-agentskills\n",
+            encoding="utf-8")
         self.git("add", ".", cwd=seed)
         self.git("commit", "--quiet", "-m", "seed", cwd=seed)
         self.git("remote", "add", "origin", self.url, cwd=seed)
@@ -39212,11 +39219,11 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(self.head(), before)
         self.assertIn("dry run", proc.stdout)
-        self.assertNotIn("usage/latest.json",
+        self.assertNotIn("usage/",
                          self.git("ls-tree", "-r", "--name-only", "persistent/eval-results",
                                   cwd=self.origin))
 
-    def test_a_real_run_pushes_exactly_the_one_file_and_verifies_it(self):
+    def test_a_real_run_pushes_exactly_the_two_files_and_verifies_it(self):
         before = self.head()
         proc = self.run_script()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -39225,7 +39232,8 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertEqual(self.git("rev-list", "--count", f"{before}..{after}",
                                   cwd=self.origin), "1")
         self.assertEqual(self.git("diff", "--name-only", before, after,
-                                  cwd=self.origin), "usage/latest.json")
+                                  cwd=self.origin),
+                         "usage/latest.json\nusage/weekly-local.json")
         self.assertEqual(self.git("log", "-1", "--format=%s", "persistent/eval-results",
                                   cwd=self.origin), self.SUBJECT)
         # Nothing else on the branch moved, and main was never written to.

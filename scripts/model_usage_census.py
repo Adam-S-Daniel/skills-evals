@@ -55,8 +55,21 @@ named line on stderr and exit 2, never an ImportError traceback. See
 `evals/usage/CENSUS.md` for installing it on the durable machine that runs
 this script.
 
+SKILL USAGE rides the same walk when `--weekly-out` is given: how often each
+skill was invoked, per ISO week, published beside the model census as
+`usage/weekly-local.json` (schema: `harness/skill_usage.py`, the one place it
+is defined). The same contract holds, and the keys are just as
+untrusted: a `Skill` tool call's `input.skill` and a typed
+`<command-name>` are free strings, so a name becomes a key ONLY when it is
+in `skill_allowlist()` — skills that already appear by name in this public
+repo, as a fixture or a non-coverage row for a non-private registry — and
+matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
+typed slash command that is not an allowlisted skill (`/clear`, `/model`)
+is not a skill invocation and is not counted at all.
+
 Usage:
-    python3 scripts/model_usage_census.py --out usage/latest.json
+    python3 scripts/model_usage_census.py --out usage/latest.json \
+        [--weekly-out usage/weekly-local.json]
 """
 
 from __future__ import annotations
@@ -68,12 +81,17 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "harness"))
+# Appended, not inserted: eval_coverage (for the skill allowlist) is the only
+# module wanted from scripts/, and nothing there may shadow anything else.
+sys.path.append(str(REPO_ROOT / "scripts"))
 from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: E402
+import skill_usage  # noqa: E402
 
 DEFAULT_PROJECTS = Path.home() / ".claude" / "projects"
 DEFAULT_WEEKS = 8
-POLICY_PATH = Path(__file__).resolve().parent.parent / "evals" / "roster-policy.yml"
+POLICY_PATH = REPO_ROOT / "evals" / "roster-policy.yml"
 
 #: The one message this script prints for a missing PyYAML, everywhere it can
 #: be hit — main()'s guard and the test that shims the import away both key
@@ -166,6 +184,86 @@ def _turn_key(entry: dict, message: dict):
     return None
 
 
+#: The shape of a published skill key: a skill directory basename, lowercase.
+#: Necessary even for an allowlisted name — the allowlist is read from files a
+#: pull request can change, and this is the last check before a public key.
+SKILL_KEY_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+
+#: A typed slash command, as Claude Code records it in the user entry.
+_COMMAND_NAME_RE = re.compile(r"<command-name>([^<]{0,200})</command-name>")
+
+
+def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
+    """The skill names that may become published keys.
+
+    A name qualifies when this public repo already carries it: a skill
+    fixture `scripts/eval_coverage.py` counts under `root/evals`, or a row
+    of `root/evals/non-coverage.yml` for a registry that is not private.
+    Both are read by eval_coverage's own `count_fixtures`/`load_skips`, so
+    "is a fixture" means the same here as in the coverage census. Raises
+    `eval_coverage.CensusRefusal` or ValueError when either cannot be read;
+    the caller fails closed. Needs PyYAML, so the import is lazy.
+    """
+    import eval_coverage
+    import run_eval
+    registries = {entry["name"]: entry
+                  for entry in run_eval._load_registries_config()}
+    fixtures = eval_coverage.count_fixtures(Path(root) / "evals", registries)
+    skips: dict = {}
+    eval_coverage.load_skips(Path(root) / "evals" / "non-coverage.yml",
+                             registries, private=False, into=skips)
+    names = {skill for _registry, skill in fixtures}
+    names |= {skill for registry, skill in skips
+              if registry not in eval_coverage.PRIVATE_REGISTRIES}
+    return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))
+
+
+def _skill_name(raw) -> str | None:
+    """`/adam-coding-anywhere:workflow-path-audit` -> `workflow-path-audit`."""
+    if not isinstance(raw, str):
+        return None
+    name = raw[1:] if raw.startswith("/") else raw
+    return name.rsplit(":", 1)[-1]
+
+
+def skill_key(raw, allowlist: frozenset[str]) -> str:
+    """The key a Skill tool call's `input.skill` is counted under."""
+    name = _skill_name(raw)
+    if name in allowlist and SKILL_KEY_RE.fullmatch(name):
+        return name
+    return OTHER_KEY
+
+
+def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
+    """The allowlisted skill a user entry's slash command names, or None.
+
+    Only the message's own text counts (a string, or `text` items): a
+    `tool_result` can quote a transcript, and its tags were not typed here.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, list):
+        texts = [item["text"] for item in content
+                 if isinstance(item, dict) and item.get("type") == "text"
+                 and isinstance(item.get("text"), str)]
+    else:
+        return None
+    for text in texts:
+        match = _COMMAND_NAME_RE.search(text)
+        if match:
+            name = _skill_name(match.group(1))
+            if name in allowlist and SKILL_KEY_RE.fullmatch(name):
+                return name
+            return None
+    return None
+
+
+def _bump(counts: dict, key: str, week: str) -> None:
+    counts.setdefault(key, {})
+    counts[key][week] = counts[key].get(week, 0) + 1
+
+
 def census_counts(projects_dir: Path, now: datetime,
                   weeks: int = DEFAULT_WEEKS) -> dict:
     """{model_id: {iso_week: count}} over the trailing `weeks` ISO weeks.
@@ -176,9 +274,28 @@ def census_counts(projects_dir: Path, now: datetime,
     are all skipped — a transcript being written while this runs will have a
     torn last line, and that is not a reason to fail.
     """
+    return census_all(projects_dir, now, weeks)[0]
+
+
+def census_all(projects_dir: Path, now: datetime, weeks: int = DEFAULT_WEEKS,
+               allowlist: frozenset[str] | None = None) -> tuple[dict, dict]:
+    """(model counts, skill tally) from ONE walk of the transcripts.
+
+    Model counts are `census_counts`'s. The skill tally is
+    {"invocations": {skill: {iso_week: n}}, "sessions": {skill: {iso_week: n}},
+    "sessions_scanned": n}. Invocations stay empty when `allowlist` is None;
+    otherwise one per `Skill` tool call (deduplicated per transcript on the
+    tool_use `id`) and one per user entry whose typed slash command names an
+    allowlisted skill. `sessions` counts the distinct transcript files that
+    invoked a skill in a week; `sessions_scanned` the transcript files read
+    (those the mtime prefilter kept). Same window as the models.
+    """
     wanted = set(window_weeks(now, weeks))
     oldest = window_start(now, weeks)
     counts: dict[str, dict[str, int]] = {}
+    skills: dict[str, dict[str, int]] = {}
+    sessions: dict[str, dict[str, int]] = {}
+    tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0}
     #: (st_dev, st_ino) of every transcript already processed. A symlink or a
     #: hard-linked copy is the SAME underlying file reachable via a second
     #: path in the walk — reading it twice double-counts every turn in it.
@@ -189,7 +306,7 @@ def census_counts(projects_dir: Path, now: datetime,
     seen_files: set[tuple[int, int]] = set()
     projects_dir = Path(projects_dir)
     if not projects_dir.is_dir():
-        return counts
+        return counts, tally
 
     for transcript in sorted(projects_dir.rglob("*.jsonl")):
         try:
@@ -208,6 +325,9 @@ def census_counts(projects_dir: Path, now: datetime,
         if datetime.fromtimestamp(stat.st_mtime, timezone.utc) < oldest:
             continue
         seen_turns: set[str] = set()
+        seen_calls: set[str] = set()
+        invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
+        tally["sessions_scanned"] += 1
         try:
             with open(transcript, encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -218,38 +338,91 @@ def census_counts(projects_dir: Path, now: datetime,
                         entry = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    if not isinstance(entry, dict) or entry.get("type") != "assistant":
+                    if not isinstance(entry, dict):
+                        continue
+                    kind = entry.get("type")
+                    if kind not in ("assistant", "user"):
                         continue
                     message = entry.get("message")
                     if not isinstance(message, dict):
                         continue
-                    key = published_key(message.get("model"))
                     when = parse_ts(entry.get("timestamp"))
-                    if key is None or when is None:
+                    if when is None:
                         continue
                     week = iso_week(when)
                     if week not in wanted:
+                        continue
+                    if kind == "user":
+                        if allowlist is not None:
+                            typed = _typed_skill(message, allowlist)
+                            if typed is not None:
+                                _bump(skills, typed, week)
+                                invoked.add((typed, week))
+                        continue
+                    if allowlist is not None and isinstance(message.get("content"), list):
+                        for item in message["content"]:
+                            if not (isinstance(item, dict)
+                                    and item.get("type") == "tool_use"
+                                    and item.get("name") == "Skill"):
+                                continue
+                            call = item.get("id")
+                            if isinstance(call, str) and call:
+                                if call in seen_calls:
+                                    continue
+                                seen_calls.add(call)
+                            given = item.get("input")
+                            raw = given.get("skill") if isinstance(given, dict) else None
+                            name = skill_key(raw, allowlist)
+                            _bump(skills, name, week)
+                            invoked.add((name, week))
+                    key = published_key(message.get("model"))
+                    if key is None:
                         continue
                     turn = _turn_key(entry, message)
                     if turn is not None:
                         if turn in seen_turns:
                             continue
                         seen_turns.add(turn)
-                    counts.setdefault(key, {})
-                    counts[key][week] = counts[key].get(week, 0) + 1
+                    _bump(counts, key, week)
         except OSError:
             continue
-    return counts
+        for name, week in invoked:
+            _bump(sessions, name, week)
+    return counts, tally
 
 
 def build_document(projects_dir: Path, now: datetime,
                    weeks: int = DEFAULT_WEEKS) -> dict:
     """The published artifact. Exactly three keys — see the module docstring."""
+    return _document(census_counts(projects_dir, now, weeks), now, weeks)
+
+
+def _document(counts: dict, now: datetime, weeks: int) -> dict:
     return {
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "weeks": window_weeks(now, weeks),
-        "counts": census_counts(projects_dir, now, weeks),
+        "counts": counts,
     }
+
+
+def build_weekly_document(tally: dict, now: datetime,
+                          weeks: int = DEFAULT_WEEKS) -> dict:
+    """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
+    owns its schema. The window starts at the Monday of its oldest week."""
+    rows = [skill_usage.row(week, "skill", name, n,
+                            tally["sessions"].get(name, {}).get(week, 0))
+            for name, by_week in tally["invocations"].items()
+            for week, n in by_week.items()]
+    oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
+    window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
+    return skill_usage.document(rows, now, window_from, tally["sessions_scanned"])
+
+
+def _write_json(path: Path, document: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(document, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 def main() -> int:
@@ -258,6 +431,13 @@ def main() -> int:
                         help="Claude Code transcript root (default ~/.claude/projects)")
     parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--weekly-out", type=Path, default=None,
+                        help="also write weekly skill invocations here "
+                             "(published as usage/weekly-local.json)")
+    parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
+                        help="repo whose evals/ fixtures and non-coverage.yml "
+                             "name the publishable skills (default: this "
+                             "script's repo)")
     parser.add_argument("--now", default=None,
                         help="ISO-8601 instant to treat as now (tests and "
                              "scripts/publish_usage_census.sh's test seam); "
@@ -288,17 +468,31 @@ def main() -> int:
     if now is None:
         print("--now is not an ISO-8601 instant", file=sys.stderr)
         return 2
-    document = build_document(args.projects, now, args.weeks)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(document, f, indent=2, sort_keys=True)
-        f.write("\n")
+    allowlist = None
+    if args.weekly_out is not None:
+        import eval_coverage
+        try:
+            allowlist = skill_allowlist(args.skill_allowlist_root)
+        except (eval_coverage.CensusRefusal, ValueError, OSError):
+            # No detail: a refusal message can carry a path, and this line
+            # reaches a scheduled task's status report. Nothing is written.
+            print("skill allowlist could not be read from the evals "
+                  "directory; nothing published", file=sys.stderr)
+            return 2
+    counts, tally = census_all(args.projects, now, args.weeks, allowlist)
+    document = _document(counts, now, args.weeks)
+    _write_json(args.out, document)
 
     # Non-identifying status line only: counts, and the OUTPUT path the caller
     # already knows — never a model id, never anything from under --projects.
     total = sum(sum(by_week.values()) for by_week in document["counts"].values())
-    print(f"census: {len(document['counts'])} models, {total} assistant turns, "
-          f"{args.weeks} weeks -> {args.out}")
+    status = (f"census: {len(document['counts'])} models, {total} assistant turns, "
+              f"{args.weeks} weeks -> {args.out}")
+    if args.weekly_out is not None:
+        _write_json(args.weekly_out, build_weekly_document(tally, now, args.weeks))
+        calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
+        status += f"; {calls} skill invocations -> {args.weekly_out}"
+    print(status)
     return 0
 
 

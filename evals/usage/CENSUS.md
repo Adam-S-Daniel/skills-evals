@@ -9,6 +9,50 @@ older than 14 days the roster falls back to "newest model per tier" and says so
 in every arm's reason ("no fresh census"). Nothing fails silently — but nothing
 refreshes the census either, until somebody schedules it.
 
+## Skill usage
+
+The same run also counts how often each skill is invoked, per ISO week, and
+the publish script commits it beside the model census as
+`usage/weekly-local.json`. The improvement planner reads it through
+`harness/skill_usage.py`, so a frequently used skill is improved first; a
+missing or stale file reads as unknown, never as zero.
+
+The schema is defined once, in `harness/skill_usage.py` (`row()`,
+`document()`, `ROW_FIELDS`); other row kinds (`hook`) go into the same file
+through it:
+
+```json
+{"generated_at": "2026-09-04T12:00:00Z", "schema": 1,
+ "sources": [{"surface": "local", "scope": "transcripts",
+              "from": "2026-07-13T00:00:00Z", "to": "2026-09-04T12:00:00Z",
+              "sessions_scanned": 42}],
+ "rows": [{"week": "2026-08-31", "kind": "skill", "name": "workflow-path-audit",
+           "repo": null, "surface": "local", "invocations": 3, "sessions": 2,
+           "blocked": null, "overridden": null, "outcome": null}]}
+```
+
+`week` is the Monday (UTC) of the ISO week; rows are sorted by week, kind and
+name. `sessions` is the number of distinct transcript files that invoked the
+name that week, and `sessions_scanned` the number of transcript files read
+inside the window. Neither carries an id. A new run is published when the
+rows or the window start changed; `to` and `sessions_scanned` alone do not
+trigger a commit.
+
+- **What is counted.** Each `Skill` tool call (once per tool-use id per
+  transcript), and each typed slash command whose name is a skill. A plugin
+  prefix is dropped: `adam-coding-anywhere:workflow-path-audit` counts as
+  `workflow-path-audit`.
+- **Allowlist, then `other`.** A skill name is published only when this repo
+  already names it publicly: a skill fixture under `evals/`, or an
+  `evals/non-coverage.yml` row for a registry that is not private. Every other
+  Skill tool call counts under `other`; a typed command that is not an
+  allowlisted skill (`/clear`) is not counted at all.
+- **Blind spots.** Cloud sessions are not in local transcripts. A skill loaded
+  without the Skill tool (read straight from its `SKILL.md`) is not counted.
+  Local eval sessions do not inflate the counts: `local_eval.py` runs a
+  one-turn arm without session persistence and moves a multi-turn arm's
+  transcripts out of `~/.claude/projects` when it ends.
+
 ## Why it runs on the owner's durable machine
 
 It reads transcripts, and only the machine where Claude Code is used day to day
@@ -43,8 +87,9 @@ name alone.
   `TestPublishUsageCensus` runs the same shape end to end through the publish
   script against a local bare repository and asserts the pushed file holds only
   those keys and that the script's one summary line holds totals only.
-- The publish script prints one line — model count, turn total, week count — with
-  no path under `$HOME` and no per-model figures. It handles no token: it uses
+- The publish script prints one line — model count, turn total, skill
+  invocation total, week count — with no path under `$HOME` and no per-model or
+  per-skill figures. It handles no token: it uses
   the git credentials the machine already has.
 
 ## Setting it up (the owner does this once)
@@ -60,8 +105,8 @@ Try it first. A dry run does everything except the push:
 bash /path/to/skills-evals/scripts/publish_usage_census.sh --dry-run
 ```
 
-It prints e.g. `usage census: 4 models, 1234 assistant turns, 8 weeks; dry run,
-committed locally and pushed nothing`. The script clones skills-evals into a temp
+It prints e.g. `usage census: 4 models, 1234 assistant turns, 56 skill
+invocations, 8 weeks; dry run, committed locally and pushed nothing`. The script clones skills-evals into a temp
 dir itself, so it always runs the census from `main`, and it re-publishes at least
 every 6 days even when the counts have not moved, so an idle account does not age
 out of the roster's 14-day freshness window.

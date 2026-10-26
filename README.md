@@ -27,6 +27,7 @@ harness/
   run_propagation.py       # runner: Tier-2 propagation arms
   roster.py                # model roster: availability + usage -> arms/judge/preflight
   timeweeks.py             # ISO-week arithmetic shared by the roster and the census
+  skill_usage.py           # usage/weekly-local.json: its schema, and per-skill weight for the planner
   scorers/
     objective.py           # scriptable assertions on the output workspace
     judge.py               # LLM-as-judge rubric scoring
@@ -158,7 +159,7 @@ scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
   refresh_models.py        # GET /v1/models -> availability document (the one network call)
-  model_usage_census.py    # local transcripts -> {model: {iso week: count}}
+  model_usage_census.py    # local transcripts -> {model: {iso week: count}}, and the same per skill
   publish_usage_census.sh  # runs the census on the owner's machine, pushes it to persistent/eval-results
   local_eval.py            # guarded local runner: N trials of one skill fixture under the owner's /login,
                            # results outside every repo, a "local exhibit, not badge input"

@@ -41,6 +41,11 @@ def iso_week(moment: datetime) -> str:
     return f"{year}-W{week:02d}"
 
 
+def week_monday(label: str) -> str:
+    """`2026-W36` -> `2026-08-31`, the Monday (UTC) that ISO week starts on."""
+    return datetime.strptime(f"{label}-1", "%G-W%V-%u").date().isoformat()
+
+
 def window_weeks(now: datetime, count: int) -> list[str]:
     """The `count` ISO week labels ending with the one `now` falls in."""
     return [iso_week(now - timedelta(weeks=offset)) for offset in range(count)]
