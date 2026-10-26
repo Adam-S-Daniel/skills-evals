@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CDazbZTBJ6nuGpsSNnB32h",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CDazbZTBJ6nuGpsSNnB32h",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011dPqnS9cRkdKrWuyrzP2cx",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && git status --short && ls -R . | grep -v '^./.git/' | head -50 && cat scripts/retry.sh; cat CHANGELOG.md; ls docs 2><path>",
+      "input_chars": 156,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011dPqnS9cRkdKrWuyrzP2cx",
+      "is_error": true,
+      "output": "Exit code 2\n6dfd99b initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nCHANGELOG.md\nREADME.md\nscripts\n\n./scripts:\nretry.sh\n#!<path> bash\n# retry.sh: retry a transient command failure w...",
+      "output_chars": 1377,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EFE3pCdX297ymw2hHtxxXW",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 171,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EFE3pCdX297ymw2hHtxxXW",
+      "is_error": false,
+      "output": "1\t# Architecture Decision Records\n2\t\n3\tThis folder captures **why** non-obvious decisions were made in this repo \u2014\n4\tcontext that isn't in the code, that `git blame` won't surface, and that a\n5\tcontributor a year from now would otherwise re-derive (badly).\n6\t\n7\tEach ADR is one Markdown file, `NNNN-k...",
+      "output_chars": 3686,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GETpVjtyPgxHbVGhQ9cTiN",
+      "name": "Bash",
+      "input": "cat README.md; git remote -v",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GETpVjtyPgxHbVGhQ9cTiN",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.",
+      "output_chars": 179,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KZ2QHRo5ytUeE72PPykTe2",
+      "name": "Bash",
+      "input": "mkdir -p docs/decisions && cat > docs/decisions/README.md <<'EOF'\n# Architecture Decision Records\n\nThis folder captures **why** non-obvious decisions were made in this repo:\ncontext that isn't in the ...",
+      "input_chars": 4426,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KZ2QHRo5ytUeE72PPykTe2",
+      "is_error": false,
+      "output": "#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential backoff.\n#\n# See docs/decisions/0001-cap-retries-with-exponential-backoff.md for why\n# attempts are capped at 5 with exponential backoff.\nset -euo pipefail\n\nmax_attempts=5\ndelay=1\nattempt=1\n\nwhile true; do\nok\n M AGEN...",
+      "output_chars": 454,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
