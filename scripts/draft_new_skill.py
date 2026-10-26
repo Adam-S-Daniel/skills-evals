@@ -982,7 +982,7 @@ def measure(staging: Path, registry_flag: str, ref: str, payload_path: Path,
     if quotes_an_example(staged, proposal["examples"]):
         return finish(["a staged file quotes a lesson example verbatim"])
 
-    with tempfile.TemporaryDirectory(prefix="draft-skill-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="propose-skill-edit-draft-") as tmp:
         scratch = Path(tmp)
         try:
             sha = loop.resolve_ref(checkout, ref)
