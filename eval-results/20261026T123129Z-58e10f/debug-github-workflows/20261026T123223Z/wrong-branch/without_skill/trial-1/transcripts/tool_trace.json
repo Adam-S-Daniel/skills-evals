@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PZU1n8boB1UvTxBzUYX78X",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls -a; ls .github/workflows 2><path>; which gh",
+      "input_chars": 95,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PZU1n8boB1UvTxBzUYX78X",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n55ea9b2 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zp...",
+      "output_chars": 374,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M6GUoVaoBJKpAg4RdLjaHg",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md | head -40; ls bin src test; file bin/gh; head -20 bin/gh",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M6GUoVaoBJKpAg4RdLjaHg",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1824,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EcYLoy1odXddj5PrV1DVtA",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -8; python3 -m unittest discover -s test 2>&1 | tail -8; cat src/sequence.py test/test_current.py; git log --stat --format=%h\\ %s | head -20",
+      "input_chars": 189,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EcYLoy1odXddj5PrV1DVtA",
+      "is_error": false,
+      "output": "             ^^^^^^^^^^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'test.test_legacy'\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n.\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n...",
+      "output_chars": 1685,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A1aS54A3p9ayhiaL7swhNb",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; git log --all --oneline -- test | head; git log -S test_legacy --oneline --all | head",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A1aS54A3p9ayhiaL7swhNb",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 737,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
