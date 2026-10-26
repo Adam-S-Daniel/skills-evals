@@ -278,6 +278,30 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
+### review-bash-ci-reliability/drift-report-capture
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/drift-report-capture](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/drift-report-capture)
+- Review a config-drift check whose `diff` and `grep | head | cut` captures abort it under `set -euo pipefail` on a normal result (checklist item 7). Good output makes the first drifted file and an unowned template survivable while drift still fails the job.
+- Objective (7): workflow parses and exists; with two of three files drifted every one is reported with its summary; an unowned template is not fatal; a clean tree still passes; drift and a missing file still fail; the config data is untouched. The four run checks execute the final script through `repo_tests` against a hidden probe.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
+### review-bash-ci-reliability/test-runner-assertions
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/test-runner-assertions](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/test-runner-assertions)
+- Review a green shell test runner whose `grep`, `cmp` and script-under-test captures kill the whole run on a failing assertion (item 7's test-harness paragraph). Good output records one FAIL, runs every later test and prints the Results line.
+- Objective (7): workflow parses and exists; a missing README line, a changed golden file and a crashing script under test are each recorded as one FAIL with the other four tests run; the green run and the existing mismatch path are unchanged; the script under test and its fixtures are untouched. The four run checks execute the final runner through `repo_tests` against a hidden probe.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
+### review-bash-ci-reliability/empty-repo-discovery
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/empty-repo-discovery](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/empty-repo-discovery)
+- Review a nightly visibility audit that reads `gh repo list` through process substitution and exits 0 on an empty result, so a failed listing goes green (item 3). Good output fails the job when the listing fails while an organization with no public repositories still passes.
+- Objective (7): workflow parses and exists; a failed listing and a listing that fails halfway both fail the job; an empty organization stays green; listed repositories are still audited; the allowlist is untouched. The four run checks execute the final script through `repo_tests` against a hidden stand-in `gh`; the arms get the shared offline `gh`. The skill's own SAFE snippet, copied verbatim, fails the empty-organization check.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
 ### skills-doctor/bucketed-account-store
 
 - `skills-doctor` (registry: `adam-agentskills`) — [evals/skills-doctor/bucketed-account-store](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/skills-doctor/bucketed-account-store)
