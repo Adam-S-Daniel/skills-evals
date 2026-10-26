@@ -92,9 +92,22 @@ jobs:
       # The newest 20 merged pull requests per repository: new work arrives
       # a few a day, and every candidate costs three REST reads against the
       # job token's hourly limit.
+      # The fleet includes the private registry, which the job token cannot
+      # see, so the miner would fail closed on its 404 (2026-10-26, run
+      # 40361751478). The read-only registry App sees it and is listed
+      # under `skipped`; public repositories read the same with any token.
+      - name: Mint the read-only fleet token
+        id: fleet-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
       - name: Mine merged fleet pull requests
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.fleet-token.outputs.token }}
         run: |
           set -euo pipefail
           python3 scripts/mine_real_work.py mine --registry _agent-guidance/repos.yml \

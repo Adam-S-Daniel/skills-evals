@@ -426,6 +426,17 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         self.assertTrue(mint["continue-on-error"])
         self.assertEqual(mint["with"]["permission-contents"], "write")
 
+    def test_the_miner_reads_the_fleet_with_the_read_only_registry_token(self):
+        holders = [(name, s.get("id")) for name, job in self.jobs.items()
+                   for s in job["steps"] if "REGISTRY_READ_APP_PEM" in json.dumps(s)]
+        self.assertEqual(holders, [("plan", "fleet-token")])
+        mint = next(s for s in self.jobs["plan"]["steps"] if s.get("id") == "fleet-token")
+        self.assertEqual(mint["with"]["repositories"], "adam-agentskills-private")
+        self.assertEqual(mint["with"]["permission-contents"], "read")
+        self.assertNotIn("continue-on-error", mint)
+        step = self.step("plan", "mine_real_work.py mine")
+        self.assertEqual(step["env"]["GH_TOKEN"], "${{ steps.fleet-token.outputs.token }}")
+
     def test_promotion_pushes_only_what_promote_writes_and_arms_that_sha(self):
         step = self.step("promote", "app_gh pr merge")
         self.assertEqual(step["env"]["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
