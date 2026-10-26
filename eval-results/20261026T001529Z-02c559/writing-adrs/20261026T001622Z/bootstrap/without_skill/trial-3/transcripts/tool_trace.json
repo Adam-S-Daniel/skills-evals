@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HsQd1d3VTQhWxHEu6mfAmL",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -10 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HsQd1d3VTQhWxHEu6mfAmL",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n3645a65 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/retry.sh\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./C...",
+      "output_chars": 347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gwp8HnaP9Jgq82HcGhUSDV",
+      "name": "Bash",
+      "input": "for f in README.md scripts/retry.sh CHANGELOG.md; do echo \"=== $f\"; cat \"$f\"; done; ls -la docs 2><path>; git show --stat HEAD | head -20",
+      "input_chars": 140,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gwp8HnaP9Jgq82HcGhUSDV",
+      "is_error": false,
+      "output": "=== README.md\n# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.\n=== scripts/retry.sh\n#!<path> bash\n# retry.sh: retry a transient command failure with capped exponential b...",
+      "output_chars": 1687,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017gSh7Sg2y4MwZiw8hD9G7B",
+      "name": "Bash",
+      "input": "d=$(mktemp -d) && printf '#!<path>\\necho \"sleep $1\" >&2\\n' > \"$d/sleep\" && chmod +x \"$d/sleep\" && PATH=\"$d:$PATH\" bash scripts/retry.sh false; echo \"exit=$?\"",
+      "input_chars": 158,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017gSh7Sg2y4MwZiw8hD9G7B",
+      "is_error": false,
+      "output": "sleep 1\nsleep 2\nsleep 4\nsleep 8\nretry.sh: giving up after 5 attempts: false\nexit=1",
+      "output_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017SBpX3zZPcSMni3ob5Q7F9",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CBQN5cXg9QqeUgtW5KcP76",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017SBpX3zZPcSMni3ob5Q7F9",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CBQN5cXg9QqeUgtW5KcP76",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019SnePpnQuPHAz89UvHNaLT",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CejcZJADQpbKdgsCeSMbfp",
+      "name": "Bash",
+      "input": "bash -n scripts/retry.sh && d=$(mktemp -d) && printf '#!<path>\\necho \"sleep $1\" >&2\\n' > \"$d/sleep\" && chmod +x \"$d/sleep\" && PATH=\"$d:$PATH\" bash scripts/retry.sh false; echo \"fail-case exit=$?\"; PAT...",
+      "input_chars": 312,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019SnePpnQuPHAz89UvHNaLT",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 83,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CejcZJADQpbKdgsCeSMbfp",
+      "is_error": false,
+      "output": "sleep 1\nsleep 2\nsleep 4\nsleep 8\nretry.sh: giving up after 5 attempts: false\nfail-case exit=1\npass-case exit=0\n M AGENTS.md\n M scripts/retry.sh\n?? docs/",
+      "output_chars": 151,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
