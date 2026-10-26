@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0172KBvB6k8nBvmX1s3RZxnC",
+      "name": "Bash",
+      "input": "git status && git log --oneline -15 && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 81,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0172KBvB6k8nBvmX1s3RZxnC",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.claude/\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track...",
+      "output_chars": 1454,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MotVqksRQxP1PnruB2nype",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml && ls -R bin src test .gh && for f in bin/* src/* test/*; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 129,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MotVqksRQxP1PnruB2nype",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.5KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s tes...",
+      "output_chars": 2190,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F8fyxhxYsvqHJNUvWNkzcf",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; echo ====; cat .gh/replay/run-view-77001.log; echo; cat .gh/replay/run-list.json; cat .gh/replay/api/repos/example-org/example-service/check-runs/99001/annota...",
+      "input_chars": 321,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F8fyxhxYsvqHJNUvWNkzcf",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n====\ntest\tRun unit tests\t2026-01-07T...",
+      "output_chars": 2614,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DF6R36GpDzoa3kjmZsaNvR",
+      "name": "Bash",
+      "input": "wc -c bin/gh; git log --stat --format='%h %s' ; echo ---; python3 -m unittest test.test_legacy; echo \"exit=$?\"; python3 -m unittest discover -s test; echo \"exit=$?\"; cat .gh/replay/api/repos/example-o...",
+      "input_chars": 268,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DF6R36GpDzoa3kjmZsaNvR",
+      "is_error": false,
+      "output": "54717 bin/gh\n0811955 initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   |   35 +\n .../example-org/ex...",
+      "output_chars": 2313,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

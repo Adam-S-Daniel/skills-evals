@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MVzWHYfnCr8inmoT5TdhzF",
+      "name": "Bash",
+      "input": "git status | head -5 && git log --oneline -15 && ls -a && ls .github/workflows 2><path>",
+      "input_chars": 90,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MVzWHYfnCr8inmoT5TdhzF",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n23336a8 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprof...",
+      "output_chars": 340,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Mm9HnB9YwnrsYPzuq965c6",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml README.md .gitmodules; find bin src test -type f | head -50; ls -la .gh .claude; git show --stat HEAD | head -40",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Mm9HnB9YwnrsYPzuq965c6",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 2172,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015ZkyDNJ2dM4aubsMnCDocF",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay && cat run-list.json run-view-77001.json run-view-77001.log; find . -path '*check-runs/99001*' -o -name 'compare*' | xargs cat; git -C <path> lo...",
+      "input_chars": 254,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015ZkyDNJ2dM4aubsMnCDocF",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n[\n  {\n    \"databaseId\": 77001,\n    \"...",
+      "output_chars": 3342,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GvUvAGy51r9bKfPAt6nayJ",
+      "name": "Bash",
+      "input": "cd <path> && git branch -a; git show 0933504 --stat; git show 0933504 -- .github; git log --oneline --all --graph; cat \".gh/replay/api/repos/example-org/example-service/compare/main...fix/ci-test-disc...",
+      "input_chars": 379,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GvUvAGy51r9bKfPAt6nayJ",
+      "is_error": false,
+      "output": "  fix/ci-test-discovery\n* main\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/fix/ci-test-discovery\n  remotes/origin/main\ncommit 093350486ff3efc5013d0416a70a4c6e1886778a\nAuthor: <redacted> <<email>>\nDate:   Thu Jan 1 00:00:00 2026 +0000\n\n    Use current test discovery\n\n .github/workflows/ci.y...",
+      "output_chars": 2166,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
