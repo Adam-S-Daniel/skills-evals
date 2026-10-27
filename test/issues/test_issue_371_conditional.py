@@ -768,6 +768,28 @@ class GuidancePairTests(unittest.TestCase):
         self.assertIs(self.summary("w_full")["judge_conditional"], False)
         self.assertEqual(self.summary("w_section")["judge"], SKIPPED)
 
+    def test_the_ingester_accepts_every_arm_of_an_isolation_guidance_run(self):
+        # Until 2026-10-27 every such run was refused at ingest: its pooling
+        # key (`fixture_name`, `guidance_digests`) was not an allowed key and
+        # it carries no `n`.
+        proc = self.run_guidance("$MAGIC_TOKEN", arms=self.FOUR_ARMS)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        (run_dir,) = (self.results / f"guidance/{self.SECTION}").iterdir()
+        for arm in self.FOUR_ARMS:
+            rel = f"guidance/{self.SECTION}/{run_dir.name}/{arm}/summary.json"
+            doc = self.summary(arm)
+            parts = ingest.parse_result_path(rel)
+            with self.subTest(arm=arm):
+                self.assertIn("guidance_digests", doc)
+                ingest.check_summary(doc, rel, parts)
+                digests = doc["guidance_digests"]
+                for bad in ({**doc, "n": 1}, {**doc, "fixture_name": "../x"},
+                            {**doc, "guidance_digests": {**digests, "rest": "x"}},
+                            {**doc, "guidance_digests": {"section": digests["section"]}},
+                            {**doc, "guidance_digests": {**digests, "extra": digests["rest"]}}):
+                    with self.assertRaises(ingest.Rejected):
+                        ingest.check_summary(bad, rel, parts)
+
     def test_the_judge_pairs_are_the_gates_pairs(self):
         import gates
         self.assertEqual(run_eval.GUIDANCE_JUDGE_PAIRS, gates.GUIDANCE_PAIRS)
