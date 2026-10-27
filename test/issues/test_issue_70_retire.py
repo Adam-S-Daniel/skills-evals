@@ -322,7 +322,7 @@ class ProposalTests(Base):
         """Adam, 2026-10-26: removal pull requests auto-merge, no human."""
         doc = yaml.safe_load((ROOT / "evals" / "gate-policy.yml").read_text())
         self.assertEqual(doc["skills"]["retirement_mode"], "auto")
-        self.assertEqual(doc["guidance"]["retirement_mode"], "proposal")
+        self.assertEqual(doc["guidance"]["retirement_mode"], "auto")
 
 
 class AutoTests(Base):
@@ -1716,7 +1716,7 @@ class WorkflowTests(unittest.TestCase):
             "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && "
             "secrets.EVAL_IMPROVE_APP_PEM != '' }}")})
         # The token reaches one step: no other step or the job names it.
-        named = [s for s in steps if "app-token" in json.dumps(s)]
+        named = [s for s in steps if "steps.app-token" in json.dumps(s) or s.get("id") == "app-token"]
         self.assertEqual(named, [mint, act])
         self.assertNotIn("env", self.job)
         registry = next(s for s in steps if s.get("with", {}).get("repository")

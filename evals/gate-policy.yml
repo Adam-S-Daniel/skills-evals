@@ -47,9 +47,11 @@ skills:
 # read only for the `shorten-or-merge` outcome (harness/gates.py,
 # `guidance_verdict`). Same starting values as skills, kept apart so they can
 # diverge. Adam made section removal automatic on 2026-10-10 (#124) and
-# removal pull requests auto-merging on 2026-10-25; the mode stays
-# `proposal` until the write path to _agent-guidance is wired, and switching
-# it is the owner's call, as for skills.
+# removal pull requests auto-merging on 2026-10-25. The write path is the
+# eval-improve GitHub App's token for _agent-guidance alone; with no token
+# (the secrets are unset, the mint failed, or the App is not installed on
+# _agent-guidance), scripts/retire_skill.py --target guidance files the
+# issue instead. Set it to `proposal` to turn removal pull requests off.
 guidance:
   objective_margin: 0.05
   judge_margin: 0.5
@@ -63,4 +65,4 @@ guidance:
   floor_fraction: 0.10
   bootstrap_resamples: 2000
   retire_looks: [5, 10, 20]
-  retirement_mode: proposal
+  retirement_mode: auto

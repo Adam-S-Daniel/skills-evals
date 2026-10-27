@@ -367,10 +367,10 @@ class GuidanceVerdictTests(unittest.TestCase):
 
 class GuidancePolicyTests(unittest.TestCase):
 
-    def test_the_committed_policy_has_its_own_guidance_block_in_proposal_mode(self):
+    def test_the_committed_policy_has_its_own_guidance_block_in_auto_mode(self):
         policy = gates.load_gate_policy()
         self.assertIsNotNone(policy["guidance"])
-        self.assertEqual(policy["guidance"]["retirement_mode"], "proposal")
+        self.assertEqual(policy["guidance"]["retirement_mode"], "auto")
         self.assertEqual(set(policy["guidance"]), set(policy["skills"]))
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
@@ -459,7 +459,7 @@ class ComputeGuidanceTests(unittest.TestCase):
     def test_flat_runs_of_both_pairs_retire_the_section(self):
         self.write_runs()
         doc = self.compute()
-        self.assertEqual(doc["guidance_retirement_mode"], "proposal")
+        self.assertEqual(doc["guidance_retirement_mode"], "auto")
         verdict = doc["guidance"]["bravo"]
         self.assertEqual(verdict["verdict"], "retire", verdict["reason"])
         self.assertEqual(verdict["cells"][0]["with"]["runs"], 20)
@@ -517,8 +517,9 @@ def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=N
 
 
 class FakeGh:
-    def __init__(self, issues=(), prs=()):
+    def __init__(self, issues=(), prs=(), merge_method="MERGE"):
         self.calls, self.issues, self.prs = [], list(issues), list(prs)
+        self.merge_method = merge_method
 
     def __call__(self, args, stdin=None):
         self.calls.append((args, stdin))
@@ -527,7 +528,9 @@ class FakeGh:
         if args[:2] == ["api", "--paginate"] and "/pulls?" in args[2]:
             return "\n".join(json.dumps(p) for p in self.prs)
         if args[:2] == ["pr", "create"]:
-            return "https://github.com/example-org/guidance/pull/9\n"
+            return f"https://github.com/{rs.GUIDANCE_REPO}/pull/9\n"
+        if args[:2] == ["pr", "view"]:
+            return f"{self.merge_method}\n"
         return ""
 
 
@@ -664,16 +667,20 @@ AUTO_ENV = {"GITHUB_EVENT_NAME": "schedule", "GITHUB_ACTIONS": "true",
 @unittest.skipUnless(shutil.which("node"), "node is needed for the coverage script")
 class GuidanceRemovalTests(unittest.TestCase):
 
-    def run_main(self, gates_doc, checkout, env=AUTO_ENV, allow=("auto",), dry=False):
+    def run_main(self, gates_doc, checkout, env=AUTO_ENV, allow=("auto",), dry=False,
+                 fallback=False):
         path = tmpdir(self, "gates-") / "gates.json"
         path.write_text(json.dumps(gates_doc))
         gh, pushed, out = FakeGh(), [], io.StringIO()
+        self.registry = FakeGh()
         argv = ["--gates", str(path), "--target", "guidance", "--guidance", str(checkout),
-                *[x for a in allow for x in ("--allow-mode", a)], *(["--dry-run"] if dry else [])]
+                *[x for a in allow for x in ("--allow-mode", a)], *(["--dry-run"] if dry else []),
+                *(["--fallback-to-proposal"] if fallback else [])]
         old = os.environ.copy()
         os.environ.update(GIT_ENV)
         try:
-            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b: pushed.append(b), out=out)
+            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b: pushed.append(b),
+                         registry_gh=self.registry, out=out)
         finally:
             os.environ.clear()
             os.environ.update(old)
@@ -684,8 +691,18 @@ class GuidanceRemovalTests(unittest.TestCase):
         rc, gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root)
         self.assertEqual(rc, 0, out)
         self.assertEqual(pushed, ["retire-guidance/bravo"])
-        self.assertEqual([c[0][:2] for c in gh.calls][-2:], [["pr", "create"], ["pr", "merge"]])
-        self.assertEqual(gh.calls[-1][0][-2:], ["--auto", "--merge"])
+        # Every write to _agent-guidance goes through registry_gh: the
+        # workflow's own token cannot write another repository.
+        self.assertEqual([c[0][:2] for c in self.registry.calls],
+                         [["pr", "create"], ["api", "-X"], ["pr", "merge"], ["pr", "view"]])
+        create, label, merge, _view = self.registry.calls
+        self.assertEqual(label[0][-1], f"labels[]={rs.AGENT_LABEL}")
+        self.assertIn(f"repos/{rs.GUIDANCE_REPO}/issues/9/labels", label[0][3])
+        head = sh(root, "git", "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(merge[0][-4:], ["--auto", "--merge", "--match-head-commit", head])
+        self.assertTrue(create[1].rstrip().endswith(rs.AGENT_MARKER))
+        self.assertIn(rs.AGENT_TRAILER, sh(root, "git", "log", "-1", "--format=%B").stdout)
+        self.assertEqual([c[0][:2] for c in gh.calls if c[0][0] == "pr"], [])
         self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")
         changed = sh(root, "git", "show", "--name-only", "--format=", "HEAD").stdout.split()
         self.assertEqual(sorted(changed), sorted([
@@ -714,6 +731,44 @@ class GuidanceRemovalTests(unittest.TestCase):
                 self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")
                 self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(),
                                  ["*", "main"])
+
+    def test_a_removal_without_auto_enabled_on_the_pull_request_is_an_error(self):
+        root = guidance_repo(self)
+        registry = FakeGh(merge_method="")
+        path = tmpdir(self, "gates-") / "gates.json"
+        path.write_text(json.dumps(guidance_gates(mode="auto")))
+        old = os.environ.copy()
+        os.environ.update(GIT_ENV)
+        try:
+            rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
+                          str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
+                         push=lambda c, b: None, registry_gh=registry, out=io.StringIO())
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        self.assertEqual(rc, 2)
+
+    def test_fallback_to_proposal_files_the_issue_when_auto_is_not_allowed(self):
+        root = guidance_repo(self)
+        rc, gh, pushed, out = self.run_main(guidance_gates(mode="auto"), root,
+                                            allow=("proposal",), fallback=True)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(pushed, [])
+        self.assertEqual(self.registry.calls, [])
+        self.assertEqual(gh.calls[-1][0][:4], ["issue", "create", "-R", rs.EVALS_REPO])
+        self.assertIn(rs.GUIDANCE_NO_CREDENTIAL, gh.calls[-1][1])
+        self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(), ["*", "main"])
+        rc, _gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root,
+                                              allow=("proposal",), fallback=True, dry=True)
+        self.assertEqual(json.loads(out)["mode_reason"], rs.GUIDANCE_NO_CREDENTIAL)
+
+    def test_without_fallback_auto_not_allowed_still_exits_2(self):
+        root = guidance_repo(self)
+        rc, gh, pushed, _out = self.run_main(guidance_gates(mode="auto"), root,
+                                             allow=("proposal",))
+        self.assertEqual(rc, 2)
+        self.assertEqual(pushed, [])
+        self.assertEqual(gh.calls, [])
 
     def test_a_sections_file_section_removes_the_file(self):
         root = guidance_repo(self)
@@ -748,7 +803,7 @@ class GuidanceRemovalTests(unittest.TestCase):
 class GuidanceWorkflowTests(unittest.TestCase):
     """skill-coverage.yml's retirement job, read with a YAML parser."""
 
-    def test_the_guidance_step_follows_the_skill_step_in_proposal_mode(self):
+    def test_the_guidance_step_follows_the_skill_step_with_its_own_scoped_token(self):
         doc = yaml.safe_load((ROOT / ".github/workflows/skill-coverage.yml").read_text())
         steps = doc["jobs"]["retirement"]["steps"]
         checkout = next(s for s in steps if s.get("with", {}).get("repository")
@@ -760,9 +815,28 @@ class GuidanceWorkflowTests(unittest.TestCase):
         self.assertIn("--guidance \"$GITHUB_WORKSPACE/agent-guidance\"", compute["run"])
         self.assertIn("--target guidance", guidance_act["run"])
         self.assertNotIn("--target guidance", acts[0]["run"])
-        self.assertIn("--allow-mode proposal", guidance_act["run"])
-        self.assertNotIn("auto", guidance_act["run"])
-        self.assertEqual(guidance_act["env"], {"GH_TOKEN": "${{ github.token }}"})
+        self.assertIn("modes=(--allow-mode proposal)", guidance_act["run"])
+        self.assertIn('if [ -n "$REGISTRY_TOKEN" ]; then\n  modes+=(--allow-mode auto)',
+                      guidance_act["run"])
+        self.assertIn("modes+=(--fallback-to-proposal)", guidance_act["run"])
+        self.assertIn('"${modes[@]}"', guidance_act["run"])
+        self.assertEqual(guidance_act["env"], {
+            "GH_TOKEN": "${{ github.token }}",
+            "REGISTRY_TOKEN": "${{ steps.guidance-token.outputs.token }}"})
+        mint = steps[steps.index(guidance_act) - 1]
+        self.assertEqual(mint["id"], "guidance-token")
+        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+        self.assertIs(mint["continue-on-error"], True)
+        self.assertEqual(mint["if"], "steps.credential.outputs.present == 'true'")
+        self.assertEqual(mint["with"], {
+            "client-id": "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.EVAL_IMPROVE_APP_PEM }}",
+            "owner": "Adam-S-Daniel", "repositories": "_agent-guidance",
+            "permission-contents": "write", "permission-pull-requests": "write"})
+        # Each token reaches one step: the guidance token is not the skill step's.
+        self.assertEqual([s for s in steps if "guidance-token" in json.dumps(s)],
+                         [mint, guidance_act])
+        self.assertNotIn("guidance-token", json.dumps(acts[0]))
         self.assertLess(steps.index(checkout), steps.index(compute))
         self.assertIs(checkout["with"]["persist-credentials"], False)
         self.assertEqual(doc["jobs"]["retirement"]["permissions"],
