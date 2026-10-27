@@ -4,6 +4,7 @@
 Parse workflow structure with PyYAML and execute selection scripts offline.
 The caller must use the PID namespace and sentinel required by AGENTS.md.
 """
+import ast
 import importlib.util
 import contextlib
 import io
@@ -58,6 +59,15 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
+
+
+def bare_trials():
+    """scripts/plan_week.py's literal `BARE_TRIALS`, read from its AST so
+    this module imports no harness code."""
+    tree = ast.parse((ROOT / "scripts" / "plan_week.py").read_text(encoding="utf-8"))
+    (value,) = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
+                and [getattr(t, "id", None) for t in node.targets] == ["BARE_TRIALS"]]
+    return value
 
 
 def promoted_entries():
@@ -587,7 +597,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
             return result, sent
 
     def test_dispatch_sends_each_mode_and_sanitizes_failure(self):
-        result, sent = self.dispatch({"MODE": "eval", "FIXTURE": EXPECTED[0],
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "both", "FIXTURE": EXPECTED[0],
                                       "MODEL": "claude-opus-5-5"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(sent, ["workflow", "run", "routine-eval-fire.yml", "--repo",
@@ -605,7 +615,22 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         result, sent = self.dispatch({"MODE": "scaffold"})
         self.assertEqual(result.returncode, 1)
         self.assertIsNone(sent)
-        result, _ = self.dispatch({"MODE": "eval", "FIXTURE": EXPECTED[0],
+        # A bare baseline (ADR 0012's 2026-10-27 addendum): one arm at the
+        # planner's trials; an eval leg with any other arms sends nothing.
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "bare", "FIXTURE": EXPECTED[0],
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-8:], ["--raw-field", "fixture=" + EXPECTED[0],
+                                      "--raw-field", "model=claude-opus-5-5",
+                                      "--raw-field", "arms=bare",
+                                      "--raw-field", f"trials={bare_trials()}"])
+        for arms in ("", "with", "without", "both bare"):
+            with self.subTest(arms=arms):
+                result, sent = self.dispatch({"MODE": "eval", "ARMS": arms,
+                                              "FIXTURE": EXPECTED[0], "MODEL": "m"})
+                self.assertEqual(result.returncode, 1)
+                self.assertIsNone(sent)
+        result, _ = self.dispatch({"MODE": "eval", "ARMS": "both", "FIXTURE": EXPECTED[0],
                                    "MODEL": "claude-opus-5-5"}, fail=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn("Routine eval dispatch failed", result.stdout)

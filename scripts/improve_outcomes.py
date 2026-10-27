@@ -43,9 +43,11 @@ import urllib.request
 
 FIRE_WORKFLOW = "routine-eval-fire.yml"
 #: routine-eval-fire.yml's `run-name`, as GitHub renders it in
-#: `display_title`: the mode, then the one target input of that mode
-#: (fixture, candidate or skill), then the model when one was given.
-TITLE_RE = re.compile(r"Fire eval routine: (?P<mode>eval|scaffold|improve) "
+#: `display_title`: the mode, ` bare` after it for an eval fire with
+#: `arms: bare` (ADR 0012, bare baseline addendum), then the one target input
+#: of that mode (fixture, candidate or skill), then the model when one was
+#: given.
+TITLE_RE = re.compile(r"Fire eval routine: (?P<mode>eval|scaffold|improve)(?P<bare> bare)? "
                       r"(?P<target>[A-Za-z0-9][A-Za-z0-9/_.-]{0,255})"
                       r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}))? ?")
 SKILL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -79,12 +81,19 @@ def parse_time(value) -> datetime | None:
 
 
 def parse_title(title) -> dict | None:
-    """{mode, target, model} of a fire run's title, or None for any other
-    title (a run from before the `run-name`, or one that does not match)."""
+    """{mode, target, model, bare} of a fire run's title, or None for any
+    other title (a run from before the `run-name`, one that does not match,
+    or ` bare` after a mode other than eval, which the workflow never
+    renders). `bare` is True for an eval fire with `arms: bare`: one
+    isolation arm, never a pair (ADR 0012, bare baseline addendum)."""
     match = TITLE_RE.fullmatch(title) if isinstance(title, str) else None
     if match is None:
         return None
-    return {"mode": match["mode"], "target": match["target"], "model": match["model"]}
+    bare = match["bare"] is not None
+    if bare and match["mode"] != "eval":
+        return None
+    return {"mode": match["mode"], "target": match["target"], "model": match["model"],
+            "bare": bare}
 
 
 def run_id_time(run_id) -> datetime | None:

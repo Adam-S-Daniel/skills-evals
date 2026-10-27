@@ -2,7 +2,9 @@ name: Weekly routine evals
 
 # The closed loop's weekly sweep (G5, G6): scripts/plan_week.py plans eval
 # AND improve fires by priority band (safety, missing evidence, near a
-# decision, improvements, re-checks; the thresholds design's rule D), with
+# decision, improvements, re-checks; the thresholds design's rule D; then
+# bare baselines, ADR 0012's 2026-10-27 addendum: one `arms: bare` fire of
+# three trials per in-place fixture and roster model, once), with
 # improve eligibility and stopping (rules A and C) read from evidence that
 # already exists (scripts/improve_outcomes.py). Each leg dispatches the
 # existing fire workflow, which validates its inputs, runs the allowance
@@ -132,6 +134,7 @@ jobs:
       - name: Revalidate the planned fire
         env:
           MODE: ${{ matrix.mode }}
+          ARMS: ${{ matrix.arms }}
           FIXTURE: ${{ matrix.fixture }}
           EVAL_KEY: ${{ matrix.eval_key }}
           MODEL: ${{ matrix.model }}
@@ -147,6 +150,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           MODE: ${{ matrix.mode }}
+          ARMS: ${{ matrix.arms }}
           FIXTURE: ${{ matrix.fixture }}
           MODEL: ${{ matrix.model }}
           SKILL: ${{ matrix.skill }}
@@ -155,8 +159,18 @@ jobs:
           set -euo pipefail
           case "$MODE" in
             eval)
+              # A bare baseline is one arm at three trials; a cell's pair
+              # is both arms at one.
+              case "${ARMS:-}" in
+                both) trials=1 ;;
+                bare) trials=3 ;;
+                *)
+                  echo "::error::Routine eval dispatch failed"
+                  exit 1 ;;
+              esac
               fields=(--raw-field mode=eval --raw-field "fixture=$FIXTURE"
-                      --raw-field "model=$MODEL" --raw-field arms=both --raw-field trials=1) ;;
+                      --raw-field "model=$MODEL" --raw-field "arms=$ARMS"
+                      --raw-field "trials=$trials") ;;
             improve)
               fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
                       --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;

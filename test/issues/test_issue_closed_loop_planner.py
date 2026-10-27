@@ -53,34 +53,72 @@ def stamp(moment):
     return moment.strftime("%Y%m%dT%H%M%SZ") + "-abc123"
 
 
+#: routine-eval-fire.yml's one conditional in `run-name`: ` bare` after an
+#: eval mode whose `arms` is bare (ADR 0012, bare baseline addendum).
+BARE_EXPRESSION = "${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}"
+
+
+def render_title(template, **inputs):
+    """The fire workflow's `run-name` as GitHub renders it for `inputs`:
+    the bare conditional, then each `${{ inputs.<name> }}`."""
+    bare = " bare" if inputs.get("mode") == "eval" and inputs.get("arms") == "bare" else ""
+    text = template.replace(BARE_EXPRESSION, bare)
+    return re.sub(r"\$\{\{ inputs\.(\w+) \}\}", lambda m: inputs.get(m.group(1), ""), text)
+
+
 class TitleAndOutcomeTests(unittest.TestCase):
 
     def test_titles_parse_strictly(self):
         self.assertEqual(io_mod.parse_title("Fire eval routine: improve writing-adrs "),
-                         {"mode": "improve", "target": "writing-adrs", "model": None})
+                         {"mode": "improve", "target": "writing-adrs", "model": None,
+                          "bare": False})
         self.assertEqual(io_mod.parse_title(
             "Fire eval routine: eval evals/writing-adrs/bootstrap claude-opus-5-5"),
             {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
-             "model": "claude-opus-5-5"})
+             "model": "claude-opus-5-5", "bare": False})
+        self.assertEqual(io_mod.parse_title(
+            "Fire eval routine: eval bare evals/writing-adrs/bootstrap claude-opus-5-5"),
+            {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
+             "model": "claude-opus-5-5", "bare": True})
+        # A skill named `bare` is still a skill, not a marker.
+        self.assertEqual(io_mod.parse_title("Fire eval routine: improve bare ")["target"],
+                         "bare")
         for bad in ("Fire eval routine", "Fire eval routine: improve ",
                     "Fire eval routine: deploy x", "Fire eval routine: improve a;b",
-                    "Fire eval routine: improve x y z", None, 3):
+                    "Fire eval routine: improve x y z", None, 3,
+                    # ` bare` belongs to eval mode only.
+                    "Fire eval routine: improve bare writing-adrs ",
+                    "Fire eval routine: scaffold bare a__b__1 ",
+                    "Fire eval routine: eval bare  ", "Fire eval routine: evalbare evals/x m"):
             self.assertIsNone(io_mod.parse_title(bad), bad)
 
     def test_the_fire_workflow_renders_the_title_the_parser_reads(self):
         doc = yaml.safe_load((ROOT / ".github/workflows/routine-eval-fire.yml").read_text())
         template = doc["run-name"]
+        self.assertIn(BARE_EXPRESSION, template)
 
         def render(**inputs):
-            return re.sub(r"\$\{\{ inputs\.(\w+) \}\}",
-                          lambda m: inputs.get(m.group(1), ""), template)
+            inputs.setdefault("arms", "both")
+            return render_title(template, **inputs)
+        self.assertNotIn("${{", render(mode="eval"))
         self.assertEqual(io_mod.parse_title(render(mode="improve", skill="writing-adrs")),
-                         {"mode": "improve", "target": "writing-adrs", "model": None})
+                         {"mode": "improve", "target": "writing-adrs", "model": None,
+                          "bare": False})
         self.assertEqual(io_mod.parse_title(render(mode="eval", fixture="evals/x",
                                                    model="claude-opus-5-5"))["model"],
                          "claude-opus-5-5")
         self.assertEqual(io_mod.parse_title(render(mode="scaffold", candidate="a__b__1"))["mode"],
                          "scaffold")
+        self.assertEqual(io_mod.parse_title(render(mode="eval", arms="bare", fixture="evals/x",
+                                                   model="claude-opus-5-5")),
+                         {"mode": "eval", "target": "evals/x", "model": "claude-opus-5-5",
+                          "bare": True})
+        for arms in ("with", "without"):
+            self.assertFalse(io_mod.parse_title(render(mode="eval", arms=arms,
+                                                       fixture="evals/x"))["bare"])
+        # The workflow refuses bare outside eval mode; its title never says so.
+        self.assertEqual(io_mod.parse_title(render(mode="improve", arms="bare",
+                                                   skill="writing-adrs"))["bare"], False)
 
     def test_outcomes_from_fires_and_branches(self):
         t = NOW - timedelta(days=3)
@@ -631,21 +669,28 @@ class DispatchLegTests(unittest.TestCase):
         self.assertEqual(slept, [60] * 5)
 
     def test_validate_fire_accepts_only_planned_shapes(self):
-        good = {"MODE": "eval", "FIXTURE": "evals/writing-adrs/bootstrap",
+        good = {"MODE": "eval", "ARMS": "both", "FIXTURE": "evals/writing-adrs/bootstrap",
                 "EVAL_KEY": "writing-adrs/bootstrap", "MODEL": "claude-opus-5-5",
                 "SKILL": "", "HOLDOUT": ""}
         plan_week.validate_fire(good)
+        # A bare leg on a scheduled fixture that runs in place.
+        plan_week.validate_fire({**good, "ARMS": "bare"})
+        guidance = {"FIXTURE": GUIDANCE_FIXTURE, "EVAL_KEY": GUIDANCE_FIXTURE[len("evals/"):]}
+        plan_week.validate_fire({**good, **guidance})
         for change in ({"EVAL_KEY": "writing-adrs/supersede"}, {"MODEL": "claude-fable-5-1"},
                        {"FIXTURE": "evals/writing-adrs/supersede",
                         "EVAL_KEY": "writing-adrs/supersede"},
-                       {"SKILL": "writing-adrs"}, {"MODE": "scaffold"}):
+                       {"SKILL": "writing-adrs"}, {"MODE": "scaffold"},
+                       {"ARMS": ""}, {"ARMS": "with"}, {"ARMS": "without"},
+                       # A scheduled fixture with no `context` mapping.
+                       {**guidance, "ARMS": "bare"}):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**good, **change})
-        improve = {"MODE": "improve", "FIXTURE": "", "EVAL_KEY": "", "MODEL": "",
+        improve = {"MODE": "improve", "ARMS": "", "FIXTURE": "", "EVAL_KEY": "", "MODEL": "",
                    "SKILL": "writing-adrs", "HOLDOUT": "bootstrap"}
         plan_week.validate_fire(improve)
         for change in ({"HOLDOUT": ""}, {"HOLDOUT": "nope"}, {"SKILL": "skills-doctor"},
-                       {"MODEL": "claude-opus-5-5"}):
+                       {"MODEL": "claude-opus-5-5"}, {"ARMS": "bare"}, {"ARMS": "both"}):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**improve, **change})
 
@@ -676,11 +721,22 @@ class PlanCommandTests(unittest.TestCase):
             self.assertGreater(len(matrix["include"]), 0)
             self.assertTrue(all(row["band"] == "missing" for row in matrix["include"]))
             for row in matrix["include"]:
-                plan_week.validate_fire({"MODE": row["mode"], "FIXTURE": row["fixture"],
+                plan_week.validate_fire({"MODE": row["mode"], "ARMS": row["arms"],
+                                         "FIXTURE": row["fixture"],
                                          "EVAL_KEY": row["eval_key"], "MODEL": row["model"],
                                          "SKILL": row["skill"], "HOLDOUT": row["holdout"]})
             self.assertIn("### Weekly plan:", summary.read_text())
-            self.assertEqual(json.loads(plan_file.read_text())["schema_version"], 1)
+            plan = json.loads(plan_file.read_text())
+            self.assertEqual(plan["schema_version"], 1)
+            # Every in-place cell is a bare candidate on an empty tree; the
+            # missing band takes the room first, so none is planned yet.
+            roster = yaml.safe_load((ROOT / "evals" / "roster.yml").read_text())
+            in_place = [f for f in plan_week.schedule.scheduled_fixtures(
+                            ROOT / "evals" / "scheduled.yml",
+                            plan_week.schedule.committed_fixtures(ROOT))
+                        if plan_week.schedule.declares_context(ROOT / f)]
+            self.assertTrue(in_place)
+            self.assertEqual(plan["unplanned"]["bare"], len(in_place) * len(roster["arms"]))
 
     def test_an_unreadable_evidence_file_plans_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -786,7 +842,142 @@ class GuidanceFixtureTests(unittest.TestCase):
             self.assertFalse(any(w.get("skill") == "guidance" for w in plan["work"]))
 
 
+BARE_FIXTURES = ("evals/writing-adrs/bootstrap", "evals/disarm-inherited-reach",
+                 "evals/embeddable-tool-pages", "evals/github-actions-sha-pinning",
+                 "evals/windows-elevation-from-wsl")
+
+
+class BareBaselineTests(unittest.TestCase):
+    """ADR 0012's 2026-10-27 addendum: one bare fire per (scheduled in-place
+    fixture, roster model), once, after every other band, reserved as one
+    arm; never an empty fire of the cell's pair, and one run to the guard."""
+
+    def scheduled_in_place(self):
+        committed = plan_week.schedule.committed_fixtures(ROOT)
+        return [f for f in plan_week.schedule.scheduled_fixtures(
+                    ROOT / "evals" / "scheduled.yml", committed)
+                if plan_week.schedule.declares_context(ROOT / f)]
+
+    def test_the_scheduled_in_place_fixtures(self):
+        in_place = self.scheduled_in_place()
+        for fixture in BARE_FIXTURES:
+            self.assertIn(fixture, in_place)
+        # Guidance fixtures declare no context: their arms are their own.
+        self.assertFalse([f for f in in_place if f.startswith("evals/guidance/")])
+
+    def test_bare_cells_are_the_in_place_cells_with_no_bare_run(self):
+        bootstrap, disarm, embeddable, pinning, windows = BARE_FIXTURES
+        gates_doc = {"roster_models": ["m1", "m2"], "skills": {}, "bare_runs": [
+            # Ingested: done, on m1 only.
+            {"skill": "writing-adrs", "fixture": "bootstrap", "model": "m1"},
+            {"skill": "disarm-inherited-reach", "fixture": None, "model": "m2"}]}
+        t = NOW - timedelta(days=2)
+        runs = [fire(1, f"Fire eval routine: eval bare {embeddable} m1", t),
+                fire(2, f"Fire eval routine: eval bare {pinning} m1", NOW,
+                     conclusion=None, status="in_progress"),
+                # Refused or failed: not done.
+                fire(3, f"Fire eval routine: eval bare {windows} m1", t, conclusion="failure"),
+                # A pair fire is not a bare run.
+                fire(4, f"Fire eval routine: eval {windows} m2", t),
+                # A bare fire with no model names no cell.
+                fire(5, f"Fire eval routine: eval bare {windows} ", t)]
+        every = {(f, m) for f in self.scheduled_in_place() for m in ("m1", "m2")}
+        got = plan_week.bare_cells(ROOT / "evals", gates_doc, runs)
+        self.assertEqual(len(got), len({(c["fixture"], c["model"]) for c in got}))
+        self.assertEqual({(c["fixture"], c["model"]) for c in got},
+                         every - {(bootstrap, "m1"), (disarm, "m2"), (embeddable, "m1"),
+                                  (pinning, "m1")})
+        self.assertEqual(next(c for c in got if c["fixture"] == bootstrap)["skill"],
+                         "writing-adrs")
+        # Once done, never again; a new model id on the roster gets its own.
+        done = [{"skill": c["skill"], "fixture": c["fixture"].split("/")[2]
+                 if c["fixture"].count("/") == 2 else None, "model": c["model"]}
+                for c in got] + gates_doc["bare_runs"]
+        later = {**gates_doc, "bare_runs": done}
+        self.assertEqual(plan_week.bare_cells(ROOT / "evals", later, runs), [])
+        later["roster_models"] = ["m1", "m2", "m3"]
+        self.assertEqual({(c["fixture"], c["model"])
+                          for c in plan_week.bare_cells(ROOT / "evals", later, runs)},
+                         {(f, "m3") for f in self.scheduled_in_place()})
+
+    def test_bare_fires_take_only_the_room_left_and_cost_one_arm(self):
+        c = ctx(points_per_usd=0.005)
+        self.assertAlmostEqual(plan_week.bare_cost({"usd_per_arm_trial": 1.0}, c),
+                               1.0 * plan_week.BARE_TRIALS * 0.005)
+        self.assertAlmostEqual(plan_week.bare_cost({"usd_per_arm_trial": 100.0}, c), 0.035)
+        self.assertAlmostEqual(plan_week.bare_cost({"usd_per_arm_trial": 0.0}, c), 0.005)
+        self.assertAlmostEqual(plan_week.bare_cost(None, c), 0.035)
+        self.assertAlmostEqual(plan_week.bare_cost({"usd_per_arm_trial": 1.0}, ctx()), 0.035)
+        cells = [{**cell("evals/a", "heavy", "missing", usd=2.0), "usd_per_arm_trial": 1.0},
+                 cell("evals/b", "light", "missing")]
+        bare = [{"fixture": "evals/a", "model": "heavy", "skill": "a"},
+                {"fixture": "evals/a", "model": "light", "skill": "a"}]
+        # Room for the two missing fires (0.01 + 0.035) and one bare fire.
+        plan = plan_week.build_plan(ctx(cells=cells, bare=bare, points_per_usd=0.005,
+                                        room=0.045 + 0.015 + 0.01,
+                                        skills={"writing-adrs": skill()},
+                                        improve_charge=1.0), NOW)
+        got = [(f["band"], f["mode"], f["arms"], f["fixture"], f["model"]) for f in plan["fires"]]
+        self.assertEqual(got, [("missing", "eval", "both", "evals/a", "heavy"),
+                               ("missing", "eval", "both", "evals/b", "light"),
+                               ("bare", "eval", "bare", "evals/a", "heavy")])
+        self.assertAlmostEqual(plan["fires"][2]["cost"], 0.015)
+        self.assertEqual(plan["unplanned"]["bare"], 1)
+        leg = plan["matrix"]["include"][2]
+        self.assertEqual((leg["mode"], leg["arms"], leg["skill"], leg["holdout"]),
+                         ("eval", "bare", "", ""))
+        self.assertIn("- bare: eval bare evals/a heavy, 1.50 points",
+                      plan_week.summary_lines(plan))
+        # Bare goes after every other band, improve included, but an improve
+        # fire is still dispatched last.
+        plan = plan_week.build_plan(ctx(bare=bare, room=1.0, improve_charge=0.10,
+                                        skills={"writing-adrs": skill()}), NOW)
+        self.assertEqual([(f["band"], f["arms"]) for f in plan["fires"]],
+                         [("bare", "bare"), ("bare", "bare"), ("improve", "")])
+
+    def test_a_bare_fire_is_not_an_empty_fire_of_the_cells_pair(self):
+        fixture = "evals/writing-adrs/bootstrap"
+        gates_doc = {"roster_models": ["m1"], "skills": {}}
+        old = NOW - timedelta(days=1)
+        bare = [fire(i, f"Fire eval routine: eval bare {fixture} m1", old) for i in (1, 2)]
+        pair = [fire(i, f"Fire eval routine: eval {fixture} m1", old) for i in (3, 4)]
+
+        def empty(runs):
+            cells = plan_week.eval_cells(ROOT / "evals", gates_doc, runs, NOW)
+            return next(c for c in cells if c["fixture"] == fixture)["empty_fires"]
+        self.assertEqual(empty(bare), 0)
+        self.assertEqual(empty(pair), 2)
+
+    def test_a_bare_fire_is_one_run_to_the_allowance_guard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            runs = [fire(1, "Fire eval routine: eval bare evals/writing-adrs/bootstrap m1",
+                         NOW - timedelta(minutes=10))]
+            # Not an improve fire, so never held at improve_charge.
+            self.assertEqual(guard.improve_counts(runs, NOW), (0, 0))
+            state = guard.account(tree, LIMITS, NOW, plan_week._fire_pair(runs, NOW),
+                                  guard.improve_counts(runs, NOW))
+            # One fire in the hold: one reservation, as an eval fire of both arms.
+            self.assertAlmostEqual(state["pending"], guard.budget_file.run_reservation(LIMITS))
+            pair = [fire(1, "Fire eval routine: eval evals/writing-adrs/bootstrap m1",
+                         NOW - timedelta(minutes=10))]
+            self.assertEqual(state, guard.account(tree, LIMITS, NOW,
+                                                  plan_week._fire_pair(pair, NOW),
+                                                  guard.improve_counts(pair, NOW)))
+            self.assertTrue(guard.check(state, "eval"))
+
+
 class DocsTests(unittest.TestCase):
+
+    def test_adr_0012_records_the_bare_baseline_addendum(self):
+        text = (ROOT / "docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md"
+                ).read_text()
+        self.assertIn("## Bare baseline addendum (Adam, 2026-10-27)", text)
+        self.assertIn("one time per model\nper version of model", text)
+        self.assertIn("Ablation, the in-place pair of decision 1, stays the main approach", text)
+        doc = (ROOT / "docs/how-it-works.md").read_text()
+        self.assertIn("6. **Bare baselines**", doc)
+        self.assertIn("bare-baseline-addendum-adam-2026-10-27", doc)
 
     def test_adr_0010_records_the_2026_10_26_addendum(self):
         text = (ROOT / "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"
