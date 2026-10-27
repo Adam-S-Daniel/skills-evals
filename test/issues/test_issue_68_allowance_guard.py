@@ -1055,6 +1055,128 @@ class PaceRoomTests(unittest.TestCase):
             "; no recent account reading, so no pace room"))
 
 
+class ImproveCoverageTests(unittest.TestCase):
+    """2026-10-27: two improve fires were held at 21 points against a 30-point
+    cap while the account meter read 5%, and every fire was refused for the
+    week. An improve fire that finished before the newest snapshot is already
+    in its account-wide utilization, so it is held at no more than that."""
+
+    SNAP = NOW - timedelta(hours=1)
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    def metered(self, week=0.05):
+        run = self.tree / "routine-results" / "20261020T100000Z-a1b2c3"
+        path = run / "k" / "20261020T100000Z" / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        block = usage_block(0.02)
+        block["measured"]["meter"] = {"snapshots": [snapshot(week, at=self.SNAP)],
+                                      "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+
+    def state(self, started, count=None):
+        return guard.account(self.tree, LIMITS, NOW, (len(started),) * 2,
+                             (len(started) if count is None else count,) * 2,
+                             since=NOW - guard.WINDOW, improve_started=started)
+
+    def test_a_covered_improve_fire_is_held_at_the_meter_reading(self):
+        self.metered(0.05)
+        charge = guard.improve_charge(self.tree, LIMITS)
+        self.assertGreater(charge, 0.05)
+        started = [self.SNAP - guard.IMPROVE_MAX_RUN,  # exactly covered
+                   self.SNAP - timedelta(days=2)]
+        state = self.state(started)
+        self.assertEqual(state["improve_covered"], 2)
+        self.assertAlmostEqual(state["pending"], 0.05, places=12)
+        self.assertIn("2 of them finished before the account reading, so held "
+                      "at most at its 5.0 points", guard.describe(state))
+
+    def test_covered_fires_are_still_charged_when_the_reading_is_larger(self):
+        self.metered(0.9)
+        charge = guard.improve_charge(self.tree, LIMITS)
+        state = self.state([self.SNAP - timedelta(hours=5)])
+        self.assertAlmostEqual(state["pending"], charge, places=12)
+
+    def test_an_improve_fire_newer_than_the_snapshot_keeps_the_full_charge(self):
+        self.metered(0.05)
+        charge = guard.improve_charge(self.tree, LIMITS)
+        newer = self.SNAP - guard.IMPROVE_MAX_RUN + timedelta(seconds=1)
+        state = self.state([newer, self.SNAP - timedelta(days=1)])
+        self.assertEqual(state["improve_covered"], 1)
+        self.assertAlmostEqual(state["pending"], charge + 0.05, places=12)
+
+    def test_no_usable_snapshot_keeps_the_full_charge(self):
+        charge = guard.improve_charge(self.tree, LIMITS)
+        state = self.state([NOW - timedelta(days=2)] * 2)
+        self.assertEqual((state["improve_covered"], state["account_used"]), (0, None))
+        self.assertAlmostEqual(state["pending"], 2 * charge, places=12)
+        self.assertNotIn("finished before", guard.describe(state))
+
+    def test_without_start_times_nothing_changes(self):
+        self.metered(0.05)
+        charge = guard.improve_charge(self.tree, LIMITS)
+        state = guard.account(self.tree, LIMITS, NOW, (2, 2), (2, 2),
+                              since=NOW - guard.WINDOW)
+        self.assertAlmostEqual(state["pending"], 2 * charge, places=12)
+
+    def test_covered_never_exceeds_the_improve_count(self):
+        self.metered(0.05)
+        state = self.state([self.SNAP - timedelta(days=1)] * 3, count=1)
+        self.assertEqual(state["improve_covered"], 1)
+
+    def test_start_times_that_are_not_aware_datetimes_fail_closed(self):
+        self.metered(0.05)
+        for bad in (["2026-10-19T00:00:00Z"], [datetime(2026, 10, 19)], [None], "x"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(guard.GuardError):
+                    self.state(bad, count=1)
+        budget = self.tree / "budget.yml"
+        budget.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", str(self.tree),
+                               "--budget", str(budget)], now=NOW,
+                              fire_count=lambda now: (1, 1),
+                              improve_count=lambda now: (1, 1),
+                              improve_starts=lambda now: ["not a datetime"])
+        self.assertEqual(code, 1)
+        self.assertIn("refusing", out.getvalue())
+
+    def test_main_releases_room_a_covered_improve_fire_would_have_held(self):
+        self.metered(0.05)
+        budget = self.tree / "budget.yml"
+        budget.write_text(VALID_BUDGET, encoding="utf-8")
+
+        def run(starts):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = guard.main(["check", "--results-tree", str(self.tree),
+                                   "--budget", str(budget), "--mode", "improve"],
+                                  now=NOW, fire_count=lambda now: (2, 0),
+                                  improve_count=lambda now: (2, 0),
+                                  improve_starts=starts)
+            return code
+        # Two charges alone are over the 30-point cap; covered, they are 5.
+        self.assertEqual(run(lambda now: [self.SNAP - timedelta(days=1)] * 2), 0)
+        self.assertEqual(run(None), 1)
+
+    def test_improve_starts_reads_successful_improve_fires_in_the_window(self):
+        def row(n, title, when, conclusion="success"):
+            stamp = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+            return {"id": n, "display_title": title, "status": "completed",
+                    "conclusion": conclusion, "created_at": stamp,
+                    "run_started_at": stamp, "updated_at": stamp}
+        t = NOW - timedelta(hours=3)
+        runs = [row(1, "Fire eval routine: improve a ", t),
+                row(2, "Fire eval routine: improve a ", t, "failure"),
+                row(3, "Fire eval routine: eval evals/x m", t),
+                row(4, "Fire eval routine: improve a ", NOW - timedelta(days=9))]
+        starts = guard.improve_starts(runs, NOW)
+        self.assertEqual(starts, [t.replace(microsecond=0)])
+
+
 # ---------------------------------------------------------------------------
 # The workflows run it
 
