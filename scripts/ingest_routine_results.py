@@ -295,7 +295,12 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "installed", "decoy", "hook_returncode", "guard",
     "model_tokens", "cross_model", "guidance_violations") + ("pairing", "role", "context",
                                       "context_subject", "arm_context") + ("run", "usage") + (
-    "judge_selection", "fixture_digest", "judge_conditional")
+    "judge_selection", "fixture_digest", "judge_conditional") + (
+    # An isolation guidance run's pooling key (#124): its fixture directory's
+    # name and the section's and the rest of the guidance's digests.
+    "fixture_name", "guidance_digests")
+#: A guidance summary's `guidance_digests` (harness/guidance.py content_digests).
+GUIDANCE_DIGEST_KEYS = ("section", "rest")
 #: A summary's `judge_selection` (#371): which model judges the arm, and the
 #: rule that chose it. Null when the run selected no judge.
 JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
@@ -963,6 +968,10 @@ def check_summary(doc, where: str, parts: dict) -> None:
     if parts["trial"] is not None:
         if doc.get("trial") != parts["trial"] or "n" in doc:
             raise Rejected(f"{where}: trial does not match its directory")
+    elif "guidance_digests" in doc:
+        # An isolation guidance run writes one trial per arm and no `n` (#124).
+        if not parts["key"].startswith("guidance/") or "n" in doc or "trial" in doc:
+            raise Rejected(f"{where}: an isolation guidance arm carries n or trial")
     else:
         _integer(doc.get("n"), f"{where}: n", 1, MAX_TRIALS)
         if "trial" in doc:
@@ -1068,6 +1077,14 @@ def check_summary(doc, where: str, parts: dict) -> None:
         _pattern(doc["fixture_digest"], f"{where}: fixture_digest", DIGEST_RE)
     if "judge_conditional" in doc and not isinstance(doc["judge_conditional"], bool):
         raise Rejected(f"{where}: judge_conditional must be true or false")
+    if "fixture_name" in doc:
+        _pattern(doc["fixture_name"], f"{where}: fixture_name", NAME_RE)
+    if "guidance_digests" in doc:
+        _object(doc["guidance_digests"], f"{where}: guidance_digests",
+                GUIDANCE_DIGEST_KEYS, GUIDANCE_DIGEST_KEYS)
+        for field in GUIDANCE_DIGEST_KEYS:
+            _pattern(doc["guidance_digests"][field],
+                     f"{where}: guidance_digests.{field}", DIGEST_RE)
     for field in ("errors", "scored"):
         if field in doc:
             _integer(doc[field], f"{where}: {field}", 0, MAX_TRIALS)
