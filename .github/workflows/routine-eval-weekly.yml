@@ -110,7 +110,15 @@ jobs:
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
-            --out "$RUNNER_TEMP/plan.json"
+            --out "$RUNNER_TEMP/plan.json" \
+            --ranking-out "$RUNNER_TEMP/improve-ranking.json"
+      - name: Upload the improve ranking
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: improve-ranking
+          path: ${{ runner.temp }}/improve-ranking.json
+          retention-days: 30
+          if-no-files-found: error
 
   dispatch:
     needs: plan

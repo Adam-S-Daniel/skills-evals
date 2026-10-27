@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 
 import allowance_guard as guard  # noqa: E402
 import improve_outcomes as io_mod  # noqa: E402
+import compute_gates as plan_week_compute_gates  # noqa: E402
 import plan_week  # noqa: E402
 
 NOW = datetime(2026, 10, 27, 7, 0, 0, tzinfo=timezone.utc)
@@ -854,6 +855,291 @@ class GuidanceFixtureTests(unittest.TestCase):
             plan = json.loads(plan_file.read_text())
             self.assertNotIn("guidance", plan["skills"])
             self.assertFalse(any(w.get("skill") == "guidance" for w in plan["work"]))
+
+
+def gsection(fixtures=4, headroom=0.4, verdict="keep"):
+    """A guidance section's context, as plan_week.guidance_contexts builds it."""
+    return {"fixtures": fixtures, "holdout": "zzz" if fixtures >= 4 else "",
+            "verdict": verdict,
+            "evidence": {"headroom": headroom, "pass_rate": None, "with_trials": 6,
+                         "targets": []}}
+
+
+class ImproveValueTests(unittest.TestCase):
+    """The improve candidates, skills and guidance sections, ranked by
+    value = use x headroom / cost."""
+
+    def test_the_value_formula_and_what_makes_it_unknown(self):
+        self.assertAlmostEqual(plan_week.value_of(10, 0.5, 0.25), 20.0)
+        self.assertEqual(plan_week.value_of(0, 0.5, 0.25), 0.0)
+        for args in ((None, 0.5, 0.25), (10, None, 0.25), (10, 0.5, None), (10, 0.5, 0)):
+            self.assertIsNone(plan_week.value_of(*args), args)
+
+    def test_cost_is_improve_trials_times_each_fixtures_mean_fire_cost(self):
+        # usd 1 and 3 on one fixture: points 0.01 and 0.03, mean 0.02; the
+        # second fixture 0.02; an unknown cell adds nothing.
+        cells = [cell("evals/a/f1", "heavy", "missing", usd=1.0),
+                 cell("evals/a/f1", "light", "missing", usd=3.0),
+                 cell("evals/a/f2", "heavy", "missing", usd=2.0),
+                 cell("evals/a/f3", "heavy", "missing"),
+                 cell("evals/b/f1", "heavy", "missing")]
+        c = ctx(cells=cells, points_per_usd=0.01)
+        self.assertAlmostEqual(plan_week.cost_estimate(c, "skill", "a"),
+                               plan_week.IMPROVE_TRIALS * 0.04)
+        self.assertIsNone(plan_week.cost_estimate(c, "skill", "b"))
+        self.assertIsNone(plan_week.cost_estimate(ctx(cells=cells), "skill", "a"))
+        guidance = {**cell("evals/guidance/s/x", "heavy", "missing", usd=2.0), "skill": "",
+                    "section": "s"}
+        c = ctx(cells=[guidance], points_per_usd=0.01)
+        self.assertAlmostEqual(plan_week.cost_estimate(c, "guidance", "s"),
+                               plan_week.IMPROVE_TRIALS * 0.02)
+        self.assertIsNone(plan_week.cost_estimate(c, "skill", "s"))
+
+    def test_ranking_rows_carry_value_use_and_cost(self):
+        cells = [cell("evals/a/f1", "heavy", "missing", usd=2.0)]
+        plan = plan_week.build_plan(ctx(
+            skills={"a": skill(headroom=0.5)}, skill_weights={"a": 4}, cells=cells,
+            points_per_usd=0.01, room=1.0), NOW)
+        cost = plan_week.IMPROVE_TRIALS * 0.02
+        self.assertEqual(plan["improve_ranking"], [{
+            "subject": "skill", "name": "a", "value": 4 * 0.5 / cost, "use": 4,
+            "use_known": True, "headroom": 0.5, "cost": cost, "cost_known": True,
+            "eligible": True, "reasons": []}])
+        improve = [f for f in plan["fires"] if f["mode"] == "improve"]
+        self.assertEqual([f["value"] for f in improve], [4 * 0.5 / cost])
+        self.assertIsNone(plan["fires"][0]["value"] if plan["fires"][0]["mode"] == "eval"
+                          else None)
+        self.assertNotIn("value", plan["matrix"]["include"][0])
+
+    def test_unknown_use_and_cost_are_neutral_and_a_known_zero_stays_zero(self):
+        skills = {"known": skill(), "unknown": skill(), "unused": skill()}
+        plan = plan_week.build_plan(ctx(
+            skills=skills, skill_weights={"known": 8, "unknown": None, "unused": 0},
+            improve_charge=0.2, room=1.0, guidance_use=None,
+            guidance={"sec": gsection(headroom=0.5)}), NOW)
+        rows = {r["name"]: r for r in plan["improve_ranking"]}
+        self.assertEqual((rows["unknown"]["use"], rows["unknown"]["use_known"]), (8, False))
+        self.assertEqual((rows["unused"]["use"], rows["unused"]["use_known"],
+                          rows["unused"]["value"]), (0, True, 0.0))
+        # Guidance's unknown use is the same neutral value; no cost known
+        # anywhere, so the improve charge stands in.
+        self.assertEqual((rows["sec"]["use"], rows["sec"]["use_known"]), (8, False))
+        self.assertTrue(all(r["cost"] == 0.2 and not r["cost_known"] for r in rows.values()))
+        self.assertAlmostEqual(rows["sec"]["value"], 8 * 0.5 / 0.2)
+
+    def test_an_unknown_cost_is_the_median_of_the_known_ones(self):
+        cells = [cell("evals/a/f1", "heavy", "missing", usd=1.0),
+                 cell("evals/b/f1", "heavy", "missing", usd=3.0)]
+        plan = plan_week.build_plan(ctx(
+            skills={"a": skill(), "b": skill(), "c": skill()}, cells=cells,
+            points_per_usd=0.01, improve_charge=0.9, room=1.0), NOW)
+        rows = {r["name"]: r for r in plan["improve_ranking"]}
+        self.assertAlmostEqual(rows["c"]["cost"], plan_week.IMPROVE_TRIALS * 0.02)
+        self.assertFalse(rows["c"]["cost_known"])
+        self.assertTrue(rows["a"]["cost_known"] and rows["b"]["cost_known"])
+
+    def test_the_improve_band_is_ordered_by_value_not_usage(self):
+        # The heavier skill used to lead; the one with far more headroom now does.
+        skills = {"heavy": skill(headroom=0.12), "light": skill(headroom=0.9)}
+        plan = plan_week.build_plan(ctx(skills=skills, room=1.0, improve_charge=0.01,
+                                        skill_weights={"heavy": 10, "light": 5}), NOW)
+        self.assertEqual([f["skill"] for f in plan["fires"]], ["light", "heavy"])
+        self.assertEqual([r["name"] for r in plan["improve_ranking"]], ["light", "heavy"])
+        self.assertGreater(plan["fires"][0]["value"], plan["fires"][1]["value"])
+
+    def test_ties_break_on_name(self):
+        plan = plan_week.build_plan(ctx(skills={"b": skill(), "a": skill()}, room=1.0,
+                                        improve_charge=0.01,
+                                        skill_weights={"a": 3, "b": 3}), NOW)
+        self.assertEqual([f["skill"] for f in plan["fires"]], ["a", "b"])
+
+    def test_an_eligible_guidance_section_is_a_work_item_never_a_fire(self):
+        plan = plan_week.build_plan(ctx(
+            guidance={"sec": gsection(headroom=0.4)}, guidance_use=100.0,
+            improve_charge=0.1, room=1.0), NOW)
+        self.assertEqual(plan["fires"], [])
+        self.assertEqual(plan["matrix"]["include"], [])
+        self.assertEqual(len(plan["work"]), 1)
+        item = plan["work"][0]
+        self.assertAlmostEqual(item.pop("value"), 100.0 * 0.4 / 0.1)
+        self.assertEqual(item, {
+            "kind": "guidance-improve", "change_type": "guidance-edit", "section": "sec",
+            "fixtures": 4, "headroom": 0.4,
+            "route": "local run: scripts/propose_guidance_edit.py (no routine mode yet)"})
+        self.assertEqual(plan["guidance"], {"sec": {
+            "eligible": True, "reasons": [], "headroom": 0.4, "fixtures": 4}})
+        self.assertEqual(plan["skills"], {})
+
+    def test_guidance_sections_that_are_not_eligible(self):
+        plan = plan_week.build_plan(ctx(
+            guidance={"few": gsection(fixtures=2, headroom=0.5),
+                      "flat": gsection(headroom=0.05),
+                      "retiring": gsection(verdict="retire"),
+                      "pending": gsection(verdict="retire-pending", headroom=0.01),
+                      "blank": gsection(headroom=None)},
+            guidance_use=10.0, room=1.0), NOW)
+        by_section = {w["section"]: w for w in plan["work"]}
+        self.assertEqual(sorted(by_section), ["few", "flat"])
+        self.assertEqual((by_section["few"]["kind"], by_section["few"]["skill"],
+                          by_section["few"]["fixtures"], by_section["few"]["headroom"]),
+                         ("needs-fixtures", "", 2, 0.5))
+        self.assertEqual((by_section["flat"]["kind"], by_section["flat"]["skill"]),
+                         ("needs-harder-fixtures", ""))
+        status = plan["guidance"]
+        self.assertEqual(status["few"]["reasons"], ["2 fixture(s), under 4"])
+        self.assertIn("owned by retirement (retire)", status["retiring"]["reasons"])
+        self.assertIn("no train headroom", status["blank"]["reasons"])
+        self.assertFalse(any(s["eligible"] for s in status.values()))
+        self.assertEqual(plan["fires"], [])
+
+    def test_the_ranking_is_by_value_with_unknown_headroom_last(self):
+        skills = {"blank": skill(headroom=None), "low": skill(headroom=0.2),
+                  "high": skill(headroom=0.8)}
+        plan = plan_week.build_plan(ctx(
+            skills=skills, skill_weights={"blank": 99, "low": 5, "high": 5},
+            guidance={"sec": gsection(headroom=0.5)}, guidance_use=5.0,
+            improve_charge=0.1, room=1.0), NOW)
+        ranking = plan["improve_ranking"]
+        self.assertEqual([(r["subject"], r["name"]) for r in ranking],
+                         [("skill", "high"), ("guidance", "sec"), ("skill", "low"),
+                          ("skill", "blank")])
+        self.assertIsNone(ranking[-1]["value"])
+        self.assertIsNone(ranking[-1]["headroom"])
+        self.assertIn("no train headroom", ranking[-1]["reasons"])
+        self.assertTrue(ranking[0]["eligible"] and ranking[1]["eligible"])
+        self.assertEqual([r["value"] for r in ranking[:3]],
+                         sorted((r["value"] for r in ranking[:3]), reverse=True))
+
+    def test_the_summary_lists_the_top_ten_with_rounding_only_there(self):
+        skills = {f"s{i:02d}": skill(headroom=0.3 + i / 100) for i in range(12)}
+        skills["blank"] = skill(headroom=None)
+        plan = plan_week.build_plan(ctx(skills=skills, room=1.0, improve_charge=0.07,
+                                        skill_weights={n: 2 for n in skills}), NOW)
+        lines = plan_week.summary_lines(plan)
+        at = lines.index("Improve ranking (value = use × headroom ÷ cost)")
+        rows = [line for line in lines[at:] if line.startswith("- ")]
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(rows[0], "- skill s11: value 11.7 (use 2.0, headroom 0.41, "
+                                  "cost 7.00 points), eligible")
+        self.assertNotEqual(plan["improve_ranking"][0]["value"], 11.7)
+        blank = plan_week.summary_lines({**plan, "improve_ranking": plan["improve_ranking"][-1:]})
+        self.assertIn("- skill blank: value unknown (use 2.0, headroom unknown, cost 7.00 "
+                      "points): no train headroom", blank)
+
+    def test_session_rate_scales_the_transcript_window_to_28_days(self):
+        import skill_usage
+        doc = skill_usage.document([], NOW, NOW - timedelta(days=14), 50)
+        self.assertAlmostEqual(skill_usage.session_rate(doc, NOW), 100.0)
+        self.assertAlmostEqual(skill_usage.session_rate(doc, NOW, days=7), 25.0)
+        self.assertIsNone(skill_usage.session_rate(None, NOW))
+        self.assertIsNone(skill_usage.session_rate(doc, NOW + timedelta(days=15)))
+        for change in ({"sessions_scanned": -1}, {"sessions_scanned": True},
+                       {"from": "yesterday"}, {"to": doc["sources"][0]["from"]},
+                       {"scope": "hooks"}, {"surface": "cloud"}):
+            bad = {**doc, "sources": [{**doc["sources"][0], **change}]}
+            self.assertIsNone(skill_usage.session_rate(bad, NOW), change)
+        self.assertIsNone(skill_usage.session_rate({**doc, "sources": []}, NOW))
+        # A known zero is zero, not unknown.
+        zero = skill_usage.document([], NOW, NOW - timedelta(days=14), 0)
+        self.assertEqual(skill_usage.session_rate(zero, NOW), 0.0)
+
+    def test_guidance_use_reads_the_census_or_stays_unknown(self):
+        import skill_usage
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            self.assertIsNone(plan_week.guidance_use(tree, NOW))
+            (tree / "usage").mkdir()
+            path = tree / "usage" / "weekly-local.json"
+            path.write_text(json.dumps(skill_usage.document(
+                [], NOW - timedelta(days=1), NOW - timedelta(days=15), 56)))
+            self.assertAlmostEqual(plan_week.guidance_use(tree, NOW), 112.0)
+            self.assertIsNone(plan_week.guidance_use(tree, NOW + timedelta(days=30)))
+            path.write_text("{")
+            self.assertIsNone(plan_week.guidance_use(tree, NOW))
+            with mock.patch.dict(sys.modules, {"skill_usage": None}):
+                self.assertIsNone(plan_week.guidance_use(tree, NOW))
+
+    def test_guidance_contexts_need_the_checkout_and_pool_the_in_situ_full_arm(self):
+        section = "anything-you-name-gets-its-link"
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            doc = {"roster_models": ["m"], "guidance": {section: {"verdict": "keep"}}}
+            self.assertEqual(plan_week.guidance_contexts(
+                ROOT / "evals", tree, "20261026T120000Z", doc, None), {})
+            # done-summary, handoff, no-url are train; waiting-on-review (last
+            # in name order) is the holdout and must not count.
+            expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t"}
+                        for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
+
+            def run(name, role, checks):
+                return {"skill": section, "fixture": name, "model": "m", "role": role,
+                        "pair": "in_situ", "tested_digest": "t",
+                        "fixture_digest": f"fd-{name}", "arm_context_digest": "rest",
+                        "pair_key": "rest", "timestamp": "20261020T000000Z", "path": name,
+                        "trials": [trial(checks)]}
+            runs = [run("done-summary", "with", {"a": True, "b": False}),
+                    run("done-summary", "without", {"a": False, "b": False}),
+                    run("handoff", "with", {"a": True, "b": True}),
+                    run("handoff", "without", {"a": False, "b": True}),
+                    run("waiting-on-review", "with", {"a": False, "b": False}),
+                    run("waiting-on-review", "without", {"a": False, "b": False})]
+            index = {"guidance_runs": runs + [{**runs[0], "pair": "alone"}]}
+            with mock.patch.object(plan_week_compute_gates, "build_index",
+                                   return_value=index), \
+                 mock.patch.object(plan_week_compute_gates, "expected_guidance",
+                                   return_value=expected):
+                got = plan_week.guidance_contexts(ROOT / "evals", tree, "20261026T120000Z",
+                                                  doc, tree)
+        self.assertEqual(got[section]["fixtures"], 4)
+        self.assertEqual(got[section]["holdout"], "waiting-on-review")
+        self.assertEqual(got[section]["verdict"], "keep")
+        # 3 of 4 train checks passed: headroom 0.25, the holdout's failures left out.
+        self.assertAlmostEqual(got[section]["evidence"]["headroom"], 0.25)
+        # A section with one fixture keeps no holdout and an unknown verdict.
+        self.assertEqual(got["finding-your-unknowns"]["holdout"], "")
+        self.assertEqual(got["finding-your-unknowns"]["verdict"], "insufficient")
+        self.assertNotIn("_delivery", got)
+
+    def test_ranking_out_writes_the_ranking_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "tree").mkdir()
+            evidence = base / "evidence.json"
+            evidence.write_text(json.dumps({"fire_runs": [], "improve_branches": [],
+                                            "registry_prs": [], "on_hold": []}))
+            plan_file, ranking_file = base / "plan.json", base / "ranking.json"
+            out = io.StringIO()
+            with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": "", "GITHUB_STEP_SUMMARY": ""}), \
+                 contextlib.redirect_stdout(out):
+                code = plan_week.main(["plan", "--results-tree", str(base / "tree"),
+                                       "--as-of", "2026-10-26T12:00:00+00:00",
+                                       "--evidence", str(evidence), "--out", str(plan_file),
+                                       "--ranking-out", str(ranking_file)])
+            self.assertEqual(code, 0, out.getvalue())
+            plan = json.loads(plan_file.read_text())
+            ranking = json.loads(ranking_file.read_text())
+            self.assertEqual(sorted(ranking), ["generated_at", "improve_ranking",
+                                               "schema_version"])
+            self.assertEqual(ranking["schema_version"], 1)
+            self.assertEqual(ranking["generated_at"], plan["generated_at"])
+            self.assertEqual(ranking["improve_ranking"], plan["improve_ranking"])
+            self.assertTrue(ranking["improve_ranking"])
+            self.assertTrue(all(r["subject"] == "skill" and r["value"] is None
+                                for r in ranking["improve_ranking"]))
+            self.assertIn("Improve ranking (value = use × headroom ÷ cost)", out.getvalue())
+
+    def test_the_weekly_workflow_uploads_the_ranking(self):
+        doc = yaml.safe_load((ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+        steps = doc["jobs"]["plan"]["steps"]
+        at = next(i for i, step in enumerate(steps) if step.get("id") == "plan")
+        self.assertIn('--ranking-out "$RUNNER_TEMP/improve-ranking.json"', steps[at]["run"])
+        upload = steps[at + 1]
+        self.assertEqual(upload["uses"], "actions/upload-artifact@v7.0.2")
+        self.assertEqual(upload["with"], {
+            "name": "improve-ranking", "path": "${{ runner.temp }}/improve-ranking.json",
+            "retention-days": 30, "if-no-files-found": "error"})
+        lock = (ROOT / ".github/workflows/actions.lock").read_text()
+        self.assertIn("actions/upload-artifact@v7.0.2", lock)
 
 
 BARE_FIXTURES = ("evals/writing-adrs/bootstrap", "evals/disarm-inherited-reach",

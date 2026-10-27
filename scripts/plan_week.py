@@ -25,9 +25,12 @@ on its path, but it names a section, not a skill: its evidence is the
 section's in-situ cells in the verdict document's `guidance` half
 (results/guidance/<section>/..., classified by arm `mode`), and its cell
 carries `section` and an empty `skill`. Skill-only logic skips it: the
-removal-PR safety band, improve eligibility and skill usage weight. The
-section's expected extent needs `--guidance`, an _agent-guidance checkout;
-without one every guidance cell that has runs stays insufficient.
+removal-PR safety band, skill improve eligibility and skill usage weight.
+The section's expected extent needs `--guidance`, an _agent-guidance
+checkout; without one every guidance cell that has runs stays insufficient
+and there are no guidance improve candidates. A guidance section is an
+improve CANDIDATE (see IMPROVE ELIGIBILITY), ranked with the skills, but
+never a fire.
 
 THE BANDS (rule D), in order:
 
@@ -43,8 +46,21 @@ THE BANDS (rule D), in order:
   3. near a decision, at least 20%: insufficient cells, fewest runs short
      of their next look (`min_runs`, then `retire_looks`) first.
   4. improvements, at least 20%: improve fires for eligible skills, highest
-     heaviest skill usage first (harness/skill_usage.py, `skill_weights`;
-     an unknown weight is neutral, never zero), then train headroom.
+     potential value first: value = use x headroom / cost, ties by name.
+       use: a skill's usage weight (harness/skill_usage.py, `skill_weights`:
+         invocations over 4 weeks); a guidance section's is the census's
+         transcript sessions scanned scaled to 28 days by its window
+         (`skill_usage.session_rate`), since every session loads the
+         guidance. Unknown (no, stale or unreadable census) is neutral, the
+         median known skill weight, never zero; a known 0 stays 0.
+       headroom: 1 - the pooled with-arm pass rate over the train fixtures
+         (a guidance section's: its in-situ `full` arm). Unknown headroom
+         gives no value, ranked last, never a guessed 0.
+       cost: allowance points, IMPROVE_TRIALS x the sum over the subject's
+         fixtures of that fixture's mean `fire_cost` across its cells with a
+         known cost. With none known, the median of the known estimates
+         across candidates, else the improve charge (neutral, like use).
+     Each ranking row records whether use and cost were known.
   5. re-checks: decided cells whose newest run is over 8 weeks old.
   6. bare baselines (ADR 0012, bare baseline addendum; Adam, 2026-10-27:
      "one time per model per version of model"): one fire with `arms:
@@ -92,6 +108,20 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      open issue or pull request labeled `on-hold` whose title names the
      skill, no cooldown. Outcomes come from scripts/improve_outcomes.py.
 
+  The same ranking covers every guidance section with fixtures (not
+  `_delivery`, the canary), found by scripts/propose_guidance_edit.py's own
+  listing (fixtures declaring the `full` ablation arm). A section is
+  eligible with at least `MIN_IMPROVE_FIXTURES` such fixtures (the last in
+  name order is the holdout, as the proposer picks it), train headroom of at
+  least `MIN_GAIN` over its pooled in-situ `full` arm runs, and a guidance
+  verdict (the verdict document's `guidance` half) that is not `retire` or
+  `retire-pending`. It has no target rule (the proposer proposes before it
+  measures). There is no routine fire mode for guidance yet, so an eligible
+  section is the work item `guidance-improve` (change type `guidance-edit`,
+  routed to a local run of the proposer), never a fire; one with fewer
+  fixtures and headroom gets `needs-fixtures`, one without headroom
+  `needs-harder-fixtures`, each carrying its `section`.
+
 STOPPING (rule C): a rejection (every no-branch outcome, conservatively, and
 an accepted candidate whose pull request closed unmerged) starts a 14-day
 cooldown; three in a row stop the skill until its content (the registry
@@ -104,7 +134,7 @@ lands (the gates pool only runs of the content on main).
 
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
 `fixture-broken` (change type
-`fixture`), and `agent-check` items read from `--lessons` (lesson proposals
+`fixture`), `guidance-improve` (change type `guidance-edit`), and `agent-check` items read from `--lessons` (lesson proposals
 of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
@@ -124,7 +154,14 @@ the improve work items. Skills whose SKILL.md is mostly checklist or rules
 sections (`hook_candidate`) are listed as `hook_candidates` and in the
 summary, since a git hook may serve them better.
 
-OUTPUT. `--out` gets the whole plan as JSON; $GITHUB_OUTPUT gets `matrix=`
+OUTPUT. `--out` gets the whole plan as JSON, including `improve_ranking`
+(every candidate, skill or guidance section, by value, highest first and
+unknown last, with its use, headroom, cost, whether use and cost were known,
+and eligibility) and `guidance` (a per-section status like `skills`); each
+fire entry carries its `value` (null for an eval fire; the matrix legs do
+not). `--ranking-out` gets the ranking alone (public-safe: skill names and
+section ids), which the weekly workflow uploads as the `improve-ranking`
+artifact. $GITHUB_OUTPUT gets `matrix=`
 (the fires, improve fires last so a long improve run never holds up the
 evals behind it) and `count=`. The log and job summary carry numbers and
 public skill names only: agent-check items are counted, never quoted.
@@ -176,6 +213,11 @@ FIRE_RESULT_WINDOW = timedelta(hours=2)
 SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
 IMPROVE_TRIALS = 3
+#: Where an eligible guidance section's improvement runs until the routine has
+#: a guidance mode.
+GUIDANCE_IMPROVE_ROUTE = "local run: scripts/propose_guidance_edit.py (no routine mode yet)"
+#: The window `use` is counted over: skill_usage.weight's four weeks.
+USE_WINDOW_DAYS = 28
 #: Trials of a bare fire's one arm (routine-eval-weekly.yml sends them).
 BARE_TRIALS = 3
 #: wait-slot: at most this many fires in flight, each counted in flight this
@@ -421,13 +463,50 @@ def neutral_weights(raw: dict) -> dict:
     return {skill: neutral if w is None else w for skill, w in raw.items()}
 
 
+def value_of(use, headroom, cost) -> float | None:
+    """The potential value of an improvement: expected uses over the usage
+    window times train headroom, per allowance point spent. None when any
+    factor is unknown (headroom) or the cost is not positive: never a guess
+    of 0."""
+    if use is None or headroom is None or cost is None or cost <= 0:
+        return None
+    return use * headroom / cost
+
+
+def cost_estimate(ctx: dict, subject: str, name: str) -> float | None:
+    """What an improve run on a subject costs, in allowance points:
+    IMPROVE_TRIALS times the sum over its fixtures of that fixture's mean
+    `fire_cost` across its cells with a known cost. A fixture with no known
+    cell adds nothing. None when no fixture has a known cost (or the
+    points-per-dollar ratio is unknown)."""
+    if not ctx.get("points_per_usd"):
+        return None
+    per_fixture: dict = {}
+    for c in ctx.get("cells", []):
+        mine = c.get("section") == name if subject == "guidance" \
+            else not c.get("section") and c["skill"] == name
+        if mine and c.get("usd_per_fire") is not None:
+            per_fixture.setdefault(c["fixture"], []).append(fire_cost(c, ctx))
+    if not per_fixture:
+        return None
+    return IMPROVE_TRIALS * sum(sum(v) / len(v) for v in per_fixture.values())
+
+
 def improve_items(ctx: dict, now: datetime) -> tuple:
-    """(improve fires, work items, per-skill status). Improve fires and
-    needs-fixtures and needs-harder-fixtures items are ordered by skill usage weight, heaviest first
-    (`neutral_weights` of ctx["skill_weights"]), then train headroom."""
+    """(improve fires, work items, per-skill status, per-section guidance
+    status, improve ranking). Candidates, skills and guidance sections, are
+    ranked by value = use x headroom / cost (module docstring, THE BANDS
+    item 4); improve fires and guidance work items follow that order, and
+    needs-fixtures and needs-harder-fixtures items stay ordered by skill
+    usage weight, heaviest first (`neutral_weights` of ctx["skill_weights"]),
+    then train headroom."""
     raw = ctx.get("skill_weights") or {}
     weights = neutral_weights({name: raw.get(name) for name in ctx["skills"]})
+    # The neutral use of anything unknown: the median `neutral_weights` gives
+    # an unknown skill, from the skills alone.
+    neutral = neutral_weights({**{n: raw.get(n) for n in ctx["skills"]}, "": None})[""]
     fires, work, status = [], [], {}
+    candidates = []
     for name, skill in sorted(ctx["skills"].items()):
         evidence = skill["evidence"]
         headroom = evidence["headroom"]
@@ -455,13 +534,70 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append(skill["pause"])
         status[name] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
                         "fixtures": skill["fixtures"], "targets": len(evidence["targets"])}
-        if not reasons:
-            fires.append({"mode": "improve", "arms": "", "fixture": "", "model": "", "skill": name,
-                          "holdout": skill["holdout"], "cost": ctx["improve_charge"],
-                          "change_type": "skill-edit", "band": "improve",
-                          "order": (-weights.get(name, 1.0), -headroom)})
+        candidates.append({"subject": "skill", "name": name, "use": weights.get(name, neutral),
+                           "use_known": raw.get(name) is not None, "headroom": headroom,
+                           "cost": cost_estimate(ctx, "skill", name),
+                           "eligible": not reasons, "reasons": reasons,
+                           "fixtures": skill["fixtures"], "holdout": skill["holdout"]})
+    guidance_use = ctx.get("guidance_use")
+    gstatus, gitems = {}, []
+    for section, info in sorted((ctx.get("guidance") or {}).items()):
+        headroom = info["evidence"]["headroom"]
+        reasons = []
+        if headroom is None or headroom < MIN_GAIN:
+            reasons.append("no train headroom")
+        if info["fixtures"] < MIN_IMPROVE_FIXTURES:
+            reasons.append(f"{info['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
+        if info["verdict"] in ("retire", "retire-pending"):
+            reasons.append(f"owned by retirement ({info['verdict']})")
+        gstatus[section] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
+                            "fixtures": info["fixtures"]}
+        candidates.append({"subject": "guidance", "name": section,
+                           "use": neutral if guidance_use is None else guidance_use,
+                           "use_known": guidance_use is not None, "headroom": headroom,
+                           "cost": cost_estimate(ctx, "guidance", section),
+                           "eligible": not reasons, "reasons": reasons})
+        gitems.append((section, info, headroom, reasons))
+    known = sorted(c["cost"] for c in candidates if c["cost"] is not None)
+    fallback = (known[len(known) // 2] if len(known) % 2
+                else (known[len(known) // 2 - 1] + known[len(known) // 2]) / 2) \
+        if known else ctx["improve_charge"]
+    ranking = []
+    for c in candidates:
+        cost = fallback if c["cost"] is None else c["cost"]
+        ranking.append({"subject": c["subject"], "name": c["name"],
+                        "value": value_of(c["use"], c["headroom"], cost), "use": c["use"],
+                        "use_known": c["use_known"], "headroom": c["headroom"], "cost": cost,
+                        "cost_known": c["cost"] is not None, "eligible": c["eligible"],
+                        "reasons": c["reasons"]})
+    ranking.sort(key=lambda r: (r["value"] is None, -(r["value"] or 0.0), r["name"]))
+    value = {(r["subject"], r["name"]): r["value"] for r in ranking}
+    for c in candidates:
+        if c["subject"] == "skill" and c["eligible"]:
+            v = value[("skill", c["name"])]
+            fires.append({"mode": "improve", "arms": "", "fixture": "", "model": "",
+                          "skill": c["name"], "holdout": c["holdout"],
+                          "cost": ctx["improve_charge"], "change_type": "skill-edit",
+                          "band": "improve", "value": v,
+                          "order": (v is None, -(v or 0.0), c["name"])})
     work.sort(key=lambda w: (-weights.get(w["skill"], 1.0), -(w["headroom"] or 0.0), w["skill"]))
-    return fires, work, status
+    # Guidance has no routine fire mode yet: an eligible section is a work item.
+    guidance_work = []
+    for section, info, headroom, reasons in gitems:
+        v = value[("guidance", section)]
+        if not reasons:
+            guidance_work.append({
+                "kind": "guidance-improve", "change_type": "guidance-edit",
+                "section": section, "fixtures": info["fixtures"], "headroom": headroom,
+                "value": v, "route": GUIDANCE_IMPROVE_ROUTE})
+        elif headroom is not None and info["verdict"] not in ("retire", "retire-pending"):
+            kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
+            guidance_work.append({
+                "kind": kind, "change_type": "fixture", "skill": "", "section": section,
+                "fixtures": info["fixtures"], "headroom": headroom, "value": v,
+                "route": "issue"})
+    guidance_work.sort(key=lambda w: (w["value"] is None, -(w["value"] or 0.0), w["section"]))
+    return fires, work + guidance_work, status, gstatus, ranking
 
 
 def hook_candidate(text: str) -> bool:
@@ -580,7 +716,7 @@ def allocate(bands: dict, room: float, max_fires: int) -> list:
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure."""
     bands, work = eval_items(ctx, now)
-    improve, needs, status = improve_items(ctx, now)
+    improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
@@ -591,7 +727,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
               "fixture": i["fixture"],
               "eval_key": i["fixture"][len("evals/"):] if i["fixture"] else "",
               "model": i["model"], "skill": i["skill"], "holdout": i["holdout"],
-              "change_type": i["change_type"] or "measure", "cost": i["cost"]}
+              "change_type": i["change_type"] or "measure", "cost": i["cost"],
+              "value": i.get("value")}
              for slot, i in enumerate(chosen)]
     return {"schema_version": 1, "generated_at": _iso(now), "room": ctx["room"],
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
@@ -599,7 +736,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "unplanned": {band: len(items) for band, items in bands.items()},
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
-            "skills": status, "hook_candidates": hooks,
+            "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
+            "hook_candidates": hooks,
             # An eval leg sends no skill: the fire workflow refuses one.
             "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "arms",
                                                          "fixture", "eval_key", "model",
@@ -821,6 +959,46 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
     return out
 
 
+def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
+                      guidance_dir: Path | None) -> dict:
+    """Per guidance section with fixtures that declare the `full` ablation
+    arm (scripts/propose_guidance_edit.py's own listing): what improve
+    eligibility needs, {fixtures, holdout, verdict, evidence}. The holdout is
+    the last fixture in name order, as the proposer picks it, and only when
+    there are MIN_IMPROVE_FIXTURES; the evidence is `train_evidence` over the
+    other fixtures' pooled in-situ `full` arm runs. {} without `guidance_dir`
+    (a section's extent, hence its cells, needs the checkout)."""
+    root = evals_dir / "guidance"
+    if guidance_dir is None or not root.is_dir() or root.is_symlink():
+        return {}
+    import compute_gates
+    import gates
+    import propose_guidance_edit as proposer
+    index = compute_gates.build_index(tree, evals_dir, as_of)
+    runs = [r for r in index["guidance_runs"] if r.get("pair") == "in_situ"]
+    out = {}
+    for directory in sorted(p for p in root.iterdir()
+                            if p.is_dir() and not p.is_symlink() and not p.name.startswith("_")):
+        section = directory.name
+        try:
+            found = proposer.fixture_layout_discover(evals_dir, section)
+        except proposer.Refusal:
+            raise PlanError("a guidance fixture is unreadable") from None
+        if not found:
+            continue
+        names = [Path(f).name for f in found]
+        holdout = names[-1] if len(names) >= MIN_IMPROVE_FIXTURES else ""
+        cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
+                                 compute_gates.expected_guidance(evals_dir, section,
+                                                                 guidance_dir))
+        out[section] = {
+            "fixtures": len(found), "holdout": holdout,
+            "verdict": (gates_doc.get("guidance") or {}).get(section, {}).get(
+                "verdict", "insufficient"),
+            "evidence": train_evidence(cells, [n for n in names if n != holdout])}
+    return out
+
+
 def fetch_evidence(token: str, now: datetime) -> dict:
     """The GitHub evidence, read live (fail closed)."""
     get = outcomes_mod.github_get
@@ -907,6 +1085,22 @@ def skill_weights(tree: Path, skills: list, now: datetime) -> dict:
     return out
 
 
+def guidance_use(tree: Path, now: datetime) -> float | None:
+    """The expected uses of every guidance section over USE_WINDOW_DAYS: all
+    of it loads in every session, so the census's transcript sessions
+    scanned, scaled to that window (skill_usage.session_rate). None when
+    unknown (stale, absent or unreadable census), which the ranking makes
+    neutral."""
+    try:
+        import skill_usage  # noqa: PLC0415 - optional, as in skill_weights
+        value = skill_usage.session_rate(skill_usage.load(tree / "usage" / "weekly-local.json"),
+                                         now, USE_WINDOW_DAYS)
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and value >= 0 else None
+
+
 def trigger_contexts(evals_dir: Path, registries: dict) -> dict:
     """{skill: {"trigger_set", "hook_candidate"}} for every skill of the
     adam-agentskills checkout (`plugins/*/skills/<skill>/SKILL.md`, the one
@@ -964,6 +1158,10 @@ def gather(args, now: datetime) -> dict:
             "cells": eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
+            "guidance": guidance_contexts(evals_dir, args.results_tree,
+                                          compute_gates.parse_as_of(args.as_of), gates_doc,
+                                          args.guidance),
+            "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
                                            now),
@@ -1000,6 +1198,16 @@ def summary_lines(plan: dict) -> list:
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
     lines.append("Hook candidates (mostly checklist or rules sections): "
                  + (", ".join(plan.get("hook_candidates", [])) or "none"))
+    lines += ["", "Improve ranking (value = use × headroom ÷ cost)", ""]
+    ranking = plan.get("improve_ranking", [])[:10]
+    for row in ranking:
+        value = "unknown" if row["value"] is None else f"{row['value']:.3g}"
+        headroom = "unknown" if row["headroom"] is None else f"{row['headroom']:.2f}"
+        end = ", eligible" if row["eligible"] else f": {row['reasons'][0]}"
+        lines.append(f"- {row['subject']} {row['name']}: value {value} (use {row['use']:.1f}, "
+                     f"headroom {headroom}, cost {row['cost'] * 100:.2f} points){end}")
+    if not ranking:
+        lines.append("- none")
     return lines
 
 
@@ -1088,6 +1296,8 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--lessons", type=Path, default=None)
     p.add_argument("--max-fires", type=int, default=30)
     p.add_argument("--out", type=Path, default=None)
+    p.add_argument("--ranking-out", type=Path, default=None,
+                   help="the improve ranking alone (public-safe), as JSON")
     sub.add_parser("validate-fire")
     p = sub.add_parser("wait-slot")
     p.add_argument("--max-wait", type=int, default=1500)
@@ -1119,6 +1329,11 @@ def main(argv: list | None = None) -> int:
     print("\n".join(lines))
     if args.out is not None:
         args.out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.ranking_out is not None:
+        args.ranking_out.write_text(json.dumps(
+            {"schema_version": 1, "generated_at": plan["generated_at"],
+             "improve_ranking": plan["improve_ranking"]}, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
             out.write("\n".join(lines) + "\n")
