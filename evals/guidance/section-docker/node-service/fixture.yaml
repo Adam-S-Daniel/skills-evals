@@ -1,0 +1,72 @@
+
+# Guidance fixture: section-docker / node-service
+#
+# The Docker section's rules on a first Dockerfile: a multi-stage build, a
+# pinned base image (never `latest`), a non-root USER, a HEALTHCHECK for a
+# long-lived service, and a .dockerignore that keeps out .git and
+# node_modules. The seed is a small Node service with a build step and a
+# /healthz endpoint.
+#
+# What the section should change: all five. The prompt names none of them.
+
+subject: guidance
+section: section-docker
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Write a Dockerfile for this service.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: multi-stage
+    description: The Dockerfile has a build stage and a runtime stage.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["(?ims)^FROM\\b.*^FROM\\b"]
+  - id: base-pinned
+    description: Every FROM names a version or digest, never latest or no tag.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["(?im)^FROM\\s+\\S+(:\\S+|@sha256:[0-9a-f]{64})"]
+    must_not_match: ["(?im)^FROM\\s+[^\\s:@]+(\\s|$)", "(?im)^FROM\\s+\\S+:latest\\b"]
+  - id: non-root
+    description: The image runs as a non-root user.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["(?im)^USER\\s+(?!root\\b|0\\b)\\S+"]
+  - id: healthcheck
+    description: The Dockerfile declares a HEALTHCHECK.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["(?im)^HEALTHCHECK\\b"]
+  - id: dockerignore
+    description: A .dockerignore excludes .git and node_modules.
+    type: file_matches
+    paths: [".dockerignore"]
+    must_match: ["(?m)^/?\\.git/?\\s*$", "(?m)^/?node_modules/?\\s*$"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Docker rules — multi-stage, pinned base, non-root USER, HEALTHCHECK
+  on /healthz, .dockerignore? Take 2 points off for each one missed.
+  (2) Image — does it build dist/ in one stage and run `npm start` (or
+  node dist/server.js) on port 8080 in the other?
+  (3) Restraint — did the agent leave the service's code alone?
