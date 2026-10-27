@@ -82,10 +82,10 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_eight_skill_and_eight_guidance_fixtures(self):
+    def test_the_schedule_names_eight_skill_and_fifteen_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 16)
-        self.assertEqual(len(set(paths)), 16)
+        self.assertEqual(len(paths), 23)
+        self.assertEqual(len(set(paths)), 23)
         self.assertEqual(len(fixtures()), 8)
         self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
                          sorted(str(p.parent.relative_to(ROOT)) for p in
