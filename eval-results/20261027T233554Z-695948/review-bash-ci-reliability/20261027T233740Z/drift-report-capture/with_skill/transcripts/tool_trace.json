@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015AwY6Dc5JR1YkrcjFy1JNt",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:review-bash-ci-reliability",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015AwY6Dc5JR1YkrcjFy1JNt",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:review-bash-ci-reliability",
+      "output_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UDzsfrLWMP6FSXSGqs4TmW",
+      "name": "Bash",
+      "input": "git ls-files | grep -E '\\.(sh|yml|yaml)$|^\\.github' | head -100",
+      "input_chars": 63,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UDzsfrLWMP6FSXSGqs4TmW",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nscripts/check-drift.sh",
+      "output_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RpG1SfSB5x5KQrd5kgcRno",
+      "name": "Bash",
+      "input": "cat -n scripts/check-drift.sh .github/workflows/drift.yml",
+      "input_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RpG1SfSB5x5KQrd5kgcRno",
+      "is_error": false,
+      "output": "     1\t#!<path> bash\n     2\t# Compare every deployed config with the template it was rendered from and\n     3\t# report each file that drifted, with the team that owns its template.\n     4\tset -euo pipefail\n     5\t\n     6\tchecked=0\n     7\tdrifted=0\n     8\t\n     9\tfor expected in templates/*.conf; do\n...",
+      "output_chars": 1516,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WMeCiLRWLgJ3Kv8v6sQZN8",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace(\"cut -d: -f2 | tr -d ' ')\",\"cut -d: -f2 | tr -d ' ' || true)\")\ns=s.replace('delta=$(diff -u \"$expected\" \"$actual\")','# diff exit...",
+      "input_chars": 959,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WMeCiLRWLgJ3Kv8v6sQZN8",
+      "is_error": false,
+      "output": "bash: <path>: No such file or directory\nrc=127\nShell cwd was reset to <path>",
+      "output_chars": 174,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019feY4Psp5GDGfkEa2hqSVv",
+      "name": "Bash",
+      "input": "cd $TMPDIR/t && bash <path>; echo rc=$?; cp templates/x.conf deploy/x.conf; bash <path>; echo rc=$?",
+      "input_chars": 199,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019feY4Psp5GDGfkEa2hqSVv",
+      "is_error": false,
+      "output": "DRIFT: deploy/x.conf (owner: unassigned)\n--- templates/x.conf\t2026-10-27 23:37:57.985072284 +0000\n+++ deploy/x.conf\t2026-10-27 23:37:57.985072284 +0000\n@@ -1 +1 @@\n-a\n+b\ndrift check: 1 checked, 1 drifted\nrc=1\ndrift check: 1 checked, 0 drifted\nrc=0\nShell cwd was reset to <path>",
+      "output_chars": 304,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
