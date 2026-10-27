@@ -14,7 +14,7 @@ name: Fixture supply
 #   fire workflow's run titles), ranks the rest by their subject skills
 #   (fewest fixtures first), and cuts the list to what fits: at most
 #   MAX_IN_FLIGHT (3) routine sessions at once, counting fires of the last
-#   two hours as still running, and the weekly allowance guard's room
+#   45 minutes (the guard's PENDING_FULL_HOLD) as still running, and the weekly allowance guard's room
 #   (scripts/allowance_guard.py; it fails closed). `dispatch` fires them one
 #   at a time through routine-eval-fire.yml in scaffold mode, which
 #   validates the candidate, runs the guard again and holds the bearer; a
