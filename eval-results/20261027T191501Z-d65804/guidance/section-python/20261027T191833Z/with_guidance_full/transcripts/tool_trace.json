@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016Ha1RFy5UcBLLBpYTrB9xd",
+      "name": "Bash",
+      "input": "git status --short && ls && cat settings.py && ls test* 2><path>",
+      "input_chars": 67,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016Ha1RFy5UcBLLBpYTrB9xd",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nsettings.json\nsettings.py\n\"\"\"Application settings.\"\"\"\n\nDEFAULTS: dict[str, object] = {\"port\": 8080, \"debug\": False}\n\n\ndef merged(overrides: dict[str,...",
+      "output_chars": 422,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013Kbco6h5Cv67Gv4Et9vCoQ",
+      "name": "Bash",
+      "input": "cat > settings.py <<'EOF'\n\"\"\"Application settings.\"\"\"\n\nimport json\nimport logging\nfrom pathlib import Path\n\nlogger = logging.getLogger(__name__)\n\nDEFAULTS: dict[str, object] = {\"port\": 8080, \"debug\": ...",
+      "input_chars": 2124,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013Kbco6h5Cv67Gv4Et9vCoQ",
+      "is_error": false,
+      "output": "<path>: No module named pytest\nexit=1",
+      "output_chars": 53,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MwkJK6nqbAP1RYRv3G8cL4",
+      "name": "Bash",
+      "input": "cat > test_settings.py <<'EOF'\nimport tempfile\nimport unittest\nfrom pathlib import Path\n\nfrom settings import DEFAULTS, load_settings\n\n\nclass LoadSettingsTest(unittest.TestCase):\n    def setUp(self) -...",
+      "input_chars": 1270,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MwkJK6nqbAP1RYRv3G8cL4",
+      "is_error": false,
+      "output": "test_applies_overrides (test_settings.LoadSettingsTest.test_applies_overrides) ... ok\ntest_invalid_file_returns_defaults (test_settings.LoadSettingsTest.test_invalid_file_returns_defaults) ... ok\ntest_missing_file_returns_defaults (test_settings.LoadSettingsTest.test_missing_file_returns_defaults) ....",
+      "output_chars": 410,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

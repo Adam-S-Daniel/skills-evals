@@ -1,0 +1,363 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20261027T191833Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1233271,
+    "num_turns": 5,
+    "duration_ms": 31745,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 21566,
+      "cache_read_input_tokens": 152431,
+      "output_tokens": 2180,
+      "output_tokens_details": {
+        "thinking_tokens": 175
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 21566,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 320,
+          "cache_read_input_tokens": 35506,
+          "cache_creation_input_tokens": 513,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 513
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "signature-typed",
+      "passed": true,
+      "detail": "settings.py matches"
+    },
+    {
+      "id": "specific-exceptions",
+      "passed": true,
+      "detail": "settings.py matches"
+    },
+    {
+      "id": "logging-not-print",
+      "passed": true,
+      "detail": "settings.py matches"
+    },
+    {
+      "id": "pathlib-used",
+      "passed": false,
+      "detail": "settings.py lacks /\\bPath\\b/"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.311 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2180,
+      "cache_read_input_tokens": 152431,
+      "cache_creation_input_tokens": 21566,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": null,
+    "canonical_model": null,
+    "complete": true,
+    "dropped": 0,
+    "other_share": null,
+    "threshold": 0.5,
+    "flagged": null
+  },
+  "subject": "guidance",
+  "section": "section-python",
+  "mode": "full-minus-section",
+  "bytes": 25303,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (vf8f47d7c, 25303 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": null,
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "NPYOFKTE-5641"
+  },
+  "fixture_name": "load-config",
+  "guidance_digests": {
+    "section": "123765a48a2da95b1cff94d066d94d7c5cf9b07d40bde2c242e6146144fe2e3f",
+    "rest": "fc2a09ffde91058383e2c0f1447eb748788156b5416b9ffcc437e42336adcffa"
+  },
+  "fixture_digest": "47341e60ea89a45fffc21e81d0dc0a289a523d01a842a4d748363171083873c4",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261027T191501Z-d65804",
+    "session_id": "cse_01SphsQEkaeVbpQQ9rJE4L6H",
+    "harness_commit": "fb17f3c27f9d7caacc231288bef9c26f4d875295",
+    "cli_version": "2.1.311 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-27T19:18:33Z",
+    "ended_at": "2026-10-27T19:20:24Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-27T19:18:36.271Z",
+      "to_at": "2026-10-27T19:20:05.877Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.15,
+          "to": 0,
+          "delta": null,
+          "window_reset": true
+        },
+        "seven_day": {
+          "from": 0.17,
+          "to": 0.17,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEkaeVbpQQ9rJE4L6H",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-27T19:19:46Z",
+      "ended_at": "2026-10-27T19:20:24Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-10-27T19:19:46Z",
+          "ended_at": "2026-10-27T19:19:51Z",
+          "duration_ms": 5125,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-27T19:19:51Z",
+          "ended_at": "2026-10-27T19:20:24Z",
+          "duration_ms": 32977,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-27T19:19:51.199Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "guard",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793128800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.16,
+                  "resetsAt": 1793128800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.17,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-27T19:19:54.595Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793128800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.16,
+                  "resetsAt": 1793128800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.17,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-27T19:20:05.877Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793146800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0,
+                  "resetsAt": 1793146800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.17,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 32977,
+        "num_turns": 5,
+        "cost_usd": 0.1233271,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2180,
+            "cache_read_input_tokens": 152431,
+            "cache_creation_input_tokens": 21566,
+            "cost_usd": 0.1233271
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 21566
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 5125,
+        "num_turns": 1,
+        "cost_usd": 0.0534612,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 10392,
+            "cache_creation_input_tokens": 13072,
+            "cost_usd": 0.0534612
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13072
+        },
+        "reasons": {}
+      },
+      "reasons": {}
+    }
+  }
+}

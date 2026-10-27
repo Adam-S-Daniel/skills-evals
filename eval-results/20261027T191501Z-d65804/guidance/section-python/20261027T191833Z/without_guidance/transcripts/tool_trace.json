@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011fA494TLr549eQcASK5S12",
+      "name": "Bash",
+      "input": "ls && cat settings.py",
+      "input_chars": 21,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011fA494TLr549eQcASK5S12",
+      "is_error": false,
+      "output": "settings.json\nsettings.py\n\"\"\"Application settings.\"\"\"\n\nDEFAULTS: dict[str, object] = {\"port\": 8080, \"debug\": False}\n\n\ndef merged(overrides: dict[str, object]) -> dict[str, object]:\n    \"\"\"Return the defaults with overrides applied.\"\"\"\n    return {**DEFAULTS, **overrides}",
+      "output_chars": 271,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NNBrtyEA2DTAMDeLnJzj8h",
+      "name": "Bash",
+      "input": "python - <<'EOF'\np='settings.py'\ns=open(p).read()\ns=s.replace('\"\"\"Application settings.\"\"\"\\n','\"\"\"Application settings.\"\"\"\\n\\nimport json\\nimport logging\\n\\nlogger = logging.getLogger(__name__)\\n',1)\n...",
+      "input_chars": 1150,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NNBrtyEA2DTAMDeLnJzj8h",
+      "is_error": false,
+      "output": "{\"port\": 9090}\nSettings file not found: nope; using defaults\n{'port': 9090, 'debug': False}\n{'port': 8080, 'debug': False}",
+      "output_chars": 122,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
