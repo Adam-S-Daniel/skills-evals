@@ -2,8 +2,8 @@
 """Conditional judging (#371 items 1 and 2): the judge is not called for a
 with/without pair whose objective result already decides it.
 
-For a pair (`--arm both`, or a guidance run of exactly one `with` and one
-`without` arm) no judge call is made while trials run. Once every trial of
+For a pair (`--arm both`, or each pair of a guidance run's arms by mode:
+`section`/`none` and `full`/`full-minus-section`) no judge call is made while trials run. Once every trial of
 both arms is scored, the arms' objective pass rates (checks passed over
 checks scored, over the trials whose `error` is null) are compared exactly:
 `with` strictly ahead skips the judge for every scored trial of the pair and
@@ -726,6 +726,52 @@ class GuidancePairTests(unittest.TestCase):
         (run_dir,) = (self.results / f"guidance/{self.SECTION}").iterdir()
         self.assertIn(CELL, (run_dir / "report.md").read_text(encoding="utf-8"))
 
+    # Four arms in two pairs by mode, as the scheduled guidance fixtures
+    # declare them, under names no role table knows (main's are
+    # `with_guidance_section` and the like; short ones here keep this test's
+    # deep scratch paths inside the arm's --settings cap).
+    FOUR_ARMS = {"w_section": {"mode": "section"}, "wo_none": {"mode": "none"},
+                 "w_full": {"mode": "full"}, "w_minus": {"mode": "full-minus-section"}}
+
+    def test_four_named_arms_settle_each_pair_on_its_own_result(self):
+        # Every arm handed the delivered payload sees the token: `section`
+        # beats `none` (that pair skips the judge), while `full` and
+        # `full-minus-section` both match, a tie (that pair is judged).
+        proc = self.run_guidance("$MAGIC_TOKEN", arms=self.FOUR_ARMS)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.judge_calls(), 2)
+        for arm in ("w_section", "wo_none"):
+            with self.subTest(arm=arm):
+                self.assertEqual(self.summary(arm)["judge"], SKIPPED)
+        for arm in ("w_full", "w_minus"):
+            with self.subTest(arm=arm):
+                self.assertNotEqual(self.summary(arm)["judge"], SKIPPED)
+        for arm in self.FOUR_ARMS:
+            with self.subTest(arm=arm):
+                self.assertIs(self.summary(arm)["judge_conditional"], True)
+
+    def test_four_named_arms_judge_every_arm_on_a_tie(self):
+        proc = self.run_guidance(".", arms=self.FOUR_ARMS)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.judge_calls(), 4)
+        for arm in self.FOUR_ARMS:
+            with self.subTest(arm=arm):
+                self.assertNotEqual(self.summary(arm)["judge"], SKIPPED)
+
+    def test_an_arm_in_no_complete_pair_is_judged_unconditionally(self):
+        arms = {"w_section": {"mode": "section"}, "wo_none": {"mode": "none"},
+                "w_full": {"mode": "full"}}
+        proc = self.run_guidance("$MAGIC_TOKEN", arms=arms)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.judge_calls(), 1)
+        self.assertNotEqual(self.summary("w_full")["judge"], SKIPPED)
+        self.assertIs(self.summary("w_full")["judge_conditional"], False)
+        self.assertEqual(self.summary("w_section")["judge"], SKIPPED)
+
+    def test_the_judge_pairs_are_the_gates_pairs(self):
+        import gates
+        self.assertEqual(run_eval.GUIDANCE_JUDGE_PAIRS, gates.GUIDANCE_PAIRS)
+
     def test_a_tie_judges_both_arms(self):
         proc = self.run_guidance(".")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -808,12 +854,21 @@ class GuidancePairTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(self.judge_calls(), 2)
 
-    def test_arms_that_are_not_a_with_without_pair_judge_in_place(self):
+    def test_arms_are_paired_by_mode_whatever_their_names(self):
+        # Until 2026-10-27 the pair was found by arm NAME, so this run, and
+        # every scheduled guidance fixture, judged every trial.
         proc = self.run_guidance("$MAGIC_TOKEN", arms={
             "treatment": {"mode": "section"}, "control": {"mode": "none"}})
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(self.judge_calls(), 2)
-        self.assertNotEqual(self.summary("treatment")["judge"], SKIPPED)
+        self.assertEqual(self.judge_calls(), 0)
+        self.assertEqual(self.summary("treatment")["judge"], SKIPPED)
+
+    def test_two_arms_of_one_mode_are_no_pair_and_judge_in_place(self):
+        proc = self.run_guidance("$MAGIC_TOKEN", arms={
+            "a": {"mode": "section"}, "b": {"mode": "section"},
+            "without_guidance": {"mode": "none"}})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.judge_calls(), 3)
 
 
 if __name__ == "__main__":
