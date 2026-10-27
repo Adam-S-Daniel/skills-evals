@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Issue #71: the checked-in writing-adrs `--trigger-eval-set`.
+"""Issue #71: the checked-in `--trigger-eval-set` files (writing-adrs,
+review-bash-ci-reliability).
 
 `evals/writing-adrs/trigger-eval-set.json` is a reviewed skill-creator query
 set for `scripts/propose_skill_edit.py --trigger-eval-set`. The
@@ -48,10 +49,13 @@ def normalized(text: str) -> str:
 
 class CheckedInSetTests(unittest.TestCase):
 
+    skill = SKILL
+
     def setUp(self):
-        self.items = pse.load_trigger_eval_set(SET_PATH)
-        self.names = pse.skill_fixtures(SKILL)
-        self.fixtures = pse.load_fixtures(SKILL, self.names)
+        self.set_path = REPO_ROOT / "evals" / self.skill / "trigger-eval-set.json"
+        self.items = pse.load_trigger_eval_set(self.set_path)
+        self.names = pse.skill_fixtures(self.skill)
+        self.fixtures = pse.load_fixtures(self.skill, self.names)
 
     def test_set_is_balanced_and_distinct(self):
         positives = [i for i in self.items if i["should_trigger"]]
@@ -72,7 +76,7 @@ class CheckedInSetTests(unittest.TestCase):
                 with self.subTest(holdout=holdout, rotation=rotation):
                     train, validation = pse.split_fixtures(self.names, rotation, holdout)
                     items, source = pse.trigger_eval_set(
-                        SKILL, self.fixtures, train, validation, SET_PATH, holdout)
+                        self.skill, self.fixtures, train, validation, self.set_path, holdout)
                     self.assertEqual(source, "file:trigger-eval-set.json")
                     self.assertEqual(len(items), len(self.items))
                     counts = pse.trigger_split_counts(items)
@@ -81,6 +85,14 @@ class CheckedInSetTests(unittest.TestCase):
                     self.assertGreaterEqual(counts["train"]["should_not_trigger"], 2)
                     planned += 1
         self.assertEqual(planned, (len(self.names) + 1) * len(self.names))
+
+
+class ReviewBashSetTests(CheckedInSetTests):
+    """review-bash-ci-reliability's four fixtures share one prompt, so the
+    fixture-derived default has no should-trigger query at all; the same
+    pins hold for its checked-in set."""
+
+    skill = "review-bash-ci-reliability"
 
 
 class DryRunWithSetTests(t71.PipelineCase):
