@@ -54,7 +54,11 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/security/search-query",
             "evals/guidance/section-docker/node-service",
             "evals/guidance/section-javascript/fetch-retry",
-            "evals/guidance/section-typescript/parse-event"]
+            "evals/guidance/section-typescript/parse-event",
+            "evals/guidance/section-go/fetch-user",
+            "evals/guidance/section-rust/parse-port",
+            "evals/guidance/section-dotnet/load-settings",
+            "evals/guidance/workstation-layout/clone-all"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"

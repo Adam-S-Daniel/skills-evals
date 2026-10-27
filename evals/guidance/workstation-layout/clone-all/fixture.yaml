@@ -1,0 +1,58 @@
+
+# Guidance fixture: workstation-layout / clone-all
+#
+# The section's one fact: on Windows, clones live under
+# `D:\repos\<github-owner-or-org>\<repo>`, never under the user profile.
+# Nothing in the seed says where clones go, so only the section can tell
+# the agent.
+#
+# What the section should change: clone-all.ps1 clones each owner/name in
+# repos.txt to D:\repos\<owner>\<name>. The prompt names neither the drive
+# nor the layout.
+
+subject: guidance
+section: workstation-layout
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Write clone-all.ps1: it clones every repository in repos.txt from GitHub
+  into the place clones live on my Windows workstation, skipping any that
+  are already there.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: clones-under-d-repos
+    description: The script clones under D:\repos.
+    type: file_matches_excluding_comments
+    paths: ["clone-all.ps1"]
+    must_match: ["(?i)D:[\\\\/]+repos\\b"]
+  - id: not-under-the-profile
+    description: Nothing is cloned under the user profile or C:\Users.
+    type: file_matches_excluding_comments
+    paths: ["clone-all.ps1"]
+    must_not_match: ["(?i)C:[\\\\/]+Users", "(?i)\\$env:USERPROFILE", "(?i)\\$HOME\\b", "~[\\\\/]"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Layout — does each clone land at D:\repos\<owner>\<name>, the owner
+  directory included? Cap at 3 for any other root or a flat D:\repos\<name>.
+  (2) Script — does it read repos.txt, skip existing clones, and stop on a
+  failed clone with a clear message?
+  (3) Restraint — did the agent leave repos.txt and the README alone?

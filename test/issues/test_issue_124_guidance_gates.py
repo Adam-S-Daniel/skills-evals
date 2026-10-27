@@ -61,7 +61,8 @@ SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed"
             "fleet-spans-two-owners", "github-404-means-not-authorized",
             "test-that-can-signal-kills-every-session", "section-python", "dependency-updates",
             "agent-contribution-markers", "security", "section-docker", "section-javascript",
-            "section-typescript"}
+            "section-typescript", "section-go", "section-rust", "section-dotnet",
+            "workstation-layout"}
 MODES = {"with_guidance_section": "section", "without_guidance": "none",
          "with_guidance_full": "full",
          "with_guidance_full_minus_section": "full-minus-section"}
@@ -584,6 +585,100 @@ class ThirdBatchFixtureTests(unittest.TestCase):
             "    throw new Error(\"not an Event\");\n  }\n"
             "  return { id: data.id, kind: data.kind, at: data.at };\n}\n")
         self._check(*args, {"src/events.ts": good}, {True})
+
+
+def check_fixture(test, section, name, files, expected):
+    """Write `files` into a fresh workspace of the fixture and compare its
+    scores with `expected`: a dict of check ids, or {True}/{False} for all."""
+    fixture = GUIDANCE_EVALS / section / name
+    ws = workspace(test, fixture)
+    for rel, text in files.items():
+        (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+        (ws / rel).write_text(text, encoding="utf-8")
+    got = score(fixture, ws)
+    test.assertEqual(got if isinstance(expected, dict) else set(got.values()), expected)
+
+
+class FourthBatchFixtureTests(unittest.TestCase):
+    """The Go, Rust and .NET sections and the workstation layout (gap G4)."""
+
+    def seed(self, section, name, rel):
+        return (GUIDANCE_EVALS / section / name / "seed" / rel).read_text(encoding="utf-8")
+
+    def test_fetch_user(self):
+        args = ("section-go", "fetch-user")
+        seed = self.seed(*args, "users.go")
+        trap = seed.replace("package users\n", 'package users\n\nimport (\n\t"encoding/json"\n'
+                            '\t"net/http"\n)\n') + (
+            "\nfunc FetchUser(id string) User {\n\tresp, _ := http.Get(BaseURL + \"/users/\" + id)\n"
+            "\tvar u User\n\t_ = json.NewDecoder(resp.Body).Decode(&u)\n\treturn u\n}\n")
+        test = ("package users\n\nimport \"testing\"\n\nfunc TestFetchUser(t *testing.T) {\n"
+                "\tif FetchUser(\"1\").ID != \"1\" {\n\t\tt.Fatal(\"wrong user\")\n\t}\n}\n")
+        check_fixture(self, *args, {"users.go": trap, "users_test.go": test}, {False})
+        good = seed.replace("package users\n", 'package users\n\nimport (\n\t"context"\n'
+                            '\t"encoding/json"\n\t"fmt"\n\t"net/http"\n)\n') + (
+            "\nfunc FetchUser(ctx context.Context, id string) (User, error) {\n"
+            "\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, BaseURL+\"/users/\"+id, nil)\n"
+            "\tif err != nil {\n\t\treturn User{}, err\n\t}\n"
+            "\tresp, err := http.DefaultClient.Do(req)\n\tif err != nil {\n\t\treturn User{}, err\n\t}\n"
+            "\tdefer resp.Body.Close()\n\tif resp.StatusCode != http.StatusOK {\n"
+            "\t\treturn User{}, fmt.Errorf(\"get user %s: %s\", id, resp.Status)\n\t}\n"
+            "\tvar u User\n\tif err := json.NewDecoder(resp.Body).Decode(&u); err != nil {\n"
+            "\t\treturn User{}, err\n\t}\n\treturn u, nil\n}\n")
+        table = ("package users\n\nimport \"testing\"\n\nfunc TestFetchUser(t *testing.T) {\n"
+                 "\tcases := []struct {\n\t\tname, id string\n\t\twantErr bool\n\t}{{\"ok\", \"1\", false}}\n"
+                 "\tfor _, tc := range cases {\n\t\tt.Run(tc.name, func(t *testing.T) {})\n\t}\n}\n")
+        check_fixture(self, *args, {"users.go": good, "users_test.go": table}, {True})
+
+    def test_parse_port(self):
+        args = ("section-rust", "parse-port")
+        seed = self.seed(*args, "src/lib.rs")
+        trap = seed + ("\npub fn parse_port(value: &str) -> u16 {\n    value.parse().unwrap()\n}\n\n"
+                       "pub fn port_from_env() -> u16 {\n"
+                       "    parse_port(&std::env::var(\"PORT\").expect(\"PORT\"))\n}\n")
+        check_fixture(self, *args, {"src/lib.rs": trap, "tests/port.rs": "// none\n"}, {False})
+        good = seed + (
+            "\npub fn parse_port(value: &str) -> Result<u16, ConfigError> {\n"
+            "    match value.parse::<u16>() {\n        Ok(port) if port > 0 => Ok(port),\n"
+            "        _ => Err(ConfigError::Invalid { key: \"PORT\", value: value.to_string() }),\n"
+            "    }\n}\n\npub fn port_from_env() -> Result<u16, ConfigError> {\n"
+            "    let value = std::env::var(\"PORT\").map_err(|_| ConfigError::Missing(\"PORT\"))?;\n"
+            "    parse_port(&value)\n}\n")
+        check_fixture(self, *args, {"src/lib.rs": good,
+                                    "tests/port.rs": "#[test]\nfn rejects_zero() {\n"
+                                    "    assert!(netconf::parse_port(\"0\").is_err());\n}\n"}, {True})
+
+    def test_load_settings_async(self):
+        args = ("section-dotnet", "load-settings")
+        seed = self.seed(*args, "SettingsStore.cs")
+        methods = (
+            "    public async Task<AppSettings> LoadAsync()\n    {\n"
+            "        if (!File.Exists(_path)) return new AppSettings();\n"
+            "        await using var stream = File.OpenRead(_path);\n"
+            "        return await System.Text.Json.JsonSerializer.DeserializeAsync<AppSettings>(stream)\n"
+            "            ?? new AppSettings();\n    }\n\n")
+        trap = seed.replace("        _path = path;\n    }\n", "        _path = path;\n    }\n\n"
+                            + methods + "    public AppSettings Load() => LoadAsync().Result;\n")
+        check_fixture(self, *args, {"SettingsStore.cs": trap},
+                      {"nullable-enabled": False, "async-without-blocking": False,
+                       "framework-kept": True})
+        good = "#nullable enable\n" + seed.replace(
+            "        _path = path;\n    }\n", "        _path = path;\n    }\n\n" + methods
+            + "    public AppSettings Load() => File.Exists(_path)\n"
+            "        ? System.Text.Json.JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path))"
+            " ?? new AppSettings()\n        : new AppSettings();\n")
+        check_fixture(self, *args, {"SettingsStore.cs": good}, {True})
+
+    def test_clone_all(self):
+        args = ("workstation-layout", "clone-all")
+        trap = ("foreach ($line in Get-Content repos.txt) {\n"
+                "  $dest = Join-Path $env:USERPROFILE \"source\\repos\\$($line.Split('/')[1])\"\n"
+                "  if (-not (Test-Path $dest)) { git clone \"https://github.com/$line\" $dest }\n}\n")
+        check_fixture(self, *args, {"clone-all.ps1": trap}, {False})
+        good = ("foreach ($line in Get-Content repos.txt) {\n  $owner, $name = $line.Split('/')\n"
+                "  $dest = \"D:\\repos\\$owner\\$name\"\n"
+                "  if (-not (Test-Path $dest)) { git clone \"https://github.com/$line\" $dest }\n}\n")
+        check_fixture(self, *args, {"clone-all.ps1": good}, {True})
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,68 @@
+
+# Guidance fixture: section-dotnet / load-settings
+#
+# The .NET section's rules on file I/O: nullable reference types enabled,
+# `async Task` for I/O with no `.Result` or `.Wait()`, disposal through
+# `using`, and the project's existing target framework kept. The seed's
+# csproj does not enable nullable reference types.
+#
+# What the section should change: an async LoadAsync, `#nullable enable` (or
+# `<Nullable>enable</Nullable>`), no blocking call, net8.0 kept. The prompt
+# names none of them.
+
+subject: guidance
+section: section-dotnet
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add LoadAsync() to SettingsStore: it reads the JSON file at the store's
+  path into AppSettings, returning the defaults when the file does not
+  exist. Also add a synchronous Load() for callers that cannot await.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: nullable-enabled
+    description: Nullable reference types are on, in the csproj or the file.
+    type: file_matches
+    paths: ["Settings.csproj", "SettingsStore.cs"]
+    must_match: ["<Nullable>\\s*enable\\s*</Nullable>|#nullable\\s+enable"]
+    require_present: true
+  - id: async-without-blocking
+    description: LoadAsync is async, and nothing blocks on a task with .Result, .Wait() or GetResult().
+    type: file_matches_excluding_comments
+    paths: ["SettingsStore.cs"]
+    must_match: ["public\\s+(async\\s+)?(Task|ValueTask)<\\s*AppSettings\\s*>\\s+LoadAsync\\("]
+    must_not_match: ["\\.Result\\b", "\\.Wait\\(\\s*\\)", "GetAwaiter\\(\\)\\s*\\.\\s*GetResult\\("]
+  - id: framework-kept
+    description: The project still targets net8.0.
+    type: file_matches
+    paths: ["Settings.csproj"]
+    must_match: ["<TargetFramework>net8\\.0</TargetFramework>"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) .NET rules — nullable enabled with warnings resolved, async I/O with
+  no sync-over-async, streams disposed with using, target framework kept?
+  Cap at 3 if Load() blocks on LoadAsync() with .Result or .Wait(). A
+  synchronous Load() that uses File.ReadAllText (or says why it cannot
+  exist) is fine.
+  (2) Behavior — defaults when the file is missing, AppSettings otherwise?
+  (3) Naming — PascalCase public members, `_camelCase` private fields?
