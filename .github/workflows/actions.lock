@@ -53,6 +53,11 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.2.0'
         - 'actions/setup-python@v7.0.0'
+    '.github/workflows/routine-guidance-improve-gate.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.2.0'
+        - 'actions/setup-python@v7.0.0'
+    '.github/workflows/routine-guidance-improve-pushed.yml': []
     '.github/workflows/routine-improve-gate.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.2.0'

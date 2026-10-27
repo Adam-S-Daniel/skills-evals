@@ -296,6 +296,37 @@ class PauseTests(unittest.TestCase):
             + three[2:]
         self.assertIn("3 rejections", self.pause(mixed))
 
+    def test_a_guidance_section_is_paused_by_its_own_records_and_prs(self):
+        def srec(section, outcome, at):
+            return {"section": section, "fire_run": 1, "at": iso(at), "outcome": outcome,
+                    "run_id": None}
+
+        def spause(records=(), prs=()):
+            return plan_week.pause("sec", list(records), list(prs), [], NOW, None,
+                                   lambda moment: False, key="section")
+        open_pr = {"section": "sec", "state": "open", "created_at": iso(NOW),
+                   "closed_at": None, "merged_at": None}
+        self.assertIsNone(spause())
+        self.assertIn("pull request is open", spause(prs=[open_pr]))
+        self.assertIn("in flight", spause([srec("sec", "pending", NOW)]))
+        self.assertIn("cooling down", spause([srec("sec", "rejected",
+                                                   NOW - timedelta(days=3))]))
+        three = [srec("sec", "rejected", NOW - timedelta(days=d)) for d in (60, 40, 20)]
+        self.assertIn("3 rejections in a row", spause(three))
+        self.assertIsNone(spause([srec("other", "pending", NOW)]))
+
+    def test_the_guidance_lane_holds_one_guidance_edit_at_a_time(self):
+        lane = plan_week.guidance_lane
+        other_pr = {"section": "other", "state": "open"}
+        self.assertIsNone(lane("sec", [], [], []))
+        self.assertIsNone(lane("sec", [], [{**other_pr, "state": "closed"}], []))
+        self.assertIn("another guidance-loop pull request", lane("sec", [], [other_pr], []))
+        self.assertIn("another guidance-loop pull request", lane("sec", [], [], ["other"]))
+        self.assertIn("removal pull request for it", lane("sec", [], [], ["sec"]))
+        self.assertIn("another guidance-improve attempt",
+                      lane("sec", [{"section": "other", "outcome": "pending"}], [], []))
+        self.assertIsNone(lane("sec", [{"section": "other", "outcome": "rejected"}], [], []))
+
     def test_infrastructure_failures_retry_twice(self):
         two = [rec("writing-adrs", "fire-failed", NOW - timedelta(hours=h)) for h in (3, 2)]
         self.assertIsNone(self.pause(two))
@@ -708,6 +739,23 @@ class DispatchLegTests(unittest.TestCase):
                        {"MODEL": "claude-opus-5-5"}, {"ARMS": "bare"}, {"ARMS": "both"}):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**improve, **change})
+        # A section on an improve or eval leg is refused; only guidance-improve
+        # legs carry one.
+        for leg in (good, improve):
+            with self.assertRaises(plan_week.PlanError):
+                plan_week.validate_fire({**leg, "SECTION": GUIDANCE_SECTION})
+        gleg = {"MODE": "guidance-improve", "ARMS": "", "FIXTURE": "", "EVAL_KEY": "",
+                "MODEL": "", "SKILL": "", "SECTION": GUIDANCE_SECTION,
+                "HOLDOUT": GUIDANCE_FIXTURE[len("evals/"):]}
+        plan_week.validate_fire(gleg)
+        # A planned leg always names its holdout, as an improve leg does.
+        for change in ({"HOLDOUT": ""}, {"SECTION": ""}, {"SECTION": "_delivery"},
+                       {"SECTION": "two-setup-gaps", "HOLDOUT": ""},
+                       {"HOLDOUT": "handoff"}, {"HOLDOUT": "guidance/x/handoff"},
+                       {"SKILL": "writing-adrs"}, {"MODEL": "claude-opus-5-5"},
+                       {"ARMS": "both"}, {"FIXTURE": GUIDANCE_FIXTURE}):
+            with self.assertRaises(plan_week.PlanError, msg=change):
+                plan_week.validate_fire({**gleg, **change})
 
 
 class PlanCommandTests(unittest.TestCase):
@@ -789,6 +837,7 @@ class PlanCommandTests(unittest.TestCase):
 
 
 GUIDANCE_FIXTURE = "evals/guidance/anything-you-name-gets-its-link/handoff"
+GUIDANCE_SECTION = "anything-you-name-gets-its-link"
 
 
 class GuidanceFixtureTests(unittest.TestCase):
@@ -953,22 +1002,64 @@ class ImproveValueTests(unittest.TestCase):
                                         skill_weights={"a": 3, "b": 3}), NOW)
         self.assertEqual([f["skill"] for f in plan["fires"]], ["a", "b"])
 
-    def test_an_eligible_guidance_section_is_a_work_item_never_a_fire(self):
+    def test_an_eligible_guidance_section_is_an_improve_band_fire(self):
         plan = plan_week.build_plan(ctx(
-            guidance={"sec": gsection(headroom=0.4)}, guidance_use=100.0,
-            improve_charge=0.1, room=1.0), NOW)
-        self.assertEqual(plan["fires"], [])
-        self.assertEqual(plan["matrix"]["include"], [])
-        self.assertEqual(len(plan["work"]), 1)
-        item = plan["work"][0]
-        self.assertAlmostEqual(item.pop("value"), 100.0 * 0.4 / 0.1)
-        self.assertEqual(item, {
-            "kind": "guidance-improve", "change_type": "guidance-edit", "section": "sec",
-            "fixtures": 4, "headroom": 0.4,
-            "route": "local run: scripts/propose_guidance_edit.py (no routine mode yet)"})
+            guidance={"sec": {**gsection(headroom=0.4),
+                              "holdout_fixture": "guidance/sec/zzz"}},
+            guidance_use=100.0, improve_charge=0.1, room=1.0), NOW)
+        self.assertEqual(plan["work"], [])
+        [fire] = plan["fires"]
+        self.assertAlmostEqual(fire.pop("value"), 100.0 * 0.4 / 0.1)
+        self.assertEqual(fire, {
+            "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "",
+            "fixture": "", "eval_key": "", "model": "", "skill": "", "section": "sec",
+            "holdout": "guidance/sec/zzz", "change_type": "guidance-edit", "cost": 0.1})
+        self.assertEqual(plan["matrix"]["include"], [{
+            "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "", "fixture": "", "eval_key": "",
+            "model": "", "skill": "", "section": "sec", "holdout": "guidance/sec/zzz"}])
         self.assertEqual(plan["guidance"], {"sec": {
             "eligible": True, "reasons": [], "headroom": 0.4, "fixtures": 4}})
         self.assertEqual(plan["skills"], {})
+
+    def test_one_guidance_fire_per_plan_the_highest_value_first(self):
+        plan = plan_week.build_plan(ctx(
+            guidance={"low": gsection(headroom=0.2), "high": gsection(headroom=0.8)},
+            guidance_use=10.0, improve_charge=0.1, room=1.0), NOW)
+        self.assertEqual([f["section"] for f in plan["fires"]], ["high"])
+        self.assertTrue(plan["guidance"]["low"]["eligible"])
+        self.assertIn("high ranks higher", plan["guidance"]["low"]["deferred"])
+        self.assertEqual(plan["work"], [])
+
+    def test_a_paused_section_gets_no_fire_and_no_work_item(self):
+        for pause in ("an attempt is in flight",
+                      "another guidance-loop pull request is open in _agent-guidance"):
+            with self.subTest(pause=pause):
+                plan = plan_week.build_plan(ctx(
+                    guidance={"sec": {**gsection(headroom=0.5), "pause": pause}},
+                    guidance_use=10.0, improve_charge=0.1, room=1.0), NOW)
+                self.assertEqual(plan["fires"], [])
+                self.assertEqual(plan["work"], [])
+                self.assertEqual(plan["guidance"]["sec"]["reasons"], [pause])
+                self.assertFalse(plan["guidance"]["sec"]["eligible"])
+        plan = plan_week.build_plan(ctx(
+            guidance={"sec": {**gsection(headroom=0.5), "row_ok": False}},
+            guidance_use=10.0, improve_charge=0.1, room=1.0), NOW)
+        self.assertEqual((plan["fires"], plan["work"]), ([], []))
+        self.assertEqual(plan["guidance"]["sec"]["reasons"],
+                         ["its eval-coverage.yml row is skipped or missing"])
+
+    def test_a_section_id_the_fire_workflow_refuses_stays_a_work_item(self):
+        # `Sec_1` is a manifest id the fire workflow's section pattern
+        # refuses, so it keeps the local route instead of a fire.
+        plan = plan_week.build_plan(ctx(
+            guidance={"Sec_1": gsection(headroom=0.4)}, guidance_use=100.0,
+            improve_charge=0.1, room=1.0), NOW)
+        self.assertEqual(plan["fires"], [])
+        [item] = plan["work"]
+        self.assertAlmostEqual(item.pop("value"), 100.0 * 0.4 / 0.1)
+        self.assertEqual(item, {
+            "kind": "guidance-improve", "change_type": "guidance-edit", "section": "Sec_1",
+            "fixtures": 4, "headroom": 0.4, "route": plan_week.GUIDANCE_IMPROVE_ROUTE})
 
     def test_guidance_sections_that_are_not_eligible(self):
         plan = plan_week.build_plan(ctx(

@@ -641,3 +641,80 @@ no routine run and no real pull request.
   auto-merged one does not count toward them, so that gate needs its own
   decision. The fleet rule "PR + auto-merge is not a sanctioned bot-write
   path" needs a repo-settings ADR.
+
+## Routine guidance improve mode addendum (2026-10-27)
+
+The improve mode above, for a fleet-guidance section instead of a skill:
+the top-ranked eligible section is fired, measured and landed in
+Adam-S-Daniel/_agent-guidance with no human, under the same switch. The
+registry side is repo-settings ADR 0012 (loop changes merge without review)
+and ADR 0014 (the eval-improve App writes _agent-guidance for the guidance
+loop). Built red-first with fakes and a scratch _agent-guidance checkout; no
+routine run and no real pull request.
+
+- **The fire.** `routine-eval-fire.yml` takes `mode: guidance-improve` with
+  a `section` and an optional `holdout` (a fixture key relative to
+  `evals/`, such as `guidance/<section>/<name>`). Before the bearer is in any
+  step's env it checks the section against `^[a-z0-9][a-z0-9-]{0,63}$` (so
+  `_delivery` and every other `_` directory are refused) and runs
+  `scripts/guidance_improve_gate.py fire-check`: at least the proposer's
+  `MIN_FIXTURES` fixtures declaring the `full` arm
+  (`propose_guidance_edit.fixture_layout_discover`), a holdout empty or one
+  of them, and, against the _agent-guidance checkout, a manifest row that is
+  not skipped. It sends exactly `run_id`, `mode`, `section`, `trials` and
+  `holdout` (null when empty), and its title is `Fire eval routine:
+  guidance-improve <section>`.
+- **Charged and paused as an improve fire.** `improve_outcomes` reads those
+  titles and `claude/eval-guidance-improve-<run id>` branches as records
+  keyed by `section`; the allowance guard charges them `improve_charge` for
+  the week (`charged_fires`). The weekly plan makes the highest-value
+  eligible section an improve-band fire, one per plan, with `trials=3`.
+  Rule C applies per section (an open `eval-guidance-improve/<section>` pull
+  request, an attempt in flight, the 14-day cooldown, three rejections),
+  and a guidance lane holds the rest: no fire while another section's
+  guidance-loop pull request (`eval-guidance-improve/*`, `retire-guidance/*`)
+  is open or another section's attempt is in flight, since every guidance
+  edit writes `AGENTS.md` and `docs/guidance-impact.md`. A section id the
+  fire workflow's pattern refuses stays a work item for a local run.
+- **The branch and its gate.** On an accepted candidate only (exit 0: the
+  candidate was accepted and its patch passed _agent-guidance's own checks)
+  the routine pushes `claude/eval-guidance-improve-<run id>`, adding exactly
+  `eval-guidance-improve/<run id>/summary.json`, `report.md` and
+  `guidance.patch`. The root is its own: the branch also matches the results
+  signal's `claude/eval-*`, and the path filters keep each push to its own
+  gate (a suite test parses the three). `routine-guidance-improve-pushed.yml`
+  holds no permissions; `routine-guidance-improve-gate.yml` runs on its
+  `workflow_run` from the default branch's copy and validates without
+  running anything: the record is accepted for one section at a full sha
+  with a split equal to that section's fixtures on the default branch, the
+  patch touches only the row's file and the proposer's bookkeeping files
+  (`agents-md/eval-coverage.yml`, `docs/guidance-impact.md`, `AGENTS.md`),
+  and the report has the proposer's title and no closing keyword or
+  @mention.
+- **The commit is built with no credential.** `prepare` works on an
+  anonymous checkout of _agent-guidance's default branch tip, refuses unless
+  the measured sha is on it and `agents-md/` and `AGENTS.md` are unchanged
+  since, applies the patch, re-copies `agents-md/base.md` to
+  `.claude/hooks/fleet-guidance.md` when the section is in base.md (that
+  repository's byte-identical fleet-memory payload), and refuses any changed
+  path outside ADR 0014's allowlist. It checks what changed, not only where,
+  since base.md reaches every repository: the section's file must keep its
+  `##` headings and every byte outside the section's extent (the proposer's
+  own extent finder), the manifest may change only the row's `bytes`, to the
+  new extent's size, and the impact file may gain only one inserted entry
+  naming the section. AGENTS.md is left to _agent-guidance's staleness check.
+- **The pull request.** Only then is the eval-improve App's token minted, for
+  _agent-guidance alone, under `continue-on-error`; one step uses it. The
+  pull request comes from `eval-guidance-improve/<section>`, labeled
+  `agent-authored`; in `auto` (`evals/improve-policy.yml`) it is ready with
+  auto-merge by merge commit and `--match-head-commit`, read back, otherwise
+  a draft. Nothing is opened while another guidance-loop pull request is
+  open there or the target branch exists. With either App secret unset, or a
+  failed mint (the App not yet installed on _agent-guidance), the job opens
+  nothing, says why in its summary, and succeeds.
+- **The routine's saved prompt** needs a GUIDANCE-IMPROVE MODE section (not in
+  this repository; Adam pastes it). Each run is at most 4 fixtures x 2
+  sides x 3 trials = 24 nested agent arms, 48 when the proposer re-runs a
+  noisy or near-threshold measurement, plus one proposal call: 49 agent
+  sessions for a four-fixture section, 73 at six. The prompt raises this
+  mode's nested-agent limit to 100 and keeps the 90-minute stop.

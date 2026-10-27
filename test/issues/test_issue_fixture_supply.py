@@ -143,7 +143,7 @@ class PickTests(unittest.TestCase):
         rendered = rendered.replace("${{ inputs.mode }}", "scaffold")
         # A scaffold fire sends no model, so the folded title ends in a space.
         rendered = rendered.replace("${{ inputs.model }}", "")
-        for name in ("candidate", "fixture", "skill"):
+        for name in ("candidate", "fixture", "skill", "section"):
             rendered = rendered.replace("${{ inputs.%s }}" % name,
                                         "example-org__widget__9" if name == "candidate" else "")
         self.assertEqual(scaffold.fired_candidates([rendered]), {"example-org__widget__9"})

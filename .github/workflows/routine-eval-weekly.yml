@@ -11,12 +11,16 @@ name: Weekly routine evals
 # guard and holds the routine bearer.
 #
 # * Improve mode is scheduled since Adam's 2026-10-26 decision (ADR 0010,
-#   decision 4 addendum): no human in the loop.
+#   decision 4 addendum): no human in the loop. So is guidance-improve mode
+#   (ADR 0005, "Routine guidance improve mode addendum"): an eligible
+#   _agent-guidance section is an improve-band fire, one at a time, sent
+#   `trials=3` like an improve fire.
 # * The plan job reads the whole results branch (ingested runs, the usage
 #   census) and the three public registries as data, computes the
 #   retirement verdicts as scripts/compute_gates.py does, and reads the
-#   GitHub evidence (fire runs, improve branches, adam-agentskills pull
-#   requests, open on-hold issues) with its read-only token. A read failure
+#   GitHub evidence (fire runs, improve and guidance-improve branches,
+#   adam-agentskills and _agent-guidance pull requests, open on-hold
+#   issues) with its read-only token. A read failure
 #   plans nothing (fail closed). When nothing fits, `count` is 0 and the
 #   dispatch job is skipped.
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
@@ -91,11 +95,13 @@ jobs:
           path: registry-site
           persist-credentials: false
       - name: Check out _agent-guidance (the guidance sections' content)
-        # Read for the sections' extents and digests, never run (#124).
+        # Read for the sections' extents and digests, never run (#124). Full
+        # history: a section's newest change lifts its three-rejection stop.
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: agent-guidance
+          fetch-depth: 0
           persist-credentials: false
       - name: Plan the week's fires by band within the weekly allowance
         id: plan
@@ -153,6 +159,7 @@ jobs:
           EVAL_KEY: ${{ matrix.eval_key }}
           MODEL: ${{ matrix.model }}
           SKILL: ${{ matrix.skill }}
+          SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
         run: python3 scripts/plan_week.py validate-fire
       - name: Wait until fewer than three fires are in flight
@@ -168,6 +175,7 @@ jobs:
           FIXTURE: ${{ matrix.fixture }}
           MODEL: ${{ matrix.model }}
           SKILL: ${{ matrix.skill }}
+          SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
         run: |
           set -euo pipefail
@@ -187,6 +195,9 @@ jobs:
                       --raw-field "trials=$trials") ;;
             improve)
               fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
+                      --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;
+            guidance-improve)
+              fields=(--raw-field mode=guidance-improve --raw-field "section=$SECTION"
                       --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;
             *)
               echo "::error::Routine eval dispatch failed"

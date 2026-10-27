@@ -26,6 +26,15 @@ name: Fire eval routine
 #   fire-check`): nested evals/<skill>/<name> fixtures that all name it and
 #   adam-agentskills, at least the loop's minimum of them, and `holdout`
 #   empty or one of their names.
+#   `guidance-improve` (ADR 0005, "Routine guidance improve mode addendum")
+#   sends exactly five: run_id, mode, section, trials and holdout (null when
+#   empty), and the routine runs scripts/propose_guidance_edit.py on that
+#   _agent-guidance section. `section` must match ^[a-z0-9][a-z0-9-]{0,63}$
+#   (so never `_delivery`) and pass `scripts/guidance_improve_gate.py
+#   fire-check`: at least the proposer's minimum of fixtures declaring the
+#   `full` arm (its own listing), `holdout` empty or one of their keys
+#   (guidance/<section>/<name>), and, after _agent-guidance is checked out
+#   (public, no credential kept), a manifest row that is not skipped.
 #   `draft` (turn a `new-skill` lesson into a drafted skill; caller
 #   routine-draft-skill.yml) takes one input, `proposal`, a path under
 #   adam-agentskills-private's lessons/ matching
@@ -39,12 +48,14 @@ name: Fire eval routine
 #   closed this subject's hook proposal as not planned; the payload then
 #   carries `hook_declined: true` and the routine skips its hooks-first
 #   triage. Each mode's own text inputs must
-#   be empty in the others (`candidate`, `skill`/`holdout` and `proposal`
-#   in eval mode, `fixture`, `skill`/`holdout` and `proposal` in scaffold
-#   mode, `fixture`, `candidate` and `proposal` in improve mode, and every
-#   other text input in draft mode), so no input is silently ignored except
-#   arms and trials, which are choices; arms is sent in eval mode only and
-#   trials in eval and improve. The routine treats the payload as
+#   be empty in the others (`candidate`, `skill`/`holdout`, `section` and
+#   `proposal` in eval mode, `fixture`, `skill`/`holdout`, `section` and
+#   `proposal` in scaffold mode, `fixture`, `candidate`, `section` and
+#   `proposal` in improve mode, `fixture`, `candidate`, `skill` and
+#   `proposal` in guidance-improve mode, and every other text input in draft
+#   mode), so no input is silently ignored except arms and trials, which are
+#   choices; arms is sent in eval mode only and trials in eval, improve and
+#   guidance-improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
 #   every value.
 # * `arms: bare` (ADR 0012, bare baseline addendum; Adam, 2026-10-27) is
@@ -106,11 +117,14 @@ name: Fire eval routine
 #   decision 2). A scaffold run pushes `claude/scaffold-<fixture id>`
 #   instead, which its own gate validates, and an improve run pushes
 #   `claude/eval-improve-<run id>` only for an accepted candidate, which
-#   routine-improve-gate.yml validates. A draft run always pushes
+#   routine-improve-gate.yml validates; a guidance-improve run likewise
+#   pushes `claude/eval-guidance-improve-<run id>`, which
+#   routine-guidance-improve-gate.yml validates. A draft run always pushes
 #   `claude/draft-skill-<run id>`, which routine-draft-skill-gate.yml
 #   validates. Nothing here writes to the repository.
 # * `run-name` names the mode and its one text input (a candidate, a
-#   fixture or a skill; the others are empty, as validation requires), so a
+#   fixture, a skill or a section; the others are empty, as validation
+#   requires), so a
 #   successful scaffold run is titled `Fire eval routine: scaffold <key>`.
 #   routine-fixture-supply.yml reads those titles to fire no candidate twice
 #   within scripts/scaffold_real_work.py's REFIRE_AFTER_DAYS. It is a display
@@ -119,10 +133,10 @@ name: Fire eval routine
 # * The run's title (`run-name`) names the mode, ` bare` after it for an
 #   eval fire with `arms: bare` (so the weekly planner can tell which
 #   (fixture, model) bare runs were fired), the one target input of that
-#   mode (fixture, candidate or skill) and the model when one is given. It is
-#   the only place the runs API exposes a dispatch's inputs, so
-#   scripts/improve_outcomes.py reads improve attempts from it and
-#   scripts/allowance_guard.py charges improve fires their own cost (G5,
+#   mode (fixture, candidate, skill or section) and the model when one is
+#   given. It is the only place the runs API exposes a dispatch's inputs, so
+#   scripts/improve_outcomes.py reads improve and guidance-improve attempts
+#   from it and scripts/allowance_guard.py charges both their own cost (G5,
 #   thresholds doc plumbing gap 2). A title is display text, never a command;
 #   the readers accept only titles matching a strict pattern, and only from
 #   runs that passed validation.
@@ -131,7 +145,7 @@ name: Fire eval routine
 
 run-name: >-
   Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}
-  ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}
+  ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}${{ inputs.section }}
   ${{ inputs.model }}
 
 on:
@@ -141,10 +155,11 @@ on:
         description: >-
           eval runs a fixture; scaffold turns one miner candidate into a
           draft real-work fixture; improve runs the improvement loop on
-          one skill; draft turns one new-skill lesson into a drafted skill.
+          one skill; guidance-improve runs it on one _agent-guidance
+          section; draft turns one new-skill lesson into a drafted skill.
         required: true
         type: choice
-        options: [eval, scaffold, improve, draft]
+        options: [eval, scaffold, improve, guidance-improve, draft]
         default: eval
       candidate:
         description: >-
@@ -168,8 +183,18 @@ on:
         type: string
       holdout:
         description: >-
-          Improve mode only, optional: one fixture name under
-          evals/<skill>/ to hold out, e.g. supersede. Empty means none.
+          Improve and guidance-improve modes only, optional: the fixture to
+          hold out, a name under evals/<skill>/ (e.g. supersede) or a
+          guidance fixture key (e.g. guidance/example-section/handoff).
+          Empty means none.
+        required: false
+        type: string
+      section:
+        description: >-
+          Guidance-improve mode only (leave empty otherwise): the
+          _agent-guidance section id, e.g. anything-you-name-gets-its-link.
+          It must have at least four committed fixtures declaring the full
+          arm on the default branch.
         required: false
         type: string
       proposal:
@@ -230,8 +255,9 @@ jobs:
 
       # Pinned, not the runner's system Python (WorkflowPinnedPythonTests):
       # the validation step lists committed fixtures with
-      # scripts/plan_scheduled_evals.py and, in improve mode, runs
-      # scripts/improve_gate.py fire-check.
+      # scripts/plan_scheduled_evals.py and, in improve and guidance-improve
+      # modes, runs scripts/improve_gate.py or guidance_improve_gate.py
+      # fire-check.
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
@@ -250,12 +276,13 @@ jobs:
           # NUL first, on the event file itself: bash's $( ) drops a NUL, so
           # every check below would otherwise judge a different string than
           # the dispatcher sent. No rejection echoes the value back.
-          # `fixture`, `candidate`, `skill`, `holdout`, `model` and
-          # `proposal` are optional strings (each is used in one mode only),
-          # so an absent one reads as empty.
+          # `fixture`, `candidate`, `skill`, `holdout`, `section`, `model`
+          # and `proposal` are optional strings (each is used in one or two
+          # modes only), so an absent one reads as empty.
           if jq -e '[.inputs.mode, .inputs.arms, .inputs.trials,
                      (.inputs.fixture // ""), (.inputs.candidate // ""),
                      (.inputs.skill // ""), (.inputs.holdout // ""),
+                     (.inputs.section // ""),
                      (.inputs.model // ""), (.inputs.proposal // ""),
                      (.inputs.hook_declined // "false")]
                     | any(type != "string" or test("\u0000"))' \
@@ -267,10 +294,11 @@ jobs:
           # value ending in one would otherwise pass the pattern below.
           if jq -e '[.inputs.mode, (.inputs.candidate // ""),
                      (.inputs.skill // ""), (.inputs.holdout // ""),
+                     (.inputs.section // ""),
                      (.inputs.model // ""), (.inputs.proposal // "")]
                     | any(test("[\u0000-\u001f\u007f]"))' \
                "$event" >/dev/null; then
-            echo "::error::input 'mode', 'candidate', 'skill', 'holdout', 'model' or 'proposal' contains a control character"
+            echo "::error::input 'mode', 'candidate', 'skill', 'holdout', 'section', 'model' or 'proposal' contains a control character"
             exit 1
           fi
           mode="$(jq -r '.inputs.mode' "$event")"
@@ -278,6 +306,7 @@ jobs:
           fixture="$(jq -r '.inputs.fixture // ""' "$event")"
           skill="$(jq -r '.inputs.skill // ""' "$event")"
           holdout="$(jq -r '.inputs.holdout // ""' "$event")"
+          section="$(jq -r '.inputs.section // ""' "$event")"
           model="$(jq -r '.inputs.model // ""' "$event")"
           proposal="$(jq -r '.inputs.proposal // ""' "$event")"
           hook_declined="$(jq -r '.inputs.hook_declined // "false"' "$event")"
@@ -306,12 +335,21 @@ jobs:
           case "$mode" in
             eval|scaffold|draft)
               if [ -n "$skill" ] || [ -n "$holdout" ]; then
-                echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve"
+                echo "::error::inputs 'skill' and 'holdout' must be empty unless the mode is improve or guidance-improve"
+                exit 1
+              fi ;;
+            guidance-improve)
+              if [ -n "$skill" ]; then
+                echo "::error::input 'skill' must be empty in guidance-improve mode"
                 exit 1
               fi ;;
           esac
+          if [ -n "$section" ] && [ "$mode" != guidance-improve ]; then
+            echo "::error::input 'section' must be empty unless the mode is guidance-improve"
+            exit 1
+          fi
           case "$mode" in
-            scaffold|improve|draft)
+            scaffold|improve|guidance-improve|draft)
               if [ -n "$model" ]; then
                 echo "::error::input 'model' must be empty unless the mode is eval"
                 exit 1
@@ -322,7 +360,7 @@ jobs:
             exit 1
           fi
           case "$mode" in
-            eval|scaffold|improve)
+            eval|scaffold|improve|guidance-improve)
               if [ -n "$proposal" ] || [ "$hook_declined" != false ]; then
                 echo "::error::input 'proposal' must be empty and 'hook_declined' false unless the mode is draft"
                 exit 1
@@ -361,6 +399,22 @@ jobs:
                 echo "::error::input 'holdout' is longer than 128 characters or has characters outside [A-Za-z0-9._-]"
                 exit 1
               fi ;;
+            guidance-improve)
+              if [ -n "$fixture" ] || [ -n "$candidate" ]; then
+                echo "::error::inputs 'fixture' and 'candidate' must be empty in guidance-improve mode"
+                exit 1
+              fi
+              # A manifest id, never `_`-prefixed (`_delivery` is the canary).
+              if ! [[ "$section" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
+                echo "::error::input 'section' is empty or is not a guidance section id"
+                exit 1
+              fi
+              # The proposer's fixture key, relative to evals/; fire-check
+              # below checks it is one of the section's fixtures.
+              if [ -n "$holdout" ] && ! [[ "$holdout" =~ ^guidance/[A-Za-z0-9][A-Za-z0-9._-]{0,127}(/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$ ]]; then
+                echo "::error::input 'holdout' is not a guidance fixture key (guidance/<section>/<name>)"
+                exit 1
+              fi ;;
             draft)
               if [ -n "$fixture" ] || [ -n "$candidate" ]; then
                 echo "::error::inputs 'fixture' and 'candidate' must be empty in draft mode"
@@ -374,7 +428,7 @@ jobs:
                 exit 1
               fi ;;
             *)
-              echo "::error::input 'mode' must be eval, scaffold, improve or draft"
+              echo "::error::input 'mode' must be eval, scaffold, improve, guidance-improve or draft"
               exit 1 ;;
           esac
 
@@ -440,6 +494,17 @@ jobs:
             fi
           fi
 
+          if [ "$mode" = guidance-improve ]; then
+            # propose_guidance_edit's own listing, read-only and offline: at
+            # least its MIN_FIXTURES fixtures declaring the `full` arm, and a
+            # holdout among them. The manifest row is checked below, once
+            # _agent-guidance is checked out. Fixed-text refusals only.
+            if ! python3 scripts/guidance_improve_gate.py fire-check "$section" --holdout="$holdout"; then
+              echo "::error::input 'section' or 'holdout' is refused by the guidance proposer's fixture check"
+              exit 1
+            fi
+          fi
+
           run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
           if ! [[ "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$ ]]; then
             echo "::error::generated run id has an unexpected shape"
@@ -452,6 +517,7 @@ jobs:
             echo "fixture=${fixture}"
             echo "skill=${skill}"
             echo "holdout=${holdout}"
+            echo "section=${section}"
             echo "model=${model}"
             echo "proposal=${proposal}"
             echo "hook_declined=${hook_declined}"
@@ -464,6 +530,8 @@ jobs:
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
           elif [ "$mode" = improve ]; then
             echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
+          elif [ "$mode" = guidance-improve ]; then
+            echo "mode: guidance-improve, section: ${section}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
           elif [ "$mode" = draft ]; then
             echo "mode: draft, proposal: ${proposal}, hook_declined: ${hook_declined} (arms and trials are not sent)"
           else
@@ -482,7 +550,8 @@ jobs:
           sparse-checkout: routine-results
 
       # Every mode, before the fire: refused (exit 1, numbers-only log) when
-      # this run's reservation (an improve run's own, larger charge) would
+      # this run's reservation (an improve or guidance-improve run's own,
+      # larger charge) would
       # take the last seven days past the weekly cap, or when the spend
       # cannot be read. The job's read-only token, never the bearer.
       - name: Check the weekly allowance
@@ -496,13 +565,31 @@ jobs:
       # the candidate's owner must be in SYNC_OWNERS and its name in
       # cron_coverage.fleet, read from _agent-guidance's default branch as the
       # miner reads them. A public repository; no credentials are kept.
+      # Guidance-improve mode reads its section's manifest row from it too.
       - name: Check out _agent-guidance (the fleet registry)
-        if: steps.validate.outputs.mode == 'scaffold'
+        if: steps.validate.outputs.mode == 'scaffold' || steps.validate.outputs.mode == 'guidance-improve'
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
           persist-credentials: false
+
+      # Guidance-improve mode only, no token in env: the section's row in
+      # _agent-guidance's agents-md/eval-coverage.yml exists and is not
+      # `skipped` (propose_guidance_edit's load_row), so a section the
+      # proposer would refuse never starts a session. Fixed text only.
+      - name: Check the guidance section's manifest row
+        if: steps.validate.outputs.mode == 'guidance-improve'
+        env:
+          SECTION: ${{ steps.validate.outputs.section }}
+          HOLDOUT: ${{ steps.validate.outputs.holdout }}
+        run: |
+          set -euo pipefail
+          if ! python3 scripts/guidance_improve_gate.py fire-check "$SECTION" \
+               --holdout="$HOLDOUT" --guidance _agent-guidance; then
+            echo "::error::input 'section' has no measurable row in _agent-guidance's manifest"
+            exit 1
+          fi
 
       # Scaffold mode only. The job's read-only token, never the bearer: the
       # snapshot refuses a candidate outside the fleet, or whose repository
@@ -589,6 +676,7 @@ jobs:
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
           SKILL: ${{ steps.validate.outputs.skill }}
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
+          SECTION: ${{ steps.validate.outputs.section }}
           MODEL: ${{ steps.validate.outputs.model }}
           PROPOSAL: ${{ steps.validate.outputs.proposal }}
           HOOK_DECLINED: ${{ steps.validate.outputs.hook_declined }}
@@ -632,6 +720,14 @@ jobs:
                 --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
                 '{text: ({run_id: $run_id, mode: "improve", skill: $skill, trials: $trials,
                           holdout: (if $holdout == "" then null else $holdout end)} | tojson)}')" ;;
+            guidance-improve)
+              # Exactly five keys; an empty holdout is null, never "".
+              body="$(jq -n -c \
+                --arg run_id "$RUN_ID" --arg section "$SECTION" \
+                --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
+                '{text: ({run_id: $run_id, mode: "guidance-improve", section: $section,
+                          trials: $trials,
+                          holdout: (if $holdout == "" then null else $holdout end)} | tojson)}')" ;;
             draft)
               # Exactly one JSON object, as draft_new_skill.py payload wrote
               # and fire-check passed it, with this run's id and draft mode,
@@ -654,7 +750,7 @@ jobs:
               body="$(jq -n -c --slurpfile payload "$DRAFT_PAYLOAD_FILE" \
                 '{text: ($payload[0] | tojson)}')" ;;
             *)
-              echo "::error::mode must be eval, scaffold, improve or draft"
+              echo "::error::mode must be eval, scaffold, improve, guidance-improve or draft"
               exit 1 ;;
           esac
           # The fire API's documented cap on `text`: 65,536 characters. Its
@@ -777,6 +873,20 @@ jobs:
               fi
               echo "- Session: ${session_url}"
               echo "- Results branch: \`claude/eval-improve-${RUN_ID}\`, pushed only on an accepted candidate; routine-improve-gate.yml validates it and opens the draft PR"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$MODE" = guidance-improve ]; then
+            {
+              echo "### Eval routine fired (guidance-improve mode)"
+              echo
+              echo "- Run id: \`${RUN_ID}\`"
+              echo "- Section: \`${SECTION}\`, trials: \`${TRIALS}\`"
+              if [ -n "$HOLDOUT" ]; then
+                echo "- Holdout: \`${HOLDOUT}\`"
+              else
+                echo "- Holdout: none"
+              fi
+              echo "- Session: ${session_url}"
+              echo "- Results branch: \`claude/eval-guidance-improve-${RUN_ID}\`, pushed only on an accepted candidate; routine-guidance-improve-gate.yml validates it and opens the pull request in _agent-guidance"
             } >> "$GITHUB_STEP_SUMMARY"
           elif [ "$MODE" = draft ]; then
             {

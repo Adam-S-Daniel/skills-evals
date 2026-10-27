@@ -155,7 +155,8 @@ Three layers enforce it:
    fire without results: at the full reservation when it is under 2 hours
    old, and at the overrun alone after that (a routine run finishes within
    minutes, so a fire with no results two hours later failed or never
-   started). An improve fire never lands results, so it is charged its own
+   started). An improve fire (or a guidance-improve fire) never lands
+   results, so it is charged its own
    cost for the whole week: twelve eval fires at their measured mean
    (twelve full reservations until anything is measured). The fire goes
    only if one more reservation (an improve fire's charge, in improve mode)
@@ -202,9 +203,12 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    trials of every fixture at its historical fire cost; an unknown use or
    cost is neutral, an unknown headroom ranks last). Fleet-guidance sections
    are ranked in the same list (every session loads the guidance, so its use
-   is the census's session count scaled to four weeks), but there is no
-   routine mode for them yet: an eligible section is a `guidance-improve`
-   work item for a local `scripts/propose_guidance_edit.py` run, not a fire.
+   is the census's session count scaled to four weeks). The highest-value
+   eligible section is a `guidance-improve` fire, one per plan, at three
+   trials and the improve charge
+   ([ADR 0005 addendum](decisions/0005-improvement-loop-reuses-skill-creator.md#routine-guidance-improve-mode-addendum-2026-10-27));
+   only a section id the fire workflow refuses stays a work item for a
+   local `scripts/propose_guidance_edit.py` run.
    The whole ranking is the plan's `improve_ranking`, the job summary's top
    ten, and the `improve-ranking` artifact (30 days). A skill with
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
@@ -234,7 +238,22 @@ changes (or 90 days). A failed fire is retried at most twice. After a merged
 improvement nothing is attempted until the with arm is measured again. The
 routine does not record rejections, so `scripts/improve_outcomes.py` reads
 them from GitHub: an improve fire with no `claude/eval-improve-<run id>`
-branch twelve hours later counts as a rejection.
+branch twelve hours later counts as a rejection. A guidance section follows
+the same rules, read from `claude/eval-guidance-improve-<run id>` branches and
+`eval-guidance-improve/<section>` pull requests in _agent-guidance, and one
+more: no section is fired while another section's guidance-loop pull request
+(`eval-guidance-improve/*` or `retire-guidance/*`) is open there or its
+attempt is in flight, because every guidance edit writes `AGENTS.md` and
+`docs/guidance-impact.md`.
+
+An accepted guidance candidate is pushed as `claude/eval-guidance-improve-<run
+id>`; `routine-guidance-improve-gate.yml` validates it without running it,
+builds the _agent-guidance commit with no credential (re-copying base.md to
+its fleet-memory payload), and opens the pull request from
+`eval-guidance-improve/<section>` with the eval-improve App's token minted for
+_agent-guidance alone: ready with auto-merge in `auto`, a draft otherwise, and
+nothing (with the reason in the job summary) while the App's secrets are unset
+or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`, and
 `agent-check` items read from lesson proposals) are listed in the plan, not

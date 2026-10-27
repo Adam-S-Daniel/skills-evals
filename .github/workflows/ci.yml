@@ -12,7 +12,9 @@ name: CI
 # which test_issue_scheduled_fixtures.py parses and runs; routine-eval-ingest.yml
 # and routine-eval-results-pushed.yml, which test_issue_routine_eval_ingest.py
 # parses; routine-improve-gate.yml and routine-improve-pushed.yml, which
-# test_issue_routine_improve.py parses; propagation.yml, which test_issue_64.py
+# test_issue_routine_improve.py parses; routine-guidance-improve-gate.yml and
+# routine-guidance-improve-pushed.yml, which
+# test_issue_routine_guidance_improve.py parses; propagation.yml, which test_issue_64.py
 # parses for coverage publication gates; and .github/dependabot.yml, which test_issue_real_work_fixtures.py
 # parses to check it covers every seed manifest. Plus this file itself, so a change to
 # the filter is always exercised by the filter. .github/workflows/actions.lock,
