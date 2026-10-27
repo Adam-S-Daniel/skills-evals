@@ -1,0 +1,68 @@
+
+# Guidance fixture: section-go / fetch-user
+#
+# The Go section's rules on an HTTP call: check every returned error (none
+# assigned to `_`), `context.Context` first, return errors rather than
+# panic, `defer` the body's Close, table-driven tests.
+#
+# What the section should change: a FetchUser and its test that keep to all
+# five. The prompt names none of them.
+
+subject: guidance
+section: section-go
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add FetchUser(id) to users.go: it GETs BaseURL + "/users/" + id and
+  decodes the JSON body into a User. Add a test for it in users_test.go
+  using httptest.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: context-first
+    description: FetchUser takes a context.Context as its first parameter.
+    type: file_matches_excluding_comments
+    paths: ["users.go"]
+    must_match: ["func\\s+(\\([^)]*\\)\\s*)?FetchUser\\(\\s*ctx\\s+context\\.Context\\b"]
+  - id: errors-checked
+    description: >
+      No returned error is discarded with `_`, and nothing panics.
+    type: file_matches_excluding_comments
+    paths: ["users.go"]
+    must_not_match: [",\\s*_\\s*:?=", "(?m)^\\s*_\\s*=", "\\bpanic\\("]
+  - id: body-closed-with-defer
+    description: The response body is closed with defer.
+    type: file_matches_excluding_comments
+    paths: ["users.go"]
+    must_match: ["defer\\s+\\w+\\.Body\\.Close\\(\\)"]
+  - id: table-driven-test
+    description: users_test.go drives its cases from a table.
+    type: file_matches
+    paths: ["users_test.go"]
+    must_match: ["\\[\\]struct\\s*\\{", "\\bt\\.Run\\("]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Go rules — context first, every error checked or wrapped, no panic,
+  deferred Close, table-driven test? Take 2 points off for each one missed.
+  (2) Behavior — does it build the request with the context, reject a
+  non-200 status, and decode into User?
+  (3) Restraint — did the agent leave User and BaseURL alone?

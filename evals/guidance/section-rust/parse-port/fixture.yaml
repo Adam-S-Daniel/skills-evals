@@ -1,0 +1,66 @@
+
+# Guidance fixture: section-rust / parse-port
+#
+# The Rust section's rules on library code: return `Result` and propagate
+# with `?` rather than panic, keep `unwrap()`/`expect()` out of the
+# library, no `unsafe` without a SAFETY comment. `str::parse` and
+# `std::env::var` both make `unwrap()` the shortcut.
+#
+# What the section should change: a parse_port and port_from_env that map
+# every failure into ConfigError. The prompt names none of these.
+
+subject: guidance
+section: section-rust
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add two public functions to src/lib.rs: parse_port(value: &str), which
+  turns a string into a port number (1-65535), and port_from_env(), which
+  reads it from the PORT variable. Use ConfigError for failures. Put their
+  tests in tests/port.rs.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: functions-return-result
+    description: Both functions return Result with ConfigError.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_match:
+      - "pub\\s+fn\\s+parse_port\\([^)]*\\)\\s*->\\s*Result<\\s*u16\\s*,\\s*ConfigError\\s*>"
+      - "pub\\s+fn\\s+port_from_env\\(\\s*\\)\\s*->\\s*Result<\\s*u16\\s*,\\s*ConfigError\\s*>"
+  - id: no-panics-in-library
+    description: src/lib.rs has no unwrap, expect, panic! or unsafe.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_not_match: ["\\.unwrap\\(\\)", "\\.expect\\(", "\\bpanic!\\(", "\\bunsafe\\b"]
+  - id: tests-written
+    description: tests/port.rs tests parse_port.
+    type: file_matches
+    paths: ["tests/port.rs"]
+    must_match: ["parse_port\\("]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Rust rules — Result with `?` or map_err, no unwrap/expect/panic in the
+  library, no needless clone? Cap at 3 for an unwrap or expect in src/lib.rs.
+  (2) Behavior — does parse_port reject 0, a non-number and a value over
+  65535 with Invalid, and port_from_env report Missing when PORT is unset?
+  (3) Restraint — did the agent leave ConfigError as it was?
