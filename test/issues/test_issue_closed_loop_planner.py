@@ -448,13 +448,25 @@ class BandTests(unittest.TestCase):
                   "private": skill(registry_ok=False)}
         plan = plan_week.build_plan(ctx(skills=skills, room=1.0), NOW)
         self.assertEqual([f["skill"] for f in plan["fires"]], ["ok"])
-        self.assertEqual([(w["kind"], w["skill"], w["change_type"]) for w in plan["work"]],
-                         [("needs-fixtures", "few", "fixture")])
+        self.assertEqual(sorted((w["kind"], w["skill"], w["change_type"]) for w in plan["work"]),
+                         [("needs-fixtures", "few", "fixture"),
+                          ("needs-harder-fixtures", "few-flat", "fixture"),
+                          ("needs-harder-fixtures", "flat", "fixture")])
         status = plan["skills"]
         self.assertEqual(status["paused"]["reasons"], ["cooling down after a rejection"])
         self.assertIn("owned by retirement (retire-pending)", status["retiring"]["reasons"])
         self.assertIn("no failing check to target", status["aimless"]["reasons"])
         self.assertIn("no train headroom", status["flat"]["reasons"])
+
+    def test_a_skill_above_ninety_percent_wants_harder_fixtures_not_an_edit(self):
+        skills = {"high": skill(headroom=0.05), "eligible": skill(headroom=0.3),
+                  "retiring": skill(headroom=0.05, verdict="retire"),
+                  "private": skill(headroom=0.05, registry_ok=False)}
+        plan = plan_week.build_plan(ctx(skills=skills, room=1.0), NOW)
+        self.assertEqual([f["skill"] for f in plan["fires"]], ["eligible"])
+        self.assertEqual(plan["work"], [{
+            "kind": "needs-harder-fixtures", "change_type": "fixture", "skill": "high",
+            "fixtures": 4, "headroom": 0.05, "route": "issue"}])
 
     def test_skill_usage_weight_orders_improvements_unknown_is_neutral(self):
         skills = {"a": skill(headroom=0.5), "b": skill(headroom=0.3), "c": skill(headroom=0.2),

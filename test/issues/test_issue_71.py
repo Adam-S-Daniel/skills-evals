@@ -591,6 +591,60 @@ class TriggerEvalSetOverrideTests(PipelineCase):
                          "file:queries.json")
 
 
+class NoHeadroomTests(PipelineCase):
+    """A baseline that leaves less than the minimum gain, with a judge that
+    cannot make it up, stops before any trigger, proposal or candidate call."""
+
+    @staticmethod
+    def numbers(passed: int, total: int, judge: float | None) -> dict:
+        return {name: (passed, total, judge) for name in GOOD}
+
+    def test_baseline_above_ninety_percent_stops_before_any_model_call(self):
+        numbers = self.numbers(19, 20, None)
+        runner = FakeRunner(numbers, numbers, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner)
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual((record["status"], record["decision"]), ("rejected", "rejected"))
+        self.assertIn("no train headroom", " ".join(record["reasons"]))
+        self.assertIn("0.950", " ".join(record["reasons"]))
+        self.assertEqual([c[0] for c in runner.calls], ["run_eval"])
+
+    def test_a_judge_with_room_keeps_the_run_going(self):
+        numbers = self.numbers(19, 20, 8.0)
+        runner = FakeRunner(numbers, numbers, proposal(), NEW_DESCRIPTION)
+        self.run_main(runner)
+        self.assertNotIn("no train headroom", " ".join(self.record()["reasons"]))
+        self.assertIn("propose", [c[0] for c in runner.calls])
+
+    def test_baseline_below_ninety_percent_keeps_the_run_going(self):
+        numbers = self.numbers(17, 20, None)
+        runner = FakeRunner(numbers, numbers, proposal(), NEW_DESCRIPTION)
+        self.run_main(runner)
+        self.assertNotIn("no train headroom", " ".join(self.record()["reasons"]))
+        self.assertIn("propose", [c[0] for c in runner.calls])
+
+    def test_exactly_ninety_percent_is_not_below_the_minimum_gain(self):
+        numbers = self.numbers(9, 10, None)
+        runner = FakeRunner(numbers, numbers, proposal(), NEW_DESCRIPTION)
+        self.run_main(runner)
+        self.assertNotIn("no train headroom", " ".join(self.record()["reasons"]))
+        self.assertIn("propose", [c[0] for c in runner.calls])
+
+    def test_pure_check(self):
+        def metrics(rate, judge=None, errors=()):
+            return {"errors": list(errors), "pass_rate": rate, "judge_mean": judge}
+        self.assertIn("0.950", pse.no_headroom(metrics(0.95)))
+        self.assertIn("0.989", pse.no_headroom(metrics(0.989, 9.5)))
+        self.assertIsNone(pse.no_headroom(metrics(0.95, 9.0)))
+        self.assertIsNone(pse.no_headroom(metrics(0.95, 8.0)))
+        self.assertIsNone(pse.no_headroom(metrics(0.9)))
+        self.assertIsNone(pse.no_headroom(metrics(0.85)))
+        self.assertIsNone(pse.no_headroom(metrics(0.95, errors=["x"])))
+        self.assertIsNone(pse.no_headroom(metrics(None)))
+        self.assertIsNotNone(pse.no_headroom(metrics(0.95), min_gain=0.05 + 1e-3))
+
+
 class RejectTests(PipelineCase):
 
     def test_missing_one_trial_is_inconclusive_instead_of_using_survivors(self):

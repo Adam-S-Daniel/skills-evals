@@ -179,7 +179,9 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
 4. **Improvements** (at least 20%): skills with four or more fixtures, train
    headroom, a check that fails often but can pass, no retirement verdict,
    and no pause, ordered by skill usage and then headroom. A skill with
-   fewer fixtures becomes a "needs fixtures" work item.
+   fewer fixtures becomes a "needs fixtures" work item. A skill that already
+   passes at least 90% of its checks has no headroom for an edit to gain, so
+   it becomes a "needs harder fixtures" work item: write a fixture it fails.
 5. **Re-checks**: decided cells not measured for eight weeks.
 6. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
@@ -206,9 +208,9 @@ routine does not record rejections, so `scripts/improve_outcomes.py` reads
 them from GitHub: an improve fire with no `claude/eval-improve-<run id>`
 branch twelve hours later counts as a rejection.
 
-Work items (`needs-fixtures`, `fixture-broken`, and `agent-check` items read
-from lesson proposals) are listed in the plan, not fired; each carries a
-`change_type`. The dispatch job fires one leg at a time, waits while three
+Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`, and
+`agent-check` items read from lesson proposals) are listed in the plan, not
+fired; each carries a `change_type`. The dispatch job fires one leg at a time, waits while three
 fires are in flight, and spaces fires a minute apart; improve fires go last.
 
 ### The trigger lane

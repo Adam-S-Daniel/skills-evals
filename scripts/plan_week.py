@@ -77,7 +77,11 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      sees it. Fewer fixtures with train headroom is a `needs-fixtures` work
      item instead, ranked by headroom.
   2. train headroom: 1 - the pooled with-arm pass rate over the other
-     fixtures is at least `MIN_GAIN` (propose_skill_edit's default gain).
+     fixtures is at least `MIN_GAIN` (propose_skill_edit's default gain). A
+     skill below it (one that already passes at least 90% of its checks) can
+     not be improved by an edit, so it becomes a `needs-harder-fixtures` work
+     item instead: the next step is a fixture it fails. Retiring skills and
+     skills outside adam-agentskills get none.
   3. a target: some train check fails in at least 25% of at least 6 scored
      with-arm trials, at least twice, and has passed at least once in some
      arm. Infrastructure trials are not evidence (gates.trial_record).
@@ -98,7 +102,8 @@ retried at most twice, then the skill waits 14 days. After a merged
 improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
-WORK ITEMS are not fires: `needs-fixtures` and `fixture-broken` (change type
+WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
+`fixture-broken` (change type
 `fixture`), and `agent-check` items read from `--lessons` (lesson proposals
 of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
@@ -418,7 +423,7 @@ def neutral_weights(raw: dict) -> dict:
 
 def improve_items(ctx: dict, now: datetime) -> tuple:
     """(improve fires, work items, per-skill status). Improve fires and
-    needs-fixtures items are ordered by skill usage weight, heaviest first
+    needs-fixtures and needs-harder-fixtures items are ordered by skill usage weight, heaviest first
     (`neutral_weights` of ctx["skill_weights"]), then train headroom."""
     raw = ctx.get("skill_weights") or {}
     weights = neutral_weights({name: raw.get(name) for name in ctx["skills"]})
@@ -431,6 +436,11 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append("its fixtures do not all name adam-agentskills")
         if headroom is None or headroom < MIN_GAIN:
             reasons.append("no train headroom")
+            if (headroom is not None and skill["registry_ok"]
+                    and skill["verdict"] not in ("retire", "retire-pending")):
+                work.append({"kind": "needs-harder-fixtures", "change_type": "fixture",
+                             "skill": name, "fixtures": skill["fixtures"],
+                             "headroom": headroom, "route": "issue"})
         if skill["fixtures"] < MIN_IMPROVE_FIXTURES:
             if not reasons:
                 work.append({"kind": "needs-fixtures", "change_type": "fixture",
