@@ -531,7 +531,10 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
     def test_weekly_caller_plans_by_band_and_leaves_fire_credentials_separate(self):
         workflow = self.workflow()
         trigger = workflow.get("on", workflow.get(True))
-        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"}]})
+        # A manual dispatch runs the sweep when GitHub skips the schedule
+        # (2026-10-27); it takes no inputs.
+        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"}],
+                                   "workflow_dispatch": None})
         self.assertEqual(workflow["permissions"], {})
         self.assertNotIn("concurrency", workflow)
         jobs = workflow["jobs"]

@@ -24,12 +24,18 @@ name: Weekly routine evals
 #   then waits 60 seconds before the next leg (the routine's fire limit).
 #   Improve fires are planned last, so a long improve run never holds up
 #   the evals.
+# * A manual dispatch runs the same sweep (no inputs). GitHub did not start
+#   the 2026-10-27 07:00 UTC schedule, and a schedule-only workflow left the
+#   week's plan with no way to run until the next Tuesday. The plan job's
+#   default-branch condition and the fire workflow's allowance guard bound a
+#   manual run exactly as a scheduled one.
 # * Not a pull_request or push workflow, so no path filter and no required
 #   check. Inputs are never interpolated into `run:`; matrix values reach
 #   the shell through `env` and are revalidated before the dispatch.
 on:
   schedule:
     - cron: "0 7 * * 2"
+  workflow_dispatch:
 
 permissions: {}
 
