@@ -54,6 +54,16 @@ runs (`eval_fire_cost`, never more than one reservation each), or times the
 full reservation while nothing is measured. `check --mode improve` needs room
 for that charge before an improve fire goes.
 
+That charge is an estimate and was never corrected by measurement: on
+2026-10-27 two improve fires were held at 21 points against a 30-point cap
+while the account meter last read 5% used, and every fire was refused for
+the rest of the week. An improve fire that started `IMPROVE_MAX_RUN` or more
+before the newest usable meter snapshot had finished, so its real cost is
+already inside that snapshot's account-wide `utilization`: those "covered"
+fires are held together at no more than that reading. The meter covers the
+whole account, so the bound overcounts, the safe direction. Fires not yet
+covered, and every fire when no snapshot is usable, keep the full charge.
+
 Bare fires (ADR 0012, bare baseline addendum, 2026-10-27): `arms: bare`
 runs one arm of an in-place fixture. Nothing here is costed per arm: a fire
 is one run, reserved at `per_run_cap + per_run_overrun`, the most the in-run
@@ -145,6 +155,10 @@ PACE_CLOCK_SKEW = timedelta(minutes=5)
 #: skill at three trials each, about 24 agent trials for a four-fixture skill
 #: (thresholds doc), where an eval fire (arms both, one trial) runs two.
 IMPROVE_FIRE_UNITS = 12
+#: The longest an improve fire runs: the routine's improve step gets 90
+#: minutes, plus setup, the push and the ingest. A fire that started this long
+#: before a meter snapshot is finished, so the snapshot already counts it.
+IMPROVE_MAX_RUN = timedelta(hours=2)
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
 
@@ -368,9 +382,11 @@ def pace(runs: list[Path], limits: dict, now: datetime):
 
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
-            since: datetime | None = None) -> dict:
+            since: datetime | None = None,
+            improve_started: list | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
-    account_used, week_elapsed, improve_fires, improve_charge} for the
+    account_used, week_elapsed, improve_fires, improve_charge,
+    improve_covered} for the
     window from `since` (default `window_start`) up to `now`, given
     `fires`, a pair: the successful fires of that window and of the
     last `PENDING_FULL_HOLD`. An ingested run is matched to a fire by its run
@@ -381,7 +397,10 @@ def account(tree: Path, limits: dict, now: datetime,
     newest meter snapshot; `account_used` and `week_elapsed` are None when
     there is no usable one. `improve` is the same pair for the improve
     fires among them: each is charged `improve_charge` for the whole window
-    and is never matched against ingested runs."""
+    and is never matched against ingested runs, except that `improve_started`,
+    their start times, lets those that started `IMPROVE_MAX_RUN` or more
+    before the newest usable snapshot (`improve_covered` of them) be held
+    together at no more than its account-wide `account_used`."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -393,6 +412,11 @@ def account(tree: Path, limits: dict, now: datetime,
     # Improve fires are among the fires; they never produce routine-results.
     fires_7d = max(0, fires_7d - improve_7d)
     fires_24h = max(0, fires_24h - improve_24h)
+    if improve_started is not None and (
+            not isinstance(improve_started, list)
+            or any(not isinstance(start, datetime) or start.tzinfo is None
+                   for start in improve_started)):
+        raise GuardError("improve start times are not aware datetimes")
     if since is None:
         since = window_start(now)
     runs = ingested_runs(tree, now, since)
@@ -409,14 +433,23 @@ def account(tree: Path, limits: dict, now: datetime,
         >= held_since)
     recent = max(0, min(fires_24h - recent_runs, unresulted))
     charge = improve_charge(tree, limits)
-    pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
-               + improve_7d * charge)
     room, used, elapsed = pace(runs, limits, now)
+    covered = 0
+    if improve_started and used is not None:
+        # `pace` accepted the newest snapshot, so `newest_snapshot` is not None.
+        at = newest_snapshot(runs)[0]
+        covered = min(improve_7d,
+                      sum(1 for start in improve_started if start + IMPROVE_MAX_RUN <= at))
+    improve_held = (improve_7d - covered) * charge + (
+        min(covered * charge, used) if covered else 0.0)
+    pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
+               + improve_held)
     return {"spent": spent, "pending": pending, "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
-            "improve_fires": improve_7d, "improve_charge": charge}
+            "improve_fires": improve_7d, "improve_charge": charge,
+            "improve_covered": covered}
 
 
 def room(state: dict) -> float:
@@ -501,6 +534,10 @@ def describe(state: dict) -> str:
     if state.get("improve_fires"):
         line += (f"; {state['improve_fires']} improve fire(s) held at "
                  f"{points(state['improve_charge'])} points each")
+        if state.get("improve_covered"):
+            line += (f"; {state['improve_covered']} of them finished before the "
+                     f"account reading, so held at most at its "
+                     f"{points(state['account_used'])} points")
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -537,9 +574,17 @@ def improve_counts(runs: list, now: datetime,
             sum(1 for f in fires if f["started"] >= now - PENDING_FULL_HOLD))
 
 
-def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
-    """`improve_counts` of the fire runs since `since` (default the last
-    seven days)."""
+def improve_starts(runs: list, now: datetime,
+                   since: datetime | None = None) -> list[datetime]:
+    """The `started` times of the successful improve fires since `since`
+    (default seven days before `now`) among the runs API's rows."""
+    since = since or now - WINDOW
+    return [f["started"] for f in improve_outcomes.improve_fires(runs)
+            if f["conclusion"] == "success" and f["started"] >= since]
+
+
+def _live_improve_runs(now: datetime) -> list:
+    """The fire runs of the last seven days, fetched once."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     token = os.environ.get("GH_TOKEN", "")
     api = os.environ.get("GITHUB_API_URL") or "https://api.github.com"
@@ -549,14 +594,27 @@ def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, in
             get=lambda path, tok, **kw: improve_outcomes.github_get(path, tok, api=api, **kw))
     except improve_outcomes.EvidenceError as exc:
         raise GuardError(str(exc)) from None
-    return improve_counts(runs, now, since)
+    return runs
+
+
+def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, int]:
+    """`improve_counts` of the fire runs since `since` (default the last
+    seven days)."""
+    return improve_counts(_live_improve_runs(now), now, since)
+
+
+def _live_improve_both(now: datetime, since: datetime | None = None):
+    """(`improve_counts`, `improve_starts`) of one fetch of the fire runs."""
+    runs = _live_improve_runs(now)
+    return improve_counts(runs, now, since), improve_starts(runs, now, since)
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
-         fire_count=None, improve_count=None) -> int:
+         fire_count=None, improve_count=None, improve_starts=None) -> int:
     """`fire_count` and `improve_count`, functions of `now` returning
     `(fires_7d, fires_24h)` (all fires, and the improve fires among them),
-    stand in for the API in tests."""
+    stand in for the API in tests, and `improve_starts`, a function of `now`
+    returning the improve fires' start times (used with `improve_count`)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("check", "fits"))
     parser.add_argument("--results-tree", type=Path, required=True,
@@ -571,10 +629,14 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     try:
         limits = budget_file.load_budget(args.budget)
         since = window_start(now)
-        state = account(args.results_tree, limits, now,
-                        fire_count(now) if fire_count else _live_fires(now, since),
-                        improve_count(now) if improve_count else _live_improve(now, since),
-                        since)
+        fires = fire_count(now) if fire_count else _live_fires(now, since)
+        if improve_count:
+            improve = improve_count(now)
+            started = improve_starts(now) if improve_starts else None
+        else:
+            # One fetch feeds both the counts and the start times.
+            improve, started = _live_improve_both(now, since)
+        state = account(args.results_tree, limits, now, fires, improve, since, started)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")

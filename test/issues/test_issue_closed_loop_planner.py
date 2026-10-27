@@ -251,6 +251,8 @@ class GuardImproveChargeTests(unittest.TestCase):
                 fire(4, "Fire eval routine: improve a ", NOW, conclusion="failure"),
                 fire(5, "Fire eval routine: eval evals/x m", NOW)]
         self.assertEqual(guard.improve_counts(runs, NOW), (2, 1))
+        self.assertCountEqual(guard.improve_starts(runs, NOW),
+                              [NOW - timedelta(minutes=30), NOW - timedelta(days=3)])
 
 
 def rec(skill, outcome, at):
@@ -965,6 +967,29 @@ class BareBaselineTests(unittest.TestCase):
                                                   plan_week._fire_pair(pair, NOW),
                                                   guard.improve_counts(pair, NOW)))
             self.assertTrue(guard.check(state, "eval"))
+
+    def test_evidence_start_times_bound_a_covered_improve_fire(self):
+        # The planner passes the same evidence rows' start times to `account`.
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            run = tree / "routine-results" / "20261026T000000Z-abc123"
+            path = run / "k" / "with_skill" / "summary.json"
+            path.parent.mkdir(parents=True)
+            snap_at = NOW - timedelta(hours=1)
+            doc = {"usage": {"measured": {"meter": {"snapshots": [{
+                "at": iso(snap_at), "info": {"unifiedWindows": {"seven_day": {
+                    "utilization": 0.05,
+                    "resetsAt": int((NOW + timedelta(days=1)).timestamp())}}}}]}}}}
+            path.write_text(json.dumps(doc))
+            runs = [fire(1, "Fire eval routine: improve a ", NOW - timedelta(days=1))]
+            state = guard.account(tree, LIMITS, NOW, plan_week._fire_pair(runs, NOW),
+                                  guard.improve_counts(runs, NOW),
+                                  since=NOW - guard.WINDOW,
+                                  improve_started=guard.improve_starts(runs, NOW))
+            self.assertEqual(state["improve_covered"], 1)
+            self.assertGreater(state["improve_charge"], 0.05)
+            self.assertAlmostEqual(
+                state["pending"], min(state["improve_charge"], 0.05), places=12)
 
 
 class DocsTests(unittest.TestCase):
