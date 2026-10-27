@@ -5293,13 +5293,19 @@ def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
 #
 # The judge is the expensive call, and a with/without pair whose objective
 # result already decides it gains nothing from it. For a pair (`--arm both`,
-# or a guidance run of exactly one `with` and one `without` arm) no trial
+# or each mode pair of a guidance run, below) no trial
 # calls the judge while trials run (`_judge_hold`); each leaves the inputs of
 # its call in the pair's `hold` list. Once every trial of both arms is scored,
 # the arms' objective pass rates are compared exactly (`_objective_decided`):
 # `with` strictly ahead records JUDGE_SKIPPED in every scored trial's summary
 # and calls nothing; a tie, a loss or an undefined rate judges every scored
 # trial of both arms. Never some trials of a pair and not others.
+# A guidance run pairs its arms by MODE, not by name (`_guidance_judge_holds`):
+# each complete pair of `GUIDANCE_JUDGE_PAIRS` (the same pairs as
+# gates.GUIDANCE_PAIRS) is held and settled on its own, so a fixture that
+# declares `section`/`none` and `full`/`full-minus-section` arms under any
+# names skips the judge per pair; an arm in no complete pair is judged inside
+# its trial.
 # `--judge always`, a single-arm run and a fixture whose judge mode is not
 # absolute judge each trial inside the trial, as before; `--no-judge` judges
 # nothing and records null.
@@ -5334,6 +5340,32 @@ def _judge_hold(args: argparse.Namespace, fixture: dict,
             != ["with", "without"]):
         return None
     return []
+
+
+#: The with/without pairs of a guidance run, by arm mode: gates.GUIDANCE_PAIRS,
+#: which a test holds this equal to (gates is not imported by the harness).
+GUIDANCE_JUDGE_PAIRS = {"in_situ": {"full": "with", "full-minus-section": "without"},
+                        "alone": {"section": "with", "none": "without"}}
+
+
+def _guidance_judge_holds(args: argparse.Namespace, fixture: dict,
+                          arms: list[dict]) -> list[dict]:
+    """One `{"with": name, "without": name, "hold": []}` per complete pair of
+    `arms` (`GUIDANCE_JUDGE_PAIRS`, exactly one arm of each mode), whose judge
+    calls wait on that pair's objective result; `[]` when nothing is held
+    (`--no-judge`, `--judge always`, a judge mode that is not absolute, or no
+    complete pair)."""
+    if (args.no_judge or getattr(args, "judge", "auto") == "always"
+            or _judge_is_pairwise(fixture)):
+        return []
+    pairs = []
+    for roles in GUIDANCE_JUDGE_PAIRS.values():
+        named = {role: [a["name"] for a in arms if a["mode"] == mode]
+                 for mode, role in roles.items()}
+        if all(len(names) == 1 for names in named.values()):
+            pairs.append({"with": named["with"][0],
+                          "without": named["without"][0], "hold": []})
+    return pairs
 
 
 def _objective_decided(with_trials: list[dict], without_trials: list[dict]) -> bool:
@@ -6158,9 +6190,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up.
 
-    `ctx["judge_hold"]`, a list, defers the judge call as `_run_arm`'s `hold`
-    does (#371); None or absent judges inside the trial."""
+    `ctx["judge_holds"][arm["name"]]`, its pair's list, defers the judge
+    call as `_run_arm`'s `hold` does (#371); an arm absent from it judges
+    inside the trial."""
     plan = ctx.get("plan")
+    hold = (ctx.get("judge_holds") or {}).get(arm["name"])
     if plan is not None and "_pair_parent" not in plan:
         with _in_place_pair(plan):
             return _run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
@@ -6268,7 +6302,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                      "delivery": channel, "hook_verdict": info["verdict"],
                      "installed": info["installed"], "decoy": decoy,
                      "hook_returncode": info["returncode"], "guard": None,
-                     **ctx.get("record", {})}
+                     **ctx.get("record", {}),
+                     # Per arm: an arm in no complete pair judges unconditionally.
+                     "judge_conditional": hold is not None}
             if fixture.get("_real_work"):
                 extra["guidance_violations"] = guidance_violations.measure(None, None, None)
             if info["returncode"] is not None and (
@@ -6407,7 +6443,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 judge_call = functools.partial(
                     _call_judge, fixture, result.get("transcript") or "", diff,
                     (fixture.get("judge") or {}).get("model"), permission_mode)
-                if ctx.get("judge_hold") is None:
+                if hold is None:
                     judge_result, judge_models = _judge_unless_stopped(judge_call)
                     judge_call = None
 
@@ -6427,7 +6463,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 **({"guidance_violations": extra["guidance_violations"]}
                    if "guidance_violations" in extra else {})}
         if judge_call is not None:
-            ctx["judge_hold"].append({
+            hold.append({
                 "path": args.results_dir / ctx["key"] / timestamp / arm["name"]
                 / "summary.json", "call": judge_call, "result": done})
         return done
@@ -6622,11 +6658,10 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         # fixture's content, its directory name (two fixtures of one section
         # share `results/guidance/<section>/`), the section and the rest of
         # the guidance as digests, and whether the judge waited on the pair.
-        judge_hold = _judge_hold(args, fixture, [a["name"] for a in arms])
+        judge_pairs = _guidance_judge_holds(args, fixture, arms)
         record = {} if plan is not None else {
             "fixture_name": args.eval_dir.name,
             "guidance_digests": guidance.content_digests(guidance_dir, row),
-            "judge_conditional": judge_hold is not None,
             **({"fixture_digest": digest}
                if (digest := fixture_digest(args.eval_dir)) is not None else {})}
     except guidance.GuidanceError as exc:
@@ -6635,7 +6670,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
 
     ctx = {"guidance_dir": guidance_dir, "row": row, "section": section,
            "key": key, "delivery": args.delivery, "plan": plan, "record": record,
-           "judge_hold": judge_hold,
+           "judge_holds": {pair[role]: pair["hold"] for pair in judge_pairs
+                           for role in ("with", "without")},
            # One fresh token per RUN, shared by every arm: the control arm
            # looks for the SAME token the treatment arm was given, which is
            # what turns "the control saw it" into proof of contamination.
@@ -6658,10 +6694,11 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         with _in_place_pair(plan):
             arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
                              for arm in arms]
-            if ctx["judge_hold"]:
-                by_role = {_ROLES[s["arm"]]: [s] for s in arm_summaries}
-                _settle_judging(ctx["judge_hold"], _objective_decided(
-                    by_role["with"], by_role["without"]))
+            by_name = {s["arm"]: [s] for s in arm_summaries}
+            for pair in judge_pairs:
+                if pair["hold"]:
+                    _settle_judging(pair["hold"], _objective_decided(
+                        by_name[pair["with"]], by_name[pair["without"]]))
     except guidance.GuidanceError as exc:
         # A checkout missing the hook, a heading that has drifted from its
         # manifest row, a payload that cannot be read: all configuration, all
