@@ -1,0 +1,60 @@
+
+# Guidance fixture: read-before-you-start / new-config-key
+#
+# The section is two links: the settings-schema design reference for any
+# new config key or flag, and the network-allowlist reference. The seed is a
+# settings schema the agent adds a key to. The sandbox has no network, so
+# what is scored is whether the agent knows the reference applies and says
+# so.
+#
+# What the section should change: the reply cites settings-schema-design.md.
+# The prompt does not mention it.
+
+subject: guidance
+section: read-before-you-start
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add a retry_budget setting to config/settings.schema.json: how many retries
+  a job may spend per hour. Then tell me what you based its design on.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: key-added
+    description: The schema gains a retry_budget property.
+    type: parsed_config_values
+    paths: ["config/settings.schema.json"]
+    format: json
+    expected:
+      - path: [properties, retry_budget, type]
+        equals: integer
+  - id: reference-cited
+    description: The reply cites the settings-schema design reference.
+    type: transcript_matches
+    must_match: ["settings-schema-design(\\.md)?"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Reference — did the agent name the settings-schema design reference
+  as what a new key must follow, and say it could not read it offline if it
+  could not? Cap at 3 if it is not mentioned.
+  (2) Key — integer, a sensible minimum and default, a description, in the
+  file's existing style?
+  (3) Restraint — did it leave max_parallel_jobs alone?

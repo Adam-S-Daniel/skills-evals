@@ -42,7 +42,7 @@ September pause, and is not updated any more.
   and files or updates an issue instead when the job has no App token or
   the skill's plugin runs code. Still owed before a removal can merge: the
   repo-settings exception ADR, and the App's two secrets in skills-evals.
-- **Guidance sections (#124):** twenty-four sections have fixtures under
+- **Guidance sections (#124):** all twenty-nine sections have fixtures under
   `evals/guidance/<section id>/<name>/` and are on the schedule. The same
   `retirement` job gives each one a verdict, and a section that helps only
   when alone gets `shorten-or-merge`, not removal. It files an issue in

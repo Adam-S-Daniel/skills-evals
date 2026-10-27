@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Job runner settings",
+  "type": "object",
+  "properties": {
+    "max_parallel_jobs": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 4,
+      "description": "How many jobs may run at once."
+    }
+  },
+  "additionalProperties": false
+}

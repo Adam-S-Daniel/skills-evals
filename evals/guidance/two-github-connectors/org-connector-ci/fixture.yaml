@@ -1,0 +1,61 @@
+
+# Guidance fixture: two-github-connectors / org-connector-ci
+#
+# A knowledge fixture: the section is the only place an agent learns how the
+# two GitHub MCP servers differ. The org connector (`github-mcp`) checks a
+# pull request with `pull_request_read` methods `get_check_runs` AND
+# `get_status` (#83: `get_status` was pending while every check run was
+# green), and it has no Actions tools, so it cannot dispatch, re-run or read
+# a workflow run. There is no MCP server in the sandbox; the answer is
+# scored from the reply.
+#
+# What the section should change: both methods named, and the Actions gap
+# stated. The prompt names neither.
+
+subject: guidance
+section: two-github-connectors
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  In this session the only GitHub tools are the claude.ai organization
+  connector's (github-mcp). In a few lines: how do I check whether pull
+  request 12's CI passed with it, and what can it not do that I would need
+  another tool for?
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: both-ci-reads-named
+    description: The reply names both get_check_runs and get_status.
+    type: transcript_matches
+    must_match: ["\\bget_check_runs\\b", "\\bget_status\\b"]
+  - id: actions-gap-named
+    description: The reply says it cannot work with workflow runs (dispatch, re-run, job logs).
+    type: transcript_matches
+    must_match: ["(?i)\\b(dispatch|re-?run|job logs?|workflow runs?|actions_\\w+|get_job_logs)\\b"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) CI check — does it say to read both the check runs and the combined
+  status, and why (a legacy status can be pending or failing while every
+  check run is green)? Cap at 3 if only one is named.
+  (2) Limits — does it say the org connector has no Actions tools (no
+  dispatch, re-run or job logs) and no auto-merge, and that
+  mcp__github__ has them?
+  (3) Brevity — is it a few lines that answer both questions?
