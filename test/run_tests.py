@@ -9728,7 +9728,7 @@ class TestIssue84(Issue84Fixture, unittest.TestCase):
 
     def test_the_fixture_pins_its_arms_and_weights_correctness_over_restraint(self):
         fixture = run_eval.load_fixture(self.STUCK_DIR)
-        self.assertTrue(fixture.get("model"), "arms must run on a pinned model")
+        self.assertNotIn("model", fixture, "arms follow the roster")
         weights = fixture["judge"]["weights"]
         self.assertLess(weights["restraint"], weights["root_cause"])
         self.assertLess(weights["restraint"], weights["decisions"])
@@ -14198,11 +14198,9 @@ class TestIssue81(unittest.TestCase):
                 self.assertEqual(fixture["skill"], "adam-writing-style")
                 self.assertIsNotNone(
                     run_eval.registry_for_url(registries, fixture["registry"]))
-                # Arms pinned mid-tier, judge pinned strong (DESIGN.md's
-                # harness-wide rules) — an unpinned arm silently tracks the
-                # CLI's default model across releases.
-                self.assertTrue(fixture.get("model"))
-                self.assertTrue(fixture["judge"].get("model"))
+                # No pins: the arms and the judge follow evals/roster.yml.
+                self.assertNotIn("model", fixture)
+                self.assertNotIn("model", fixture["judge"])
                 self.assertTrue(fixture.get("judge_rubric", "").strip())
 
     def test_prompts_are_the_ones_the_issue_gives(self):

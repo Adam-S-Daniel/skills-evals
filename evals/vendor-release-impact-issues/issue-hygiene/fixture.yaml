@@ -38,13 +38,7 @@
 skill: vendor-release-impact-issues
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Same calibration as the other fixtures: a pinned mid-tier model so the
-# with/without comparison is not flattened by a ceiling effect, and so the
-# arms do not silently track the CLI's default model across releases.
-model: claude-sonnet-5
-
 judge:
-  model: claude-opus-4-8
   # Correctness carries the axis that matters — did the agent file the right
   # issues, against the right surfaces, with the right facts. Hygiene is the
   # skill's own safety contract (quotes, links, titles) and Restraint is the

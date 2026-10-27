@@ -38,11 +38,7 @@
 skill: writing-adrs
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Pinned mid-tier model, same as the other two fixtures for this skill.
-model: claude-sonnet-5
-
 judge:
-  model: claude-opus-4-8
   weights:
     replacement-explains-the-reversal: 0.5
     audit-trail-preserved: 0.3

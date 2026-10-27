@@ -193,8 +193,8 @@ class TestIssue75(unittest.TestCase):
     def test_fixture_shape_and_seed_have_no_answer_leak(self):
         doc = fixture()
         assert doc["skill"] == "github-actions-repo-settings"
-        assert doc["model"] == "claude-sonnet-5"
-        assert doc["judge"]["model"] == "claude-opus-4-8"
+        assert "model" not in doc  # follows the roster
+        assert "model" not in doc["judge"]
         assert list(doc["arms"]) == ["with_skill", "without_skill"]
         assert tuple(c["id"] for c in doc["objective_checks"]) == CHECK_IDS
         assert len(set(CHECK_IDS)) == 9

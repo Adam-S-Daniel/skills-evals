@@ -35,10 +35,8 @@ registry: https://github.com/Adam-S-Daniel/cms-platform
 # correctness is decidable from the resulting workflow files alone, so the
 # objective checks below carry the whole behavioural spec; the judge is left
 # only what genuinely needs judgement (see judge_rubric).
-model: claude-sonnet-5
 
 judge:
-  model: claude-opus-4-8
   # Weighted overall — the harness recomputes it from these and ignores the
   # judge's own arithmetic. Convention fidelity carries the correctness axis
   # (every documented gate/shape, including the two "don't repeat" traps);

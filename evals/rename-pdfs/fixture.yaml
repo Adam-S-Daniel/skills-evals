@@ -54,12 +54,6 @@
 skill: rename-pdfs
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Same calibration as workflow-path-audit / windows-elevation-from-wsl: a
-# pinned mid-tier model so the with/without comparison isn't flattened by a
-# ceiling effect, and so the arms don't silently track the CLI's default
-# model across releases.
-model: claude-sonnet-5
-
 # What the agent under test needs beyond a bare Python 3 interpreter, since
 # scripts/extract_pdf_context.py (the skill's own helper) imports pypdf to
 # read the seed PDFs' text. Nothing consumes this block yet — not this
@@ -224,7 +218,6 @@ objective_checks:
 # answer by luck), and whether it stayed inside the one folder it was asked
 # to touch.
 judge:
-  model: claude-opus-4-8
   # Convention fidelity carries the correctness axis and must outvote the
   # Restraint guardrail (DESIGN.md, harness-wide rules) — an equal-weighted
   # Restraint quietly rewards an arm that renames nothing.

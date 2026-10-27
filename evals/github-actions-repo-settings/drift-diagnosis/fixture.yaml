@@ -10,7 +10,6 @@
 # Markdown and a supported lead-in; later mentions do not count.
 skill: github-actions-repo-settings
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
-model: claude-sonnet-5
 
 # Exact deployed bytes: two eligible guidance revisions match; the resolver
 # selected the newest eligible commit (then the lexical SHA tie-breaker).
@@ -24,7 +23,6 @@ context:
     skill_payload_bytes: 840212
 
 judge:
-  model: claude-opus-4-8
   weights:
     reasoning: 0.7
     communication: 0.3

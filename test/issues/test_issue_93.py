@@ -100,7 +100,9 @@ class ConsumerBumpFixtureTests(unittest.TestCase):
         selected, judge, problem = select_models(self.fixture, argparse.Namespace(
             model=None, no_judge=False, roster=ROOT / "evals/roster.yml"))
         self.assertIsNone(problem)
-        self.assertEqual(selected, self.fixture["model"])
+        self.assertNotIn("model", self.fixture)
+        roster = yaml.safe_load((ROOT / "evals/roster.yml").read_text(encoding="utf-8"))
+        self.assertEqual(selected, roster["arms"][0]["id"])
         self.assertIsInstance(judge, str)
         self.assertNotIn("model", self.fixture["judge"])
         for pattern, count, expected in (
