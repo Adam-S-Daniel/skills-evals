@@ -39,7 +39,14 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure",
             "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
             "evals/guidance/pinning-github-actions/new-workflow",
-            "evals/guidance/git-practices/merge-method-and-closing-keyword"]
+            "evals/guidance/git-practices/merge-method-and-closing-keyword",
+            "evals/guidance/subagent-delegation/verifier-that-cannot-fail",
+            "evals/guidance/automation-vs-branch-protection/required-check-concurrency",
+            "evals/guidance/working-in-these-repos/on-hold-pull-request",
+            "evals/guidance/data-exposure-in-ci/dispatch-email-input",
+            "evals/guidance/name-becomes-scanner-data/bundle-lock-name",
+            "evals/guidance/fleet-spans-two-owners/skills-lock-census",
+            "evals/guidance/github-404-means-not-authorized/private-repo-404"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"

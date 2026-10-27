@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Offline mirror of the GitHub CLI for the repositories of example-org and example-labs."""
+import base64
+import json
+import os
+import re
+import sys
+
+args = sys.argv[1:]
+os.makedirs(".gh", exist_ok=True)
+with open(".gh/calls.log", "a", encoding="utf-8") as log:
+    log.write(" ".join(a.replace("\n", "\\n") for a in args) + "\n")
+
+#: What each repository's default branch holds at its root.
+TREES = {
+    "example-org/widgets": ["README.md", "package.json", "skills.lock"],
+    "example-org/api-gateway": ["README.md", "go.mod"],
+    "example-org/docs-site": ["README.md", "_config.yml", "skills.lock"],
+    "example-labs/notebook": ["README.md", "pyproject.toml"],
+    "example-labs/data-pipeline": ["README.md", "pyproject.toml", "skills.lock"],
+}
+#: The code-search index lags: data-pipeline's skills.lock is not in it yet.
+INDEXED = {("example-org/widgets", "skills.lock"), ("example-org/docs-site", "skills.lock")}
+NOT_FOUND = '{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}'
+
+
+def flag(name):
+    return args[args.index(name) + 1] if name in args else None
+
+
+def not_found():
+    print(NOT_FOUND)
+    sys.exit("gh: Not Found (HTTP 404)")
+
+
+def search(query, owners):
+    words = query.split()
+    for word in list(words):
+        m = re.fullmatch(r"(?:user|org|owner):(\S+)", word)
+        if m:
+            owners.append(m.group(1))
+            words.remove(word)
+    filename = re.sub(r"^(?:filename|path):", "", " ".join(words)).strip() or None
+    hits = []
+    for repo, path in sorted(INDEXED):
+        if owners and repo.split("/")[0] not in owners:
+            continue
+        if filename and filename not in path:
+            continue
+        hits.append({"path": path, "repository": {"nameWithOwner": repo}})
+    return hits
+
+
+if args[:2] == ["search", "code"]:
+    owners = [o for i, o in enumerate(args) if i and args[i - 1] in ("--owner", "--repo")]
+    rest = [a for i, a in enumerate(args[2:], 2) if not a.startswith("-")
+            and args[i - 1] not in ("--owner", "--repo", "--json", "--jq", "--filename", "-L", "--limit")]
+    query = " ".join(rest + ([flag("--filename")] if flag("--filename") else []))
+    hits = search(query, [o.split("/")[0] for o in owners])
+    if "--json" in args:
+        print(json.dumps(hits))
+    else:
+        for hit in hits:
+            print(f"{hit['repository']['nameWithOwner']}:{hit['path']}")
+    sys.exit(0)
+if args[:2] == ["repo", "list"]:
+    owner = next((a for a in args[2:] if not a.startswith("-")), None)
+    repos = [r for r in TREES if owner is None or r.split("/")[0] == owner]
+    if "--json" in args:
+        print(json.dumps([{"nameWithOwner": r} for r in repos]))
+    else:
+        print("\n".join(repos))
+    sys.exit(0)
+if args[:1] == ["api"]:
+    endpoint = next((a for a in args[1:] if not a.startswith("-")), "").lstrip("/")
+    m = re.fullmatch(r"search/code\?q=(.+)", endpoint)
+    if m:
+        from urllib.parse import unquote_plus
+        hits = search(unquote_plus(m.group(1)), [])
+        print(json.dumps({"total_count": len(hits), "items": hits}))
+        sys.exit(0)
+    m = re.fullmatch(r"repos/([^/]+/[^/]+)(?:/contents/?(.*))?", endpoint.split("?")[0])
+    if not m or m.group(1) not in TREES:
+        not_found()
+    repo, path = m.group(1), m.group(2)
+    if path is None:
+        print(json.dumps({"full_name": repo, "default_branch": "main", "private": False}))
+    elif path == "":
+        print(json.dumps([{"name": n, "path": n, "type": "file"} for n in TREES[repo]]))
+    elif path in TREES[repo]:
+        print(json.dumps({"name": path, "path": path, "type": "file",
+                          "content": base64.b64encode(b"# lock\n").decode()}))
+    else:
+        not_found()
+    sys.exit(0)
+sys.exit(f"gh (offline mirror): unsupported command: {' '.join(args)}")

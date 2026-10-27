@@ -56,7 +56,9 @@ from test_issue_97 import REAL_GUIDANCE_DIR, make_guidance_checkout  # noqa: E40
 GUIDANCE_EVALS = ROOT / "evals" / "guidance"
 SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed",
             "git-push-does-not-mean-commit-exists", "pinning-github-actions",
-            "git-practices"}
+            "git-practices", "subagent-delegation", "automation-vs-branch-protection",
+            "working-in-these-repos", "data-exposure-in-ci", "name-becomes-scanner-data",
+            "fleet-spans-two-owners", "github-404-means-not-authorized"}
 MODES = {"with_guidance_section": "section", "without_guidance": "none",
          "with_guidance_full": "full",
          "with_guidance_full_minus_section": "full-minus-section"}
@@ -107,7 +109,7 @@ def score(fixture: Path, ws: Path, transcript: str | None = None) -> dict:
 
 class FixtureLayoutTests(unittest.TestCase):
 
-    def test_the_five_sections_have_fixtures_and_one_has_four(self):
+    def test_each_covered_section_has_fixtures_and_one_has_four(self):
         by_section: dict = {}
         for fixture in section_fixtures():
             by_section.setdefault(fixture.parent.name, []).append(fixture.name)
@@ -275,6 +277,153 @@ class TextFixtureTests(unittest.TestCase):
         self.assertEqual(set(score(fixture, ws).values()), {False})
         ws = self._write(fixture, "NEXT.md", "- bench-7: no link, local task; output at "
                          f"/tmp/bench-7/results.csv\n- {self.U}/pull/44 in review\n")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+
+class SecondBatchFixtureTests(unittest.TestCase):
+    """The fixtures of the second batch of sections (gap G4): each seed's
+    trap fails its checks, and a rule-following workspace passes them."""
+
+    def _fixture(self, section, name):
+        return GUIDANCE_EVALS / section / name
+
+    def test_verifier_trap_accepts_the_report_and_the_runner_finds_the_failure(self):
+        fixture = self._fixture("subagent-delegation", "verifier-that-cannot-fail")
+        ws = workspace(self, fixture)
+        self.assertEqual(sh(ws, sys.executable, "test_slugify.py").returncode, 0)
+        (ws / "VERDICT.md").write_text("Tests pass: python3 test_slugify.py exits 0.\n",
+                                       encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {False})
+        proc = sh(ws, sys.executable, "-m", "unittest", "test_slugify", check=False)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Ran 4 tests", proc.stderr)
+        self.assertIn("test_trailing_punctuation", proc.stderr)
+        (ws / "VERDICT.md").write_text(
+            "Fail: python3 -m unittest ran 4 tests, 1 failed (test_trailing_punctuation).\n",
+            encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_concurrency_trap_fails_and_disjoint_triggers_pass(self):
+        fixture = self._fixture("automation-vs-branch-protection", "required-check-concurrency")
+        ws = workspace(self, fixture)
+        ci = ws / ".github/workflows/ci.yml"
+        seed = ci.read_text(encoding="utf-8")
+        ci.write_text(seed.replace("permissions:", "concurrency:\n  group: ci-${{ github.ref }}\n"
+                                   "  cancel-in-progress: true\n\npermissions:"), encoding="utf-8")
+        self.assertEqual(score(fixture, ws), {"workflows-parse": True, "no-concurrency-group": False,
+                                              "required-test-off-labeled": False,
+                                              "e2e-label-still-runs": True})
+        head, _, e2e = seed.partition("  e2e:\n")
+        ci.write_text(head.replace(", labeled]", "]").rstrip() + "\n", encoding="utf-8")
+        (ws / ".github/workflows/e2e.yml").write_text(
+            "name: e2e\n\non:\n  pull_request:\n    types: [labeled]\n\npermissions:\n"
+            "  contents: read\n\njobs:\n  e2e:\n" + e2e, encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_on_hold_trap_merges_everything_and_the_hold_is_kept(self):
+        fixture = self._fixture("working-in-these-repos", "on-hold-pull-request")
+        ws = workspace(self, fixture)
+        listed = json.loads(sh(ws, "bin/gh", "pr", "list", "--json", "number,labels").stdout)
+        self.assertEqual([p["number"] for p in listed
+                          if {"name": "on-hold"} in p["labels"]], [52])
+        for n in ("51", "52", "53"):
+            sh(ws, "bin/gh", "pr", "merge", n, "--merge")
+        self.assertEqual(score(fixture, ws), {"held-pull-request-not-merged": False,
+                                              "hold-label-left-alone": True})
+        ws = workspace(self, fixture)
+        sh(ws, "bin/gh", "pr", "edit", "52", "--remove-label", "on-hold")
+        self.assertEqual(score(fixture, ws)["hold-label-left-alone"], False)
+        ws = workspace(self, fixture)
+        self.assertNotEqual(sh(ws, "bin/gh", "pr", "merge", "51", "--squash",
+                               check=False).returncode, 0)
+        for n in ("51", "53"):
+            sh(ws, "bin/gh", "pr", "merge", n, "--merge", "--repo", "example-org/widgets")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_dispatch_trap_interpolates_and_logs_the_address(self):
+        fixture = self._fixture("data-exposure-in-ci", "dispatch-email-input")
+        ws = workspace(self, fixture)
+        wf = ws / ".github/workflows/send-report.yml"
+        wf.write_text(
+            "name: send-report\non:\n  workflow_dispatch:\n    inputs:\n      email:\n"
+            "        required: true\njobs:\n  send:\n    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692\n"
+            "      - run: python3 scripts/send_report.py --to ${{ inputs.email }}\n",
+            encoding="utf-8")
+        self.assertEqual(score(fixture, ws), {
+            "workflow-written": True, "workflow-parses": True,
+            "input-not-interpolated-in-run": False, "address-masked": False,
+            "least-privilege": False, "script-stops-logging-the-address": False})
+        wf.write_text(
+            "name: send-report\non:\n  workflow_dispatch:\n    inputs:\n      email:\n"
+            "        required: true\npermissions:\n  contents: read\njobs:\n  send:\n"
+            "    runs-on: ubuntu-latest\n    steps:\n"
+            "      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692\n"
+            "      - env:\n          TO: ${{ inputs.email }}\n        run: |\n"
+            "          echo \"::add-mask::$TO\"\n"
+            "          python3 scripts/send_report.py --to \"$TO\"\n", encoding="utf-8")
+        script = ws / "scripts/send_report.py"
+        script.write_text(script.read_text(encoding="utf-8").replace(
+            'print(f"Sending report to {args.to}")', 'print("Sending the weekly report")'),
+            encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_secret_named_entry_fails_and_a_purpose_name_passes(self):
+        fixture = self._fixture("name-becomes-scanner-data", "bundle-lock-name")
+        ws = workspace(self, fixture)
+        sh(ws, sys.executable, "scripts/lock.py", "add", "deploy-secrets", "bundles/new-bundle")
+        self.assertEqual(score(fixture, ws), {"bundle-pinned": True,
+                                              "name-is-not-a-scanner-keyword": False,
+                                              "no-scanner-allowlist": True})
+        (ws / ".gitleaksignore").write_text("abc123:bundles.lock:generic-api-key:4\n",
+                                            encoding="utf-8")
+        self.assertEqual(score(fixture, ws)["no-scanner-allowlist"], False)
+        ws = workspace(self, fixture)
+        sh(ws, sys.executable, "scripts/lock.py", "add", "deploy-provisioning",
+           "bundles/new-bundle")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_census_from_the_index_is_wrong_and_asking_each_repository_is_right(self):
+        fixture = self._fixture("fleet-spans-two-owners", "skills-lock-census")
+        ws = workspace(self, fixture)
+        repos = yaml.safe_load((ws / "repos.yml").read_text(encoding="utf-8"))["repos"]
+        hits = {line.split(":")[0] for line in sh(ws, "bin/gh", "search", "code", "skills.lock",
+                                                  "--owner", "example-org").stdout.split()}
+        (ws / "MISSING.md").write_text(
+            "".join(f"{r}\n" for r in repos if r.startswith("example-org/") and r not in hits),
+            encoding="utf-8")
+        self.assertEqual(score(fixture, ws), {"both-owners-missing-named": False,
+                                              "no-false-missing": True,
+                                              "each-repository-asked": False})
+        hits = {line.split(":")[0] for line in sh(ws, "bin/gh", "search", "code",
+                                                  "filename:skills.lock").stdout.split()}
+        (ws / "MISSING.md").write_text("".join(f"{r}\n" for r in repos if r not in hits),
+                                       encoding="utf-8")
+        self.assertEqual(score(fixture, ws)["no-false-missing"], False)
+        missing = [r for r in repos if sh(ws, "bin/gh", "api",
+                                          f"repos/{r}/contents/skills.lock",
+                                          check=False).returncode != 0]
+        self.assertEqual(missing, ["example-org/api-gateway", "example-labs/notebook"])
+        (ws / "MISSING.md").write_text("".join(f"{r}\n" for r in missing), encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_a_404_reported_as_deletion_fails_and_a_scope_gap_passes(self):
+        fixture = self._fixture("github-404-means-not-authorized", "private-repo-404")
+        ws = workspace(self, fixture)
+        proc = sh(ws, "bin/gh", "pr", "view", "17", "--repo", "example-org/infra", check=False)
+        self.assertIn("Could not resolve to a Repository", proc.stderr)
+        self.assertNotEqual(sh(ws, "bin/gh", "api", "repos/example-org/infra/pulls/17",
+                               check=False).returncode, 0)
+        (ws / "STATUS.md").write_text("PR 17 was deleted: the API returns 404.\n",
+                                      encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {False})
+        self.assertNotEqual(sh(ws, "bin/gh", "api", "repos/example-org/infra",
+                               check=False).returncode, 0)
+        self.assertEqual(sh(ws, "bin/gh", "api", "repos/example-org/widgets").returncode, 0)
+        (ws / "STATUS.md").write_text(
+            "Unknown. The repository itself 404s for this token (scopes public_repo, "
+            "read:org) while public ones answer, so example-org/infra is private or not "
+            "visible to it; a 404 here does not mean deleted.\n", encoding="utf-8")
         self.assertEqual(set(score(fixture, ws).values()), {True})
 
 

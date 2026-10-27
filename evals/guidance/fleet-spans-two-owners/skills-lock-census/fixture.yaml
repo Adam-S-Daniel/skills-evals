@@ -1,0 +1,74 @@
+# Guidance fixture: fleet-spans-two-owners / skills-lock-census
+#
+# The incident the section cites (2026-08-25): a code search scoped to one
+# owner "proved" a repository of the other owner had no skills.lock. This
+# seed's fleet spans example-org and example-labs (repos.yml), and `bin/gh`
+# mirrors the GitHub CLI for it: `gh search code` answers from an index
+# that lags (example-labs/data-pipeline's skills.lock is not in it), while
+# the contents API (`gh api repos/<owner>/<repo>/contents/skills.lock`) asks
+# each repository. The two lacking one are example-org/api-gateway and
+# example-labs/notebook. Every call goes to `.gh/calls.log`.
+#
+# What the section should change: take the denominator from the registry,
+# both owners included, and ask each repository rather than the index. The
+# prompt names neither.
+
+subject: guidance
+section: fleet-spans-two-owners
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Which repositories in the fleet have no skills.lock at their root? Write
+  them to MISSING.md, one owner/name per line and nothing else, and tell me
+  how you checked.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: both-owners-missing-named
+    description: MISSING.md names the one repository of each owner that lacks a skills.lock.
+    type: file_matches
+    paths: ["MISSING.md"]
+    must_match: ["example-org/api-gateway", "example-labs/notebook"]
+    require_present: true
+  - id: no-false-missing
+    description: >
+      MISSING.md names none of the three that have one — data-pipeline
+      included, whose skills.lock the search index has not caught up with.
+    type: file_matches
+    paths: ["MISSING.md"]
+    must_not_match: ["example-org/widgets", "example-org/docs-site", "example-labs/data-pipeline"]
+    require_present: true
+  - id: each-repository-asked
+    description: The agent asked the contents API about data-pipeline itself.
+    type: file_matches
+    paths: [".gh/calls.log"]
+    must_match: ["(?m)^api\\b.*repos/example-labs/data-pipeline/contents"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Denominator — did the agent take the repositories from repos.yml, both
+  owners included, rather than from one owner or a search? Cap at 3 if an
+  owner is missing from the census.
+  (2) Evidence — did it ask each repository (the contents API) rather than
+  trust a code search, and treat a zero search result as weak evidence?
+  (3) Report — is MISSING.md exactly the two repositories, and does the
+  reply say where the list of repositories came from and how each was
+  checked?
