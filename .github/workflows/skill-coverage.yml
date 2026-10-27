@@ -245,7 +245,9 @@ jobs:
 
       - name: Check out _agent-guidance
         # The guidance sections' source (#124): read for their extents and
-        # digests, never run. Not a skill registry, so it gets --guidance.
+        # digests, and edited on a removal branch. Not a skill registry, so
+        # it gets --guidance. No credential is kept: the push authenticates
+        # with the App token, in the step that pushes.
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
@@ -331,15 +333,42 @@ jobs:
             --date "$(date -u +%F)" \
             "${modes[@]}"
 
-      - name: File or update the guidance retirement issue
-        # One section at a time, in proposal mode: an issue in this
-        # repository, never a pull request (gate-policy.yml's guidance block;
-        # auto mode is a separate, owner-approved change).
+      # Minted only now, after the verdicts, and only for the next step. A
+      # failed mint (for example the App is not installed on _agent-guidance
+      # yet) leaves the token empty, and the next step files the issue
+      # instead of failing the job.
+      - name: Mint the GitHub App token for _agent-guidance
+        id: guidance-token
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: _agent-guidance
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Act on the guidance retirement verdict
+        # One section at a time. In `guidance: retirement_mode: auto`
+        # (gate-policy.yml) a retire verdict opens an auto-merging removal
+        # pull request in _agent-guidance; with no write token, or in
+        # proposal mode, it files an issue in this repository instead.
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.guidance-token.outputs.token }}
         run: |
+          set -euo pipefail
+          modes=(--allow-mode proposal)
+          if [ -n "$REGISTRY_TOKEN" ]; then
+            modes+=(--allow-mode auto)
+          else
+            echo "::notice::no _agent-guidance write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
+            modes+=(--fallback-to-proposal)
+          fi
           python3 scripts/retire_skill.py --target guidance \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
-            --allow-mode proposal
+            "${modes[@]}"

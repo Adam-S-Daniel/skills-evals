@@ -151,8 +151,14 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     exactly as that repository's own instructions say: managed output with
     its trailing newlines stripped, then everything from the `## Repo-
     specific additions` heading LINE (never the first occurrence of the
-    substring, which the managed header quotes); pushed, opened and armed
-    to auto-merge, one at a time (`retire-guidance/` heads);
+    substring, which the managed header quotes); pushed, opened, labeled
+    `agent-authored` and armed to auto-merge (merge commit, matched to the
+    removal head, read back), one at a time (`retire-guidance/` heads).
+    These writes to _agent-guidance go through `registry_gh` and the push
+    with `REGISTRY_TOKEN`, as the skill path's do; the issues stay on `gh`.
+    With `--fallback-to-proposal`, `auto` mode without `auto` allowed (no
+    token reached the run) files the issue instead of exiting 2, and the
+    issue says why;
   * a `shorten-or-merge` verdict (the section helps only alone): an issue in
     skills-evals (`SHORTEN_ISSUE_MARKER`) in either mode, never a removal.
 
@@ -205,6 +211,8 @@ REGISTRY_ADR = improve_gate.REGISTRY_ADR
 #: skills-evals GitHub App's installation token, minted by the workflow).
 REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
 PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
+GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance reached this run "
+                         "(the GitHub App token was not minted)")
 NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
                  "GitHub App token was not minted)")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -1226,7 +1234,7 @@ def _run(checkout: Path, *args: str) -> str:
     return proc.stdout
 
 
-def guidance_issue_action(gates, section, kind, run_url) -> dict:
+def guidance_issue_action(gates, section, kind, run_url, mode_reason=None) -> dict:
     """Create or update the section's issue (`kind` retire or shorten), or
     nothing when a closed one already decided it."""
     verdict = guidance_block(gates)[section]
@@ -1240,9 +1248,12 @@ def guidance_issue_action(gates, section, kind, run_url) -> dict:
             "body": (f"{marker}\nThe guidance verdict for `{section}` is "
                      f"**{verdict.get('verdict')}** as of {gates['as_of']}: "
                      f"{verdict.get('reason')}.\n\n"
-                     + ("`evals/gate-policy.yml` sets `guidance: retirement_mode: proposal`, "
-                        "so a human removes it from _agent-guidance.\n\n" if kind == "retire"
-                        else "Nothing is removed: the section teaches the behavior, and the "
+                     + ((f"`evals/gate-policy.yml` sets `guidance: retirement_mode: auto`, "
+                         f"but {mode_reason}, so no removal pull request is opened and a "
+                         "human removes it from _agent-guidance.\n\n" if mode_reason else
+                         "`evals/gate-policy.yml` sets `guidance: retirement_mode: proposal`, "
+                         "so a human removes it from _agent-guidance.\n\n")
+                        if kind == "retire" else "Nothing is removed: the section teaches the behavior, and the "
                         "rest of the guidance already covers it. Shorten it or merge it into "
                         "the section that covers it.\n\n")
                      + guidance_evidence(verdict)
@@ -1252,9 +1263,10 @@ def guidance_issue_action(gates, section, kind, run_url) -> dict:
 
 
 def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = None,
-                  allowed=("proposal",)) -> dict:
+                  allowed=("proposal",), fallback: bool = False) -> dict:
     """What to do for guidance, read-only. RetireError for a refusal."""
     mode = guidance_mode(gates)
+    mode_reason = None
     section = guidance_retiring(gates)
     if section is None:
         shortening = guidance_shortening(gates)
@@ -1264,20 +1276,24 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         section, kind = shortening[0], "shorten"
     else:
         kind = "retire"
+        if mode == "auto" and "auto" not in allowed and fallback:
+            mode_reason = GUIDANCE_NO_CREDENTIAL
+            mode = _lowered(mode_reason, allowed)
         if mode not in allowed:
             raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
                               f"not wired (allowed: {', '.join(allowed)})")
     if kind == "shorten" or mode == "proposal":
-        issue = guidance_issue_action(gates, section, kind, run_url)
+        issue = guidance_issue_action(gates, section, kind, run_url, mode_reason)
+        lowered = {"mode_reason": mode_reason} if mode_reason else {}
         found = guidance_issues(gh, issue["marker"])
         if not found["open"] and found["closed"]:
-            return {"action": "none", "mode": mode, "section": section,
+            return {"action": "none", "mode": mode, "section": section, **lowered,
                     "issue": found["closed"][0],
                     "reason": f"{section} is already decided: issue "
                               f"#{found['closed'][0]} is closed, so none is filed again"}
         number = found["open"][0] if found["open"] else None
         return {"action": "update-issue" if number else "create-issue", "mode": mode,
-                "section": section, "issue": number, "title": issue["title"],
+                "section": section, "issue": number, **lowered, "title": issue["title"],
                 "body": issue["body"]}
     prs = guidance_open_prs(gh)
     if prs:
@@ -1303,7 +1319,7 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
                      "(Adam, 2026-10-10 and 2026-10-25)."
                      + (f"\n\nWorkflow run: {run_url}" if run_url else "")
                      + "\n\nOpened by skills-evals' scripts/retire_skill.py --target "
-                       "guidance on its scheduled workflow.\n")}
+                       "guidance on its scheduled workflow.\n\n" + AGENT_MARKER + "\n")}
 
 
 def guidance_prepare_branch(checkout: Path, action: dict) -> None:
@@ -1335,7 +1351,8 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
          "skills-evals#124's scheduled retirement found no benefit of the whole "
-         "guidance with the section over it without, in every cell at two fixed looks.")
+         "guidance with the section over it without, in every cell at two fixed looks."
+         f"\n\n{AGENT_TRAILER}")
 
 
 def guidance_commands(action: dict) -> list:
@@ -1358,14 +1375,28 @@ def guidance_commands(action: dict) -> list:
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
                 ["git", "commit"],
                 ["git", "push", "origin", f"HEAD:refs/heads/{action['branch']}"],
+                ["git", "merge-base", "--is-ancestor", "HEAD",
+                 f"refs/remotes/origin/{action['branch']}"],
                 ["gh", "pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
                  "--head", action["branch"], "--title", action["title"], "--body-file", "-"],
+                ["gh", "api", "-X", "POST",
+                 f"repos/{GUIDANCE_REPO}/issues/<new pull request number>/labels",
+                 "-f", f"labels[]={AGENT_LABEL}"],
                 ["gh", "pr", "merge", "<new pull request url>", "-R", GUIDANCE_REPO,
-                 "--auto", "--merge"]]
+                 "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
+                ["gh", "pr", "view", "<new pull request url>", "-R", GUIDANCE_REPO,
+                 "--json", "autoMergeRequest"]]
     return []
 
 
-def guidance_execute(action: dict, checkout: Path | None, gh, push, env) -> str:
+GUIDANCE_PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(GUIDANCE_REPO)}/pull/(\d+)")
+
+
+def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
+                     registry_gh=None) -> str:
+    """Make the plan's writes: skills-evals issues through `gh`,
+    _agent-guidance writes through `registry_gh` (default `gh`)."""
+    registry_gh = registry_gh or gh
     kind = action["action"]
     if kind == "none":
         return action["reason"]
@@ -1375,12 +1406,27 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env) -> str:
                 else f"updated issue #{action['issue']} for {action['section']}")
     check_auto_env(env)
     guidance_prepare_branch(checkout, action)
+    head = _git(checkout, "rev-parse", "HEAD").strip()
     push(checkout, action["branch"])
-    url = gh(["pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
-              "--head", action["branch"], "--title", action["title"],
-              "--body-file", "-"], action["body"]).strip()
-    gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge"])
+    url = registry_gh(["pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
+                       "--head", action["branch"], "--title", action["title"],
+                       "--body-file", "-"], action["body"]).strip()
+    match = GUIDANCE_PR_URL_RE.fullmatch(url)
+    if not match:
+        raise RetireError("creating the pull request printed no pull request URL")
+    # Labeled before auto-merge, as the skill path does: a pull request that
+    # could not be marked as the loop's stays open for a person.
+    registry_gh(["api", "-X", "POST", f"repos/{GUIDANCE_REPO}/issues/{match.group(1)}/labels",
+                 "-f", f"labels[]={AGENT_LABEL}"])
+    registry_gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge",
+                 "--match-head-commit", head])
+    method = registry_gh(["pr", "view", url, "-R", GUIDANCE_REPO, "--json",
+                          "autoMergeRequest", "--jq",
+                          '.autoMergeRequest.mergeMethod // ""']).strip()
+    if method != "MERGE":
+        raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
     return f"opened {url} with auto-merge"
+
 
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
          registry_gh=None, out=sys.stdout) -> int:
@@ -1402,7 +1448,7 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
     parser.add_argument("--allow-mode", action="append", choices=("auto", "proposal"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--fallback-to-proposal", action="store_true",
-                        help="this caller has no adam-agentskills write credential: a "
+                        help="this caller has no write credential for the target repository: a "
                              "gates file in auto mode files the issue instead of exiting 2")
     parser.add_argument("--date", metavar="YYYY-MM-DD",
                         help="the skill-impact entry's date (default: the gates file's "
@@ -1430,13 +1476,18 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
         if args.target == "guidance":
             if not args.dry_run and guidance_mode(gates) == "auto" and "auto" in allowed:
                 check_auto_env(env)
-            action = guidance_plan(gates, args.guidance, gh, run_url, allowed)
+            action = guidance_plan(gates, args.guidance, gh, run_url, allowed,
+                                   fallback=args.fallback_to_proposal)
             if args.dry_run:
                 out.write(json.dumps({"dry_run": True, **action,
                                       "would_run": guidance_commands(action)},
                                      indent=2, sort_keys=True) + "\n")
                 return 0
-            out.write(guidance_execute(action, args.guidance, gh, push, env) + "\n")
+            if action.get("mode_reason"):
+                print(f"retire_skill: auto lowered to proposal: {action['mode_reason']}",
+                      file=sys.stderr)
+            out.write(guidance_execute(action, args.guidance, gh, push, env,
+                                       registry_gh) + "\n")
             return 0
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)
