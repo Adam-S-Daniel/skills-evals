@@ -16,14 +16,7 @@
 skill: writing-adrs
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
-# Pinned mid-tier model, same rationale as every other fixture here: an
-# Opus-tier agent could plausibly ace this without the skill (ceiling
-# effect), and pinning stops with/without comparisons silently tracking the
-# CLI's default model across releases.
-model: claude-sonnet-5
-
 judge:
-  model: claude-opus-4-8
   # Dimension names match these weight keys EXACTLY (judge.py matches
   # case-insensitively, but the rubric text below spells them identically
   # anyway so there's no ambiguity reading the two side by side).

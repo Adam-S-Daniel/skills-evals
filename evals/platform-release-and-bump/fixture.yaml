@@ -27,11 +27,10 @@ context:
     guidance_bytes: 31374
     skill_catalog_bytes: 17522
     skill_payload_bytes: 1103484
-# The issue pins an agent model, recorded as fixture data below. Its effort
-# request has no supported fixture key and is therefore not represented.
+# The issue's effort request has no supported fixture key and is therefore not
+# represented. Its agent-model pin was dropped: the arms follow the roster.
 skill: platform-release-and-bump
 registry: https://github.com/Adam-S-Daniel/cms-platform
-model: claude-sonnet-5
 prompt: Bump this consumer to platform v0.1.104.
 arms:
   with_skill:

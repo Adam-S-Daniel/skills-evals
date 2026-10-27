@@ -81,6 +81,25 @@ within about half an hour and checks out: it changes only
 the eval runs on the committed roster as before, and the run's summary says
 why (ADR [0004](decisions/0004-eval-runs-on-the-roster-its-run-merged.md)).
 
+**Fixtures follow the roster; they do not pin models.** A fixture leaves out
+`model:` and `judge.model:`, and the weekly sweep runs it once per roster arm
+with a judge chosen above that arm. A pin goes stale the moment the roster
+moves on (twelve fixtures kept a retired Sonnet and a below-arm Opus judge
+until 2026-10-27). A fixture that truly needs one keeps it and says why, in a
+parsed field: top-level `model_pin_reason:` beside `model:`, and
+`judge.model_pin_reason:` beside `judge.model:` (non-empty strings). The
+required `test` check enforces it
+(`FixtureModelPinTests` in `test/issues/test_issue_371_judge_tier.py`): any
+`model:` or `judge.model:` without its reason key fails, even one naming a
+current roster id. That check never reads the roster, so fixtures stay in
+step with it automatically: an unreasoned fixture always follows the roster,
+and a roster pull request that drops a model (it changes exactly
+`evals/roster.yml`, ADR [0003](decisions/0003-roster-merges-automatically.md))
+cannot be turned red by a pin. A reasoned pin is a deliberate choice that the
+roster does not move. The one deliberate pin is `evals/guidance/_delivery`,
+which uses the roster's current Haiku (the `preflight` id), because the
+delivery guard runs on the fixture's own model.
+
 ## 3. When it runs, and what it costs to run
 
 `.github/workflows/eval.yml` runs every Tuesday at 07:00 UTC and on manual
@@ -432,7 +451,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Write a 60-word third-person proposal bio from background notes; good output is concrete (employer/dates, the named accessibility standard), third-person, and free of corporate filler.
 - Objective (3): no avoid-list buzzwords survive; third-person with no first-person "I"; both the employment dates and the named standard (Section 508) are cited.
 - Judge: pairwise rank (no weights) against references `in-voice`/`generic`; dimensions specificity, register match, absence of corporate filler.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class C. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class C. No real run yet.
 
 ### adam-writing-style/recruiter-reply
 
@@ -440,7 +459,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Reply to a recruiter's cold email in the user's voice, declining but leaving the door open; good output greets by name, opens with a hedge rather than an assertion, and cites specifics from the material.
 - Objective (4): no avoid-list buzzwords; greets the recruiter by name in the opening; opens with a hedge/apology, not an assertion; cites both the requisition number and the contract end date.
 - Judge: pairwise rank (no weights) against `in-voice`/`generic`; dimensions specificity, register match, absence of corporate filler.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class C. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class C. No real run yet.
 
 ### adam-writing-style/self-appraisal-opening
 
@@ -448,7 +467,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Draft the opening paragraph of a quarterly self-appraisal from notes; good output is first-person, narrative, generous toward collaborators, and specific about named systems and numbers.
 - Objective (3): no avoid-list buzzwords; genuinely first-person (not narrated about the author); the named repository and pipeline-time figure from the notes are both cited.
 - Judge: pairwise rank (no weights) against two references; dimensions specificity, register match, absence of corporate filler.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class C. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class C. No real run yet.
 
 ### cms-stuck-pr-triage
 
@@ -456,7 +475,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Diagnose why a CMS publish loop "keeps failing" and say what to do about each open PR, using a fake replay-only `gh` CLI seeded with three PRs (one blocked by a missing required status check, one on a stale base, one that should be left alone). Good output names the right cause per PR and attempts no writes.
 - Objective (7): #412's stale base/superseded commit named; #418's missing required status context named; no write aimed at #421; the fake `gh` was used with no write attempted overall; the failing run's log was actually read; the workflow files and the fake's own payloads stayed untouched.
 - Judge: weighted — `root_cause` 0.4, `decisions` 0.4, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class B. No real run yet.
 
 ### disarm-inherited-reach
 
@@ -488,7 +507,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Wire two Playwright CI workflows' failures into the platform's `post-failure-comment` composite action instead of an ad hoc inline `gh pr comment`, following its caller-side-gating convention (including a schedule-only workflow that shouldn't be touched). Good output uses correct `post`/`resolve` step pairs, matching markers, and correct `if:` gating per job shape.
 - Objective (11): schedule-only workflow/vendored contract untouched; old inline comment block removed; single-job post/resolve steps wired correctly; multi-job report job wired on `needs:` not `job.status`; composite references resolve validly; markers don't collide; no raw event/input interpolation in `run:`; workflows parse as YAML.
 - Judge: weighted — `convention_fidelity` 0.5, `gitleaks_explanation` 0.2, `restraint` 0.3.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class A. No real run yet.
 
 ### rename-pdfs
 
@@ -496,7 +515,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Rename six seeded PDFs (a statement, an invoice with a decoy filename date, an already-conventional receipt, an image-only scan, a duplicate bill pair) to the user's `YYYYMMDD-Type-Issuer-Title.pdf` convention. Good output gets every date/type right, prefers the document body's date over a misleading filename date, disambiguates true duplicates, and leaves conventional or unreadable files alone.
 - Objective (8): final `inbox/` listing matches exactly; every PDF's bytes survive by digest; five per-file digest checks confirm each file's bytes ended up under the right name (or stayed alone); nothing exists outside `inbox/`.
 - Judge: weighted — `convention_fidelity` 0.5, `date_priority` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class A. No real run yet.
 
 ### review-bash-ci-reliability/release-pipeline
 
@@ -544,7 +563,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Turn a vendor CLI's release notes (ExampleCLI 4.1.0 to 4.3.0) into drafted GitHub issues for a small repo that consumes it. Five real findings are baked in, mixed with decoys. Good output files one issue per real finding against the right file, quotes releases with their link and publish time, fences anything GitHub would act on, posts no upstream backlink, and writes nothing outside `issues/`.
 - Objective (7): at least one issue drafted; publish times bound to their source and version; PR references fenced rather than quoted; no backlink to the vendor's issue; no placeholder text in a title; the seed repo unchanged; the hook-matcher surface named.
 - Judge: weighted — `correctness` 0.5, `hygiene` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (per the README; the fixture states no class). 1 real run, latest 2026-09-26T18:45:29Z: objective 6/7 with the skill against 4/7 without, judge overall 7.2 against 5.4.
+- No pinned models: the roster picks the agent and the judge. Class A (per the README; the fixture states no class). 1 real run, latest 2026-09-26T18:45:29Z: objective 6/7 with the skill against 4/7 without, judge overall 7.2 against 5.4.
 
 ### windows-elevation-from-wsl
 
@@ -600,7 +619,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Same decision, but in a repo with three existing ADRs and its own house section order (Status/Context/Decision/Consequences), different from the skill's default. Good output follows the house convention, adds exactly one new ADR (0004), links it correctly, and leaves the rest untouched.
 - Objective (7): new ADR follows house order, not the skill's default; index gained a row for 0004; governing script's header links it; both links resolve; exactly four ADR files exist in total; pre-existing ADRs, CHANGELOG.md, AGENTS.md, and root README.md all byte-identical to seed.
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (format half — matches an existing convention). No real run yet.
+- No pinned models: the roster picks the agent and the judge. Class A (format half — matches an existing convention). No real run yet.
 
 ### writing-adrs/supersede
 
@@ -608,7 +627,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Record a snapshot-retention decision that reverses an accepted ADR. Good output writes ADR 0004, marks 0002 as superseded, updates both index rows and the script's ADR pointer, and preserves the old decision as history.
 - Objective (13): a new ADR with the required sections and a mention of 0002; 0002's status and index row point to 0004; the old decision text and unaffected rows stay intact; links resolve; a script comment points to 0004; the retention decision stays intact; exactly four ADR files exist; unrelated files stay byte-identical. These checks establish a format floor; the judge decides whether the prose explains the reversal.
 - Judge: weighted — `replacement-explains-the-reversal` 0.5, `audit-trail-preserved` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture: its objective checks are a format floor, and the README files every `writing-adrs` fixtures under Class A (format half). No real run yet.
+- No pinned models: the roster picks the agent and the judge. No class label in the fixture: its objective checks are a format floor, and the README files every `writing-adrs` fixtures under Class A (format half). No real run yet.
 
 ### writing-adrs/why-no-comment-trail
 
@@ -616,7 +635,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - The user asks why an export script ends every CSV line with CRLF, says nothing in the repo explains it, and relays the reason and two rejected alternatives from the person who wrote it. Good output records that as ADR 0003 in the repo's house format, adds its index row, points the script at it, and leaves the line endings and everything else alone.
 - Objective (11): a new house-format ADR that is not a pasted seed ADR; non-heading lines name the line-ending rule and the importer, and each rejected alternative; index gained a row for 0003 and kept the other two; links resolve; a script comment points to 0003; both CRLF printf lines stay; exactly three ADR files exist; unrelated files stay byte-identical.
 - Judge: weighted — `adr-records-the-reason` 0.5, `next-reader-finds-it` 0.3, `restraint` 0.2.
-- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture, filed with its siblings under Class A (format half). No real run yet.
+- No pinned models: the roster picks the agent and the judge. No class label in the fixture, filed with its siblings under Class A (format half). No real run yet.
 
 ## 6. What is finished
 

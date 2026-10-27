@@ -35,12 +35,15 @@ subject: guidance
 # agents-md/eval-coverage.yml and never changes when the heading is reworded.
 section: security
 
-# The cheapest model that can answer a tool-free probe. It is both the agent
-# model for these arms and, because a guidance arm's preflight model is the
-# fixture's own pin, the model the delivery guard runs on. When the model
-# roster (skills-evals#67) lands, its `preflight` entry supersedes this for
-# the guard leg.
-model: claude-haiku-4-5
+# The cheapest model that can answer a tool-free probe: the roster's current
+# haiku, matching its `preflight` entry (evals/roster.yml). It is both the
+# agent model for these arms and, because a guidance arm's guard runs on
+# `--model` or else the fixture's own pin (harness/run_eval.py), the model the
+# delivery guard runs on. Move it when the roster's preflight model moves.
+model: claude-haiku-5-5
+model_pin_reason: >-
+  the cheapest model that can answer a tool-free probe, kept equal to the
+  roster's preflight id (see the comment above)
 
 # Both legs of every arm are a single tool-free question, so the budget is
 # small on purpose: five arms x (guard probe + agent call) has to fit inside

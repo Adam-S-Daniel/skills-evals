@@ -41,14 +41,10 @@
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
-# Arms pinned mid-tier, judge pinned strong — DESIGN.md's harness-wide
-# rules. A ceiling-effect arm is signal-free, and an unpinned arm silently
-# tracks the CLI's default model across releases.
-model: claude-sonnet-5
-
+# No model pins: the arms follow the roster and, being pairwise, the judge is
+# the roster's judge (evals/roster.yml).
 judge:
   mode: pairwise
-  model: claude-opus-4-8
   # Blind, shuffled per trial, score = rank. No `weights:` — the score is a
   # rank, not a weighted mean, and harness/scorers/judge.py rejects a
   # fixture that carries both rather than half-honouring it.

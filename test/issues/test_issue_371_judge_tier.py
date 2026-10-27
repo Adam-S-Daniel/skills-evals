@@ -772,5 +772,68 @@ class IngesterTests(unittest.TestCase):
                     self.check(self.summary(judge_selection=value))
 
 
+class FixtureModelPinTests(unittest.TestCase):
+    """A fixture follows the roster unless it says why not.
+
+    `model:` and `judge.model:` pins go stale when the roster moves on (twelve
+    fixtures kept the retired `claude-sonnet-5` and a below-arm Opus judge
+    until 2026-10-27). So no pin is accepted without a non-empty
+    `model_pin_reason:` (beside `model:`) / `judge.model_pin_reason:` (beside
+    `judge.model:`), not even one naming a current roster id: the check never
+    reads the roster, so a roster pull request that drops a model can never
+    turn it red, and an unreasoned fixture always follows the roster.
+    """
+
+    @staticmethod
+    def unreasoned_pins(evals_dir: Path) -> list:
+        """`path: key=id` for every pin without its reason key."""
+        found = []
+        for path in sorted(evals_dir.rglob("fixture.yaml")):
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if not isinstance(doc, dict):
+                continue
+            judge = doc.get("judge") if isinstance(doc.get("judge"), dict) else {}
+            for label, pin, reason in (
+                    ("model", doc.get("model"), doc.get("model_pin_reason")),
+                    ("judge.model", judge.get("model"), judge.get("model_pin_reason"))):
+                if pin is None:
+                    continue
+                if isinstance(reason, str) and reason.strip():
+                    continue
+                found.append(f"{path.relative_to(evals_dir).as_posix()}: "
+                             f"{label}={pin}")
+        return found
+
+    def write(self, root: Path, name: str, text: str) -> None:
+        target = root / name / "fixture.yaml"
+        target.parent.mkdir(parents=True)
+        target.write_text(text, encoding="utf-8")
+
+    def test_every_committed_fixture_pin_is_reasoned(self):
+        self.assertEqual(
+            self.unreasoned_pins(REPO_ROOT / "evals"), [],
+            "a fixture pins a model without saying why: delete the pin so it "
+            "follows the roster, or add model_pin_reason: / "
+            "judge.model_pin_reason: saying why it must stay")
+
+    def test_any_unreasoned_pin_fails_even_a_current_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write(root, "stale", "model: old-1\njudge:\n  model: old-2\n")
+            self.write(root, "current",
+                       "model: model-a-2\njudge:\n  model: model-b-1\n")
+            self.write(root, "reasoned",
+                       "model: old-1\nmodel_pin_reason: needs the old tokenizer\n"
+                       "judge:\n  model: old-2\n  model_pin_reason: ' '\n")
+            self.write(root, "unpinned", "judge:\n  mode: pairwise\n")
+            self.assertEqual(
+                self.unreasoned_pins(root),
+                ["current/fixture.yaml: model=model-a-2",
+                 "current/fixture.yaml: judge.model=model-b-1",
+                 "reasoned/fixture.yaml: judge.model=old-2",
+                 "stale/fixture.yaml: model=old-1",
+                 "stale/fixture.yaml: judge.model=old-2"])
+
+
 if __name__ == "__main__":
     unittest.main()

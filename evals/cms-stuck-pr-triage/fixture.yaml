@@ -171,14 +171,10 @@ skill: cms-stuck-pr-triage
 # URL here must match the entry #63 adds to harness/registries.yml.
 registry: https://github.com/Adam-S-Daniel/cms-platform
 
-# Arms on a pinned mid-tier model, as for every other fixture here: an
-# Opus-tier agent would likely reach this root cause WITHOUT the skill, and a
-# ceiling effect leaves the with/without comparison signal-free. Pinning also
-# stops the arms silently tracking the CLI's default model across releases.
-model: claude-sonnet-5
+# No `model:` or `judge.model:` pin: the arms follow the roster (evals/roster.yml),
+# and the judge is chosen from a tier above the arm.
 
 judge:
-  model: claude-opus-4-8
   # Root cause and per-PR decisions carry the correctness axis; restraint is
   # the guardrail and must not outvote them (DESIGN.md, harness-wide rules).
   # Left equal-weighted, restraint rewards the arm that looked at less.

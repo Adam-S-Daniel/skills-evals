@@ -251,7 +251,7 @@ def claude_bin() -> str:
 
 
 def probe(*, cwd: Path, home: Path, tmpdir: Path, env_extra: dict | None = None,
-          extra_argv=(), model: str = "claude-haiku-4-5", timeout: int = 120,
+          extra_argv=(), model: str = "claude-haiku-5-5", timeout: int = 120,
           allow_scope_flags: bool = False) -> ProbeFacts:
     """Spawn the CLI, read the init event, kill the child. No API call is made.
 

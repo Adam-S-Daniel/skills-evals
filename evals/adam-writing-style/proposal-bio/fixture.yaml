@@ -76,11 +76,8 @@
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
-model: claude-sonnet-5
-
 judge:
   mode: pairwise
-  model: claude-opus-4-8
   references:
     - name: in-voice
       path: references/in-voice.md

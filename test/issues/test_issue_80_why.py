@@ -382,13 +382,11 @@ class TestIssue80Why(unittest.TestCase):
                 other = run_eval.load_fixture(ADRS_DIR / name)
                 for key in ("skill", "registry", "arms"):
                     self.assertEqual(self.fixture[key], other[key])
-                if name == "bootstrap":
-                    # Scheduled, so it follows the roster (#371 item 5).
-                    self.assertNotIn("model", other)
-                    self.assertNotIn("model", other["judge"])
-                    continue
-                self.assertEqual(self.fixture["model"], other["model"])
-                self.assertEqual(self.fixture["judge"]["model"], other["judge"]["model"])
+                # Every writing-adrs fixture follows the roster.
+                self.assertNotIn("model", other)
+                self.assertNotIn("model", other["judge"])
+                self.assertNotIn("model", self.fixture)
+                self.assertNotIn("model", self.fixture["judge"])
 
     def test_judge_weights_sum_to_one_and_name_the_rubrics_dimensions(self):
         weights = self.fixture["judge"]["weights"]
