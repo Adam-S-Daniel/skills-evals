@@ -52,7 +52,12 @@ improve <skill>`, says so; scripts/improve_outcomes.py reads it) is charged
 runs: `IMPROVE_FIRE_UNITS` times the mean measured cost of the ingested eval
 runs (`eval_fire_cost`, never more than one reservation each), or times the
 full reservation while nothing is measured. `check --mode improve` needs room
-for that charge before an improve fire goes.
+for that charge before an improve fire goes. A guidance section's improve
+fire (`Fire eval routine: guidance-improve <section>`,
+scripts/propose_guidance_edit.py: the same baseline-and-candidate loop at
+three trials per fixture, and its results never land in `routine-results/`
+either) is counted, held and checked exactly as an improve fire
+(`improve_outcomes.charged_fires`, `IMPROVE_MODES`).
 
 That charge is an estimate and was never corrected by measurement: on
 2026-10-27 two improve fires were held at 21 points against a 30-point cap
@@ -159,6 +164,8 @@ IMPROVE_FIRE_UNITS = 12
 #: minutes, plus setup, the push and the ingest. A fire that started this long
 #: before a meter snapshot is finished, so the snapshot already counts it.
 IMPROVE_MAX_RUN = timedelta(hours=2)
+#: The fire modes charged `improve_charge`, held all week (see above).
+IMPROVE_MODES = ("improve", "guidance-improve")
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
 
@@ -549,7 +556,7 @@ def describe(state: dict) -> str:
 def check(state: dict, mode: str = "eval") -> bool:
     """Whether one more fire, reserved in full (an improve fire at
     `improve_charge`), stays within the cap."""
-    if mode == "improve":
+    if mode in IMPROVE_MODES:
         return room(state) + EPSILON >= state["improve_charge"]
     return fits(state) >= 1
 
@@ -566,20 +573,22 @@ def _live_fires(now: datetime, since: datetime | None = None) -> tuple[int, int]
 
 def improve_counts(runs: list, now: datetime,
                    since: datetime | None = None) -> tuple[int, int]:
-    """(successful improve fires since `since`, default seven days before
-    `now`; in the last `PENDING_FULL_HOLD`) among the runs API's rows."""
+    """(successful improve and guidance-improve fires since `since`, default
+    seven days before `now`; in the last `PENDING_FULL_HOLD`) among the runs
+    API's rows."""
     since = since or now - WINDOW
-    fires = [f for f in improve_outcomes.improve_fires(runs) if f["conclusion"] == "success"]
+    fires = [f for f in improve_outcomes.charged_fires(runs) if f["conclusion"] == "success"]
     return (sum(1 for f in fires if f["started"] >= since),
             sum(1 for f in fires if f["started"] >= now - PENDING_FULL_HOLD))
 
 
 def improve_starts(runs: list, now: datetime,
                    since: datetime | None = None) -> list[datetime]:
-    """The `started` times of the successful improve fires since `since`
-    (default seven days before `now`) among the runs API's rows."""
+    """The `started` times of the successful improve and guidance-improve
+    fires since `since` (default seven days before `now`) among the runs
+    API's rows."""
     since = since or now - WINDOW
-    return [f["started"] for f in improve_outcomes.improve_fires(runs)
+    return [f["started"] for f in improve_outcomes.charged_fires(runs)
             if f["conclusion"] == "success" and f["started"] >= since]
 
 
@@ -621,9 +630,12 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
                         help="a checkout of persistent/eval-results")
     parser.add_argument("--budget", type=Path, default=None,
                         help="the budget file (default: evals/budget.yml)")
-    parser.add_argument("--mode", choices=("eval", "scaffold", "improve"), default="eval",
-                        help="the fire's mode: an improve fire needs room for "
-                             "improve_charge")
+    # Every mode routine-eval-fire.yml passes: draft was missing until
+    # 2026-10-27, so argparse refused every draft fire at this step.
+    parser.add_argument("--mode", choices=("eval", "scaffold", "draft", *IMPROVE_MODES),
+                        default="eval",
+                        help="the fire's mode: an improve or guidance-improve fire "
+                             "needs room for improve_charge")
     args = parser.parse_args(argv)
     now = now or datetime.now(timezone.utc)
     try:

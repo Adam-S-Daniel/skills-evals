@@ -29,8 +29,9 @@ removal-PR safety band, skill improve eligibility and skill usage weight.
 The section's expected extent needs `--guidance`, an _agent-guidance
 checkout; without one every guidance cell that has runs stays insufficient
 and there are no guidance improve candidates. A guidance section is an
-improve CANDIDATE (see IMPROVE ELIGIBILITY), ranked with the skills, but
-never a fire.
+improve CANDIDATE (see IMPROVE ELIGIBILITY), ranked with the skills, and an
+eligible one is a `guidance-improve` fire (routine-eval-fire.yml's
+guidance-improve mode, ADR 0005's routine guidance improve mode addendum).
 
 THE BANDS (rule D), in order:
 
@@ -45,7 +46,8 @@ THE BANDS (rule D), in order:
      no run becomes a `fixture-broken` work item and leaves the queue.
   3. near a decision, at least 20%: insufficient cells, fewest runs short
      of their next look (`min_runs`, then `retire_looks`) first.
-  4. improvements, at least 20%: improve fires for eligible skills, highest
+  4. improvements, at least 20%: improve fires for eligible skills and
+     guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
        use: a skill's usage weight (harness/skill_usage.py, `skill_weights`:
          invocations over 4 weeks); a guidance section's is the census's
@@ -81,7 +83,8 @@ measured routine runs show (points per dollar), between `per_run_overrun`
 and one full reservation; one full reservation when either is unknown. A
 bare fire runs ONE arm, so it is reserved at its cell's mean agent cost per
 arm trial times `BARE_TRIALS`, clamped the same way. An
-improve fire is reserved at `allowance_guard.improve_charge`. The room is
+improve or guidance-improve fire is reserved at
+`allowance_guard.improve_charge`. The room is
 `allowance_guard.room`. The per-fire guard still checks every fire at its
 full reservation before it spends anything; this plan only orders them.
 
@@ -115,12 +118,26 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   name order is the holdout, as the proposer picks it), train headroom of at
   least `MIN_GAIN` over its pooled in-situ `full` arm runs, and a guidance
   verdict (the verdict document's `guidance` half) that is not `retire` or
-  `retire-pending`. It has no target rule (the proposer proposes before it
-  measures). There is no routine fire mode for guidance yet, so an eligible
-  section is the work item `guidance-improve` (change type `guidance-edit`,
-  routed to a local run of the proposer), never a fire; one with fewer
-  fixtures and headroom gets `needs-fixtures`, one without headroom
-  `needs-harder-fixtures`, each carrying its `section`.
+  `retire-pending`, an `eval-coverage.yml` row that is not `skipped` (the
+  proposer refuses one), and not paused: `pause` keyed by section over the
+  guidance-improve outcomes (scripts/improve_outcomes.py, mode
+  `guidance-improve`) and the `eval-guidance-improve/<section>` pull
+  requests in _agent-guidance, plus the guidance lane (`guidance_lane`): no
+  guidance-loop pull request (`eval-guidance-improve/*`,
+  `retire-guidance/*`) open there and no guidance-improve attempt in flight,
+  since every guidance edit writes AGENTS.md and docs/guidance-impact.md and
+  a second would conflict. Its content change, for the three-rejection stop,
+  is the _agent-guidance history of its row's file. It has no target rule
+  (the proposer proposes before it measures). An eligible section is an
+  improve-band fire, `mode: guidance-improve`, its `section`, the proposer's
+  holdout as `holdout` (the fixture key, guidance/<section>/<name>), reserved
+  at the improve charge; at most ONE per plan, the highest value (the lane
+  rule again). The work item `guidance-improve` (change type
+  `guidance-edit`, routed to a local run of the proposer) remains only for
+  an eligible section whose id the fire workflow's `section` pattern
+  (^[a-z0-9][a-z0-9-]{0,63}$) refuses. One with fewer fixtures and headroom
+  gets `needs-fixtures`, one without headroom `needs-harder-fixtures`, each
+  carrying its `section`.
 
 STOPPING (rule C): a rejection (every no-branch outcome, conservatively, and
 an accepted candidate whose pull request closed unmerged) starts a 14-day
@@ -134,12 +151,15 @@ lands (the gates pool only runs of the content on main).
 
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
 `fixture-broken` (change type
-`fixture`), `guidance-improve` (change type `guidance-edit`), and `agent-check` items read from `--lessons` (lesson proposals
+`fixture`), `guidance-improve` (change type `guidance-edit`; only for a
+section id the fire workflow refuses, see above), and `agent-check` items
+read from `--lessons` (lesson proposals
 of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
 Every item carries `change_type`: `skill-edit` for an improve fire,
-`fixture`, `agent-check`, or `trigger`.
+`guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`, or
+`trigger`.
 
 THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
 weeks over about 72,000 model turns, so most skills almost never trigger).
@@ -162,13 +182,16 @@ fire entry carries its `value` (null for an eval fire; the matrix legs do
 not). `--ranking-out` gets the ranking alone (public-safe: skill names and
 section ids), which the weekly workflow uploads as the `improve-ranking`
 artifact. $GITHUB_OUTPUT gets `matrix=`
-(the fires, improve fires last so a long improve run never holds up the
-evals behind it) and `count=`. The log and job summary carry numbers and
+(the fires, improve and guidance-improve fires last so a long improve run
+never holds up the evals behind it; every leg carries `section`, empty but
+for a guidance-improve leg) and `count=`. The log and job summary carry numbers and
 public skill names only: agent-check items are counted, never quoted.
 
 EVIDENCE. `--evidence FILE` reads the GitHub evidence from a recorded JSON
-file ({fire_runs, improve_branches, registry_prs, on_hold}); without it the
-evidence is fetched with GH_TOKEN (scripts/improve_outcomes.py's reader).
+file ({fire_runs, improve_branches, registry_prs, on_hold}, and optionally
+guidance_branches, guidance_prs and guidance_on_hold, empty when absent);
+without it the evidence is fetched with GH_TOKEN (scripts/improve_outcomes.py's
+reader), _agent-guidance's pull requests and on-hold issues included.
 Every read failure stops the plan (fail closed); the message is fixed text
 and a status code.
 """
@@ -197,6 +220,13 @@ import plan_scheduled_evals as schedule  # noqa: E402
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
 SELF_REPO = "Adam-S-Daniel/skills-evals"
+GUIDANCE_REPO = "Adam-S-Daniel/_agent-guidance"
+#: Guidance-loop heads in _agent-guidance: improvements (this plan's fires,
+#: scripts/guidance_improve_gate.py) and removals (scripts/retire_skill.py).
+GUIDANCE_IMPROVE_PREFIX = "eval-guidance-improve/"
+GUIDANCE_REMOVAL_PREFIX = "retire-guidance/"
+#: The fire modes that run the improvement loop (held IMPROVE_FLIGHT).
+IMPROVE_MODES = ("improve", "guidance-improve")
 MIN_IMPROVE_FIXTURES = 4
 MIN_GAIN = 0.10
 TARGET_FAIL_RATE = 0.25
@@ -213,9 +243,13 @@ FIRE_RESULT_WINDOW = timedelta(hours=2)
 SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
 IMPROVE_TRIALS = 3
-#: Where an eligible guidance section's improvement runs until the routine has
-#: a guidance mode.
-GUIDANCE_IMPROVE_ROUTE = "local run: scripts/propose_guidance_edit.py (no routine mode yet)"
+#: Where an eligible guidance section's improvement runs when the fire
+#: workflow's `section` pattern refuses its id.
+GUIDANCE_IMPROVE_ROUTE = ("local run: scripts/propose_guidance_edit.py (the fire "
+                          "workflow's section pattern refuses this id)")
+#: A guidance fixture key, relative to evals/ (the proposer's listing).
+GUIDANCE_FIXTURE_RE = re.compile(r"guidance/[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+                                 r"(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?")
 #: The window `use` is counted over: skill_usage.weight's four weeks.
 USE_WINDOW_DAYS = 28
 #: Trials of a bare fire's one arm (routine-eval-weekly.yml sends them).
@@ -262,16 +296,17 @@ def _stamp_time(stamp) -> datetime | None:
 # Rule C: is a skill paused?
 
 def pause(skill: str, records: list, prs: list, on_hold: list, now: datetime,
-          changed_at: datetime | None, remeasured_after) -> str | None:
+          changed_at: datetime | None, remeasured_after, key: str = "skill") -> str | None:
     """Why `skill` may not be attempted now, or None. `records` are
     improve_outcomes records, `prs` {skill, state, created_at, closed_at,
     merged_at} of `eval-improve/<skill>` pull requests, `on_hold` the titles
     of open `on-hold` issues and pull requests, `changed_at` the newest
     change to its content, fixtures or the roster, and `remeasured_after` a
     function of a time: whether a with-arm run of the skill landed after
-    it."""
-    mine = [r for r in records if r["skill"] == skill]
-    own_prs = sorted((p for p in prs if p["skill"] == skill),
+    it. A guidance section passes `key="section"`: its records and its
+    `eval-guidance-improve/<section>` pull requests carry `section`."""
+    mine = [r for r in records if r[key] == skill]
+    own_prs = sorted((p for p in prs if p[key] == skill),
                      key=lambda p: p["created_at"] or "")
     if any(p["state"] == "open" for p in own_prs):
         return "an improve pull request is open"
@@ -326,6 +361,24 @@ def pause(skill: str, records: list, prs: list, on_hold: list, now: datetime,
         return None
     if now - at < COOLDOWN:
         return "cooling down after a rejection"
+    return None
+
+
+def guidance_lane(section: str, records: list, prs: list, removals: list) -> str | None:
+    """Why no guidance-improve fire may go for `section` because of ANOTHER
+    section, or None: every guidance edit writes AGENTS.md and
+    docs/guidance-impact.md in _agent-guidance, so a second open pull
+    request would conflict once the first merged (the gate opens nothing
+    while one is open). `records` are guidance-improve outcome records, `prs`
+    the `eval-guidance-improve/<section>` pull requests, `removals` the
+    sections with an open `retire-guidance/` pull request."""
+    if any(p["state"] == "open" and p["section"] != section for p in prs) \
+            or any(r != section for r in removals):
+        return "another guidance-loop pull request is open in _agent-guidance"
+    if any(r["outcome"] == "pending" and r["section"] != section for r in records):
+        return "another guidance-improve attempt is in flight"
+    if section in removals:
+        return "a removal pull request for it is open in _agent-guidance"
     return None
 
 
@@ -550,6 +603,10 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append(f"{info['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
         if info["verdict"] in ("retire", "retire-pending"):
             reasons.append(f"owned by retirement ({info['verdict']})")
+        if info.get("row_ok") is False:
+            reasons.append("its eval-coverage.yml row is skipped or missing")
+        if not reasons and info.get("pause"):
+            reasons.append(info["pause"])
         gstatus[section] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
                             "fixtures": info["fixtures"]}
         candidates.append({"subject": "guidance", "name": section,
@@ -581,16 +638,35 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "band": "improve", "value": v,
                           "order": (v is None, -(v or 0.0), c["name"])})
     work.sort(key=lambda w: (-weights.get(w["skill"], 1.0), -(w["headroom"] or 0.0), w["skill"]))
-    # Guidance has no routine fire mode yet: an eligible section is a work item.
-    guidance_work = []
-    for section, info, headroom, reasons in gitems:
+    # An eligible section is a guidance-improve fire, at most one per plan
+    # (`guidance_lane`: a second open guidance edit would conflict), the
+    # highest value first; a work item only when the fire workflow's section
+    # pattern refuses its id.
+    guidance_work, fired = [], None
+    for section, info, headroom, reasons in sorted(
+            gitems, key=lambda g: (value[("guidance", g[0])] is None,
+                                   -(value[("guidance", g[0])] or 0.0), g[0])):
         v = value[("guidance", section)]
-        if not reasons:
+        if not reasons and not outcomes_mod.SECTION_RE.fullmatch(section):
             guidance_work.append({
                 "kind": "guidance-improve", "change_type": "guidance-edit",
                 "section": section, "fixtures": info["fixtures"], "headroom": headroom,
                 "value": v, "route": GUIDANCE_IMPROVE_ROUTE})
-        elif headroom is not None and info["verdict"] not in ("retire", "retire-pending"):
+        elif not reasons and fired is not None:
+            gstatus[section]["deferred"] = (f"one guidance-improve fire per plan; "
+                                            f"{fired} ranks higher")
+        elif not reasons:
+            fired = section
+            fires.append({"mode": "guidance-improve", "arms": "", "fixture": "", "model": "",
+                          "skill": "", "section": section,
+                          "holdout": info.get("holdout_fixture", ""),
+                          "cost": ctx["improve_charge"], "change_type": "guidance-edit",
+                          "band": "improve", "value": v,
+                          "order": (v is None, -(v or 0.0), section)})
+        elif headroom is not None and info["verdict"] not in ("retire", "retire-pending") \
+                and (headroom < MIN_GAIN or info["fixtures"] < MIN_IMPROVE_FIXTURES):
+            # A paused section, or one whose manifest row is skipped, needs
+            # no fixture work; its reason is in `gstatus`.
             kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
             guidance_work.append({
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,
@@ -722,11 +798,12 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     bands["bare"].extend(bare_items(ctx))
     chosen = allocate(bands, ctx["room"], max_fires)
     # Improve fires last: a long improve run in flight never holds up evals.
-    chosen.sort(key=lambda i: i["mode"] == "improve")
+    chosen.sort(key=lambda i: i["mode"] in IMPROVE_MODES)
     fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
               "fixture": i["fixture"],
               "eval_key": i["fixture"][len("evals/"):] if i["fixture"] else "",
-              "model": i["model"], "skill": i["skill"], "holdout": i["holdout"],
+              "model": i["model"], "skill": i["skill"], "section": i.get("section") or "",
+              "holdout": i["holdout"],
               "change_type": i["change_type"] or "measure", "cost": i["cost"],
               "value": i.get("value")}
              for slot, i in enumerate(chosen)]
@@ -738,11 +815,15 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
             "hook_candidates": hooks,
-            # An eval leg sends no skill: the fire workflow refuses one.
+            # An eval leg sends no skill and no section, and only a
+            # guidance-improve leg a section: the fire workflow refuses them
+            # in any other mode.
             "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "arms",
                                                          "fixture", "eval_key", "model",
                                                          "holdout")},
-                                    "skill": f["skill"] if f["mode"] == "improve" else ""}
+                                    "skill": f["skill"] if f["mode"] == "improve" else "",
+                                    "section": f["section"] if f["mode"] == "guidance-improve"
+                                    else ""}
                                    for f in fires]}}
 
 
@@ -960,14 +1041,23 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
 
 
 def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
-                      guidance_dir: Path | None) -> dict:
+                      guidance_dir: Path | None, records: list = (), prs: list = (),
+                      removals: list = (), on_hold: list = (),
+                      now: datetime | None = None) -> dict:
     """Per guidance section with fixtures that declare the `full` ablation
     arm (scripts/propose_guidance_edit.py's own listing): what improve
-    eligibility needs, {fixtures, holdout, verdict, evidence}. The holdout is
-    the last fixture in name order, as the proposer picks it, and only when
-    there are MIN_IMPROVE_FIXTURES; the evidence is `train_evidence` over the
-    other fixtures' pooled in-situ `full` arm runs. {} without `guidance_dir`
-    (a section's extent, hence its cells, needs the checkout)."""
+    eligibility needs, {fixtures, holdout, holdout_fixture, verdict,
+    evidence, row_ok, pause}. The holdout is the last fixture in name order,
+    as the proposer picks it, and only when there are MIN_IMPROVE_FIXTURES:
+    `holdout` its directory name (the cells' key), `holdout_fixture` its key
+    relative to evals/ (what the fire sends). The evidence is
+    `train_evidence` over the other fixtures' pooled in-situ `full` arm
+    runs; `row_ok` whether the proposer's `load_row` accepts the section's
+    manifest row; `pause` rule C (`pause` keyed by section, then
+    `guidance_lane`) over the guidance-improve `records`, the
+    `eval-guidance-improve/` `prs` and the open `removals`. {} without
+    `guidance_dir` (a section's extent, hence its cells, needs the
+    checkout)."""
     root = evals_dir / "guidance"
     if guidance_dir is None or not root.is_dir() or root.is_symlink():
         return {}
@@ -976,6 +1066,8 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
     import propose_guidance_edit as proposer
     index = compute_gates.build_index(tree, evals_dir, as_of)
     runs = [r for r in index["guidance_runs"] if r.get("pair") == "in_situ"]
+    now = now or datetime.now(timezone.utc)
+    roster_changed = _git_time(evals_dir.parent, "evals/roster.yml")
     out = {}
     for directory in sorted(p for p in root.iterdir()
                             if p.is_dir() and not p.is_symlink() and not p.name.startswith("_")):
@@ -987,15 +1079,30 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         if not found:
             continue
         names = [Path(f).name for f in found]
-        holdout = names[-1] if len(names) >= MIN_IMPROVE_FIXTURES else ""
+        enough = len(names) >= MIN_IMPROVE_FIXTURES
+        holdout = names[-1] if enough else ""
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
                                  compute_gates.expected_guidance(evals_dir, section,
                                                                  guidance_dir))
+        try:
+            row = proposer.load_row(guidance_dir, section)
+        except proposer.Refusal:
+            row = None
+        changes = [t for t in (roster_changed,
+                               _git_time(evals_dir.parent, f"evals/guidance/{section}"),
+                               _git_time(guidance_dir, row["file"]) if row else None) if t]
         out[section] = {
             "fixtures": len(found), "holdout": holdout,
+            "holdout_fixture": found[-1] if enough else "",
             "verdict": (gates_doc.get("guidance") or {}).get(section, {}).get(
                 "verdict", "insufficient"),
-            "evidence": train_evidence(cells, [n for n in names if n != holdout])}
+            "evidence": train_evidence(cells, [n for n in names if n != holdout]),
+            "row_ok": row is not None,
+            "pause": pause(section, list(records), list(prs), list(on_hold), now,
+                           max(changes) if changes else None,
+                           lambda moment, cells=cells: with_run_after(cells, moment),
+                           key="section")
+            or guidance_lane(section, list(records), list(prs), list(removals))}
     return out
 
 
@@ -1005,22 +1112,32 @@ def fetch_evidence(token: str, now: datetime) -> dict:
     since = now - STOP_FOR - timedelta(days=30)
     fire_runs = outcomes_mod.fetch_fire_runs(SELF_REPO, token, since)
     branches = outcomes_mod.fetch_improve_branches(SELF_REPO, token)
-    pulls = []
-    for page in range(1, outcomes_mod.MAX_PAGES + 1):
-        rows = get(f"/repos/{REGISTRY_REPO}/pulls?state=all&per_page=100&page={page}", token)
-        if not isinstance(rows, list):
-            raise outcomes_mod.EvidenceError("the pulls API answered without a list")
-        pulls.extend(rows)
-        if len(rows) < 100:
-            break
-    on_hold = []
-    for repo in (SELF_REPO, REGISTRY_REPO):
+    guidance_branches = outcomes_mod.fetch_improve_branches(SELF_REPO, token,
+                                                            mode="guidance-improve")
+
+    def pulls_of(repo: str) -> list:
+        pulls = []
+        for page in range(1, outcomes_mod.MAX_PAGES + 1):
+            rows = get(f"/repos/{repo}/pulls?state=all&per_page=100&page={page}", token)
+            if not isinstance(rows, list):
+                raise outcomes_mod.EvidenceError("the pulls API answered without a list")
+            pulls.extend(rows)
+            if len(rows) < 100:
+                break
+        return pulls
+
+    def on_hold_of(repo: str) -> list:
         rows = get(f"/repos/{repo}/issues?state=open&labels=on-hold&per_page=100", token)
         if not isinstance(rows, list):
             raise outcomes_mod.EvidenceError("the issues API answered without a list")
-        on_hold.extend(r.get("title") for r in rows if isinstance(r, dict))
+        return [r.get("title") for r in rows if isinstance(r, dict)]
+    own = on_hold_of(SELF_REPO)
     return {"fire_runs": fire_runs, "improve_branches": branches,
-            "registry_prs": pulls, "on_hold": on_hold}
+            "registry_prs": pulls_of(REGISTRY_REPO),
+            "on_hold": own + on_hold_of(REGISTRY_REPO),
+            "guidance_branches": guidance_branches,
+            "guidance_prs": pulls_of(GUIDANCE_REPO),
+            "guidance_on_hold": own + on_hold_of(GUIDANCE_REPO)}
 
 
 def registry_prs(rows: list) -> tuple:
@@ -1040,6 +1157,31 @@ def registry_prs(rows: list) -> tuple:
                     removal.add(skill)
             else:
                 improve.append({"skill": skill, "state": row.get("state"),
+                                "created_at": row.get("created_at"),
+                                "closed_at": row.get("closed_at"),
+                                "merged_at": row.get("merged_at")})
+    return improve, sorted(removal)
+
+
+def guidance_prs(rows: list) -> tuple:
+    """(guidance improve PRs as {section, state, created_at, closed_at,
+    merged_at}, sections with an open removal PR) from _agent-guidance's
+    pulls API rows: `eval-guidance-improve/<section>` and
+    `retire-guidance/<section>` heads."""
+    improve, removal = [], set()
+    for row in rows:
+        head = (row.get("head") or {}).get("ref") if isinstance(row, dict) else None
+        if not isinstance(head, str):
+            continue
+        for prefix in (GUIDANCE_IMPROVE_PREFIX, GUIDANCE_REMOVAL_PREFIX):
+            section = head[len(prefix):] if head.startswith(prefix) else None
+            if section is None or not outcomes_mod.SECTION_RE.fullmatch(section):
+                continue
+            if prefix == GUIDANCE_REMOVAL_PREFIX:
+                if row.get("state") == "open":
+                    removal.add(section)
+            else:
+                improve.append({"section": section, "state": row.get("state"),
                                 "created_at": row.get("created_at"),
                                 "closed_at": row.get("closed_at"),
                                 "merged_at": row.get("merged_at")})
@@ -1138,6 +1280,10 @@ def gather(args, now: datetime) -> dict:
         evidence = fetch_evidence(os.environ.get("GH_TOKEN", ""), now)
     records = outcomes_mod.outcomes(evidence["fire_runs"], evidence["improve_branches"], now)
     prs, removal = registry_prs(evidence["registry_prs"])
+    grecords = outcomes_mod.outcomes(evidence["fire_runs"],
+                                     evidence.get("guidance_branches", []), now,
+                                     mode="guidance-improve")
+    gprs, gremoval = guidance_prs(evidence.get("guidance_prs", []))
     since = guard.window_start(now)
     state = guard.account(args.results_tree, limits, now,
                           _fire_pair(evidence["fire_runs"], now, since),
@@ -1160,7 +1306,8 @@ def gather(args, now: datetime) -> dict:
             "skills": skills,
             "guidance": guidance_contexts(evals_dir, args.results_tree,
                                           compute_gates.parse_as_of(args.as_of), gates_doc,
-                                          args.guidance),
+                                          args.guidance, grecords, gprs, gremoval,
+                                          evidence.get("guidance_on_hold", []), now),
             "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
@@ -1184,7 +1331,8 @@ def summary_lines(plan: dict) -> list:
     lines = [f"### Weekly plan: {len(plan['fires'])} fire(s), room "
              f"{plan['room'] * 100:.1f} points", ""]
     for fire in plan["fires"]:
-        target = fire["fixture"] or f"{fire['skill']} (holdout {fire['holdout']})"
+        target = fire["fixture"] or (f"{fire['skill'] or fire.get('section', '')} "
+                                     f"(holdout {fire['holdout']})")
         mode = fire["mode"] + (" bare" if fire.get("arms") == "bare" else "")
         lines.append(f"- {fire['band']}: {mode} {target} {fire['model']}".rstrip()
                      + f", {fire['cost'] * 100:.2f} points")
@@ -1218,13 +1366,20 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     """Refuse a matrix leg that is not a fire this repository would plan:
     eval mode on a scheduled, committed fixture and a roster arm, its arms
     both, or bare on a fixture that runs in place; improve mode on a skill
-    improve_gate.py fire-check accepts, with a holdout and no arms."""
+    improve_gate.py fire-check accepts, with a holdout and no arms;
+    guidance-improve mode on a section guidance_improve_gate.py fire-check
+    accepts, with its holdout fixture key and no arms. Only a
+    guidance-improve leg carries a section."""
+    import guidance_improve_gate
     import improve_gate
     import roster_arm
     mode = env.get("MODE", "")
     fixture, key, model = env.get("FIXTURE", ""), env.get("EVAL_KEY", ""), env.get("MODEL", "")
     skill, holdout = env.get("SKILL", ""), env.get("HOLDOUT", "")
+    section = env.get("SECTION", "")
     arms = env.get("ARMS", "")
+    if section and mode != "guidance-improve":
+        raise PlanError("only a guidance-improve leg carries a section")
     if mode == "eval":
         committed = schedule.committed_fixtures(root)
         scheduled = schedule.scheduled_fixtures(root / "evals" / "scheduled.yml", committed)
@@ -1243,8 +1398,17 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
             improve_gate.fire_check(skill, holdout)
         except improve_gate.Rejected:
             raise PlanError("the improve leg is refused by the fixture check") from None
+    elif mode == "guidance-improve":
+        if fixture or key or model or arms or skill \
+                or not outcomes_mod.SECTION_RE.fullmatch(section) \
+                or not GUIDANCE_FIXTURE_RE.fullmatch(holdout):
+            raise PlanError("the guidance-improve leg is malformed")
+        try:
+            guidance_improve_gate.fire_check(section, holdout, evals_dir=root / "evals")
+        except guidance_improve_gate.Rejected:
+            raise PlanError("the guidance-improve leg is refused by the fixture check") from None
     else:
-        raise PlanError("the leg's mode is not eval or improve")
+        raise PlanError("the leg's mode is not eval, improve or guidance-improve")
 
 
 def in_flight(runs: list, now: datetime) -> int:
@@ -1260,7 +1424,7 @@ def in_flight(runs: list, now: datetime) -> int:
         if started is None or run.get("conclusion") != "success":
             continue
         title = outcomes_mod.parse_title(run.get("display_title"))
-        flight = IMPROVE_FLIGHT if title and title["mode"] == "improve" else EVAL_FLIGHT
+        flight = IMPROVE_FLIGHT if title and title["mode"] in IMPROVE_MODES else EVAL_FLIGHT
         if now - started < flight:
             count += 1
     return count

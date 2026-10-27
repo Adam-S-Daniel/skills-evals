@@ -7,7 +7,8 @@ routines fire API. What is pinned here:
 
   * it triggers on `workflow_dispatch` only (no schedule: #71's gate; no
     pull_request: it would have to be a required check), with exactly the
-    inputs mode, candidate, fixture, skill, holdout, model, arms and trials
+    inputs mode, candidate, fixture, skill, holdout, section, model, arms and
+    trials
     (`model`: test_issue_68_model_input.py), and `permissions: contents: read`
     plus `actions: read` for the weekly allowance guard (#68; the guard
     itself is test_issue_68_allowance_guard.py's);
@@ -45,7 +46,14 @@ routines fire API. What is pinned here:
     exactly `mode`, `run_id`, `candidate` and `issue_snapshot` in scaffold
     mode, or exactly
     `run_id`, `mode`, `skill`, `trials` and `holdout` (null when empty) in
-    improve mode; it never prints the response body, on success or failure.
+    improve mode, or `run_id`, `mode`, `section`, `trials` and `holdout` in
+    guidance-improve mode; it never prints the response body, on success or
+    failure;
+  * guidance-improve mode (ADR 0005, "Routine guidance improve mode
+    addendum"): `section` must match `^[a-z0-9][a-z0-9-]{0,63}$` (so no
+    leading `_`) and pass `guidance_improve_gate.py fire-check` (at least the
+    proposer's MIN_FIXTURES full-arm fixtures; `holdout` empty or one of
+    their keys), and must be empty in every other mode.
 
 The workflow is parsed with PyYAML, never scanned line by line. Discovered
 and run by test/run_tests.py; also runnable on its own with
@@ -85,6 +93,10 @@ CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 SKILL = "writing-adrs"
 HOLDOUT = "supersede"
 PROPOSAL = "proposals/2026-10-26/example-skill__new-skill.json"
+# The committed guidance section with the proposer's minimum of full-arm
+# fixtures, and one of them as a holdout key.
+SECTION = "anything-you-name-gets-its-link"
+GHOLDOUT = "guidance/anything-you-name-gets-its-link/handoff"
 SKILL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # The miner key pattern the routine re-checks (routine-delta.md, Payload).
 CANDIDATE_RE = re.compile(r"^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$")
@@ -144,10 +156,11 @@ class WorkflowShapeTests(unittest.TestCase):
         inputs = on["workflow_dispatch"]["inputs"]
         self.assertEqual(set(inputs),
                          {"mode", "candidate", "fixture", "skill", "holdout",
-                          "model", "proposal", "hook_declined", "arms", "trials"})
+                          "section", "model", "proposal", "hook_declined", "arms",
+                          "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
-                         ["eval", "scaffold", "improve", "draft"])
+                         ["eval", "scaffold", "improve", "guidance-improve", "draft"])
         # Draft mode only: the proposal path, and whether the agent-checks
         # lane declined the subject's hook proposal (a choice, so a string
         # in the event file like every other input).
@@ -163,8 +176,9 @@ class WorkflowShapeTests(unittest.TestCase):
         # validation step does. Likewise `fixture`, required in eval mode only.
         self.assertIs(inputs["candidate"]["required"], False)
         self.assertIs(inputs["fixture"]["required"], False)
-        # Improve mode only; `holdout` may stay empty even there.
-        for name in ("skill", "holdout"):
+        # Improve mode only (`section` guidance-improve mode only); `holdout`
+        # may stay empty even there.
+        for name in ("skill", "holdout", "section"):
             self.assertEqual(inputs[name]["type"], "string")
             self.assertIs(inputs[name]["required"], False)
             self.assertNotIn("default", inputs[name])
@@ -733,6 +747,73 @@ class ValidateStepTests(unittest.TestCase):
                 proc, _ = self.run_step({**inputs, "arms": "both", "trials": "1"})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    def test_accepts_a_guidance_improve_run(self):
+        # The one committed section with the proposer's four full-arm
+        # fixtures; holdout is a fixture key relative to evals/.
+        for holdout in (GHOLDOUT, ""):
+            with self.subTest(holdout=holdout):
+                proc, values = self.run_step(
+                    {"mode": "guidance-improve", "section": SECTION,
+                     "holdout": holdout, "arms": "both", "trials": "3"})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(values["mode"], "guidance-improve")
+                self.assertEqual(values["section"], SECTION)
+                self.assertEqual(values["holdout"], holdout)
+                self.assertEqual(values["trials"], "3")
+                self.assertEqual((values["fixture"], values["candidate"],
+                                  values["skill"]), ("", "", ""))
+                self.assertRegex(values["run_id"], RUN_ID)
+
+    def test_refuses_bad_guidance_improve_inputs_without_echoing_them(self):
+        good = {"mode": "guidance-improve", "section": SECTION, "holdout": "",
+                "arms": "both", "trials": "3"}
+        self._refuse_all(good, {
+            "missing_section": {"section": None},
+            "empty_section": {"section": ""},
+            "leading_underscore": {"section": "_delivery"},
+            "upper_case": {"section": "Anything-You-Name"},
+            "leading_dash": {"section": "-anything"},
+            "dot": {"section": "anything.you"},
+            "slash": {"section": "guidance/anything"},
+            "dotdot": {"section": ".."},
+            "too_long": {"section": "a" * 65},
+            "subst": {"section": "$(id)"},
+            "space": {"section": "anything you"},
+            "non_ascii": {"section": "anything-you-nam\u00e9"},
+        }, expect="is not a guidance section id")
+        self._refuse_all(good, {
+            "skill_given": {"skill": SKILL},
+        }, expect="'skill' must be empty in guidance-improve mode")
+        self._refuse_all(good, {
+            "fixture_given": {"fixture": FIXTURE},
+            "candidate_given": {"candidate": CANDIDATE},
+        })
+        self._refuse_all(good, {
+            "holdout_bare_name": {"holdout": "handoff"},
+            "holdout_with_evals": {"holdout": "evals/" + GHOLDOUT},
+            "holdout_dotdot": {"holdout": "guidance/../x"},
+            "holdout_subst": {"holdout": "guidance/$(id)"},
+        }, expect="is not a guidance fixture key")
+        # Well-shaped, but the proposer would refuse: too few full-arm
+        # fixtures, or a holdout of another section.
+        self._refuse_all(good, {
+            "too_few_fixtures": {"section": "two-setup-gaps"},
+            "no_such_section": {"section": "no-such-section-xyz"},
+            "holdout_of_another_section": {
+                "holdout": "guidance/two-setup-gaps/no-such-fixture"},
+        }, expect="refused by the guidance proposer's fixture check")
+
+    def test_refuses_a_section_outside_guidance_improve_mode(self):
+        cases = (({"mode": "eval", "fixture": FIXTURE}, ),
+                 ({"mode": "improve", "skill": SKILL}, ),
+                 ({"mode": "scaffold", "candidate": CANDIDATE}, ))
+        for (base,) in cases:
+            with self.subTest(mode=base["mode"]):
+                self._refuse_all({**base, "arms": "both", "trials": "1"},
+                                 {"section_given": {"section": SECTION}},
+                                 expect="'section' must be empty unless the mode is "
+                                        "guidance-improve")
+
     def _refuse_all(self, good, cases, expect=None, forbid=None):
         for label, override in cases.items():
             with self.subTest(case=label):
@@ -934,7 +1015,7 @@ class FireStepTests(unittest.TestCase):
             "EVAL_ROUTINE_FIRE_BEARER": self.BEARER,
             "RUN_ID": "20261006T120000Z-a1b2c3",
             "FIXTURE": FIXTURE, "ARMS": "both", "TRIALS": "2",
-            "MODE": "eval", "CANDIDATE": "", "SKILL": "", "HOLDOUT": "",
+            "MODE": "eval", "CANDIDATE": "", "SKILL": "", "HOLDOUT": "", "SECTION": "",
             "ISSUE_SNAPSHOT_FILE": str(self.snapshot),
             "GITHUB_STEP_SUMMARY": str(self.summary),
             "FAKE_CURL_LOG": str(self.log),
@@ -1178,6 +1259,39 @@ class FireStepTests(unittest.TestCase):
                     self.assertIn(f"`{HOLDOUT}`", summary)
                 else:
                     self.assertIn("Holdout: none", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_guidance_improve_sends_exactly_five_keys(self):
+        # FIXTURE, ARMS, CANDIDATE and SKILL hold junk: guidance-improve mode
+        # sends none of them. `holdout` is null when empty, never "".
+        for holdout, sent in ((GHOLDOUT, GHOLDOUT), ("", None)):
+            with self.subTest(holdout=holdout):
+                proc = self.run_step(
+                    "200", self.ok_body(), MODE="guidance-improve", SECTION=SECTION,
+                    TRIALS="3", HOLDOUT=holdout, FIXTURE="FIXTURE-SENTINEL",
+                    ARMS="ARMS-SENTINEL", CANDIDATE="CANDIDATE-SENTINEL",
+                    SKILL="SKILL-SENTINEL")
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                argv = json.loads((self.log / "argv.json").read_text())
+                self.assertFalse(any(self.BEARER in a for a in argv))
+                body = json.loads(argv[argv.index("--data-binary") + 1])
+                payload = json.loads(body["text"])
+                self.assertEqual(list(payload),
+                                 ["run_id", "mode", "section", "trials", "holdout"])
+                self.assertEqual(payload, {
+                    "run_id": "20261006T120000Z-a1b2c3", "mode": "guidance-improve",
+                    "section": SECTION, "trials": 3, "holdout": sent})
+                self.assertIs(type(payload["trials"]), int)
+                out = proc.stdout + proc.stderr
+                self.assertNotIn("SENTINEL", out)
+                self.assertNotIn(self.BEARER, out)
+                summary = self.summary.read_text()
+                self.assertNotIn("SENTINEL", summary)
+                self.assertIn("guidance-improve mode", summary)
+                self.assertIn(f"`{SECTION}`", summary)
+                self.assertIn("claude/eval-guidance-improve-20261006T120000Z-a1b2c3",
+                              summary)
+                self.assertIn("routine-guidance-improve-gate.yml", summary)
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_values_are_json_encoded_by_jq(self):

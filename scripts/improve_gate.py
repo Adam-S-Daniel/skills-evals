@@ -289,11 +289,24 @@ def check_patch(text: str, where: str, skill_md: str) -> None:
     lines = text[:-1].split("\n")
     if lines[:2] != [f"--- a/{skill_md}", f"+++ b/{skill_md}"]:
         raise Rejected(f"{where}: must change {skill_md!r} and nothing else")
-    i, changed, hunks = 2, 0, 0
+    i, hunks, changed = check_hunks(lines, 2, where)
+    if i < len(lines):
+        raise Rejected(f"{where}: line {i + 1} is not a hunk header")
+    if not hunks or not changed:
+        raise Rejected(f"{where}: changes nothing")
+
+
+def check_hunks(lines: list, i: int, where: str) -> tuple[int, int, int]:
+    """(index of the first line after them, hunks, changed lines) of the
+    unified-diff hunks starting at `lines[i]`, every hunk's line counts
+    agreeing with its header. Stops at the first line that is not a hunk
+    header; scripts/guidance_improve_gate.py reads a multi-file patch with
+    it."""
+    changed = hunks = 0
     while i < len(lines):
         header = HUNK_RE.fullmatch(lines[i])
         if not header:
-            raise Rejected(f"{where}: line {i + 1} is not a hunk header")
+            break
         old = int(header.group(2) if header.group(2) is not None else 1)
         new = int(header.group(4) if header.group(4) is not None else 1)
         hunks += 1
@@ -313,8 +326,7 @@ def check_patch(text: str, where: str, skill_md: str) -> None:
                 raise Rejected(f"{where}: line {i + 1} does not fit hunk "
                                f"{hunks}")
             i += 1
-    if not hunks or not changed:
-        raise Rejected(f"{where}: changes nothing")
+    return i, hunks, changed
 
 
 def closing_text(text: str) -> str:
@@ -327,6 +339,13 @@ def check_report(text: str, where: str, skill: str) -> None:
     if text.split("\n", 1)[0] != REPORT_TITLE.format(skill=skill):
         raise Rejected(f"{where}: does not open with the loop's title for "
                        "this skill")
+    check_body_text(text, where)
+
+
+def check_body_text(text: str, where: str) -> None:
+    """Refuse text that would act on GitHub as a pull-request body in
+    another repository: a closing keyword before an issue or pull request
+    reference, or an @mention."""
     stripped = closing_text(text)
     if CLOSING_RE.search(text) or CLOSING_RE.search(stripped) \
             or CLOSING_URL_RE.search(stripped):
