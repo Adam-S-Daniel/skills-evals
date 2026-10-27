@@ -1,24 +1,22 @@
 {
+  "fixture_readiness": {
+    "context_declared": 24,
+    "context_missing": 67,
+    "draft": 11,
+    "guidance_unproven": 0,
+    "paired_context_delivery_verified": false,
+    "total": 91
+  },
+  "generated_at": "2026-10-27T10:56:49Z",
   "include_private_names": false,
   "problems": [],
-  "publication": {
-    "as_of": "2026-10-26T15:22:53Z",
-    "guidance_revision": "08a095d7e1b03b4dfc659b7039932440c27058ed",
-    "public_registry_revisions": {
-      "adam-agentskills": "36f3c7c42998f4806e6d5a832fec09ac7cbcec31",
-      "adamdaniel.ai": "272bc957c042c191049a658315c0bce5280a3015",
-      "cms-platform": "a20903f83f567c11de8b50c0b517f99b75f14059"
-    },
-    "repository_revision": "287482febdeacdbf9cb215c7930a69235d1535da",
-    "run_id": "40347789182"
-  },
   "registries": [
     {
       "counts": {
-        "covered": 12,
+        "covered": 13,
         "gap": 0,
         "skipped": 8,
-        "total": 20
+        "total": 21
       },
       "layout": "plugins/*/skills/*/SKILL.md",
       "name": "adam-agentskills",
@@ -46,6 +44,14 @@
           "fixtures": 1,
           "reason": null,
           "registry": "adam-agentskills",
+          "skill": "ci-job-performance",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
           "skill": "debug-github-workflows",
           "status": "covered"
         },
@@ -67,7 +73,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "review-bash-ci-reliability",
@@ -75,7 +81,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "skills-doctor",
@@ -83,7 +89,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "vendor-release-impact-issues",
@@ -91,7 +97,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "workflow-path-audit",
@@ -185,8 +191,7 @@
           "skill": "rename-pdfs",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adam-agentskills"
+      ]
     },
     {
       "counts": {
@@ -304,8 +309,7 @@
           "skill": "test-canary",
           "status": "skipped"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/cms-platform"
+      ]
     },
     {
       "counts": {
@@ -327,8 +331,7 @@
           "skill": "embeddable-tool-pages",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai"
+      ]
     },
     {
       "counts": {
@@ -344,11 +347,13 @@
       "skills": []
     }
   ],
-  "schema": 1,
+  "schema": 2,
+  "status": "complete",
   "totals": {
-    "covered": 24,
+    "covered": 25,
     "gap": 0,
     "skipped": 11,
-    "total": 35
-  }
+    "total": 36
+  },
+  "unresolved": []
 }

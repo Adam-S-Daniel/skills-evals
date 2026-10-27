@@ -2,11 +2,11 @@
 
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
-| adam-agentskills | 20 | 12 | 8 | 0 |
+| adam-agentskills | 21 | 13 | 8 | 0 |
 | cms-platform | 13 | 10 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 1 | 1 | 0 | 0 |
-| **Total** | 35 | 24 | 11 | 0 |
+| **Total** | 36 | 25 | 11 | 0 |
 
 ## adam-agentskills
 
@@ -14,13 +14,14 @@
 |---|---|---|---:|---|
 | adam-anything-anywhere | finding-unknowns | covered | 1 |  |
 | adam-anything-anywhere | writing-adrs | covered | 4 |  |
-| adam-coding-anywhere | debug-github-workflows | covered | 1 |  |
+| adam-coding-anywhere | ci-job-performance | covered | 1 |  |
+| adam-coding-anywhere | debug-github-workflows | covered | 4 |  |
 | adam-coding-anywhere | disarm-inherited-reach | covered | 1 |  |
 | adam-coding-anywhere | github-actions-repo-settings | covered | 1 |  |
-| adam-coding-anywhere | review-bash-ci-reliability | covered | 1 |  |
-| adam-coding-anywhere | skills-doctor | covered | 1 |  |
-| adam-coding-anywhere | vendor-release-impact-issues | covered | 1 |  |
-| adam-coding-anywhere | workflow-path-audit | covered | 1 |  |
+| adam-coding-anywhere | review-bash-ci-reliability | covered | 4 |  |
+| adam-coding-anywhere | skills-doctor | covered | 4 |  |
+| adam-coding-anywhere | vendor-release-impact-issues | covered | 4 |  |
+| adam-coding-anywhere | workflow-path-audit | covered | 4 |  |
 | adam-coding-local | launch-top-level-claude-session | skipped | 0 | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
 | adam-coding-local | migrate-claude-memory | skipped | 0 | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
 | adam-coding-local | sync-cc-settings-between-wsl-and-windows | skipped | 0 | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
@@ -67,6 +68,6 @@ None.
 
 ## Fixture metadata readiness
 
-- Fixtures: 43; draft: 11.
-- Context declared: 18; missing: 25; guidance unproven: 0.
+- Fixtures: 91; draft: 11.
+- Context declared: 24; missing: 67; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
