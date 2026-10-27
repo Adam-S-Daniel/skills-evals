@@ -68,6 +68,9 @@ already inside that snapshot's account-wide `utilization`: those "covered"
 fires are held together at no more than that reading. The meter covers the
 whole account, so the bound overcounts, the safe direction. Fires not yet
 covered, and every fire when no snapshot is usable, keep the full charge.
+Only an ingested eval run brings a newer snapshot, so when those full
+charges leave no room for one, one eval fire may still go to bring it
+(`refresh`); without that the holds lasted the week (2026-10-27).
 
 Bare fires (ADR 0012, bare baseline addendum, 2026-10-27): `arms: bare`
 runs one arm of an in-place fixture. Nothing here is costed per arm: a fire
@@ -451,12 +454,19 @@ def account(tree: Path, limits: dict, now: datetime,
         min(covered * charge, used) if covered else 0.0)
     pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
                + improve_held)
+    # Finished (IMPROVE_MAX_RUN or more ago) but newer than the reading, so
+    # still held in full until an ingested run brings a newer snapshot.
+    finished = 0
+    if improve_started:
+        finished = min(improve_7d - covered, max(0, sum(
+            1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
     return {"spent": spent, "pending": pending, "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
             "improve_fires": improve_7d, "improve_charge": charge,
-            "improve_covered": covered}
+            "improve_covered": covered, "improve_finished": finished,
+            "improve_finished_held": finished * charge}
 
 
 def room(state: dict) -> float:
@@ -545,6 +555,9 @@ def describe(state: dict) -> str:
             line += (f"; {state['improve_covered']} of them finished before the "
                      f"account reading, so held at most at its "
                      f"{points(state['account_used'])} points")
+    if state.get("improve_finished"):
+        line += (f"; {state['improve_finished']} finished after it, held in full "
+                 f"until a newer reading")
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -558,7 +571,26 @@ def check(state: dict, mode: str = "eval") -> bool:
     `improve_charge`), stays within the cap."""
     if mode in IMPROVE_MODES:
         return room(state) + EPSILON >= state["improve_charge"]
-    return fits(state) >= 1
+    # Only an eval fire's ingested results carry a meter snapshot.
+    return fits(state) >= 1 or (mode == "eval" and refresh(state))
+
+
+def refresh(state: dict) -> bool:
+    """Whether one eval fire may go only to bring a newer meter snapshot.
+
+    Improve fires that finished after the newest snapshot keep their full
+    charge until an ingested run brings a newer one, and only eval fires
+    bring one. On 2026-10-27 two refused improve fires held 21 points that
+    way, which left 3.1 points of room against a 3.5-point eval reservation:
+    no fire could go, so no snapshot could come, for the rest of the week.
+    So an eval fire goes when it fits with those finished fires left out,
+    and no eval fire from the last `PENDING_FULL_HOLD` is still without
+    results. Its own reservation is held in full, and the in-run stop
+    still bounds it."""
+    if not state.get("improve_finished") or state.get("recent"):
+        return False
+    left = room(state) + state["improve_finished_held"] + EPSILON
+    return left >= state["reservation"]
 
 
 def _live_fires(now: datetime, since: datetime | None = None) -> tuple[int, int]:
@@ -665,6 +697,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     if not check(state, args.mode):
         print(REFUSAL)
         return 1
+    if args.mode not in IMPROVE_MODES and fits(state) < 1:
+        print("allowed as the one refresh fire: its results bring a newer account reading")
     return 0
 
 
