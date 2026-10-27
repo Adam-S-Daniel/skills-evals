@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-26T16:37:15Z",
+  "generated_at": "2026-10-27T16:37:15Z",
   "rows": [
     {
       "blocked": null,
@@ -252,6 +252,258 @@
       "sessions": 1,
       "surface": "local",
       "week": "2026-10-19"
+    },
+    {
+      "blocked": 0,
+      "invocations": 20,
+      "kind": "hook",
+      "name": "all",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 6,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 4,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 8,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 6,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 4,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 8,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 1,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/adamdaniel.ai",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/cms-platform",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 2,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
     }
   ],
   "schema": 1,
@@ -259,9 +511,16 @@
     {
       "from": "2026-09-07T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2488,
+      "sessions_scanned": 2506,
       "surface": "local",
-      "to": "2026-10-26T16:37:15Z"
+      "to": "2026-10-27T16:37:15Z"
+    },
+    {
+      "from": "2026-09-07T00:00:00Z",
+      "runs_scanned": 20,
+      "scope": "hooks",
+      "surface": "local",
+      "to": "2026-10-27T16:37:15Z"
     }
   ]
 }
