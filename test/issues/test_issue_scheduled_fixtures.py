@@ -46,7 +46,15 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/data-exposure-in-ci/dispatch-email-input",
             "evals/guidance/name-becomes-scanner-data/bundle-lock-name",
             "evals/guidance/fleet-spans-two-owners/skills-lock-census",
-            "evals/guidance/github-404-means-not-authorized/private-repo-404"]
+            "evals/guidance/github-404-means-not-authorized/private-repo-404",
+            "evals/guidance/test-that-can-signal-kills-every-session/stop-worker",
+            "evals/guidance/section-python/load-config",
+            "evals/guidance/dependency-updates/dependabot-cooldown",
+            "evals/guidance/agent-contribution-markers/open-pull-request",
+            "evals/guidance/security/search-query",
+            "evals/guidance/section-docker/node-service",
+            "evals/guidance/section-javascript/fetch-retry",
+            "evals/guidance/section-typescript/parse-event"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"

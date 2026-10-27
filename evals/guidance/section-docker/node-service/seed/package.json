@@ -1,0 +1,6 @@
+{
+  "name": "status-api",
+  "private": true,
+  "scripts": {"build": "node build.js", "start": "node dist/server.js"},
+  "dependencies": {}
+}

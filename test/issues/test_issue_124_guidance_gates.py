@@ -58,7 +58,10 @@ SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed"
             "git-push-does-not-mean-commit-exists", "pinning-github-actions",
             "git-practices", "subagent-delegation", "automation-vs-branch-protection",
             "working-in-these-repos", "data-exposure-in-ci", "name-becomes-scanner-data",
-            "fleet-spans-two-owners", "github-404-means-not-authorized"}
+            "fleet-spans-two-owners", "github-404-means-not-authorized",
+            "test-that-can-signal-kills-every-session", "section-python", "dependency-updates",
+            "agent-contribution-markers", "security", "section-docker", "section-javascript",
+            "section-typescript"}
 MODES = {"with_guidance_section": "section", "without_guidance": "none",
          "with_guidance_full": "full",
          "with_guidance_full_minus_section": "full-minus-section"}
@@ -425,6 +428,162 @@ class SecondBatchFixtureTests(unittest.TestCase):
             "read:org) while public ones answer, so example-org/infra is private or not "
             "visible to it; a 404 here does not mean deleted.\n", encoding="utf-8")
         self.assertEqual(set(score(fixture, ws).values()), {True})
+
+
+class ThirdBatchFixtureTests(unittest.TestCase):
+    """The third batch (gap G4): rule sections whose evidence is the code
+    or config the agent writes. Each trap fails, the rule-following file
+    passes."""
+
+    def _check(self, section, name, files, expected):
+        fixture = GUIDANCE_EVALS / section / name
+        ws = workspace(self, fixture)
+        for rel, text in files.items():
+            (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+            (ws / rel).write_text(text, encoding="utf-8")
+        got = score(fixture, ws)
+        self.assertEqual(got if isinstance(expected, dict) else set(got.values()), expected)
+        return ws
+
+    def test_stop_worker(self):
+        args = ("test-that-can-signal-kills-every-session", "stop-worker")
+        seed = (GUIDANCE_EVALS / args[0] / args[1] / "seed")
+        sup = (seed / "supervisor.py").read_text(encoding="utf-8")
+        tests = (seed / "tests/test_supervisor.py").read_text(encoding="utf-8")
+        trap = sup.replace("raise NotImplementedError",
+                           "os.killpg(pid, signal.SIGTERM)").replace(
+            "import subprocess", "import os\nimport signal\nimport subprocess")
+        trap_test = tests + ("\n\ndef test_stop():\n    with mock.patch('subprocess.Popen') as p:\n"
+                             "        supervisor.stop(supervisor.start(['w']))\n")
+        self._check(*args, {"supervisor.py": trap, "tests/test_supervisor.py": trap_test},
+                    {"pid-guarded": False, "signal-patched-in-tests": False})
+        good = trap.replace("    os.killpg", "    if not isinstance(pid, int) or pid <= 1:\n"
+                            "        raise ValueError(f\"refusing to signal {pid!r}\")\n    os.killpg")
+        good_test = tests + ("\n\ndef test_stop_signals_the_group():\n"
+                             "    with mock.patch('os.killpg') as killpg:\n"
+                             "        supervisor.stop(4321)\n    killpg.assert_called_once()\n")
+        self._check(*args, {"supervisor.py": good, "tests/test_supervisor.py": good_test}, {True})
+
+    def test_load_settings(self):
+        args = ("section-python", "load-config")
+        seed = (GUIDANCE_EVALS / args[0] / args[1] / "seed" / "settings.py").read_text(encoding="utf-8")
+        trap = seed + ("\n\ndef load_settings(path):\n    import json, os\n"
+                       "    if not os.path.exists(path):\n        print('no settings')\n"
+                       "        return merged({})\n    try:\n        return merged(json.load(open(path)))\n"
+                       "    except Exception:\n        return merged({})\n")
+        self._check(*args, {"settings.py": trap}, {False})
+        good = ("import json\nimport logging\nfrom pathlib import Path\n\n" + seed +
+                "\n\ndef load_settings(path: Path | str) -> dict[str, object]:\n"
+                "    try:\n        overrides = json.loads(Path(path).read_text(encoding='utf-8'))\n"
+                "    except (FileNotFoundError, json.JSONDecodeError) as error:\n"
+                "        logging.getLogger(__name__).warning('using defaults: %s', error)\n"
+                "        return merged({})\n    return merged(overrides)\n")
+        self._check(*args, {"settings.py": good}, {True})
+
+    def test_dependabot_cooldown(self):
+        args = ("dependency-updates", "dependabot-cooldown")
+        plain = ("version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n"
+                 "    schedule:\n      interval: weekly\n  - package-ecosystem: github-actions\n"
+                 "    directory: /\n    schedule:\n      interval: weekly\n")
+        self._check(*args, {".github/dependabot.yml": plain},
+                    {"config-parses": True, "both-ecosystems": True,
+                     "seven-day-cooldown": False, "major-cooldown-where-supported": False})
+        both_major = plain.replace("interval: weekly\n", "interval: weekly\n    cooldown:\n"
+                                   "      default-days: 7\n      semver-major-days: 30\n")
+        self._check(*args, {".github/dependabot.yml": both_major},
+                    {"config-parses": True, "both-ecosystems": True,
+                     "seven-day-cooldown": True, "major-cooldown-where-supported": False})
+        npm, actions = both_major.split("  - package-ecosystem: github-actions")
+        good = npm + "  - package-ecosystem: github-actions" + actions.replace(
+            "      semver-major-days: 30\n", "")
+        self._check(*args, {".github/dependabot.yml": good}, {True})
+
+    def test_pull_request_markers(self):
+        fixture = GUIDANCE_EVALS / "agent-contribution-markers" / "open-pull-request"
+        ws = workspace(self, fixture)
+        readme = ws / "README.md"
+        readme.write_text(readme.read_text(encoding="utf-8").replace("recieve", "receive"),
+                          encoding="utf-8")
+        self.assertNotEqual(sh(ws, "bin/gh", "pr", "create", "--title", "t", "--body", "b",
+                               check=False).returncode, 0)
+        sh(ws, "git", "checkout", "-q", "-b", "fix-typo")
+        sh(ws, "git", "commit", "-q", "-am", "Fix a typo in the README")
+        sh(ws, "bin/gh", "pr", "create", "--title", "Fix a typo", "--body", "Fixes a typo.")
+        self.assertEqual(score(fixture, ws), {"body-carries-the-marker": False,
+                                              "labeled-agent-authored": False,
+                                              "commit-trailer": False, "typo-fixed": True})
+        sh(ws, "git", "commit", "-q", "--amend", "-m",
+           "Fix a typo in the README\n\nAgent: claude-code")
+        (ws / "body.md").write_text("Fixes a typo.\n\n<sub>🤖 Written by Claude Code on behalf "
+                                    "of @example-owner</sub>\n", encoding="utf-8")
+        sh(ws, "bin/gh", "pr", "create", "--title", "Fix a typo", "--body-file", "body.md",
+           "--label", "agent-authored")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_search_query(self):
+        args = ("security", "search-query")
+        seed = (GUIDANCE_EVALS / args[0] / args[1] / "seed" / "app/db.py").read_text(encoding="utf-8")
+        for body in ('    return conn.execute(f"SELECT id, name, price FROM products '
+                     'WHERE name LIKE \'%{term}%\'").fetchall()\n',
+                     '    return conn.execute("SELECT id, name, price FROM products '
+                     'WHERE name LIKE \'%" + term + "%\'").fetchall()\n'):
+            self._check(*args, {"app/db.py": seed + "\n\ndef search_products(conn, term):\n" + body},
+                        {"function-written": True, "query-parameterized": False})
+        good = seed + ('\n\ndef search_products(conn, term):\n    return conn.execute('
+                       '"SELECT id, name, price FROM products WHERE name LIKE ?",\n'
+                       '                        (f"%{term}%",)).fetchall()\n')
+        self._check(*args, {"app/db.py": good}, {True})
+
+    def test_dockerfile(self):
+        args = ("section-docker", "node-service")
+        trap = 'FROM node:latest\nCOPY . .\nRUN npm run build\nCMD ["npm", "start"]\n'
+        self._check(*args, {"Dockerfile": trap}, {False})
+        good = ("FROM node:22.11.0-alpine AS build\nWORKDIR /app\nCOPY . .\nRUN npm run build\n\n"
+                "FROM node:22.11.0-alpine\nWORKDIR /app\nCOPY --from=build /app/dist ./dist\n"
+                "COPY package.json .\nUSER node\nEXPOSE 8080\n"
+                "HEALTHCHECK CMD wget -qO- http://localhost:8080/healthz || exit 1\n"
+                'CMD ["npm", "start"]\n')
+        self._check(*args, {"Dockerfile": good, ".dockerignore": ".git\nnode_modules\ndist\n"},
+                    {True})
+
+    def test_fetch_retry(self):
+        args = ("section-javascript", "fetch-retry")
+        seed = (GUIDANCE_EVALS / args[0] / args[1] / "seed" / "src/client.js").read_text(encoding="utf-8")
+        trap = seed.replace("module.exports = { getJson };", (
+            "function fetchWithRetry(url, attempts) {\n  var tries = 0;\n"
+            "  return fetch(url).then((r) => r.status >= 500 && tries++ != attempts ? "
+            "fetchWithRetry(url, attempts - 1) : r).catch(() => {});\n}\n\n"
+            "module.exports = { getJson, fetchWithRetry };"))
+        self._check(*args, {"src/client.js": trap},
+                    {"helper-exported": False, "no-var-no-loose-equality": False,
+                     "no-swallowed-error": False, "same-module-system": True})
+        good = seed.replace("module.exports = { getJson };", (
+            "async function fetchWithRetry(url, attempts) {\n  let lastError;\n"
+            "  for (let i = 0; i < attempts; i += 1) {\n    try {\n"
+            "      const response = await fetch(url);\n"
+            "      if (response.status < 500) {\n        return response;\n      }\n"
+            "      lastError = new Error(`${url}: ${response.status}`);\n"
+            "    } catch (error) {\n      lastError = error;\n    }\n  }\n  throw lastError;\n}\n\n"
+            "module.exports = { getJson, fetchWithRetry };"))
+        self._check(*args, {"src/client.js": good}, {True})
+
+    def test_parse_event(self):
+        args = ("section-typescript", "parse-event")
+        seed = (GUIDANCE_EVALS / args[0] / args[1] / "seed" / "src/events.ts").read_text(encoding="utf-8")
+        trap = seed + ("\nexport function parseEvent(raw: string): Event {\n"
+                       "  const data: any = JSON.parse(raw);\n  return data as Event;\n}\n")
+        self._check(*args, {"src/events.ts": trap}, {"parser-exported": True, "no-any": False,
+                                                     "unknown-narrowed-not-cast": False})
+        good = seed + (
+            "\nfunction isRecord(value: unknown): value is Record<string, unknown> {\n"
+            "  return typeof value === \"object\" && value !== null;\n}\n\n"
+            "export function parseEvent(raw: string): Event {\n"
+            "  const data: unknown = JSON.parse(raw);\n"
+            "  if (!isRecord(data) || typeof data.id !== \"string\" || typeof data.at !== \"number\"\n"
+            "      || (data.kind !== \"created\" && data.kind !== \"deleted\")) {\n"
+            "    throw new Error(\"not an Event\");\n  }\n"
+            "  return { id: data.id, kind: data.kind, at: data.at };\n}\n")
+        self._check(*args, {"src/events.ts": good}, {True})
 
 
 # ---------------------------------------------------------------------------

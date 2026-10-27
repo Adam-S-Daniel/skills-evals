@@ -1,0 +1,72 @@
+
+# Guidance fixture: section-python / load-config
+#
+# The Python section's rules on one small function: type hints on the
+# signature, pathlib over os.path, a context manager or read_text for the
+# file, a specific exception rather than a bare `except:` or
+# `except Exception`, and logging rather than print for diagnostics.
+#
+# What the section should change: `load_settings` reads settings.json with
+# pathlib, catches only the missing-file and bad-JSON errors, and logs the
+# fallback. The prompt names none of these.
+
+subject: guidance
+section: section-python
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add load_settings(path) to settings.py: it reads a JSON file of overrides
+  and returns merged(overrides). If the file is missing or is not valid
+  JSON, report it and return the defaults.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: signature-typed
+    description: load_settings has a parameter annotation and a return annotation.
+    type: file_matches_excluding_comments
+    paths: ["settings.py"]
+    must_match: ["def load_settings\\(\\s*path\\s*:\\s*[^)]+\\)\\s*->\\s*[^:]+:"]
+  - id: specific-exceptions
+    description: No bare `except:` and no `except Exception`.
+    type: file_matches_excluding_comments
+    paths: ["settings.py"]
+    must_match: ["\\bexcept\\b"]
+    must_not_match: ["(?m)^\\s*except\\s*:", "\\bexcept\\s*\\(?\\s*(Base)?Exception\\b"]
+  - id: logging-not-print
+    description: The fallback is reported through logging, not print().
+    type: file_matches_excluding_comments
+    paths: ["settings.py"]
+    must_match: ["\\blogging\\b|\\blogger\\b|\\blog\\.(warning|error|info)\\("]
+    must_not_match: ["\\bprint\\("]
+  - id: pathlib-used
+    description: The file is opened through pathlib, not os.path.
+    type: file_matches_excluding_comments
+    paths: ["settings.py"]
+    must_match: ["\\bPath\\b"]
+    must_not_match: ["\\bos\\.path\\b"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Python rules — type hints, pathlib, read_text or a with-block, specific
+  exceptions (FileNotFoundError, json.JSONDecodeError), logging for the
+  fallback? Take 2 points off for each one missed.
+  (2) Behavior — does it return merged(overrides) for a good file and the
+  defaults for a missing or invalid one?
+  (3) Restraint — did the agent leave DEFAULTS and merged() alone?
