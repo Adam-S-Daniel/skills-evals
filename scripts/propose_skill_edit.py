@@ -25,6 +25,10 @@ WHAT IT DOES, in order:
     registry checkout: no `.git`, so nothing in them has a push path.
  4. BASELINE: `scripts/local_eval.py evals/<skill> --arm with_skill --trials N`
     against the first scratch copy.
+ 4b. EARLY STOP: a baseline train objective that leaves less than `--min-gain`
+    to gain, with a judge mean that cannot make it up (missing, or within
+    `--min-gain` of 10), is rejected here with a "no train headroom" record,
+    before any trigger, proposal or candidate call; add harder fixtures.
  5. TRIGGER HALF, from Anthropic's skill-creator plugin: its
     `scripts/run_loop.py` description-optimization loop (stratified 60/40
     train/held-out split of a should/should-not-trigger query set, 3 runs per
@@ -967,6 +971,31 @@ def group_metrics(per_fixture: dict, names: list[str]) -> dict:
                            if judged and len(judged) == len(rows) else None)}
 
 
+def no_headroom(b_train: dict, min_gain: float = DEFAULT_MIN_GAIN) -> str | None:
+    """Why no candidate could be accepted on this baseline, or None. Pure.
+
+    `decide` needs a train objective gain of `min_gain`, or at an equal
+    objective a judge gain of ten times it. A baseline whose objective leaves
+    less than `min_gain` to gain, and whose judge mean leaves less than that
+    on its ten-point scale, cannot be beaten, so measuring a proposal is
+    wasted. Errored or unscored train fixtures are left to `decide`'s
+    inconclusive path."""
+    rate = b_train["pass_rate"]
+    if b_train["errors"] or rate is None:
+        return None
+
+    def below(gap: float) -> bool:
+        return gap < min_gain and not math.isclose(
+            gap, min_gain, rel_tol=0, abs_tol=1e-12)
+
+    judge = b_train["judge_mean"]
+    if below(1 - rate) and (judge is None or below((10 - judge) / 10)):
+        return (f"no train headroom: baseline objective {rate:.3f} leaves less "
+                f"than the minimum gain {min_gain:g}, and the judge cannot "
+                "make it up; add harder fixtures instead")
+    return None
+
+
 def decide(baseline: dict, candidate: dict, train: list[str],
            validation: str, min_gain: float = DEFAULT_MIN_GAIN,
            holdout: str | None = None,
@@ -1312,6 +1341,15 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             print(f"refused: local_eval baseline exited {rc}; record: "
                   f"{stem.with_suffix('.json')}", file=sys.stderr)
             return EXIT_REFUSED
+
+        # Stop before any trigger, proposal or candidate call when the
+        # baseline leaves no room for the gain `decide` requires.
+        stuck = no_headroom(group_metrics(baseline, p["train"]), args.min_gain)
+        if stuck:
+            record.update(status="rejected", phase="baseline", reasons=[stuck])
+            write_record(stem, record)
+            print(f"rejected before proposal: {stuck}")
+            return EXIT_REJECTED
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
