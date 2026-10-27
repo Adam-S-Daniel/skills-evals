@@ -53,6 +53,15 @@ runs (`eval_fire_cost`, never more than one reservation each), or times the
 full reservation while nothing is measured. `check --mode improve` needs room
 for that charge before an improve fire goes.
 
+Bare fires (ADR 0012, bare baseline addendum, 2026-10-27): `arms: bare`
+runs one arm of an in-place fixture. Nothing here is costed per arm: a fire
+is one run, reserved at `per_run_cap + per_run_overrun`, the most the in-run
+stop lets one run_eval invocation spend whatever its arms, and an ingested
+run is charged its own measured delta. So a bare fire is held, checked and
+charged as one run, exactly as an eval fire of both arms, never as two.
+Its title (`Fire eval routine: eval bare <fixture> <model>`) is not an
+improve title, so it is never charged `improve_charge`.
+
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
 account has not used is released as its week ends. The newest account meter

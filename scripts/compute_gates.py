@@ -74,6 +74,18 @@ run"), the first by path: a run ingested under both `results/` and
 `routine-results/` counts once. The model is in the key because one routine
 run may stamp every model's arms with one `--timestamp`.
 
+BARE RUNS ARE REPORTED APART (ADR 0012 decision 3 and its 2026-10-27
+addendum). A bare run is the one isolation `without` arm the weekly plan
+fires once per (in-place fixture, roster model): a skill arm run whose
+summary does not say `pairing: in_place`, whose role is `without`, whose
+`<timestamp>[/<fixture>]` holds no `with` arm, and whose fixture on main
+runs in place (its fixture.yaml has a top-level `context` mapping,
+plan_scheduled_evals.declares_context). It is never pooled: build_index
+lists it under `bare_runs`, not `runs`, so no cell, verdict, improve
+evidence or cost ratio reads it, and the document lists it under
+`bare_runs` for the comparison with the same cell's in-place `with` arm.
+An isolation pair (both arms in one run) is left as it was.
+
 ONE SKILL'S FAILURE IS ITS OWN: an exception while classifying a skill
 (MemoryError included) makes that skill `insufficient`, naming the
 exception's type (never its message), and the others are still decided.
@@ -111,6 +123,7 @@ import delivery  # noqa: E402
 import gates  # noqa: E402
 import guidance  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
+import plan_scheduled_evals  # noqa: E402
 import run_eval  # noqa: E402
 
 PREFIXES = ("results", "routine-results")
@@ -209,6 +222,16 @@ def _fixture_class(evals_dir: Path, skill: str, fixture, trials: list) -> tuple:
     return any(t.get("pairwise") for t in trials), None
 
 
+def _runs_in_place(evals_dir: Path, skill: str, fixture) -> bool:
+    """Whether the skill fixture on main runs in place (ADR 0012), read at
+    its `gates.FIXTURE_ALIASES` target as `_fixture_class` reads it."""
+    directory = evals_dir / skill / (fixture or "")
+    alias = gates.FIXTURE_ALIASES.get((skill, fixture or ""))
+    if alias is not None and not (directory / run_eval.FIXTURE_FILE).is_file():
+        directory = evals_dir / skill / alias
+    return plan_scheduled_evals.declares_context(directory)
+
+
 def _count(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -294,6 +317,7 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
                    and _string(doc["harness"].get("version"))})
     return {"skill": skill, "fixture": fixture, "model": model, "role": role,
             "timestamp": timestamp, "path": run_dir, "report": report,
+            "in_place": summary.get("pairing") == "in_place",
             "tested_digest": (_string(subject.get("tested_digest"))
                               if isinstance(subject, dict) else None),
             "fixture_digest": summary.get("fixture_digest"),
@@ -381,16 +405,23 @@ def _content(summary: bytes, trials: list) -> tuple:
 
 
 def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
-    """{"runs": [validated arm runs], "skipped": {reason: count},
-    "skills": [every skill key seen]}: none stamped after `as_of`, and each
-    arm run once per cell key, by the module docstring's DUPLICATES rules."""
+    """{"runs": [validated arm runs], "bare_runs": [bare runs, never
+    pooled], "skipped": {reason: count}, "skills": [every skill key seen]}:
+    none stamped after `as_of`, and each arm run once per cell key, by the
+    module docstring's DUPLICATES rules. A bare run (module docstring) is
+    set apart before those rules, so it never stands in for a pooled run."""
     runs, skipped, skills, sections = [], {}, set(), set()
 
     def count(reason):
         skipped[reason] = skipped.get(reason, 0) + 1
 
-    validated = []
-    for key, entry in sorted(_summaries(tree).items(),
+    validated, bare = [], []
+    summaries = _summaries(tree)
+    # A unit, (run dir, fixture), with a `with` arm by name, valid or not, is
+    # a pair: its `without` arm is never bare.
+    paired = {(key[0], key[3]) for key in summaries
+              if run_eval._ROLES.get(key[4]) == "with"}
+    for key, entry in sorted(summaries.items(),
                              key=lambda item: tuple(p or "" for p in item[0])):
         if key[1].startswith("guidance/"):
             sections.add(key[1].split("/", 1)[1])
@@ -401,6 +432,16 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
             count(reason)
         else:
             validated.append(record)
+    paired |= {(r["path"], r["fixture"]) for r in validated if r["role"] == "with"}
+    for record in list(validated):
+        if "pair" not in record and record["role"] == "without" and not record["in_place"] \
+                and (record["path"], record["fixture"]) not in paired \
+                and _runs_in_place(evals_dir, record["skill"], record["fixture"]):
+            validated.remove(record)
+            if record["timestamp"] > as_of:
+                count("after as-of")
+            else:
+                bare.append(record)
     seen = set()
     for record in sorted(validated, key=lambda r: (r["path"], r["fixture"] or "", r["role"])):
         if record["timestamp"] > as_of:
@@ -417,6 +458,7 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
         seen |= marks
         runs.append(record)
     return {"runs": [r for r in runs if "pair" not in r],
+            "bare_runs": bare,
             "guidance_runs": [r for r in runs if "pair" in r],
             "skipped": skipped, "skills": sorted(skills), "sections": sorted(sections)}
 
@@ -556,7 +598,14 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
             "newest_run": max((r["timestamp"] for r in index["runs"]), default=None),
             "policy": policy, "retirement_mode": policy["retirement_mode"],
             "roster_models": models, "registries": sorted((registries or {}).keys()),
-            "skipped": index["skipped"], "skills": skills}
+            "skipped": index["skipped"], "skills": skills,
+            # Reported apart, never in a cell (module docstring, BARE RUNS).
+            "bare_runs": [{"skill": r["skill"], "fixture": r["fixture"], "model": r["model"],
+                           "timestamp": r["timestamp"], "path": r["path"],
+                           "report": gates._link(r["report"])}
+                          for r in sorted(index["bare_runs"], key=lambda r: (
+                              r["skill"], r["fixture"] or "", r["model"], r["timestamp"],
+                              r["path"]))]}
     if policies["guidance"] is not None:
         doc.update(guidance_section_verdicts(index, models, policies["guidance"],
                                              evals_dir, guidance_dir))

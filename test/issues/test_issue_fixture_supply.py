@@ -135,7 +135,12 @@ class PickTests(unittest.TestCase):
 
     def test_fire_run_name_starts_with_the_prefix_pick_reads(self):
         doc = yaml.safe_load(FIRE.read_text(encoding="utf-8"))
-        rendered = doc["run-name"].replace("${{ inputs.mode }}", "scaffold")
+        # The ` bare` marker renders only for an eval fire (ADR 0012's bare
+        # baseline addendum), never in scaffold mode.
+        bare = "${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}"
+        self.assertIn(bare, doc["run-name"])
+        rendered = doc["run-name"].replace(bare, "")
+        rendered = rendered.replace("${{ inputs.mode }}", "scaffold")
         # A scaffold fire sends no model, so the folded title ends in a space.
         rendered = rendered.replace("${{ inputs.model }}", "")
         for name in ("candidate", "fixture", "skill"):

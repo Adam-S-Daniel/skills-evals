@@ -150,6 +150,42 @@ questions for the owner. Answers, recorded verbatim:
   raise them. A context over budget blocks the run rather than being
   truncated.
 
+## Bare baseline addendum (Adam, 2026-10-27)
+
+Ablation, the in-place pair of decision 1, stays the main approach. Next to
+it, each fixture that runs in place (its `fixture.yaml` has a top-level
+`context` mapping) gets one **bare** run per model: a single arm with
+nothing of ours loaded, no skills, no guidance and no memory. It is the
+isolation `without_skill` arm (`harness/run_eval.py --pairing isolation
+--arm without_skill`); `strip_agent_context:` still runs. Its result is
+compared with the same fixture's in-place `with` arm on the same model, which
+says how much the whole deployed context adds over the model alone.
+
+How often: Adam first chose monthly, then changed it to "one time per model
+per version of model". A fixture gets a bare run for a model id (for
+example `claude-sonnet-5-5`) once, and again only when a new model id
+appears among the arms of `evals/roster.yml`. Nothing repeats on a clock.
+
+How it is built:
+
+- `routine-eval-fire.yml` takes `arms: bare` in eval mode, for an in-place
+  fixture only (a fixture without a `context` mapping already has a bare
+  arm: its isolation `without`). The run's title reads
+  `Fire eval routine: eval bare <fixture> <model>`.
+- `scripts/plan_week.py` plans one bare fire of three trials per (scheduled
+  in-place fixture, roster model) that has none yet, in a last band with no
+  minimum share, so it spends only room the other bands leave. A bare run
+  ingested for the cell, or a bare fire that succeeded or is still running,
+  counts as done; a refused or failed fire does not.
+- Decision 3 applies: a bare run is an isolation result, reported apart and
+  never pooled. `scripts/compute_gates.py` sets it apart (a `without` arm
+  without `pairing: in_place`, with no `with` arm beside it, on an in-place
+  fixture) and lists it under `bare_runs`; no cell, verdict, improve
+  evidence or cost ratio reads it.
+- A bare fire is one run to the weekly allowance guard, as any eval fire is.
+  The weekly plan reserves it as one arm: its cell's mean cost per arm
+  trial, times its three trials.
+
 ## Consequences
 
 - **Deltas mean what the keep-or-remove decision needs:** the subject's

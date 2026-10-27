@@ -385,6 +385,26 @@ class AcceptTests(GitCase):
                 json.dumps(guidance).encode()})
         self.assertEqual(self.validate()["files"], "2")
 
+    def test_a_bare_run_of_one_arm_is_accepted_as_it_is(self):
+        # A bare fire (`arms: bare`, ADR 0012's 2026-10-27 addendum) pushes
+        # one isolation `without_skill` arm and its trials, no `pairing`.
+        # Ingest marks nothing: compute_gates sets it apart on read.
+        base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}"
+        files = {f"{base}/report.md": REPORT.encode(),
+                 f"{base}/bootstrap/without_skill/summary.json":
+                     json.dumps(summary("without_skill", n=3, errors=0)).encode()}
+        for k in (1, 2, 3):
+            trial = summary("without_skill", trial=k)
+            del trial["n"]
+            files[f"{base}/bootstrap/without_skill/trial-{k}/summary.json"] = \
+                json.dumps(trial).encode()
+        self.commit(files)
+        out = self.tmp / "staged"
+        self.assertEqual(self.validate(out=out)["files"], "5")
+        staged = sorted(str(p.relative_to(out)) for p in out.rglob("summary.json"))
+        self.assertEqual(len(staged), 4)
+        self.assertFalse(any("with_skill" in name for name in staged))
+
     def test_keep_long_term_is_summary_and_report_only(self):
         # Owner's answer (2026-10-06): "summary + report only". A trace is
         # still validated (RejectContentTests), then dropped.

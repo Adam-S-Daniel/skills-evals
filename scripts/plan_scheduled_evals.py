@@ -3,6 +3,10 @@
 
 The routine sweep's banded, allowance-cut plan is scripts/plan_week.py,
 which reads the reviewed list through `scheduled_fixtures` here.
+
+`--in-place FIXTURE` exits 0 only for a committed fixture whose fixture.yaml
+declares a top-level `context` mapping, the fixtures that run in place (ADR
+0012); routine-eval-fire.yml runs it before it accepts `arms: bare`.
 """
 import argparse
 import json
@@ -31,6 +35,19 @@ def validate_fixture(path, committed):
     if not path.startswith("evals/") or path not in committed:
         raise ValueError("fixture names no committed fixture")
     return path[len("evals/"):]
+
+
+def declares_context(directory):
+    """Whether the fixture in `directory` runs in place (ADR 0012): its
+    fixture.yaml parses to a mapping with a top-level `context` mapping, the
+    test harness/run_eval.py applies. An unreadable file is not in place."""
+    import yaml
+
+    try:
+        document = yaml.safe_load((Path(directory) / "fixture.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return False
+    return isinstance(document, dict) and isinstance(document.get("context"), dict)
 
 
 def scheduled_fixtures(path, committed):
@@ -99,6 +116,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--committed", action="store_true")
     parser.add_argument("--validate", nargs=3, metavar=("FIXTURE", "KEY", "SLOT"))
+    parser.add_argument("--in-place", metavar="FIXTURE")
     args = parser.parse_args()
     root = Path.cwd()
     try:
@@ -110,6 +128,10 @@ def main():
             if key != expected or not re.fullmatch(r"(?:0|[1-9][0-9]{0,2})", slot) or int(slot) > 255:
                 raise ValueError("matrix key or slot does not match a validated fixture")
             print(f"eval_key={expected}")
+        elif args.in_place is not None:
+            validate_fixture(args.in_place, committed_fixtures(root))
+            if not declares_context(root / args.in_place):
+                raise ValueError("fixture does not run in place")
         else:
             event_path = os.environ.get("GITHUB_EVENT_PATH")
             event = json.loads(Path(event_path).read_text()) if event_path else {}

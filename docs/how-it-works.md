@@ -168,7 +168,7 @@ UTC (G5, G6; Adam lifted the three-PR gate on 2026-10-26, see the
 [ADR 0010 addendum](decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decision-4-addendum-2026-10-26)).
 It computes the retirement verdicts over the results branch, then plans
 eval fires (one reviewed fixture from `evals/scheduled.yml` on one roster
-model) and improve fires (one skill, with a fixed holdout) in five bands:
+model) and improve fires (one skill, with a fixed holdout) in six bands:
 
 1. **Safety**: every cell of a skill with an open removal pull request.
 2. **Missing evidence** (at least 30% of the room): cells with no run,
@@ -181,6 +181,21 @@ model) and improve fires (one skill, with a fixed holdout) in five bands:
    and no pause, ordered by skill usage and then headroom. A skill with
    fewer fixtures becomes a "needs fixtures" work item.
 5. **Re-checks**: decided cells not measured for eight weeks.
+6. **Bare baselines** (no minimum share, only the room left): one fire with
+   `arms: bare` and three trials per scheduled fixture that runs in place
+   and roster model, once per model id
+   ([ADR 0012 addendum](decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md#bare-baseline-addendum-adam-2026-10-27),
+   Adam, 2026-10-27). It runs the isolation `without_skill` arm alone,
+   nothing of ours loaded, to compare with the in-place `with` arm. A bare
+   run already ingested, or a bare fire that succeeded or is still running,
+   counts as done; a new roster model gets its own. Bare runs are listed
+   apart (`bare_runs` in the verdict document) and never pooled into a cell.
+
+`routine-eval-fire.yml` accepts `arms: bare` in eval mode only, and only for
+a fixture whose `fixture.yaml` has a top-level `context` mapping; its run is
+titled `Fire eval routine: eval bare <fixture> <model>`. The allowance guard
+holds it as one run, like any eval fire; the plan reserves it as one arm
+(the cell's cost per arm trial, times three).
 
 A skill is paused while an improve pull request is open, an attempt is in
 flight, an open `on-hold` issue names it, for 14 days after a rejection, and

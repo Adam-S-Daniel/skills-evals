@@ -78,6 +78,8 @@ from lockfile_pins import lock_problem  # noqa: E402
 SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
+#: A committed fixture with no top-level `context` mapping (ADR 0012).
+NOT_IN_PLACE = "evals/writing-adrs/supersede"
 CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 # A skill with at least three committed fixtures, and one of them.
 SKILL = "writing-adrs"
@@ -167,7 +169,7 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIs(inputs[name]["required"], False)
             self.assertNotIn("default", inputs[name])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["arms"]["options"],
-                         ["both", "with", "without"])
+                         ["both", "with", "without", "bare"])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["trials"]["options"],
                          ["1", "2", "3"])
 
@@ -684,6 +686,53 @@ class ValidateStepTests(unittest.TestCase):
                     "declined_given": {"hook_declined": "true"},
                 })
 
+    def test_accepts_bare_for_a_fixture_that_runs_in_place(self):
+        # ADR 0012's bare baseline addendum: FIXTURE's fixture.yaml has a
+        # top-level `context` mapping.
+        proc, values = self.run_step(
+            {"mode": "eval", "fixture": FIXTURE, "arms": "bare", "trials": "3",
+             "model": "claude-sonnet-5-5"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual((values["arms"], values["trials"], values["model"]),
+                         ("bare", "3", "claude-sonnet-5-5"))
+        # `model` stays optional, as for any eval fire.
+        proc, values = self.run_step(
+            {"mode": "eval", "fixture": FIXTURE, "arms": "bare", "trials": "1"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(values["model"], "")
+
+    def test_refuses_bare_for_a_fixture_that_does_not_run_in_place(self):
+        # Committed, but with no `context` mapping: its isolation `without`
+        # arm already is its bare arm.
+        for fixture in (NOT_IN_PLACE, "evals/guidance/anything-you-name-gets-its-link/handoff"):
+            with self.subTest(fixture=fixture):
+                proc, values = self.run_step(
+                    {"mode": "eval", "fixture": fixture, "arms": "bare", "trials": "3"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {}, "no output on a refusal")
+                self.assertIn("::error::input 'arms' is bare but the fixture does not run "
+                              "in place (no top-level context mapping)", proc.stdout)
+                self.assertNotIn(fixture, proc.stdout + proc.stderr)
+                # The same fixture is fine with both arms.
+                proc, _ = self.run_step(
+                    {"mode": "eval", "fixture": fixture, "arms": "both", "trials": "1"})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_refuses_bare_outside_eval_mode(self):
+        cases = {"improve": {"mode": "improve", "skill": SKILL, "holdout": HOLDOUT},
+                 "scaffold": {"mode": "scaffold", "candidate": CANDIDATE},
+                 "draft": {"mode": "draft", "proposal": PROPOSAL}}
+        for label, inputs in cases.items():
+            with self.subTest(mode=label):
+                proc, values = self.run_step({**inputs, "arms": "bare", "trials": "1"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {})
+                self.assertIn("::error::input 'arms' may be bare in eval mode only",
+                              proc.stdout)
+                # The same inputs with arms both pass this step.
+                proc, _ = self.run_step({**inputs, "arms": "both", "trials": "1"})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
     def _refuse_all(self, good, cases, expect=None, forbid=None):
         for label, override in cases.items():
             with self.subTest(case=label):
@@ -959,6 +1008,18 @@ class FireStepTests(unittest.TestCase):
         summary = self.summary.read_text()
         self.assertIn(f"https://claude.ai/code/{self.SESSION}", summary)
         self.assertIn("claude/eval-20261006T120000Z-a1b2c3", summary)
+
+    @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
+    def test_bare_sends_arms_bare_and_its_trials(self):
+        proc = self.run_step("200", self.ok_body(), ARMS="bare", TRIALS="3",
+                             MODEL="claude-sonnet-5-5")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        argv = json.loads((self.log / "argv.json").read_text())
+        body = json.loads(argv[argv.index("--data-binary") + 1])
+        self.assertEqual(json.loads(body["text"]), {
+            "mode": "eval", "run_id": "20261006T120000Z-a1b2c3", "fixture": FIXTURE,
+            "arms": "bare", "trials": 3, "model": "claude-sonnet-5-5"})
+        self.assertIn("arms: `bare`", self.summary.read_text())
 
     @unittest.skipUnless(shutil.which("jq"), "needs jq on PATH")
     def test_scaffold_sends_exactly_mode_run_id_candidate_and_snapshot(self):

@@ -46,6 +46,15 @@ THE BANDS (rule D), in order:
      heaviest skill usage first (harness/skill_usage.py, `skill_weights`;
      an unknown weight is neutral, never zero), then train headroom.
   5. re-checks: decided cells whose newest run is over 8 weeks old.
+  6. bare baselines (ADR 0012, bare baseline addendum; Adam, 2026-10-27:
+     "one time per model per version of model"): one fire with `arms:
+     bare`, `BARE_TRIALS` trials, per (scheduled fixture that runs in place,
+     roster model) that has never had one, heaviest model first, with no
+     minimum share, so only room the other bands leave. Done means a bare
+     run ingested for that cell (the verdict document's `bare_runs`) or a
+     bare fire for it that succeeded or is still running (its run title);
+     a refused or failed fire is not done. A new roster model id gets its
+     own; nothing is repeated on a clock.
 
 Each band first gets its minimum share of the room left after safety;
 what is left then goes to the bands in order. Within a band ties break on
@@ -53,7 +62,9 @@ cost, cheapest first, and the plan stops at `--max-fires`. A fire is
 reserved at its historical cost: its cell's mean agent `cost_usd` per run
 (summed over both arms) converted to allowance points by the ratio the
 measured routine runs show (points per dollar), between `per_run_overrun`
-and one full reservation; one full reservation when either is unknown. An
+and one full reservation; one full reservation when either is unknown. A
+bare fire runs ONE arm, so it is reserved at its cell's mean agent cost per
+arm trial times `BARE_TRIALS`, clamped the same way. An
 improve fire is reserved at `allowance_guard.improve_charge`. The room is
 `allowance_guard.room`. The per-fire guard still checks every fire at its
 full reservation before it spends anything; this plan only orders them.
@@ -158,8 +169,10 @@ BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
 SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
-BANDS = ("safety", "missing", "near", "improve", "recheck")
+BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
 IMPROVE_TRIALS = 3
+#: Trials of a bare fire's one arm (routine-eval-weekly.yml sends them).
+BARE_TRIALS = 3
 #: wait-slot: at most this many fires in flight, each counted in flight this
 #: long after it started (an eval run takes 4 to 12 minutes, an improve run
 #: a few hours), polled once a minute.
@@ -333,6 +346,32 @@ def fire_cost(cell: dict, ctx: dict) -> float:
     return min(reserve, max(ctx["overrun"], usd * ratio))
 
 
+def bare_cost(cell: dict | None, ctx: dict) -> float:
+    """A bare fire's reservation: one arm, BARE_TRIALS trials, at its cell's
+    mean agent cost per arm trial (module docstring)."""
+    reserve, ratio = ctx["reservation"], ctx.get("points_per_usd")
+    usd = (cell or {}).get("usd_per_arm_trial")
+    if not ratio or usd is None:
+        return reserve
+    return min(reserve, max(ctx["overrun"], usd * BARE_TRIALS * ratio))
+
+
+def bare_items(ctx: dict) -> list:
+    """Band 6's fires: one per ctx["bare"] entry, {fixture, model, skill},
+    the in-place cells with no bare run yet."""
+    weights = ctx["model_weights"]
+    cells = {(c["fixture"], c["model"]): c for c in ctx["cells"]}
+    items = []
+    for entry in ctx.get("bare", []):
+        weight = weights.get(entry["model"], 0.0)
+        items.append({"mode": "eval", "arms": "bare", "fixture": entry["fixture"],
+                      "model": entry["model"], "skill": entry["skill"], "holdout": "",
+                      "cost": bare_cost(cells.get((entry["fixture"], entry["model"])), ctx),
+                      "change_type": None, "weight": weight, "band": "bare",
+                      "order": (-weight,)})
+    return items
+
+
 def eval_items(ctx: dict, now: datetime) -> tuple:
     """(fires by band, work items) for the eval cells."""
     policy, weights = ctx["policy"], ctx["model_weights"]
@@ -340,7 +379,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
-        item = {"mode": "eval", "fixture": cell["fixture"], "model": cell["model"],
+        item = {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
                 "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
                 "change_type": None, "weight": weights.get(cell["model"], 0.0)}
         least = min(cell["with_runs"], cell["without_runs"])
@@ -407,7 +446,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
         status[name] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
                         "fixtures": skill["fixtures"], "targets": len(evidence["targets"])}
         if not reasons:
-            fires.append({"mode": "improve", "fixture": "", "model": "", "skill": name,
+            fires.append({"mode": "improve", "arms": "", "fixture": "", "model": "", "skill": name,
                           "holdout": skill["holdout"], "cost": ctx["improve_charge"],
                           "change_type": "skill-edit", "band": "improve",
                           "order": (-weights.get(name, 1.0), -headroom)})
@@ -534,10 +573,12 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     improve, needs, status = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
     bands["improve"].extend(improve)
+    bands["bare"].extend(bare_items(ctx))
     chosen = allocate(bands, ctx["room"], max_fires)
     # Improve fires last: a long improve run in flight never holds up evals.
     chosen.sort(key=lambda i: i["mode"] == "improve")
-    fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "fixture": i["fixture"],
+    fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
+              "fixture": i["fixture"],
               "eval_key": i["fixture"][len("evals/"):] if i["fixture"] else "",
               "model": i["model"], "skill": i["skill"], "holdout": i["holdout"],
               "change_type": i["change_type"] or "measure", "cost": i["cost"]}
@@ -550,8 +591,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "hook_candidates": hooks,
             # An eval leg sends no skill: the fire workflow refuses one.
-            "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "fixture",
-                                                         "eval_key", "model", "holdout")},
+            "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "arms",
+                                                         "fixture", "eval_key", "model",
+                                                         "holdout")},
                                     "skill": f["skill"] if f["mode"] == "improve" else ""}
                                    for f in fires]}}
 
@@ -650,8 +692,10 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
         started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
-        if title and title["mode"] == "eval" and title["model"] and started \
-                and run.get("conclusion") == "success" and now - started >= FIRE_RESULT_WINDOW:
+        # A bare fire runs one arm, never the cell's pair: not an empty fire.
+        if title and title["mode"] == "eval" and not title["bare"] and title["model"] \
+                and started and run.get("conclusion") == "success" \
+                and now - started >= FIRE_RESULT_WINDOW:
             key = (title["target"], title["model"])
             fired.setdefault(key, []).append(started)
     cells = []
@@ -673,6 +717,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             entries = [r for role in ("with", "without") for r in runs.get(role, [])]
             stamps = sorted({r["timestamp"] for r in entries})
             cost = cell.get("cost_usd") if cell else None
+            arm_trials = sum(r.get("scored_trials") or 0 for r in entries)
             newest = stamps[-1] if stamps else None
             newest_time = _stamp_time(newest)
             cls = cell["class"] if cell else "missing"
@@ -682,10 +727,43 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 "with_runs": len(runs.get("with", [])),
                 "without_runs": len(runs.get("without", [])), "newest": newest,
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
+                "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
+                else None,
                 "empty_fires": sum(1 for t in fired.get((fixture, model), [])
                                    if newest_time is None or t > newest_time)
                 if cls == "missing" else 0})
     return cells
+
+
+def bare_cells(evals_dir: Path, gates_doc: dict, fire_runs: list) -> list:
+    """{fixture, model, skill} for each (scheduled skill fixture that runs in
+    place, roster model) with no bare run yet (module docstring, band 6):
+    none in the verdict document's `bare_runs` and no bare fire for it that
+    succeeded or is still running. A guidance fixture has none: its arms are
+    its own."""
+    committed = schedule.committed_fixtures(evals_dir.parent)
+    scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
+    done = {(run.get("skill"), run.get("fixture"), run.get("model"))
+            for run in gates_doc.get("bare_runs", []) if isinstance(run, dict)}
+    fired = set()
+    for run in fire_runs:
+        title = outcomes_mod.parse_title(run.get("display_title")) \
+            if isinstance(run, dict) else None
+        if title and title["bare"] and title["model"] \
+                and (run.get("conclusion") == "success"
+                     or run.get("status") not in (None, "completed")):
+            fired.add((title["target"], title["model"]))
+    out = []
+    for fixture in scheduled:
+        subject, skill = _fixture_subject(evals_dir, fixture)
+        if subject != "skill" or not schedule.declares_context(evals_dir.parent / fixture):
+            continue
+        parts = fixture.split("/")
+        name = parts[2] if len(parts) == 3 else None
+        for model in gates_doc["roster_models"]:
+            if (skill, name, model) not in done and (fixture, model) not in fired:
+                out.append({"fixture": fixture, "model": model, "skill": skill})
+    return out
 
 
 def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
@@ -873,6 +951,7 @@ def gather(args, now: datetime) -> dict:
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
             "cells": eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now),
+            "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
@@ -897,7 +976,8 @@ def summary_lines(plan: dict) -> list:
              f"{plan['room'] * 100:.1f} points", ""]
     for fire in plan["fires"]:
         target = fire["fixture"] or f"{fire['skill']} (holdout {fire['holdout']})"
-        lines.append(f"- {fire['band']}: {fire['mode']} {target} {fire['model']}".rstrip()
+        mode = fire["mode"] + (" bare" if fire.get("arms") == "bare" else "")
+        lines.append(f"- {fire['band']}: {mode} {target} {fire['model']}".rstrip()
                      + f", {fire['cost'] * 100:.2f} points")
     kinds: dict = {}
     for item in plan["work"]:
@@ -917,23 +997,27 @@ def summary_lines(plan: dict) -> list:
 
 def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     """Refuse a matrix leg that is not a fire this repository would plan:
-    eval mode on a scheduled, committed fixture and a roster arm; improve
-    mode on a skill improve_gate.py fire-check accepts, with a holdout."""
+    eval mode on a scheduled, committed fixture and a roster arm, its arms
+    both, or bare on a fixture that runs in place; improve mode on a skill
+    improve_gate.py fire-check accepts, with a holdout and no arms."""
     import improve_gate
     import roster_arm
     mode = env.get("MODE", "")
     fixture, key, model = env.get("FIXTURE", ""), env.get("EVAL_KEY", ""), env.get("MODEL", "")
     skill, holdout = env.get("SKILL", ""), env.get("HOLDOUT", "")
+    arms = env.get("ARMS", "")
     if mode == "eval":
         committed = schedule.committed_fixtures(root)
         scheduled = schedule.scheduled_fixtures(root / "evals" / "scheduled.yml", committed)
         if fixture not in scheduled or schedule.validate_fixture(fixture, committed) != key \
-                or skill or holdout \
+                or skill or holdout or arms not in ("both", "bare") \
                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", model) \
                 or not roster_arm.is_arm(model, root / "evals" / "roster.yml"):
             raise PlanError("the eval leg is not a scheduled fixture on a roster arm")
+        if arms == "bare" and not schedule.declares_context(root / fixture):
+            raise PlanError("the bare leg's fixture does not run in place")
     elif mode == "improve":
-        if fixture or key or model or not outcomes_mod.SKILL_RE.fullmatch(skill) \
+        if fixture or key or model or arms or not outcomes_mod.SKILL_RE.fullmatch(skill) \
                 or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", holdout):
             raise PlanError("the improve leg is malformed")
         try:

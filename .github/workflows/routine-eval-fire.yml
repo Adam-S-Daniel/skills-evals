@@ -47,6 +47,14 @@ name: Fire eval routine
 #   trials in eval and improve. The routine treats the payload as
 #   untrusted, and so does this workflow when it builds it: jq encodes
 #   every value.
+# * `arms: bare` (ADR 0012, bare baseline addendum; Adam, 2026-10-27) is
+#   eval mode only, and only for a fixture that runs in place: its committed
+#   fixture.yaml has a top-level `context` mapping, checked by
+#   `scripts/plan_scheduled_evals.py --in-place` (a fixture without one
+#   already has a bare arm, its isolation `without`). The payload sends
+#   `"arms": "bare"` and the routine runs the one isolation `without` arm:
+#   no skills, no guidance, no memory. A refusal is fixed text. The
+#   allowance guard charges it as any eval fire: one run, whatever its arms.
 # * `model` (#68's first slice, #372 U4) is optional and valid in eval mode
 #   only: the sweep dispatches each fixture once per roster arm. When set it
 #   must be the `id` of an arm in evals/roster.yml on the default branch,
@@ -108,7 +116,9 @@ name: Fire eval routine
 #   within scripts/scaffold_real_work.py's REFIRE_AFTER_DAYS. It is a display
 #   title, never a `run:` block.
 #
-# * The run's title (`run-name`) names the mode, the one target input of that
+# * The run's title (`run-name`) names the mode, ` bare` after it for an
+#   eval fire with `arms: bare` (so the weekly planner can tell which
+#   (fixture, model) bare runs were fired), the one target input of that
 #   mode (fixture, candidate or skill) and the model when one is given. It is
 #   the only place the runs API exposes a dispatch's inputs, so
 #   scripts/improve_outcomes.py reads improve attempts from it and
@@ -120,7 +130,7 @@ name: Fire eval routine
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
 run-name: >-
-  Fire eval routine: ${{ inputs.mode }}
+  Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}
   ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}
   ${{ inputs.model }}
 
@@ -185,10 +195,12 @@ on:
         required: false
         type: string
       arms:
-        description: Which arms to run.
+        description: >-
+          Which arms to run. bare (eval mode, in-place fixtures only) runs
+          one arm with nothing of ours loaded.
         required: true
         type: choice
-        options: [both, with, without]
+        options: [both, with, without, bare]
         default: both
       trials:
         description: Trials per arm (1-3).
@@ -273,9 +285,9 @@ jobs:
           trials="$(jq -r '.inputs.trials' "$event")"
 
           case "$arms" in
-            both|with|without) ;;
+            both|with|without|bare) ;;
             *)
-              echo "::error::input 'arms' must be both, with or without"
+              echo "::error::input 'arms' must be both, with, without or bare"
               exit 1 ;;
           esac
           case "$trials" in
@@ -305,6 +317,10 @@ jobs:
                 exit 1
               fi ;;
           esac
+          if [ "$arms" = bare ] && [ "$mode" != eval ]; then
+            echo "::error::input 'arms' may be bare in eval mode only"
+            exit 1
+          fi
           case "$mode" in
             eval|scaffold|improve)
               if [ -n "$proposal" ] || [ "$hook_declined" != false ]; then
@@ -396,6 +412,14 @@ jobs:
                 echo "::error::input 'model' is not an arm of the committed evals/roster.yml"
                 exit 1
               fi
+            fi
+            # A bare run is the baseline of an in-place fixture only: a
+            # fixture with no `context` mapping already has one, its
+            # isolation `without` arm. Parsed as YAML by the script.
+            if [ "$arms" = bare ] \
+               && ! python3 scripts/plan_scheduled_evals.py --in-place "$fixture" >/dev/null; then
+              echo "::error::input 'arms' is bare but the fixture does not run in place (no top-level context mapping)"
+              exit 1
             fi
           fi
 

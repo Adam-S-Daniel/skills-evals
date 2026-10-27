@@ -1359,6 +1359,85 @@ class ComputeGatesTests(unittest.TestCase):
         self.assertEqual(doc["retirement_mode"], "auto")
         self.assertNotIn("previous", doc)
 
+    def in_place_fixture(self, skill):
+        """A fixture on main that runs in place (a top-level `context`
+        mapping, ADR 0012), tracked in Git, with its registry copy."""
+        directory = self.evals / skill
+        directory.mkdir(parents=True)
+        (directory / "fixture.yaml").write_text(
+            f"skill: {skill}\nprompt: p\ncontext:\n  repository: example/repo\n",
+            encoding="utf-8")
+        self._skill(skill, "body")
+        subprocess.run(["git", "add", "-A"], cwd=self.evals.parent, check=True)
+
+    def bare(self, skill, r, *, model_tag="z", pairing=None):
+        """A one-arm run: only `without_skill`. With no `pairing` it is an
+        isolation arm, with no context blocks, as a bare fire (`arms: bare`,
+        ADR 0012's 2026-10-27 addendum) leaves it."""
+        (run_id,) = self.write(skill, FLAT[:1], FLAT_JUDGE, start=r, model_tag=model_tag)
+        base = self.tree / "routine-results" / run_id / skill / stamp(r)
+        shutil.rmtree(base / "with_skill")
+
+        def change(doc):
+            if pairing is None:
+                for key in ("arm_context", "context", "context_subject"):
+                    doc.pop(key)
+            else:
+                doc["pairing"] = pairing
+        self.edit(base / "without_skill" / "summary.json", change)
+        return run_id, base
+
+    def test_a_bare_run_is_reported_apart_and_never_pooled(self):
+        self.in_place_fixture("ctxbot")
+        run_id, base = self.bare("ctxbot", 40)
+        _, doc = self.run_gates("a.json")
+        self.assertEqual(doc["bare_runs"], [{
+            "skill": "ctxbot", "fixture": None, "model": "model-a", "timestamp": stamp(40),
+            "path": f"routine-results/{run_id}/ctxbot/{stamp(40)}",
+            "report": gates._link(f"routine-results/{run_id}/ctxbot/{stamp(40)}/report.md")}])
+        cell = doc["skills"]["ctxbot"]["cells"][0]
+        # Pooled, it would be the cell's `without` arm and put the cell on
+        # its model; set apart, the cell still has no run at all.
+        self.assertEqual((cell["class"], cell["runs"]), ("missing", {"with": [], "without": []}))
+        self.assertEqual(doc["skills"]["ctxbot"]["runs_used"], [])
+        self.assertIsNone(doc["newest_run"])
+        # Its in-place pairs are decided as before, the bare run beside them.
+        self.write("ctxbot", FLAT[:10], FLAT_JUDGE)
+        _, with_bare = self.run_gates("b.json")
+        shutil.rmtree(base.parent.parent)
+        _, without_bare = self.run_gates("c.json")
+        self.assertEqual(with_bare["skills"], without_bare["skills"])
+        self.assertEqual(len(with_bare["bare_runs"]), 1)
+        self.assertEqual(without_bare["bare_runs"], [])
+
+    def test_only_a_lone_isolation_without_arm_on_an_in_place_fixture_is_bare(self):
+        self.in_place_fixture("ctxbot")
+        # An in-place summary is in-place evidence, alone or not.
+        self.bare("ctxbot", 41, model_tag="y", pairing="in_place")
+        # A fixture with no `context` mapping: its isolation `without` arm
+        # is an ordinary run, as before.
+        self.bare("one", 42, model_tag="x")
+        _, doc = self.run_gates("a.json")
+        self.assertEqual(doc["bare_runs"], [])
+        for skill in ("ctxbot", "one"):
+            with self.subTest(skill=skill):
+                cell = doc["skills"][skill]["cells"][0]
+                self.assertEqual(cell["class"], "insufficient")
+        self.assertEqual(len(doc["skills"]["one"]["cells"][0]["runs"]["without"]), 1)
+        # A `with` arm beside it makes it a pair, even an unreadable one.
+        run_id, base = self.bare("ctxbot", 43, model_tag="w")
+        write_json(base / "with_skill" / "summary.json", {"skill": "ctxbot"})
+        index = compute_gates.build_index(self.tree, self.evals, AS_OF)
+        self.assertEqual(index["bare_runs"], [])
+        self.assertIn(f"routine-results/{run_id}/ctxbot/{stamp(43)}",
+                      {r["path"] for r in index["runs"]})
+        # After as-of, a bare run is not read either.
+        self.bare("ctxbot", 44, model_tag="v")
+        index = compute_gates.build_index(self.tree, self.evals, stamp(43))
+        self.assertEqual((index["bare_runs"], index["skipped"].get("after as-of")), ([], 1))
+        self.assertEqual(len(compute_gates.build_index(self.tree, self.evals,
+                                                       AS_OF)["bare_runs"]), 1)
+
     def test_five_runs_are_pending_and_ten_retire(self):
         self.write("flat", FLAT[:5], FLAT_JUDGE)
         _, doc = self.run_gates("1.json")
