@@ -2277,6 +2277,10 @@ _CLI_PROFILE_MARKERS = {
     # are an empty JSON object, as written at startup; anything else could
     # configure the agent.
     "remote-settings.json": (4096, "{}"),
+    # A newer CLI (seen 2026-10-27 in the routine, which installs the latest)
+    # writes the policy limits' signature issue time beside the signature
+    # above. Like it, it can only restrict and loads no configuration.
+    "policy-limits.json.signature-iat.json": 65536,
     # CLI 2.1.310 caches the plugin directory's catalog here (it reads back at
     # most 16 MiB). It is a list of plugins one could install, not an install:
     # plugins load from installed_plugins.json and plugins/cache/, still watched.

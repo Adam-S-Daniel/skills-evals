@@ -350,6 +350,8 @@ class GuidanceProfileTests(_StandIn):
                        "policy-limits.json": 65536,
                        "policy-limits.json.signature.json": 65536,
                        "policy-limits.json.stamp.json": 4096,
+                       # 2026-10-27: the signature's issue time, beside it.
+                       "policy-limits.json.signature-iat.json": 65536,
                        "remote-settings.json.synced-at": 4096,
                        "plugins/plugin-directory-cache-v2.json": 16 * 1024 * 1024,
                        # CLI 2.1.311: a built-in plugin's store, every session.
