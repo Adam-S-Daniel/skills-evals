@@ -618,7 +618,7 @@ jobs:
       - name: Mint the read-only token for the lessons
         id: lessons-token
         if: steps.validate.outputs.mode == 'draft'
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
