@@ -1179,6 +1179,87 @@ class ImproveCoverageTests(unittest.TestCase):
         self.assertEqual(starts, [t.replace(microsecond=0)])
 
 
+class RefreshFireTests(unittest.TestCase):
+    """2026-10-27: two refused improve fires that finished after the newest
+    snapshot held 21 points in full; with 3.1 points of room against a
+    3.5-point reservation no eval fire could go, so no newer snapshot could
+    come. One eval fire may go to bring it."""
+
+    SNAP = NOW - timedelta(hours=6)
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+        run = self.tree / "routine-results" / "20261020T100000Z-a1b2c3"
+        path = run / "k" / "20261020T100000Z" / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        block = usage_block(0.02)
+        block["measured"]["meter"] = {"snapshots": [snapshot(0.05, at=self.SNAP)],
+                                      "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+        self.charge = guard.improve_charge(self.tree, LIMITS)
+
+    def state(self, started, fires=None, recent=0):
+        n = len(started)
+        return guard.account(self.tree, LIMITS, NOW,
+                             (n + (fires or 0), recent), (n, 0),
+                             since=NOW - guard.WINDOW, improve_started=started)
+
+    def blocked(self):
+        # Enough finished-but-uncovered fires that no eval fire fits.
+        count = int(guard.room(self.state([])) // self.charge) + 1
+        return [NOW - guard.IMPROVE_MAX_RUN] * count
+
+    def test_finished_uncovered_fires_allow_one_refresh_eval_fire(self):
+        state = self.state(self.blocked())
+        self.assertEqual(guard.fits(state), 0)
+        self.assertEqual(state["improve_finished"], len(self.blocked()))
+        self.assertTrue(guard.refresh(state))
+        self.assertTrue(guard.check(state, "eval"))
+        self.assertIn("finished after it, held in full", guard.describe(state))
+
+    def test_the_refresh_never_admits_an_improve_scaffold_or_draft_fire(self):
+        state = self.state(self.blocked())
+        for mode in ("improve", "guidance-improve", "scaffold", "draft"):
+            with self.subTest(mode=mode):
+                self.assertFalse(guard.check(state, mode))
+
+    def test_a_recent_eval_fire_without_results_stops_another_refresh(self):
+        state = self.state(self.blocked(), fires=2, recent=1)  # one is the ingested run
+        self.assertEqual(state["recent"], 1)
+        self.assertFalse(guard.check(state, "eval"))
+
+    def test_improve_fires_still_running_give_no_refresh(self):
+        running = [NOW - guard.IMPROVE_MAX_RUN + timedelta(seconds=1)] * len(self.blocked())
+        state = self.state(running)
+        self.assertEqual(state["improve_finished"], 0)
+        self.assertFalse(guard.check(state, "eval"))
+
+    def test_covered_fires_are_not_counted_as_finished(self):
+        state = self.state([self.SNAP - guard.IMPROVE_MAX_RUN] * 3)
+        self.assertEqual((state["improve_covered"], state["improve_finished"]), (3, 0))
+
+    def test_no_refresh_when_spend_alone_leaves_no_room(self):
+        state = self.state(self.blocked())
+        state["spent"] = state["cap"]
+        state["pace_room"] = 0.0
+        self.assertFalse(guard.check(state, "eval"))
+
+    def test_main_names_the_refresh_fire(self):
+        budget = self.tree / "budget.yml"
+        budget.write_text(VALID_BUDGET, encoding="utf-8")
+        starts = self.blocked()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", str(self.tree),
+                               "--budget", str(budget)], now=NOW,
+                              fire_count=lambda now: (len(starts), 0),
+                              improve_count=lambda now: (len(starts), 0),
+                              improve_starts=lambda now: starts)
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertIn("allowed as the one refresh fire", out.getvalue())
+
+
 # ---------------------------------------------------------------------------
 # The workflows run it
 
