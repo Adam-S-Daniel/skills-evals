@@ -28,11 +28,12 @@ one week's sanctioned push to the next):
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
   * pending: successful runs of routine-eval-fire.yml in the window that
-    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (2
-    hours) is reserved at `per_run_cap + per_run_overrun`; an older one is
+    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (45
+    minutes) is reserved at `per_run_cap + per_run_overrun`; an older one is
     charged `per_run_overrun` only for the rest of the week. A routine run
-    finishes within minutes (healthy runs take 4-12, ingest a few more), so a
-    fire with no results two hours later failed or never started (or is a
+    finishes within minutes (healthy runs take 4-12, ingest a few more) and
+    the routine's own prompt stops an eval or scaffold run at 30 minutes, so
+    a fire with no results 45 minutes later failed or never started (or is a
     scaffold or improve run, which never lands in routine-results/), and the
     in-run stops (`per_run_cap`,
     `stop_when_account_above` in harness/run_eval.py) still bound what it
@@ -122,8 +123,12 @@ ACCOUNT_WEEK_RESET = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
 #: an older one failed or never started, and is charged per_run_overrun only.
 #: It was 24 hours until 2026-10-26, when fires whose routine never started
 #: held a day's reservation each and kept a week-end ramp from using the
-#: allowance Adam had left; healthy runs land within about 15 minutes.
-PENDING_FULL_HOLD = timedelta(hours=2)
+#: allowance Adam had left; healthy runs land within about 15 minutes. It was
+#: 2 hours until 2026-10-27, when three fires that failed at startup held
+#: about 31 points against a 30-point cap while measured use was about 5, and
+#: blocked every fire for two hours. The routine stops an eval or scaffold run
+#: at 30 minutes, so 45 minutes covers that limit plus the push and ingest.
+PENDING_FULL_HOLD = timedelta(minutes=45)
 #: ingest_routine_results.SIZE_CAPS["summary.json"]: a bigger file was never
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024

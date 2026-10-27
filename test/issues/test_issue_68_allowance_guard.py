@@ -713,7 +713,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
         self.assertIn("pending 0.0 points", out)
-        self.assertIn("(0 from the last 2h held in full)", out)
+        self.assertIn("(0 from the last 0.75h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
         self.assertNotIn("20261020T100000Z", out + summary)
@@ -783,12 +783,12 @@ class LiveFiresTests(unittest.TestCase):
         self.assertEqual(self.live(opener), (5, 2))
         self.assertEqual(len(seen), 2)
         self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
-        self.assertIn("created=%3E%3D2026-10-20T13%3A30%3A00Z", seen[1])
+        self.assertIn("created=%3E%3D2026-10-20T14%3A45%3A00Z", seen[1])
         self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
 
     def test_a_failed_hold_window_count_fails_closed(self):
         def opener(request, timeout):
-            if "2026-10-20T13" in request.full_url:
+            if "2026-10-20T14%3A45" in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
                                              io.BytesIO(b"private-body-marker"))
             return FireCountTests.Response(b'{"total_count": 5}')

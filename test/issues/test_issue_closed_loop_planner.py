@@ -245,7 +245,7 @@ class GuardImproveChargeTests(unittest.TestCase):
         self.assertIn(guard.REFUSAL, out.getvalue())
 
     def test_improve_counts_read_titles(self):
-        runs = [fire(1, "Fire eval routine: improve a ", NOW - timedelta(hours=1)),
+        runs = [fire(1, "Fire eval routine: improve a ", NOW - timedelta(minutes=30)),
                 fire(2, "Fire eval routine: improve a ", NOW - timedelta(days=3)),
                 fire(3, "Fire eval routine: improve a ", NOW - timedelta(days=9)),
                 fire(4, "Fire eval routine: improve a ", NOW, conclusion="failure"),
