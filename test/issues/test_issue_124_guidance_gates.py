@@ -62,7 +62,8 @@ SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed"
             "test-that-can-signal-kills-every-session", "section-python", "dependency-updates",
             "agent-contribution-markers", "security", "section-docker", "section-javascript",
             "section-typescript", "section-go", "section-rust", "section-dotnet",
-            "workstation-layout"}
+            "workstation-layout", "two-github-connectors", "two-setup-gaps",
+            "skills-ecosystem", "finding-your-unknowns", "read-before-you-start"}
 MODES = {"with_guidance_section": "section", "without_guidance": "none",
          "with_guidance_full": "full",
          "with_guidance_full_minus_section": "full-minus-section"}
@@ -679,6 +680,72 @@ class FourthBatchFixtureTests(unittest.TestCase):
                 "  $dest = \"D:\\repos\\$owner\\$name\"\n"
                 "  if (-not (Test-Path $dest)) { git clone \"https://github.com/$line\" $dest }\n}\n")
         check_fixture(self, *args, {"clone-all.ps1": good}, {True})
+
+
+class FifthBatchFixtureTests(unittest.TestCase):
+    """The last five sections (gap G4): knowledge only the section carries,
+    scored from the reply or the one file it should change."""
+
+    def test_org_connector_ci(self):
+        fixture = GUIDANCE_EVALS / "two-github-connectors" / "org-connector-ci"
+        ws = workspace(self, fixture)
+        self.assertEqual(set(score(fixture, ws, "Use pull_request_read get_check_runs.").values()),
+                         {False})
+        reply = ("Read both pull_request_read get_check_runs and get_status. It cannot "
+                 "dispatch or re-run a workflow or read job logs; use mcp__github__ for that.")
+        self.assertEqual(set(score(fixture, ws, reply).values()), {True})
+
+    def test_multi_repo_cloud_session(self):
+        fixture = GUIDANCE_EVALS / "two-setup-gaps" / "multi-repo-cloud-session"
+        ws = workspace(self, fixture)
+        (ws / ".claude").mkdir()
+        (ws / ".claude/settings.json").write_text('{"hooks": {}}\n', encoding="utf-8")
+        self.assertEqual(score(fixture, ws, "I registered the bootstrap hook for you."),
+                         {"snippet-home-named": False, "prompted-not-acted": False})
+        ws = workspace(self, fixture)
+        reply = ("repo-a pins skills but nothing at the top registers its skills-bootstrap "
+                 "hook. The snippet is in adam-agentskills' docs/multi-repo-delivery.md.")
+        self.assertEqual(set(score(fixture, ws, reply).values()), {True})
+
+    def test_push_fails_everywhere(self):
+        args = ("skills-ecosystem", "push-fails-everywhere")
+        check_fixture(self, *args, {"FIX.md": "Reinstall git.\n"}, {False})
+        check_fixture(self, *args, {"FIX.md": "The global core.hooksPath points at the retired "
+                                    "sync-skills hook. Run `bash setup.sh --owner-machine` from "
+                                    "the skills registry.\n"}, {True})
+
+    def test_changelog_check(self):
+        fixture = GUIDANCE_EVALS / "finding-your-unknowns" / "changelog-check"
+        ws = workspace(self, fixture)
+        (ws / "AGENTS.md").write_text("Always update CHANGELOG.md when you change src/.\n",
+                                      encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {False})
+        (ws / ".agent-checks/local.sh").write_text(
+            "local_checks() {\n  if grep -q '^src/' <<<\"$STAGED\" && "
+            "! grep -qx 'CHANGELOG.md' <<<\"$STAGED\"; then\n"
+            "    fail \"src/ changed without a CHANGELOG.md entry\"\n  fi\n}\n", encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+        # The check really gates a commit through the seed's own runner.
+        with open(ws / "src/app.py", "a", encoding="utf-8") as f:
+            f.write("# changed\n")
+        sh(ws, "git", "add", "src/app.py")
+        self.assertNotEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+        with open(ws / "CHANGELOG.md", "a", encoding="utf-8") as f:
+            f.write("- Change app.\n")
+        sh(ws, "git", "add", "CHANGELOG.md")
+        self.assertEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+
+    def test_new_config_key(self):
+        fixture = GUIDANCE_EVALS / "read-before-you-start" / "new-config-key"
+        ws = workspace(self, fixture)
+        schema = ws / "config/settings.schema.json"
+        doc = json.loads(schema.read_text(encoding="utf-8"))
+        doc["properties"]["retry_budget"] = {"type": "integer", "minimum": 0, "default": 10}
+        schema.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        self.assertEqual(score(fixture, ws, "I followed the file's existing style."),
+                         {"key-added": True, "reference-cited": False})
+        self.assertEqual(set(score(fixture, ws, "Per settings-schema-design.md, it is an "
+                                   "integer with a default.").values()), {True})
 
 
 # ---------------------------------------------------------------------------
