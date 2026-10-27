@@ -148,3 +148,24 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
                if isinstance(entry, dict) and entry.get("kind") == "skill"
                and entry.get("name") == skill and entry.get("week") in mondays
                and _count(entry.get("invocations")))
+
+
+def session_rate(doc, now: datetime, days: int = 28) -> float | None:
+    """Transcript sessions scanned, scaled to `days` by the source window
+    (`from` to `to`): the expected number of sessions in `days`, and so the
+    expected uses of anything every session loads, such as the guidance.
+
+    None when `doc` is None or stale, has no local transcripts source, or its
+    window or count is unreadable (unknown, never 0).
+    """
+    if doc is None or not is_fresh(doc, now):
+        return None
+    for source in doc.get("sources", []):
+        if source.get("scope") != "transcripts" or source.get("surface") != SURFACE_LOCAL:
+            continue
+        start, end = parse_ts(source.get("from")), parse_ts(source.get("to"))
+        scanned = source.get("sessions_scanned")
+        if start is None or end is None or end <= start or not _count(scanned):
+            return None
+        return scanned * (timedelta(days=days) / (end - start))
+    return None

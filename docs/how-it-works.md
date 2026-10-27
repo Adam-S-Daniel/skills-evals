@@ -178,7 +178,16 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    look.
 4. **Improvements** (at least 20%): skills with four or more fixtures, train
    headroom, a check that fails often but can pass, no retirement verdict,
-   and no pause, ordered by skill usage and then headroom. A skill with
+   and no pause, ordered by potential value: expected uses over four weeks
+   times train headroom, per allowance point an improve run costs (three
+   trials of every fixture at its historical fire cost; an unknown use or
+   cost is neutral, an unknown headroom ranks last). Fleet-guidance sections
+   are ranked in the same list (every session loads the guidance, so its use
+   is the census's session count scaled to four weeks), but there is no
+   routine mode for them yet: an eligible section is a `guidance-improve`
+   work item for a local `scripts/propose_guidance_edit.py` run, not a fire.
+   The whole ranking is the plan's `improve_ranking`, the job summary's top
+   ten, and the `improve-ranking` artifact (30 days). A skill with
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
