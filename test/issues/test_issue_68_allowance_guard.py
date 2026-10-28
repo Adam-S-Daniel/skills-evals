@@ -104,9 +104,9 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # Adam, 2026-10-27: 50 points until the 2026-11-02 reset, then 0.30
-        # again (restore LIMITS here when evals/budget.yml goes back).
-        self.assertEqual(budget.load_budget(), {**LIMITS, "weekly_cap": 0.50})
+        # Adam, 2026-10-27/28: 55 points until the 2026-11-02 reset, then
+        # 0.30 again (restore LIMITS here when evals/budget.yml goes back).
+        self.assertEqual(budget.load_budget(), {**LIMITS, "weekly_cap": 0.55})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
