@@ -1091,9 +1091,11 @@ class ImproveCoverageTests(unittest.TestCase):
                    self.SNAP - timedelta(days=2)]
         state = self.state(started)
         self.assertEqual(state["improve_covered"], 2)
-        self.assertAlmostEqual(state["pending"], 0.05, places=12)
+        # The reading less the metered run's own 2-point delta, already in spent.
+        self.assertAlmostEqual(state["pending"], 0.03, places=12)
         self.assertIn("2 of them finished before the account reading, so held "
-                      "at most at its 5.0 points", guard.describe(state))
+                      "at most at its 5.0 points less 2.0 already charged to "
+                      "eval runs inside it", guard.describe(state))
 
     def test_covered_fires_are_still_charged_when_the_reading_is_larger(self):
         self.metered(0.9)
@@ -1107,7 +1109,53 @@ class ImproveCoverageTests(unittest.TestCase):
         newer = self.SNAP - guard.IMPROVE_MAX_RUN + timedelta(seconds=1)
         state = self.state([newer, self.SNAP - timedelta(days=1)])
         self.assertEqual(state["improve_covered"], 1)
-        self.assertAlmostEqual(state["pending"], charge + 0.05, places=12)
+        self.assertAlmostEqual(state["pending"], charge + 0.03, places=12)
+
+    def add_run(self, stamp, delta, snapshot_at):
+        run = self.tree / "routine-results" / f"{stamp}-d4e5f6"
+        path = run / "k" / stamp / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        block = usage_block(delta)
+        block["measured"]["meter"] = {"snapshots": [snapshot(0.01, at=snapshot_at)],
+                                      "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+
+    def test_eval_spend_inside_the_reading_is_not_counted_twice(self):
+        """2026-10-28: the reading held every eval run's use, and spent
+        charged it again, so a guidance-improve fire was refused at 28%
+        account use against a 55-point cap."""
+        self.metered(0.28)
+        self.add_run("20261020T110000Z", 0.06, self.SNAP - timedelta(hours=2))
+        state = self.state([self.SNAP - timedelta(days=1)] * 6)
+        self.assertAlmostEqual(state["eval_inside"], 0.08, places=12)
+        self.assertAlmostEqual(state["pending"], 0.20, places=12)
+        # Safe: spent plus the hold still covers the whole reading.
+        self.assertGreaterEqual(state["spent"] + state["pending"] + 1e-12, 0.28)
+
+    def test_an_unread_run_is_not_subtracted(self):
+        self.metered(0.28)
+        run = self.tree / "routine-results" / "20261020T110000Z-d4e5f6"
+        path = run / "k" / "20261020T110000Z" / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{not json", encoding="utf-8")
+        state = self.state([self.SNAP - timedelta(days=1)])
+        self.assertAlmostEqual(state["eval_inside"], 0.02, places=12)
+
+    def test_a_run_without_any_snapshot_is_not_subtracted(self):
+        self.metered(0.28)
+        run = self.tree / "routine-results" / "20261020T110000Z-d4e5f6"
+        path = run / "k" / "20261020T110000Z" / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"arm": "x", "usage": usage_block(0.06)}),
+                        encoding="utf-8")
+        state = self.state([self.SNAP - timedelta(days=1)])
+        self.assertAlmostEqual(state["eval_inside"], 0.02, places=12)
+
+    def test_the_hold_never_goes_below_zero(self):
+        self.metered(0.01)
+        self.add_run("20261020T110000Z", 0.06, self.SNAP - timedelta(hours=2))
+        state = self.state([self.SNAP - timedelta(days=1)])
+        self.assertEqual(state["pending"], 0.0)
 
     def test_no_usable_snapshot_keeps_the_full_charge(self):
         charge = guard.improve_charge(self.tree, LIMITS)
