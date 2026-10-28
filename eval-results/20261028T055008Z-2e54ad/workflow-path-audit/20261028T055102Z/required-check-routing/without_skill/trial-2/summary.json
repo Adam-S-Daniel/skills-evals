@@ -1,0 +1,381 @@
+{
+  "skill": "workflow-path-audit",
+  "arm": "without_skill",
+  "timestamp": "20261028T055102Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.08852779999999999,
+    "num_turns": 6,
+    "duration_ms": 21919,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 11859,
+      "cache_read_input_tokens": 218566,
+      "output_tokens": 1908,
+      "output_tokens_details": {
+        "thinking_tokens": 408
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 11859,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 417,
+          "cache_read_input_tokens": 39875,
+          "cache_creation_input_tokens": 529,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 529
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "docs-change-routes-correctly",
+      "passed": true,
+      "detail": "changing docs/guide.md routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "source-change-routes-correctly",
+      "passed": true,
+      "detail": "changing src/index.js routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "lockfile-change-routes-to-installers",
+      "passed": true,
+      "detail": "changing package-lock.json routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "prose-change-runs-nothing-but-the-required-check",
+      "passed": true,
+      "detail": "changing README.md, LICENSE routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "required-check-always-fires-and-gates-internally",
+      "passed": false,
+      "detail": ".github/workflows/tests.yml: `on.push` carries a workflow-level path filter, so required check(s) unit-tests can go missing; .github/workflows/tests.yml: no early-skip gate \u2014 nothing computes a salience output that an `if:` gates the real work on"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "event-only-workflows-unfiltered",
+      "passed": true,
+      "detail": "event-only workflows carry no path filters (.github/workflows/nightly-sweep.yml, .github/workflows/triage.yml)"
+    },
+    {
+      "id": "ruleset-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 3,
+        "rationale": "Every workflow it found got a trigger decision, but the required `unit-tests` check was left unfiltered on pull_request with no computed salience output and `if:` gating, and `tests.yml` now has a workflow-level `paths` filter on push, so the cap of 4 applies; the transcript also shows no attempt to look for workflows beyond the five."
+      },
+      {
+        "name": "Salience",
+        "score": 7,
+        "rationale": "Each list looks plausible and is tied to that workflow's own inputs (what `deploy.sh` packages, docs/ plus `mkdocs.yml`, src/test/package files) and includes the workflow file itself, though the diff doesn't show that these were checked against each workflow's actual steps and config reads."
+      },
+      {
+        "name": "Restraint",
+        "score": 9,
+        "rationale": "It left the schedule-only and issue-driven workflows and the branch-protection ruleset alone; the only extra change is an explanatory comment in `tests.yml`."
+      }
+    ],
+    "overall": 5.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1202,
+      "output_tokens": 22,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 1908,
+      "cache_read_input_tokens": 218566,
+      "cache_creation_input_tokens": 11859,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.005240421460039646,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "required-check-routing",
+  "trial": 2,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "ac79bb3ffa0185d4f7e2e2da920845bbc59959b81e496ac79ac9dc634b898658",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261028T055008Z-2e54ad",
+    "session_id": "cse_01SphsQEtGFoz8hArGstazef",
+    "harness_commit": "dabe911d5cbd8cf92f42b5473805198b0f553532",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-28T05:51:02Z",
+    "ended_at": "2026-10-28T05:52:47Z",
+    "meter": {
+      "snapshot_count": 7,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-28T05:51:02Z",
+      "to_at": "2026-10-28T05:52:38Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.03,
+          "to": 0.04,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.25,
+          "to": 0.25,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEtGFoz8hArGstazef",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-28T05:51:39Z",
+      "ended_at": "2026-10-28T05:52:15Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-28T05:51:39Z",
+          "ended_at": "2026-10-28T05:52:02Z",
+          "duration_ms": 23177,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-28T05:52:02Z",
+          "ended_at": "2026-10-28T05:52:15Z",
+          "duration_ms": 12761,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-28T05:51:39Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.03,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.25,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T05:52:02Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.03,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.25,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 23177,
+        "num_turns": 6,
+        "cost_usd": 0.08852779999999999,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1202,
+            "output_tokens": 22,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001312
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 1908,
+            "cache_read_input_tokens": 218566,
+            "cache_creation_input_tokens": 11859,
+            "cost_usd": 0.08839659999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 11859
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 12761,
+        "num_turns": 1,
+        "cost_usd": 0.0760117,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 2894,
+            "output_tokens": 19,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0002989
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 708,
+            "cache_read_input_tokens": 27724,
+            "cache_creation_input_tokens": 7000,
+            "cost_usd": 0.0757128
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7000
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
