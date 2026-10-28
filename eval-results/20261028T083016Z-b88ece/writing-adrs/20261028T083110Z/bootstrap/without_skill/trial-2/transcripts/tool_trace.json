@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ex3iKUvVKBKhjhE1BJNViN",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && git status --short && ls -la && cat scripts/retry.sh && cat CHANGELOG.md && ls docs docs/* 2><path> | head -30",
+      "input_chars": 145,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018Qh2HowsAsSomihag4fmZH",
+      "name": "Bash",
+      "input": "grep -rniE \"retry|backoff|adr\" --exclude-dir=.git . | head -40",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ex3iKUvVKBKhjhE1BJNViN",
+      "is_error": false,
+      "output": "51ea2d7 initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 32\ndrwxr-xr-x 5 root root 4096 Oct 28 08:31 .\ndrwxrwxrwt 9 root root 4096 Oct 28 08:31 ..\ncrw-rw-rw- 1 root root 1, 3 Oct 28 07:42 ....",
+      "output_chars": 2253,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018Qh2HowsAsSomihag4fmZH",
+      "is_error": false,
+      "output": "./README.md:4:into the local database. See `scripts/retry.sh` for the retry helper used by\n./scripts/retry.sh:2:# retry.sh: retry a transient command failure with capped exponential backoff.\n./scripts/retry.sh:7:# Retrying forever with a fixed delay was ruled out - it would have masked\n./scripts/ret...",
+      "output_chars": 723,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JuSFAnQSj6hnGGed772ymb",
+      "name": "Bash",
+      "input": "cat README.md",
+      "input_chars": 13,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JuSFAnQSj6hnGGed772ymb",
+      "is_error": false,
+      "output": "# Order Sync\n\nOrder Sync polls the upstream fulfillment service and mirrors order status\ninto the local database. See `scripts/retry.sh` for the retry helper used by\nevery poller.",
+      "output_chars": 179,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P2Z41AocqwLeWuyAxZXhqc",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 36,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P2Z41AocqwLeWuyAxZXhqc",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 76,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

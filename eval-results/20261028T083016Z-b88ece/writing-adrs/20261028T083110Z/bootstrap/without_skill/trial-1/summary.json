@@ -1,0 +1,386 @@
+{
+  "skill": "writing-adrs",
+  "arm": "without_skill",
+  "timestamp": "20261028T083110Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0697147,
+    "num_turns": 4,
+    "duration_ms": 15671,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 10992,
+      "cache_read_input_tokens": 102580,
+      "output_tokens": 1535,
+      "output_tokens_details": {
+        "thinking_tokens": 280
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 10992,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 391,
+          "cache_read_input_tokens": 38047,
+          "cache_creation_input_tokens": 929,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 929
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "readme-bootstrapped-in-skill-shape",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /(?im)^## When to write one\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Naming and numbering\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Status values\\s*$/; no file matched ['docs/decisions/README.md'] lacks /(?im)^## Index\\s*$/; no file matched ['docs/decisions/README.md'] lacks /NNNN-kebab-title\\.md/"
+    },
+    {
+      "id": "index-gained-a-row-for-0001",
+      "passed": false,
+      "detail": "no file matched ['docs/decisions/README.md'] lacks /\\[0001\\]\\(0001-[a-z0-9-]+\\.md\\)/"
+    },
+    {
+      "id": "adr-0001-sections-in-order",
+      "passed": false,
+      "detail": "docs/decisions/0001-retry-policy.md lacks /(?s)^## Context\\b.*^## Decision\\b.*^## Consequences\\b.*^## Alternatives considered\\b.*^## References\\b/"
+    },
+    {
+      "id": "retry-sh-links-the-adr",
+      "passed": false,
+      "detail": "scripts/retry.sh lacks /(?s)^#[^\\n]*docs/decisions/0001-[a-z0-9-]+\\.md.*^set -euo pipefail$/"
+    },
+    {
+      "id": "readme-index-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (no file matched)"
+    },
+    {
+      "id": "retry-sh-link-resolves",
+      "passed": true,
+      "detail": "all link targets exist (scripts/retry.sh)"
+    },
+    {
+      "id": "exactly-one-adr-file",
+      "passed": true,
+      "detail": "1 file(s) matched ['docs/decisions/[0-9][0-9][0-9][0-9]-*.md']"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (CHANGELOG.md, README.md)"
+    },
+    {
+      "id": "agents-md-gained-the-pointer",
+      "passed": false,
+      "detail": "AGENTS.md lacks /(?im)^### Architecture Decision Records\\s*$/; AGENTS.md lacks /docs/decisions/"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "decision-with-alternatives-and-consequences",
+        "score": 8,
+        "rationale": "The Context describes the 2026-03 outage without announcing the decision, the Decision matches retry.sh (5 attempts, 1s to 16s exponential backoff, non-zero exit), and both named alternatives (retry forever, fail fast) are rejected with reasons; the downsides are thin, though: only the update-the-record maintenance cost is a clear negative, and added latency and surfaced errors are framed as benefits."
+      },
+      {
+        "name": "title-is-a-decision-statement",
+        "score": 2,
+        "rationale": "The title 'Retry policy for transient upstream failures' is a noun phrase, not an imperative verb plus object, and there is no index row with a decision-statement title."
+      },
+      {
+        "name": "restraint",
+        "score": 5,
+        "rationale": "The agent correctly wrote no second ADR for the CHANGELOG fact and made no unrelated edits, but it left out the required AGENTS.md pointer paragraph under '### Architecture Decision Records' (Bootstrap step 4) and did not create a decisions index, so the bootstrap is incomplete."
+      }
+    ],
+    "overall": 5.6
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1177,
+      "output_tokens": 18,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 1535,
+      "cache_read_input_tokens": 102580,
+      "cache_creation_input_tokens": 10992,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.010274443718402861,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "bootstrap",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "1b2dc23f7d85deca6ce5ce005798d5653a2ae274509f0127b02f2bf8e2ff0348",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261028T083016Z-b88ece",
+    "session_id": "cse_01SphsQACunq2wRNmzrfa4rq",
+    "harness_commit": "dabe911d5cbd8cf92f42b5473805198b0f553532",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-28T08:31:10Z",
+    "ended_at": "2026-10-28T08:32:35Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-28T08:31:10Z",
+      "to_at": "2026-10-28T08:32:26Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.09,
+          "to": 0.09,
+          "delta": 0.0,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.27,
+          "to": 0.27,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQACunq2wRNmzrfa4rq",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-28T08:31:10Z",
+      "ended_at": "2026-10-28T08:31:37Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-28T08:31:10Z",
+          "ended_at": "2026-10-28T08:31:28Z",
+          "duration_ms": 17447,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-28T08:31:28Z",
+          "ended_at": "2026-10-28T08:31:37Z",
+          "duration_ms": 9441,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-28T08:31:10Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.09,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.27,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T08:31:28Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.09,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.27,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 17447,
+        "num_turns": 4,
+        "cost_usd": 0.0697147,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1177,
+            "output_tokens": 18,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00012670000000000002
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 1535,
+            "cache_read_input_tokens": 102580,
+            "cache_creation_input_tokens": 10992,
+            "cost_usd": 0.06958800000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 10992
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 9441,
+        "num_turns": 1,
+        "cost_usd": 0.0739846,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 2748,
+            "output_tokens": 242,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0003958
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 659,
+            "cache_read_input_tokens": 27724,
+            "cache_creation_input_tokens": 6857,
+            "cost_usd": 0.0735888
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 6857
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}

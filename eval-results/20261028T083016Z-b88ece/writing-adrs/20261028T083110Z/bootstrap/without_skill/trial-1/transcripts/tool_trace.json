@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TyVeexUgvPuFPvKYc9epoj",
+      "name": "Bash",
+      "input": "git log --oneline | head -20 && git status --short && ls -R . 2><path> | grep -v '^./.git' | head -50 && cat scripts/retry.sh && cat CHANGELOG.md",
+      "input_chars": 148,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011yLXhUR6qyoo9BDQ4r3zR5",
+      "name": "Bash",
+      "input": "grep -rniE \"retry|backoff|adr|decision\" --exclude-dir=.git . | head -40",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011yLXhUR6qyoo9BDQ4r3zR5",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 1126,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TyVeexUgvPuFPvKYc9epoj",
+      "is_error": false,
+      "output": "6a629fe initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nCHANGELOG.md\nREADME.md\nscripts\n\n./scripts:\nretry.sh\n#!<path> bash\n# retry.sh: retry a transient command failure with capped e...",
+      "output_chars": 1365,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018teWRZgus3PbmwHHiMFoGB",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018teWRZgus3PbmwHHiMFoGB",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
