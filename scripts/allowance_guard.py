@@ -68,6 +68,16 @@ already inside that snapshot's account-wide `utilization`: those "covered"
 fires are held together at no more than that reading. The meter covers the
 whole account, so the bound overcounts, the safe direction. Fires not yet
 covered, and every fire when no snapshot is usable, keep the full charge.
+
+That reading also holds the measured weekly delta of every ingested eval run
+whose snapshots all precede it, and `spent` already charges those runs, so
+the covered fires are held at the reading less those deltas (never below
+zero). Without that, on 2026-10-28 the eval runs were counted twice and a
+guidance-improve fire was refused at 28% account use against a 55-point
+cap. It stays safe even when runs overlapped and their deltas count the
+same use twice: spent plus the hold is still at least the eval runs' own
+`per_run_overrun` plus the whole reading, and each run's unmeasured last
+call is what that overrun is for.
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
 (`refresh`); without that the holds lasted the week (2026-10-27).
@@ -260,6 +270,33 @@ def measured_cost(run_dir: Path, limits: dict) -> float | None:
     return sum(_invocation_cost(usage, limits) for usage in blocks.values())
 
 
+def delta_inside(run_dir: Path, at: datetime) -> float:
+    """The measured weekly delta of one ingested run with at least one meter
+    snapshot, all of them readable and no later than `at`: use the reading at
+    `at` already holds. 0.0 for anything else (an unread summary, an
+    unmeasured delta), so nothing unread is subtracted."""
+    blocks, seen = {}, 0
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if not isinstance(usage, dict) or _unmeasured(usage):
+            return 0.0
+        measured = usage.get("measured")
+        reading = measured.get("meter") if isinstance(measured, dict) else None
+        snapshots = reading.get("snapshots") if isinstance(reading, dict) else None
+        for snapshot in snapshots if isinstance(snapshots, list) else ():
+            stamp = _snapshot_time(snapshot)
+            if stamp is None or stamp > at:
+                return 0.0
+            seen += 1
+        level = {key: value for key, value in usage.items() if key != "measured"}
+        blocks[json.dumps(level, sort_keys=True)] = usage
+    if not seen:
+        return 0.0
+    return sum(max(0.0, float(usage["meter_delta"]["windows"]["seven_day"]["delta"]))
+               for usage in blocks.values())
+
+
 def all_runs(tree: Path) -> list[Path]:
     """Every run directory under `<tree>/routine-results/`, any age."""
     root = tree / DEST_ROOT
@@ -396,7 +433,7 @@ def account(tree: Path, limits: dict, now: datetime,
             improve_started: list | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed, improve_fires, improve_charge,
-    improve_covered} for the
+    improve_covered, eval_inside} for the
     window from `since` (default `window_start`) up to `now`, given
     `fires`, a pair: the successful fires of that window and of the
     last `PENDING_FULL_HOLD`. An ingested run is matched to a fire by its run
@@ -410,7 +447,9 @@ def account(tree: Path, limits: dict, now: datetime,
     and is never matched against ingested runs, except that `improve_started`,
     their start times, lets those that started `IMPROVE_MAX_RUN` or more
     before the newest usable snapshot (`improve_covered` of them) be held
-    together at no more than its account-wide `account_used`."""
+    together at no more than its account-wide `account_used`, less
+    `eval_inside`, the measured deltas of the ingested runs inside that
+    reading."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -445,13 +484,16 @@ def account(tree: Path, limits: dict, now: datetime,
     charge = improve_charge(tree, limits)
     room, used, elapsed = pace(runs, limits, now)
     covered = 0
+    eval_inside = 0.0
     if improve_started and used is not None:
         # `pace` accepted the newest snapshot, so `newest_snapshot` is not None.
         at = newest_snapshot(runs)[0]
         covered = min(improve_7d,
                       sum(1 for start in improve_started if start + IMPROVE_MAX_RUN <= at))
+        # Already charged in `spent` (module docstring, 2026-10-28).
+        eval_inside = sum(delta_inside(run_dir, at) for run_dir in runs)
     improve_held = (improve_7d - covered) * charge + (
-        min(covered * charge, used) if covered else 0.0)
+        min(covered * charge, max(0.0, used - eval_inside)) if covered else 0.0)
     pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
                + improve_held)
     # Finished (IMPROVE_MAX_RUN or more ago) but newer than the reading, so
@@ -465,7 +507,8 @@ def account(tree: Path, limits: dict, now: datetime,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
             "improve_fires": improve_7d, "improve_charge": charge,
-            "improve_covered": covered, "improve_finished": finished,
+            "improve_covered": covered, "eval_inside": eval_inside,
+            "improve_finished": finished,
             "improve_finished_held": finished * charge}
 
 
@@ -555,6 +598,9 @@ def describe(state: dict) -> str:
             line += (f"; {state['improve_covered']} of them finished before the "
                      f"account reading, so held at most at its "
                      f"{points(state['account_used'])} points")
+            if state.get("eval_inside"):
+                line += (f" less {points(state['eval_inside'])} already charged "
+                         f"to eval runs inside it")
     if state.get("improve_finished"):
         line += (f"; {state['improve_finished']} finished after it, held in full "
                  f"until a newer reading")
