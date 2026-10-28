@@ -1,0 +1,408 @@
+{
+  "skill": "embeddable-tool-pages",
+  "arm": "without_skill",
+  "timestamp": "20261028T065459Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1688017,
+    "num_turns": 5,
+    "duration_ms": 22323,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 12243,
+      "cache_read_input_tokens": 181737,
+      "output_tokens": 1717,
+      "output_tokens_details": {
+        "thinking_tokens": 302
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 12243,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 531,
+          "cache_read_input_tokens": 39759,
+          "cache_creation_input_tokens": 933,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 933
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "asset-copy",
+      "passed": true,
+      "detail": "assets/tools/unit-converter/index.html: digest matches"
+    },
+    {
+      "id": "tool-front-matter",
+      "passed": true,
+      "detail": "front matter satisfies all constraints"
+    },
+    {
+      "id": "tool-entry-listing",
+      "passed": true,
+      "detail": "_tools/ matches the expected listing (2 entries)"
+    },
+    {
+      "id": "post-embed",
+      "passed": false,
+      "detail": "_posts/2026-01-01-example.md lacks /(?s)<!--\\s*html-embed:start\\s*-->(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<iframe(?=\\s)(?=[^>]*?\\s+src\\s*=\\s*([\"'])/assets/tools/unit-converter/\\1)[^>]*>(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<!--\\s*html-embed:end\\s*-->/"
+    },
+    {
+      "id": "source-unchanged",
+      "passed": true,
+      "detail": "unchanged (seed/new-tool/index.html)"
+    },
+    {
+      "id": "existing-tool-unchanged",
+      "passed": true,
+      "detail": "unchanged (_data/tool_sources/existing.yml, _tools/existing.md, assets/tools/existing/index.html)"
+    },
+    {
+      "id": "site-wiring-unchanged",
+      "passed": true,
+      "detail": "unchanged (_config.yml, _includes/header.html, _layouts/default.html, _layouts/tool.html, admin/collections.site.yml, tools/index.html)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 4,
+        "rationale": "The collection entry has the right slug, embed_src, title and description and will render via the existing tool layout at /tools/unit-converter/, the asset is a byte-identical copy, and the post has a real iframe below the intro with a link to the permanent page, but the iframe is not wrapped in html-embed:start/html-embed:end comments and its src is a Liquid relative_url expression rather than the literal /assets/tools/unit-converter/ path, so the post-embed check fails and correctness is capped at 4."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "The source app, automation-managed counter tool, tool_sources data, config, layouts, includes, tools index and CMS collection wiring were all left untouched, the _tools directory contains exactly existing.md and unit-converter.md, and the unrelated post text was preserved; the only quibble is the unprompted title rename to 'Length Converter'."
+      },
+      {
+        "name": "explanation",
+        "score": 4,
+        "rationale": "The reply honestly states that Jekyll was unavailable so no build was run and does not fake verification, and it notes the asset is what both iframes load, but it never clearly explains why one static app is shared, does not distinguish the CMS preview from a live PR preview where iframe scripts actually run, and does not flag that a first-time tool addition needs visual-regression and new-page manual review."
+      }
+    ],
+    "overall": 5.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1",
+    "claude-haiku-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1218,
+      "output_tokens": 17,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 1717,
+      "cache_read_input_tokens": 181737,
+      "cache_creation_input_tokens": 12243,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.006270881782453717,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "3aa9fe8c0eddebffc637d93b9257a55fcce3b7fc3699204920b6dacfc71885a2",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261028T065403Z-f5400e",
+    "session_id": "cse_01SphsQCE5XzaPcxUznTbTbg",
+    "harness_commit": "dabe911d5cbd8cf92f42b5473805198b0f553532",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-28T06:54:59Z",
+    "ended_at": "2026-10-28T06:58:31Z",
+    "meter": {
+      "snapshot_count": 9,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-28T06:54:59Z",
+      "to_at": "2026-10-28T06:57:58.968Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.05,
+          "to": 0.06,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.26,
+          "to": 0.26,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQCE5XzaPcxUznTbTbg",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-28T06:57:26Z",
+      "ended_at": "2026-10-28T06:58:31Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-28T06:57:26Z",
+          "ended_at": "2026-10-28T06:57:50Z",
+          "duration_ms": 23862,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-28T06:57:50Z",
+          "ended_at": "2026-10-28T06:58:31Z",
+          "duration_ms": 41483,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-28T06:57:26Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.06,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T06:57:50Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.06,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T06:57:58.968Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.06,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.02,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 23862,
+        "num_turns": 5,
+        "cost_usd": 0.1688017,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1218,
+            "output_tokens": 17,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001303
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 1717,
+            "cache_read_input_tokens": 181737,
+            "cache_creation_input_tokens": 12243,
+            "cost_usd": 0.1686714
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 12243
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 41483,
+        "num_turns": 6,
+        "cost_usd": 0.45644445,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 162,
+            "output_tokens": 2499,
+            "cache_read_input_tokens": 228281,
+            "cache_creation_input_tokens": 13623,
+            "cost_usd": 0.45610025
+          },
+          "claude-haiku-5-5": {
+            "input_tokens": 3342,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0003442
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13623
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
