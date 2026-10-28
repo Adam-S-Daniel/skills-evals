@@ -1,0 +1,451 @@
+{
+  "skill": "github-actions-sha-pinning",
+  "arm": "without_skill",
+  "timestamp": "20261028T075935Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1766013,
+    "num_turns": 5,
+    "duration_ms": 26233,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 12371,
+      "cache_read_input_tokens": 179527,
+      "output_tokens": 2078,
+      "output_tokens_details": {
+        "thinking_tokens": 570
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 12371,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 788,
+          "cache_read_input_tokens": 39263,
+          "cache_creation_input_tokens": 976,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 976
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "third-party-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "third-party-pins-match-pins-md",
+      "passed": true,
+      "detail": "every PINS.md pin present and correct"
+    },
+    {
+      "id": "no-trailing-comments",
+      "passed": false,
+      "detail": "version comment present: .github/workflows/ci.yml:15 - uses: actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a  # v4; .github/workflows/ci.yml:16 - uses: actions/setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708  # v4; .github/workflows/ci.yml:19 - uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1  # v4.1.0; .github/workflows/ci.yml:23 - uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f  # v4.1.0"
+    },
+    {
+      "id": "cms-platform-refs-stay-on-tag",
+      "passed": true,
+      "detail": "every platform ref pinned to v0.1.104"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/lint.yml)"
+    },
+    {
+      "id": "reference-files-untouched",
+      "passed": true,
+      "detail": "unchanged (PINS.md)"
+    },
+    {
+      "id": "ci-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "deploy-workflow-not-deleted",
+      "passed": true,
+      "detail": ".github/workflows/deploy.yml matches"
+    },
+    {
+      "id": "gate-action-not-deleted",
+      "passed": true,
+      "detail": ".github/actions/gate/action.yml matches"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "carve_out",
+        "score": 4,
+        "rationale": "Both cms-platform refs were left on v0.1.104 only because the agent could not find a SHA; it listed them as unfinished work it would pin on request, showing no understanding that they must stay on the release tag."
+      },
+      {
+        "name": "comment_removal",
+        "score": 1,
+        "rationale": "The agent kept the pre-existing `# v4.1.0` trailing comment on upload-artifact and added new version comments to every ref it pinned, the opposite of stripping them."
+      },
+      {
+        "name": "restraint",
+        "score": 8,
+        "rationale": "Only ci.yml was changed and the docker ref, local action, and PINS.md were left untouched, though the agent offered to pin the docker ref and never raised the cooling-off consideration."
+      }
+    ],
+    "overall": 4.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1",
+    "claude-haiku-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1184,
+      "output_tokens": 19,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2078,
+      "cache_read_input_tokens": 179527,
+      "cache_creation_input_tokens": 12371,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.006163257150761569,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "ad845fc5b17c288e1bd464f0688fcf54e52e425d3ee2491a046b56cc4dd41058",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261028T075833Z-39e6ea",
+    "session_id": "cse_01SphsQE7JYr2w1zreMiZfEi",
+    "harness_commit": "dabe911d5cbd8cf92f42b5473805198b0f553532",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-28T07:59:35Z",
+    "ended_at": "2026-10-28T08:01:52Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-28T07:59:36Z",
+      "to_at": "2026-10-28T08:01:51.862Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.08,
+          "to": 0.08,
+          "delta": 0.0,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.26,
+          "to": 0.27,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQE7JYr2w1zreMiZfEi",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-28T07:59:35Z",
+      "ended_at": "2026-10-28T08:00:16Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-28T07:59:36Z",
+          "ended_at": "2026-10-28T08:00:05Z",
+          "duration_ms": 29080,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-28T08:00:05Z",
+          "ended_at": "2026-10-28T08:00:16Z",
+          "duration_ms": 11199,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-28T07:59:36Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.08,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T07:59:49.044Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.08,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.27,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T08:00:05Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.08,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.27,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T08:00:16.069Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.08,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.27,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.02,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 29080,
+        "num_turns": 5,
+        "cost_usd": 0.1766013,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1184,
+            "output_tokens": 19,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00012790000000000002
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2078,
+            "cache_read_input_tokens": 179527,
+            "cache_creation_input_tokens": 12371,
+            "cost_usd": 0.1764734
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 12371
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 11199,
+        "num_turns": 1,
+        "cost_usd": 0.18156835,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 2,
+            "output_tokens": 685,
+            "cache_read_input_tokens": 29583,
+            "cache_creation_input_tokens": 6980,
+            "cost_usd": 0.18126575
+          },
+          "claude-haiku-5-5": {
+            "input_tokens": 2906,
+            "output_tokens": 24,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00030260000000000004
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 6980
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
