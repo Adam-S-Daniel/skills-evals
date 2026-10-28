@@ -1,0 +1,457 @@
+{
+  "skill": "review-bash-ci-reliability",
+  "arm": "without_skill",
+  "timestamp": "20261028T072618Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.37869500000000006,
+    "num_turns": 12,
+    "duration_ms": 106907,
+    "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 18858,
+      "cache_read_input_tokens": 358953,
+      "output_tokens": 7792,
+      "output_tokens_details": {
+        "thinking_tokens": 2155
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 18858,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1260,
+          "cache_read_input_tokens": 46473,
+          "cache_creation_input_tokens": 253,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 253
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflow-yaml-parses",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "workflow-file-present",
+      "passed": true,
+      "detail": ".github/workflows/release.yml matches"
+    },
+    {
+      "id": "process-substitution-error-propagates",
+      "passed": true,
+      "detail": "scripts/publish.sh matches"
+    },
+    {
+      "id": "grep-q-avoids-broken-pipe",
+      "passed": true,
+      "detail": "scripts/publish.sh matches"
+    },
+    {
+      "id": "gh-api-failure-not-swallowed",
+      "passed": true,
+      "detail": "scripts/collect.sh matches"
+    },
+    {
+      "id": "git-identity-configured",
+      "passed": true,
+      "detail": "scripts/bump.sh matches"
+    },
+    {
+      "id": "jq-guaranteed-or-replaced",
+      "passed": false,
+      "detail": "scripts/bump.sh, .github/workflows/release.yml lacks /(^[^#\\n]*(apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\\n]*\\bjq\\b|^[^#\\n]*uses:[^#\\n]*jq|^[^#\\n]*command -v jq|\\A(?:(?!(?:\\A|\\n)[^#\\n]*\\bjq\\b)[\\s\\S])*\\Z)/"
+    },
+    {
+      "id": "version-read-does-not-depend-on-unguarded-jq",
+      "passed": false,
+      "detail": "scripts/bump.sh, .github/workflows/release.yml contains /(?=[\\s\\S]*(?:\\A|\\n)[^#\\n]*\\bjq\\b)\\A(?:(?!(?:\\A|\\n)[^#\\n]*(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\\n]*\\bjq\\b|(?:\\A|\\n)[^#\\n]*uses:[^#\\n]*jq|(?:\\A|\\n)[^#\\n]*command -v jq)[\\s\\S])*\\Z/"
+    },
+    {
+      "id": "commit-signing-safe-for-ci",
+      "passed": false,
+      "detail": "scripts/bump.sh lacks /(^[^#\\n]*git config( --(local|global))? commit\\.gpgsign\\s+false[^#\\n]*|^[^#\\n]*git config( --(local|global))? user\\.signingkey[^#\\n]*|^[^#\\n]*-c\\s+commit\\.gpgsign=false[^#\\n]*|^[^#\\n]*--no-gpg-sign[^#\\n]*)/"
+    },
+    {
+      "id": "decoy-optional-cleanup-untouched",
+      "passed": false,
+      "detail": "scripts/collect.sh lacks /^[^#\\n]*rm -f\\s+\"\\$tmp_response\"\\s*\\|\\|\\s*true[^#\\n]*/"
+    },
+    {
+      "id": "decoy-existing-set-e-untouched",
+      "passed": true,
+      "detail": "scripts/publish.sh matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 4,
+        "rationale": "Four of six findings are genuinely fixed (watch runs unpiped with --exit-status so set -e sees it, here-string replaces the echo|grep -q pipe, the gh api `|| true` is removed so the bare assignment propagates failure, and git config user.name/email run before the commit), but jq is never installed or guarded (the agent actually added a second jq call) and nothing defends against commit.gpgsign, so the jq-guaranteed-or-replaced, version-read-does-not-depend-on-unguarded-jq and commit-signing-safe-for-ci checks all fail and cap this dimension at 4."
+      },
+      {
+        "name": "Restraint",
+        "score": 2,
+        "rationale": "The agent deleted the optional `rm -f \"$tmp_response\" || true` decoy outright (calling it a leftover temp file), failing decoy-optional-cleanup-untouched and capping this at 4, and on top of that rewrote large unrequested surface area: workflow concurrency, timeout, branch gating, GH_TOKEN, step outputs and conditions, pagination and a changed API filter, a rebase-and-retry push loop, a version-format guard, a jq-based edit, and `[skip ci]`; only the `set -euo pipefail` decoy was left alone."
+      },
+      {
+        "name": "Explanation",
+        "score": 6,
+        "rationale": "For the four fixes it made, the reply names the real failure mode (process substitution hides the exit status from set -e and watch exits 0 without --exit-status; grep -q stops reading and the pipeline returns 141 under pipefail; `|| true` turned API/login failures into 'nothing to release'; runners have no git identity so commit fails), but it never identifies or explains the unguaranteed jq dependency or the commit.gpgsign hazard, and some explanations cover out-of-scope changes rather than the review's findings."
+      }
+    ],
+    "overall": 4.199999999999999
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1",
+    "claude-haiku-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1189,
+      "output_tokens": 19,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 18,
+      "output_tokens": 7792,
+      "cache_read_input_tokens": 358953,
+      "cache_creation_input_tokens": 18858,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0031228268821624026,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "release-pipeline",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "6caa5ce0fc6219c58e3fd4223694e2d0aa3ba392b122dd89db2775d4d212bdb6",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261028T072519Z-80e1ce",
+    "session_id": "cse_01SphsQBcqyyh5H4FuCcdErh",
+    "harness_commit": "fb17f3c27f9d7caacc231288bef9c26f4d875295",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-28T07:26:18Z",
+    "ended_at": "2026-10-28T07:34:19Z",
+    "meter": {
+      "snapshot_count": 10,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-28T07:26:18Z",
+      "to_at": "2026-10-28T07:33:33.791Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.06,
+          "to": 0.07,
+          "delta": 0.01,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.26,
+          "to": 0.26,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQBcqyyh5H4FuCcdErh",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-28T07:26:18Z",
+      "ended_at": "2026-10-28T07:29:26Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-28T07:26:18Z",
+          "ended_at": "2026-10-28T07:28:07Z",
+          "duration_ms": 109218,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-28T07:28:07Z",
+          "ended_at": "2026-10-28T07:29:26Z",
+          "duration_ms": 78837,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-28T07:26:18Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.06,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T07:27:22.509Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.07,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T07:28:07Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.07,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-28T07:28:13.502Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793182800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.07,
+                  "resetsAt": 1793182800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.26,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.02,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 109218,
+        "num_turns": 12,
+        "cost_usd": 0.37869500000000006,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1189,
+            "output_tokens": 19,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0001284
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 18,
+            "output_tokens": 7792,
+            "cache_read_input_tokens": 358953,
+            "cache_creation_input_tokens": 18858,
+            "cost_usd": 0.37856660000000003
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 18858
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 78837,
+        "num_turns": 8,
+        "cost_usd": 1.0286271,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 226,
+            "output_tokens": 5564,
+            "cache_read_input_tokens": 375070,
+            "cache_creation_input_tokens": 32692,
+            "cost_usd": 1.0280675000000001
+          },
+          "claude-haiku-5-5": {
+            "input_tokens": 5471,
+            "output_tokens": 25,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0005596
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 32692
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}

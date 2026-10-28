@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0138MpQfNdWUWrp9c68GBXG8",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100; ls -la .github/workflows 2><path>",
+      "input_chars": 121,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0138MpQfNdWUWrp9c68GBXG8",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.github/workflows/release.yml\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/collect.sh\n./scripts/bump.sh\n./scripts/publish.sh\n./.profile\n...",
+      "output_chars": 524,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AWEW9wYYXd9XrfNRcFCrJ2",
+      "name": "Bash",
+      "input": "for f in .github/workflows/release.yml scripts/*.sh package.json README.md; do echo \"=== $f\"; cat -A \"$f\" | sed 's/\\$$//'; done; git log --oneline | head",
+      "input_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AWEW9wYYXd9XrfNRcFCrJ2",
+      "is_error": false,
+      "output": "=== .github/workflows/release.yml\nname: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Collect changed package...",
+      "output_chars": 2282,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Mt3yx2FnpqFfNksgSwrxgY",
+      "name": "Bash",
+      "input": "which shellcheck gh jq actionlint",
+      "input_chars": 33,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Mt3yx2FnpqFfNksgSwrxgY",
+      "is_error": true,
+      "output": "Exit code 1\n<path>\n<path>",
+      "output_chars": 41,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FAfGYbtpoZxk2ABqBzdAXe",
+      "name": "Bash",
+      "input": "cat > scripts/collect.sh <<'EOF'\n#!<path> bash\n# Collect the packages changed since the last release, via the GitHub API.\nset -euo pipefail\n\nREPO=\"${GITHUB_REPOSITORY:-example-org/example-repo}\"\n\n# Th...",
+      "input_chars": 3510,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FAfGYbtpoZxk2ABqBzdAXe",
+      "is_error": false,
+      "output": "scripts/bump.sh ok\nscripts/collect.sh ok\nscripts/publish.sh ok\nyaml ok",
+      "output_chars": 70,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EsAikfTZGXQoDEu3dLEqgc",
+      "name": "Bash",
+      "input": "d=$(mktemp -d) && cp package.json scripts/bump.sh \"$d\" && cd \"$d\" && git init -q && git add . && git -c user.name=t -c user.email=t@t commit -qm i && git remote add origin \"$d/none\" ; bash bump.sh; ca...",
+      "input_chars": 617,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EsAikfTZGXQoDEu3dLEqgc",
+      "is_error": false,
+      "output": "error: Debug: Namespace set to \"git\" (ignored)\nDebug: Key file set to \"<path>\" (ignored, using server key)\nMCP server request failed (attempt 1/3), retrying in 111.904161ms: failed to send request: Post \"http://127.0.0.1:39877/mcp\": dial tcp 127.0.0.1:39877: connect: connection refused\nMCP server re...",
+      "output_chars": 2339,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0189onE8r7Fhs74ZK2wh63sP",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 42,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JGgTDnPJ142UBkDfGvhXvk",
+      "name": "Bash",
+      "input": "d=$(mktemp -d) && mkdir \"$d/bin\" && printf '#!<path>\\n[ \"$2\" = watch ] && { echo \"run failed\"; exit 1; }\\necho \"Successfully published\"\\n' > \"$d/bin/gh\" && chmod +x \"$d/bin/gh\" && PATH=\"$d/bin:$PATH\" ...",
+      "input_chars": 419,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0189onE8r7Fhs74ZK2wh63sP",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 82,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JGgTDnPJ142UBkDfGvhXvk",
+      "is_error": false,
+      "output": "watching publish run 5\nrun failed\nerror: publish run 5 failed\nexit=1\nwatching publish run 5\nSuccessfully published\nconfirmed: publish run succeeded\nexit=0\n .github/workflows/release.yml | 14 ++++++++++++++\n scripts/bump.sh               | 13 +++++++++++--\n scripts/collect.sh            | 19 ++++++++...",
+      "output_chars": 419,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
