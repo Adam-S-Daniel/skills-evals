@@ -104,8 +104,8 @@ session that lost the guidance must not also lose these.
   [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
 
 - **Running tests in a fresh or cloud session.** Run `bash scripts/dev_setup.sh`
-  first: it installs what `ci.yml`'s `test` job installs (the pip pins and the
-  four fixture `npm ci` directories), and `test/issues/test_issue_dev_setup.py`
+  first: it installs what `ci.yml`'s `test` job installs (the pip pins, the fixture
+  `npm ci` directories and the fixtures' Ruby gems via `bundle install`), and `test/issues/test_issue_dev_setup.py`
   keeps the two in step. Then run the module that covers your change,
   `python3 -m pytest test/issues/<file>.py -q -n 2`, and report its count
   beside its exit code. `python3 -m unittest test.issues.<name>` cannot import
