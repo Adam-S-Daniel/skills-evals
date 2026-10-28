@@ -6190,6 +6190,23 @@ def _guard_error(guard: dict) -> dict:
                       "memory; no score is written for it"}
 
 
+def _guidance_agent_model(fixture: dict, args: argparse.Namespace) -> str | None:
+    """A guidance run's arm model, resolved once per run as the skill path's
+    `select_models` does: the `--model` flag, the fixture's `model:` pin,
+    else the roster's first arm. Before 2026-10-28 an unpinned guidance run
+    left it to the CLI default and recorded `cross_model.model` null, so
+    compute_gates dropped every ingested guidance run ("no requested arm
+    model") and no section ever had evidence to retire or improve on. With
+    no readable roster (a harness copy without one) it stays None, the CLI
+    default, as before."""
+    pinned = getattr(args, "model", None) or fixture.get("model")
+    if pinned:
+        return pinned
+    roster, problem = read_roster(_resolve_roster(getattr(args, "roster", None)))
+    arm_ids = [] if problem else roster_models(roster)[0]
+    return arm_ids[0] if arm_ids else None
+
+
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up.
@@ -6211,7 +6228,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
     harness_version = getattr(args, "harness_version", None)
     permission_mode = _permission_mode(args)
     effort = _effort(args, fixture)
-    agent_model = getattr(args, "model", None) or fixture.get("model")
+    agent_model = (getattr(args, "model", None) or fixture.get("model")
+                   or ctx.get("agent_model"))
     extra = {}
     agent_summary = raw = tool_trace = None
     agent_models = []
@@ -6687,6 +6705,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
            # be handed a token that does not exist until its own turn comes.
            "decoys": {arm["name"]: guidance.new_decoy_token()
                       for arm in arms if arm["mode"] == "none"}}
+
+    ctx["agent_model"] = _guidance_agent_model(fixture, args)
 
     timestamp = getattr(args, "run_timestamp", None) or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     if getattr(args, "timestamp", None) is not None and (args.results_dir / key / timestamp).exists():

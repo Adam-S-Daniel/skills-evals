@@ -591,6 +591,23 @@ jobs:
             exit 1
           fi
 
+      # Guidance-improve mode only, no token in env: the plan's own rule A
+      # headroom (scripts/plan_week.py guidance-headroom) over the ingested
+      # runs, so a fire dispatched by hand cannot start a section the plan
+      # would never pick, one already passing at least 90% of its checks.
+      # The guidance proposer has no early stop (it interleaves baseline and
+      # candidate), so without this such a fire spends its whole run before
+      # rejecting (2026-10-28, run 20261028T213124Z-65c174). Numbers only.
+      - name: Check the guidance section's train headroom
+        if: steps.validate.outputs.mode == 'guidance-improve'
+        env:
+          SECTION: ${{ steps.validate.outputs.section }}
+        run: |
+          set -euo pipefail
+          as_of="$(git -C eval-results-branch log -1 --format=%cI)"
+          python3 scripts/plan_week.py guidance-headroom "$SECTION" \
+            --results-tree eval-results-branch --as-of "$as_of" --guidance _agent-guidance
+
       # Scaffold mode only. The job's read-only token, never the bearer: the
       # snapshot refuses a candidate outside the fleet, or whose repository
       # GitHub names differently (a rename redirect), before it reads GitHub
