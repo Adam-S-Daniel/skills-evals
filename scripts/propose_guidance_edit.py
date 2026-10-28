@@ -186,18 +186,29 @@ def fixture_layout_discover(evals_dir: Path, section: str) -> list[str]:
 
 def fixture_layout_argv(fixture_dir: Path, guidance_dir: Path, results_dir: Path,
                         ts: str, no_judge: bool, read_deny: Path) -> list[str]:
-    """run_eval.py's argv for ONE trial of the `full` ablation arm."""
+    """run_eval.py's argv for ONE trial of the `full` ablation arm.
+
+    No `--timestamp`: run_eval refuses it for a guidance fixture outside
+    in-place pairing, so every trial of the first live fire (2026-10-28)
+    ended `missing_summary`. Each trial gets its own empty `results_dir`
+    instead, and `fixture_layout_summary` finds the one summary in it."""
     argv = [str(fixture_dir), "--ablation", "--arm", ARM,
             "--guidance", str(guidance_dir), "--results-dir", str(results_dir),
-            "--timestamp", ts, "--read-deny", str(read_deny),
+            "--read-deny", str(read_deny),
             "--run-billing", "subscription", "--run-runner", "workstation",
             "--run-location", "local", "--run-id", ts]
     return argv + (["--no-judge"] if no_judge else [])
 
 
-def fixture_layout_summary(results_dir: Path, section: str, ts: str) -> Path:
-    """Where that one trial's summary.json lands."""
-    return results_dir / "guidance" / section / ts / ARM / "summary.json"
+def fixture_layout_summary(results_dir: Path, section: str) -> Path:
+    """That one trial's summary.json, under the run's own timestamp: the only
+    `<ARM>/summary.json` below `guidance/<section>/` in its fresh results
+    directory. None found, or more than one, gives a path that does not
+    exist, which `read_summary` reads as a missing summary."""
+    found = sorted((results_dir / "guidance" / section).glob(f"**/{ARM}/summary.json"))
+    if len(found) == 1:
+        return found[0]
+    return results_dir / "guidance" / section / ARM / "summary.json"
 
 
 # ---------------------------------------------------------------------------
@@ -986,7 +997,7 @@ def run_pipeline(args, runner, now, validator, p, ts, stem, scratch) -> int:
                     rc = runner.run_eval(fixture_layout_argv(
                         EVALS_DIR / name, roots[side], out, ts, args.no_judge, results))
                     summaries, rcs = raw[side][name]
-                    summaries.append(read_summary(fixture_layout_summary(out, section, ts)))
+                    summaries.append(read_summary(fixture_layout_summary(out, section)))
                     rcs.append(rc)
         return {side: {n: fixture_metrics(*raw[side][n]) for n in names}
                 for side in raw}
