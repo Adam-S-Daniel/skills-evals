@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BZm3tF9UP97X1tj14wJVgw",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BZm3tF9UP97X1tj14wJVgw",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n90e47d...",
+      "output_chars": 1174,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XCbtZMaxUFCYZvsRRSSq8e",
+      "name": "Bash",
+      "input": "cat README.md; for f in session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json session/skills.lock session/skills/synced/.bucket-*; do echo \"=== $f\"; cat \"$f\"; done; ls ...",
+      "input_chars": 264,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XCbtZMaxUFCYZvsRRSSq8e",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 3903,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FCpLZinY6zWPv8LkLnzcxE",
+      "name": "Bash",
+      "input": "for f in $(find session registry -name SKILL.md); do echo \"=== $f\"; cat -A \"$f\" | head -80; echo; sha256sum \"$f\"; done",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FCpLZinY6zWPv8LkLnzcxE",
+      "is_error": false,
+      "output": "=== session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/docx/SKILL.md\n---^M$\nname: docx^M$\ndescription: Create, read and edit Word documents.^M$\n---^M$\n^M$\n# docx^M$\n^M$\nUse the bundled python-docx helpers.^M$\n\ncb4fb0372d5d662b4205c3dac89a54dbd72ff85ae24d4...",
+      "output_chars": 2841,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FZLYZbDo5xRBUqHP4TRicF",
+      "name": "Bash",
+      "input": "git ls-files; echo ---; ls -la; head -c 600 .gitmodules .mcp.json 2>&1; echo; cd registry/plugins/adam/skills/writing-adrs && for c in \"cat SKILL.md\" \"printf 'SKILL.md\\n'; cat SKILL.md\" ; do :; done; ...",
+      "input_chars": 675,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FZLYZbDo5xRBUqHP4TRicF",
+      "is_error": false,
+      "output": "README.md\nregistry/plugins/adam/skills/adam-writing-style/SKILL.md\nregistry/plugins/adam/skills/writing-adrs/SKILL.md\nsession/skills.lock\nsession/skills/.skills-bootstrap-installed.json\nsession/skills/adam-writing-style/SKILL.md\nsession/skills/synced/.bucket-00000000-0000-4000-8000-000000000001_0000...",
+      "output_chars": 2066,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PJQecUAUrvtECLaBTfgLZS",
+      "name": "Bash",
+      "input": "cd <path> && date -u -d @1789713628; diff <(tr -d '\\r' < session/skills/synced/*<path>) session/skills/writing-adrs/SKILL.md; ls -la --time-style=full-iso session/skills/*/ session/skills/synced/*/*/",
+      "input_chars": 232,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PJQecUAUrvtECLaBTfgLZS",
+      "is_error": false,
+      "output": "Fri Sep 18 06:40:28 UTC 2026\n8a9\n> Status is one of Proposed, Accepted, Superseded.\n12c13,17\n< Context, Decision, Consequences, References.\n---\n> Context, Decision, Consequences, Alternatives considered, References.\n> \n> ## Index\n> \n> Every ADR gets a row in docs/decisions/README.md.\nsession/skills/...",
+      "output_chars": 1878,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H11GiSEiZ7HLsUeVmCTx73",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 35,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H11GiSEiZ7HLsUeVmCTx73",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 131,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
