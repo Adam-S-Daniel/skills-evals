@@ -247,7 +247,11 @@ class FakeRunner:
         self.seen[side] = (guidance_dir / "agents-md" / "base.md").read_text(encoding="utf-8")
         value = self.numbers[side][fixture]
         value = value(trial) if callable(value) else value
-        path = pge.fixture_layout_summary(out, SECTION, flag(argv, "--timestamp"))
+        # run_eval refuses --timestamp for a guidance fixture outside in-place
+        # pairing (2026-10-28: every live trial ended missing_summary), and
+        # picks its own timestamp directory.
+        assert "--timestamp" not in argv, "run_eval refuses --timestamp here"
+        path = out / "guidance" / SECTION / f"20261028T{trial:06d}Z" / pge.ARM / "summary.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(summary(*value)), encoding="utf-8")
         return self.rc
