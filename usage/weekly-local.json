@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-27T16:37:15Z",
+  "generated_at": "2026-10-28T16:37:18Z",
   "rows": [
     {
       "blocked": null,
@@ -254,8 +254,8 @@
       "week": "2026-10-19"
     },
     {
-      "blocked": 0,
-      "invocations": 20,
+      "blocked": 498,
+      "invocations": 582,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -303,7 +303,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 3,
+      "invocations": 564,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -350,8 +350,8 @@
       "week": "2026-10-26"
     },
     {
-      "blocked": 0,
-      "invocations": 3,
+      "blocked": 498,
+      "invocations": 564,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -399,7 +399,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 569,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -447,9 +447,21 @@
     },
     {
       "blocked": 0,
-      "invocations": 8,
+      "invocations": 569,
       "kind": "hook",
       "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-10-26"
+    },
+    {
+      "blocked": 0,
+      "invocations": 561,
+      "kind": "hook",
+      "name": "skill-shell",
       "outcome": null,
       "overridden": null,
       "repo": "other",
@@ -494,8 +506,8 @@
       "week": "2026-10-26"
     },
     {
-      "blocked": 0,
-      "invocations": 3,
+      "blocked": 497,
+      "invocations": 564,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -511,16 +523,16 @@
     {
       "from": "2026-09-07T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2506,
+      "sessions_scanned": 2514,
       "surface": "local",
-      "to": "2026-10-27T16:37:15Z"
+      "to": "2026-10-28T16:37:18Z"
     },
     {
       "from": "2026-09-07T00:00:00Z",
-      "runs_scanned": 20,
+      "runs_scanned": 582,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-10-27T16:37:15Z"
+      "to": "2026-10-28T16:37:18Z"
     }
   ]
 }
