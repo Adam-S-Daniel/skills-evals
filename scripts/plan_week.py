@@ -187,6 +187,19 @@ never holds up the evals behind it; every leg carries `section`, empty but
 for a guidance-improve leg) and `count=`. The log and job summary carry numbers and
 public skill names only: agent-check items are counted, never quoted.
 
+FIRE CHECK. `guidance-headroom SECTION` is routine-eval-fire.yml's check
+before a guidance-improve fire: the same rule A headroom over the same
+pooled in-situ `full` runs (`guidance_contexts`), so a fire dispatched by
+hand cannot start what the plan would never pick. Exit 1 when the train
+headroom is known and under `MIN_GAIN` (the section already passes at least
+90% of its checks; it needs harder fixtures), 0 otherwise. Unknown headroom
+passes: the guidance proposer measures before it decides, and the rule is
+about sections already at the ceiling. Unlike the skill proposer it has no
+early stop after a baseline (it interleaves baseline and candidate), so
+without this check such a fire spends its whole run before rejecting
+(2026-10-28: "anything-you-name-gets-its-link" at 72/72, run
+20261028T213124Z-65c174). The log names the section and the numbers only.
+
 EVIDENCE. `--evidence FILE` reads the GitHub evidence from a recorded JSON
 file ({fire_runs, improve_branches, registry_prs, on_hold}, and optionally
 guidance_branches, guidance_prs and guidance_on_hold, empty when absent);
@@ -1445,6 +1458,25 @@ def wait_slot(fetch, max_wait: int, clock=lambda: datetime.now(timezone.utc),
         waited += POLL_SECONDS
 
 
+def guidance_headroom(section: str, tree: Path, evals_dir: Path, guidance_dir: Path,
+                      as_of: str) -> tuple:
+    """(ok, message) for the fire check (module docstring, FIRE CHECK)."""
+    import compute_gates
+    gates_doc = compute_gates.compute(tree, evals_dir / "roster.yml",
+                                      evals_dir / "gate-policy.yml", evals_dir,
+                                      compute_gates.parse_as_of(as_of), {}, guidance_dir)
+    info = guidance_contexts(evals_dir, tree, compute_gates.parse_as_of(as_of), gates_doc,
+                             guidance_dir).get(section)
+    headroom = info["evidence"]["headroom"] if info else None
+    if headroom is None:
+        return True, f"section {section}: train headroom unknown; the proposer measures it"
+    if headroom < MIN_GAIN:
+        return False, (f"section {section}: train headroom {headroom:.3f} is under the "
+                       f"minimum gain {MIN_GAIN:g}; it needs harder fixtures, not an "
+                       "improve run")
+    return True, f"section {section}: train headroom {headroom:.3f}"
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1463,6 +1495,12 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--ranking-out", type=Path, default=None,
                    help="the improve ranking alone (public-safe), as JSON")
     sub.add_parser("validate-fire")
+    p = sub.add_parser("guidance-headroom")
+    p.add_argument("section")
+    p.add_argument("--results-tree", type=Path, required=True)
+    p.add_argument("--as-of", required=True)
+    p.add_argument("--guidance", type=Path, required=True)
+    p.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     p = sub.add_parser("wait-slot")
     p.add_argument("--max-wait", type=int, default=1500)
     args = parser.parse_args(argv)
@@ -1470,6 +1508,13 @@ def main(argv: list | None = None) -> int:
         if args.command == "validate-fire":
             validate_fire(dict(os.environ))
             return 0
+        if args.command == "guidance-headroom":
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.section):
+                raise PlanError("the section id is malformed")
+            ok, message = guidance_headroom(args.section, args.results_tree, args.evals_dir,
+                                            args.guidance, args.as_of)
+            print(message if ok else f"::error::{message}")
+            return 0 if ok else 1
         if args.command == "wait-slot":
             token = os.environ.get("GH_TOKEN", "")
             ok = wait_slot(lambda since: outcomes_mod.fetch_fire_runs(SELF_REPO, token, since),

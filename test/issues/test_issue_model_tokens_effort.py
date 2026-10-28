@@ -694,6 +694,61 @@ class GuidanceArmTests(unittest.TestCase):
         self.assertEqual(summary["cross_model"], MULTI_MODEL_CROSS)
 
 
+    def test_an_unpinned_guidance_arm_runs_and_records_the_runs_roster_model(self):
+        # 2026-10-28: unpinned guidance runs recorded `cross_model.model`
+        # null, and compute_gates dropped every one ("no requested arm
+        # model"). The run resolves the model once; the arm uses it.
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        args = argparse.Namespace(results_dir=tmp / "results", model=None,
+                                  timeout=30, no_judge=True,
+                                  harness_version=None, effort=None)
+        ctx = {"delivery": "user", "decoys": {}, "token": "TOK",
+               "guidance_dir": tmp, "row": {}, "section": "s",
+               "key": "guidance/s", "agent_model": OWN}
+        arm = {"name": "treatment", "mode": "section", "objective_checks": []}
+        info = {"bytes": 1, "verdict": "installed", "installed": True,
+                "returncode": 0, "dest": "x"}
+        guard = {"ok": True, "expected": True, "observed": True, "detail": "d"}
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm_config):
+            seen.update(arm_config)
+            return {"transcript": "t", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1,
+                    "raw": {"modelUsage": MULTI_MODEL_USAGE}}
+
+        with mock.patch.object(run_eval.guidance, "assemble", return_value="p"), \
+             mock.patch.object(run_eval.guidance, "deliver", return_value=info), \
+             mock.patch.object(run_eval.guidance, "agent_env", return_value={}), \
+             mock.patch.object(run_eval.guidance, "run_guard", return_value=guard), \
+             mock.patch.object(run_eval, "run_agent", fake_run_agent):
+            run_eval._run_guidance_arm(arm, {"prompt": "do it"}, tmp / "no-seed",
+                                       ctx, args, "T")
+        self.assertEqual(seen["model"], OWN)
+        summary = json.loads((tmp / "results" / "guidance" / "s" / "T"
+                              / "treatment" / "summary.json")
+                             .read_text(encoding="utf-8"))
+        self.assertEqual(summary["cross_model"]["model"], OWN)
+
+    def test_the_guidance_run_model_is_the_flag_the_pin_or_the_rosters_first_arm(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        roster = tmp / "roster.yml"
+        roster.write_text("arms:\n  - id: claude-arm-one\n  - id: claude-arm-two\n"
+                          "judge: claude-judge\n", encoding="utf-8")
+        flag = argparse.Namespace(model="claude-flag", roster=roster)
+        bare = argparse.Namespace(model=None, roster=roster)
+        self.assertEqual(run_eval._guidance_agent_model({"model": "claude-pin"}, flag),
+                         "claude-flag")
+        self.assertEqual(run_eval._guidance_agent_model({"model": "claude-pin"}, bare),
+                         "claude-pin")
+        self.assertEqual(run_eval._guidance_agent_model({}, bare), "claude-arm-one")
+        # No readable roster: the CLI default, as before.
+        missing = argparse.Namespace(model=None, roster=tmp / "absent.yml")
+        self.assertIsNone(run_eval._guidance_agent_model({}, missing))
+
+
 # ---------------------------------------------------------------------------
 # The improvement loop's tokens: the total across every model
 

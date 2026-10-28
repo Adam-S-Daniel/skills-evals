@@ -1191,6 +1191,41 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(got["finding-your-unknowns"]["verdict"], "insufficient")
         self.assertNotIn("_delivery", got)
 
+    def test_the_fire_check_refuses_a_section_with_no_train_headroom(self):
+        # 2026-10-28: a hand-dispatched guidance-improve fire on a section at
+        # 72/72 ran its whole loop before rejecting. The fire workflow now
+        # asks the plan's own rule A first.
+        section = "anything-you-name-gets-its-link"
+
+        def check(headroom, present=True):
+            ctx = ({section: {"evidence": {"headroom": headroom}}} if present else {})
+            out = io.StringIO()
+            with mock.patch.object(plan_week_compute_gates, "compute",
+                                   return_value={"roster_models": ["m"]}), \
+                 mock.patch.object(plan_week, "guidance_contexts", return_value=ctx), \
+                 contextlib.redirect_stdout(out):
+                code = plan_week.main(["guidance-headroom", section, "--results-tree", "t",
+                                       "--as-of", "2026-10-28T18:07:56+00:00",
+                                       "--guidance", "g"])
+            return code, out.getvalue()
+
+        code, out = check(0.0)
+        self.assertEqual(code, 1, out)
+        self.assertIn("::error::", out)
+        self.assertIn("needs harder fixtures", out)
+        code, out = check(plan_week.MIN_GAIN - 0.01)
+        self.assertEqual(code, 1, out)
+        self.assertEqual(check(plan_week.MIN_GAIN)[0], 0)
+        self.assertEqual(check(0.25)[0], 0)
+        # Unknown headroom passes: the proposer measures before it decides.
+        self.assertEqual(check(None)[0], 0)
+        self.assertEqual(check(None, present=False)[0], 0)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = plan_week.main(["guidance-headroom", "../x", "--results-tree", "t",
+                                   "--as-of", "2026-10-28T18:07:56+00:00", "--guidance", "g"])
+        self.assertEqual(code, 1)
+
     def test_ranking_out_writes_the_ranking_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
