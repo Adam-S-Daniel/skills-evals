@@ -5225,8 +5225,12 @@ class WorkflowPinnedPythonTests(unittest.TestCase):
     def test_the_guard_can_fail(self):
         # Mutation inside the test: the helper must flag each unpinned shape,
         # so a parser that silently matches nothing cannot pass the real check.
-        pin = {"uses": "actions/setup-python@v7.0.0",
-               "with": {"python-version": "3.12"}}
+        # The tag ci.yml uses, so it stays locked when Dependabot moves it.
+        ci = yaml.safe_load((self.WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+        locked = next(s["uses"] for job in ci["jobs"].values()
+                      for s in job.get("steps") or []
+                      if str(s.get("uses", "")).startswith(self.SETUP_PYTHON))
+        pin = {"uses": locked, "with": {"python-version": "3.12"}}
         run = {"name": "go", "run": "python3 x.py"}
         cases = {
             "no pin": ([run], ["j: go"]),
