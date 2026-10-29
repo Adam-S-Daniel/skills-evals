@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-10-27T12:47:13Z",
+  "generated_at": "2026-10-29T14:46:11Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-07T00:00:00Z",
-      "to": "2026-10-27T12:47:13Z",
+      "to": "2026-10-29T14:46:11Z",
       "repos_scanned": 22
     }
   ],
@@ -3671,7 +3671,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 26,
+      "invocations": 45,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3683,7 +3683,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/ai-usage-dashboard",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 3,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3695,7 +3695,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/claude-memory-map",
       "surface": "ci",
-      "invocations": 2,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3707,10 +3707,10 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 26,
+      "invocations": 64,
       "sessions": null,
-      "blocked": 0,
-      "overridden": 0,
+      "blocked": 1,
+      "overridden": 1,
       "outcome": null
     },
     {
@@ -3719,7 +3719,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/fastmail-actions",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 4,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3731,7 +3731,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 23,
+      "invocations": 38,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3743,7 +3743,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/rss-inator",
       "surface": "ci",
-      "invocations": 3,
+      "invocations": 4,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3755,7 +3755,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/scratch-claude-001",
       "surface": "ci",
-      "invocations": 1,
+      "invocations": 2,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3767,7 +3767,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/scratch-jules-001",
       "surface": "ci",
-      "invocations": 1,
+      "invocations": 2,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3779,7 +3779,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 69,
+      "invocations": 93,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3791,7 +3791,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/verify-actions-lock",
       "surface": "ci",
-      "invocations": 0,
+      "invocations": 3,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3803,7 +3803,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/wsl-automation",
       "surface": "ci",
-      "invocations": 1,
+      "invocations": 9,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3815,7 +3815,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/scratch-claude-002",
       "surface": "ci",
-      "invocations": 1,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3827,7 +3827,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/squarespacetemp",
       "surface": "ci",
-      "invocations": 1,
+      "invocations": 2,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3839,7 +3839,7 @@
       "name": "agent-checks",
       "repo": "private",
       "surface": "ci",
-      "invocations": 7,
+      "invocations": 13,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -3856,11 +3856,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 20,
-        "prs_merged": 19,
+        "prs_opened": 33,
+        "prs_merged": 33,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 16,
+        "agent_prs_merged": 25,
         "ci_red_after": 5
       }
     },
@@ -3875,11 +3875,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 7,
-        "prs_merged": 7,
+        "prs_opened": 12,
+        "prs_merged": 11,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 7,
+        "agent_prs_merged": 10,
         "ci_red_after": 0
       }
     },
@@ -3894,12 +3894,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 27,
-        "prs_merged": 29,
-        "prs_closed_unmerged": 2,
+        "prs_opened": 74,
+        "prs_merged": 72,
+        "prs_closed_unmerged": 10,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
-        "ci_red_after": 0
+        "agent_prs_merged": 2,
+        "ci_red_after": 1
       }
     },
     {
@@ -3913,11 +3913,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
+        "prs_opened": 3,
+        "prs_merged": 2,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -3932,11 +3932,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 2,
-        "prs_merged": 2,
+        "prs_opened": 5,
+        "prs_merged": 4,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 3,
         "ci_red_after": 0
       }
     },
@@ -3951,12 +3951,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 13,
-        "prs_merged": 15,
-        "prs_closed_unmerged": 0,
+        "prs_opened": 38,
+        "prs_merged": 45,
+        "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
-        "ci_red_after": 0
+        "agent_prs_merged": 12,
+        "ci_red_after": 1
       }
     },
     {
@@ -3970,11 +3970,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 1,
+        "prs_opened": 4,
+        "prs_merged": 4,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 1
       }
     },
@@ -3989,12 +3989,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 17,
-        "prs_merged": 13,
+        "prs_opened": 27,
+        "prs_merged": 27,
         "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 7,
-        "ci_red_after": 1
+        "agent_prs_merged": 10,
+        "ci_red_after": 2
       }
     },
     {
@@ -4008,11 +4008,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 2,
-        "prs_merged": 2,
+        "prs_opened": 3,
+        "prs_merged": 3,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4027,11 +4027,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 1,
-        "prs_merged": 1,
+        "prs_opened": 2,
+        "prs_merged": 2,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4046,11 +4046,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 1,
-        "prs_merged": 1,
+        "prs_opened": 2,
+        "prs_merged": 2,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4065,12 +4065,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 43,
-        "prs_merged": 43,
-        "prs_closed_unmerged": 1,
+        "prs_opened": 63,
+        "prs_merged": 61,
+        "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 40,
-        "ci_red_after": 10
+        "agent_prs_merged": 57,
+        "ci_red_after": 18
       }
     },
     {
@@ -4084,11 +4084,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 0,
-        "prs_merged": 0,
+        "prs_opened": 3,
+        "prs_merged": 2,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4103,11 +4103,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 1,
-        "prs_merged": 4,
+        "prs_opened": 8,
+        "prs_merged": 10,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
+        "agent_prs_merged": 3,
         "ci_red_after": 0
       }
     },
@@ -4122,11 +4122,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 6,
-        "prs_merged": 7,
-        "prs_closed_unmerged": 0,
+        "prs_opened": 18,
+        "prs_merged": 15,
+        "prs_closed_unmerged": 6,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
+        "agent_prs_merged": 2,
         "ci_red_after": 0
       }
     },
@@ -4141,11 +4141,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 1,
-        "prs_merged": 1,
+        "prs_opened": 4,
+        "prs_merged": 4,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4160,11 +4160,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 1,
-        "prs_merged": 1,
+        "prs_opened": 2,
+        "prs_merged": 2,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 0,
+        "agent_prs_merged": 1,
         "ci_red_after": 0
       }
     },
@@ -4179,11 +4179,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 8,
-        "prs_merged": 8,
+        "prs_opened": 14,
+        "prs_merged": 12,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 1,
+        "agent_prs_merged": 2,
         "ci_red_after": 0
       }
     }
