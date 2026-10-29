@@ -4724,7 +4724,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/skill-coverage.yml",
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
-               ".github/dependabot.yml", "evals/**",
+               ".github/dependabot.yml", "evals/**", "dashboard/**",
                "harness/**", "scripts/**", "test/**", "README.md",
                "DESIGN.md",
                "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",

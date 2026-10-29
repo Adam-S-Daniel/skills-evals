@@ -73,6 +73,7 @@ on:
       - .github/actions/**
       - .github/dependabot.yml
       - evals/**
+      - dashboard/**
       - harness/**
       - scripts/**
       - test/**
@@ -143,6 +144,7 @@ jobs:
             .github/actions/**
             .github/dependabot.yml
             evals/**
+            dashboard/**
             harness/**
             scripts/**
             test/**
