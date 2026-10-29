@@ -6821,7 +6821,7 @@ class TestProposalSentenceIsCoupledToRosterPrSed(_WeeklyLoop):
 # --- Round 6: the roster PR is the App's (ADR 0003) ---------------------------
 
 
-APP_TOKEN_ACTION = "actions/create-github-app-token@v3.2.0"
+APP_TOKEN_ACTION_PREFIX = "actions/create-github-app-token@"
 APP_TOKEN_STEP_ID = "roster-app-token"
 
 
@@ -6852,9 +6852,9 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
              "run": "pip install pyyaml==6.0.3"},
         ])
         self.assertEqual(step.get("id"), APP_TOKEN_STEP_ID)
-        self.assertEqual(step.get("uses"), APP_TOKEN_ACTION,
-                         "v3.2.0 by exact tag, locked in actions.lock")
-        for pinned in (setup[0]["uses"], APP_TOKEN_ACTION):
+        self.assertTrue(str(step.get("uses")).startswith(APP_TOKEN_ACTION_PREFIX),
+                        "the App token action by exact tag, locked in actions.lock")
+        for pinned in (setup[0]["uses"], step["uses"]):
             self.assertIsNone(lock_problem(pinned, EVAL_WORKFLOW))
         self.assertIs(step.get("continue-on-error"), True,
                       "a missing or broken App must degrade, not fail the job")
