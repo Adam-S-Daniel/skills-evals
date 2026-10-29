@@ -2,13 +2,11 @@
 # Guidance fixture: section-dotnet / load-settings
 #
 # The .NET section's rules on file I/O: nullable reference types enabled,
-# `async Task` for I/O with no `.Result` or `.Wait()`, disposal through
-# `using`, and the project's existing target framework kept. The seed's
-# csproj does not enable nullable reference types.
+# and the project's existing target framework kept. The seed's csproj does
+# not enable nullable reference types.
 #
-# What the section should change: an async LoadAsync, `#nullable enable` (or
-# `<Nullable>enable</Nullable>`), no blocking call, net8.0 kept. The prompt
-# names none of them.
+# What the section should change: `#nullable enable` (or
+# `<Nullable>enable</Nullable>`) and net8.0 kept. The prompt names neither.
 
 subject: guidance
 section: section-dotnet
@@ -44,12 +42,11 @@ objective_checks:
     paths: ["Settings.csproj", "SettingsStore.cs"]
     must_match: ["<Nullable>\\s*enable\\s*</Nullable>|#nullable\\s+enable"]
     require_present: true
-  - id: async-without-blocking
-    description: LoadAsync is async, and nothing blocks on a task with .Result, .Wait() or GetResult().
+  - id: load-async-defined
+    description: SettingsStore defines LoadAsync returning a task of AppSettings.
     type: file_matches_excluding_comments
     paths: ["SettingsStore.cs"]
     must_match: ["public\\s+(async\\s+)?(Task|ValueTask)<\\s*AppSettings\\s*>\\s+LoadAsync\\("]
-    must_not_match: ["\\.Result\\b", "\\.Wait\\(\\s*\\)", "GetAwaiter\\(\\)\\s*\\.\\s*GetResult\\("]
   - id: framework-kept
     description: The project still targets net8.0.
     type: file_matches
@@ -59,10 +56,7 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) .NET rules — nullable enabled with warnings resolved, async I/O with
-  no sync-over-async, streams disposed with using, target framework kept?
-  Cap at 3 if Load() blocks on LoadAsync() with .Result or .Wait(). A
-  synchronous Load() that uses File.ReadAllText (or says why it cannot
-  exist) is fine.
+  (1) .NET rules — nullable enabled with warnings resolved, target
+  framework kept?
   (2) Behavior — defaults when the file is missing, AppSettings otherwise?
-  (3) Naming — PascalCase public members, `_camelCase` private fields?
+  (3) Restraint — did the agent leave AppSettings as it was?

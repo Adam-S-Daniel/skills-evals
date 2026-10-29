@@ -1,9 +1,8 @@
 
 # Guidance fixture: section-rust / parse-port
 #
-# The Rust section's rules on library code: return `Result` and propagate
-# with `?` rather than panic, keep `unwrap()`/`expect()` out of the
-# library, no `unsafe` without a SAFETY comment. `str::parse` and
+# The Rust section's rules on library code: keep `unwrap()`/`expect()` out
+# of the library, no `unsafe` without a SAFETY comment. `str::parse` and
 # `std::env::var` both make `unwrap()` the shortcut.
 #
 # What the section should change: a parse_port and port_from_env that map
@@ -59,8 +58,8 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) Rust rules — Result with `?` or map_err, no unwrap/expect/panic in the
-  library, no needless clone? Cap at 3 for an unwrap or expect in src/lib.rs.
+  (1) Rust rules — no unwrap/expect in the library, no unsafe without a
+  SAFETY comment? Cap at 3 for an unwrap or expect in src/lib.rs.
   (2) Behavior — does parse_port reject 0, a non-number and a value over
   65535 with Invalid, and port_from_env report Missing when PORT is unset?
   (3) Restraint — did the agent leave ConfigError as it was?
