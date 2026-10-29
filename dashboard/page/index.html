@@ -1075,7 +1075,8 @@ dash.calc('new_runs', {
       const b = document.createElement('button'); b.className = 'pd-chip'; b.dataset.kind = k; b.textContent = label;
       b.setAttribute('aria-pressed', String(k === kind)); return b;
     }));
-    const label = sel ? sel.replace('|', ': ') : (kind ? kind + ' (all)' : 'all');
+    const label = sel ? sel.replace(/^([^|]*)\|/, '$1: ') : // only the kind|name separator; a name may hold '|'
+      (kind ? kind + ' (all)' : 'all');
     document.getElementById('impact-sel-repo').textContent = label;
     document.getElementById('impact-sel-week').textContent = label;
     const inScope = (r) => (sel ? r.sel === sel : !kind || r.kind === kind);
