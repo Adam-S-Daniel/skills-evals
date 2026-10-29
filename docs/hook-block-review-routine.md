@@ -1,8 +1,10 @@
 # Routine: weekly git hook block review
 
 **Fires:** weekly, Tuesday 18:23 UTC, from a claude.ai scheduled task in
-Adam's account named `Weekly git hook block review`. Each fire starts a fresh
-cloud session (environment `My Whitelist`, GitHub connector only). Its prompt
+Adam's account named `Weekly git hook block review`
+(`trig_01EdhriC21o7QigCHktTTaBx`). Each fire starts a new thread in the
+"Automatic Continuous Self Improvement and Evals" project, with that
+project's repositories and settings, and push-notifies Adam. Its prompt
 is one line pointing here, so the procedure is reviewed as a pull request
 rather than as an edit to a trigger nobody can diff.
 
