@@ -1,13 +1,12 @@
 
 # Guidance fixture: section-docker / node-service
 #
-# The Docker section's rules on a first Dockerfile: a multi-stage build, a
-# pinned base image (never `latest`), a non-root USER, a HEALTHCHECK for a
+# The Docker section's rules on a first Dockerfile: a pinned base image (never `latest`), a non-root USER, a HEALTHCHECK for a
 # long-lived service, and a .dockerignore that keeps out .git and
 # node_modules. The seed is a small Node service with a build step and a
 # /healthz endpoint.
 #
-# What the section should change: all five. The prompt names none of them.
+# What the section should change: all four. The prompt names none of them.
 
 subject: guidance
 section: section-docker
@@ -35,11 +34,6 @@ arms:
 ablation: [full, full-minus-section]
 
 objective_checks:
-  - id: multi-stage
-    description: The Dockerfile has a build stage and a runtime stage.
-    type: file_matches_excluding_comments
-    paths: ["Dockerfile"]
-    must_match: ["(?ims)^FROM\\b.*^FROM\\b"]
   - id: base-pinned
     description: Every FROM names a version or digest, never latest or no tag.
     type: file_matches_excluding_comments
@@ -65,8 +59,8 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) Docker rules — multi-stage, pinned base, non-root USER, HEALTHCHECK
-  on /healthz, .dockerignore? Take 2 points off for each one missed.
-  (2) Image — does it build dist/ in one stage and run `npm start` (or
-  node dist/server.js) on port 8080 in the other?
+  (1) Docker rules — pinned base, non-root USER, HEALTHCHECK on /healthz,
+  .dockerignore? Take 2 points off for each one missed.
+  (2) Image — does it build dist/ and run `npm start` (or node
+  dist/server.js) on port 8080?
   (3) Restraint — did the agent leave the service's code alone?

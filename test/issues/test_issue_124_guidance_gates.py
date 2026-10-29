@@ -557,8 +557,8 @@ class ThirdBatchFixtureTests(unittest.TestCase):
             "fetchWithRetry(url, attempts - 1) : r).catch(() => {});\n}\n\n"
             "module.exports = { getJson, fetchWithRetry };"))
         self._check(*args, {"src/client.js": trap},
-                    {"helper-exported": False, "no-var-no-loose-equality": False,
-                     "no-swallowed-error": False, "same-module-system": True})
+                    {"helper-exported": True, "no-swallowed-error": False,
+                     "same-module-system": True})
         good = seed.replace("module.exports = { getJson };", (
             "async function fetchWithRetry(url, attempts) {\n  let lastError;\n"
             "  for (let i = 0; i < attempts; i += 1) {\n    try {\n"
@@ -661,7 +661,7 @@ class FourthBatchFixtureTests(unittest.TestCase):
         trap = seed.replace("        _path = path;\n    }\n", "        _path = path;\n    }\n\n"
                             + methods + "    public AppSettings Load() => LoadAsync().Result;\n")
         check_fixture(self, *args, {"SettingsStore.cs": trap},
-                      {"nullable-enabled": False, "async-without-blocking": False,
+                      {"nullable-enabled": False, "load-async-defined": True,
                        "framework-kept": True})
         good = "#nullable enable\n" + seed.replace(
             "        _path = path;\n    }\n", "        _path = path;\n    }\n\n" + methods

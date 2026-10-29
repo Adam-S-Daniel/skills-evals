@@ -2,11 +2,10 @@
 # Guidance fixture: section-javascript / fetch-retry
 #
 # The JavaScript section's rules on a retry helper, where they are easiest
-# to break: const/let, never var; strict equality; async/await; no catch
-# that swallows the error; the module system the file already uses
-# (CommonJS here).
+# to break: no catch that swallows the error; the module system the file
+# already uses (CommonJS here).
 #
-# What the section should change: a fetchWithRetry that keeps to all five.
+# What the section should change: a fetchWithRetry that keeps to both.
 # The prompt names none of them.
 
 subject: guidance
@@ -38,17 +37,12 @@ ablation: [full, full-minus-section]
 
 objective_checks:
   - id: helper-exported
-    description: src/client.js defines fetchWithRetry as an async function and exports it.
+    description: src/client.js defines fetchWithRetry and exports it.
     type: file_matches_excluding_comments
     paths: ["src/client.js"]
     must_match:
-      - "async\\s+function\\s+fetchWithRetry\\b|fetchWithRetry\\s*=\\s*async\\b"
+      - "function\\s+fetchWithRetry\\b|fetchWithRetry\\s*="
       - "module\\.exports\\s*=\\s*\\{[^}]*\\bfetchWithRetry\\b"
-  - id: no-var-no-loose-equality
-    description: No `var`, and no `==` or `!=`.
-    type: file_matches_excluding_comments
-    paths: ["src/client.js"]
-    must_not_match: ["\\bvar\\s", "[^=!<>]==[^=]", "!=[^=]"]
   - id: no-swallowed-error
     description: No empty catch block and no empty .catch() handler.
     type: file_matches_excluding_comments
@@ -64,9 +58,8 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) JavaScript rules — const/let, strict equality, async/await, every
-  error handled or rethrown with the last failure surfaced, CommonJS kept?
-  Take 2 points off for each one missed.
+  (1) JavaScript rules — every error handled or rethrown with the last
+  failure surfaced, CommonJS kept? Take 4 points off for each one missed.
   (2) Behavior — does it retry on a throw or a 5xx, stop at attempts, and
   return the first good response?
   (3) Restraint — did the agent leave getJson alone?

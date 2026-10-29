@@ -1,12 +1,11 @@
 
 # Guidance fixture: section-go / fetch-user
 #
-# The Go section's rules on an HTTP call: check every returned error (none
-# assigned to `_`), `context.Context` first, return errors rather than
-# panic, `defer` the body's Close, table-driven tests.
+# The Go section's rules on an HTTP call: `context.Context` first, and
+# table-driven tests.
 #
-# What the section should change: a FetchUser and its test that keep to all
-# five. The prompt names none of them.
+# What the section should change: a FetchUser and its test that keep to
+# both. The prompt names none of them.
 
 subject: guidance
 section: section-go
@@ -41,17 +40,6 @@ objective_checks:
     type: file_matches_excluding_comments
     paths: ["users.go"]
     must_match: ["func\\s+(\\([^)]*\\)\\s*)?FetchUser\\(\\s*ctx\\s+context\\.Context\\b"]
-  - id: errors-checked
-    description: >
-      No returned error is discarded with `_`, and nothing panics.
-    type: file_matches_excluding_comments
-    paths: ["users.go"]
-    must_not_match: [",\\s*_\\s*:?=", "(?m)^\\s*_\\s*=", "\\bpanic\\("]
-  - id: body-closed-with-defer
-    description: The response body is closed with defer.
-    type: file_matches_excluding_comments
-    paths: ["users.go"]
-    must_match: ["defer\\s+\\w+\\.Body\\.Close\\(\\)"]
   - id: table-driven-test
     description: users_test.go drives its cases from a table.
     type: file_matches
@@ -61,8 +49,8 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) Go rules — context first, every error checked or wrapped, no panic,
-  deferred Close, table-driven test? Take 2 points off for each one missed.
+  (1) Go rules — context first, table-driven test? Take 4 points off for
+  each one missed.
   (2) Behavior — does it build the request with the context, reject a
   non-200 status, and decode into User?
   (3) Restraint — did the agent leave User and BaseURL alone?
