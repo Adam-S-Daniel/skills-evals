@@ -1,0 +1,403 @@
+{
+  "arm": "without_guidance",
+  "timestamp": "20261029T181126Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.054401099999999994,
+    "num_turns": 3,
+    "duration_ms": 11509,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 10152,
+      "cache_read_input_tokens": 60711,
+      "output_tokens": 771,
+      "output_tokens_details": {
+        "thinking_tokens": 163
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 10152,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 294,
+          "cache_read_input_tokens": 23297,
+          "cache_creation_input_tokens": 1308,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1308
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "no-concurrency-group",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "required-test-off-labeled",
+      "passed": false,
+      "detail": ".github/workflows/ci.yml contains /\\blabeled\\b/"
+    },
+    {
+      "id": "e2e-label-still-runs",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Required check",
+        "score": 9,
+        "rationale": "The `test` job is excluded from `labeled` events via an `if`, making its trigger set disjoint from label-driven runs, and no concurrency group or cancel-in-progress is used."
+      },
+      {
+        "name": "Behavior",
+        "score": 9,
+        "rationale": "The e2e job still runs when the `e2e` label is added (and on pushes with the label present), and `test` still runs on opened, synchronize and reopened."
+      },
+      {
+        "name": "Restraint",
+        "score": 9,
+        "rationale": "Only `.github/workflows/ci.yml` was changed; the ruleset and the rest of the repository were left alone."
+      }
+    ],
+    "overall": 9.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.312 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 771,
+      "cache_read_input_tokens": 60711,
+      "cache_creation_input_tokens": 10152,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": null,
+    "canonical_model": null,
+    "complete": true,
+    "dropped": 0,
+    "other_share": null,
+    "threshold": 0.5,
+    "flagged": null
+  },
+  "subject": "guidance",
+  "section": "automation-vs-branch-protection",
+  "mode": "none",
+  "bytes": 34,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v77b001ad, 34 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": "WUNCEIGN-4965",
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": null,
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "WUNCEIGN-4965"
+  },
+  "fixture_name": "required-check-concurrency",
+  "guidance_digests": {
+    "section": "ad6fc5fa90e95700f4e0c69dbcf32761320820d13a2f10c8e4ac6fdafb4cc81b",
+    "rest": "aaa7e5f9e1c35dcaff0deb5e6145df262efab8ee72d01627d0c23983338fc20b"
+  },
+  "fixture_digest": "f5c856ca9211b37f956dc81e64d4ff5450ab05b209f92fb8de04ce8d76c3f5e4",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261029T181020Z-014a70",
+    "session_id": "cse_01SphsQEUkeibnXyZk2JZQtj",
+    "harness_commit": "fb17f3c27f9d7caacc231288bef9c26f4d875295",
+    "cli_version": "2.1.312 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-10-29T18:11:26Z",
+    "ended_at": "2026-10-29T18:13:20Z",
+    "meter": {
+      "snapshot_count": 12,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-10-29T18:11:30.121Z",
+      "to_at": "2026-10-29T18:13:13Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "five_hour": {
+          "from": 0.11,
+          "to": 0.11,
+          "delta": 0.0,
+          "window_reset": false
+        },
+        "seven_day": {
+          "from": 0.59,
+          "to": 0.59,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEUkeibnXyZk2JZQtj",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-10-29T18:11:43Z",
+      "ended_at": "2026-10-29T18:13:20Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-10-29T18:11:43Z",
+          "ended_at": "2026-10-29T18:11:48Z",
+          "duration_ms": 5192,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-10-29T18:11:48Z",
+          "ended_at": "2026-10-29T18:12:01Z",
+          "duration_ms": 12827,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-10-29T18:13:13Z",
+          "ended_at": "2026-10-29T18:13:20Z",
+          "duration_ms": 7809,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-10-29T18:11:48.379Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "guard",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793308800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.11,
+                  "resetsAt": 1793308800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.59,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-29T18:11:51.945Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793308800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.11,
+                  "resetsAt": 1793308800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.59,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-10-29T18:13:13Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1793308800,
+              "rateLimitType": "five_hour",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "five_hour": {
+                  "utilization": 0.11,
+                  "resetsAt": 1793308800,
+                  "status": "allowed"
+                },
+                "seven_day": {
+                  "utilization": 0.59,
+                  "resetsAt": 1793638800,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 12827,
+        "num_turns": 3,
+        "cost_usd": 0.054401099999999994,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 771,
+            "cache_read_input_tokens": 60711,
+            "cache_creation_input_tokens": 10152,
+            "cost_usd": 0.054401099999999994
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 10152
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 7809,
+        "num_turns": 1,
+        "cost_usd": 0.029946300000000002,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 2173,
+            "output_tokens": 162,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00029830000000000004
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 236,
+            "cache_read_input_tokens": 27840,
+            "cache_creation_input_tokens": 6125,
+            "cost_usd": 0.029648
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 6125
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 5192,
+        "num_turns": 1,
+        "cost_usd": 0.0133052,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 10392,
+            "cache_creation_input_tokens": 3033,
+            "cost_usd": 0.0133052
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3033
+        },
+        "reasons": {}
+      },
+      "reasons": {}
+    }
+  }
+}
