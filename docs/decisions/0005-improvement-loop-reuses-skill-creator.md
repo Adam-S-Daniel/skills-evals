@@ -718,3 +718,47 @@ routine run and no real pull request.
   noisy or near-threshold measurement, plus one proposal call: 49 agent
   sessions for a four-fixture section, 73 at six. The prompt raises this
   mode's nested-agent limit to 100 and keeps the 90-minute stop.
+
+## Held-out screen addendum (2026-10-30)
+
+Adam, on the first loop-shipped improvement (adam-agentskills#87): its
+held-out fixture, `drift-report-capture`, passed 21 of 21 checks before and
+after the edit. A held-out fixture that already passes every check can catch
+a regression but can never show that an edit carries over to a task the
+proposer did not see. His ask: refuse such a held-out fixture, pick a harder
+one, and measure the held-out fixture before spending tokens on anything
+else.
+
+- **Held-out first.** Both proposers measure the rotating validation
+  fixture's baseline before anything else. `propose_skill_edit.py` now
+  measures its baseline one fixture per `local_eval.py --fixture` call (each
+  fixture still once, so no extra tokens), validation first;
+  `propose_guidance_edit.py` runs the validation fixture's baseline trials
+  before its proposal call and reuses them as that fixture's first
+  `--trials` baseline trials (so on that one fixture the baseline precedes
+  the candidate rather than interleaving with it; the regression guard reads
+  it, and a re-measure would cost a fixture's worth of trials).
+- **Saturated is refused.** `propose_skill_edit.saturated`: every objective
+  check passed in every trial, with no error. The judge is not consulted
+  (the motivating case had a judge mean of 8.6), and `decide` still guards
+  it. A saturated validation fixture is swapped for the next in rotation
+  order (`validation_order`, never the fixed holdout), and train becomes the
+  rest; the skill proposer passes over, unmeasured, a candidate whose
+  fixture-derived trigger set would be unusable. The record keeps the order
+  tried as `heldout_screen`.
+- **When nothing is harder.** Every candidate saturated, or the chosen one
+  errored: the run is rejected with phase `held-out` ("no held-out
+  headroom", or "inconclusive") before any train, trigger, proposal or
+  candidate spend. The fix is a harder fixture, the same as for the "no
+  train headroom" stop.
+- **The gates refuse it too.** `improve_gate.py` and
+  `guidance_improve_gate.py` reject an accepted record whose validation
+  fixture's baseline passed every check, so an older or edited copy of the
+  loop cannot land such an edit.
+- **Existing cases.** The routine runs with an empty results directory, so
+  the default rotation is always 0 and every run held out the first fixture
+  by name; for review-bash-ci-reliability that is the saturated
+  `drift-report-capture`. From this change the screen moves past it on the
+  next run. Of the accepted records on `claude/eval-improve-*` and
+  `claude/eval-guidance-improve-*` branches on 2026-10-30, only #87's had a
+  saturated held-out fixture.
