@@ -23974,6 +23974,18 @@ class TestIssue86(unittest.TestCase):
             with_equals={"mode": "post"}, marker_not_html_comment=True)
         self.assertFalse(passed)
 
+    def test_marker_not_html_comment_rejects_the_bang_comment_end(self):
+        # HTML ends a comment at `--!>` as well as `-->`.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n"
+             "          marker: \"e2e-failure --!>\"\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_not_html_comment=True)
+        self.assertFalse(passed)
+
     def test_marker_not_html_comment_accepts_a_bare_marker(self):
         wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
              "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
