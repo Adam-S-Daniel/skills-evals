@@ -6844,9 +6844,12 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         # edits PATH or GITHUB_ENV, an `env`, an `if`) is code that runs
         # before the key exists and shapes the steps that hold it.
         *setup, step, manage = self.job["steps"]
-        self.assertEqual(setup, [
+        # setup-python's tag is Dependabot's to move; the lock check below
+        # keeps it exact.
+        python = dict(setup[0])
+        self.assertTrue(str(python.pop("uses", "")).startswith("actions/setup-python@"))
+        self.assertEqual([python, setup[1]], [
             {"name": "Set up Python",
-             "uses": "actions/setup-python@v7.0.0",
              "with": {"python-version": "3.12"}},
             {"name": "Install roster dependency",
              "run": "pip install pyyaml==6.0.3"},
