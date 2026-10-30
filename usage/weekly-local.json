@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-29T16:37:14Z",
+  "generated_at": "2026-10-30T16:37:13Z",
   "rows": [
     {
       "blocked": null,
@@ -255,7 +255,7 @@
     },
     {
       "blocked": 498,
-      "invocations": 854,
+      "invocations": 1056,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -303,7 +303,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 836,
+      "invocations": 1038,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -351,7 +351,7 @@
     },
     {
       "blocked": 498,
-      "invocations": 836,
+      "invocations": 1038,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -399,7 +399,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 841,
+      "invocations": 1043,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -447,7 +447,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 841,
+      "invocations": 1043,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -459,7 +459,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 833,
+      "invocations": 1035,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -507,7 +507,7 @@
     },
     {
       "blocked": 497,
-      "invocations": 836,
+      "invocations": 1038,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -523,16 +523,16 @@
     {
       "from": "2026-09-07T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2515,
+      "sessions_scanned": 2517,
       "surface": "local",
-      "to": "2026-10-29T16:37:14Z"
+      "to": "2026-10-30T16:37:13Z"
     },
     {
       "from": "2026-09-07T00:00:00Z",
-      "runs_scanned": 854,
+      "runs_scanned": 1056,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-10-29T16:37:14Z"
+      "to": "2026-10-30T16:37:13Z"
     }
   ]
 }
