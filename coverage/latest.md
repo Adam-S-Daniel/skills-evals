@@ -5,8 +5,8 @@
 | adam-agentskills | 21 | 13 | 8 | 0 |
 | cms-platform | 13 | 10 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
-| adam-agentskills-private | 1 | 1 | 0 | 0 |
-| **Total** | 36 | 25 | 11 | 0 |
+| adam-agentskills-private | 3 | 1 | 0 | 2 |
+| **Total** | 38 | 25 | 11 | 2 |
 
 ## adam-agentskills
 
