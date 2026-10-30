@@ -259,7 +259,7 @@ jobs:
       # modes, runs scripts/improve_gate.py or guidance_improve_gate.py
       # fire-check.
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
 
@@ -635,7 +635,7 @@ jobs:
       - name: Mint the read-only token for the lessons
         id: lessons-token
         if: steps.validate.outputs.mode == 'draft'
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
           private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
