@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Stand-in for dasel: prints the `version = "..."` value of the file named by
+# -f/--file (or read on stdin), whatever selector it is given.
+file=
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -f|--file) file=$2; shift 2 ;;
+        --file=*) file=${1#--file=}; shift ;;
+        *) shift ;;
+    esac
+done
+if [[ -n "$file" ]]; then src=$(cat -- "$file") || exit 1; else src=$(cat); fi
+value=$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' <<<"$src" | head -1)
+[[ -n "$value" ]] || { echo "dasel: no such key" >&2; exit 1; }
+printf '%s\n' "$value"
