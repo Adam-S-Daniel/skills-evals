@@ -98,6 +98,23 @@ def flag(argv: list[str], name: str) -> str:
     return argv[argv.index(name) + 1]
 
 
+def eval_phases(runner) -> list[str]:
+    """The phases of the runner's local_eval calls, consecutive repeats
+    collapsed: one "baseline" stands for its one-fixture-per-call series."""
+    out = []
+    for call in runner.calls:
+        if call[0] == "run_eval" and (not out or out[-1] != call[1]):
+            out.append(call[1])
+    return out
+
+
+def phase_of(run_dir: Path) -> str:
+    """"baseline" or "candidate": the baseline is measured one fixture per
+    call, under `runs/baseline/<skill>/<ts>/<fixture>`."""
+    return next(part for part in reversed(Path(run_dir).parts)
+                if part in ("baseline", "candidate"))
+
+
 def usage_block(tokens: int) -> dict:
     """A CLI `usage` block whose four token counts sum to `tokens`."""
     tenth = tokens // 10
@@ -163,14 +180,17 @@ class FakeRunner:
 
     def run_eval(self, argv):
         run_dir = Path(flag(argv, "--results-dir"))
-        label = run_dir.parent.parent.name
+        label = phase_of(run_dir)
         registry = Path(flag(argv, "--registry").split("=", 1)[1])
         self.calls.append(("run_eval", label, registry, list(argv)))
         assert not run_dir.exists(), "local_eval destination must start empty"
         assert not (registry / ".git").exists(), "scratch registry carries .git"
         self.seen_skill_md[label] = (registry / "plugins" / "demo" / "skills"
                                      / SKILL / "SKILL.md").read_text(encoding="utf-8")
+        only = flag(argv, "--fixture") if "--fixture" in argv else None
         for fixture, (passed, total, judge) in self.numbers[label].items():
+            if only is not None and fixture != only:
+                continue
             write_arm(run_dir, flag(argv, "--timestamp"), fixture,
                       passed, total, judge,
                       int(flag(argv, "--trials")), self.tokens[label],
@@ -218,7 +238,7 @@ class RefusingRunner(FakeRunner):
         self.phase = phase
 
     def run_eval(self, argv):
-        if Path(flag(argv, "--results-dir")).parent.parent.name == self.phase:
+        if phase_of(Path(flag(argv, "--results-dir"))) == self.phase:
             self.calls.append(("refused", self.phase))
             return 2
         return super().run_eval(argv)
@@ -382,7 +402,7 @@ class RefusalTests(PipelineCase):
                                  ("refused", phase, 2))
                 self.assertEqual(record["decision"], "refused")
                 self.assertIn("apiKeyHelper", record["reasons"][0])
-                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                self.assertEqual(eval_phases(runner),
                                  ["baseline"])
                 shutil.rmtree(self.results)
 
@@ -534,7 +554,11 @@ class AcceptTests(PipelineCase):
 
     def test_measurement_uses_local_eval_with_n_trials_on_with_skill(self):
         evals = [c for c in self.runner.calls if c[0] == "run_eval"]
-        self.assertEqual([c[1] for c in evals], ["baseline", "candidate"])
+        self.assertEqual(eval_phases(self.runner), ["baseline", "candidate"])
+        # The baseline is one call per fixture; the candidate one call for all.
+        self.assertEqual(sorted(flag(c[3], "--fixture") for c in evals
+                                if c[1] == "baseline"), FIXTURES)
+        self.assertNotIn("--fixture", evals[-1][3])
         for _, _, _, argv in evals:
             self.assertEqual(flag(argv, "--arm"), "with_skill")
             self.assertEqual(flag(argv, "--trials"), "3")
@@ -546,7 +570,7 @@ class AcceptTests(PipelineCase):
         # The candidate's arms must not read the baseline run or the proposed
         # patch, both under the results root beside the candidate's own run.
         evals = [c for c in self.runner.calls if c[0] == "run_eval"]
-        self.assertEqual(len(evals), 2)
+        self.assertEqual(eval_phases(self.runner), ["baseline", "candidate"])
         for _, _, _, argv in evals:
             self.assertEqual(Path(flag(argv, "--read-deny")), self.results.resolve())
 
@@ -608,7 +632,8 @@ class NoHeadroomTests(PipelineCase):
         self.assertEqual((record["status"], record["decision"]), ("rejected", "rejected"))
         self.assertIn("no train headroom", " ".join(record["reasons"]))
         self.assertIn("0.950", " ".join(record["reasons"]))
-        self.assertEqual([c[0] for c in runner.calls], ["run_eval"])
+        self.assertEqual({c[0] for c in runner.calls}, {"run_eval"})
+        self.assertEqual(eval_phases(runner), ["baseline"])
 
     def test_a_judge_with_room_keeps_the_run_going(self):
         numbers = self.numbers(19, 20, 8.0)
@@ -652,7 +677,7 @@ class RejectTests(PipelineCase):
             def run_eval(self, argv):
                 rc = super().run_eval(argv)
                 run_dir = Path(flag(argv, "--results-dir"))
-                if run_dir.parent.parent.name == "baseline":
+                if phase_of(run_dir) == "baseline" and run_dir.name == "bootstrap":
                     (run_dir / "t2" / SKILL / TS / "bootstrap" / "with_skill"
                      / "summary.json").unlink()
                 return rc
@@ -670,7 +695,7 @@ class RejectTests(PipelineCase):
             def run_eval(self, argv):
                 rc = super().run_eval(argv)
                 run_dir = Path(flag(argv, "--results-dir"))
-                if run_dir.parent.parent.name == "baseline":
+                if phase_of(run_dir) == "baseline" and run_dir.name == "bootstrap":
                     path = (run_dir / "t2" / SKILL / TS / "bootstrap"
                             / "with_skill" / "summary.json")
                     summary = json.loads(path.read_text())
@@ -694,7 +719,7 @@ class RejectTests(PipelineCase):
             def run_eval(self, argv):
                 rc = super().run_eval(argv)
                 run_dir = Path(flag(argv, "--results-dir"))
-                if run_dir.parent.parent.name == "baseline":
+                if phase_of(run_dir) == "baseline" and run_dir.name == "bootstrap":
                     if self.fault == "manifest":
                         (run_dir / "manifest.json").write_text(json.dumps({
                             "trials": [{"trial": 1, "exit_code": 0},
@@ -744,9 +769,11 @@ class RejectTests(PipelineCase):
             for phase in ("baseline", "candidate"):
                 self.assertTrue(all(m["error"] is None
                                     for m in record[phase].values()))
-            for phase in ("baseline", "candidate"):
-                path = pse.run_paths(self.results, phase, SKILL, stamp)
-                self.assertTrue((path / "t1").is_dir())
+            self.assertTrue((pse.run_paths(self.results, "candidate", SKILL, stamp)
+                             / "t1").is_dir())
+            for name in FIXTURES:
+                self.assertTrue((pse.baseline_dir(self.results, SKILL, stamp, name)
+                                 / "t1").is_dir())
         self.assertNotEqual(pse.run_paths(self.results, "baseline", SKILL, TS),
                             pse.run_paths(self.results, "baseline", "another-skill", TS))
 
@@ -769,7 +796,7 @@ class RejectTests(PipelineCase):
         runner = FakeRunner(GOOD, {}, proposal(bad))
         rc, out, _ = self.run_main(runner)
         self.assertEqual(rc, 1)
-        self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
+        self.assertEqual(eval_phases(runner), ["baseline"])
         self.assertEqual(self.record()["status"], "invalid-proposal")
         self.assertEqual(self.record()["decision"], "rejected")
         self.assertIn("README.md", self.record()["reasons"][0])
@@ -787,7 +814,7 @@ class RejectTests(PipelineCase):
         runner = FakeRunner(GOOD, {}, proposal(bad))
         rc, _, _ = self.run_main(runner)
         self.assertEqual(rc, 1)
-        self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
+        self.assertEqual(eval_phases(runner), ["baseline"])
         self.assertIn("frontmatter", self.record()["reasons"][0])
 
     def test_no_change_from_either_half_measures_nothing(self):
@@ -796,10 +823,12 @@ class RejectTests(PipelineCase):
         self.assertEqual(rc, 1)
         self.assertEqual(self.record()["status"], "no-candidate")
         self.assertEqual(self.record()["decision"], "no-candidate")
-        self.assertEqual(len([c for c in runner.calls if c[0] == "run_eval"]), 1)
+        self.assertEqual(eval_phases(runner), ["baseline"])
 
     def test_no_candidate_records_tokens_for_train_validation_and_fixed_holdout(self):
-        passes = {name: (4, 4, 7.0) for name in FIXTURES}
+        # The validation fixture misses a check, so the held-out screen keeps it.
+        passes = dict({name: (4, 4, 7.0) for name in FIXTURES},
+                      bootstrap=(3, 4, 7.0))
         runner = FakeRunner(passes, {}, None)
         rc, _, _ = self.run_main(runner, "--rotation", "0", "--holdout", "supersede")
         self.assertEqual(rc, 1)
@@ -831,6 +860,8 @@ class RejectTests(PipelineCase):
             def run_eval(self, argv):
                 super().run_eval(argv)
                 run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.name != "existing-convention":
+                    return 1
                 missing = run_dir / "t1" / SKILL / TS / "existing-convention" / "with_skill"
                 shutil.rmtree(missing)
                 return 2
@@ -845,6 +876,117 @@ class RejectTests(PipelineCase):
         self.assertEqual(record["baseline"]["bootstrap"]["tokens"], 1000)
         self.assertIsNone(record["baseline"]["existing-convention"]["tokens"])
         self.assertEqual(record["baseline"]["supersede"]["tokens"], 1000)
+
+
+class HeldOutScreenTests(PipelineCase):
+    """A held-out fixture that already passes every check can only show a
+    regression, so the improver measures the held-out fixture first and
+    swaps a saturated one for the next in rotation order, before any train,
+    trigger, proposal or candidate spend (ADR 0005's held-out screen
+    addendum)."""
+
+    def baseline_order(self, runner):
+        return [flag(c[3], "--fixture") for c in runner.calls
+                if c[0] == "run_eval" and c[1] == "baseline"]
+
+    def test_saturated_and_errored_metrics(self):
+        self.assertTrue(pse.saturated({"error": None, "passed": 21, "total": 21}))
+        self.assertFalse(pse.saturated({"error": None, "passed": 20, "total": 21}))
+        self.assertFalse(pse.saturated({"error": "trial_exit", "passed": 4, "total": 4}))
+        self.assertFalse(pse.saturated({"error": None, "passed": 0, "total": 0}))
+        self.assertFalse(pse.saturated({"error": None, "passed": None, "total": None}))
+        # The judge is not consulted: 21/21 checks with a judge of 8.6 is
+        # the case that motivated the rule.
+        self.assertTrue(pse.saturated({"error": None, "passed": 21, "total": 21,
+                                       "judge_mean": 8.6}))
+
+    def test_validation_order_starts_at_the_rotation_and_skips_the_holdout(self):
+        self.assertEqual(pse.validation_order(FIXTURES, 2),
+                         ["supersede", "bootstrap", "existing-convention"])
+        self.assertEqual(pse.validation_order(FIXTURES, 0, "bootstrap"),
+                         ["existing-convention", "supersede"])
+
+    def test_held_out_fixture_is_measured_before_any_train_fixture(self):
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        self.run_main(runner, "--rotation", "2")
+        self.assertEqual(self.baseline_order(runner)[0], "supersede")
+        self.assertEqual(sorted(self.baseline_order(runner)), FIXTURES)
+        self.assertEqual(self.record()["heldout_screen"], [
+            {"fixture": "supersede", "measured": True, "passed": 9, "total": 12,
+             "saturated": False}])
+
+    def test_saturated_held_out_is_swapped_for_the_next_in_rotation(self):
+        numbers = {"bootstrap": (2, 4, 6.0), "existing-convention": (2, 4, 6.0),
+                   "supersede": (4, 4, 8.6)}
+        candidate = dict(numbers, **{"existing-convention": (4, 4, 7.0)})
+        runner = FakeRunner(numbers, candidate, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        record = self.record()
+        self.assertEqual(self.baseline_order(runner),
+                         ["supersede", "bootstrap", "existing-convention"])
+        self.assertEqual(record["split"], {"rotation": 2,
+                                           "train": ["existing-convention", "supersede"],
+                                           "validation": "bootstrap"})
+        self.assertEqual([(e["fixture"], e["saturated"]) for e in record["heldout_screen"]],
+                         [("supersede", True), ("bootstrap", False)])
+        # The new validation fixture's prompt never reaches the trigger loop,
+        # and its failures never reach the proposer.
+        bootstrap_prompt = " ".join(pse.run_eval.load_fixture(
+            pse.EVALS_DIR / SKILL / "bootstrap")["prompt"].split())
+        self.assertNotIn(bootstrap_prompt, [i["query"] for i in runner.eval_set])
+        prompt = next(c[1] for c in runner.calls if c[0] == "propose")
+        self.assertNotIn('<fixture name="bootstrap">', prompt)
+        self.assertIn('<fixture name="existing-convention">', prompt)
+        self.assertEqual(rc, 0)
+        self.assertEqual(record["status"], "accepted")
+
+    def test_every_candidate_saturated_stops_before_any_other_spend(self):
+        numbers = {name: (4, 4, 6.0) for name in FIXTURES}
+        runner = FakeRunner(numbers, {}, None)
+        rc, out, _ = self.run_main(runner, "--rotation", "1")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"]), ("rejected", "held-out"))
+        self.assertIn("no held-out headroom", record["reasons"][0])
+        self.assertIn("no held-out headroom", out)
+        self.assertEqual(self.baseline_order(runner),
+                         ["existing-convention", "supersede", "bootstrap"])
+        self.assertEqual(eval_phases(runner), ["baseline"])
+        self.assertFalse(any(c[0] in ("loop", "propose") for c in runner.calls))
+
+    def test_errored_held_out_stops_before_train_is_measured(self):
+        class ErroredHeldOut(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.name == "supersede":
+                    path = (run_dir / "t1" / SKILL / TS / "supersede"
+                            / "with_skill" / "summary.json")
+                    summary = json.loads(path.read_text())
+                    summary["error"] = {"type": "nonzero_exit"}
+                    path.write_text(json.dumps(summary))
+                return rc
+
+        runner = ErroredHeldOut(GOOD, {}, None)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"]), ("rejected", "held-out"))
+        self.assertIn("inconclusive", record["reasons"][0])
+        self.assertEqual(self.baseline_order(runner), ["supersede"])
+        self.assertFalse(any(c[0] in ("loop", "propose") for c in runner.calls))
+
+    def test_fixed_holdout_is_never_a_validation_candidate(self):
+        numbers = {"bootstrap": (2, 4, 6.0), "existing-convention": (4, 4, 6.0),
+                   "supersede": (2, 4, 6.0)}
+        runner = FakeRunner(numbers, {}, proposal(""))
+        self.run_main(runner, "--rotation", "0", "--holdout", "bootstrap")
+        record = self.record()
+        self.assertEqual(self.baseline_order(runner)[:2],
+                         ["existing-convention", "supersede"])
+        self.assertEqual(record["split"]["validation"], "supersede")
+        self.assertEqual(record["split"]["holdout"], "bootstrap")
+        self.assertEqual(record["split"]["train"], ["existing-convention"])
 
 
 def trial_split(n: int, holdout: float = 0.4) -> tuple[int, int]:
@@ -1575,7 +1717,7 @@ class HardeningPipelineTests(PipelineCase):
         self.assertEqual(record["status"], "invalid-proposal")
         self.assertIn("control character", record["reasons"][0])
         self.assertIsNone(record["candidate"])
-        self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
+        self.assertEqual(eval_phases(runner), ["baseline"])
 
     def test_whitespace_descriptions_are_flattened_and_measured(self):
         candidate = dict(GOOD, **{"bootstrap": (3, 4, 7.0)})
@@ -1591,7 +1733,7 @@ class HardeningPipelineTests(PipelineCase):
                 self.assertEqual(record["status"], "accepted")
                 self.assertIn("bootstrap", record["baseline"])
                 self.assertIn("bootstrap", record["candidate"])
-                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                self.assertEqual(eval_phases(runner),
                                  ["baseline", "candidate"])
                 self.assertEqual(record["body_half"]["unified_diff"], BODY_DIFF)
                 measured = runner.seen_skill_md["candidate"]
@@ -2100,7 +2242,7 @@ class GuardedRunnerTests(unittest.TestCase):
                                  ("refused", phase, 2))
                 self.assertIn("apiKeyHelper", record["reasons"][0])
                 self.assertFalse(self.cli_log.exists(), "CLI sentinel reached")
-                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                self.assertEqual(eval_phases(runner),
                                  ["baseline"])
                 shutil.rmtree(results)
                 if settings.exists():

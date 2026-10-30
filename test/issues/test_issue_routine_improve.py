@@ -394,6 +394,18 @@ class RejectContentTests(GitCase):
                 self.git("reset", "-q", "--hard", "main")
                 self.rejects(r"status", summary_json=self.rec(status=status))
 
+    def test_rejects_a_held_out_fixture_that_already_passed_everything(self):
+        # The loop's own held-out screen refuses such a validation fixture;
+        # the gate refuses the record too, so no older or edited copy of the
+        # loop can ship an edit whose held-out test could not tell anything.
+        full = {"bootstrap": metrics(1), "existing-convention": metrics(2)}
+        self.rejects(r"held-out fixture passed every check",
+                     summary_json=self.rec(baseline=full))
+        self.git("reset", "-q", "--hard", "main")
+        partial = {"bootstrap": metrics(1), "existing-convention": metrics(1)}
+        self.commit(good_files(summary_json=self.rec(baseline=partial)))
+        self.assertEqual(self.validate()["skill"], SKILL)
+
     def test_rejects_another_registry_or_a_bad_sha(self):
         cases = [
             {"name": "cms-platform"},

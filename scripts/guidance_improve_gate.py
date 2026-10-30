@@ -159,7 +159,7 @@ RECORD_REQUIRED = ("schema", "section", "timestamp", "row", "guidance", "split",
                    "trials", "proposal", "baseline", "candidate", "patch_validation",
                    "files", "status", "exit_code", "reasons")
 RECORD_ALLOWED = RECORD_REQUIRED + ("local_exhibit", "no_judge", "models", "tokens_basis",
-                                    "runs", "table", "phase")
+                                    "runs", "table", "phase", "heldout_screen")
 REPORT_TITLE = "## Proposed `{section}` guidance edit (validation-gated)"
 DIFF_HEADER_RE = re.compile(r"diff --git a/(?P<a>\S+) b/(?P<b>\S+)")
 INDEX_RE = re.compile(r"index [0-9a-f]{7,64}\.\.[0-9a-f]{7,64}(?: 100644)?")
@@ -226,6 +226,14 @@ def check_record(doc, where: str, fixtures: list[str]) -> dict:
     if sorted(names) != sorted(fixtures):
         raise Rejected(f"{where}: the split is not the section's fixtures on the "
                        "default branch")
+    held = (doc["baseline"].get(split["validation"])
+            if isinstance(doc["baseline"], dict) else None)
+    if isinstance(held, dict) and type(held.get("passed")) is int \
+            and type(held.get("total")) is int and held["total"] >= 1 \
+            and held["passed"] == held["total"]:
+        raise Rejected(f"{where}: the held-out fixture passed every check on "
+                       "the baseline, so it cannot show the edit carries over "
+                       "(propose_guidance_edit's held-out screen)")
     return {"section": section, "guidance_sha": found["sha"], "section_file": row["file"],
             "heading": heading}
 

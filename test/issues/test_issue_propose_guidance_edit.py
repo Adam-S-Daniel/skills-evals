@@ -464,10 +464,14 @@ class AcceptTests(PipelineCase):
         self.run_main(runner)
         order = [(c[3], c[2], c[1]) for c in runner.calls if c[0] == "run_eval"]
         names = FIXTURES[1:3] + [FIXTURES[0], FIXTURES[3]]
-        expected = [(k, n, side) for k in (1, 2, 3) for n in names
-                    for side in ("baseline", "candidate")]
+        # The held-out (validation) fixture's baseline trials run first, before
+        # the proposal, and are not re-run in the interleaved measurement.
+        screened = [(k, FIXTURES[0], "baseline") for k in (1, 2, 3)]
+        expected = screened + [(k, n, side) for k in (1, 2, 3) for n in names
+                               for side in ("baseline", "candidate")
+                               if (k, n, side) not in screened]
         self.assertEqual(order, expected)
-        self.assertEqual(runner.calls[0][0], "propose")
+        self.assertEqual([c[0] for c in runner.calls].index("propose"), 3)
 
     def test_a_varying_arm_extends_to_six_trials(self):
         varying = dict(GAIN_C, **{FIXTURES[0]: lambda k: (9 if k % 2 else 8, 10)})
@@ -531,7 +535,9 @@ class RejectAndRefuseTests(PipelineCase):
         rc, _, _ = self.run_main(runner)
         self.assertEqual(rc, 1)
         self.assertEqual(self.record()["status"], "invalid-proposal")
-        self.assertFalse([c for c in runner.calls if c[0] == "run_eval"])
+        # Only the held-out screen ran: the validation fixture's baseline.
+        self.assertEqual([(c[1], c[2]) for c in runner.calls if c[0] == "run_eval"],
+                         [("baseline", FIXTURES[0])] * 3)
         self.assertFalse(self.stem().with_suffix(".patch").exists())
 
     def test_refused_environment_is_exit_2_before_the_proposal(self):
@@ -541,6 +547,59 @@ class RejectAndRefuseTests(PipelineCase):
         self.assertEqual(rc, 2)
         self.assertEqual(self.record()["phase"], "preflight")
         self.assertEqual(runner.calls, [])
+
+
+class HeldOutScreenTests(PipelineCase):
+    """The validation fixture is measured before the proposal; one that
+    passes every check is swapped for the next in rotation order."""
+
+    def baseline_before_proposal(self, runner):
+        first = [c[0] for c in runner.calls].index("propose") \
+            if any(c[0] == "propose" for c in runner.calls) else len(runner.calls)
+        return [(c[2], c[3]) for c in runner.calls[:first] if c[0] == "run_eval"]
+
+    def test_saturated_validation_is_swapped_and_its_trials_reused(self):
+        base = dict(GAIN_B, **{FIXTURES[0]: (10, 10)})
+        cand = dict(GAIN_C, **{FIXTURES[0]: (10, 10)})
+        runner = FakeRunner(base, cand, reply())
+        self.run_main(runner)
+        record = self.record()
+        self.assertEqual(self.baseline_before_proposal(runner),
+                         [(FIXTURES[0], k) for k in (1, 2, 3)]
+                         + [(FIXTURES[1], k) for k in (1, 2, 3)])
+        self.assertEqual(record["split"]["validation"], FIXTURES[1])
+        self.assertEqual(record["split"]["train"], [FIXTURES[0], FIXTURES[2]])
+        self.assertEqual(record["split"]["holdout"], FIXTURES[3])
+        self.assertEqual([(e["fixture"], e["saturated"]) for e in record["heldout_screen"]],
+                         [(FIXTURES[0], True), (FIXTURES[1], False)])
+        # Each fixture's baseline is measured once per trial, never twice.
+        baseline = [(c[2], c[3]) for c in runner.calls
+                    if c[0] == "run_eval" and c[1] == "baseline"]
+        self.assertEqual(len(baseline), len(set(baseline)))
+        self.assertEqual(record["baseline"][FIXTURES[0]]["passed"], 30)
+        prompt = next(c[1] for c in runner.calls if c[0] == "propose")
+        self.assertNotIn("beta-rules/three", prompt)
+
+    def test_every_candidate_saturated_stops_before_the_proposal(self):
+        full = {f: (10, 10) for f in FIXTURES}
+        runner = FakeRunner(full, full, None)
+        rc, out, _ = self.run_main(runner)
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"]), ("rejected", "held-out"))
+        self.assertIn("no held-out headroom", record["reasons"][0])
+        self.assertIn("no held-out headroom", out)
+        self.assertFalse(any(c[0] == "propose" for c in runner.calls))
+        self.assertEqual(sorted({c[2] for c in runner.calls}), FIXTURES[:3])
+
+    def test_errored_validation_stops_before_the_proposal(self):
+        runner = FakeRunner(GAIN_B, GAIN_C, None, rc=2)
+        rc, _, _ = self.run_main(runner)
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"]), ("rejected", "held-out"))
+        self.assertIn("inconclusive", record["reasons"][0])
+        self.assertEqual({c[2] for c in runner.calls}, {FIXTURES[0]})
 
 
 class ProposalValidationTests(unittest.TestCase):

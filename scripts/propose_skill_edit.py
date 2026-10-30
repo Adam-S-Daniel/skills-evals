@@ -23,8 +23,18 @@ WHAT IT DOES, in order:
     from both train and the rotating validation population on every run.
  3. Builds two scratch registries from `git archive <ref>` of the local
     registry checkout: no `.git`, so nothing in them has a push path.
- 4. BASELINE: `scripts/local_eval.py evals/<skill> --arm with_skill --trials N`
-    against the first scratch copy.
+ 4. HELD-OUT FIRST, then BASELINE: `scripts/local_eval.py evals/<skill>
+    --arm with_skill --trials N --fixture <name>` against the first scratch
+    copy, one fixture per call, so each is measured once. The rotating
+    validation fixture is measured before any other. One that passes every
+    objective check in every trial (`saturated`) can only show a regression,
+    never that an edit carries over to a task the proposer did not see, so it
+    is refused and the next fixture in rotation order is measured as the
+    validation instead; a candidate whose fixture-derived trigger set would
+    be unusable is passed over unmeasured. When every candidate passes
+    everything, or the chosen one errors, the run stops here, before any
+    train fixture is measured. Then the train fixtures and the fixed
+    holdout are measured.
  4b. EARLY STOP: a baseline train objective that leaves less than `--min-gain`
     to gain, with a judge mean that cannot make it up (missing, or within
     `--min-gain` of 10), is rejected here with a "no train headroom" record,
@@ -300,6 +310,26 @@ def split_fixtures(fixtures: list[str], rotation: int,
     ordered = sorted(f for f in fixtures if f != holdout)
     validation = ordered[rotation % len(ordered)]
     return [f for f in ordered if f != validation], validation
+
+
+def validation_order(fixtures: list[str], rotation: int,
+                     holdout: str | None = None) -> list[str]:
+    """Every validation candidate, in the order the held-out screen tries
+    them: `split_fixtures`'s pick first, then the rest in rotation order."""
+    ordered = sorted(f for f in fixtures if f != holdout)
+    return [ordered[(rotation + i) % len(ordered)] for i in range(len(ordered))]
+
+
+def saturated(metrics: dict) -> bool:
+    """Every objective check passed in every trial. Pure. Such a held-out
+    fixture can catch a regression but can never show that an edit carries
+    over to a task the proposer did not see (skills-evals ADR 0005's
+    held-out screen addendum). The judge is not consulted: "passes every
+    check" is the rule, and `decide` still guards the judge. An errored or
+    unscored fixture is not saturated."""
+    total = metrics.get("total")
+    return (not metrics.get("error") and bool(total)
+            and metrics.get("passed") == total)
 
 
 def default_rotation(records_dir: Path) -> int:
@@ -771,6 +801,12 @@ def run_paths(results: Path, label: str, skill: str, ts: str) -> Path:
     return results / "runs" / label / skill / ts
 
 
+def baseline_dir(results: Path, skill: str, ts: str, fixture: str) -> Path:
+    """The baseline is measured one fixture per local_eval call, held-out
+    first; each call gets its own empty destination under the baseline's."""
+    return run_paths(results, "baseline", skill, ts) / fixture
+
+
 def trial_arm_dir(run_dir: Path, trial: int, skill: str, ts: str,
                   fixture: str) -> Path:
     return run_dir / f"t{trial}" / skill / ts / fixture / ARM
@@ -845,14 +881,18 @@ def parse_proposal(reply: str) -> dict:
 
 def run_eval_argv(skill: str, registry_name: str, registry_root: Path,
                   results: Path, ts: str, trials: int, no_judge: bool,
-                  read_deny: Path | None = None) -> list[str]:
+                  read_deny: Path | None = None,
+                  fixture: str | None = None) -> list[str]:
     """local_eval's argv. `read_deny` is this pipeline's results root: the
-    candidate's arms must not read the baseline run or the proposed patch."""
+    candidate's arms must not read the baseline run or the proposed patch.
+    `fixture` runs that one nested fixture only."""
     argv = [str(EVALS_DIR / skill), "--arm", ARM, "--trials", str(trials),
             "--registry", f"{registry_name}={registry_root}",
             "--results-dir", str(results), "--timestamp", ts]
     if read_deny is not None:
         argv += ["--read-deny", str(read_deny)]
+    if fixture is not None:
+        argv += ["--fixture", fixture]
     return argv + (["--no-judge"] if no_judge else [])
 
 
@@ -1215,19 +1255,27 @@ def plan(args: argparse.Namespace) -> dict:
         raise Refusal(str(exc)) from exc
     sha = resolve_ref(registry["path"], args.ref)
     skill_creator, sc_sha = find_skill_creator(args.skill_creator)
-    eval_set, source = trigger_eval_set(skill, fixtures, train, validation,
-                                        args.trigger_eval_set, args.holdout)
+    p = {"skill": skill, "results": results, "records_dir": records_dir,
+         "rotation": rotation, "holdout": args.holdout, "min_gain": args.min_gain,
+         "fixtures": fixtures, "registry": registry, "sha": sha,
+         "skill_creator": skill_creator, "skill_creator_sha": sc_sha,
+         "validation_order": validation_order(names, rotation, args.holdout),
+         "trigger_eval_set_override": args.trigger_eval_set,
+         "arm_model": models[train[0]],
+         "proposal_model": proposal_model()}
+    set_split(p, train, validation)
+    return p
+
+
+def set_split(p: dict, train: list[str], validation: str) -> None:
+    """Point the plan at one split, with the trigger set that split implies:
+    the validation fixture's prompt never enters it. Reads, never writes."""
+    eval_set, source = trigger_eval_set(p["skill"], p["fixtures"], train, validation,
+                                        p["trigger_eval_set_override"], p["holdout"])
     split_counts = trigger_split_counts(eval_set)
-    return {"skill": skill, "results": results, "records_dir": records_dir,
-            "rotation": rotation, "train": train, "validation": validation,
-            "holdout": args.holdout, "min_gain": args.min_gain,
-            "fixtures": fixtures, "registry": registry, "sha": sha,
-            "skill_creator": skill_creator, "skill_creator_sha": sc_sha,
-            "eval_set": eval_set, "eval_set_source": source,
-            "trigger_split": split_counts,
-            "trigger_problems": trigger_set_problems(split_counts),
-            "arm_model": models[train[0]],
-            "proposal_model": proposal_model()}
+    p.update(train=train, validation=validation, eval_set=eval_set,
+             eval_set_source=source, trigger_split=split_counts,
+             trigger_problems=trigger_set_problems(split_counts))
 
 
 def print_plan(p: dict, args: argparse.Namespace) -> None:
@@ -1236,6 +1284,7 @@ def print_plan(p: dict, args: argparse.Namespace) -> None:
     print(json.dumps({
         "skill": p["skill"], "rotation": p["rotation"], "train": p["train"],
         "validation": p["validation"],
+        "validation_order": p["validation_order"],
         "holdout": p["holdout"], "min_gain": p["min_gain"],
         "registry": {"name": p["registry"]["name"], "sha": p["sha"]},
         "skill_creator": str(p["skill_creator"]),
@@ -1327,20 +1376,81 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         except Refusal as exc:
             return record_refusal(stem, record, "preflight", exc)
 
-        rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
-                                           run_paths(results, "baseline", skill, ts),
-                                           ts, args.trials, args.no_judge,
-                                           read_deny=results))
-        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
-                                       skill, ts, n, args.trials) for n in names}
+        # Held-out first: the validation fixture is measured before any train
+        # fixture, and one that already passes every check is swapped for the
+        # next in rotation order, so no train, trigger, proposal or candidate
+        # tokens go to a run whose held-out test cannot tell anything.
+        baseline: dict = {}
         record["baseline"] = baseline
-        if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+        record["heldout_screen"] = screen = []
+
+        def measure(name: str) -> int:
+            out = baseline_dir(results, skill, ts, name)
+            rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
+                                               out, ts, args.trials, args.no_judge,
+                                               read_deny=results, fixture=name))
+            baseline[name] = fixture_metrics(out, skill, ts, name, args.trials)
+            return rc
+
+        def refuse_baseline(rc: int) -> int:
             record.update(status="refused", phase="baseline", exit_code=rc,
                           reasons=[f"local_eval exited {rc} during baseline"])
             write_record(stem, record)
             print(f"refused: local_eval baseline exited {rc}; record: "
                   f"{stem.with_suffix('.json')}", file=sys.stderr)
             return EXIT_REFUSED
+
+        validation = None
+        for name in p["validation_order"]:
+            train = [n for n in p["train"] + [p["validation"]] if n != name]
+            if name != p["validation"]:
+                trial = dict(p)
+                set_split(trial, sorted(train), name)
+                if trigger_set_unusable(trial):
+                    screen.append({"fixture": name, "measured": False,
+                                   "skipped": "trigger set unusable"})
+                    continue
+            rc = measure(name)
+            if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+                return refuse_baseline(rc)
+            full = saturated(baseline[name])
+            screen.append({"fixture": name, "measured": True,
+                           "passed": baseline[name]["passed"],
+                           "total": baseline[name]["total"], "saturated": full})
+            if not full:
+                validation = name
+                break
+        if validation is None:
+            reason = ("no held-out headroom: every validation candidate passes "
+                      "every check on the baseline, so no held-out test could "
+                      "show an edit carries over; add harder fixtures instead")
+            record.update(status="rejected", phase="held-out", reasons=[reason])
+            write_record(stem, record)
+            print(f"rejected before proposal: {reason}")
+            return EXIT_REJECTED
+        if validation != p["validation"]:
+            set_split(p, sorted(n for n in p["train"] + [p["validation"]]
+                                if n != validation), validation)
+            record["split"].update(train=p["train"], validation=validation)
+            record["trigger_set"] = {"source": p["eval_set_source"],
+                                     "size": len(p["eval_set"]),
+                                     "split": p["trigger_split"],
+                                     "problems": p["trigger_problems"]}
+        if baseline[validation]["error"]:
+            reason = (f"inconclusive: held-out fixture {validation!r} errored on "
+                      f"the baseline ({baseline[validation]['error']})")
+            record.update(status="rejected", phase="held-out", reasons=[reason])
+            write_record(stem, record)
+            print(f"rejected before proposal: {reason}")
+            return EXIT_REJECTED
+
+        for name in names:
+            if name not in baseline:
+                rc = measure(name)
+                if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+                    return refuse_baseline(rc)
+        names = p["train"] + [p["validation"]] + ([p["holdout"]] if p["holdout"] else [])
+        record["baseline"] = baseline = {n: baseline[n] for n in names}
 
         # Stop before any trigger, proposal or candidate call when the
         # baseline leaves no room for the gain `decide` requires.
@@ -1388,7 +1498,7 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "loop_output": str(trigger_dir / "loop.json")}
 
         # Body half: one proposal call, validated before anything is measured.
-        evidence = {n: failure_evidence(run_paths(results, "baseline", skill, ts),
+        evidence = {n: failure_evidence(baseline_dir(results, skill, ts, n),
                                         skill, ts, n, args.trials)
                     for n in p["train"]}
         evidence = {n: e for n, e in evidence.items() if e}

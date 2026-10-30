@@ -161,7 +161,7 @@ RECORD_REQUIRED = ("schema", "skill", "timestamp", "registry", "split",
                    "description_half", "body_half", "table", "files")
 RECORD_ALLOWED = RECORD_REQUIRED + (
     "local_exhibit", "no_judge", "min_gain", "models", "runs", "trigger_set",
-    "phase", "exit_code", "decision", "tokens_basis")
+    "phase", "exit_code", "decision", "tokens_basis", "heldout_screen")
 #: The values a record's `tokens_basis` may take (propose_skill_edit's
 #: TOKENS_BASIS and TOKENS_BASIS_LEGACY); a record without one predates it.
 TOKENS_BASES = ("model_usage_total", "usage_main_loop")
@@ -274,6 +274,14 @@ def check_record(doc, where: str, repo: str) -> dict:
         [split["holdout"]] if "holdout" in split else [])
     if not all(isinstance(n, str) and NAME_RE.fullmatch(n) for n in names):
         raise Rejected(f"{where}: bad fixture name in split")
+    held = (doc["baseline"].get(split["validation"])
+            if isinstance(doc["baseline"], dict) else None)
+    if isinstance(held, dict) and type(held.get("passed")) is int \
+            and type(held.get("total")) is int and held["total"] >= 1 \
+            and held["passed"] == held["total"]:
+        raise Rejected(f"{where}: the held-out fixture passed every check on "
+                       "the baseline, so it cannot show the edit carries over "
+                       "(propose_skill_edit's held-out screen)")
 
     if not (Path(repo) / "evals" / skill).is_dir():
         raise Rejected(f"{where}: skill has no evals/ directory on the "
