@@ -272,7 +272,7 @@ jobs:
       # eval.yml and propagation.yml already run.
       - name: Set up Python
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -291,7 +291,7 @@ jobs:
         run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0
       - name: Set up Node for the browser-testing AST fixture
         if: steps.salient.outputs.run == 'true'
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
       - name: Install browser-testing parser dependencies
