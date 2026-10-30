@@ -1,0 +1,17 @@
+name: Nightly snapshot
+
+on:
+  schedule:
+    - cron: "25 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+      - name: Rebuild the snapshot and commit it when it changed
+        run: bash scripts/publish-snapshot.sh

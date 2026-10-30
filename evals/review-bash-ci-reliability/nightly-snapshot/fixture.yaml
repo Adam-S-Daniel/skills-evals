@@ -1,0 +1,183 @@
+# Eval fixture: review-bash-ci-reliability (nightly-snapshot)
+# Measures three SKILL.md checklist items at once, in a script none of the
+# other fixtures resembles: item 5, "Commit Signing in CI" (a script that
+# commits in CI cannot see the runner's global git config, so a global
+# `commit.gpgsign = true` makes every `git commit` fail for want of a key);
+# item 6, "Missing Dependencies" (a tool beyond bash and coreutils must be
+# guaranteed, not assumed); and item 7, "An Expected Non-Zero Inside `$(...)`".
+# The seed's nightly scripts/publish-snapshot.sh rebuilds snapshot/all.csv,
+# commits it when it changed and pushes. Three things go wrong in it:
+#   * it sets a CI identity (item 2) but leaves signing to whatever the
+#     runner's global config says;
+#   * `version=$(dasel ... 2>/dev/null || echo unknown)` turns a missing
+#     dasel (not on the GitHub-hosted image, and nothing installs it) into a
+#     commit titled `snapshot unknown` and a green job;
+#   * `changed=$(git status --porcelain ... | grep -c .)` exits 1 under
+#     pipefail on the one night there is nothing to commit, which the seed
+#     README says is normal, so the job goes red with no message.
+#
+# Why this fixture exists (2026-10-30): the first loop-shipped improvement,
+# adam-agentskills#87, edited items 5, 6 and 7 and was accepted on a held-out
+# fixture (drift-report-capture) that passed every check before and after, so
+# nothing showed the edit carries over. This fixture was written after that
+# edit and never reached its proposer; it is the unseen fixture #87 is
+# re-checked on. Why the other fixtures cannot measure the same thing:
+# `release-pipeline` has an unguarded jq and a commit with no signing setup,
+# but scores them by reading the script (file_matches), and it was one of
+# #87's train fixtures, so its failures were in the proposer's prompt;
+# `drift-report-capture` and `test-runner-assertions` commit nothing and
+# need no optional tool; `empty-repo-discovery` is item 3.
+#
+# What the objective column decides, and how: the three behavior and two
+# restraint checks RUN the final scripts/publish-snapshot.sh through the
+# `repo_tests` scorer. The probe (checker/.probe/snapshot.sh) copies the
+# workspace into a throwaway git repository with a local bare remote, gives
+# it its own HOME, and puts a stand-in dasel (checker/.probe/bin/dasel) first
+# on PATH, or leaves dasel off PATH entirely. Both are an overlay laid over a
+# scratch copy of the workspace, so the agent never sees them. Each case is
+# decided by the script's exit code, the commit it made (or did not) here
+# and on the remote, and for the missing tool one line of output. What it
+# cannot decide: a signing fix made only in the workflow (a `git config
+# --global` step) fails `signing-on-runner`, because the probe runs the
+# script, not the workflow; the item's own text puts the setting in the repo
+# the script commits in. Whether the reply explains each failure is the
+# judge's.
+
+skill: review-bash-ci-reliability
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
+# picks both (ADR 0013).
+
+# In-place context (ADR 0012): the same block as `release-pipeline`, measured
+# there on 2026-10-10. Every figure is a property of the context repository
+# and the skill, not of the fixture, so it holds for each fixture of this
+# skill unchanged.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 28f2b6ed98837757417e058dd21047df046dadc7
+  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  budget:
+    guidance_bytes: 31374
+    skill_catalog_bytes: 7603
+    skill_payload_bytes: 857047
+
+judge:
+  # Correctness carries the axis that matters; restraint is the guardrail and
+  # must not outvote it (DESIGN.md, "Harness-wide rules").
+  weights:
+    correctness: 0.5
+    restraint: 0.2
+    explanation: 0.3
+
+prompt: >
+  Review the shell in this repo's CI for reliability problems and fix what
+  you find.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# `repo_tests` requires a `fail_to_pass` list; that is the scorer's key name,
+# and every case listed must exit 0. The restraint checks put their cases
+# there too and pass on the pristine seed by design.
+objective_checks:
+  - id: workflow-yaml-parses
+    description: The snapshot workflow still parses as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  - id: workflow-file-present
+    description: The snapshot workflow itself is still present (yaml_parses passes on a deleted file)
+    type: file_matches
+    paths: [".github/workflows/snapshot.yml"]
+    require_present: true
+    must_match:
+      - '^name: Nightly snapshot[ \t]*$'
+
+  - id: signing-on-runner
+    description: >
+      With new data and a global git config that turns commit signing on
+      (with no usable key), the job passes and the snapshot is committed as
+      `snapshot 1.4.2` and pushed. The pristine script's `git commit` fails.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/snapshot.sh]
+    fail_to_pass:
+      - signing-on-runner
+
+  - id: no-change-night
+    description: >
+      With no new data, the job passes and commits nothing. The pristine
+      script dies inside `changed=$(... | grep -c .)`, which exits 1 when it
+      counts zero.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/snapshot.sh]
+    fail_to_pass:
+      - no-change-night
+
+  - id: missing-tool-not-silent
+    description: >
+      With new data and no dasel on PATH, the job either still commits
+      `snapshot 1.4.2` or fails, commits nothing and names dasel in its
+      output; it never commits `snapshot unknown`. The pristine script does.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/snapshot.sh]
+    fail_to_pass:
+      - missing-tool-not-silent
+
+  - id: new-data-still-committed
+    description: >
+      Restraint: with new data, dasel present and no signing configured, the
+      snapshot is committed as `snapshot 1.4.2` and pushed. Passes on the
+      pristine seed.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/snapshot.sh]
+    fail_to_pass:
+      - new-data-committed
+
+  - id: build-failure-still-fails
+    description: >
+      Restraint: when the snapshot build fails, the job fails and commits
+      nothing. A fix that makes the job green by swallowing errors fails
+      here. Passes on the pristine seed.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/snapshot.sh]
+    fail_to_pass:
+      - build-failure-fails-the-job
+
+  - id: data-untouched
+    description: >
+      The data, the committed snapshot and the manifest are byte-identical to
+      the seed: the fixes belong in the scripts and the workflow.
+    type: files_unchanged
+    paths:
+      - "data/*.csv"
+      - "snapshot/all.csv"
+      - "manifest.toml"
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — did the agent find and fix all three: commit signing left
+  to the runner's global git config (disable it in the repo the script
+  commits in, or set up a key); dasel assumed present and its absence
+  swallowed into a `snapshot unknown` commit (install it in the workflow,
+  guard it with `command -v` and fail loudly, or read the version with plain
+  bash, and drop the fallback either way); and `grep -c` inside `$(...)`
+  aborting the script under `set -euo pipefail` on a night with nothing to
+  commit? Cap at 4 if signing-on-runner, no-change-night or
+  missing-tool-not-silent is failing.
+  (2) Restraint — did the agent keep the job failing when the build fails,
+  keep committing and pushing real changes, leave the data alone, and avoid
+  unrelated rewrites? Cap at 4 if new-data-still-committed,
+  build-failure-still-fails or data-untouched is failing.
+  (3) Explanation — did the reply name each actual failure mode (a global
+  signing setting the script cannot see, a missing tool hidden by a
+  fallback, an expected non-zero exit inside a command substitution under
+  set -e), so a reader could tell why the original code was unsafe?

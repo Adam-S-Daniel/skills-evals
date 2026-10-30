@@ -552,6 +552,14 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
 - No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
 
+### review-bash-ci-reliability/nightly-snapshot
+
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/nightly-snapshot](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/nightly-snapshot)
+- Review a nightly job that commits a rebuilt snapshot: it leaves commit signing to the runner's global git config (item 5), hides a missing `dasel` behind `|| echo unknown` (item 6), and captures `grep -c` under `set -euo pipefail`, which aborts on a night with nothing to commit (item 7). Written after adam-agentskills#87 edited those three items, as the fixture that edit never saw.
+- Objective (8): workflow parses and exists; the snapshot is committed and pushed with signing turned on globally; a quiet night stays green and commits nothing; without `dasel` the job never commits `snapshot unknown`; new data is still committed; a failed build still fails; the data is untouched. The five run checks execute the final script in a throwaway git repository through `repo_tests` against a hidden probe.
+- Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
+- No pinned models: the roster picks the agent and the judge. In-place context: `Adam-S-Daniel/cms-platform`. Class A. No real run yet.
+
 ### review-bash-ci-reliability/test-runner-assertions
 
 - `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability/test-runner-assertions](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability/test-runner-assertions)
