@@ -82,3 +82,23 @@ fixtures:
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/read-before-you-start/new-config-key
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
+  - path: evals/rename-pdfs
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#82)."
+  - path: evals/pdf-ocr-audit
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#83)."
+  - path: evals/cms-stuck-pr-triage
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#84)."
+  - path: evals/post-failure-comment
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#86)."
+  - path: evals/admin-config-render
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#87)."
+  - path: evals/code-quality
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Local N=3 run 2026-10-05 on agent claude-sonnet-5 (not badge input): objective with 9.0/10 vs without 7.67/10 after re-scoring with tree-sitter (#88). No routine run yet."
+  - path: evals/ci-watcher-loops
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Local N=3 touch-gate run 2026-10-05 on agent claude-sonnet-5 (not badge input): objective 8.0 vs 8.0 of 8, judge 8.32 vs 7.85 (#89). No routine run yet."
+  - path: evals/editorial-label-audit
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#90)."
+  - path: evals/consumer-repo-provisioning
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#91)."
+  - path: evals/platform-release-and-bump
+    readiness: "In-place pair on adamdaniel.ai, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: test scores the seed and the reference fix (#93)."
