@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-10-31T22:10:57Z",
+ "generated_at": "2026-10-31T22:32:54Z",
  "guidance": {
   "sections": [
    {
@@ -483,9 +483,10 @@
  },
  "newest_run": "2026-10-31T19:03:47Z",
  "policy": {
+  "benefit_confidence": 0.85,
   "min_cli_versions": 2,
-  "min_runs": 5,
-  "objective_margin": 0.05
+  "objective_margin": 0.05,
+  "retire_confidence": 0.95
  },
  "roster": {
   "arms": [
@@ -5211,7 +5212,7 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "1caa4d2be23fd1402a3b8445571a85a69ab9fe28",
-  "results_commit": "4fc5c7d1a6479eeedf717d5528e06cc5b9df5089"
+  "repository_commit": "350d5341f80ec1cae12b3ac8eb350c7d1ce768e9",
+  "results_commit": "9281a8d7ae998f9fe6b12ab28b1f225d242a24be"
  }
 }
