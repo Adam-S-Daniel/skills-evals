@@ -1,0 +1,202 @@
+name: Publish explorer data
+
+# #72: publish `explorer/latest.json` on `persistent/eval-results`, the public
+# data behind the Skill Evals Explorer page (scripts/explorer_data.py says what
+# it carries and what it never does).
+#
+# * Triggers: after a routine's results are ingested, daily (the census and the
+#   regression list move without an ingest), and by hand. There is no
+#   pull_request or push trigger, so no path filter applies. `workflow_run`
+#   always runs the default branch's copy, never one a branch carries.
+# * Two jobs so the write token never meets the code that reads the tree:
+#   `build` (read-only) checks out main, the results branch and the public
+#   sources, runs the script and uploads one file; `publish` (the only job
+#   with `contents: write`) checks out nothing from main, puts that file on the
+#   results branch and pushes.
+# * Writes go only to `persistent/eval-results` (the sanctioned bot-write
+#   target), never to main. Nothing from the event is interpolated into a
+#   `run:` block.
+# * The file is committed only when it changed apart from `generated_at` and
+#   `source.results_commit`, which move with every commit to the branch
+#   (including this workflow's own), so the workflow never commits to itself.
+# * The regression alerts' issue links come from open issues carrying the
+#   `skills-evals:regression:` markers (`issues: read`).
+# * No private registry is checked out: the census on the results branch is the
+#   only source of which skills are public.
+
+on:
+  workflow_run:
+    workflows: [Ingest routine eval results]
+    types: [completed]
+  schedule:
+    - cron: "41 9 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+# Each run rebuilds from the newest results, so a skipped pending run loses
+# nothing. This is not a required check.
+concurrency:
+  group: explorer-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && (github.event_name != 'workflow_run'
+          || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Check out adam-agentskills
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: registry-agentskills
+          persist-credentials: false
+
+      - name: Check out cms-platform
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: registry-cms
+          persist-credentials: false
+
+      - name: Check out adamdaniel.ai
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: registry-site
+          persist-credentials: false
+
+      - name: Check out _agent-guidance
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the offline verdict dependency
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+
+      - name: List the open regression issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search '"skills-evals:regression:" in:body' \
+            --json number,url,body --limit 200 \
+            > "$RUNNER_TEMP/regression-issues.json"
+
+      - name: Build the explorer data
+        working-directory: skills-evals
+        run: |
+          set -euo pipefail
+          as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
+          mkdir -p "$RUNNER_TEMP/explorer"
+          python3 scripts/explorer_data.py \
+            --results-tree "$GITHUB_WORKSPACE/eval-results" \
+            --roster evals/roster.yml --policy evals/gate-policy.yml \
+            --as-of "$as_of" \
+            --repository-commit "$(git rev-parse HEAD)" \
+            --results-commit "$(git -C "$GITHUB_WORKSPACE/eval-results" rev-parse HEAD)" \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
+            --guidance-manifest "$GITHUB_WORKSPACE/agent-guidance/agents-md/eval-coverage.yml" \
+            --regression-issues "$RUNNER_TEMP/regression-issues.json" \
+            --out "$RUNNER_TEMP/explorer/latest.json"
+
+      - name: Upload the explorer data
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: explorer-data
+          path: ${{ runner.temp }}/explorer/latest.json
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Download the explorer data
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: explorer-data
+          path: ${{ runner.temp }}/explorer/
+
+      - name: Commit to persistent/eval-results and push
+        working-directory: eval-results
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          new="$RUNNER_TEMP/explorer/latest.json"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          refspec="+refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results"
+          # The two fields that change with every commit to the branch.
+          strip='del(.generated_at, .source.results_commit)'
+          for attempt in 1 2 3; do
+            git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags origin "$refspec"
+            git reset -q --hard refs/remotes/origin/persistent/eval-results
+            if [ -f explorer/latest.json ] \
+                && [ "$(jq -S "$strip" explorer/latest.json)" = "$(jq -S "$strip" "$new")" ]; then
+              echo "explorer/latest.json is current; nothing to commit"
+              exit 0
+            fi
+            mkdir -p explorer
+            cp "$new" explorer/latest.json
+            git add -- explorer/latest.json
+            git \
+              -c user.name="skills-evals explorer bot" \
+              -c user.email="skills-evals@users.noreply.github.com" \
+              commit -q -m "explorer: refresh explorer/latest.json [skip ci]"
+            commit="$(git rev-parse HEAD)"
+            if git -c "http.https://github.com/.extraheader=$auth" \
+                 push origin HEAD:refs/heads/persistent/eval-results; then
+              git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags origin "$refspec"
+              if git merge-base --is-ancestor "$commit" refs/remotes/origin/persistent/eval-results; then
+                echo "published explorer/latest.json as ${commit}"
+                exit 0
+              fi
+              echo "::error::the push reported success but ${commit} is not on persistent/eval-results"
+              exit 1
+            fi
+            echo "push attempt ${attempt} was rejected; rebuilding on the new tip"
+          done
+          echo "::error::could not push to persistent/eval-results after 3 attempts"
+          exit 1
