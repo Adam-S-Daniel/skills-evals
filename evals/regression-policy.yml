@@ -1,0 +1,32 @@
+# Thresholds for regression detection, read by harness/regression.py (#69, #121).
+#
+# Adam asked on 2026-10-31 that regression detection be finished. These are
+# STARTING VALUES, not tuned ones: nothing yet says how large a real
+# regression is on this fleet, so they are loose enough to catch a collapse
+# and tight enough to ignore one run's luck. Revise them from what the first
+# issues show.
+#
+# A cell (skill or guidance section, fixture, roster model) is compared with
+# its own past: the newest `window_runs` runs against the `window_runs`
+# before them, with runs of the same fixture content only. A `with` window of
+# fewer than `min_window_runs` runs is `insufficient`. A drop must be at
+# least `objective_drop` (a fraction of checks) or `judge_drop` (judge points
+# out of 10) AND larger than the windows' pooled standard deviation, so a
+# noisy fixture does not alarm on noise. `lost_delta_min_previous` is how
+# much the skill (or section) must have helped, `with` minus `without`, for
+# losing that help to count as `lost-delta`.
+#
+# `guidance:` starts identical to `skills:` so the two can diverge later
+# without a code change.
+skills:
+  window_runs: 3
+  min_window_runs: 2
+  objective_drop: 0.15
+  judge_drop: 1.0
+  lost_delta_min_previous: 0.10
+guidance:
+  window_runs: 3
+  min_window_runs: 2
+  objective_drop: 0.15
+  judge_drop: 1.0
+  lost_delta_min_previous: 0.10
