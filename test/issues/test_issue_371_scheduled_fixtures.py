@@ -35,6 +35,8 @@ PINNED_WITH_REASON: dict[str, str] = {}
 # A scheduled fixture with no provable `guidance_revision`, or no `context`
 # at all, stays an isolation pair and is named here with the reason.
 _NO_CONTEXT_YET = ("Merged hermetic before in-place pairs existed and declares no `context`; scheduled as an isolation pair until a context is scaffolded and measured.")
+_PRIVATE = ("A private-registry skill (adam-agentskills-private): no public "
+            "context repository carries it, so it runs as an isolation pair.")
 ISOLATION_ONLY: dict[str, str] = {
     "evals/rename-pdfs": _NO_CONTEXT_YET,
     "evals/pdf-ocr-audit": _NO_CONTEXT_YET,
@@ -45,6 +47,11 @@ ISOLATION_ONLY: dict[str, str] = {
     "evals/ci-watcher-loops": _NO_CONTEXT_YET,
     "evals/editorial-label-audit": _NO_CONTEXT_YET,
     "evals/consumer-repo-provisioning": _NO_CONTEXT_YET,
+    # In place would mean a context repository holding the private skill;
+    # its results stay in the private repository (#81).
+    "evals/adam-writing-style/proposal-bio": _PRIVATE,
+    "evals/adam-writing-style/recruiter-reply": _PRIVATE,
+    "evals/adam-writing-style/self-appraisal-opening": _PRIVATE,
 }
 
 # What each in-place arm measured on 2026-10-10, as (guidance, catalog,
@@ -98,11 +105,11 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_eighteen_skill_and_thirty_two_guidance_fixtures(self):
+    def test_the_schedule_names_twenty_one_skill_and_thirty_two_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 50)
-        self.assertEqual(len(set(paths)), 50)
-        self.assertEqual(len(fixtures()), 18)
+        self.assertEqual(len(paths), 53)
+        self.assertEqual(len(set(paths)), 53)
+        self.assertEqual(len(fixtures()), 21)
         self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
                          sorted(str(p.parent.relative_to(ROOT)) for p in
                                 (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))

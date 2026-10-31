@@ -252,11 +252,15 @@ class WorkflowShapeTests(unittest.TestCase):
                                  "EVAL_ROUTINE_FIRE_BEARER")])
         self.assertNotIn("secrets.", self.steps[fire]["run"])
         # The one other secret is the read-only registry App's key, an input
-        # of draft mode's mint step (as propagation.yml mints it).
+        # of the private-results mint step (#81) and of draft mode's (as
+        # propagation.yml mints it).
+        private = next(i for i, s in enumerate(self.steps)
+                       if s.get("id") == "private-token")
         mint = next(i for i, s in enumerate(self.steps)
                     if s.get("id") == "lessons-token")
         mentions = [p for p, v in scalars(self.doc) if "secrets." in v]
         self.assertEqual(mentions, [
+            ("jobs", "fire", "steps", private, "with", "private-key"),
             ("jobs", "fire", "steps", mint, "with", "private-key"), *hits],
             "no other secret is referenced")
 
@@ -355,7 +359,7 @@ class WorkflowShapeTests(unittest.TestCase):
             with self.subTest(step=step.get("name")):
                 text = yaml.safe_dump(step)
                 self.assertNotIn("BEARER", text)
-                if step.get("id") != "lessons-token":
+                if step.get("id") not in ("lessons-token", "private-token"):
                     self.assertNotIn("secrets", text)
 
     def test_the_snapshot_step_sits_between_validation_and_the_fire_step(self):
@@ -412,9 +416,9 @@ class WorkflowShapeTests(unittest.TestCase):
         checkout = [s for s in self.steps
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
         # The default branch, persistent/eval-results for the allowance
-        # guard (#68), _agent-guidance for scaffold mode and the lessons for
-        # draft mode.
-        self.assertEqual(len(checkout), 4)
+        # guard (#68), the private repository's results for it too (#81),
+        # _agent-guidance for scaffold mode and the lessons for draft mode.
+        self.assertEqual(len(checkout), 5)
         for step in checkout:
             self.assertIs(step["with"]["persist-credentials"], False)
 

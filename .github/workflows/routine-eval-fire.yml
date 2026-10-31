@@ -559,6 +559,51 @@ jobs:
           persist-credentials: false
           sparse-checkout: routine-results
 
+      # Private-skill evals push their results to adam-agentskills-private
+      # (Adam, 2026-10-31), whose own ingest writes its persistent/eval-results.
+      # The guard charges those runs too: the read-only registry App token
+      # (that repository alone, contents read) reaches only the lookup and
+      # the data-only checkout, and scripts/overlay_private_results.py adds
+      # the runs to the tree in the workspace. No App, or no branch yet:
+      # nothing is added, and an unmatched private fire stays charged as
+      # pending, the guard's safe side.
+      - name: Mint the read-only token for the private results
+        id: private-token
+        if: vars.REGISTRY_READ_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+      - name: Look for the private results branch
+        id: private-results
+        if: steps.private-token.outputs.token != ''
+        env:
+          PRIVATE_READ_TOKEN: ${{ steps.private-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if GH_TOKEN="$PRIVATE_READ_TOKEN" gh api repos/Adam-S-Daniel/adam-agentskills-private/branches/persistent/eval-results \
+               --silent 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out the private results (data only)
+        if: steps.private-results.outputs.exists == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/eval-results
+          path: private-eval-results
+          persist-credentials: false
+          sparse-checkout: routine-results
+          token: ${{ steps.private-token.outputs.token }}
+      - name: Add the private runs to the results tree
+        if: steps.private-results.outputs.exists == 'true'
+        run: python3 scripts/overlay_private_results.py --private private-eval-results --tree eval-results-branch
+
       # Every mode, before the fire: refused (exit 1, numbers-only log) when
       # this run's reservation (an improve or guidance-improve run's own,
       # larger charge) would

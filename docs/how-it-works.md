@@ -469,6 +469,22 @@ The most recent real run at the time of writing is
 [`results/workflow-path-audit/20260922T125552Z/report.md`](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/workflow-path-audit/20260922T125552Z/report.md).
 Raw transcripts are deliberately never published (public repository): each arm's `transcripts/raw.json` stays on the runner, in neither `persistent/eval-results` nor the run's workflow artifact. Each arm's `transcripts/` directory also holds `tool_trace.json`, a bounded, redacted line per tool call and tool result; it stays out of `persistent/eval-results` and reaches only the run's workflow artifact. That artifact (`eval-results-payload-*` on success, `eval-results-diagnostics-*` on failure) carries only `summary.json`, `report.md` and `tool_trace.json` (#289).
 
+### Private-skill results (#81)
+
+A skill in `adam-agentskills-private` (today only `adam-writing-style`) is
+scheduled like any other, but its results never land here (Adam,
+2026-10-31: they live in the private skills repo and stay off the public
+explorer). The eval routine checks out the private registry for that
+fixture and pushes its results to `claude/eval-<run id>` in
+`adam-agentskills-private`, whose own ingest writes that repository's
+`persistent/eval-results`. The weekly plan and the fire workflow's
+allowance guard read that branch with the read-only registry App token
+and add its `routine-results/` to the workspace tree
+(`scripts/overlay_private_results.py`); nothing from it is pushed,
+uploaded or printed. The plan gives a private skill eval cells but no
+improve candidate, ranking row or work item, since each of those would
+publish its pass rate (`plan_week.PRIVATE_REGISTRY_URL`).
+
 ## 5. What is measured today
 
 Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models (a scheduled fixture pins none and names its in-place context instead), and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). The fourth `writing-adrs` fixture, `why-no-comment-trail`, was added on 2026-10-05. Eighteen fixtures are listed. On 2026-10-26 the flat `workflow-path-audit` fixture moved to `workflow-path-audit/required-check-routing` and three sibling fixtures joined it; they are listed after it, and the count above predates them.

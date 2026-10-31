@@ -41,6 +41,12 @@
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
 # No model pins: the arms follow the roster and, being pairwise, the judge is
 # the roster's judge (evals/roster.yml).
 judge:
