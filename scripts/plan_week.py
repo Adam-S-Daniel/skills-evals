@@ -41,12 +41,16 @@ THE BANDS (rule D), in order:
      request's head, is not planned: routine arms run only the registries'
      default branches (ADR 0010 decision 1).
   2. missing evidence, at least 30%: cells with no run on their model,
-     heaviest model usage first (usage/latest.json on the results branch;
+     cheaper model first, then heaviest model usage (usage/latest.json on the results branch;
      equal weights without it). A cell with two successful fires and still
      no run becomes a `fixture-broken` work item and leaves the queue.
-  3. near a decision, at least 20%: insufficient cells, fewest runs first
-     (every run can decide a cell: harness/gates.py checks a confidence
-     sequence after each one).
+  3. near a decision, at least 20%: insufficient cells, fewest runs first,
+     then the cheaper model (every run can decide a cell: harness/gates.py
+     checks a confidence sequence after each one).
+  Bands 2 and 3 skip every cell of a skill or guidance section whose
+  verdict is already `keep` (one confident benefit decides it; band 5
+  re-checks it), and order the cheaper model first within a tie (Adam,
+  2026-10-31: Sonnet first, Opus only while that has not settled it).
   4. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -215,9 +219,11 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import os
 from pathlib import Path
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -484,9 +490,25 @@ def bare_items(ctx: dict) -> list:
     return items
 
 
+def model_costs(cells: list) -> dict:
+    """Each roster model's median agent cost per arm trial over the cells
+    that know one; a model with none known is absent (ordered last)."""
+    known: dict = {}
+    for cell in cells:
+        if cell.get("usd_per_arm_trial") is not None:
+            known.setdefault(cell["model"], []).append(cell["usd_per_arm_trial"])
+    return {m: statistics.median(v) for m, v in known.items()}
+
+
 def eval_items(ctx: dict, now: datetime) -> tuple:
-    """(fires by band, work items) for the eval cells."""
+    """(fires by band, work items) for the eval cells. A subject (skill or
+    guidance section) already kept plans no missing or near fire: one
+    confident benefit keeps it, so more runs cannot change the verdict
+    until its re-check. Within a band the cheaper model goes first (Adam,
+    2026-10-31: Sonnet first, Opus only while the cheaper runs have not
+    settled it), then the heavier-used model."""
     weights = ctx["model_weights"]
+    costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
     bands = {band: [] for band in BANDS}
     work = []
@@ -494,10 +516,14 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         item = {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
                 "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
                 "change_type": None, "weight": weights.get(cell["model"], 0.0)}
+        price = costs.get(cell["model"], math.inf)
         least = min(cell["with_runs"], cell["without_runs"])
         newest = _stamp_time(cell["newest"])
+        kept = cell.get("verdict") == "keep"
         if not cell.get("section") and cell["skill"] in removal:
             bands["safety"].append({**item, "band": "safety", "order": ()})
+        elif kept and cell["class"] in ("missing", "insufficient"):
+            continue
         elif cell["class"] == "missing":
             if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
                 broken = {"kind": "fixture-broken", "change_type": "fixture",
@@ -508,10 +534,10 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                 work.append(broken)
             else:
                 bands["missing"].append({**item, "band": "missing",
-                                         "order": (-item["weight"],)})
+                                         "order": (price, -item["weight"])})
         elif cell["class"] == "insufficient":
             bands["near"].append({**item, "band": "near",
-                                  "order": (least, -item["weight"])})
+                                  "order": (least, price, -item["weight"])})
         elif newest is not None and now - newest >= RECHECK_AFTER:
             bands["recheck"].append({**item, "band": "recheck",
                                      "order": (newest.timestamp(),)})
@@ -963,7 +989,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cls = cell["class"] if cell else "missing"
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
-                "class": cls,
+                "class": cls, "verdict": verdict.get("verdict"),
                 "with_runs": len(runs.get("with", [])),
                 "without_runs": len(runs.get("without", [])), "newest": newest,
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,

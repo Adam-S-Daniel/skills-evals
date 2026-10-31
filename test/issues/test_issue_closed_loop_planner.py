@@ -473,6 +473,39 @@ class BandTests(unittest.TestCase):
                                          "skill": "b", "fixture": "evals/b",
                                          "model": "heavy", "route": "issue"}])
 
+    def test_a_kept_subject_plans_no_missing_or_near_fire(self):
+        # 2026-10-31: one confident benefit keeps it; more runs cannot
+        # change that until the re-check.
+        old = "20260801T000000Z"
+        kept = [{**cell("evals/k/a", "heavy", "missing", skill="k"), "verdict": "keep"},
+                {**cell("evals/k/b", "light", "insufficient", runs=2, skill="k"),
+                 "verdict": "keep"},
+                {**cell("evals/k/c", "heavy", "benefit", runs=3, newest=old, skill="k"),
+                 "verdict": "keep"},
+                {**cell("evals/g", "heavy", "insufficient", runs=1, skill=""),
+                 "section": "sec", "verdict": "keep"}]
+        open_ = [{**cell("evals/o", "heavy", "insufficient", runs=1), "verdict": "insufficient"}]
+        plan = plan_week.build_plan(ctx(cells=kept + open_, room=1.0), NOW)
+        self.assertEqual([(f["fixture"], f["band"]) for f in plan["fires"]],
+                         [("evals/o", "near"), ("evals/k/c", "recheck")])
+        # A kept skill with an open removal pull request still gets safety.
+        plan = plan_week.build_plan(ctx(cells=kept[:1], removal_prs=["k"], room=1.0), NOW)
+        self.assertEqual([f["band"] for f in plan["fires"]], ["safety"])
+
+    def test_the_cheaper_model_goes_first(self):
+        priced = [{**cell("evals/a", "heavy", "insufficient", runs=1), "usd_per_arm_trial": 0.33},
+                  {**cell("evals/a", "light", "insufficient", runs=1), "usd_per_arm_trial": 0.11},
+                  {**cell("evals/b", "heavy", "missing"), "usd_per_arm_trial": None},
+                  {**cell("evals/b", "light", "missing"), "usd_per_arm_trial": None},
+                  {**cell("evals/c", "other", "missing")}]
+        self.assertEqual(plan_week.model_costs(priced), {"heavy": 0.33, "light": 0.11})
+        plan = plan_week.build_plan(ctx(cells=priced, room=1.0), NOW)
+        order = [(f["fixture"], f["model"]) for f in plan["fires"]]
+        # A model with no known cost goes after the priced ones.
+        self.assertLess(order.index(("evals/b", "light")), order.index(("evals/b", "heavy")))
+        self.assertLess(order.index(("evals/b", "heavy")), order.index(("evals/c", "other")))
+        self.assertLess(order.index(("evals/a", "light")), order.index(("evals/a", "heavy")))
+
     def test_historical_cost_is_clamped_and_breaks_ties(self):
         c = ctx(points_per_usd=0.01)
         self.assertAlmostEqual(plan_week.fire_cost({"usd_per_fire": 2.0}, c), 0.02)

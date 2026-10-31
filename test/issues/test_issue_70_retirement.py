@@ -365,9 +365,10 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(priors, {"objective": gates.FALLBACK_PRIOR_VARIANCE,
                                   "judge": gates.FALLBACK_PRIOR_VARIANCE * 100,
                                   "check": gates.FALLBACK_PRIOR_VARIANCE})
-        # A conditionally judged run gives no judge figure to measure.
+        # A conditionally judged run's figures are measured too: run-to-run
+        # spread is not what the conditional skip biases.
         runs = series("with", FLAT[:4], FLAT_JUDGE, conditional=True)
-        self.assertEqual(gates.run_priors(runs)["judge"], gates.FALLBACK_PRIOR_VARIANCE * 100)
+        self.assertNotEqual(gates.run_priors(runs)["judge"], gates.FALLBACK_PRIOR_VARIANCE * 100)
         self.assertEqual(gates.run_priors(runs)["objective"], gates.MIN_PRIOR_VARIANCE)
 
 
@@ -453,11 +454,15 @@ class TrialTests(unittest.TestCase):
                          gates.NO_CHECKS_REASON)
         self.assertIsNone(gates.run_numbers([empty] * 3, True)["skip_reason"])
 
-    def test_the_judge_counts_only_when_every_trial_was_judged_unconditionally(self):
+    def test_the_judge_counts_only_when_every_trial_was_judged(self):
         judged = [gates.trial_record(trial(overall=f)) for f in (7.0, 7.1, 7.2)]
         self.assertAlmostEqual(gates.run_numbers(judged, True)["judge_mean"], 7.1)
         self.assertTrue(gates.run_numbers(judged, True)["judge_spread"])
-        self.assertIsNone(gates.run_numbers(judged, False)["judge_mean"])
+        self.assertFalse(gates.run_numbers(judged, True)["judge_conditional"])
+        # A conditional run keeps its figure and says it was conditional;
+        # _classify decides whether the cell may use it.
+        self.assertAlmostEqual(gates.run_numbers(judged, False)["judge_mean"], 7.1)
+        self.assertTrue(gates.run_numbers(judged, False)["judge_conditional"])
         one_skipped = judged[:2] + [gates.trial_record(trial(skipped=True))]
         self.assertIsNone(gates.run_numbers(one_skipped * 2, True)["judge_mean"])
         same = [gates.trial_record(trial(overall=7.0))] * 3
@@ -690,11 +695,29 @@ class CellTests(unittest.TestCase):
         self.assertEqual(result["class"], "insufficient")
         self.assertIn("judge is needed", result["reason"])
 
-    def test_a_conditionally_judged_run_has_no_judge_figure(self):
+    def test_conditional_judging_counts_when_no_judge_call_was_skipped(self):
+        # 2026-10-31: every counted run of both arms judged, so the
+        # conditional skip selected nothing out.
         result = cell(*[series(role, FLAT[:10], FLAT_JUDGE, conditional=True)
                         for role in ("with", "without")])
+        self.assertEqual(result["class"], "no-benefit", result["reason"])
+        self.assertEqual(result["with"]["judge_runs"], 10)
+        self.assertEqual(result["with"]["judge_conditional_runs"], 10)
+
+    def test_conditional_judging_with_a_skipped_call_has_no_judge_figure(self):
+        with_runs, without_runs = [series(role, FLAT[:10], FLAT_JUDGE, conditional=True)
+                                   for role in ("with", "without")]
+        # One pair's judge was skipped (the objective already favored with).
+        for runs in (with_runs, without_runs):
+            runs[0]["trials"] = [gates.trial_record(trial(skipped=True, offset=k))
+                                 for k in range(3)]
+        result = cell(with_runs, without_runs)
         self.assertEqual(result["class"], "insufficient")
-        self.assertEqual(result["with"]["judge_runs"], 0)
+        self.assertIn("every counted run judged", result["reason"])
+        # The same runs judged unconditionally: the other nine decide.
+        for run in with_runs + without_runs:
+            run["judge_conditional"] = False
+        self.assertEqual(cell(with_runs, without_runs)["class"], "no-benefit")
 
     def test_the_judge_needs_no_spread(self):
         # Equal judge figures within every run, and the arms level: decided.
