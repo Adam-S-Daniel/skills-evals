@@ -124,7 +124,7 @@
   "title": "Test results snapshot"
  },
  "gate": {
-  "description": "The two conditions you set on Oct 24 before anything new gets built, with status from the planning thread.",
+  "description": "The two conditions you set on Oct 24 before anything new got built; both met by Oct 28.",
   "schedule": "Updated by Claude on request",
   "source": {
    "kind": "file",
@@ -135,7 +135,7 @@
   "title": "Build gate"
  },
  "loop_gaps": {
-  "description": "Gaps G1 to G13 with status and owner, copied from /mnt/project-files/loop/status.json, which the loop thread updates on every merge.",
+  "description": "Gaps G1 to G13 and the bare baseline with status and owner, copied from /mnt/project-files/loop/status.json, which the loop thread updates on every merge.",
   "schedule": "Updated by Claude on every refresh",
   "source": {
    "kind": "file",

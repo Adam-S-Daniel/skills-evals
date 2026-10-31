@@ -58,7 +58,8 @@
     <h1 class="pd-title">Self-improvement project</h1>
     <p class="pd-goal">Goal: a fully automatic system that adds, removes and changes your skills and rules files so your real work in Claude Code goes better, and proves each change with tests.</p>
     <p class="pd-take" id="takeaway">
-      Gate to start building again: <b class="dash-skeleton" data-source="headline" data-field="gate_met">—</b> of <b class="dash-skeleton" data-source="headline" data-field="gate_total">—</b> conditions met.
+      Loop gaps closed: <b class="dash-skeleton" data-source="loop_counts" data-field="done">—</b> of <b class="dash-skeleton" data-source="loop_counts" data-field="total">—</b>.
+      Routines healthy: <b class="dash-skeleton" data-source="routine_health" data-field="ok">—</b> of <b class="dash-skeleton" data-source="routine_health" data-field="active">—</b>.
       Tests used <b class="dash-skeleton" data-source="cap_use" data-field="spent">—</b> of <b class="dash-skeleton" data-source="cap_use" data-field="cap">—</b> allowance points this week.
       On each skill test's latest run, the skill beat no skill in <b class="dash-skeleton" data-source="eval_latest_summary" data-field="helped">—</b> of <b class="dash-skeleton" data-source="eval_latest_summary" data-field="tests">—</b>.
       <b class="dash-skeleton" data-source="headline" data-field="waiting">—</b> items wait on you.
@@ -79,10 +80,10 @@
   <!-- OVERVIEW -->
   <section class="pd-page" id="overview" data-page-id="overview">
     <div class="pd-tiles">
-      <button class="pd-tile" data-go="decisions" id="tile-gate">
-        <span class="pd-tile-label">Gate to build again</span>
-        <span class="pd-tile-num"><span class="dash-skeleton" data-source="headline" data-field="gate_met">—</span> <small>of <span data-source="headline" data-field="gate_total">—</span> met</small></span>
-        <span class="pd-tile-note">One improvement judged, two sweeps inside the cap</span>
+      <button class="pd-tile" data-go="routines" id="tile-routines">
+        <span class="pd-tile-label">Routines healthy</span>
+        <span class="pd-tile-num"><span class="dash-skeleton" data-source="routine_health" data-field="ok">—</span> <small>of <span data-source="routine_health" data-field="active">—</span></small></span>
+        <span class="pd-tile-note"><span data-source="routine_health" data-field="attention">—</span> late, failing or to check; retired and not-yet-run ones not counted</span>
       </button>
       <button class="pd-tile" data-go="loop" id="tile-loop">
         <span class="pd-tile-label">Loop gaps closed</span>
@@ -181,18 +182,18 @@
 
     <div class="pd-card" id="card-loop-lanes">
       <h2>Who is building each lane</h2>
-      <p class="pd-note">One project thread per lane. "Latest" and "State" are from the snapshot taken at each refresh.</p>
+      <p class="pd-note">One project thread per lane. "Latest" is the lane's last notable result; "State" and "Last active" come from the thread list at each refresh.</p>
       <div class="pd-scroll" style="max-height: none">
         <table class="pd-table" id="tbl-loop-lanes" data-source="loop_lanes_live" data-row-key="thread">
-          <thead><tr><th data-field="lane">Lane</th><th data-field="thread">Thread</th><th data-field="does">Builds</th><th data-field="latest">Latest</th><th data-field="state">State</th></tr></thead>
+          <thead><tr><th data-field="lane">Lane</th><th data-field="thread">Thread</th><th data-field="does">Builds</th><th data-field="latest">Latest</th><th data-field="state">State</th><th data-field="last_active">Last active</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
 
     <div class="pd-card" id="card-loop-gaps">
-      <h2>Gaps, G1 to G13</h2>
-      <p class="pd-note">From the loop's gap list. The loop thread updates each status as its PRs merge.</p>
+      <h2>Gaps</h2>
+      <p class="pd-note">From the loop's gap list (G1 to G13, plus the bare baseline). Each status changes as the PRs that close it merge.</p>
       <div class="pd-scroll" style="max-height: none">
         <table class="pd-table" id="tbl-loop-gaps" data-source="loop_gaps" data-row-key="gap">
           <thead><tr><th data-field="gap">#</th><th data-field="title">Gap</th><th data-field="status">Status</th><th data-field="owner">Owner</th></tr></thead>
@@ -464,21 +465,22 @@
 
   <!-- DECISIONS -->
   <section class="pd-page" id="decisions" data-page-id="decisions" hidden>
-    <div class="pd-card" id="card-gate">
-      <h2>The gate: nothing new gets built until</h2>
-      <div class="pd-scroll" style="max-height: none">
-        <table class="pd-table" id="tbl-gate" data-source="gate" data-row-key="condition">
-          <thead><tr><th data-field="condition">Condition</th><th data-field="status">Status</th><th data-field="detail">Detail</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
     <div class="pd-card" id="card-decisions">
       <h2>Your decisions</h2>
       <p class="pd-note">The full strategy, options and survey are in the project's files (strategy/projects-era-strategy-2026-10-20.md).</p>
       <div class="pd-scroll" style="max-height: none">
         <table class="pd-table" id="tbl-decisions" data-source="decisions" data-row-key="date,decision">
           <thead><tr><th data-field="date">Date</th><th data-field="decision">Decision</th><th data-field="link">Record</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="pd-card" id="card-gate">
+      <h2>The build gate, met Oct 28</h2>
+      <p class="pd-note">Two conditions you set on Oct 24 before anything new got built. Both are met, so new work is no longer held back.</p>
+      <div class="pd-scroll" style="max-height: none">
+        <table class="pd-table" id="tbl-gate" data-source="gate" data-row-key="condition">
+          <thead><tr><th data-field="condition">Condition</th><th data-field="status">Status</th><th data-field="detail">Detail</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -685,7 +687,7 @@ dash.calc('loop_lanes_live', {
   inputs: ['loop_lanes', 'threads'],
   fn: (loop_lanes, threads) => {
     const t = new Map(threads.map((r) => [r.title, r]));
-    return loop_lanes.map((l) => ({ ...l, state: (t.get(l.thread) || {}).state || '' }));
+    return loop_lanes.map((l) => ({ ...l, state: (t.get(l.thread) || {}).state || '', last_active: (t.get(l.thread) || {}).last_active || '' }));
   },
 });
 // Sum a list of usage rows; a field stays null (not collected) unless some row has it.
@@ -748,6 +750,18 @@ dash.calc('headline', {
     cleanup_partly: cleanup.filter((c) => c.status === 'Partly done').length,
     cleanup_total: cleanup.length, waiting: waiting.filter((w) => w.id !== 'none').length,
   }],
+});
+dash.calc('routine_health', {
+  title: 'Routine health counts',
+  description: 'Routines not retired and already run once, how many are healthy, and how many are late, failing, paused or need a check.',
+  inputs: ['routines'],
+  fn: (routines) => {
+    const active = routines.filter((r) => r.health !== 'Retired');
+    // A routine that has not had its first run yet is neither healthy nor a problem.
+    const ok = active.filter((r) => r.health === 'OK').length;
+    const fresh = active.filter((r) => r.health === 'Not run yet').length;
+    return [{ active: active.length - fresh, ok, attention: active.length - fresh - ok }];
+  },
 });
 dash.calc('pr_counts', {
   title: 'Open PR counts',
@@ -1148,7 +1162,7 @@ dash.calc('new_runs', {
     renderTable('tbl-ingests', 'eval_ingests', [{ field: 'run_id', link: 'url', fmt: (v, r) => v || r.message }, { field: 'ingested_at', fmt: dt }], (r) => r.sha);
     renderTable('tbl-loop-stages', 'loop_stages', [{ field: 'kind' }, { field: 'stage', link: 'link' }, { field: 'status', pill: true }, { field: 'what' }, { field: 'gaps' }], (r) => r.order);
     renderTable('tbl-loop-grid', 'loop_grid', [{ field: 'stage' }, { field: 'skills' }, { field: 'guidance' }, { field: 'memories' }], (r) => r.stage);
-    renderTable('tbl-loop-lanes', 'loop_lanes_live', [{ field: 'lane' }, { field: 'thread', link: 'link' }, { field: 'does' }, { field: 'latest', link: 'latest_link' }, { field: 'state', pill: true }], (r) => r.thread);
+    renderTable('tbl-loop-lanes', 'loop_lanes_live', [{ field: 'lane' }, { field: 'thread', link: 'link' }, { field: 'does' }, { field: 'latest', link: 'latest_link' }, { field: 'state', pill: true }, { field: 'last_active', fmt: dt }], (r) => r.thread);
     renderTable('tbl-loop-gaps', 'loop_gaps', [{ field: 'gap' }, { field: 'title', link: 'link' }, { field: 'status', pill: true }, { field: 'owner' }], (r) => r.gap);
     renderTable('tbl-roster', 'roster', [{ field: 'model', link: 'link' }, { field: 'role' }, { field: 'status', pill: true }, { field: 'why' }], (r) => r.id);
     renderTable('tbl-models', 'eval_summary', [{ field: 'model' }, { field: 'runs', num: true }, { field: 'helped', num: true }, { field: 'tied', num: true }, { field: 'hurt', num: true }, { field: 'with_avg', num: true, fmt: pct }, { field: 'without_avg', num: true, fmt: pct }, { field: 'lift', num: true, fmt: (v) => (v >= 0 ? '+' : '') + d3.format('.1f')(v * 100) + ' pts' }], (r) => r.model, { sort: { field: 'runs', dir: 'desc' } });
@@ -1180,7 +1194,7 @@ dash.calc('new_runs', {
     renderTable('tbl-routines', 'routines', [{ field: 'name', link: 'link' }, { field: 'what' }, { field: 'schedule' }, { field: 'last_run', fmt: dt }, { field: 'health', pill: true }, { field: 'note' }], (r) => r.name);
     renderTable('tbl-checkins', 'checkins', [{ field: 'when', fmt: dt }, { field: 'what' }], (r) => r.id, { sort: { field: 'when', dir: 'asc' } });
     renderTable('tbl-gate', 'gate', [{ field: 'condition', link: 'link' }, { field: 'status', pill: true }, { field: 'detail' }], (r) => r.condition);
-    renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace('/pull/', '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });
+    renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace(/\/(pull|issues)\//, '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });
   }
 
   dash.onData(draw);

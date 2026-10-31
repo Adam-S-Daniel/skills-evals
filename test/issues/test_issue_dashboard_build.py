@@ -122,6 +122,8 @@ class DashboardBuildTests(unittest.TestCase):
             (routine(source=trig, expect_every_hours=1), {"t": {"last_run": {"status": "ROUTINE_RUN_STATUS_SUCCEEDED", "fired_at": "2026-01-06T09:00:00Z"}}}, {}, "Late", "Succeeded"),
             (routine(source=trig, expect_every_hours=1), {"t": {"last_run": {"status": "ROUTINE_RUN_STATUS_SUCCEEDED", "fired_at": "2026-01-06T12:30:00Z"}}}, {}, "OK", "Succeeded"),
             (routine(source=trig), {"t": {"enabled": False}}, {}, "Paused", None),
+            (routine(source=trig, expect_every_hours=168), {"t": {"next_run_at": "2026-01-13T18:00:00Z"}}, {}, "Not run yet", None),
+            (routine(source=trig, expect_every_hours=1), {"t": {"next_run_at": "2026-01-06T00:00:00Z"}}, {}, "Late", None),
             (routine(source={"kind": "none"}, retired=True), {}, {}, "Retired", "Idle"),
             (routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"}), {},
              {"o/r:w.yml": [{"created_at": "2026-01-05T00:00:00Z", "status": "completed", "conclusion": "success"},
