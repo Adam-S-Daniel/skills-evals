@@ -211,8 +211,11 @@ def _sandbox_placeholder(path: Path) -> bool:
     Measured 2026-10-09 (CLI 2.1.292, .293 and .295): one sandboxed Bash call
     in a fresh repository leaves a 0-byte regular `.git/config.worktree`, the
     bubblewrap mount point for a protected path that did not exist (the
-    distro `/usr/bin/bwrap` 0.9.0 and another build alike). Only that exact
-    shape counts: a regular file this user owns, empty, with no other link.
+    distro `/usr/bin/bwrap` 0.9.0 and another build alike). Measured again
+    2026-10-31 (CLI 2.1.316): the same call now also leaves a 0-byte
+    `.git/objects/info/alternates`, which names no object store. Only that
+    exact shape counts: a regular file this user owns, empty, with no other
+    link.
     """
     try:
         info = os.lstat(path)
@@ -248,8 +251,10 @@ def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
     if identity.st_uid != os.getuid():
         _refuse('.git ownership changed')
     _refuse_redirects(gitdir)
+    # An empty alternates file lists no store; the sandbox leaves one.
     for relative in ('objects/info/alternates', 'objects/info/http-alternates'):
-        if os.path.lexists(gitdir / relative):
+        path = gitdir / relative
+        if os.path.lexists(path) and not _sandbox_placeholder(path):
             _refuse('alternate object store')
     if (gitdir / 'info').is_symlink():
         _refuse('metadata info symlink')
@@ -273,6 +278,9 @@ def _copy_metadata(source: Path, destination: Path, *, top: bool = True,
         if deadline is not None:
             deadline.remaining()
         if entry.name in {'config', 'config.worktree', 'hooks'} or (top and entry.name in {'info', 'commondir', 'gitdir'}):
+            continue
+        if source.name == 'info' and source.parent.name == 'objects' and entry.name in {
+                'alternates', 'http-alternates'}:
             continue
         if entry.is_symlink():
             _refuse('metadata symlink')
