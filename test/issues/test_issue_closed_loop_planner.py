@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 import allowance_guard as guard  # noqa: E402
 import improve_outcomes as io_mod  # noqa: E402
 import compute_gates as plan_week_compute_gates  # noqa: E402
+import gates  # noqa: E402
 import plan_week  # noqa: E402
 
 NOW = datetime(2026, 10, 27, 7, 0, 0, tzinfo=timezone.utc)
@@ -378,7 +379,10 @@ class TrainEvidenceTests(unittest.TestCase):
         self.assertFalse(plan_week.with_run_after(cells, NOW - timedelta(days=6)))
 
 
-POLICY = {"min_runs": 5, "retire_looks": [5, 10, 20]}
+#: The gates document's policy block, as plan_week's context carries it. The
+#: near band orders by run count alone (2026-10-31: no fixed looks), so the
+#: planner reads no threshold from it.
+POLICY = gates.load_gate_policy()["skills"]
 
 
 def cell(fixture, model, cls, runs=0, newest=None, usd=None, empty=0, skill=None):
@@ -430,8 +434,10 @@ class BandTests(unittest.TestCase):
         self.assertNotIn("evals/r1", [f["fixture"] for f in plan["fires"]])
         self.assertLessEqual(sum(f["cost"] for f in plan["fires"]), 1.0 + 1e-9)
         near = [f["fixture"] for f in plan["fires"] if f["band"] == "near"]
-        # Runs 4 are one short of the 5-run look, so they lead.
-        self.assertEqual(near[:2], ["evals/n0", "evals/n3"])
+        # Fewest runs lead: any run can decide a cell, and the cells with
+        # the least evidence gain the most from one.
+        self.assertEqual(near, ["evals/n2", "evals/n5", "evals/n1", "evals/n4",
+                                "evals/n0", "evals/n3"])
         self.assertEqual(plan["matrix"]["include"][0]["eval_key"], "s0/x")
 
     def test_a_tight_room_still_reserves_each_band_its_share(self):
@@ -443,6 +449,19 @@ class BandTests(unittest.TestCase):
         # 5 fires) goes to missing first.
         self.assertEqual(bands.count("near"), 2)
         self.assertEqual(bands.count("missing"), 8)
+
+    def test_near_cells_go_fewest_runs_first_then_heaviest_model(self):
+        # No `_next_look` (2026-10-31): the order is the smaller arm's run
+        # count, then model weight.
+        lopsided = {**cell("evals/c", "heavy", "insufficient", runs=1), "with_runs": 9}
+        cells = [cell("evals/a", "light", "insufficient", runs=3),
+                 cell("evals/a", "heavy", "insufficient", runs=3),
+                 cell("evals/b", "light", "insufficient", runs=1), lopsided]
+        plan = plan_week.build_plan(ctx(cells=cells, room=1.0), NOW)
+        self.assertEqual([(f["fixture"], f["model"]) for f in plan["fires"]
+                          if f["band"] == "near"],
+                         [("evals/c", "heavy"), ("evals/b", "light"),
+                          ("evals/a", "heavy"), ("evals/a", "light")])
 
     def test_missing_cells_go_heaviest_model_first_and_broken_ones_leave(self):
         cells = [cell("evals/a", "light", "missing"), cell("evals/a", "heavy", "missing"),

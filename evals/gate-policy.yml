@@ -7,10 +7,16 @@
 # the unit, and bounds over run means decide it. harness/gates.py's
 # docstring says how each number is used.
 #
-# Confidences: `benefit_confidence` is two-sided, `retire_confidence` and
-# `check_confidence` are one-sided. `retire_looks` are the only run counts
-# at which a cell may be classified `no-benefit`, and it must be so at the
-# two largest it has reached (so at least ten runs per arm).
+# Confidences (Adam, 2026-10-31: decide on confidence alone, 85% to keep and
+# 95% to remove): each is the two-sided level of an anytime-valid confidence
+# sequence over run means (harness/gates.py, `confidence_sequence`), so a
+# cell is checked after every run with no minimum run count and no fixed
+# looks. Keep when the `benefit_confidence` sequence's lower end is above 0
+# (or a check's, Holm-corrected at `check_confidence`); no benefit when the
+# `retire_confidence` sequence's upper end is under the margin, and only
+# once the runs span `min_cli_versions` Claude Code versions (removals
+# only). `prior_strength` is how many runs' worth of weight the run-to-run
+# spread measured across every evaluation gets against a cell's own spread.
 #
 # Every validated run counts, from `results/` and `routine-results/` alike
 # (scripts/compute_gates.py): the gate guards against honest mistakes (a
@@ -31,16 +37,14 @@
 skills:
   objective_margin: 0.05
   judge_margin: 0.5
-  benefit_confidence: 0.90
-  retire_confidence: 0.975
-  check_confidence: 0.90
-  min_runs: 5
+  benefit_confidence: 0.85
+  retire_confidence: 0.95
+  check_confidence: 0.85
   min_cli_versions: 2
+  prior_strength: 4
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
-  bootstrap_resamples: 2000
-  retire_looks: [5, 10, 20]
   retirement_mode: auto
 # Guidance sections (skills-evals#124): the same verdict over each section's
 # ablation pair (full vs full-minus-section), with the section-vs-none pair
@@ -55,14 +59,12 @@ skills:
 guidance:
   objective_margin: 0.05
   judge_margin: 0.5
-  benefit_confidence: 0.90
-  retire_confidence: 0.975
-  check_confidence: 0.90
-  min_runs: 5
+  benefit_confidence: 0.85
+  retire_confidence: 0.95
+  check_confidence: 0.85
   min_cli_versions: 2
+  prior_strength: 4
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
-  bootstrap_resamples: 2000
-  retire_looks: [5, 10, 20]
   retirement_mode: auto

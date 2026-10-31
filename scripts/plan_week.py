@@ -44,8 +44,9 @@ THE BANDS (rule D), in order:
      heaviest model usage first (usage/latest.json on the results branch;
      equal weights without it). A cell with two successful fires and still
      no run becomes a `fixture-broken` work item and leaves the queue.
-  3. near a decision, at least 20%: insufficient cells, fewest runs short
-     of their next look (`min_runs`, then `retire_looks`) first.
+  3. near a decision, at least 20%: insufficient cells, fewest runs first
+     (every run can decide a cell: harness/gates.py checks a confidence
+     sequence after each one).
   4. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -448,13 +449,6 @@ def with_run_after(cells: dict, moment: datetime) -> bool:
 # ---------------------------------------------------------------------------
 # Rule D: the bands.
 
-def _next_look(runs: int, policy: dict) -> int:
-    for look in [policy["min_runs"], *policy["retire_looks"]]:
-        if runs < look:
-            return look
-    return runs + 1
-
-
 def fire_cost(cell: dict, ctx: dict) -> float:
     """A cell's fire at its historical cost (module docstring)."""
     reserve, ratio = ctx["reservation"], ctx.get("points_per_usd")
@@ -492,7 +486,7 @@ def bare_items(ctx: dict) -> list:
 
 def eval_items(ctx: dict, now: datetime) -> tuple:
     """(fires by band, work items) for the eval cells."""
-    policy, weights = ctx["policy"], ctx["model_weights"]
+    weights = ctx["model_weights"]
     removal = {s for s in ctx["removal_prs"]}
     bands = {band: [] for band in BANDS}
     work = []
@@ -517,8 +511,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                                          "order": (-item["weight"],)})
         elif cell["class"] == "insufficient":
             bands["near"].append({**item, "band": "near",
-                                  "order": (_next_look(least, policy) - least,
-                                            -item["weight"])})
+                                  "order": (least, -item["weight"])})
         elif newest is not None and now - newest >= RECHECK_AFTER:
             bands["recheck"].append({**item, "band": "recheck",
                                      "order": (newest.timestamp(),)})

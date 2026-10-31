@@ -297,7 +297,7 @@ as prose.
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
 then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
-`retire` (no benefit on every fixture and roster model, at two fixed looks)
+`retire` (no benefit on every fixture and roster model, at 95% confidence on an anytime-valid bound)
 gets, in `retirement_mode: auto` (the committed value in
 `evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
 labeled `agent-authored`, that auto-merges (merge commit) with no human

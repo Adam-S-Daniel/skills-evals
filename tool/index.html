@@ -170,7 +170,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* ------------------------------------------------------------------ */
 const SCHEMA_VERSION = 1;
 const WINDOW_WEEKS = 26;          // pool runs from the last 26 weeks
-const MIN_PAIRED_RUNS = 5;        // the loop's own floor (gate-policy.yml min_runs); used where no loop verdict exists
+const MIN_PAIRED_RUNS = 5;        // the page's own rule for the whole-guidance headline only; the loop itself has no run minimum
 const HELPS_MIN_GAIN = 0.05;      // 5 percentage points better on at least one model
 const WORSE_TOLERANCE = -0.05;    // and never more than 5 points worse on any model
 const EPS = 1e-9;                 // float tolerance for the comparisons above
@@ -237,13 +237,13 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'The improvement loop decided to keep it: its statistical test is confident (a 90% range that stays above zero) that, on some model and task, Claude passes more checks with it than without it.',
+    helps: 'The improvement loop decided to keep it: its statistical test is confident (an 85% range that stays above zero, and stays valid however many runs it looks at) that, on some model and task, Claude passes more checks with it than without it.',
     alone: 'It helps when it is the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
     none: 'The improvement loop is at least 97.5% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
     canttell: 'Claude already passes this test without it, so the test cannot show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be.',
-    early: 'The improvement loop has not decided yet (it needs at least ' + MIN_PAIRED_RUNS + ' runs per side and a confident result), but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
-    insufficient: 'The improvement loop has not decided yet: it needs at least ' + MIN_PAIRED_RUNS + ' runs per side and a confident result, and the early results do not clearly point either way.'
+    early: 'The improvement loop is not yet 85% confident, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
+    insufficient: 'The improvement loop has not decided yet: it is not 85% confident the skill helps, nor 95% confident it does not, and the early results do not clearly point either way.'
   },
   chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
 
