@@ -532,11 +532,16 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         workflow = self.workflow()
         trigger = workflow.get("on", workflow.get(True))
         # A manual dispatch runs the sweep when GitHub skips the schedule
-        # (2026-10-27); it takes no inputs.
-        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"}],
+        # (2026-10-27); it takes no inputs. The three-hourly top-up spends
+        # room that fires costing less than their estimate left (Adam,
+        # 2026-10-31); the group keeps two sweeps from planning the same
+        # cells at once, and it is not a required check.
+        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"},
+                                                {"cron": "37 */3 * * *"}],
                                    "workflow_dispatch": None})
         self.assertEqual(workflow["permissions"], {})
-        self.assertNotIn("concurrency", workflow)
+        self.assertEqual(workflow["concurrency"],
+                         {"group": "routine-eval-weekly", "cancel-in-progress": False})
         jobs = workflow["jobs"]
         self.assertEqual(set(jobs), {"plan", "dispatch"})
         self.assertEqual(jobs["plan"]["permissions"],
