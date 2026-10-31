@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FLYKXSV2o8vceoU2CYTEDB",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 58,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FLYKXSV2o8vceoU2CYTEDB",
+      "is_error": false,
+      "output": "1\t{\n2\t  \"repo\": \"example-org/widgets\",\n3\t  \"week\": \"2026-10-19\",\n4\t  \"done\": [\n5\t    {\"kind\": \"pull_request\", \"number\": 38, \"title\": \"Drop the legacy uploader\", \"merged_at\": \"2026-10-19\"},\n6\t    {\"kind\": \"pull_request\", \"number\": 41, \"title\": \"Retry flaky uploads\", \"merged_at\": \"2026-10-20\"},\n7\t    ...",
+      "output_chars": 570,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VqP6hmsBn1ar9EvcXoT2vY",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 54,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VqP6hmsBn1ar9EvcXoT2vY",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 150,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
