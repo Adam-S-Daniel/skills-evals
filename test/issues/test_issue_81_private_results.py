@@ -12,9 +12,10 @@ Run with: python3 -m pytest test/issues/test_issue_81_private_results.py -q
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import contextlib
+import io
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -82,17 +83,16 @@ class Overlay(unittest.TestCase):
 
     def test_the_cli_logs_a_count_and_fails_closed_without_naming_contents(self):
         write_run(self.private, RUN_B, "secret-ish")
-        ok = subprocess.run([sys.executable, str(ROOT / "scripts/overlay_private_results.py"),
-                             "--private", str(self.private), "--tree", str(self.tree)],
-                            capture_output=True, text=True)
-        self.assertEqual(ok.returncode, 0, ok.stderr)
-        self.assertIn("1 run(s) added", ok.stdout)
-        again = subprocess.run([sys.executable, str(ROOT / "scripts/overlay_private_results.py"),
-                                "--private", str(self.private), "--tree", str(self.tree)],
-                               capture_output=True, text=True)
-        self.assertEqual(again.returncode, 1)
-        self.assertNotIn(RUN_B, again.stdout)
-        self.assertNotIn("secret-ish", again.stdout)
+        argv = ["--private", str(self.private), "--tree", str(self.tree)]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(overlay.main(argv), 0)
+        self.assertIn("1 run(s) added", out.getvalue())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(overlay.main(argv), 1)
+        self.assertNotIn(RUN_B, out.getvalue())
+        self.assertNotIn("secret-ish", out.getvalue())
 
 
 def steps(workflow: str, job: str) -> list:
