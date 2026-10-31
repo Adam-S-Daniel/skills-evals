@@ -304,6 +304,50 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         run_eval._git('status', '--short', cwd=self.repo)
         self.assertIn('+after', run_eval._git('diff', cwd=self.repo).stdout)
 
+    def test_sandbox_placeholder_alternates_passes(self):
+        # Since CLI 2.1.316 the sandbox also leaves an empty regular
+        # `.git/objects/info/alternates`; it names no object store.
+        import workspace_git
+        workspace_git.run('init', '-q', cwd=self.repo, check=True)
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        for name in ('alternates', 'http-alternates'):
+            with self.subTest(name=name):
+                path = self.repo / '.git' / 'objects' / 'info' / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'')
+                try:
+                    workspace_git.validate(self.repo)
+                    run_eval._git('status', '--short', cwd=self.repo)
+                    self.assertIn('+after', run_eval._git('diff', cwd=self.repo).stdout)
+                finally:
+                    path.unlink()
+
+    def test_alternates_other_than_the_placeholder_refused(self):
+        import workspace_git
+        info = self.repo / '.git' / 'objects' / 'info'
+        info.mkdir(parents=True, exist_ok=True)
+        elsewhere = self.root / 'empty-elsewhere'
+        elsewhere.write_bytes(b'')
+        cases = {'content': lambda path: path.write_text(str(self.root) + '\n'),
+                 'symlink to an empty file': lambda path: path.symlink_to(elsewhere),
+                 'hard-linked empty file': lambda path: os.link(elsewhere, path),
+                 'directory': Path.mkdir}
+        for name in ('alternates', 'http-alternates'):
+            for label, make in cases.items():
+                with self.subTest(name=name, label=label):
+                    path = info / name
+                    make(path)
+                    try:
+                        self.assertFalse(workspace_git._sandbox_placeholder(path))
+                        with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+                            run_eval._git('status', cwd=self.repo)
+                    finally:
+                        if path.is_dir() and not path.is_symlink():
+                            path.rmdir()
+                        else:
+                            path.unlink()
+
     def test_only_the_exact_placeholder_shape_passes(self):
         import workspace_git
         gitdir = self.repo / '.git'
