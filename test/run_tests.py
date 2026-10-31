@@ -4722,6 +4722,7 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-gate.yml",
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/workflows/skill-coverage.yml",
+               ".github/workflows/explorer-data.yml",
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
