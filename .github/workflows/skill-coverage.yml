@@ -456,3 +456,70 @@ jobs:
           name: regressions
           path: ${{ runner.temp }}/regressions/
           if-no-files-found: error
+
+  # Publishes the regression document for the public explorer: the committed
+  # path `regressions/latest.json` on persistent/eval-results (schedule only).
+  # No `concurrency` group, as routine-eval-ingest.yml has none: GitHub keeps
+  # only the newest pending run in a group, so a burst would cancel runs
+  # silently. A push that loses a race to another writer of the branch is
+  # rebuilt on the new tip and retried (three attempts); this job writes only
+  # regressions/latest.json, so a retry cannot conflict.
+  regression-publish:
+    if: >-
+      github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+      && needs.regression.result == 'success'
+    needs: regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the scheduled main commit
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download the regression document
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: regressions
+          path: ${{ runner.temp }}/regressions
+
+      - name: Publish regressions/latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/regressions/latest.json"
+          jq -e '.schema_version == 1 and (.rows | type == "array") and
+            (.subjects | type == "object")' "$source" >/dev/null
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git config user.name "skills-evals real-eval bot"
+          git config user.email "skills-evals@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results
+            git checkout -B persistent/eval-results origin/persistent/eval-results
+            if [ -L regressions ] || { [ -e regressions ] && [ ! -d regressions ]; }; then
+              echo "Unsafe regressions output path." >&2
+              exit 1
+            fi
+            if [ -L regressions/latest.json ] || { [ -e regressions/latest.json ] && [ ! -f regressions/latest.json ]; }; then
+              echo "Unsafe regressions output path." >&2
+              exit 1
+            fi
+            mkdir -p regressions
+            cp "$source" regressions/latest.json
+            git add -f regressions/latest.json
+            if git diff --cached --quiet; then
+              echo "No regression change to commit."
+              exit 0
+            fi
+            git commit -m "regressions: publish latest verdicts [skip ci]"
+            if git -c "http.https://github.com/.extraheader=$auth" push origin HEAD:refs/heads/persistent/eval-results; then
+              exit 0
+            fi
+            echo "Push attempt $attempt failed; retrying from a fresh fetch." >&2
+          done
+          echo "Could not publish regressions/latest.json after 3 attempts." >&2
+          exit 1

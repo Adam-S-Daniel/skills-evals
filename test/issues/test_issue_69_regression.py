@@ -786,5 +786,43 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(upload["with"]["name"], "regressions")
 
 
+class PublishWorkflowTests(unittest.TestCase):
+    """The regression-publish job, read with a YAML parser."""
+
+    def setUp(self):
+        self.doc = yaml.safe_load((ROOT / ".github/workflows/skill-coverage.yml").read_text())
+        self.job = self.doc["jobs"]["regression-publish"]
+        self.lock = yaml.safe_load((ROOT / ".github/workflows/actions.lock").read_text())
+
+    def test_permissions_needs_and_condition(self):
+        self.assertEqual(self.job["permissions"], {"contents": "write"})
+        self.assertEqual(self.job["needs"], "regression")
+        condition = self.job["if"]
+        self.assertIn("github.event_name == 'schedule'", condition)
+        self.assertIn("github.ref == 'refs/heads/main'", condition)
+        self.assertIn("needs.regression.result == 'success'", condition)
+        self.assertNotIn("concurrency", self.job)
+        self.assertEqual(self.job["timeout-minutes"], 10)
+
+    def test_no_interpolation_and_every_action_is_locked(self):
+        locked = set(self.lock["workflows"][".github/workflows/skill-coverage.yml"])
+        for step in self.job["steps"]:
+            if "run" in step:
+                self.assertNotIn("${{", step["run"])
+            if "uses" in step:
+                self.assertIn(step["uses"], locked)
+                self.assertIsNone(lock_problem(step["uses"], "skill-coverage.yml"))
+                if step["uses"].startswith("actions/checkout@"):
+                    self.assertIs(step["with"]["persist-credentials"], False)
+
+    def test_writes_only_the_one_path(self):
+        script = next(s["run"] for s in self.job["steps"]
+                      if "git add" in s.get("run", ""))
+        adds = [line.strip() for line in script.splitlines() if "git add" in line]
+        self.assertEqual(adds, ["git add -f regressions/latest.json"])
+        self.assertIn("persistent/eval-results", script)
+        self.assertIn("for attempt in 1 2 3", script)
+
+
 if __name__ == "__main__":
     unittest.main()
