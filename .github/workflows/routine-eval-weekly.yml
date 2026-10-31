@@ -36,19 +36,28 @@ name: Weekly routine evals
 # * Top-up (Adam, 2026-10-31: "use what is available rather than stopping
 #   short"): the planner books each fire at its estimated cost, so the
 #   Tuesday sweep stops once those estimates fill the room, even when the
-#   fires then cost less. Every three hours the sweep plans again from the
-#   newest ingested results and meter reading, so the room that real costs
-#   left is spent before the account week resets. A top-up with nothing due
-#   or no room plans nothing (`count` 0). The concurrency group keeps two
-#   sweeps from planning the same cells at once: a queued sweep waits for
-#   the running one (cancel-in-progress false).
+#   fires then cost less. So the sweep plans again from the newest ingested
+#   results and meter reading each time a result is ingested (`workflow_run`
+#   of the ingest workflow), and once a day after the scheduled-run health
+#   audit as a backstop for a chain that stopped because every fire was
+#   refused. A three-hourly cron did this first, but GitHub never started
+#   it (15:37, 18:37 and 21:37 UTC on 2026-10-31, even after re-enabling
+#   the workflow) while other schedules in this repo ran. A top-up with
+#   nothing due or no room plans nothing (`count` 0), which ends the chain
+#   until the next backstop. The concurrency group keeps two sweeps from
+#   planning the same cells at once: a queued sweep waits for the running
+#   one (cancel-in-progress false), and a newer queued sweep replaces an
+#   older one. A `workflow_run` run uses the default branch's copy of this
+#   file, so the plan job's default-branch condition holds.
 # * Not a pull_request or push workflow, so no path filter and no required
 #   check. Inputs are never interpolated into `run:`; matrix values reach
 #   the shell through `env` and are revalidated before the dispatch.
 on:
   schedule:
     - cron: "0 7 * * 2"
-    - cron: "37 */3 * * *"
+  workflow_run:
+    workflows: ["Ingest routine eval results", "Scheduled-run health audit"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
