@@ -1340,6 +1340,37 @@ class ComputeGatesTests(unittest.TestCase):
         second, _ = self.run_gates("b.json")
         self.assertEqual(first.read_bytes(), second.read_bytes())
 
+    def test_one_trial_runs_count(self):
+        """A one-trial run's arm summary IS its trial, with `n: 1`, no
+        aggregate and no trial files (harness/run_eval.py, "Fixture
+        layout"). Every routine run fired with trials 1 was once skipped as
+        "no aggregate block", so no gate saw it (2026-10-31)."""
+        self.write("one", [[80]] * 3, [8.0] * 3)
+        for arm in sorted(self.tree.glob("routine-results/*/one/*/*_skill")):
+            outer = json.loads((arm / "summary.json").read_text(encoding="utf-8"))
+            inner = json.loads((arm / "trial-1" / "summary.json").read_text(
+                encoding="utf-8"))
+            shutil.rmtree(arm / "trial-1")
+            for field in ("aggregate", "errors"):
+                outer.pop(field)
+            write_json(arm / "summary.json", {**outer, **inner, "n": 1})
+        index = compute_gates.build_index(self.tree, self.evals, AS_OF)
+        mine = [r for r in index["runs"] if r["skill"] == "one"]
+        self.assertEqual(sorted(r["role"] for r in mine), ["with"] * 3 + ["without"] * 3)
+        self.assertTrue(all(len(r["trials"]) == 1 and r["trials"][0]["scored"]
+                            for r in mine))
+        self.assertEqual(index["skipped"], {"no aggregate block": 1})
+        # Only `n` 1 with no trial files is a trial; `n` 2 still needs its
+        # aggregate, and so does a summary beside trial files.
+        arms = sorted(self.tree.glob("routine-results/*/one/*/*_skill"))
+        self.edit(arms[0] / "summary.json", lambda d: d.update(n=2))
+        self.edit(arms[1] / "summary.json", lambda d: d.update(n=True))
+        write_json(arms[2] / "trial-1" / "summary.json",
+                   json.loads((arms[2] / "summary.json").read_text(encoding="utf-8")))
+        index = compute_gates.build_index(self.tree, self.evals, AS_OF)
+        self.assertEqual(len([r for r in index["runs"] if r["skill"] == "one"]), 3)
+        self.assertEqual(index["skipped"], {"no aggregate block": 4})
+
     def test_verdicts_links_and_skips(self):
         self.write("flat", FLAT[:10], FLAT_JUDGE)
         # One fixture per routine run id, as the fire workflow makes them.

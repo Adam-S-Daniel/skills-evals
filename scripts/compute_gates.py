@@ -42,8 +42,9 @@ what the caller checked out. No registry, or no unique copy, leaves it
 unknown, and every cell of the skill is then insufficient.
 
 A VALIDATED ARM RUN is one arm of one `<timestamp>[/<fixture>]` whose summary
-parses as a JSON object naming the skill and carrying an `aggregate` and a
-`run` block, whose role is `with` or `without` (the summary's `role`, else
+parses as a JSON object naming the skill and carrying an `aggregate` (not
+needed by a one-trial run: `n` 1 and no trial files) and a `run` block,
+whose role is `with` or `without` (the summary's `role`, else
 `run_eval._ROLES` of the arm name), whose requested model is recorded
 (`run_eval._arm_model`), whose trial summaries parse and have the shape
 run_eval writes (`gates.trial_record`), are numbered 1 to n and agree with
@@ -252,7 +253,12 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     summary = _parse(raw)
     if summary is None:
         return None, "no readable arm summary"
-    if not isinstance(summary.get("aggregate"), dict):
+    # A one-trial run (`--trials 1`, the routine's default) writes the trial
+    # itself as the arm summary, with `n: 1` and no aggregate and no trial
+    # files (harness/run_eval.py, "Fixture layout"); it is read as its one
+    # trial below. Any other summary needs its aggregate.
+    single = not entry["trials"] and type(summary.get("n")) is int and summary["n"] == 1
+    if not single and not isinstance(summary.get("aggregate"), dict):
         return None, "no aggregate block"
     if not isinstance(summary.get("run"), dict):
         return None, "no run block"
