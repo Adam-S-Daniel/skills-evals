@@ -9,18 +9,23 @@ name: Draft a skill from a lesson
 # branch. See docs/how-it-works.md, "Draft mode".
 #
 # * `select` holds `contents: read` and `actions: read` (the allowance
-#   guard counts the fire workflow's runs). It reads three things as data
+#   guard counts the fire workflow's runs). It reads four things as data
 #   and runs nothing from them: the redacted proposals under
 #   adam-agentskills-private's lessons/ (a sparse checkout with the
 #   read-only registry App token, minted as propagation.yml mints it), the
+#   open `skill-proposal` issues in the public adam-agentskills (with the
+#   job token; only the owner's own issues with a "Skill name: `<subject>`"
+#   line count, and scripts/draft_new_skill.py `issue-proposals` turns each
+#   into a proposal of the same schema under issue-proposals/), the
 #   public adam-agentskills checkout and the private one's plugins/ (a
 #   subject that is already a skill there is never drafted), and the
 #   `claude/draft-skill-*` branches of this repository (a subject drafted
 #   before, whatever the decision, hook-first included, is never drafted
-#   again). scripts/draft_new_skill.py `drafted-subjects` reads those
-#   branches through git plumbing; `select` picks the highest
-#   evidence_count, then the newest, then by name, and prints only the
-#   proposal's path and a count.
+#   again). `drafted-subjects` reads those branches through git plumbing;
+#   `select` ranks both sources together, the highest evidence_count, then
+#   the newest, then by name, and prints only the proposal's path and a
+#   count. With no persistent/lessons branch, the issues alone can still
+#   produce a pick.
 # * The decline path (`issues: read`): the agent-checks lane closes a
 #   `Hook proposal: <subject>` issue as not planned when the lesson cannot
 #   be checked at commit time. Those subjects go to `select
@@ -105,9 +110,9 @@ jobs:
           permission-contents: read
 
       # persistent/lessons exists only once the BOXY miner has pushed a
-      # lesson; until then there is nothing to draft, which is not an error.
-      # ls-remote exits 2 when the branch is absent; any other nonzero code
-      # fails the step.
+      # lesson; until then only the skill-proposal issues can be drafted,
+      # which is not an error. ls-remote exits 2 when the branch is absent;
+      # any other nonzero code fails the step.
       - name: Look for the lessons branch
         id: lessons-branch
         env:
@@ -120,7 +125,7 @@ jobs:
             https://github.com/Adam-S-Daniel/adam-agentskills-private.git persistent/lessons \
             > /dev/null || rc=$?
           if [ "$rc" -eq 2 ]; then
-            echo "no persistent/lessons branch yet: nothing to draft"
+            echo "no persistent/lessons branch yet: only issues can be drafted"
             echo "present=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -188,17 +193,41 @@ jobs:
           done <<<"$issues"
           echo "declined hook proposals: $(wc -l < "$declined")"
 
+      # Skill proposals filed as issues in the public adam-agentskills: one
+      # page of the open `skill-proposal` issues, saved as data and never
+      # printed. `issue-proposals` keeps only the owner's own issues with a
+      # name line and writes each as a proposal file; it prints counts and
+      # issue numbers only. An API error fails the job (closed).
+      - name: Convert the skill-proposal issues
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          issues="${RUNNER_TEMP:?}/skill-proposal-issues.json"
+          fetched=ok
+          gh api "repos/Adam-S-Daniel/adam-agentskills/issues?labels=skill-proposal&state=open&per_page=100" \
+            > "$issues" || fetched=ERROR
+          if [ "$fetched" = ERROR ]; then
+            echo "::error::could not list the skill-proposal issues"
+            exit 1
+          fi
+          python3 scripts/draft_new_skill.py issue-proposals --issues "$issues" \
+            --out "$RUNNER_TEMP/issue-lessons"
+
       - name: Select one new-skill proposal
         id: select
         working-directory: skills-evals
         run: |
           set -euo pipefail
-          # No lessons branch yet: an empty lessons/ selects nothing.
+          # No lessons branch yet: an empty lessons/ adds nothing, and the
+          # issue proposals still compete.
           mkdir -p ../adam-agentskills-private-lessons/lessons
           drafted="${RUNNER_TEMP:?}/drafted-subjects.txt"
           python3 scripts/draft_new_skill.py drafted-subjects --repo . > "$drafted"
           python3 scripts/draft_new_skill.py select \
             --lessons ../adam-agentskills-private-lessons/lessons \
+            --issue-proposals "$RUNNER_TEMP/issue-lessons" \
             --registry adam-agentskills=../adam-agentskills \
             --registry adam-agentskills-private=../adam-agentskills-private \
             --evals evals --drafted "$drafted" \
@@ -261,8 +290,8 @@ jobs:
           set -euo pipefail
           # The fire workflow's own pattern, checked again before the value
           # reaches a command line.
-          if ! [[ "$PROPOSAL" =~ ^proposals/[0-9]{4}-[0-9]{2}-[0-9]{2}/[a-z0-9][a-z0-9-]{0,63}__new-skill\.json$ ]]; then
-            echo "::error::the selected proposal is not proposals/<date>/<subject>__new-skill.json"
+          if ! [[ "$PROPOSAL" =~ ^(proposals|issue-proposals)/[0-9]{4}-[0-9]{2}-[0-9]{2}/[a-z0-9][a-z0-9-]{0,63}__new-skill\.json$ ]]; then
+            echo "::error::the selected proposal is not proposals/ or issue-proposals/<date>/<subject>__new-skill.json"
             exit 1
           fi
           case "$HOOK_DECLINED" in

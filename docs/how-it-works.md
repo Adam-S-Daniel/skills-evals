@@ -331,7 +331,17 @@ The session miner writes redacted lesson proposals to
 adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
 Draft mode is what consumes the `new-skill` kind:
 
-1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). One proposal:
+1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). Proposals come
+   from two sources: the miner's lessons, and skill proposals filed as
+   issues in the public adam-agentskills. An open issue there counts only
+   when Adam filed it himself, it has the `skill-proposal` label, and its
+   body has a "Skill name: `<subject>`" (or "Working name: `<subject>`")
+   line; `scripts/draft_new_skill.py issue-proposals` turns each one into
+   a proposal of the same schema (evidence count 1, the title and body as
+   its examples), and the job log lists the numbers of the issues skipped
+   for lacking that line. Both sources compete as one list, so a missing
+   `persistent/lessons` branch no longer means there is nothing to draft.
+   One proposal:
    the most evidence, then the newest, then by name; never a subject that
    is already a skill, already has `evals/<subject>/`, or was drafted
    before (any `claude/draft-skill-*` branch). It dispatches

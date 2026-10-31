@@ -6,6 +6,12 @@ routine's `draft` mode. What is pinned here:
 
   * the proposal schema (one table), the selector's order and exclusions,
     and the hook-first decline path (`--hook-declined`, `hook_declined=1`);
+  * `issue-proposals`: only open, owner-filed `skill-proposal` issues (no
+    pull requests) with a name line become proposals of the same schema,
+    deterministically, the lower number winning a shared subject, the
+    skipped ones counted by number and their text never printed; `select
+    --issue-proposals` ranks them with the lessons, and `payload` reads an
+    issue-proposals/ path under that directory;
   * `drafted-subjects` reads remote branches through git plumbing only and
     prints `<subject> <decision>`;
   * the fire payload: exact keys, `id` kept, dates dropped, the 60000-byte
@@ -86,6 +92,19 @@ def proposal(**changes) -> dict:
            "examples": ["An agent pushed a branch that failed lint at "
                         "ci.example.com, twice in one session."],
            "repos": ["example-org/example-repo"]}
+    doc.update(changes)
+    return doc
+
+
+def issue(number: int = 18, **changes) -> dict:
+    doc = {"number": number, "title": "Skill: fan out a triage",
+           "state": "open", "author_association": "OWNER",
+           "user": {"login": "Adam-S-Daniel"},
+           "labels": [{"name": "bug"}, {"name": "skill-proposal"}],
+           "created_at": "2026-10-20T08:00:00Z",
+           "updated_at": "2026-10-26T09:30:00Z",
+           "body": "Working name: `fan-out-triage`, in `adam-coding-anywhere`.\n\n"
+                   "Fan a triage out over the example.com repositories."}
     doc.update(changes)
     return doc
 
@@ -321,6 +340,192 @@ class Select(Case):
         self.assertEqual(dns.eligibility("a", {"a": {"accepted"}}, {"a"}), (False, False))
 
 
+class IssueProposals(Case):
+    def convert(self, issues, out=None) -> tuple[int, str, str, Path]:
+        out = out or self.tmp / "out"
+        path = self.write(self.tmp / "issues.json", issues)
+        code, stdout, stderr = run_main("issue-proposals", "--issues", str(path),
+                                        "--out", str(out))
+        return code, stdout, stderr, out
+
+    def files(self, out: Path) -> dict[str, dict]:
+        return {p.relative_to(out).as_posix(): json.loads(p.read_text(encoding="utf-8"))
+                for p in sorted(out.rglob("*.json"))}
+
+    def test_an_owner_issue_becomes_a_schema_proposal(self):
+        code, stdout, stderr, out = self.convert([issue()])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(outputs(stdout), {"written": "1"})
+        rel = "issue-proposals/2026-10-26/fan-out-triage__new-skill.json"
+        doc = self.files(out)[rel]
+        self.assertEqual(doc, {
+            "schema_version": 1, "id": "issue-adam-agentskills-18",
+            "subject": "fan-out-triage", "kind": "new-skill", "evidence_count": 1,
+            "first_seen": "2026-10-20", "last_seen": "2026-10-26",
+            "examples": ["2026-10-20 adam-agentskills [issue] #18 Skill: fan out a triage",
+                         "Working name: `fan-out-triage`, in `adam-coding-anywhere`.\n\n"
+                         "Fan a triage out over the example.com repositories."],
+            "repos": ["Adam-S-Daniel/adam-agentskills"]})
+        self.assertRegex(doc["id"], rf"^{dns.PROPOSAL_ID}$")
+        dns.check_proposal(doc, "2026-10-26", "fan-out-triage")
+        self.assertEqual(dns.PROPOSAL_PATH_RE.fullmatch(rel).group("root"), "issue-proposals")
+
+    def test_only_open_owner_labeled_issues_count(self):
+        pr = issue(pull_request={"url": "https://example.com/pr"})
+        cases = {
+            "member": issue(author_association="MEMBER"),
+            "contributor": issue(author_association="CONTRIBUTOR"),
+            "other login": issue(user={"login": "someone-else"}),
+            "no label": issue(labels=[{"name": "bug"}]),
+            "label as text": issue(labels=["skill-proposal"]),
+            "pull request": pr,
+            "closed": issue(state="closed"),
+            "bool number": issue(number=True),
+            "bad date": issue(created_at="yesterday"),
+            "not an object": "skill-proposal",
+        }
+        for label, item in cases.items():
+            with self.subTest(label):
+                code, stdout, stderr, out = self.convert(
+                    [item], self.tmp / label.replace(" ", "-"))
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(outputs(stdout), {"written": "0"})
+                self.assertEqual(self.files(out), {})
+
+    def test_the_subject_comes_from_the_first_name_line(self):
+        cases = {
+            "working name": ("Working name: `fan-out-triage`, in x.", "fan-out-triage"),
+            "skill name": ("Intro.\nSkill name:`a-b-c`\nmore", "a-b-c"),
+            "first wins": ("Skill name: `first-one`\nWorking name: `second`", "first-one"),
+            "crlf": ("Intro.\r\nSkill name: `crlf-name`\r\n", "crlf-name"),
+            "not at line start": ("See Skill name: `nope-name`", None),
+            "bad subject": ("Skill name: `Bad_Name`", None),
+            "unquoted": ("Skill name: plain-name", None),
+            "first is bad": ("Skill name: `Bad`\nSkill name: `good-one`", None),
+        }
+        for label, (body, want) in cases.items():
+            with self.subTest(label):
+                self.assertEqual(dns.issue_subject(dns.clean_text(body)), want)
+
+    def test_unnamed_issues_are_counted_by_number_and_never_quoted(self):
+        issues = [issue(5, body=MARKER), issue(7, body=None, title=MARKER),
+                  issue(9, title=MARKER, body=f"Skill name: `good-one`\n\n{MARKER}"),
+                  issue(11, author_association="NONE", body=MARKER)]
+        code, stdout, stderr, out = self.convert(issues)
+        self.assertEqual(code, 0, stderr)
+        self.assertNotIn(MARKER, stdout + stderr)
+        self.assertIn("issues without a name line: 2 #5 #7", stderr)
+        self.assertNotIn("#11", stderr)
+        self.assertEqual(list(self.files(out)),
+                         ["issue-proposals/2026-10-26/good-one__new-skill.json"])
+
+    def test_a_shared_subject_keeps_the_lower_number(self):
+        issues = [issue(30, updated_at="2026-10-28T00:00:00Z"), issue(12)]
+        code, _, stderr, out = self.convert(issues)
+        self.assertEqual(code, 0, stderr)
+        [(rel, doc)] = self.files(out).items()
+        self.assertEqual(doc["id"], "issue-adam-agentskills-12")
+        self.assertEqual(rel, "issue-proposals/2026-10-26/fan-out-triage__new-skill.json")
+        self.assertIn("issues skipped for a subject a lower number has: 1 #30", stderr)
+
+    def test_the_body_is_chunked_on_paragraphs_within_the_limits(self):
+        limit = dns.PROPOSAL_SCHEMA["examples"]["item"]["max"]
+        self.assertEqual(dns.body_chunks("one\n\ntwo\n  \nthree", limit),
+                         ["one\n\ntwo\n\nthree"])
+        self.assertEqual(dns.body_chunks("a" * 10 + "\n\n" + "b" * 10, 15),
+                         ["a" * 10, "b" * 10])
+        self.assertEqual(dns.body_chunks("c" * 35, 15), ["c" * 15, "c" * 15, "c" * 5])
+        self.assertEqual(dns.clean_text("a\x1b[0mb\r\nc\x7f\td"), "a[0mb\nc\td")
+        paragraphs = "\n\n".join(f"{i:03d} " + "w" * 1500 for i in range(40))
+        body = "Skill name: `long-one`\n\n" + paragraphs + "\x00\x1b"
+        code, _, stderr, out = self.convert([issue(body=body, title="t\x1b\nx")])
+        self.assertEqual(code, 0, stderr)
+        [doc] = self.files(out).values()
+        self.assertEqual(len(doc["examples"]), 20)
+        self.assertEqual(doc["examples"][0], "2026-10-20 adam-agentskills [issue] #18 t x")
+        for example in doc["examples"]:
+            self.assertTrue(dns.text_ok(example, limit))
+        self.assertTrue(doc["examples"][1].startswith("Skill name: `long-one`\n\n000 "))
+
+    def test_an_issue_too_big_to_fire_is_skipped_and_counted(self):
+        body = "Skill name: `big-one`\n\n" + "\n\n".join(["é" * 1990] * 25)
+        code, _, stderr, out = self.convert([issue(body=body), issue(4)])
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual([d["id"] for d in self.files(out).values()],
+                         ["issue-adam-agentskills-4"])
+        self.assertIn("issues skipped as unusable: 1 #18", stderr)
+
+    def test_the_output_is_deterministic(self):
+        issues = [issue(3, body="Skill name: `zeta-one`"), issue(), issue(2, state="closed")]
+        _, _, _, first = self.convert(issues, self.tmp / "first")
+        _, _, _, second = self.convert(list(reversed(issues)), self.tmp / "second")
+        read = lambda root: {p.relative_to(root).as_posix(): p.read_bytes()
+                             for p in sorted(root.rglob("*.json"))}
+        self.assertEqual(len(read(first)), 2)
+        self.assertEqual(read(first), read(second))
+
+    def test_bad_input_is_refused(self):
+        code, stdout, _, _ = self.convert({"message": MARKER})
+        self.assertEqual((code, stdout), (1, ""))
+        bad = self.write(self.tmp / "bad.json", MARKER + "[")
+        code, stdout, stderr = run_main("issue-proposals", "--issues", str(bad),
+                                        "--out", str(self.tmp / "x"))
+        self.assertEqual((code, stdout), (1, ""))
+        self.assertNotIn(MARKER, stderr)
+        _, _, _, out = self.convert([issue()])
+        code, stdout, _, _ = self.convert([issue()], out)
+        self.assertEqual((code, stdout), (2, ""))
+
+
+class SelectAcrossSources(Case):
+    def setUp(self):
+        super().setUp()
+        self.lessons = self.tmp / "lessons"
+        self.issues = self.tmp / "issue-lessons"
+        self.registry = self.tmp / "registry"
+        self.registry.mkdir()
+        self.evals = self.tmp / "evals"
+        self.evals.mkdir()
+        self.drafted = self.write(self.tmp / "drafted.txt", "")
+
+    def put(self, root: Path, source: str, day: str, doc: dict) -> str:
+        rel = f"{source}/{day}/{doc['subject']}__new-skill.json"
+        self.write(root / rel, doc)
+        return rel
+
+    def select(self) -> dict:
+        code, out, err = run_main(
+            "select", "--lessons", str(self.lessons), "--issue-proposals",
+            str(self.issues), "--registry", f"adam-agentskills={self.registry}",
+            "--evals", str(self.evals), "--drafted", str(self.drafted))
+        self.assertEqual(code, 0, err)
+        return outputs(out)
+
+    def test_both_sources_compete_in_one_order(self):
+        from_issue = self.put(self.issues, "issue-proposals", "2026-10-26",
+                              proposal(subject="from-issue", evidence_count=1,
+                                       last_seen="2026-10-26"))
+        lesson = self.put(self.lessons, "proposals", "2026-10-26",
+                          proposal(subject="from-lesson", evidence_count=1))
+        self.assertEqual(self.select(), {"proposal": from_issue, "count": "1",
+                                         "hook_declined": "0"})
+        self.put(self.lessons, "proposals", "2026-10-26",
+                 proposal(subject="from-lesson", evidence_count=2))
+        self.assertEqual(self.select()["proposal"], lesson)
+
+    def test_issues_alone_can_be_picked(self):
+        rel = self.put(self.issues, "issue-proposals", "2026-10-26", proposal())
+        self.assertFalse(self.lessons.exists())
+        self.assertEqual(self.select()["proposal"], rel)
+        self.write(self.drafted, f"{SUBJECT} rejected\n")
+        self.assertEqual(self.select()["count"], "0")
+
+    def test_each_root_is_read_for_its_own_source_only(self):
+        self.put(self.lessons, "issue-proposals", "2026-10-26", proposal(subject="aaa"))
+        self.put(self.issues, "proposals", "2026-10-26", proposal(subject="bbb"))
+        self.assertEqual(self.select()["count"], "0")
+
+
 class DraftedSubjects(Case):
     def test_reads_remote_draft_branches_through_plumbing(self):
         repo = self.tmp / "repo"
@@ -375,6 +580,22 @@ class Payload(Case):
                                 "--proposal", self.rel, "--run-id", RUN_ID,
                                 "--hook-declined")
         self.assertIs(json.loads(out)["hook_declined"], True)
+
+    def test_an_issue_proposal_path_reads_under_issue_proposals(self):
+        issues = self.tmp / "issue-lessons"
+        rel = f"issue-proposals/2026-10-26/{SUBJECT}__new-skill.json"
+        self.write(issues / rel, proposal(id="issue-adam-agentskills-18"))
+        code, out, err = run_main("payload", "--lessons", str(issues),
+                                  "--proposal", rel, "--run-id", RUN_ID)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["proposal"]["id"], "issue-adam-agentskills-18")
+        # Each prefix resolves under its own directory only.
+        for lessons, path in ((self.lessons, rel),
+                              (issues, self.rel)):
+            with self.subTest(path=path):
+                code, out, _ = run_main("payload", "--lessons", str(lessons),
+                                        "--proposal", path, "--run-id", RUN_ID)
+                self.assertEqual((code, out), (1, ""))
 
     def test_bad_paths_and_run_ids_are_refused(self):
         outside = self.write(self.tmp / "outside.json", proposal())
