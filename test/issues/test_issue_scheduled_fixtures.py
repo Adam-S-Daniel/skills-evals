@@ -545,13 +545,23 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         workflow = self.workflow()
         trigger = workflow.get("on", workflow.get(True))
         # A manual dispatch runs the sweep when GitHub skips the schedule
-        # (2026-10-27); it takes no inputs. The three-hourly top-up spends
-        # room that fires costing less than their estimate left (Adam,
-        # 2026-10-31); the group keeps two sweeps from planning the same
-        # cells at once, and it is not a required check.
-        self.assertEqual(trigger, {"schedule": [{"cron": "0 7 * * 2"},
-                                                {"cron": "37 */3 * * *"}],
-                                   "workflow_dispatch": None})
+        # (2026-10-27); it takes no inputs. The top-up after each ingest
+        # (and after the daily health audit, the backstop) spends room that
+        # fires costing less than their estimate left (Adam, 2026-10-31); a
+        # three-hourly cron for it never started. The group keeps two sweeps
+        # from planning the same cells at once, and it is not a required
+        # check.
+        self.assertEqual(trigger, {
+            "schedule": [{"cron": "0 7 * * 2"}],
+            "workflow_run": {"workflows": ["Ingest routine eval results",
+                                           "Scheduled-run health audit"],
+                             "types": ["completed"]},
+            "workflow_dispatch": None})
+        # The names must match the workflows they follow, or the top-up
+        # silently never runs.
+        names = {yaml.safe_load(path.read_text())["name"]
+                 for path in (ROOT / ".github/workflows").glob("*.yml")}
+        self.assertLessEqual(set(trigger["workflow_run"]["workflows"]), names)
         self.assertEqual(workflow["permissions"], {})
         self.assertEqual(workflow["concurrency"],
                          {"group": "routine-eval-weekly", "cancel-in-progress": False})

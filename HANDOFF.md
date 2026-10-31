@@ -63,7 +63,7 @@ September pause, and is not updated any more.
     into scaffold fires; the scaffold gate opens ready, auto-merging PRs
     through the roster App, and `scaffold_real_work.py promote` schedules a
     draft after 2 clean ingested runs.
-  - *Weekly planner:* `routine-eval-weekly.yml` (Tuesday 07:00 UTC, topped up every three hours) runs
+  - *Weekly planner:* `routine-eval-weekly.yml` (Tuesday 07:00 UTC, topped up after each ingest and daily) runs
     `scripts/plan_week.py`, which plans eval, improve and trigger items by
     band within the allowance and fires them one at a time, at most three
     in flight. `trigger-optimize` items wait on a routine prompt change.
