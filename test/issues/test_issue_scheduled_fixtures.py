@@ -64,7 +64,20 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
             "evals/guidance/skills-ecosystem/push-fails-everywhere",
             "evals/guidance/finding-your-unknowns/changelog-check",
-            "evals/guidance/read-before-you-start/new-config-key"]
+            "evals/guidance/read-before-you-start/new-config-key",
+            # Skill fixtures merged hermetic and left off the schedule while
+            # the skills-fixture lane was stopped (#62's children): their
+            # skills are live in adam-agentskills and cms-platform.
+            "evals/rename-pdfs",
+            "evals/pdf-ocr-audit",
+            "evals/cms-stuck-pr-triage",
+            "evals/post-failure-comment",
+            "evals/admin-config-render",
+            "evals/code-quality",
+            "evals/ci-watcher-loops",
+            "evals/editorial-label-audit",
+            "evals/consumer-repo-provisioning",
+            "evals/platform-release-and-bump"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
