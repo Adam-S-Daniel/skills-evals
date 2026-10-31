@@ -53,7 +53,14 @@ routines fire API. What is pinned here:
     addendum"): `section` must match `^[a-z0-9][a-z0-9-]{0,63}$` (so no
     leading `_`) and pass `guidance_improve_gate.py fire-check` (at least the
     proposer's MIN_FIXTURES full-arm fixtures; `holdout` empty or one of
-    their keys), and must be empty in every other mode.
+    their keys), and must be empty in every other mode;
+  * draft mode's `proposal` is a proposals/ path (the miner's lessons, read
+    with the registry App token from persistent/lessons) or an
+    issue-proposals/ path (an owner-filed `skill-proposal` issue in the
+    public adam-agentskills): only the first mints the token and checks out
+    the lessons, only the second lists the issues with the job token and
+    rebuilds them with `draft_new_skill.py issue-proposals`, and the
+    payload step reads the matching directory.
 
 The workflow is parsed with PyYAML, never scanned line by line. Discovered
 and run by test/run_tests.py; also runnable on its own with
@@ -93,6 +100,13 @@ CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 SKILL = "writing-adrs"
 HOLDOUT = "supersede"
 PROPOSAL = "proposals/2026-10-26/example-skill__new-skill.json"
+ISSUE_PROPOSAL = "issue-proposals/2026-10-26/example-skill__new-skill.json"
+LESSONS_IF = ("steps.validate.outputs.mode == 'draft' "
+              "&& startsWith(steps.validate.outputs.proposal, 'proposals/')")
+ISSUES_IF = ("steps.validate.outputs.mode == 'draft' "
+             "&& startsWith(steps.validate.outputs.proposal, 'issue-proposals/')")
+ISSUES_API = ("repos/Adam-S-Daniel/adam-agentskills/issues"
+              "?labels=skill-proposal&state=open&per_page=100")
 # The committed guidance section with the proposer's minimum of full-arm
 # fixtures, and one of them as a holdout key.
 SECTION = "anything-you-name-gets-its-link"
@@ -257,9 +271,12 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertLess(mint, checkout)
         self.assertLess(checkout, build)
         self.assertLess(build, fire)
-        for i in (mint, checkout, build):
-            self.assertEqual(self.steps[i]["if"],
-                             "steps.validate.outputs.mode == 'draft'")
+        # The App token and the lessons checkout serve a proposals/ path
+        # only, so an issue-proposals/ fire never needs persistent/lessons.
+        for i in (mint, checkout):
+            self.assertEqual(self.steps[i]["if"], LESSONS_IF)
+        self.assertEqual(self.steps[build]["if"],
+                         "steps.validate.outputs.mode == 'draft'")
         step = self.steps[mint]
         self.assertTrue(step["uses"].startswith("actions/create-github-app-token@"))
         self.assertEqual(step["with"], {
@@ -280,13 +297,34 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(build_step["env"], {
             "RUN_ID": "${{ steps.validate.outputs.run_id }}",
             "PROPOSAL": "${{ steps.validate.outputs.proposal }}",
-            "HOOK_DECLINED": "${{ steps.validate.outputs.hook_declined }}"})
-        self.assertIn("scripts/draft_new_skill.py payload --lessons lessons-repo/lessons",
+            "HOOK_DECLINED": "${{ steps.validate.outputs.hook_declined }}",
+            "ISSUE_LESSONS": "${{ steps.issue-proposals.outputs.dir }}"})
+        self.assertIn("*) lessons=lessons-repo/lessons ;;", build_step["run"])
+        self.assertIn('issue-proposals/*) lessons="${ISSUE_LESSONS:?}" ;;',
+                      build_step["run"])
+        self.assertIn('scripts/draft_new_skill.py payload --lessons "$lessons"',
                       build_step["run"])
         self.assertIn('--proposal="$PROPOSAL"', build_step["run"])
         self.assertIn("scripts/draft_new_skill.py fire-check --payload", build_step["run"])
         self.assertEqual(self.steps[fire]["env"]["DRAFT_PAYLOAD_FILE"],
                          "${{ steps.draft-payload.outputs.file }}")
+
+    def test_issue_proposals_are_rebuilt_with_the_job_token_only(self):
+        ids = [s.get("id") for s in self.steps]
+        convert = ids.index("issue-proposals")
+        self.assertLess(ids.index("validate"), convert)
+        self.assertLess(convert, ids.index("draft-payload"))
+        step = self.steps[convert]
+        self.assertEqual(step["if"], ISSUES_IF)
+        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}"})
+        self.assertNotIn("uses", step)
+        self.assertIn(ISSUES_API, step["run"])
+        self.assertIn("|| fetched=ERROR", step["run"])
+        self.assertIn('scripts/draft_new_skill.py issue-proposals --issues "$issues"',
+                      step["run"])
+        # The job token reads a public repository's issues: the workflow
+        # widens no permission for it.
+        self.assertEqual(self.doc["permissions"], {"contents": "read", "actions": "read"})
 
     def test_validation_step_runs_before_the_fire_step(self):
         ids = [s.get("id") for s in self.steps]
@@ -357,7 +395,8 @@ class WorkflowShapeTests(unittest.TestCase):
         # (#68), which reads the workflow runs API with it, and no other.
         holders = [s.get("name") for s in self.steps
                    if "github.token" in yaml.safe_dump(s)]
-        self.assertEqual(holders, ["Check the weekly allowance", step["name"]])
+        self.assertEqual(holders, ["Check the weekly allowance", step["name"],
+                                   "Convert the skill-proposal issues"])
 
     def test_pinned_pyyaml_is_installed_before_validation(self):
         # improve_gate.py fire-check loads fixture.yaml with PyYAML, at the
@@ -638,15 +677,18 @@ class ValidateStepTests(unittest.TestCase):
                 })
 
     def test_accepts_a_draft_run(self):
-        for extra, declined in (({}, "false"), ({"hook_declined": "false"}, "false"),
-                                ({"hook_declined": "true"}, "true")):
-            with self.subTest(**extra):
+        for extra, declined, path in (
+                ({}, "false", PROPOSAL), ({"hook_declined": "false"}, "false", PROPOSAL),
+                ({"hook_declined": "true"}, "true", PROPOSAL),
+                ({}, "false", ISSUE_PROPOSAL),
+                ({"hook_declined": "true"}, "true", ISSUE_PROPOSAL)):
+            with self.subTest(path=path, **extra):
                 proc, values = self.run_step(
-                    {"mode": "draft", "proposal": PROPOSAL, "arms": "both",
+                    {"mode": "draft", "proposal": path, "arms": "both",
                      "trials": "1", **extra})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(values["mode"], "draft")
-                self.assertEqual(values["proposal"], PROPOSAL)
+                self.assertEqual(values["proposal"], path)
                 self.assertEqual(values["hook_declined"], declined)
                 for key in ("fixture", "candidate", "skill", "holdout", "model"):
                     self.assertEqual(values[key], "")
@@ -669,7 +711,12 @@ class ValidateStepTests(unittest.TestCase):
             "nested": {"proposal": "proposals/2026-10-26/x/example-skill__new-skill.json"},
             "subst": {"proposal": "proposals/2026-10-26/$(id)__new-skill.json"},
             "non_ascii": {"proposal": "proposals/2026-10-26/\u00e9x__new-skill.json"},
-        }, expect="is not proposals/<date>/<subject>__new-skill.json")
+            "singular_issue_root": {"proposal": "issue-proposal/2026-10-26/example-skill__new-skill.json"},
+            "other_root": {"proposal": "issues/2026-10-26/example-skill__new-skill.json"},
+            "nested_issue_root": {"proposal": "lessons/" + ISSUE_PROPOSAL},
+            "issue_dotdot": {"proposal": "issue-proposals/2026-10-26/../x__new-skill.json"},
+            "both_roots": {"proposal": "proposals/" + ISSUE_PROPOSAL},
+        }, expect="is not proposals/ or issue-proposals/<date>/<subject>__new-skill.json")
         self._refuse_all(good, {
             "trailing_newline": {"proposal": PROPOSAL + "\n"},
             "nul": {"proposal": PROPOSAL + "\u0000"},
@@ -860,6 +907,86 @@ class ValidateStepTests(unittest.TestCase):
                 bad = next(iter(override.values()))
                 if isinstance(bad, str) and bad:
                     self.assertNotIn(bad, proc.stdout + proc.stderr)
+
+
+FAKE_ISSUES_GH = """#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["FAKE_GH_LOG"], "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+sys.stdout.write(os.environ.get("FAKE_GH_OUT", ""))
+sys.exit(int(os.environ.get("FAKE_GH_EXIT", "0")))
+"""
+
+
+@unittest.skipUnless(shutil.which("bash"), "needs bash")
+class DraftIssueStepTests(unittest.TestCase):
+    """An issue-proposals/ fire: the convert step against a fake gh, then
+    the payload step on what it rebuilt."""
+
+    MARKER = "do-not-echo-this-issue-text"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(FAKE_ISSUES_GH, encoding="utf-8")
+        gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+        self.log = self.tmp / "gh.jsonl"
+        self.env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                    "HOME": str(self.tmp), "RUNNER_TEMP": str(self.tmp),
+                    "FAKE_GH_LOG": str(self.log)}
+
+    def issues(self) -> str:
+        return json.dumps([{
+            "number": 18, "title": "Skill: example skill", "state": "open",
+            "author_association": "OWNER", "user": {"login": "Adam-S-Daniel"},
+            "labels": [{"name": "skill-proposal"}],
+            "created_at": "2026-10-20T08:00:00Z", "updated_at": "2026-10-26T09:00:00Z",
+            "body": f"Skill name: `example-skill`, in `adam-coding-anywhere`.\n\n"
+                    f"{self.MARKER}: fan out a triage over example.com repos."}])
+
+    def run_step(self, name, **env):
+        proc = subprocess.run(["bash", "-c", step_script(name)], cwd=REPO_ROOT,
+                              env={**self.env, **env}, capture_output=True,
+                              text=True, timeout=120)
+        return proc
+
+    def test_the_rebuilt_issue_becomes_this_runs_payload(self):
+        output = self.tmp / "convert.out"
+        proc = self.run_step("Convert the skill-proposal issues", GH_TOKEN="t",
+                             GITHUB_OUTPUT=str(output), FAKE_GH_OUT=self.issues())
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn(self.MARKER, proc.stdout + proc.stderr)
+        [call] = [json.loads(l) for l in self.log.read_text().splitlines()]
+        self.assertEqual(call, ["api", ISSUES_API])
+        lessons = output.read_text().strip().removeprefix("dir=")
+        self.assertEqual(lessons, str(self.tmp / "issue-lessons"))
+        built = self.tmp / "payload.out"
+        proc = self.run_step("Build the draft payload", GITHUB_OUTPUT=str(built),
+                             RUN_ID="20261026T143000Z-0a1b2c",
+                             PROPOSAL=ISSUE_PROPOSAL, HOOK_DECLINED="false",
+                             ISSUE_LESSONS=lessons)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn(self.MARKER, proc.stdout + proc.stderr)
+        payload = json.loads(Path(built.read_text().strip().removeprefix("file="))
+                             .read_text(encoding="utf-8"))
+        self.assertEqual(payload["run_id"], "20261026T143000Z-0a1b2c")
+        self.assertEqual(payload["proposal"]["id"], "issue-adam-agentskills-18")
+        self.assertEqual(payload["proposal"]["subject"], "example-skill")
+        self.assertEqual(payload["proposal"]["repos"], ["Adam-S-Daniel/adam-agentskills"])
+
+    def test_an_api_error_fails_closed_without_echoing_the_body(self):
+        output = self.tmp / "convert.out"
+        proc = self.run_step("Convert the skill-proposal issues", GH_TOKEN="t",
+                             GITHUB_OUTPUT=str(output),
+                             FAKE_GH_OUT='{"message": "%s"}' % self.MARKER,
+                             FAKE_GH_EXIT="1")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("::error::could not list the skill-proposal issues", proc.stdout)
+        self.assertNotIn(self.MARKER, proc.stdout + proc.stderr)
+        self.assertFalse(output.exists() and output.read_text())
 
 
 @unittest.skipUnless(shutil.which("git"), "needs git on PATH")

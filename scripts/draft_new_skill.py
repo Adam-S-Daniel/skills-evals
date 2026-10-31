@@ -3,9 +3,14 @@
 
 The consumer side of the session miner. The miner (adam-agentskills-private,
 redacted at the source) writes one JSON proposal per lesson under
-`lessons/proposals/<YYYY-MM-DD>/<subject>__<kind>.json`. A daily caller,
+`lessons/proposals/<YYYY-MM-DD>/<subject>__<kind>.json`. Skill proposals
+filed as GitHub issues count too: an open issue in the public
+adam-agentskills, labeled `skill-proposal`, filed by the owner, with a
+"Skill name: `<subject>`" (or "Working name: `<subject>`") line in its body,
+becomes a proposal of the same schema (`issue-proposals`) under
+`issue-proposals/<YYYY-MM-DD>/<subject>__new-skill.json`. A daily caller,
 `.github/workflows/routine-draft-skill.yml`, picks one `new-skill` proposal
-(`select`) and fires the eval routine in `draft` mode
+from either source (`select`) and fires the eval routine in `draft` mode
 (`routine-eval-fire.yml`, which builds the payload with `payload` and
 re-checks it with `fire-check`). The routine drafts, measures and pushes one
 branch, `claude/draft-skill-<run id>`; `routine-draft-skill-gate.yml`
@@ -35,12 +40,20 @@ HOOKS FIRST (Adam, 2026-10-26): every lesson is triaged in this order.
 Subcommands (`key=value` lines are for $GITHUB_OUTPUT and hold validated
 values only):
 
-  select    --lessons DIR --registry NAME=DIR [...] --evals DIR
-            --drafted FILE [--hook-declined FILE]
-            -> proposal=<path under lessons/>, count=0|1, hook_declined=0|1
+  issue-proposals --issues FILE --out DIR
+            (FILE: the raw JSON array of adam-agentskills' open
+            `skill-proposal` issues; writes
+            DIR/issue-proposals/<date>/<subject>__new-skill.json per usable
+            issue; skip counts and issue numbers on stderr)
+  select    --lessons DIR [--issue-proposals DIR ...] --registry NAME=DIR [...]
+            --evals DIR --drafted FILE [--hook-declined FILE]
+            -> proposal=<proposals/... or issue-proposals/...>, count=0|1,
+               hook_declined=0|1
   drafted-subjects --repo DIR      -> `<subject> <decision>` per line
   payload   --lessons DIR --proposal RELPATH --run-id ID [--hook-declined]
-            -> the fire payload JSON on stdout
+            -> the fire payload JSON on stdout (DIR is lessons/ for a
+               proposals/ path, the issue-proposals --out DIR for an
+               issue-proposals/ one)
   fire-check --payload FILE        (no output; exit 0 or 1)
   hook-first --payload FILE --proposal-json FILE --results DIR
   measure   --staging DIR --registry adam-agentskills=DIR --ref SHA
@@ -67,8 +80,9 @@ PURPOSE.md, optional `references/`, `scripts/`, `assets/`), `fixtures/<name>/`
 `triage.json` (`{"mechanical": false, "reason": "..."}`; not needed when the
 payload says `hook_declined`).
 
-The branch, the staging directory, the payload and every proposal are
-UNTRUSTED (a model or a mined session wrote them). They are read as data
+The branch, the staging directory, the payload, every proposal and every
+issue are UNTRUSTED (a model, a mined session or a public issue tracker
+wrote them). They are read as data
 only; every refusal is a fixed message that never quotes them.
 """
 
@@ -110,10 +124,12 @@ REPO_NAME = r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+"
 DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 KINDS = ("skill-edit", "new-skill", "guidance-edit", "memory-note",
          "fixture-candidate")
-#: The one shape a proposal path takes under `lessons/` (the fire workflow
-#: checks its input with the same expression).
+#: The one shape a proposal path takes: `proposals/` under lessons/ (the
+#: miner's), or `issue-proposals/` under the `issue-proposals --out`
+#: directory (the fire workflow checks its input with the same expression).
 PROPOSAL_PATH_RE = re.compile(
-    rf"proposals/(?P<date>{DATE})/(?P<subject>{SUBJECT})__(?P<kind>new-skill)\.json")
+    r"(?P<root>proposals|issue-proposals)/"
+    rf"(?P<date>{DATE})/(?P<subject>{SUBJECT})__(?P<kind>new-skill)\.json")
 
 #: The proposal schema, one table: when the miner's final schema lands, this
 #: is the one edit. `type` is const | str | text | int | date | list.
@@ -135,6 +151,20 @@ PAYLOAD_PROPOSAL_KEYS = ("id", "subject", "evidence_count", "examples", "repos")
 MAX_PROPOSAL_FILE = 256 * 1024
 #: The fire payload's UTF-8 cap, under the fire step's 65536-byte text cap.
 MAX_PAYLOAD_BYTES = 60000
+
+#: Skill proposals filed as issues (`issue-proposals`). The repository is
+#: public, so only the owner's own open issues with the label count.
+ISSUE_REPO = "Adam-S-Daniel/adam-agentskills"
+ISSUE_LABEL = "skill-proposal"
+ISSUE_OWNER = "Adam-S-Daniel"
+ISSUE_SOURCE = "issue-proposals"
+#: One page of 100 issues, each body at most 65536 characters at up to six
+#: bytes each once JSON-escaped, plus the issue's own metadata.
+MAX_ISSUES_FILE = 48 * 1024 * 1024
+MAX_ISSUE_NUMBER = 10 ** 9
+#: The line naming the subject: the first one wins.
+ISSUE_NAME_RE = re.compile(r"^(?:Working name|Skill name):[ \t]*`([^`\n]*)`",
+                           re.MULTILINE)
 
 RUN_ID_RE = re.compile(ingest.RUN_ID)
 BRANCH_RE = re.compile(rf"claude/draft-skill-(?P<run_id>{ingest.RUN_ID})")
@@ -614,22 +644,34 @@ def eligibility(subject: str, drafted: dict[str, set[str]],
     return True, False
 
 
-def select(lessons: Path, registries: dict[str, Path], evals: Path,
-           drafted_file: Path, declined_file: Path | None) -> dict:
-    drafted = parse_drafted(drafted_file)
-    declined = parse_subjects(declined_file)
-    proposals_dir = lessons / "proposals"
-    candidates, skipped = [], 0
+def proposal_files(root: Path, source: str):
+    """(path, path relative to root) of every `<source>/<day>/*__new-skill.json`
+    below `root`, skipping symlinked directories."""
+    proposals_dir = root / source
     days = sorted(proposals_dir.iterdir()) if proposals_dir.is_dir() \
         and not proposals_dir.is_symlink() else []
     for day in days:
         if day.is_symlink() or not day.is_dir():
             continue
         for path in sorted(day.glob("*__new-skill.json")):
-            rel = path.relative_to(lessons).as_posix()
+            yield path, path.relative_to(root).as_posix()
+
+
+def select(lessons: Path, registries: dict[str, Path], evals: Path,
+           drafted_file: Path, declined_file: Path | None,
+           issue_roots: list[Path] | None = None) -> dict:
+    """One proposal from lessons/proposals/ and every issue root's
+    issue-proposals/, all ranked together."""
+    drafted = parse_drafted(drafted_file)
+    declined = parse_subjects(declined_file)
+    sources = [(lessons, "proposals")] + [(root, ISSUE_SOURCE)
+                                          for root in issue_roots or []]
+    candidates, skipped = [], 0
+    for root, source in sources:
+        for path, rel in proposal_files(root, source):
             match = PROPOSAL_PATH_RE.fullmatch(rel)
             try:
-                if not match:
+                if not match or match.group("root") != source:
                     raise Rejected("bad path")
                 doc = check_proposal(read_json_file(path, MAX_PROPOSAL_FILE, "proposal"),
                                      match.group("date"), match.group("subject"))
@@ -692,22 +734,142 @@ def build_payload(doc: dict, run_id: str, hook_declined: bool) -> dict:
 def payload(lessons: Path, rel: str, run_id: str, hook_declined: bool) -> bytes:
     match = PROPOSAL_PATH_RE.fullmatch(rel)
     if not match:
-        raise Rejected("proposal path is not proposals/<date>/<subject>__new-skill.json")
+        raise Rejected("proposal path is not proposals/ or issue-proposals/"
+                       "<date>/<subject>__new-skill.json")
     if not RUN_ID_RE.fullmatch(run_id):
         raise Rejected("run id is not a routine run id")
-    root = (lessons / "proposals").resolve()
+    root = (lessons / match.group("root")).resolve()
     cursor = lessons
     for part in Path(rel).parts:
         cursor = cursor / part
         if cursor.is_symlink():
             raise Rejected("proposal path has a symlink")
     if not cursor.resolve().is_relative_to(root):
-        raise Rejected("proposal path leaves lessons/proposals")
+        raise Rejected("proposal path leaves its proposals directory")
     doc = check_proposal(read_json_file(cursor, MAX_PROPOSAL_FILE, "proposal"),
                          match.group("date"), match.group("subject"))
     out = build_payload(doc, run_id, hook_declined)
     check_payload(out)
     return encode_payload(out)
+
+
+# ---------------------------------------------------------------------------
+# issue-proposals: owner-filed `skill-proposal` issues as proposals.
+
+def clean_text(text: str) -> str:
+    """`text` with CRLF and CR made LF and every other control character but
+    newline and tab dropped."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return "".join(c for c in text
+                   if not ((ord(c) < 32 and c not in "\n\t") or ord(c) == 127))
+
+
+def body_chunks(body: str, limit: int) -> list[str]:
+    """`body` cut on paragraph boundaries (blank lines) into chunks of at most
+    `limit` characters; a paragraph over the limit is cut hard."""
+    pieces = []
+    for paragraph in re.split(r"\n[ \t]*\n", body):
+        paragraph = paragraph.strip("\n")
+        if not paragraph.strip():
+            continue
+        pieces += [paragraph[i:i + limit] for i in range(0, len(paragraph), limit)]
+    chunks: list[str] = []
+    for piece in pieces:
+        if chunks and len(chunks[-1]) + 2 + len(piece) <= limit:
+            chunks[-1] += "\n\n" + piece
+        else:
+            chunks.append(piece)
+    return [c for c in chunks if c.strip()]
+
+
+def issue_usable(issue) -> bool:
+    """An open issue (not a pull request) in the label, filed by the owner,
+    with the fields a proposal needs in their API types."""
+    if not isinstance(issue, dict) or "pull_request" in issue:
+        return False
+    user, labels = issue.get("user"), issue.get("labels")
+    return (issue.get("state") == "open"
+            and issue.get("author_association") == "OWNER"
+            and isinstance(user, dict) and user.get("login") == ISSUE_OWNER
+            and isinstance(labels, list)
+            and any(isinstance(label, dict) and label.get("name") == ISSUE_LABEL
+                    for label in labels)
+            and type(issue.get("number")) is int
+            and 1 <= issue["number"] <= MAX_ISSUE_NUMBER
+            and isinstance(issue.get("title"), str)
+            and (issue.get("body") is None or isinstance(issue["body"], str))
+            and all(isinstance(issue.get(k), str)
+                    and parse_date(issue[k][:10]) is not None
+                    for k in ("created_at", "updated_at")))
+
+
+def issue_subject(body: str) -> str | None:
+    match = ISSUE_NAME_RE.search(body)
+    if not match or not SUBJECT_RE.fullmatch(match.group(1)):
+        return None
+    return match.group(1)
+
+
+def issue_proposal(issue: dict, subject: str, body: str) -> dict:
+    limit = PROPOSAL_SCHEMA["examples"]["item"]["max"]
+    created, updated = issue["created_at"][:10], issue["updated_at"][:10]
+    title = " ".join(clean_text(issue["title"]).split())
+    head = f"{created} adam-agentskills [issue] #{issue['number']} {title}".strip()
+    examples = [head[:limit], *body_chunks(body, limit)]
+    return {"schema_version": 1,
+            "id": f"issue-adam-agentskills-{issue['number']}",
+            "subject": subject, "kind": "new-skill", "evidence_count": 1,
+            "first_seen": created, "last_seen": updated,
+            "examples": examples[:PROPOSAL_SCHEMA["examples"]["max"]],
+            "repos": [ISSUE_REPO]}
+
+
+def issue_proposals(issues_file: Path, out: Path) -> dict:
+    """One proposal file per usable issue under `out`/issue-proposals/, the
+    lower number winning a shared subject. Issue text is data: nothing of
+    it is printed, only counts and issue numbers."""
+    issues = read_json_file(issues_file, MAX_ISSUES_FILE, "issues")
+    if not isinstance(issues, list):
+        raise Rejected("issues: not a JSON array")
+    target = out / ISSUE_SOURCE
+    if target.exists() or target.is_symlink():
+        raise Refused("the output directory already holds issue proposals")
+    usable = sorted((i for i in issues if issue_usable(i)), key=lambda i: i["number"])
+    written: dict[str, int] = {}
+    unnamed, unusable, duplicate = [], [], []
+    for issue in usable:
+        body = clean_text(issue["body"] or "")
+        subject = issue_subject(body)
+        if subject is None:
+            unnamed.append(issue["number"])
+            continue
+        if subject in written:
+            duplicate.append(issue["number"])
+            continue
+        doc = issue_proposal(issue, subject, body)
+        try:
+            check_proposal(doc, doc["last_seen"], subject)
+            check_payload(build_payload(doc, "00000000T000000Z-000000", True))
+        except Rejected:
+            unusable.append(issue["number"])
+            continue
+        path = target / doc["last_seen"] / f"{subject}__new-skill.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, doc)
+        written[subject] = issue["number"]
+
+    def numbers(found: list[int]) -> str:
+        return " ".join(f"#{n}" for n in found)
+
+    print(f"skill-proposal issues: {len(issues)} listed, {len(usable)} owner-filed "
+          f"and open, {len(written)} written", file=sys.stderr)
+    print(f"issues without a name line: {len(unnamed)} {numbers(unnamed)}".rstrip(),
+          file=sys.stderr)
+    print(f"issues skipped as unusable: {len(unusable)} {numbers(unusable)}".rstrip(),
+          file=sys.stderr)
+    print(f"issues skipped for a subject a lower number has: {len(duplicate)} "
+          f"{numbers(duplicate)}".rstrip(), file=sys.stderr)
+    return {"written": str(len(written))}
 
 
 # ---------------------------------------------------------------------------
@@ -1511,8 +1673,12 @@ def check_body_args(run_id: str, sha: str, branch: str) -> None:
 def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("issue-proposals")
+    p.add_argument("--issues", required=True, type=Path)
+    p.add_argument("--out", required=True, type=Path)
     p = sub.add_parser("select")
     p.add_argument("--lessons", required=True, type=Path)
+    p.add_argument("--issue-proposals", action="append", type=Path, default=[])
     p.add_argument("--registry", action="append", required=True)
     p.add_argument("--evals", required=True, type=Path)
     p.add_argument("--drafted", required=True, type=Path)
@@ -1589,7 +1755,10 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             return 0
         if args.command == "select":
             result = select(args.lessons, parse_registries(args.registry),
-                            args.evals, args.drafted, args.hook_declined)
+                            args.evals, args.drafted, args.hook_declined,
+                            args.issue_proposals)
+        elif args.command == "issue-proposals":
+            result = issue_proposals(args.issues, args.out)
         elif args.command == "hook-first":
             result = hook_first(args.payload, args.proposal_json, args.results)
         elif args.command == "resolve":
