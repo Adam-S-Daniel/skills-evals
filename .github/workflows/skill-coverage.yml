@@ -372,3 +372,87 @@ jobs:
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             "${modes[@]}"
+
+  # Regression detection (#69, #121): has a skill or a guidance section
+  # stopped helping since its previous runs? scripts/regression_issue.py files
+  # one `Regression:` issue per subject here in skills-evals, updates it while
+  # the regression lasts and closes it on the next measurement that is none.
+  # It runs on the schedule and on dispatch, where it only prints its plan
+  # unless `dry_run` is false. The job token reaches this repository alone,
+  # which is why a guidance section's issue is filed here too.
+  regression:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@v7.0.1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Check out adam-agentskills
+        # Full history: the issue lists the skill's commits between the
+        # windows from `git log`.
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: registry-agentskills
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out _agent-guidance
+        # Full history, for a guidance section's commit range.
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the offline verdict dependency
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+
+      - name: Detect and report regressions
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
+          dry=(--dry-run)
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$DRY_RUN_INPUT" = "false" ]; then
+            dry=()
+          fi
+          python3 scripts/regression_issue.py \
+            --results-tree "$GITHUB_WORKSPACE/eval-results" \
+            --roster evals/roster.yml --policy evals/regression-policy.yml \
+            --as-of "$as_of" \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
+            --out "$RUNNER_TEMP/regressions/latest.json" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "${dry[@]}"
+
+      - name: Upload the regression document
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: regressions
+          path: ${{ runner.temp }}/regressions/
+          if-no-files-found: error

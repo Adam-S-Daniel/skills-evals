@@ -1107,4 +1107,4 @@ models. The propagation probe's `--json` run record carries, per arm,
   [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20) — then
   **retired 2026-09-28** along with the claude.ai ZIP-upload channel it
   audited; see `evals/propagation/ROUTINE.md`, now HISTORY)
-- [ ] Regression tracking (compare a run against the previous one)
+- [x] Regression tracking (compare a run against the previous one): `harness/regression.py`, `scripts/regression_issue.py`, thresholds in `evals/regression-policy.yml`, run by the `regression` job in `.github/workflows/skill-coverage.yml`
