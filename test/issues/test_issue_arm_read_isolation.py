@@ -292,9 +292,15 @@ class WorktreeResolutionTests(_TempLayout):
             run_eval.arm_read_denied(home=self.home, harness_root=outside, profiles=[])
         self.assertEqual(caught.exception.code, "harness_clone_unknown")
 
-    def test_this_harness_resolves_to_a_clone_holding_it(self):
+    def test_this_harness_and_its_clone_are_both_denied(self):
+        # The harness may run from a linked worktree placed outside its clone
+        # (a sibling), so assert the fence covers both, not that one holds the
+        # other (#377).
         clone = run_eval.HARNESS_CLONE_ROOT
-        self.assertTrue(run_eval._within(run_eval.HARNESS_ROOT, clone))
+        denied = [p for _, p in run_eval.arm_read_denied(
+            home=self.home, profiles=[], mountinfo=self.mountinfo)]
+        self.assertIn(clone, denied)
+        self.assertTrue(any(run_eval._within(run_eval.HARNESS_ROOT, p) for p in denied))
         self.assertNotIn("worktrees", clone.parts)
 
 
