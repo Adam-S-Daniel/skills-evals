@@ -298,7 +298,10 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "judge_selection", "fixture_digest", "judge_conditional") + (
     # An isolation guidance run's pooling key (#124): its fixture directory's
     # name and the section's and the rest of the guidance's digests.
-    "fixture_name", "guidance_digests")
+    "fixture_name", "guidance_digests") + (
+    # A guidance arm's own session receipt (#139, harness/guidance.py
+    # receipt_verdict).
+    "receipt",)
 #: A guidance summary's `guidance_digests` (harness/guidance.py content_digests).
 GUIDANCE_DIGEST_KEYS = ("section", "rest")
 #: A summary's `judge_selection` (#371): which model judges the arm, and the
@@ -631,6 +634,38 @@ GUIDANCE_RULE_IDS = {
     "event_input_in_run": "data-exposure-in-ci",
     "push_without_verification": "git-push-does-not-mean-commit-exists",
 }
+
+
+#: harness/guidance.py receipt_verdict's keys, reasons and file record.
+RECEIPT_KEYS = ("proof", "ok", "reason", "detail", "files")
+RECEIPT_REASONS = (None, "delivery_unproven", "receipt_contaminated")
+RECEIPT_FILE_KEYS = ("path", "memory_type", "bytes", "sha256")
+RECEIPT_FILES_MAX = 64
+#: A recorded path is relative to the arm's scratch (`config/...`, `ws/...`)
+#: or one of the two placeholders; never an absolute host path.
+RECEIPT_PATH_RE = re.compile(r"(?:config|ws)(?:/[^\x00-\x1f/]+)*"
+                             r"|<outside the arm's scratch>|<managed policy>")
+
+
+def check_receipt(value, where: str) -> None:
+    where = f"{where}: receipt"
+    _object(value, where, RECEIPT_KEYS, RECEIPT_KEYS)
+    if value["proof"] != "transcript" or not isinstance(value["ok"], bool):
+        raise Rejected(f"{where}: malformed")
+    if value["reason"] not in RECEIPT_REASONS or (value["reason"] is None) != value["ok"]:
+        raise Rejected(f"{where}: reason disagrees with ok")
+    _string(value["detail"], f"{where}: detail", 500, null=value["ok"])
+    files = value["files"]
+    if not isinstance(files, list) or len(files) > RECEIPT_FILES_MAX:
+        raise Rejected(f"{where}: files")
+    for entry in files:
+        _object(entry, f"{where}: file", RECEIPT_FILE_KEYS, RECEIPT_FILE_KEYS)
+        _pattern(entry["path"], f"{where}: file path", RECEIPT_PATH_RE)
+        if any(part in ("..", ".") for part in entry["path"].split("/")):
+            raise Rejected(f"{where}: file path")
+        _string(entry["memory_type"], f"{where}: memory_type", 32, null=True)
+        _integer(entry["bytes"], f"{where}: bytes", 0, 10 ** 9)
+        _pattern(entry["sha256"], f"{where}: sha256", DIGEST_RE)
 
 
 def check_guidance_violations(value, where: str) -> None:
@@ -1091,6 +1126,8 @@ def check_summary(doc, where: str, parts: dict) -> None:
     check_in_place(doc, where, parts)
     if "guidance_violations" in doc:
         check_guidance_violations(doc["guidance_violations"], where)
+    if "receipt" in doc:
+        check_receipt(doc["receipt"], where)
     for field in ("trial_errors", "aggregate", "section", "mode", "bytes",
                   "delivery", "hook_verdict", "installed", "decoy",
                   "hook_returncode", "guard", "subject"):

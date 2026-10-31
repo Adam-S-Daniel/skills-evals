@@ -305,11 +305,58 @@ def _log_argv() -> None:
         handle.write(json.dumps(record) + "\n")
 
 
+def _instruction_files() -> list:
+    """The `files` of the instructions entry the real CLI writes (2.1.316,
+    measured): each memory file loaded per --setting-sources, its content
+    with HTML comments removed and stripped, as the CLI loads it."""
+    sources = _flag_value("--setting-sources").split(",")
+    loaded = []
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if "user" in sources and config_dir:
+        loaded.append((Path(config_dir) / "CLAUDE.md", "User"))
+    if "project" in sources:
+        loaded.append((Path.cwd() / "CLAUDE.md", "Project"))
+    ambient = os.environ.get("FAKE_CLAUDE_AMBIENT_MEMORY")
+    if ambient:
+        loaded.append((Path(ambient), "User"))
+    files = [{"path": str(path), "type": kind,
+              "content": re.sub(r"<!--.*?-->", "", text, flags=re.S).strip()}
+             for path, kind in loaded if (text := _read_if_file(path))]
+    # A JSON list of {path, type, content} appended verbatim: a test's way
+    # to name a file the fake would not load on its own.
+    return files + json.loads(os.environ.get("FAKE_CLAUDE_EXTRA_INSTRUCTIONS") or "[]")
+
+
+def _persist_session() -> None:
+    """Without --no-session-persistence and with a CLAUDE_CONFIG_DIR (never
+    the real ~/.claude), write the transcript the real CLI would:
+    `$CLAUDE_CONFIG_DIR/projects/<munged cwd>/<session>.jsonl`, carrying the
+    instructions entry when any memory file loaded.
+    $FAKE_CLAUDE_NO_INSTRUCTIONS=1 omits the entry (an older CLI)."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if not config_dir or "--no-session-persistence" in sys.argv:
+        return
+    session = _flag_value("--resume") or "fake-session"
+    project = Path(config_dir, "projects",
+                   re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd())))
+    project.mkdir(parents=True, exist_ok=True)
+    entries = [{"type": "user", "sessionId": session,
+                "message": {"role": "user", "content": "(prompt)"}}]
+    files = _instruction_files()
+    if files and not os.environ.get("FAKE_CLAUDE_NO_INSTRUCTIONS"):
+        entries.append({"type": "attachment", "sessionId": session,
+                        "attachment": {"type": "instructions", "files": files}})
+    with open(project / f"{session}.jsonl", "a", encoding="utf-8") as fh:
+        for entry in entries:
+            fh.write(json.dumps(entry) + "\n")
+
+
 def main() -> int:
     _log_argv()
     if "--version" in sys.argv:
         print("fake-claude 0.0.0 (hermetic test stub)")
         return 0
+    _persist_session()
 
     if MODE == "error":
         print("fake-claude: simulated CLI failure", file=sys.stderr)
