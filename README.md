@@ -532,6 +532,12 @@ made it into context, proves the bridge still works. Implements
 item 3 of
 [Adam-S-Daniel/_agent-guidance#17](https://github.com/Adam-S-Daniel/_agent-guidance/issues/17).
 
+This canary covers the repo-stub path (`CLAUDE.md` importing `AGENTS.md`). The
+fleet-memory path, where the guidance arrives as user memory written by
+`fleet-memory.sh`, is covered by
+[`evals/guidance/_delivery`](evals/guidance/_delivery/fixture.yaml) (see
+"Guidance subject" above).
+
 Run it:
 
 ```bash
@@ -1101,4 +1107,4 @@ models. The propagation probe's `--json` run record carries, per arm,
   [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20) — then
   **retired 2026-09-28** along with the claude.ai ZIP-upload channel it
   audited; see `evals/propagation/ROUTINE.md`, now HISTORY)
-- [ ] Regression tracking (compare a run against the previous one)
+- [x] Regression tracking (compare a run against the previous one): `harness/regression.py`, `scripts/regression_issue.py`, thresholds in `evals/regression-policy.yml`, run by the `regression` job in `.github/workflows/skill-coverage.yml`

@@ -10,9 +10,12 @@ PyYAML and running the shell steps that carry logic against a fake `gh`:
   * routine-draft-skill.yml: a daily schedule plus dispatch; `select` holds
     contents/actions/issues read, mints the read-only registry App token
     exactly as propagation.yml does, reads lessons/ and plugins/ of the
-    private registry, the public registry, the drafted branches and the
-    declined hook proposals, and checks the allowance with `fits`;
-    `dispatch` holds actions: write, re-checks the proposal pattern and maps
+    private registry, the public registry, the drafted branches, the
+    declined hook proposals and the open `skill-proposal` issues of the
+    public adam-agentskills (converted by `issue-proposals`, failing closed
+    on an API error, and passed to `select --issue-proposals`), and checks
+    the allowance with `fits`; `dispatch` holds actions: write, re-checks
+    the proposal pattern (proposals/ or issue-proposals/) and maps
     `hook_declined` before `gh workflow run`, never echoing a bad value;
   * routine-draft-skill-pushed.yml: a filtered push with no reach, whose
     branch no other routine signal matches;
@@ -56,6 +59,10 @@ sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
 
 PROPOSAL = "proposals/2026-10-26/example-skill__new-skill.json"
+ISSUE_PROPOSAL = "issue-proposals/2026-10-26/example-skill__new-skill.json"
+ISSUES_API = ("repos/Adam-S-Daniel/adam-agentskills/issues"
+              "?labels=skill-proposal&state=open&per_page=100")
+CONVERT = "Convert the skill-proposal issues"
 BRANCH = "claude/draft-skill-20261026T063000Z-0a1b2c"
 DEFAULT_BRANCH_IF = ("github.ref == format('refs/heads/{0}', "
                      "github.event.repository.default_branch)")
@@ -208,6 +215,7 @@ class CallerTests(unittest.TestCase):
                        "--registry adam-agentskills-private=../adam-agentskills-private",
                        "--lessons ../adam-agentskills-private-lessons/lessons",
                        "--evals evals --drafted",
+                       '--issue-proposals "$RUNNER_TEMP/issue-lessons"',
                        '--hook-declined "$RUNNER_TEMP/hook-declined.txt"'):
             self.assertIn(needle, body)
         fetch = step(self.doc, "select", "Fetch the drafted branches")["run"]
@@ -240,6 +248,19 @@ class CallerTests(unittest.TestCase):
             self.assertEqual(refs, ["refs/remotes/origin/claude/draft-skill-20261026T000000Z-abcdef"])
         outputs = self.jobs["select"]["outputs"]
         self.assertEqual(set(outputs), {"proposal", "count", "hook_declined", "fits"})
+
+    def test_the_issues_are_converted_with_the_job_token_before_select(self):
+        names = [s.get("name") for s in self.jobs["select"]["steps"]]
+        self.assertLess(names.index(CONVERT), names.index("Select one new-skill proposal"))
+        convert = step(self.doc, "select", CONVERT)
+        # No `if`: the issues are read whether or not persistent/lessons exists.
+        self.assertNotIn("if", convert)
+        self.assertEqual(convert["env"], {"GH_TOKEN": "${{ github.token }}"})
+        self.assertEqual(convert["working-directory"], "skills-evals")
+        self.assertIn(ISSUES_API, convert["run"])
+        self.assertIn("|| fetched=ERROR", convert["run"])
+        self.assertIn('draft_new_skill.py issue-proposals --issues "$issues"', convert["run"])
+        self.assertIn('--out "$RUNNER_TEMP/issue-lessons"', convert["run"])
 
     def test_the_allowance_pre_check_runs_only_with_a_pick(self):
         s = step(self.doc, "select", "Check the weekly allowance")
@@ -315,17 +336,18 @@ class CallerStepTests(unittest.TestCase):
                 self.assertEqual(written, f"present={present}\n" if present else "")
 
     def test_dispatch_sends_the_proposal_and_the_declined_flag(self):
-        for flag, sent in (("0", "false"), ("1", "true")):
-            with self.subTest(flag=flag):
+        for flag, sent, path in (("0", "false", PROPOSAL), ("1", "true", PROPOSAL),
+                                 ("0", "false", ISSUE_PROPOSAL)):
+            with self.subTest(flag=flag, path=path):
                 self.log.unlink(missing_ok=True)
                 proc = self.run_step("Dispatch the draft", DEFAULT_BRANCH="main",
-                                PROPOSAL=PROPOSAL, HOOK_DECLINED=flag)
+                                PROPOSAL=path, HOOK_DECLINED=flag)
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 [call] = self.calls()
                 self.assertEqual(call[:2], ["workflow", "run"])
                 self.assertIn("routine-eval-fire.yml", call)
                 self.assertIn("mode=draft", call)
-                self.assertIn(f"proposal={PROPOSAL}", call)
+                self.assertIn(f"proposal={path}", call)
                 self.assertIn(f"hook_declined={sent}", call)
 
     def test_dispatch_refuses_a_bad_value_without_calling_gh(self):
@@ -334,6 +356,9 @@ class CallerStepTests(unittest.TestCase):
             "dotdot": ("proposals/2026-10-26/../x__new-skill.json", "0"),
             "subst": ("proposals/2026-10-26/$(id)__new-skill.json", "0"),
             "newline": (PROPOSAL + "\nproposals/x", "0"),
+            "singular_issue_root": (ISSUE_PROPOSAL.replace("issue-proposals", "issue-proposal"), "0"),
+            "nested_root": ("lessons/" + ISSUE_PROPOSAL, "0"),
+            "issue_dotdot": ("issue-proposals/2026-10-26/../x__new-skill.json", "0"),
             "empty": ("", "0"),
             "flag_empty": (PROPOSAL, ""),
             "flag_word": (PROPOSAL, "true"),
@@ -372,6 +397,43 @@ class CallerStepTests(unittest.TestCase):
         proc = self.run_step("List the declined hook proposals", GH_TOKEN="t", FAKE_GH_OUT="")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual((self.tmp / "hook-declined.txt").read_text(), "")
+
+    def run_convert(self, **env):
+        # The step runs in the skills-evals checkout: draft_new_skill.py is
+        # this repository's.
+        return subprocess.run(["bash", "-c", step(self.doc, "select", CONVERT)["run"]],
+                              cwd=REPO_ROOT, env={**self.env, **env},
+                              capture_output=True, text=True, timeout=120)
+
+    def test_the_issues_become_proposal_files_without_echoing_them(self):
+        issues = [{"number": 18, "title": "Skill: example skill", "state": "open",
+                   "author_association": "OWNER", "user": {"login": "Adam-S-Daniel"},
+                   "labels": [{"name": "skill-proposal"}],
+                   "created_at": "2026-10-20T08:00:00Z",
+                   "updated_at": "2026-10-26T09:00:00Z",
+                   "body": "Skill name: `example-skill`.\n\nleaked-body text."},
+                  {"number": 19, "title": "No name line", "state": "open",
+                   "author_association": "OWNER", "user": {"login": "Adam-S-Daniel"},
+                   "labels": [{"name": "skill-proposal"}],
+                   "created_at": "2026-10-20T08:00:00Z",
+                   "updated_at": "2026-10-26T09:00:00Z", "body": "leaked-body only."}]
+        proc = self.run_convert(GH_TOKEN="t", FAKE_GH_OUT=json.dumps(issues))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("leaked-body", proc.stdout + proc.stderr)
+        self.assertIn("issues without a name line: 1 #19", proc.stderr)
+        [call] = self.calls()
+        self.assertEqual(call, ["api", ISSUES_API])
+        written = sorted(p.relative_to(self.tmp / "issue-lessons").as_posix()
+                         for p in (self.tmp / "issue-lessons").rglob("*.json"))
+        self.assertEqual(written, [ISSUE_PROPOSAL])
+
+    def test_the_issue_list_fails_closed_on_an_api_error(self):
+        proc = self.run_convert(GH_TOKEN="t", FAKE_GH_OUT='{"message": "leaked-body"}',
+                                FAKE_GH_EXIT="1")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("::error::could not list the skill-proposal issues", proc.stdout)
+        self.assertNotIn("leaked-body", proc.stdout + proc.stderr)
+        self.assertFalse((self.tmp / "issue-lessons").exists())
 
     def test_declined_list_fails_closed_on_an_api_error(self):
         proc = self.run_step("List the declined hook proposals", GH_TOKEN="t",
