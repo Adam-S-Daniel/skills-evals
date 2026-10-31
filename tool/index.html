@@ -1,0 +1,1142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skill Evals Explorer</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --axis: #898781;
+  --grid: #e1e0d9;
+  --base: #c3c2b7;
+  --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --link: #1c5cab;
+  --chip-bg: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #a3a29b;
+    --axis: #898781;
+    --grid: #2c2c2a;
+    --base: #383835;
+    --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --good-ink: #0ca30c;
+    --link: #86b6ef;
+    --chip-bg: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #a3a29b;
+  --axis: #898781;
+  --grid: #2c2c2a;
+  --base: #383835;
+  --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --good-ink: #0ca30c;
+  --link: #86b6ef;
+  --chip-bg: #2c2c2a;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; }
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 8px 0 4px; }
+h2 { font-size: 1.25rem; margin: 36px 0 8px; }
+h3 { font-size: 1.05rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+p { margin: 0 0 12px; }
+a { color: var(--link); }
+.asof, .note { color: var(--ink-2); font-size: 0.9rem; }
+.lead { max-width: 70ch; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
+.seg { display: inline-flex; border: 1px solid var(--base); border-radius: 8px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 0.9rem; padding: 6px 12px; border: 0; background: var(--surface);
+  color: var(--ink); cursor: pointer; min-height: 36px;
+}
+.seg button + button { border-left: 1px solid var(--base); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 600; }
+.seg button:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
+.panel {
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
+  padding: 16px; margin: 12px 0;
+}
+dl.gloss { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: 6px 16px; margin: 8px 0 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 560px) { dl.gloss { grid-template-columns: 1fr; } dl.gloss dd { margin-bottom: 8px; } }
+summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+@media (max-width: 400px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
+.card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
+.card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
+.card .sent { font-size: 0.95rem; }
+.card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
+.model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none;
+  font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: var(--chip-bg); color: var(--ink); border: 1px solid var(--ring); cursor: help;
+}
+.chip .ic { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--axis); }
+.chip.helps .ic { background: var(--good); }
+.chip.worse .ic { background: var(--critical); }
+.chip.alone .ic { background: var(--warning); }
+.chip.none .ic { background: var(--axis); }
+.chip.insufficient .ic { background: transparent; border: 2px solid var(--axis); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.sw.tick { width: 2px; height: 12px; border-radius: 0; background: var(--ink); }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.chart { max-width: 360px; }
+.spark { max-width: 260px; margin-top: 6px; }
+.mark:hover, .mark:focus { opacity: 0.8; outline: none; }
+.trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
+ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }
+.reason { color: var(--ink-2); font-size: 0.9rem; }
+.failure { border-left: 4px solid var(--critical); }
+.summary-line { font-size: 1rem; }
+.tablewrap { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; max-width: 260px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--base);
+  border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.tip[hidden] { display: none; }
+.headline .answer { font-size: 1.1rem; font-weight: 600; }
+@media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
+</style>
+</head>
+<body>
+<main id="app">
+  <h1>Skill Evals Explorer</h1>
+  <p id="loading">Loading the latest results.</p>
+</main>
+<noscript>
+  <div style="max-width:640px;margin:16px auto;padding:16px">
+    This page needs JavaScript to read the latest test results and draw its charts.
+    Please turn JavaScript on, or read the raw results file at
+    https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json
+  </div>
+</noscript>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/* Rules. Every threshold the status chips use lives here.            */
+/* ------------------------------------------------------------------ */
+const SCHEMA_VERSION = 1;
+const WINDOW_WEEKS = 26;          // pool runs from the last 26 weeks
+const MIN_PAIRED_RUNS = 3;        // runs per model before a chip can say more than "Not enough data"
+const HELPS_MIN_GAIN = 0.05;      // 5 percentage points better on at least one model
+const WORSE_TOLERANCE = -0.05;    // and never more than 5 points worse on any model
+const EPS = 1e-9;                 // float tolerance for the comparisons above
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const DEFAULT_DATA_URL =
+  'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json';
+const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/';
+const TIME_ZONE = 'America/New_York';
+
+const pts = (x) => Math.round(Math.abs(x) * 100);
+
+/* ------------------------------------------------------------------ */
+/* Every sentence the page shows, in one place.                       */
+/* ------------------------------------------------------------------ */
+const STRINGS = {
+  title: 'Skill Evals Explorer',
+  titleGuidance: 'Guidance Evals Explorer',
+  loading: 'Loading the latest results.',
+  dataAsOf: (when) => 'Data as of ' + when + '.',
+  newestRun: (when) => 'Newest test run: ' + when + '.',
+  noRunsYet: 'No test runs have been recorded yet.',
+  modeLabel: 'Show results for',
+  modeSkills: 'Skills',
+  modeGuidance: 'Guidance',
+  hidden: '[hidden]',
+  unknown: 'unknown',
+  et: 'ET',
+
+  introHeading: 'What you are looking at',
+  introSkills: [
+    'A skill is a page of instructions that an AI coding assistant called Claude reads before it starts a certain kind of task. Each skill is meant to help Claude do that task better.',
+    'To find out whether a skill really helps, we give Claude the same small task many times: sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model, the judge, also gives it a score from 0 to 10.',
+    'Read each number as "checks passed out of checks in total". A higher share with the skill than without it means the skill helped. "Tried" says how many attempts the numbers come from; more attempts make the result more trustworthy.'
+  ],
+  introGuidance: [
+    'The guidance is a page of rules that Claude reads at the start of every working session on Adam\'s projects. Each rule was written after a real mistake, so the same mistake does not happen again. The page is split into sections, one topic each.',
+    'To test a section, we give Claude an ordinary task with that section\'s trap hidden inside it, and run it several ways: with only that section, with no rules at all, with every rule, and with every rule except that one. Fixed checks score each attempt.',
+    'Two things matter here that do not matter for skills. Every section is read in every session, so each one has a cost, shown as roughly how many words it adds. And a section can look useful on its own but add nothing once all the other rules are present; the "all the other rules but not this one" bar shows that.'
+  ],
+  glossaryHeading: 'Words used on this page',
+  glossary: [
+    ['Fixture', 'One small, fixed practice task used for testing. The same task is used every time so results can be compared.'],
+    ['Arm', 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
+    ['Trial', 'A single attempt at the task. A run is made of several trials.'],
+    ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
+    ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
+    ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
+    ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
+  ],
+  glossaryGuidance: [
+    ['Section', 'One topic within the guidance, under its own heading.'],
+    ['Ablation', 'Running with every rule except one, to see whether that one rule still makes a difference when all the others are there.'],
+    ['Cost per session', 'How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length.']
+  ],
+  chipGlossaryIntro: 'The colored labels on each card follow these rules:',
+
+  chips: {
+    helps: 'Helps',
+    alone: 'Helps only on its own',
+    none: 'No measurable difference',
+    worse: 'Getting worse',
+    insufficient: 'Not enough data'
+  },
+  chipRules: {
+    helps: 'On at least one model, Claude passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it, and was never more than ' + pts(WORSE_TOLERANCE) + ' points worse on any model.',
+    alone: 'It helps when it is the only rule present, but adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
+    none: 'There have been enough attempts, but the difference with and without it is too small to count as help.',
+    worse: 'An automatic alert says recent results are worse than they used to be.',
+    insufficient: 'Fewer than ' + MIN_PAIRED_RUNS + ' comparison runs on every model in the last ' + WINDOW_WEEKS + ' weeks, so it is too early to say.'
+  },
+  chipOrder: ['helps', 'alone', 'none', 'worse', 'insufficient'],
+
+  skillsHeading: 'Does each skill help?',
+  skillsNote: 'One card per tested skill, the ones with results first. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means the skill helped that week.',
+  sectionsHeading: 'Does each section earn its place?',
+  sectionsNote: 'One card per section. Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
+  sortLabel: 'Order sections by',
+  sortValue: 'Help per word',
+  sortSize: 'Size',
+  noCards: 'Nothing has been tested yet.',
+  summaryCounts: (parts) => 'Right now: ' + parts + '.',
+
+  sentenceSkill: (m, a, b, c, d) => 'With this skill, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
+  sentenceSection: (m, a, b, c, d) => 'With this section, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
+  sentenceAblation: (e, f, g, h) => 'With all the rules, ' + e + ' of ' + f + '; with all the other rules but not this one, ' + g + ' of ' + h + '.',
+  sentenceWhole: (m, a, b, c, d) => 'With all the rules, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no rules, ' + c + ' of ' + d + '.',
+  tried: (n, when) => 'Tried ' + n + (n === 1 ? ' time' : ' times') + ', last on ' + when + '.',
+  notTried: 'Not tried in the last ' + WINDOW_WEEKS + ' weeks.',
+  pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
+  judgeScores: (a, b) => 'judge score ' + a + ' with, ' + b + ' without (out of 10)',
+  size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
+
+  barWith: 'With the skill',
+  barWithout: 'Without it',
+  barSection: 'Only this section',
+  barNone: 'No rules',
+  barAblated: 'All but this one',
+  barAll: 'All the rules',
+  barWholeFull: 'All the rules',
+  barWholeNone: 'No rules',
+  tickAll: 'Line: all the rules',
+  barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
+  tickTip: (a, b, rate) => 'All the rules: ' + a + ' of ' + b + ' checks (' + rate + ')',
+  chartLabel: (m) => 'Checks passed by ' + m,
+  trendCaption: 'Week by week, last ' + WINDOW_WEEKS + ' weeks. Above the line: it helped that week.',
+  trendNone: 'No weekly trend yet.',
+  trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
+  gainUp: (p) => p + ' points better with it',
+  gainDown: (p) => p + ' points worse with it',
+  gainZero: 'no difference',
+
+  verdict: {
+    retain: 'Official decision: keep it.',
+    retire: 'Official decision: remove it.',
+    'retire-pending': 'Official decision: remove it, after another removal finishes.',
+    retired: 'It has been removed.',
+    ceiling: 'Official decision: the test cannot tell, because Claude already passes without it.',
+    insufficient: 'No official decision yet: it needs more runs.',
+    'helps-only-alone': 'Official decision: it helps only on its own.'
+  },
+  verdictOther: (v) => 'Official decision: ' + v + '.',
+
+  wholeHeading: 'Does the guidance help at all?',
+  wholeNote: 'All the rules compared with no rules, pooled across every section\'s task.',
+  wholeAnswer: {
+    helps: 'Yes. With the rules, Claude passed measurably more checks.',
+    alone: 'Yes. With the rules, Claude passed measurably more checks.',
+    none: 'Not clearly. The difference so far is too small to count.',
+    worse: 'Results are getting worse and need a closer look.',
+    insufficient: 'Too early to say. There are not enough runs yet.'
+  },
+
+  rosterHeading: 'Which models are measured, and why',
+  rosterIntro: 'Each task runs on these AI models. A separate judge model scores the work but never does the task. The reasons below are recorded automatically when the list is chosen.',
+  rosterArm: 'Tested',
+  rosterJudge: 'Judge',
+  rosterEmpty: 'No models are listed yet.',
+
+  coverageHeading: 'Coverage',
+  coverageIntroSkills: 'Which skills have a test, which are left out on purpose, and which still need one.',
+  coverageIntroGuidance: 'Which sections have a test, which are left out on purpose, and which still need one.',
+  covered: 'Tested',
+  skipped: 'Left out on purpose',
+  gap: 'Not yet tested',
+  census: (when, total, c, s, g) => 'The latest count, from ' + when + ', found ' + total + ' public skills: ' + c + ' tested, ' + s + ' left out on purpose, ' + g + ' not yet tested.',
+  noneListed: 'None.',
+
+  alertsHeading: 'Alerts',
+  alertsNone: 'No open alerts.',
+  alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed' },
+  alertDetails: 'Details',
+
+  engineersHeading: 'For engineers',
+  engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
+  source: (repo, main, results) => 'Built from ' + repo + ' at ' + main + ', results at ' + results + '.',
+  colName: 'Name', colFixture: 'Task', colModel: 'Model', colWhen: 'When', colCli: 'Tool version',
+  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No rules',
+  colFull: 'All rules', colAblated: 'All but this', colReport: 'Report', colVerdict: 'Decision and reason',
+  report: 'report',
+  dataFile: (url) => 'Data file: ' + url,
+
+  failHeading: 'The results could not be shown',
+  failFetch: 'We could not load the results file.',
+  failParse: 'The results file loaded, but it is not readable.',
+  failSchema: (got) => 'The results file is in a format this page does not understand (version ' + got + '; this page reads version ' + SCHEMA_VERSION + ').',
+  failBadUrl: 'The page was asked to read results from an address it does not trust, so it did not.',
+  failFile: (url) => 'File: ' + url,
+  failWhat: 'What to do: wait a few minutes and reload the page. If it keeps happening, the results file may have moved or changed; please open an issue at https://github.com/Adam-S-Daniel/skills-evals/issues and include the file name above.'
+};
+
+/* ------------------------------------------------------------------ */
+/* One plain line per guidance section, keyed by the manifest id in   */
+/* _agent-guidance's agents-md/eval-coverage.yml.                     */
+/* ------------------------------------------------------------------ */
+const GLOSSES = {
+  'working-in-these-repos': 'House rules for any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
+  'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
+  'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
+  'workstation-layout': 'Where project folders live on Adam\'s computers, so Claude looks in the right place.',
+  'security': 'Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.',
+  'data-exposure-in-ci': 'Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.',
+  'read-before-you-start': 'A short list of reference pages to read before touching certain settings.',
+  'automation-vs-branch-protection': 'The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.',
+  'two-github-connectors': 'Claude can reach GitHub through two different connections with different powers, and must know which one it is using.',
+  'agent-contribution-markers': 'Anything Claude posts on GitHub under Adam\'s name ends with a note saying an AI wrote it.',
+  'github-404-means-not-authorized': 'When GitHub says "not found", it may only mean "you are not allowed to see this", so do not report something as gone on that alone.',
+  'fleet-spans-two-owners': 'Adam\'s projects sit under two different accounts, so a search of only one gives an answer that looks complete but is wrong.',
+  'watch-finished-is-not-ci-passed': 'A command that waits for the automatic checks finishing does not mean the checks passed; read the actual results.',
+  'git-push-does-not-mean-commit-exists': 'Uploading changes can report success even when the new change was never saved, so confirm the change is really there.',
+  'dependency-updates': 'Wait about a week before adopting a new version of an outside package, and record exact versions.',
+  'name-becomes-scanner-data': 'Names that contain words like "secret" or "token" can set off the leak scanner, so choose names that describe the purpose instead.',
+  'pinning-github-actions': 'Each outside building block the automation uses is locked to one exact, reviewed version, so it cannot change underneath us.',
+  'test-that-can-signal-kills-every-session': 'A test once stopped every program on a computer by mistake; code that stops programs must double-check what it is about to stop.',
+  'subagent-delegation': 'How Claude hands work to helper assistants, chooses cheaper models when that is safe, and checks their work before trusting it.',
+  'skills-ecosystem': 'Where Adam\'s skills come from, how they are installed, and how a project chooses which ones to load.',
+  'two-setup-gaps': 'Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.',
+  'git-practices': 'How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.',
+  'section-docker': 'Rules for building software containers: fixed versions, no administrator access, and no passwords inside.',
+  'section-dotnet': 'Rules for C# code: switch on the strictest warnings and keep to the version the project already uses.',
+  'section-go': 'Rules for Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
+  'section-javascript': 'Rules for JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
+  'section-python': 'Rules for Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
+  'section-rust': 'Rules for Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
+  'section-typescript': 'Rules for TypeScript code: no catch-all types, and respect the project\'s strict settings.'
+};
+const GLOSS_MISSING = 'A plain-language description of this section has not been written yet.';
+
+/* ------------------------------------------------------------------ */
+/* Pure helpers (exported for tests).                                 */
+/* ------------------------------------------------------------------ */
+const UNSAFE = /\S*(?:@|\/home\/|\/Users\/|\/root\/|\/tmp\/|cse_|session_|[A-Za-z]:\\)\S*/g;
+
+function clean(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(UNSAFE, STRINGS.hidden);
+}
+
+function githubLink(url) {
+  if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return null;
+  let parsed;
+  try { parsed = new URL(url); } catch (e) { return null; }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.username || parsed.password || parsed.port) return null;
+  return parsed.href;
+}
+
+function friendlyModel(id) {
+  const raw = String(id || '').toLowerCase();
+  if (!/^[a-z0-9-]+$/.test(raw)) return clean(id) || STRINGS.unknown;
+  const parts = raw.split('-').filter((p) => p && !/^\d{8}$/.test(p));
+  const words = [];
+  const nums = [];
+  for (const p of parts) {
+    if (/^\d+$/.test(p)) nums.push(p);
+    else {
+      if (nums.length) { words.push(nums.join('.')); nums.length = 0; }
+      words.push(p.charAt(0).toUpperCase() + p.slice(1));
+    }
+  }
+  if (nums.length) words.push(nums.join('.'));
+  return words.join(' ');
+}
+
+function parseTime(s) {
+  if (typeof s !== 'string') return NaN;
+  return Date.parse(s);
+}
+
+function fmtDay(ms, refMs) {
+  if (!isFinite(ms)) return STRINGS.unknown;
+  const opts = { timeZone: TIME_ZONE, month: 'short', day: 'numeric' };
+  const year = (t) => new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, year: 'numeric' }).format(new Date(t));
+  if (isFinite(refMs) && year(ms) !== year(refMs)) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
+}
+
+function fmtDateTime(ms) {
+  if (!isFinite(ms)) return STRINGS.unknown;
+  const s = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+  }).format(new Date(ms));
+  return s + ' ' + STRINGS.et;
+}
+
+function fmtCount(x) {
+  const n = Number(x) || 0;
+  const r = Math.round(n);
+  if (Math.abs(n - r) < 1e-6) return String(r);
+  return n.toFixed(1);
+}
+
+function fmtRate(p, t) {
+  if (!(t > 0)) return '0%';
+  return Math.round((p / t) * 100) + '%';
+}
+
+function fmtGain(g) {
+  if (g === null || !isFinite(g)) return STRINGS.unknown;
+  const p = Math.round(g * 100);
+  if (p === 0) return STRINGS.gainZero;
+  return p > 0 ? STRINGS.gainUp(p) : STRINGS.gainDown(-p);
+}
+
+function wordsFor(bytes) {
+  const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
+  return w;
+}
+
+function modeFromSearch(search) {
+  const q = new URLSearchParams(search || '');
+  return q.get('subject') === 'guidance' ? 'guidance' : 'skills';
+}
+
+function searchForMode(search, mode) {
+  const q = new URLSearchParams(search || '');
+  if (mode === 'guidance') q.set('subject', 'guidance'); else q.delete('subject');
+  const s = q.toString();
+  return s ? '?' + s : '';
+}
+
+function allowedDataUrl(candidate) {
+  if (typeof candidate !== 'string' || !candidate) return null;
+  let u;
+  try { u = new URL(candidate); } catch (e) { return null; }
+  if (u.username || u.password) return null;
+  if (u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
+      && (candidate.startsWith('http://localhost') || candidate.startsWith('http://127.0.0.1'))) return u.href;
+  if (u.protocol === 'https:' && u.hostname === 'raw.githubusercontent.com' && !u.port
+      && candidate.startsWith(DATA_URL_PREFIX) && u.href.startsWith(DATA_URL_PREFIX)) return u.href;
+  return null;
+}
+
+/* Returns {url} for the file to read, or {error:'badurl', url} for a refused override. */
+function dataUrlFromSearch(search) {
+  const q = new URLSearchParams(search || '');
+  if (!q.has('data')) return { url: DEFAULT_DATA_URL };
+  const ok = allowedDataUrl(q.get('data'));
+  return ok ? { url: ok } : { error: 'badurl', url: DEFAULT_DATA_URL };
+}
+
+function cacheBust(url, stamp) {
+  return url + (url.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(stamp));
+}
+
+function validateDoc(doc) {
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ok: false, kind: 'parse' };
+  if (doc.schema_version !== SCHEMA_VERSION) {
+    const got = (typeof doc.schema_version === 'number' || typeof doc.schema_version === 'string')
+      ? clean(doc.schema_version) : STRINGS.unknown;
+    return { ok: false, kind: 'schema', got: got };
+  }
+  return { ok: true };
+}
+
+async function loadData(url, fetchFn, stamp) {
+  let res;
+  try {
+    res = await fetchFn(cacheBust(url, stamp), { cache: 'no-store' });
+  } catch (e) {
+    return { ok: false, kind: 'fetch', url: url };
+  }
+  if (!res || !res.ok) return { ok: false, kind: 'fetch', url: url };
+  let doc;
+  try { doc = await res.json(); } catch (e) { return { ok: false, kind: 'parse', url: url }; }
+  const v = validateDoc(doc);
+  if (!v.ok) return Object.assign({ url: url }, v);
+  return { ok: true, doc: doc, url: url };
+}
+
+/* --- run statistics --- */
+
+function armOf(x) {
+  if (!x || typeof x !== 'object') return null;
+  const passed = Number(x.checks_passed), total = Number(x.checks_total), trials = Number(x.trials);
+  if (!isFinite(passed) || !isFinite(total) || total <= 0) return null;
+  const judge = (typeof x.judge_mean === 'number' && isFinite(x.judge_mean)) ? x.judge_mean : null;
+  return { passed: passed, total: total, trials: isFinite(trials) ? trials : 0, judge: judge };
+}
+
+/* Normalize a run so both subjects share one shape:
+   with/without = the compared pair; full/ablated = the ablation pair (guidance only). */
+function normRun(run, subject) {
+  if (!run || typeof run !== 'object') return null;
+  const at = parseTime(run.at);
+  const base = { model: String(run.model || ''), at: at, fixture: run.fixture, cli: run.cli_version, url: run.report_url };
+  if (subject === 'guidance') {
+    const m = run.modes || {};
+    return Object.assign(base, { with: armOf(m.section), without: armOf(m.none), full: armOf(m.full), ablated: armOf(m.full_minus_section) });
+  }
+  if (subject === 'whole') {
+    const m = run.modes || {};
+    return Object.assign(base, { with: armOf(m.full), without: armOf(m.none), full: null, ablated: null });
+  }
+  return Object.assign(base, { with: armOf(run.with), without: armOf(run.without), full: null, ablated: null });
+}
+
+function inWindow(r, refMs) {
+  return isFinite(r.at) && (!isFinite(refMs) || r.at >= refMs - WINDOW_WEEKS * WEEK_MS);
+}
+
+function emptyAcc() { return { n: 0, wp: 0, wt: 0, op: 0, ot: 0, trials: 0, nAbl: 0, fp: 0, ft: 0, ap: 0, at: 0, last: NaN, wj: 0, wjn: 0, oj: 0, ojn: 0 }; }
+
+function addRun(acc, r) {
+  if (r.with && r.without) {
+    acc.n += 1; acc.wp += r.with.passed; acc.wt += r.with.total; acc.op += r.without.passed; acc.ot += r.without.total;
+    acc.trials += r.with.trials;
+    if (r.with.judge !== null && r.without.judge !== null) {
+      const tw = r.with.trials || 1, to = r.without.trials || 1;
+      acc.wj += r.with.judge * tw; acc.wjn += tw; acc.oj += r.without.judge * to; acc.ojn += to;
+    }
+    if (!(acc.last >= r.at)) acc.last = r.at;
+  }
+  if (r.full && r.ablated) {
+    acc.nAbl += 1; acc.fp += r.full.passed; acc.ft += r.full.total; acc.ap += r.ablated.passed; acc.at += r.ablated.total;
+  }
+}
+
+function finish(acc) {
+  acc.gain = acc.wt > 0 && acc.ot > 0 ? acc.wp / acc.wt - acc.op / acc.ot : null;
+  acc.judgeWith = acc.wjn > 0 ? acc.wj / acc.wjn : null;
+  acc.judgeWithout = acc.ojn > 0 ? acc.oj / acc.ojn : null;
+  acc.inSitu = acc.ft > 0 && acc.at > 0 ? acc.fp / acc.ft - acc.ap / acc.at : null;
+  return acc;
+}
+
+/* Pool runs from the window per model. Returns {models:[{model, ...acc}], all: acc}. */
+function poolRuns(runs, subject, refMs, modelOrder) {
+  const by = new Map();
+  const all = emptyAcc();
+  for (const raw of Array.isArray(runs) ? runs : []) {
+    const r = normRun(raw, subject);
+    if (!r || !r.model || !inWindow(r, refMs)) continue;
+    if (!by.has(r.model)) by.set(r.model, emptyAcc());
+    addRun(by.get(r.model), r);
+    addRun(all, r);
+  }
+  const order = modelOrder || [];
+  const models = Array.from(by.keys()).sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    if (ia !== ib) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  return { models: models.map((m) => Object.assign({ model: m }, finish(by.get(m)))), all: finish(all) };
+}
+
+function hasRegression(alerts, subjectKind, name) {
+  return (Array.isArray(alerts) ? alerts : []).some((a) => a && a.kind === 'regression'
+    && (a.subject === subjectKind) && a.name === name);
+}
+
+/* The chip rule. `pooled` comes from poolRuns. */
+function chipFor(pooled, opts) {
+  const o = opts || {};
+  if (o.regression) return 'worse';
+  const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
+  if (!eligible.length) return 'insufficient';
+  const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS)
+    && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
+  if (!helps) return 'none';
+  if (o.subject === 'guidance') {
+    const abl = pooled.models.filter((m) => m.nAbl >= MIN_PAIRED_RUNS && m.inSitu !== null);
+    if (abl.length && abl.every((m) => m.inSitu < HELPS_MIN_GAIN - EPS)) return 'alone';
+  }
+  return 'helps';
+}
+
+function sentenceFor(pooled, subject, refMs) {
+  const out = [];
+  for (const m of pooled.models) {
+    if (m.n > 0) {
+      const name = friendlyModel(m.model);
+      const fn = subject === 'guidance' ? STRINGS.sentenceSection : subject === 'whole' ? STRINGS.sentenceWhole : STRINGS.sentenceSkill;
+      out.push(fn(name, fmtCount(m.wp), fmtCount(m.wt), fmtCount(m.op), fmtCount(m.ot)));
+    }
+    if (subject === 'guidance' && m.nAbl > 0) {
+      if (m.n === 0) out.push(friendlyModel(m.model) + ':');
+      out.push(STRINGS.sentenceAblation(fmtCount(m.fp), fmtCount(m.ft), fmtCount(m.ap), fmtCount(m.at)));
+    }
+  }
+  if (pooled.all.n > 0) out.push(STRINGS.tried(Math.round(pooled.all.trials), fmtDay(pooled.all.last, refMs)));
+  else out.push(STRINGS.notTried);
+  return out.join(' ');
+}
+
+/* Weekly pooled gain, oldest week first. Each point: {week, start, gain}. */
+function weeklyGains(runs, subject, refMs) {
+  if (!isFinite(refMs)) return [];
+  const buckets = new Map();
+  for (const raw of Array.isArray(runs) ? runs : []) {
+    const r = normRun(raw, subject);
+    if (!r || !inWindow(r, refMs) || !(r.with && r.without)) continue;
+    const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
+    if (w >= WINDOW_WEEKS) continue;
+    if (!buckets.has(w)) buckets.set(w, emptyAcc());
+    addRun(buckets.get(w), r);
+  }
+  return Array.from(buckets.keys()).sort((a, b) => b - a).map((w) => {
+    const acc = finish(buckets.get(w));
+    return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: acc.gain };
+  }).filter((p) => p.gain !== null);
+}
+
+function gainPerKb(pooled, bytes) {
+  const g = pooled.all.gain;
+  const kb = (Number(bytes) || 0) / 1024;
+  if (g === null || !(kb > 0)) return null;
+  return g / kb;
+}
+
+/* ------------------------------------------------------------------ */
+/* A tiny node tree: the page is built as plain objects, then turned  */
+/* into DOM with createElement and text nodes only, never HTML text. */
+/* ------------------------------------------------------------------ */
+const SVG_TAGS = new Set(['svg', 'g', 'rect', 'line', 'circle', 'path', 'text', 'polyline']);
+
+function h(tag, attrs) {
+  const kids = [];
+  const push = (c) => {
+    if (c === null || c === undefined || c === false) return;
+    if (Array.isArray(c)) c.forEach(push);
+    else kids.push(typeof c === 'object' ? c : String(c));
+  };
+  for (let i = 2; i < arguments.length; i++) push(arguments[i]);
+  return { tag: tag, attrs: attrs || {}, children: kids };
+}
+
+function link(url, text) {
+  const ok = githubLink(url);
+  if (!ok) return null;
+  return h('a', { href: ok, rel: 'noopener', target: '_blank' }, text);
+}
+
+const VISIBLE_ATTRS = ['title', 'aria-label', 'data-tip'];
+
+function textOf(node) {
+  if (node === null || node === undefined) return '';
+  if (typeof node === 'string') return node;
+  let s = '';
+  for (const k of VISIBLE_ATTRS) if (node.attrs && typeof node.attrs[k] === 'string') s += ' ' + node.attrs[k] + ' ';
+  for (const c of node.children) s += textOf(c) + ' ';
+  return s;
+}
+
+function findAll(node, pred, out) {
+  out = out || [];
+  if (node && typeof node === 'object') {
+    if (pred(node)) out.push(node);
+    node.children.forEach((c) => findAll(c, pred, out));
+  }
+  return out;
+}
+
+function toDom(node, doc) {
+  if (typeof node === 'string') return doc.createTextNode(node);
+  const isSvg = SVG_TAGS.has(node.tag);
+  const el = isSvg ? doc.createElementNS('http://www.w3.org/2000/svg', node.tag) : doc.createElement(node.tag);
+  for (const k of Object.keys(node.attrs)) {
+    const v = node.attrs[k];
+    if (typeof v === 'function') el.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) el.setAttribute(k, String(v));
+  }
+  for (const c of node.children) el.appendChild(toDom(c, doc));
+  return el;
+}
+
+/* --- charts --- */
+
+function barPath(x, y, w, hgt, r) {
+  // square at the baseline (left), 4px rounded data end (right)
+  const rr = Math.min(r, w, hgt / 2);
+  if (w <= 0) return '';
+  return 'M' + x + ',' + y + 'H' + (x + w - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w) + ',' + (y + rr)
+    + 'V' + (y + hgt - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w - rr) + ',' + (y + hgt) + 'H' + x + 'Z';
+}
+
+/* rows: [{label, p, t, color, tick?:{p,t}}] */
+function barChart(rows, label) {
+  const W = 300, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
+  const H = TOP + rows.length * (BH + GAP) + 2;
+  const span = R - L;
+  const kids = [];
+  kids.push(h('line', { x1: L, x2: L, y1: 0, y2: H - 2, stroke: 'var(--base)', 'stroke-width': 1 }));
+  rows.forEach((row, i) => {
+    const y = TOP + i * (BH + GAP);
+    const rate = row.t > 0 ? row.p / row.t : 0;
+    const w = Math.max(0, Math.min(1, rate)) * span;
+    const a = fmtCount(row.p), b = fmtCount(row.t);
+    kids.push(h('text', { x: 0, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink-2)' }, row.label));
+    kids.push(h('rect', { x: L, y: y - 2, width: span, height: BH + 4, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip': STRINGS.barTip(row.label, a, b, fmtRate(row.p, row.t)) }));
+    if (w > 0) kids.push(h('path', { d: barPath(L, y, w, BH, 4), fill: row.color, 'pointer-events': 'none' }));
+    kids.push(h('text', { x: L + w + 4, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink)', 'pointer-events': 'none' }, a + ' of ' + b));
+    if (row.tick && row.tick.t > 0) {
+      const tx = L + Math.max(0, Math.min(1, row.tick.p / row.tick.t)) * span;
+      kids.push(h('rect', { x: tx - 1, y: y - 3, width: 2, height: BH + 6, fill: 'var(--ink)', class: 'mark', tabindex: 0,
+        'data-tip': STRINGS.tickTip(fmtCount(row.tick.p), fmtCount(row.tick.t), fmtRate(row.tick.p, row.tick.t)) }));
+    }
+  });
+  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
+}
+
+function sparkline(points, refMs) {
+  if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
+  const W = 260, H = 36, PAD = 6;
+  const maxAbs = Math.max(0.1, ...points.map((p) => Math.abs(p.gain)));
+  const x = (w) => PAD + ((WINDOW_WEEKS - 1 - w) / (WINDOW_WEEKS - 1)) * (W - 2 * PAD);
+  const y = (g) => H / 2 - (g / maxAbs) * (H / 2 - PAD);
+  const kids = [h('line', { x1: PAD, x2: W - PAD, y1: y(0), y2: y(0), stroke: 'var(--base)', 'stroke-width': 1 })];
+  if (points.length > 1) {
+    kids.push(h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
+      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  }
+  points.forEach((p, i) => {
+    const last = i === points.length - 1;
+    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: last ? 4 : 2.5, fill: 'var(--s1)',
+      stroke: 'var(--surface)', 'stroke-width': 2, 'pointer-events': 'none' }));
+    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)) }));
+  });
+  return h('div', null,
+    h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
+    h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
+}
+
+function chip(kind) {
+  return h('span', { class: 'chip ' + kind, title: STRINGS.chips[kind] + ': ' + STRINGS.chipRules[kind], tabindex: 0,
+    'aria-label': STRINGS.chips[kind] + '. ' + STRINGS.chipRules[kind] },
+    h('span', { class: 'ic', 'aria-hidden': 'true' }), STRINGS.chips[kind]);
+}
+
+function legend(items) {
+  return h('div', { class: 'legend' }, items.map((it) =>
+    h('span', null, h('span', { class: it.tick ? 'sw tick' : 'sw', style: it.tick ? null : 'background:' + it.color }), it.label)));
+}
+
+function modelCharts(pooled, subject) {
+  return pooled.models.filter((m) => m.n > 0 || m.nAbl > 0).map((m) => {
+    const name = friendlyModel(m.model);
+    let rows;
+    if (subject === 'guidance') {
+      rows = [];
+      if (m.n > 0) {
+        rows.push({ label: STRINGS.barSection, p: m.wp, t: m.wt, color: 'var(--s1)' });
+        rows.push({ label: STRINGS.barNone, p: m.op, t: m.ot, color: 'var(--s2)' });
+      }
+      if (m.nAbl > 0) rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)', tick: { p: m.fp, t: m.ft } });
+    } else if (subject === 'whole') {
+      rows = [{ label: STRINGS.barWholeFull, p: m.wp, t: m.wt, color: 'var(--s1)' },
+        { label: STRINGS.barWholeNone, p: m.op, t: m.ot, color: 'var(--s2)' }];
+    } else {
+      rows = [{ label: STRINGS.barWith, p: m.wp, t: m.wt, color: 'var(--s1)' },
+        { label: STRINGS.barWithout, p: m.op, t: m.ot, color: 'var(--s2)' }];
+    }
+    return h('div', null,
+      h('p', { class: 'model' }, name + ' (' + STRINGS.pairedRuns(Math.max(m.n, m.nAbl))
+        + (m.judgeWith !== null && m.judgeWithout !== null ? '; ' + STRINGS.judgeScores(m.judgeWith.toFixed(1), m.judgeWithout.toFixed(1)) : '') + ')'),
+      barChart(rows, STRINGS.chartLabel(name)));
+  });
+}
+
+function legendFor(subject, pooled) {
+  if (subject === 'guidance') {
+    const items = [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }];
+    if (pooled.models.some((m) => m.nAbl > 0)) {
+      items.push({ label: STRINGS.barAblated, color: 'var(--s3)' });
+      items.push({ label: STRINGS.tickAll, tick: true });
+    }
+    return legend(items);
+  }
+  if (subject === 'whole') return legend([{ label: STRINGS.barWholeFull, color: 'var(--s1)' }, { label: STRINGS.barWholeNone, color: 'var(--s2)' }]);
+  return legend([{ label: STRINGS.barWith, color: 'var(--s1)' }, { label: STRINGS.barWithout, color: 'var(--s2)' }]);
+}
+
+function hasData(pooled) { return pooled.models.some((m) => m.n > 0 || m.nAbl > 0); }
+
+function verdictLine(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const key = String(v);
+  return h('p', { class: 'meta' }, Object.prototype.hasOwnProperty.call(STRINGS.verdict, key) ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key)));
+}
+
+/* --- view models --- */
+
+function context(doc) {
+  const refMs = parseTime(doc.generated_at);
+  const roster = (doc.roster && Array.isArray(doc.roster.arms)) ? doc.roster.arms : [];
+  return { refMs: refMs, order: roster.map((a) => a && a.model).filter(Boolean), alerts: doc.alerts };
+}
+
+function skillItems(doc) {
+  const c = context(doc);
+  const skills = Array.isArray(doc.skills) ? doc.skills : [];
+  return skills.filter((s) => s && (s.status === 'covered' || (Array.isArray(s.runs) && s.runs.length)))
+    .map((s) => {
+      const pooled = poolRuns(s.runs, 'skills', c.refMs, c.order);
+      return { name: String(s.name || ''), raw: s, pooled: pooled,
+        chip: chipFor(pooled, { subject: 'skills', regression: hasRegression(c.alerts, 'skill', s.name) }),
+        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
+    }).sort((a, b) => ((b.pooled.all.n > 0) - (a.pooled.all.n > 0)) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+function sectionItems(doc, sortBy) {
+  const c = context(doc);
+  const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
+  const items = secs.filter((s) => s && s.id).map((s) => {
+    const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
+    return { id: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
+      chip: chipFor(pooled, { subject: 'guidance', regression: hasRegression(c.alerts, 'guidance', s.id) }),
+      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
+      perKb: gainPerKb(pooled, s.bytes) };
+  });
+  if (sortBy === 'size') items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
+  else items.sort((a, b) => {
+    if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
+    if (a.perKb === null) return 1;
+    if (b.perKb === null) return -1;
+    return b.perKb - a.perKb || (a.id < b.id ? -1 : 1);
+  });
+  return items;
+}
+
+function wholeGuidance(doc) {
+  const c = context(doc);
+  const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
+  const runs = [];
+  secs.forEach((s) => (Array.isArray(s && s.runs) ? s.runs : []).forEach((r) => runs.push(r)));
+  const pooled = poolRuns(runs, 'whole', c.refMs, c.order);
+  return { pooled: pooled, chip: chipFor(pooled, { subject: 'whole' }), sentence: sentenceFor(pooled, 'whole', c.refMs),
+    trend: weeklyGains(runs, 'whole', c.refMs) };
+}
+
+/* --- page sections --- */
+
+function introView(mode) {
+  const paras = mode === 'guidance' ? STRINGS.introGuidance : STRINGS.introSkills;
+  const terms = STRINGS.glossary.concat(mode === 'guidance' ? STRINGS.glossaryGuidance : []);
+  const chipKinds = STRINGS.chipOrder.filter((k) => mode === 'guidance' || k !== 'alone');
+  return h('section', null,
+    h('h2', null, STRINGS.introHeading),
+    h('div', { class: 'lead' }, paras.map((p) => h('p', null, p))),
+    h('details', { class: 'panel', open: '' },
+      h('summary', null, STRINGS.glossaryHeading),
+      h('dl', { class: 'gloss' }, terms.map((t) => [h('dt', null, t[0]), h('dd', null, t[1])])),
+      h('p', { class: 'note', style: 'margin-top:12px' }, STRINGS.chipGlossaryIntro),
+      h('dl', { class: 'gloss' }, chipKinds.map((k) => [h('dt', null, chip(k)), h('dd', null, STRINGS.chipRules[k])]))));
+}
+
+function skillCard(it, refMs) {
+  return h('article', { class: 'card' },
+    h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
+    h('p', { class: 'sent' }, clean(it.sentence)),
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
+    verdictLine(it.raw.verdict));
+}
+
+function sectionCard(it, refMs) {
+  const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
+  return h('article', { class: 'card' },
+    h('div', { class: 'head' }, h('h3', null, clean(it.raw.heading || it.id)), chip(it.chip)),
+    h('p', { class: 'gl' }, gloss),
+    h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
+    h('p', { class: 'sent' }, clean(it.sentence)),
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
+    verdictLine(it.raw.verdict));
+}
+
+function chipSummary(items, mode) {
+  const counts = {};
+  items.forEach((i) => { counts[i.chip] = (counts[i.chip] || 0) + 1; });
+  const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => counts[k] + ' ' + STRINGS.chips[k].toLowerCase());
+  if (!parts.length) return null;
+  return h('p', { class: 'summary-line' }, STRINGS.summaryCounts(parts.join(', ')));
+}
+
+function rosterView(doc) {
+  const r = doc.roster || {};
+  const arms = Array.isArray(r.arms) ? r.arms : [];
+  const items = arms.filter(Boolean).map((a) => h('li', null, h('strong', null, STRINGS.rosterArm + ': ' + friendlyModel(a.model)),
+    a.reason ? h('div', { class: 'reason' }, clean(a.reason)) : null));
+  if (r.judge && r.judge.model) items.push(h('li', null, h('strong', null, STRINGS.rosterJudge + ': ' + friendlyModel(r.judge.model)),
+    r.judge.reason ? h('div', { class: 'reason' }, clean(r.judge.reason)) : null));
+  return h('section', null, h('h2', null, STRINGS.rosterHeading), h('p', { class: 'lead' }, STRINGS.rosterIntro),
+    items.length ? h('ul', { class: 'plain' }, items) : h('p', null, STRINGS.rosterEmpty));
+}
+
+function coverageView(doc, mode) {
+  const list = mode === 'guidance'
+    ? ((doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : []).filter(Boolean).map((s) => ({ name: s.heading || s.id, status: s.status, reason: s.skip_reason }))
+    : (Array.isArray(doc.skills) ? doc.skills : []).filter(Boolean).map((s) => ({ name: s.name, status: s.status, reason: s.skip_reason }));
+  const group = (status, title) => {
+    const rows = list.filter((x) => x.status === status).sort((a, b) => String(a.name) < String(b.name) ? -1 : 1);
+    return h('div', { class: 'panel' }, h('h3', null, title + ' (' + rows.length + ')'),
+      rows.length ? h('ul', { class: 'plain' }, rows.map((x) => h('li', null, clean(x.name),
+        status === 'skipped' && x.reason ? h('div', { class: 'reason' }, clean(x.reason)) : null))) : h('p', { class: 'note' }, STRINGS.noneListed));
+  };
+  const cov = doc.coverage;
+  const census = mode !== 'guidance' && cov && typeof cov.total === 'number'
+    ? h('p', { class: 'note' }, STRINGS.census(fmtDay(parseTime(cov.as_of)), fmtCount(cov.total), fmtCount(cov.covered), fmtCount(cov.skipped), fmtCount(cov.gap)))
+    : null;
+  return h('section', null, h('h2', null, STRINGS.coverageHeading),
+    h('p', { class: 'lead' }, mode === 'guidance' ? STRINGS.coverageIntroGuidance : STRINGS.coverageIntroSkills), census,
+    h('div', { class: 'cols' }, group('covered', STRINGS.covered), group('skipped', STRINGS.skipped), group('gap', STRINGS.gap)));
+}
+
+function alertsView(doc, mode) {
+  const want = mode === 'guidance' ? 'guidance' : 'skill';
+  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
+  return h('section', null, h('h2', null, STRINGS.alertsHeading),
+    alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
+      const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
+      const l = link(a.url, STRINGS.alertDetails);
+      return h('li', null, h('strong', null, kind + ': ' + clean(a.name)), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
+        a.text ? ' ' + clean(a.text) : null, l ? [' ', l] : null);
+    })) : h('p', null, STRINGS.alertsNone));
+}
+
+function engineersView(doc, mode, url) {
+  const guidance = mode === 'guidance';
+  const subjects = guidance
+    ? ((doc.guidance && doc.guidance.sections) || []).filter(Boolean).map((s) => ({ name: s.id, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason, alone: s.alone_verdict }))
+    : (doc.skills || []).filter(Boolean).map((s) => ({ name: s.name, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason }));
+  const refMs = parseTime(doc.generated_at);
+  const cell = (a) => a ? fmtCount(a.passed) + '/' + fmtCount(a.total) : '';
+  const head = [STRINGS.colName, STRINGS.colFixture, STRINGS.colModel, STRINGS.colWhen, STRINGS.colCli]
+    .concat(guidance ? [STRINGS.colSection, STRINGS.colNone, STRINGS.colFull, STRINGS.colAblated] : [STRINGS.colWith, STRINGS.colWithout])
+    .concat([STRINGS.colReport]);
+  const rows = [];
+  subjects.forEach((s) => (Array.isArray(s.runs) ? s.runs : []).forEach((raw) => {
+    const r = normRun(raw, guidance ? 'guidance' : 'skills');
+    if (!r) return;
+    const l = link(r.url, STRINGS.report);
+    rows.push(h('tr', null, h('td', null, clean(s.name)), h('td', null, clean(r.fixture)), h('td', null, friendlyModel(r.model)),
+      h('td', { class: 'num' }, fmtDay(r.at, refMs)), h('td', { class: 'num' }, clean(r.cli)),
+      guidance ? [h('td', { class: 'num' }, cell(r.with)), h('td', { class: 'num' }, cell(r.without)), h('td', { class: 'num' }, cell(r.full)), h('td', { class: 'num' }, cell(r.ablated))]
+        : [h('td', { class: 'num' }, cell(r.with)), h('td', { class: 'num' }, cell(r.without))],
+      h('td', null, l)));
+  }));
+  const verdicts = subjects.filter((s) => s.verdict || s.reason).map((s) => h('tr', null, h('td', null, clean(s.name)),
+    h('td', null, clean(s.verdict) + (s.alone ? ' / ' + clean(s.alone) : '') + (s.reason ? ': ' + clean(s.reason) : ''))));
+  const src = doc.source || {};
+  const short = (x) => /^[0-9a-f]{7,40}$/.test(String(x || '')) ? String(x).slice(0, 12) : STRINGS.unknown;
+  return h('section', null, h('details', { class: 'panel' }, h('summary', null, STRINGS.engineersHeading),
+    h('p', { class: 'note' }, STRINGS.engineersIntro),
+    h('p', { class: 'note' }, STRINGS.dataFile(url)),
+    src.repository ? h('p', { class: 'note' }, STRINGS.source(clean(src.repository), short(src.repository_commit), short(src.results_commit))) : null,
+    h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, h('tr', null, head.map((c) => h('th', null, c)))), h('tbody', null, rows))),
+    verdicts.length ? h('div', { class: 'tablewrap', style: 'margin-top:12px' }, h('table', null,
+      h('thead', null, h('tr', null, h('th', null, STRINGS.colName), h('th', null, STRINGS.colVerdict))), h('tbody', null, verdicts))) : null));
+}
+
+function toolbar(mode, sortBy, handlers) {
+  const hd = handlers || {};
+  const seg = (label, opts) => h('div', { class: 'toolbar' }, h('span', { class: 'note' }, label),
+    h('div', { class: 'seg', role: 'group', 'aria-label': label }, opts.map((o) =>
+      h('button', { type: 'button', 'aria-pressed': o.on ? 'true' : 'false', onclick: o.fn || null }, o.text))));
+  return seg(STRINGS.modeLabel, [
+    { text: STRINGS.modeSkills, on: mode === 'skills', fn: hd.skills },
+    { text: STRINGS.modeGuidance, on: mode === 'guidance', fn: hd.guidance }]);
+}
+
+function buildPage(doc, mode, opts) {
+  const o = opts || {};
+  const refMs = parseTime(doc.generated_at);
+  const newest = parseTime(doc.newest_run);
+  const top = [
+    h('h1', null, mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title),
+    h('p', { class: 'asof' }, STRINGS.dataAsOf(fmtDateTime(refMs)), ' ', isFinite(newest) ? STRINGS.newestRun(fmtDateTime(newest)) : STRINGS.noRunsYet),
+    toolbar(mode, o.sortBy, o.handlers),
+    o.notice ? h('p', { class: 'panel failure' }, o.notice) : null,
+    introView(mode)
+  ];
+  let body;
+  if (mode === 'guidance') {
+    const whole = wholeGuidance(doc);
+    const items = sectionItems(doc, o.sortBy);
+    const hd = o.handlers || {};
+    body = [
+      h('section', { class: 'headline' }, h('h2', null, STRINGS.wholeHeading),
+        h('div', { class: 'panel' },
+          h('div', { class: 'head', style: 'display:flex;gap:8px;justify-content:space-between;align-items:flex-start' },
+            h('p', { class: 'answer' }, STRINGS.wholeAnswer[whole.chip]), chip(whole.chip)),
+          h('p', { class: 'note' }, STRINGS.wholeNote),
+          h('p', { class: 'sent' }, clean(whole.sentence)),
+          legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
+          sparkline(whole.trend, refMs))),
+      h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
+        chipSummary(items, mode),
+        h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
+          h('div', { class: 'seg', role: 'group', 'aria-label': STRINGS.sortLabel },
+            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'false' : 'true', onclick: hd.sortValue || null }, STRINGS.sortValue),
+            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
+        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs))) : h('p', null, STRINGS.noCards))
+    ];
+  } else {
+    const items = skillItems(doc);
+    body = [h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
+      chipSummary(items, mode),
+      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs))) : h('p', null, STRINGS.noCards))];
+  }
+  return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
+}
+
+function buildFailure(result, mode) {
+  let msg;
+  if (result.kind === 'schema') msg = STRINGS.failSchema(result.got);
+  else if (result.kind === 'parse') msg = STRINGS.failParse;
+  else if (result.kind === 'badurl') msg = STRINGS.failBadUrl;
+  else msg = STRINGS.failFetch;
+  return h('div', null,
+    h('h1', null, mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title),
+    h('div', { class: 'panel failure', role: 'alert' },
+      h('h2', { style: 'margin-top:0' }, STRINGS.failHeading),
+      h('p', null, msg),
+      h('p', null, STRINGS.failFile(result.url || DEFAULT_DATA_URL)),
+      h('p', null, STRINGS.failWhat)));
+}
+
+/* ------------------------------------------------------------------ */
+/* Browser start-up.                                                  */
+/* ------------------------------------------------------------------ */
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof module === 'undefined') {
+  (function boot() {
+    const app = document.getElementById('app');
+    const tip = document.getElementById('tip');
+    const state = { mode: modeFromSearch(location.search), sortBy: 'value', doc: null, url: DEFAULT_DATA_URL, notice: null };
+    try { const s = localStorage.getItem('explorer-sort'); if (s === 'size' || s === 'value') state.sortBy = s; } catch (e) { /* storage unavailable */ }
+
+    function mount(node) {
+      while (app.firstChild) app.removeChild(app.firstChild);
+      app.appendChild(toDom(node, document));
+      document.title = state.mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title;
+    }
+    function setMode(m) {
+      state.mode = m;
+      try { history.replaceState(null, '', location.pathname + searchForMode(location.search, m) + location.hash); } catch (e) { /* sandboxed frame */ }
+      render();
+    }
+    function setSort(s) {
+      state.sortBy = s;
+      try { localStorage.setItem('explorer-sort', s); } catch (e) { /* storage unavailable */ }
+      render();
+    }
+    function render() {
+      mount(buildPage(state.doc, state.mode, { sortBy: state.sortBy, url: state.url, notice: state.notice, handlers: {
+        skills: () => setMode('skills'), guidance: () => setMode('guidance'),
+        sortValue: () => setSort('value'), sortSize: () => setSort('size') } }));
+    }
+    function showTip(target) {
+      const text = target && target.getAttribute && target.getAttribute('data-tip');
+      if (!text) { tip.hidden = true; return; }
+      tip.textContent = text;
+      tip.hidden = false;
+      const r = target.getBoundingClientRect();
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
+      let top = r.top - th - 8;
+      if (top < 8) top = r.bottom + 8;
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    }
+    app.addEventListener('pointerover', (e) => showTip(e.target.closest ? e.target.closest('[data-tip]') : null));
+    app.addEventListener('pointerout', () => { tip.hidden = true; });
+    app.addEventListener('focusin', (e) => showTip(e.target));
+    app.addEventListener('focusout', () => { tip.hidden = true; });
+    window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+
+    const pick = dataUrlFromSearch(location.search);
+    if (pick.error) { mount(buildFailure({ kind: 'badurl', url: pick.url }, state.mode)); return; }
+    state.url = pick.url;
+    loadData(pick.url, (u, o) => fetch(u, o), Date.now()).then((res) => {
+      if (!res.ok) { mount(buildFailure(res, state.mode)); return; }
+      state.doc = res.doc;
+      try { render(); } catch (e) {
+        mount(buildFailure({ kind: 'parse', url: pick.url }, state.mode));
+      }
+    });
+  })();
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, DEFAULT_DATA_URL,
+    STRINGS, GLOSSES, GLOSS_MISSING,
+    clean, githubLink, friendlyModel, fmtDay, fmtDateTime, fmtCount, wordsFor,
+    modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
+    poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
+    skillItems, sectionItems, wholeGuidance, buildPage, buildFailure, h, textOf, findAll, toDom
+  };
+}
+</script>
+</body>
+</html>

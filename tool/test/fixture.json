@@ -1,0 +1,1337 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-31T21:00:00Z",
+  "newest_run": "2026-10-31T20:00:00Z",
+  "source": {
+    "repository": "Adam-S-Daniel/skills-evals",
+    "repository_commit": "0000000000000000000000000000000000000000",
+    "results_commit": "1111111111111111111111111111111111111111"
+  },
+  "roster": {
+    "arms": [
+      {
+        "model": "example-large-2-0",
+        "reason": "The example large model, chosen because most example sessions use it. Contact someone@example.com."
+      },
+      {
+        "model": "example-small-1-5",
+        "reason": "The example small model, chosen because it is the cheaper default."
+      }
+    ],
+    "judge": {
+      "model": "example-judge-3-0",
+      "reason": "A stronger example model that is not itself tested."
+    }
+  },
+  "policy": {
+    "min_runs": 5,
+    "min_cli_versions": 2,
+    "objective_margin": 0.05
+  },
+  "skills": [
+    {
+      "name": "example-skill-alpha",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "covered",
+      "skip_reason": null,
+      "verdict": "insufficient",
+      "verdict_reason": "a cell is insufficient or missing",
+      "runs": [
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-31T20:00:00Z",
+          "cli_version": "9.1.100",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 5,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-0/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-17T19:00:00Z",
+          "cli_version": "9.1.101",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 5,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-1/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-09-26T18:00:00Z",
+          "cli_version": "9.1.102",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 5,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-2/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-10-24T17:00:00Z",
+          "cli_version": "9.1.103",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-3/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-10-10T16:00:00Z",
+          "cli_version": "9.1.104",
+          "with": {
+            "trials": 3,
+            "checks_passed": 6,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 6,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-4/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-09-05T15:00:00Z",
+          "cli_version": "9.1.105",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-5/report.md"
+        }
+      ]
+    },
+    {
+      "name": "example-skill-beta",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "covered",
+      "skip_reason": null,
+      "verdict": "ceiling",
+      "verdict_reason": "both arms pass every check",
+      "runs": [
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-31T20:00:00Z",
+          "cli_version": "9.1.100",
+          "with": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-0/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-03T19:00:00Z",
+          "cli_version": "9.1.101",
+          "with": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-1/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-08-29T18:00:00Z",
+          "cli_version": "9.1.102",
+          "with": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-2/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-10-31T17:00:00Z",
+          "cli_version": "9.1.103",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-3/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-09-19T16:00:00Z",
+          "cli_version": "9.1.104",
+          "with": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 9,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-4/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-08-08T15:00:00Z",
+          "cli_version": "9.1.105",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 9,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-5/report.md"
+        }
+      ]
+    },
+    {
+      "name": "example-skill-gamma",
+      "registry": "example-registry",
+      "bundle": null,
+      "status": "covered",
+      "skip_reason": null,
+      "verdict": null,
+      "verdict_reason": null,
+      "runs": [
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-24T20:00:00Z",
+          "cli_version": "9.1.100",
+          "with": {
+            "trials": 3,
+            "checks_passed": 6,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/gamma-0/report.md"
+        }
+      ]
+    },
+    {
+      "name": "example-skill-delta",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "covered",
+      "skip_reason": null,
+      "verdict": "retain",
+      "verdict_reason": "helps on every cell",
+      "runs": [
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-31T20:00:00Z",
+          "cli_version": "9.1.100",
+          "with": {
+            "trials": 3,
+            "checks_passed": 5,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 6,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-0/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-10-10T19:00:00Z",
+          "cli_version": "9.1.101",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-1/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-large-2-0",
+          "at": "2026-09-12T18:00:00Z",
+          "cli_version": "9.1.102",
+          "with": {
+            "trials": 3,
+            "checks_passed": 8,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-2/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-10-17T17:00:00Z",
+          "cli_version": "9.1.103",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-3/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-10-03T16:00:00Z",
+          "cli_version": "9.1.104",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-4/report.md"
+        },
+        {
+          "fixture": "example-task",
+          "model": "example-small-1-5",
+          "at": "2026-08-22T15:00:00Z",
+          "cli_version": "9.1.105",
+          "with": {
+            "trials": 3,
+            "checks_passed": 7,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 4,
+            "checks_total": 8,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-5/report.md"
+        }
+      ]
+    },
+    {
+      "name": "example-skill-epsilon",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "skipped",
+      "skip_reason": "It only reformats text, so there is nothing to check.",
+      "verdict": null,
+      "verdict_reason": null,
+      "runs": []
+    },
+    {
+      "name": "example-skill-zeta",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "gap",
+      "skip_reason": null,
+      "verdict": null,
+      "verdict_reason": null,
+      "runs": []
+    },
+    {
+      "name": "example-skill-leaky",
+      "registry": "example-registry",
+      "bundle": "example-bundle",
+      "status": "covered",
+      "skip_reason": null,
+      "verdict": "insufficient",
+      "verdict_reason": "see /home/example/notes and cse_0123456789",
+      "runs": [
+        {
+          "fixture": "cse_ABCDEF0123",
+          "model": "example-large-2-0",
+          "at": "2026-10-31T20:00:00Z",
+          "cli_version": "someone@example.com",
+          "with": {
+            "trials": 3,
+            "checks_passed": 3,
+            "checks_total": 4,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "without": {
+            "trials": 3,
+            "checks_passed": 2,
+            "checks_total": 4,
+            "judge_mean": 6.5,
+            "cost_usd": 0.25
+          },
+          "report_url": "https://example.com/not-github"
+        }
+      ]
+    }
+  ],
+  "guidance": {
+    "sections": [
+      {
+        "id": "anything-you-name-gets-its-link",
+        "heading": "Anything you name gets its link",
+        "bytes": 886,
+        "status": "covered",
+        "skip_reason": null,
+        "verdict": "retain",
+        "verdict_reason": "helps in situ",
+        "alone_verdict": "retain",
+        "runs": [
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-31T20:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-0/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-17T19:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-1/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-03T18:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-2/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-24T17:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-3/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-10T16:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-4/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-09-19T15:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/link-5/report.md"
+          }
+        ]
+      },
+      {
+        "id": "security",
+        "heading": "Security",
+        "bytes": 431,
+        "status": "covered",
+        "skip_reason": null,
+        "verdict": "insufficient",
+        "verdict_reason": "needs more runs",
+        "alone_verdict": "retain",
+        "runs": [
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-31T20:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-0/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-17T19:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 8,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 8,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-1/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-09-26T18:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-2/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-24T17:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-3/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-03T16:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-4/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-08-29T15:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 8,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 8,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/sec-5/report.md"
+          }
+        ]
+      },
+      {
+        "id": "workstation-layout",
+        "heading": "Workstation layout",
+        "bytes": 149,
+        "status": "covered",
+        "skip_reason": null,
+        "verdict": null,
+        "verdict_reason": null,
+        "alone_verdict": null,
+        "runs": [
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-24T20:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 5,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 2,
+                "checks_total": 5,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 5,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 5,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/ws-0/report.md"
+          }
+        ]
+      },
+      {
+        "id": "git-practices",
+        "heading": "Git practices",
+        "bytes": 1396,
+        "status": "covered",
+        "skip_reason": null,
+        "verdict": "insufficient",
+        "verdict_reason": "needs more runs",
+        "alone_verdict": "insufficient",
+        "runs": [
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-31T20:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-0/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-10T19:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-1/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-09-05T18:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-2/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-17T17:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-3/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-09-26T16:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-4/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-08-15T15:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/git-5/report.md"
+          }
+        ]
+      },
+      {
+        "id": "read-before-you-start",
+        "heading": "Read before you start",
+        "bytes": 295,
+        "status": "skipped",
+        "skip_reason": "It only lists pages to read, so no task can show a difference.",
+        "verdict": null,
+        "verdict_reason": null,
+        "alone_verdict": null,
+        "runs": []
+      },
+      {
+        "id": "section-go",
+        "heading": "Go",
+        "bytes": 313,
+        "status": "gap",
+        "skip_reason": null,
+        "verdict": null,
+        "verdict_reason": null,
+        "alone_verdict": null,
+        "runs": []
+      }
+    ]
+  },
+  "coverage": {
+    "as_of": "2026-10-31T14:36:31Z",
+    "covered": 5,
+    "skipped": 1,
+    "gap": 1,
+    "total": 7
+  },
+  "alerts": [
+    {
+      "kind": "regression",
+      "subject": "skill",
+      "name": "example-skill-delta",
+      "model": "example-large-2-0",
+      "text": "Checks passed fell this week compared with the last four weeks. Logged at /home/example/log.",
+      "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/1"
+    },
+    {
+      "kind": "retire",
+      "subject": "skill",
+      "name": "example-skill-beta",
+      "text": "Claude passes every check without it.",
+      "url": "javascript:alert(1)"
+    },
+    {
+      "kind": "regression",
+      "subject": "guidance",
+      "name": "example-unlisted-section",
+      "model": "example-small-1-5",
+      "text": "Example guidance alert.",
+      "url": null
+    }
+  ]
+}

@@ -1,0 +1,205 @@
+# Preview a PR of this repo inside the adamdaniel.ai site: mirrors the PR's
+# tool/index.html to a draft PR in the site repo, whose existing deploy-preview
+# pipeline then publishes https://preview-pr<N>.adamdaniel.ai/tools/skills-evals/
+# (and /tools/guidance-evals/) rendering this PR's page. The preview URLs are
+# commented back here. Closing this PR closes the mirror (the site tears the
+# preview down on the mirror PR's close event). Merging it makes site-sync
+# supersede the mirror. Derived from claude-memory-map's site-preview.yml, the
+# reference implementation.
+#
+# No paths filter, deliberately: the teardown leg must run even when the final
+# diff no longer touches tool/index.html, and the mirror leg closes a stale
+# mirror if a rebase dropped the tool/index.html change. Both legs are cheap
+# API calls when there is nothing to do.
+name: Site preview
+run-name: "PR #${{ github.event.pull_request.number }} → site preview (${{ github.event.action }})"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# `mirror` and `teardown` publish to adamdaniel.ai, not a verdict on this PR;
+# they are deliberately NOT required status checks. This `cancel-in-progress`
+# group is what supersedes a stale mirror once a new push lands; a job with a
+# concurrency group must never publish a REQUIRED context, because a
+# cancelled run on a shared head sha blocks the merge API outright with
+# `405 Required status check ... is cancelled` (cms-platform#437).
+concurrency:
+  group: site-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write # comment the preview links on this PR (GITHUB_TOKEN)
+
+env:
+  SITE_REPO: Adam-S-Daniel/adamdaniel.ai
+  PREVIEW_BRANCH: tool-preview/skills-evals-pr-${{ github.event.pull_request.number }}
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  COMMENT_MARKER: "<!-- skills-evals-site-preview -->"
+  FIX_HINT: install the eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai (Contents and Pull requests read-write) and keep the EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM secrets set. See README, Publishing to adamdaniel.ai.
+
+jobs:
+  # Same-repo PRs only: fork PRs don't get secrets, and this repo's PRs are
+  # branch PRs by convention.
+  mirror:
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Does this PR change tool/index.html?
+        id: relevance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh pr view "$PR_NUMBER" -R "$GITHUB_REPOSITORY" --json files -q '.files[].path')
+          if grep -qxF -- 'tool/index.html' <<<"$files"; then
+            echo "relevant=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the App credentials exist
+        id: credential
+        if: steps.relevance.outputs.relevant == 'true'
+        env:
+          HAVE_CREDENTIAL: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: echo "present=${HAVE_CREDENTIAL}" >>"$GITHUB_OUTPUT"
+
+      - name: Mint the GitHub App token for adamdaniel.ai
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adamdaniel.ai
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Soft-skip (not a red X) while the App is unusable: a preview is a
+      # nice-to-have on a PR.
+      - name: Decide whether the site can be reached
+        id: token
+        if: steps.relevance.outputs.relevant == 'true'
+        env:
+          APP_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          if [ -n "$APP_TOKEN" ]; then
+            echo "have=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "have=false" >>"$GITHUB_OUTPUT"
+            msg="No GitHub App token for ${SITE_REPO}: skipping the site preview mirror. Fix: ${FIX_HINT}"
+            echo "::warning::$msg"
+            echo "$msg" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout PR head
+        if: steps.token.outputs.have == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Checkout site repo
+        if: steps.token.outputs.have == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          ref: main
+          token: ${{ steps.mint.outputs.token }}
+          path: site
+
+      - name: Copy tool/index.html + provenance, push preview branch
+        if: steps.token.outputs.have == 'true'
+        id: sync
+        env:
+          SITE_DIR: ${{ github.workspace }}/site
+          BRANCH: ${{ env.PREVIEW_BRANCH }}
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
+          SOURCE_REF: pr-${{ github.event.pull_request.number }}
+          SOURCE_PR: ${{ github.event.pull_request.number }}
+          COMMIT_MSG: "tools: preview Skill Evals Explorer PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
+        run: bash scripts/sync_to_site.sh
+
+      - name: Ensure the draft mirror PR
+        id: mirror
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+          SRC_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          title="Preview: Skill Evals Explorer PR #${PR_NUMBER} — ${SRC_TITLE}"
+          body="Draft mirror of ${GITHUB_REPOSITORY}#${PR_NUMBER} (head \`${HEAD_SHA::7}\`) for the site preview pipeline. Do not merge: it closes automatically when the source PR closes, and a merged source PR lands via the \`tool-sync/skills-evals\` PR instead."
+          pr=$(gh pr list -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --state open --json number -q '.[0].number')
+          if [ -z "$pr" ]; then
+            gh pr create -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --base main --draft \
+              --title "$title" --body "$body"
+            pr=$(gh pr list -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --state open --json number -q '.[0].number')
+          else
+            gh pr edit -R "$SITE_REPO" "$pr" --title "$title" --body "$body"
+          fi
+          echo "site_pr=${pr}" >>"$GITHUB_OUTPUT"
+
+      - name: Comment the preview URLs here
+        if: steps.mirror.outputs.site_pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_PR: ${{ steps.mirror.outputs.site_pr }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          skills_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/skills-evals/"
+          guidance_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/guidance-evals/"
+          comment=$(cat <<EOF
+          ${COMMENT_MARKER}
+          **Site preview:**
+          - Skills view: ${skills_url}
+          - Guidance view: ${guidance_url}
+
+          Mirrored to ${SITE_REPO}#${SITE_PR} at \`${HEAD_SHA::7}\`. The links go live once the site's *Deploy Preview* run for that PR finishes (a minute or two), and they update on every push here.
+          EOF
+          )
+          bash scripts/upsert_comment.sh "$PR_NUMBER" "$COMMENT_MARKER" "$comment"
+
+  teardown:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the App credentials exist
+        id: credential
+        env:
+          HAVE_CREDENTIAL: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: echo "present=${HAVE_CREDENTIAL}" >>"$GITHUB_OUTPUT"
+
+      - name: Mint the GitHub App token for adamdaniel.ai
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adamdaniel.ai
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Close the mirror PR (if any)
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            msg="No GitHub App token for ${SITE_REPO}: nothing to tear down. Fix: ${FIX_HINT}"
+            echo "::warning::$msg"
+            echo "$msg" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          pr=$(gh pr list -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr close -R "$SITE_REPO" "$pr" --delete-branch \
+              --comment "Source PR ${GITHUB_REPOSITORY}#${PR_NUMBER} was closed: tearing down this preview mirror."
+          else
+            echo "No open mirror PR for ${PREVIEW_BRANCH}."
+          fi
