@@ -80,10 +80,12 @@ that has checks (`NO_CHECKS_REASON`, which also keeps the cell from
 `no-benefit`); each cell records, under `skipped`, why its other runs did
 not count. An arm's run mean is the mean of those trials' pass rates. Its
 run judge figure is the mean of its trials' judge figures, and exists only
-when the run judged unconditionally (`judge_conditional` false: run_eval
-skips the judge when the with arm is already ahead on the objective, so
-conditional scores are a sample biased toward no benefit) and every one of
-those trials has a figure. A delta is mean(with run means) - mean(without
+when every one of those trials has a figure. A cell's judge figures are
+usable when no counted run judged conditionally (`judge_conditional` true:
+run_eval skips the judge when the with arm is already ahead on the
+objective, so conditional scores alone are a sample biased toward no
+benefit), or when every counted run of both arms has its figure, so no
+judge call was skipped and nothing was selected out. A delta is mean(with run means) - mean(without
 run means).
 
 THE BOUNDS (`confidence_sequence`; Adam, 2026-10-31: decide on confidence
@@ -116,7 +118,7 @@ A CELL'S CLASS (`_classify`), first match wins:
      no confident gain, the judge delta's lower bound > 0. A judge-carried
      fixture keeps on any of the three too: its judge decides, but its
      objective checks are evidence of benefit. The judge figure is usable
-     with one unconditionally judged run on each arm.
+     with one judged run on each arm (see THE NUMBERS for conditional runs).
   4. `ceiling`: both arms' pooled pass rate >= `ceiling_fraction`; for a
      judge-carried fixture, both arms' mean judge figure >= `judge_ceiling`.
   5. `no-benefit`: the objective delta's `retire_confidence` upper bound <
@@ -473,8 +475,9 @@ def run_numbers(trials: list, judge_unconditional: bool, check_ids=(),
     """One arm of one run, reduced: whether it counts (`skip_reason` None:
     `MIN_TRIALS_PER_RUN` scored or agent-errored trials, and no scored trial
     without check results when the fixture has checks, `has_checks`), its
-    run mean, its run judge figure (only when `judge_unconditional` and every
-    one of those trials has one) and whether those figures differ, its
+    run mean, its run judge figure (when every one of those trials has one;
+    `judge_conditional` records whether the call was conditional, which
+    `_classify` weighs) and whether those figures differ, its
     per-check pass rates and its pooled counts. An agent-errored trial scores
     0 on every check of `check_ids` (the cell's checks) and has no judge
     figure; an infrastructure error is left out."""
@@ -491,8 +494,7 @@ def run_numbers(trials: list, judge_unconditional: bool, check_ids=(),
         skip = None
     rates = [sum(t["checks"].values()) / len(t["checks"]) for t in scored if t["checks"]]
     figures = [t["judge"] for t in scored]
-    judged = (judge_unconditional and len(scored) >= MIN_TRIALS_PER_RUN
-              and None not in figures)
+    judged = len(scored) >= MIN_TRIALS_PER_RUN and None not in figures
     per_check: dict = {}
     for t in scored:
         for key, passed in t["checks"].items():
@@ -501,6 +503,7 @@ def run_numbers(trials: list, judge_unconditional: bool, check_ids=(),
     cost = _finite_sum(costs)
     return {"scored_trials": len(scored), "errored_trials": len(errored),
             "counted": skip is None, "skip_reason": skip,
+            "judge_conditional": not judge_unconditional,
             "run_mean": _mean(rates) if rates else None,
             "judge_mean": _mean(figures) if judged else None,
             "judge_spread": bool(judged and not _constant(figures)),
@@ -548,6 +551,7 @@ def _arm_summary(runs: list) -> dict:
             "pass_rate": passed / total if total else None,
             "run_means": means, "mean_of_run_means": _mean(means) if means else None,
             "judge_runs": len(judged), "judge_run_means": judged,
+            "judge_conditional_runs": sum(r["numbers"]["judge_conditional"] for r in runs),
             "judge_figure": _mean(judged) if judged else None}
 
 
@@ -620,7 +624,13 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     objective_ceiling = all(r is not None and r >= policy["ceiling_fraction"]
                             for r in rates)
     wj, oj = arms["with"]["judge_run_means"], arms["without"]["judge_run_means"]
-    judge_ok = bool(wj and oj)
+    # A conditional judge call is skipped when its pair's objective already
+    # favors the with arm, so conditional figures are a sample biased toward
+    # no benefit: unless every counted run of BOTH arms has its figure, in
+    # which case none was skipped and nothing was selected out (2026-10-31).
+    conditional = any(arms[a]["judge_conditional_runs"] for a in arms)
+    complete = all(arms[a]["judge_runs"] == arms[a]["runs"] for a in arms)
+    judge_ok = bool(wj and oj) and (complete or not conditional)
     judge_ceiling = judge_ok and all(arms[a]["judge_figure"] >= policy["judge_ceiling"]
                                      for a in arms)
     wm, om = arms["with"]["run_means"], arms["without"]["run_means"]
@@ -658,7 +668,8 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                         "a removal needs")
         return done("no-benefit", cls_reason)
 
-    judge_words = "the judge figure needs an unconditionally judged run on each arm"
+    judge_words = ("the judge figure needs a judged run on each arm, and every "
+                   "counted run judged when any judge call was conditional")
     if judge_carried:
         # Decided on the judge, but a judge-carried fixture with objective
         # checks keeps on them too, and is no-benefit only when they are.
@@ -692,7 +703,8 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
         return done("ceiling", "both arms' pass rate at or above "
                     f"{policy['ceiling_fraction']}")
     if not judge_ok:
-        return done("insufficient", f"the judge is needed: {judge_words}")
+        return done("insufficient", "the objective interval is not tight enough "
+                    f"yet, and the judge is needed to remove: {judge_words}")
     if out["objective"]["retire_upper"] < policy["objective_margin"] \
             and out["judge"]["retire_upper"] < policy["judge_margin"]:
         return no_benefit("every delta's upper bound is under its margin")
