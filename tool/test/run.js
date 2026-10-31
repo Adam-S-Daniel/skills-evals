@@ -145,6 +145,32 @@ test('fixture cards get the expected chips', () => {
   eq(secs['git-practices'], 'none');
   eq(secs['workstation-layout'], 'insufficient');
 });
+test('skills sort by helpfulness: chip group first, then gain, highest first', () => {
+  const items = P.skillItems(fixture);
+  eq(items.map((i) => i.name).join(','),
+    'example-skill-alpha,example-skill-beta,example-skill-gamma,example-skill-leaky,example-skill-delta');
+  const rank = ['helps', 'none', 'insufficient', 'worse'];
+  items.forEach((it, i) => {
+    if (i === 0) return;
+    const p = items[i - 1];
+    const rp = rank.indexOf(p.chip), rc = rank.indexOf(it.chip);
+    ok(rp < rc || (rp === rc && (p.pooled.all.gain === null ? it.pooled.all.gain === null
+      : it.pooled.all.gain === null || p.pooled.all.gain >= it.pooled.all.gain)), 'order at ' + it.name);
+  });
+});
+test('each skill card says what the skill is for', () => {
+  eq(P.purposeOf('Write ADRs under docs/decisions/. Use when asked.'), 'Write ADRs under docs/decisions/.');
+  eq(P.purposeOf('Debug e.g. workflows. Trigger on CI.'), 'Debug e.g. workflows.');
+  eq(P.purposeOf('No final stop'), 'No final stop');
+  eq(P.purposeOf(null), null);
+  const page = P.textOf(P.buildPage(fixture, 'skills', {}));
+  ok(page.includes('Invented description of what example-skill-alpha is for.'), 'purpose on the card');
+  ok(!page.includes('Use when the test says so'), 'trigger text left off');
+  const noDesc = JSON.parse(JSON.stringify(fixture));
+  noDesc.skills.forEach((x) => { delete x.description; });
+  ok(P.textOf(P.buildPage(noDesc, 'skills', {})).includes(P.STRINGS.purposeMissing), 'fallback when absent');
+  eq(P.purposeOf('   '), null);
+});
 test('sections sort by gain per KB, or by size', () => {
   const byValue = P.sectionItems(fixture, 'value').map((i) => i.id);
   const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices'].includes(id));

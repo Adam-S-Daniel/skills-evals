@@ -164,7 +164,8 @@
           },
           "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/alpha-5/report.md"
         }
-      ]
+      ],
+      "description": "Invented description of what example-skill-alpha is for. Use when the test says so."
     },
     {
       "name": "example-skill-beta",
@@ -301,7 +302,8 @@
           },
           "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/beta-5/report.md"
         }
-      ]
+      ],
+      "description": "Invented description of what example-skill-beta is for. Use when the test says so."
     },
     {
       "name": "example-skill-gamma",
@@ -333,7 +335,8 @@
           },
           "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/gamma-0/report.md"
         }
-      ]
+      ],
+      "description": "Invented description of what example-skill-gamma is for. Use when the test says so."
     },
     {
       "name": "example-skill-delta",
@@ -470,7 +473,8 @@
           },
           "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/delta-5/report.md"
         }
-      ]
+      ],
+      "description": "Invented description of what example-skill-delta is for. Use when the test says so."
     },
     {
       "name": "example-skill-epsilon",
@@ -480,7 +484,8 @@
       "skip_reason": "It only reformats text, so there is nothing to check.",
       "verdict": null,
       "verdict_reason": null,
-      "runs": []
+      "runs": [],
+      "description": "Invented description of what example-skill-epsilon is for. Use when the test says so."
     },
     {
       "name": "example-skill-zeta",
@@ -490,7 +495,8 @@
       "skip_reason": null,
       "verdict": null,
       "verdict_reason": null,
-      "runs": []
+      "runs": [],
+      "description": "Invented description of what example-skill-zeta is for. Use when the test says so."
     },
     {
       "name": "example-skill-leaky",
@@ -522,7 +528,8 @@
           },
           "report_url": "https://example.com/not-github"
         }
-      ]
+      ],
+      "description": "Invented description of what example-skill-leaky is for. Use when the test says so."
     }
   ],
   "guidance": {

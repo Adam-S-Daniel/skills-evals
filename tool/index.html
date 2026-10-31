@@ -242,7 +242,8 @@ const STRINGS = {
   chipOrder: ['helps', 'alone', 'none', 'worse', 'insufficient'],
 
   skillsHeading: 'Does each skill help?',
-  skillsNote: 'One card per tested skill, the ones with results first. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means the skill helped that week.',
+  purposeMissing: 'A description of what this skill is for is not available.',
+  skillsNote: 'One card per tested skill, the most helpful first: skills that help, then those that make no measurable difference, then those without enough data yet, then any getting worse. Within each group, the skill that gave the biggest gain in checks passed comes first. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means the skill helped that week.',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One card per section. Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
   sortLabel: 'Order sections by',
@@ -837,6 +838,11 @@ function context(doc) {
   return { refMs: refMs, order: roster.map((a) => a && a.model).filter(Boolean), alerts: doc.alerts };
 }
 
+/* Skill cards, most helpful first: a proven gain, then no measurable
+   difference, then not enough data yet, then getting worse; by pooled gain
+   within each group. */
+const SKILL_RANK = ['helps', 'none', 'insufficient', 'worse'];
+
 function skillItems(doc) {
   const c = context(doc);
   const skills = Array.isArray(doc.skills) ? doc.skills : [];
@@ -846,7 +852,23 @@ function skillItems(doc) {
       return { name: String(s.name || ''), raw: s, pooled: pooled,
         chip: chipFor(pooled, { subject: 'skills', regression: hasRegression(c.alerts, 'skill', s.name) }),
         sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
-    }).sort((a, b) => ((b.pooled.all.n > 0) - (a.pooled.all.n > 0)) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    }).sort((a, b) => {
+      const ra = SKILL_RANK.indexOf(a.chip), rb = SKILL_RANK.indexOf(b.chip);
+      if (ra !== rb) return ra - rb;
+      const ga = a.pooled.all.gain, gb = b.pooled.all.gain;
+      if (ga !== null && gb !== null && ga !== gb) return gb - ga;
+      if ((ga === null) !== (gb === null)) return ga === null ? 1 : -1;
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+}
+
+/* What a skill is for: the first sentence of its SKILL.md description (the
+   rest says when it should load, which a reader of this page does not need). */
+function purposeOf(desc) {
+  const text = typeof desc === 'string' ? desc.trim() : '';
+  if (!text) return null;
+  const m = /^[\s\S]*?[.!?](?=\s+[A-Z(]|$)/.exec(text);
+  return (m ? m[0] : text).trim();
 }
 
 function sectionItems(doc, sortBy) {
@@ -898,6 +920,7 @@ function introView(mode) {
 function skillCard(it, refMs) {
   return h('article', { class: 'card' },
     h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
+    h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
     verdictLine(it.raw.verdict));
@@ -1130,7 +1153,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
 if (typeof module !== 'undefined') {
   module.exports = {
     SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, DEFAULT_DATA_URL,
-    STRINGS, GLOSSES, GLOSS_MISSING,
+    STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
     poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
