@@ -532,6 +532,12 @@ made it into context, proves the bridge still works. Implements
 item 3 of
 [Adam-S-Daniel/_agent-guidance#17](https://github.com/Adam-S-Daniel/_agent-guidance/issues/17).
 
+This canary covers the repo-stub path (`CLAUDE.md` importing `AGENTS.md`). The
+fleet-memory path, where the guidance arrives as user memory written by
+`fleet-memory.sh`, is covered by
+[`evals/guidance/_delivery`](evals/guidance/_delivery/fixture.yaml) (see
+"Guidance subject" above).
+
 Run it:
 
 ```bash

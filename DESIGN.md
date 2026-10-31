@@ -2246,7 +2246,8 @@ the section's own file when it is an opt-in `sections/*.md`), and
 `section`/`none` asks whether the section teaches; the declared
 `ablation: [full, full-minus-section]` pair asks what it is worth in situ,
 including any lost-in-the-middle effect of a 56 KB file. [ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md)
-(not built yet) makes the in-place pair the default. Extents are located
+makes the in-place pair the default; section fixtures declare all four arms,
+so one fire runs both pairs (see "Section fixtures, verdicts and removal"). Extents are located
 with a real markdown parse (`markdown-it-py`, pinned exact) using the same
 arithmetic as `_agent-guidance`'s own `scripts/check-guidance-coverage.js`, so
 the manifest's `bytes` column and the delivered payload can never disagree; a
@@ -2555,8 +2556,8 @@ That verdict never removes anything. The thresholds are `gate-policy.yml`'s
 
 **Removal.** `scripts/retire_skill.py --target guidance --guidance PATH`
 acts on at most one section per evaluation. `shorten-or-merge` always
-becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode
-(the committed `guidance.retirement_mode`), and in `auto` mode a branch
+becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode,
+and in `auto` mode (the committed `guidance.retirement_mode`) a branch
 `retire-guidance/<id>` in the `_agent-guidance` checkout that auto-merges.
 That branch removes the extent from `base.md` (or `git rm`s a `sections/`
 file when this was its only `##`) and re-copies `base.md` to
@@ -2565,8 +2566,37 @@ file when this was its only `##`) and re-copies `base.md` to
 `docs/guidance-impact.md` whose `Eval:` line gives the pooled run count
 (`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
 `## Repo-specific additions` heading line. A dry run lists every step.
-Auto mode is not wired: it needs a write credential for `_agent-guidance` and
-the same refusals as the skill path.
+Retirement is automatic, with no human approval (Adam, 2026-10-10, #124):
+`evals/gate-policy.yml` commits `guidance.retirement_mode: auto`, and the
+removal pull request in `_agent-guidance` is written with the eval-improve
+GitHub App's token minted for that repository alone (`skill-coverage.yml`'s
+`retirement` job). With no token it files the issue instead. The refusals match
+the skill path ([ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md),
+which covers both subjects). The decision as a fleet record is
+[_agent-guidance ADR 0030](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0030-a-sections-worth-is-measured-by-ablation-and-weighed-against-its-bytes.md).
+
+**The cost axis is bytes, and nothing divides by it.** A section's cost is the
+size of its extent, recorded as `bytes` in `_agent-guidance`'s manifest and in
+each guidance arm's summary. The retire decision weighs it only through the
+in-situ pair: a section that adds nothing inside the whole guidance is paid
+for in every session and removed. No `delta_per_kb` score (benefit per
+kilobyte) is computed anywhere, and no cap on a section's growth is enforced;
+the proposer is only told that every byte is delivered into every session
+(`scripts/propose_guidance_edit.py`, `PROPOSAL_CONSTRAINTS`).
+
+**Guidance non-coverage lives in `_agent-guidance`, not here.** A section with
+no fixture is a `gap` row, and one deliberately without a fixture is a
+`skipped` row with a `reason` and `since` date, both in
+[`agents-md/eval-coverage.yml`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/agents-md/eval-coverage.yml),
+which that repository's `check-guidance-coverage.js` gate holds to one row per
+heading. This repository's `evals/non-coverage.yml` and the "Deliberate
+non-coverage" table cover skills only.
+
+**Guidance fixtures are unprompted** ([_agent-guidance ADR 0031](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0031-guidance-eval-fixtures-are-unprompted.md)):
+the prompt never names the rule, because a section exists for the case where
+the agent does not recognize it. The four-word lint (`harness/answer_leak.py`)
+applies to real-work task text against the merged diff; no check compares a
+guidance prompt with its section, so that is a review judgment.
 
 ## Out of scope
 
