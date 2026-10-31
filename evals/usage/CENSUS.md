@@ -54,6 +54,33 @@ trigger a commit.
   one-turn arm without session persistence and moves a multi-turn arm's
   transcripts out of `~/.claude/projects` when it ends.
 
+## Guidance rows
+
+Each weekly row with `kind: "guidance"` counts the local sessions whose
+loaded memory files held the full fleet guidance, only the repo stub, or
+neither. The census reads the `attachment` entry of type `instructions` that
+Claude Code writes to a transcript (every memory file it loaded, with its
+text) and classifies each transcript file it already scans, with the same
+roots, window and cross-root dedupe:
+
+- `full`: some file contains `guidance-marker: fleet-full`, or the legacy
+  heading `## Working in these repos`.
+- `stub-only`: otherwise some file contains `guidance-marker: fleet-stub`, or
+  the legacy line `Fleet guidance is delivered once per session`.
+- `neither`: an instructions entry exists but nothing matched.
+- `unknown`: the file has no instructions entry. Older CLI versions do not
+  write one, so `unknown` is "could not tell", never "no guidance".
+
+The signatures are constants in `scripts/model_usage_census.py` that mirror
+the marker lines of `_agent-guidance`'s `agents-md/base.md` and `stub.md`.
+A session counts once, in the ISO week (Monday UTC) of its first timestamped
+entry; a session stored twice (Cowork, or under two roots) counts once. One row
+per (week, state) with a nonzero count: `name` is the state, `repo` and
+`invocations` are null, `sessions` the count. Readers that ask about skills
+(`weight()`) ignore them. Cloud sessions are not in local transcripts; a
+separate Stop hook in `_agent-guidance` will record those later. No guidance
+events go to the private events file.
+
 ## Transcript roots
 
 `--projects` may be repeated or carry several roots separated by `:`. On WSL

@@ -363,6 +363,40 @@ def _skill_event(entry: dict, when: datetime, event_id, name: str,
             "branch": _text(entry.get("gitBranch"))}
 
 
+#: Signature strings that tell a session's loaded memory files apart. They
+#: mirror the marker lines in _agent-guidance's agents-md/base.md (the full
+#: fleet guidance) and agents-md/stub.md (the repo stub), plus the two
+#: headings older versions carried before the markers existed.
+GUIDANCE_FULL_MARKERS = ("guidance-marker: fleet-full", "## Working in these repos")
+GUIDANCE_STUB_MARKERS = ("guidance-marker: fleet-stub",
+                         "Fleet guidance is delivered once per session")
+GUIDANCE_FULL, GUIDANCE_STUB, GUIDANCE_NEITHER, GUIDANCE_UNKNOWN = (
+    "full", "stub-only", "neither", "unknown")
+
+
+def _instruction_texts(entry: dict) -> list[str] | None:
+    """The memory-file texts of an `attachment` entry of type `instructions`,
+    or None when the entry is not one."""
+    attachment = entry.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "instructions":
+        return None
+    files = attachment.get("files")
+    return [f["content"] for f in files if isinstance(f, dict)
+            and isinstance(f.get("content"), str)] if isinstance(files, list) else []
+
+
+def guidance_state(texts: list[str] | None) -> str:
+    """Classify a session by the memory texts it loaded; None means no
+    instructions entry was found (an older CLI may not write one)."""
+    if texts is None:
+        return GUIDANCE_UNKNOWN
+    if any(m in t for t in texts for m in GUIDANCE_FULL_MARKERS):
+        return GUIDANCE_FULL
+    if any(m in t for t in texts for m in GUIDANCE_STUB_MARKERS):
+        return GUIDANCE_STUB
+    return GUIDANCE_NEITHER
+
+
 def _bump(counts: dict, key: str, week: str) -> None:
     counts.setdefault(key, {})
     counts[key][week] = counts[key].get(week, 0) + 1
@@ -543,7 +577,8 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     counts: dict[str, dict[str, int]] = {}
     skills: dict[str, dict[str, int]] = {}
     sessions: dict[str, dict[str, int]] = {}
-    tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0}
+    tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0,
+             "guidance": {}}
     #: (st_dev, st_ino) of every transcript already processed. A symlink or a
     #: hard-linked copy is the SAME underlying file reachable via a second
     #: path in the walk — reading it twice double-counts every turn in it.
@@ -604,6 +639,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
         invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
         file_events: list[dict] = []
         title = None
+        first_when = first_uuid = None
+        texts: list[str] | None = None
         tally["sessions_scanned"] += 1
         try:
             with open(transcript, encoding="utf-8", errors="replace") as f:
@@ -618,6 +655,14 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                     if not isinstance(entry, dict):
                         continue
                     kind = entry.get("type")
+                    if first_when is None:
+                        first_when = parse_ts(entry.get("timestamp"))
+                        first_uuid = entry.get("uuid")
+                    if kind == "attachment":
+                        found = _instruction_texts(entry)
+                        if found is not None:
+                            texts = (texts or []) + found
+                        continue
                     if record and kind in ("summary", "custom-title"):
                         text = entry.get("summary" if kind == "summary" else "customTitle")
                         title = _text(text) or title
@@ -680,6 +725,12 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
             continue
         for name, week in invoked:
             _bump(sessions, name, week)
+        # One guidance state per session, in the week of its first timestamped
+        # entry; a session stored twice (Cowork, or under two roots) counts once.
+        if first_when is not None and iso_week(first_when) in wanted \
+                and not (isinstance(first_uuid, str) and first_uuid
+                         and not fresh(("g", first_uuid))):
+            _bump(tally["guidance"], guidance_state(texts), iso_week(first_when))
         for event in file_events:
             event["session_title"] = title
         if record:
@@ -712,6 +763,9 @@ def build_weekly_document(tally: dict, now: datetime,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
             for week, n in by_week.items()]
+    rows += [skill_usage.guidance_row(week, state, n)
+             for state, by_week in tally.get("guidance", {}).items()
+             for week, n in by_week.items()]
     if hooks is not None:
         rows += [skill_usage.hook_row(week, name, repo, runs, blocked)
                  for (week, name, repo), (runs, blocked) in hooks["rows"].items()]

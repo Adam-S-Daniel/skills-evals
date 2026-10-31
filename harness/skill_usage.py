@@ -25,7 +25,8 @@ A `hook` row counts local git-hook runs from the agent-checks log: `name`
 is a check id (or `other`, or `all` for every run that week), `repo` an
 allowlisted public `owner/name`, `other` or null, `invocations` the runs in
 which the check ran and `blocked` the runs in which it failed; `sessions` is
-null. A second source, `scope: "hooks"` with `runs_scanned`, is present only
+null. A `guidance` row counts sessions per loaded-guidance state (`name` is
+`full`, `stub-only`, `neither` or `unknown`; `invocations` is null). A second source, `scope: "hooks"` with `runs_scanned`, is present only
 when a hook log was read, so an absent one means unknown, not zero.
 
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
@@ -72,6 +73,12 @@ def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
             "blocked": blocked}
 
 
+def guidance_row(iso_week_label: str, state: str, sessions: int) -> dict:
+    """One local guidance row: `sessions` sessions that week whose loaded
+    memory was in `state` (full, stub-only, neither or unknown)."""
+    return row(iso_week_label, "guidance", state, None, sessions)
+
+
 def document(rows: list[dict], now: datetime, window_from: datetime,
              sessions_scanned: int, hook_runs_scanned: int | None = None) -> dict:
     """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`."""
@@ -115,7 +122,11 @@ def load(path) -> dict | None:
             return None
         if not all(isinstance(entry.get(field), str) for field in ("week", "kind", "name")):
             return None
-        if not _count(entry.get("invocations")):
+        # A guidance row counts sessions, so its invocations are null.
+        if entry["kind"] == "guidance":
+            if entry.get("invocations") is not None:
+                return None
+        elif not _count(entry.get("invocations")):
             return None
     return doc
 
