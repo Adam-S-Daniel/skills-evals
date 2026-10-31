@@ -77,7 +77,11 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/ci-watcher-loops",
             "evals/editorial-label-audit",
             "evals/consumer-repo-provisioning",
-            "evals/platform-release-and-bump"]
+            "evals/platform-release-and-bump",
+            # A private skill (#81): results go to adam-agentskills-private.
+            "evals/adam-writing-style/proposal-bio",
+            "evals/adam-writing-style/recruiter-reply",
+            "evals/adam-writing-style/self-appraisal-opening"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
@@ -596,6 +600,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                         self.assertEqual(item["with"]["persist-credentials"], False)
                 if item not in (fire, plan_step, wait):
                     self.assertNotIn("GH_TOKEN", item.get("env", {}))
+                # The private results (#81): the read-only registry App's
+                # token, never the job's, reaches the lookup and checkouts.
+                if "PRIVATE_READ_TOKEN" in item.get("env", {}):
+                    self.assertEqual(item["env"], {"PRIVATE_READ_TOKEN":
+                                                   "${{ steps.private-token.outputs.token }}"})
                 self.assertNotIn("EVAL_ROUTINE_FIRE_BEARER", str(item))
 
     def dispatch(self, env_extra, fail=False):

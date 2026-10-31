@@ -102,3 +102,9 @@ fixtures:
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#91)."
   - path: evals/platform-release-and-bump
     readiness: "In-place pair on adamdaniel.ai, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: test scores the seed and the reference fix (#93)."
+  - path: evals/adam-writing-style/proposal-bio
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
+  - path: evals/adam-writing-style/recruiter-reply
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
+  - path: evals/adam-writing-style/self-appraisal-opening
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."

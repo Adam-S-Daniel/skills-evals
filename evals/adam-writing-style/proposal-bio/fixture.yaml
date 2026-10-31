@@ -76,6 +76,12 @@
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
 judge:
   mode: pairwise
   references:

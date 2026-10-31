@@ -89,6 +89,58 @@ jobs:
           ref: persistent/eval-results
           path: eval-results-branch
           persist-credentials: false
+      # Private-skill evals (Adam, 2026-10-31): adam-agentskills-private
+      # holds both the skill and its ingested results, which never land on
+      # this repository's branch or in a public output. The read-only
+      # registry App token, minted as routine-eval-fire.yml mints it
+      # (that repository alone, contents read), reaches only the lookup and
+      # the two checkouts below. No App configured: the private cells stay
+      # without evidence, and plan_week publishes nothing about them.
+      - name: Mint the read-only token for the private registry
+        id: private-token
+        if: vars.REGISTRY_READ_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+      - name: Look for the private results branch
+        id: private-results
+        if: steps.private-token.outputs.token != ''
+        env:
+          PRIVATE_READ_TOKEN: ${{ steps.private-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if GH_TOKEN="$PRIVATE_READ_TOKEN" gh api repos/Adam-S-Daniel/adam-agentskills-private/branches/persistent/eval-results \
+               --silent 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out the private results (data only)
+        if: steps.private-results.outputs.exists == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/eval-results
+          path: private-eval-results
+          persist-credentials: false
+          sparse-checkout: routine-results
+          token: ${{ steps.private-token.outputs.token }}
+      - name: Add the private runs to the results tree
+        if: steps.private-results.outputs.exists == 'true'
+        run: python3 scripts/overlay_private_results.py --private private-eval-results --tree eval-results-branch
+      - name: Check out adam-agentskills-private (the private skills, read for digests)
+        if: steps.private-token.outputs.token != ''
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          path: registry-private
+          persist-credentials: false
+          sparse-checkout: plugins
+          token: ${{ steps.private-token.outputs.token }}
       - name: Check out adam-agentskills
         uses: actions/checkout@v7.0.1
         with:
@@ -124,11 +176,22 @@ jobs:
         run: |
           set -euo pipefail
           as_of="$(git -C eval-results-branch log -1 --format=%cI)"
+          if [ -d private-eval-results/.git ]; then
+            # The later tip of the two branches, so private runs ingested
+            # after the public tip's last commit are read too.
+            as_of="$(python3 -c 'import sys, datetime as d; print(max(sys.argv[1:], key=d.datetime.fromisoformat))' \
+              "$as_of" "$(git -C private-eval-results log -1 --format=%cI)")"
+          fi
+          private=()
+          if [ -d registry-private/plugins ]; then
+            private=(--registry "adam-agentskills-private=$GITHUB_WORKSPACE/registry-private")
+          fi
           python3 scripts/plan_week.py plan --results-tree eval-results-branch \
             --as-of "$as_of" --max-fires 30 \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            "${private[@]}" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --out "$RUNNER_TEMP/plan.json" \
             --ranking-out "$RUNNER_TEMP/improve-ranking.json"

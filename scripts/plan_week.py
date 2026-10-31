@@ -231,6 +231,11 @@ import improve_outcomes as outcomes_mod  # noqa: E402
 import plan_scheduled_evals as schedule  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
+#: A skill here is private (Adam, 2026-10-31): its results come from the
+#: private repository's own results branch and stay out of every public
+#: output, so it gets cells (fires) but no improve candidate, ranking row,
+#: status or work item, each of which would publish its pass rate.
+PRIVATE_REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills-private"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
 SELF_REPO = "Adam-S-Daniel/skills-evals"
 GUIDANCE_REPO = "Adam-S-Daniel/_agent-guidance"
@@ -1035,6 +1040,8 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
             urls.add(doc.get("registry") if isinstance(doc, dict) else None)
             if not isinstance(doc, dict) or doc.get("skill") != directory.name:
                 urls.add(None)
+        if PRIVATE_REGISTRY_URL in urls:
+            continue
         skill = directory.name
         cells = gates.pool_cells(index["runs"], skill, models, expected)
         holdout = names[0] if len(names) >= MIN_IMPROVE_FIXTURES else ""
