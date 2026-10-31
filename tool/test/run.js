@@ -12,7 +12,7 @@ const PAGE = path.join(TOOL, 'index.html');
 const html = fs.readFileSync(PAGE, 'utf8');
 
 function loadPage() {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)].map((m) => m[1]);
   if (scripts.length !== 1) throw new Error('expected exactly one inline <script>, found ' + scripts.length);
   const sandbox = { module: { exports: {} }, URL, URLSearchParams, Intl, console, Date, Math, JSON };
   vm.runInNewContext(scripts[0], sandbox, { filename: 'index.html' });
