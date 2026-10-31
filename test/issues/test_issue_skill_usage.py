@@ -542,6 +542,15 @@ class GuidanceRowTests(unittest.TestCase):
         got = self.states(self.session("u1", ["guidance-marker: fleet-full"]), roots=2)
         self.assertEqual(got, {"full": {"2026-W36": 1}})
 
+    def test_subagent_transcripts_are_not_counted(self):
+        root = self.tmp / "root0"
+        write_transcript(root / "-proj" / "s0.jsonl",
+                         self.session("u1", ["guidance-marker: fleet-full"]))
+        write_transcript(root / "-proj" / "s0" / "subagents" / "agent-a.jsonl",
+                         self.session("u2", None))
+        got = census.census_all([root], NOW, 8, ALLOW)[1]["guidance"]
+        self.assertEqual(got, {"full": {"2026-W36": 1}})
+
     def test_week_is_that_of_the_first_timestamped_entry(self):
         entries = self.session("u1", ["guidance-marker: fleet-full"],
                                when="2026-08-30T23:59:59Z")   # Sunday: W35

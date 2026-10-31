@@ -727,7 +727,10 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
             _bump(sessions, name, week)
         # One guidance state per session, in the week of its first timestamped
         # entry; a session stored twice (Cowork, or under two roots) counts once.
+        # A subagent transcript loads no memory of its own, so it would only
+        # inflate `unknown`.
         if first_when is not None and iso_week(first_when) in wanted \
+                and "subagents" not in transcript.parts \
                 and not (isinstance(first_uuid, str) and first_uuid
                          and not fresh(("g", first_uuid))):
             _bump(tally["guidance"], guidance_state(texts), iso_week(first_when))

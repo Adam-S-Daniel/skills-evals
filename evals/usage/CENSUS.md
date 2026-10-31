@@ -74,7 +74,8 @@ roots, window and cross-root dedupe:
 The signatures are constants in `scripts/model_usage_census.py` that mirror
 the marker lines of `_agent-guidance`'s `agents-md/base.md` and `stub.md`.
 A session counts once, in the ISO week (Monday UTC) of its first timestamped
-entry; a session stored twice (Cowork, or under two roots) counts once. One row
+entry; a session stored twice (Cowork, or under two roots) counts once, and a
+subagent transcript (under a `subagents/` directory) is not counted. One row
 per (week, state) with a nonzero count: `name` is the state, `repo` and
 `invocations` are null, `sessions` the count. Readers that ask about skills
 (`weight()`) ignore them. Cloud sessions are not in local transcripts; a
