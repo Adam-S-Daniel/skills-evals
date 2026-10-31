@@ -308,7 +308,8 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("invocations", plain_status)
         self.assertIn("3 skill invocations", status)
         doc = json.loads(weekly_out.read_text(encoding="utf-8"))
-        self.assertEqual([(r["name"], r["invocations"], r["sessions"]) for r in doc["rows"]],
+        self.assertEqual([(r["name"], r["invocations"], r["sessions"]) for r in doc["rows"]
+                          if r["kind"] == "skill"],
                          [("finding-unknowns", 1, 1), ("other", 1, 1),
                           ("workflow-path-audit", 1, 1)])
         self.assertEqual(skill_usage.load(weekly_out), doc)
@@ -396,7 +397,8 @@ class PublisherTests(unittest.TestCase):
                          "usage/latest.json\nusage/weekly-local.json")
         doc = json.loads(self.git("show", f"{self.BRANCH}:usage/weekly-local.json",
                                   cwd=self.origin))
-        self.assertEqual([(r["name"], r["invocations"]) for r in doc["rows"]],
+        self.assertEqual([(r["name"], r["invocations"]) for r in doc["rows"]
+                          if r["kind"] == "skill"],
                          [("other", 1), ("workflow-path-audit", 1)])
         printed = proc.stdout + proc.stderr
         for forbidden in ("workflow-path-audit", "123456789012", str(self.tmp)):
@@ -486,6 +488,96 @@ class SkillUsageReaderTests(unittest.TestCase):
         stale = NOW + timedelta(days=15)
         self.assertIsNone(skill_usage.weight(self.DOC, "workflow-path-audit", stale))
         self.assertIsNone(skill_usage.weight(self.DOC, "finding-unknowns", stale))
+
+
+class GuidanceRowTests(unittest.TestCase):
+    """`kind: "guidance"` rows: which memory a session loaded."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="guidance-usage-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def session(uuid, texts=None, when="2026-09-03T10:00:00Z"):
+        entries = [{"type": "user", "uuid": uuid, "timestamp": when,
+                    "message": {"role": "user", "content": "hello"}}]
+        if texts is not None:
+            files = [{"path": f"/example/M{i}.md", "type": "User", "content": t}
+                     for i, t in enumerate(texts)]
+            entries.append({"type": "attachment", "timestamp": when,
+                            "attachment": {"type": "instructions", "files": files}})
+        return entries
+
+    def states(self, *sessions, roots=1):
+        dirs = []
+        for r in range(roots):
+            root = self.tmp / f"root{r}"
+            for index, entries in enumerate(sessions):
+                write_transcript(root / "-proj" / f"s{index}.jsonl", entries)
+            dirs.append(root)
+        return census.census_all(dirs, NOW, 8, ALLOW)[1]["guidance"]
+
+    def write(self, doc):
+        path = self.tmp / "weekly-local.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        return path
+
+    def test_each_state_is_classified(self):
+        got = self.states(
+            self.session("u1", ["x\n<!-- c -->guidance-marker: fleet-full"]),
+            self.session("u2", ["# Notes\n## Working in these repos"]),
+            self.session("u3", ["guidance-marker: fleet-stub"]),
+            self.session("u4", ["Fleet guidance is delivered once per session"]),
+            self.session("u5", ["just project notes"]),
+            self.session("u6", None))
+        self.assertEqual(got, {"full": {"2026-W36": 2}, "stub-only": {"2026-W36": 2},
+                               "neither": {"2026-W36": 1}, "unknown": {"2026-W36": 1}})
+
+    def test_full_wins_over_stub_across_files(self):
+        got = self.states(self.session("u1", ["guidance-marker: fleet-stub",
+                                              "guidance-marker: fleet-full"]))
+        self.assertEqual(got, {"full": {"2026-W36": 1}})
+
+    def test_a_session_under_two_roots_counts_once(self):
+        got = self.states(self.session("u1", ["guidance-marker: fleet-full"]), roots=2)
+        self.assertEqual(got, {"full": {"2026-W36": 1}})
+
+    def test_subagent_transcripts_are_not_counted(self):
+        root = self.tmp / "root0"
+        write_transcript(root / "-proj" / "s0.jsonl",
+                         self.session("u1", ["guidance-marker: fleet-full"]))
+        write_transcript(root / "-proj" / "s0" / "subagents" / "agent-a.jsonl",
+                         self.session("u2", None))
+        got = census.census_all([root], NOW, 8, ALLOW)[1]["guidance"]
+        self.assertEqual(got, {"full": {"2026-W36": 1}})
+
+    def test_week_is_that_of_the_first_timestamped_entry(self):
+        entries = self.session("u1", ["guidance-marker: fleet-full"],
+                               when="2026-08-30T23:59:59Z")   # Sunday: W35
+        entries.append({"type": "user", "uuid": "u2", "timestamp": "2026-08-31T00:00:00Z",
+                        "message": {"role": "user", "content": "later"}})
+        self.assertEqual(self.states(entries), {"full": {"2026-W35": 1}})
+        self.assertEqual(self.states(self.session("u9", None, when="2026-08-31T00:00:00Z")),
+                         {"unknown": {"2026-W36": 1}})
+
+    def test_rows_have_the_published_shape_and_do_not_change_weights(self):
+        tally = census.census_all(
+            [self.tmp / "none"], NOW, 8, ALLOW)[1]
+        tally["guidance"] = {"full": {"2026-W36": 3}, "unknown": {"2026-W36": 1}}
+        doc = census.build_weekly_document(tally, NOW)
+        self.assertEqual(doc["rows"], [
+            skill_usage.guidance_row("2026-W36", "full", 3),
+            skill_usage.guidance_row("2026-W36", "unknown", 1)])
+        self.assertEqual(doc["rows"][0], {
+            "week": "2026-08-31", "kind": "guidance", "name": "full", "repo": None,
+            "surface": "local", "invocations": None, "sessions": 3, "blocked": None,
+            "overridden": None, "outcome": None})
+        base = {**doc, "rows": [skill_usage.row("2026-W36", "skill", "finding-unknowns", 2, 1)]}
+        both = {**doc, "rows": base["rows"] + doc["rows"]}
+        self.assertEqual(skill_usage.weight(both, "finding-unknowns", NOW),
+                         skill_usage.weight(base, "finding-unknowns", NOW))
+        self.assertEqual(skill_usage.weight(both, "full", NOW), 0)
+        self.assertEqual(skill_usage.load(self.write(both)), both)
 
 
 if __name__ == "__main__":

@@ -388,8 +388,8 @@ class HookTests(unittest.TestCase):
             self.assertEqual(census.main(), 0)
         doc = census.skill_usage.load(weekly)
         self.assertEqual(sorted((r["kind"], r["name"]) for r in doc["rows"]),
-                         [("hook", "all"), ("hook", "workflow-path-audit"),
-                          ("skill", "workflow-path-audit")])
+                         [("guidance", "unknown"), ("hook", "all"),
+                          ("hook", "workflow-path-audit"), ("skill", "workflow-path-audit")])
         self.assertEqual(census.skill_usage.weight(doc, "workflow-path-audit", NOW), 1)
         kinds = [json.loads(line)["kind"]
                  for line in events.read_text(encoding="utf-8").splitlines()]
