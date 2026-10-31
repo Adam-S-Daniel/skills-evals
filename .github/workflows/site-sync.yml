@@ -1,0 +1,133 @@
+# Auto-publish to adamdaniel.ai: every merge to main that changes
+# tool/index.html (the Skill Evals Explorer page) opens (or updates) a
+# vendor-bump PR in the site repo and enables auto-merge, so the site's own CI
+# + deploy pipeline takes it live with no manual step. Derived from
+# claude-memory-map's site-sync.yml, the reference implementation. See README
+# "Publishing to adamdaniel.ai" for the credential setup.
+#
+# Credential: a GitHub App installation token (the eval-improve App), never a
+# PAT. Without the secrets, or when the App is not installed on the site repo,
+# this run warns and succeeds: it is not a required check, and a red run on
+# every explorer change would say nothing the warning does not.
+name: Site sync
+run-name: "sync → adamdaniel.ai @ ${{ github.sha }}"
+
+on:
+  push:
+    branches: [main]
+    paths: [tool/index.html]
+  workflow_dispatch:
+
+# Rapid merges collapse to the newest state: the branch is force-pushed and
+# the PR reused, so only the latest content ever matters. Not a required check
+# (see the preview workflow's note on concurrency and required contexts).
+concurrency:
+  group: site-sync
+  cancel-in-progress: true
+
+permissions:
+  contents: read # site-repo writes use the App installation token, not GITHUB_TOKEN
+
+env:
+  SITE_REPO: Adam-S-Daniel/adamdaniel.ai
+  SYNC_BRANCH: tool-sync/skills-evals
+  FIX_HINT: install the eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai (Contents and Pull requests read-write) and keep the EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM secrets set. See README, Publishing to adamdaniel.ai.
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the App credentials exist
+        id: credential
+        env:
+          HAVE_CREDENTIAL: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: echo "present=${HAVE_CREDENTIAL}" >>"$GITHUB_OUTPUT"
+
+      - name: Mint the GitHub App token for adamdaniel.ai
+        id: mint
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adamdaniel.ai
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Warn and succeed (not a red X) while the App is not usable here; the
+      # same message goes to the step summary so it is visible without
+      # opening the log.
+      - name: Decide whether the site can be reached
+        id: token
+        env:
+          APP_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          if [ -n "$APP_TOKEN" ]; then
+            echo "have=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "have=false" >>"$GITHUB_OUTPUT"
+            msg="No GitHub App token for ${SITE_REPO}: the site sync was skipped and adamdaniel.ai is now stale. Fix: ${FIX_HINT}"
+            echo "::warning::$msg"
+            echo "$msg" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Checkout skills-evals
+        if: steps.token.outputs.have == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout site repo
+        if: steps.token.outputs.have == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          ref: main
+          token: ${{ steps.mint.outputs.token }}
+          path: site
+
+      - name: Copy tool/index.html + provenance, push sync branch
+        if: steps.token.outputs.have == 'true'
+        id: sync
+        env:
+          SITE_DIR: ${{ github.workspace }}/site
+          BRANCH: ${{ env.SYNC_BRANCH }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          SOURCE_REF: main
+          COMMIT_MSG: "tools: sync Skill Evals Explorer to ${{ github.sha }}"
+        run: bash scripts/sync_to_site.sh
+
+      - name: Open (or reuse) the site PR and enable auto-merge
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+          PREVIOUS: ${{ steps.sync.outputs.previous_commit }}
+        run: |
+          short="${GITHUB_SHA::7}"
+          title="tools: sync Skill Evals Explorer to ${short}"
+          if [ -n "$PREVIOUS" ]; then
+            changes="Upstream changes: https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...${GITHUB_SHA}"
+          else
+            changes="Source commit: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          fi
+          body=$(cat <<EOF
+          Automated vendor bump of \`assets/tools/skills-evals/index.html\` from ${GITHUB_REPOSITORY}@${short}.
+
+          ${changes}
+
+          Opened by the source repo's \`site-sync\` workflow (run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Auto-merge is enabled: this lands once the site's required checks pass.
+          EOF
+          )
+          pr=$(gh pr list -R "$SITE_REPO" --head "$SYNC_BRANCH" --state open --json number -q '.[0].number')
+          if [ -z "$pr" ]; then
+            gh pr create -R "$SITE_REPO" --head "$SYNC_BRANCH" --base main \
+              --title "$title" --body "$body"
+            pr=$(gh pr list -R "$SITE_REPO" --head "$SYNC_BRANCH" --state open --json number -q '.[0].number')
+          else
+            gh pr edit -R "$SITE_REPO" "$pr" --title "$title" --body "$body"
+          fi
+          # The site repo is cms-platform-managed, which squashes.
+          gh pr merge -R "$SITE_REPO" "$pr" --auto --squash \
+            || echo "::warning::Could not enable auto-merge on ${SITE_REPO}#${pr}: merge it manually (is 'Allow auto-merge' on for the site repo?)."

@@ -4723,10 +4723,12 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/routine-scaffold-pushed.yml",
                ".github/workflows/skill-coverage.yml",
                ".github/workflows/explorer-data.yml",
+               ".github/workflows/site-sync.yml",
+               ".github/workflows/site-preview.yml",
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
-               "harness/**", "scripts/**", "test/**", "README.md",
+               "harness/**", "scripts/**", "test/**", "tool/**", "README.md",
                "DESIGN.md",
                "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
                "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]

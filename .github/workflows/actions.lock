@@ -74,6 +74,12 @@ workflows:
         - 'actions/setup-python@v7.1.0'
     '.github/workflows/routine-scaffold-pushed.yml': []
     '.github/workflows/scheduled-run-health.yml': []
+    '.github/workflows/site-preview.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.3.0'
+    '.github/workflows/site-sync.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.3.0'
     '.github/workflows/skill-coverage.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'

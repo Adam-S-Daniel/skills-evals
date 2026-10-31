@@ -666,6 +666,94 @@ was, what it found, and the incidents that shaped its design are recorded in
 [`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), now marked
 HISTORY.
 
+## Explorer
+
+[`tool/index.html`](tool/index.html) is the Skill Evals Explorer: one
+self-contained public page that explains the published results in plain
+language for someone who has never opened a terminal (issues
+[#72](https://github.com/Adam-S-Daniel/skills-evals/issues/72) and
+[#123](https://github.com/Adam-S-Daniel/skills-evals/issues/123)). It has no
+build step and no dependencies: vanilla JavaScript, inline CSS, and inline SVG
+charts it draws itself, light and dark. adamdaniel.ai iframes the same file
+twice: `/tools/skills-evals/` (the default skills view) and
+`/tools/guidance-evals/?subject=guidance` (the guidance view); an on-page
+toggle switches between them and updates the URL.
+
+It reads ONE file at load time, cache-busted with a query string:
+[`explorer/latest.json` on `persistent/eval-results`](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json)
+(raw.githubusercontent.com sends `access-control-allow-origin: *` and caches
+for 5 minutes). A new run updates the page with no rebuild. If the file fails
+to load, or carries a `schema_version` other than 1, the page says which file
+and what to do instead of going blank.
+
+**Data contract (schema_version 1)**, written by
+[`scripts/explorer_data.py`](scripts/explorer_data.py): `generated_at` and
+`newest_run` (UTC ISO 8601); `source` (repository and the two commits used);
+`roster` (`arms[]` and `judge`, each a model id and its `reason`; the page
+derives display names such as "Claude Sonnet 5.5" from the ids, never from
+code); `skills[]` (public registries only: `name`, census `status` and
+`skip_reason`, gate `verdict`, and paired `runs[]` with `with`/`without`
+`{trials, checks_passed, checks_total, judge_mean, cost_usd}` and a GitHub
+`report_url`); `guidance.sections[]` (manifest `id`, `heading`, `bytes`,
+`status`, verdicts, and `runs[]` whose `modes` hold any of `none`, `section`,
+`full`, `full_minus_section`, `stub`); `coverage` (census totals); and
+`alerts[]` (`kind`, `subject`, `name`, `text`, optional `url`). The file is
+public: no session ids, digests, transcripts, private-registry skills, emails
+or local paths. The page also renders every data string as text only and
+links only `https://github.com/` URLs.
+
+The status-chip thresholds (26-week window, 3 paired runs per model, a gain
+of 5 points) are named constants at the top of the page's script, and every
+sentence it shows is in its `STRINGS` table. Each guidance section's
+plain-language line is in `GLOSSES`, keyed by the `id` in `_agent-guidance`'s
+`agents-md/eval-coverage.yml`; a new manifest id needs a gloss there and an
+entry in [`tool/test/guidance-ids.json`](tool/test/guidance-ids.json).
+
+Preview locally against the invented test data:
+
+```bash
+cd tool && python3 -m http.server 8000
+# then open http://localhost:8000/?data=http://localhost:8000/test/fixture.json
+# and   http://localhost:8000/?subject=guidance&data=http://localhost:8000/test/fixture.json
+```
+
+`?data=` is honored only for `http://localhost`, `http://127.0.0.1` and this
+repository on `raw.githubusercontent.com`. Tests: `node tool/test/run.js`
+(plain Node, no network), which `test/issues/test_issue_72_explorer_page.py`
+runs inside the main suite.
+
+### Publishing to adamdaniel.ai
+
+Two workflows keep the site's vendored copy of `tool/index.html` current. Both
+derive from claude-memory-map's workflows, the reference implementation, and
+the site side is documented in adamdaniel.ai's `docs/CMS-ADMIN.md`
+("Vendored-tool sync + previews").
+
+- [`site-sync.yml`](.github/workflows/site-sync.yml): on every push to `main`
+  that changes `tool/index.html`, force-pushes the file and a provenance record
+  (`_data/tool_sources/skills-evals.yml`) to the site branch
+  `tool-sync/skills-evals`, opens or reuses a PR, and enables auto-merge. The
+  site's own CI and deploy take it live. Both `/tools/skills-evals/` and
+  `/tools/guidance-evals/` serve this one file.
+- [`site-preview.yml`](.github/workflows/site-preview.yml): on every PR here
+  that changes `tool/index.html`, mirrors the file to a draft site PR from
+  `tool-preview/skills-evals-pr-<n>` and comments the two preview URLs
+  (`https://preview-pr<N>.adamdaniel.ai/tools/skills-evals/` and
+  `.../tools/guidance-evals/`) on the PR. Closing the PR closes the mirror.
+  Never merge the draft mirror.
+
+Both authenticate as the eval-improve GitHub App, not a personal access token:
+they mint an installation token for `adamdaniel.ai` alone from the
+`EVAL_IMPROVE_APP_CLIENT_ID` and `EVAL_IMPROVE_APP_PEM` secrets that the other
+routine gates already use. The App must be installed on
+`Adam-S-Daniel/adamdaniel.ai` with Contents and Pull requests read-write.
+Without the secrets, or when the App is not installed there, the mint fails
+and both workflows **warn and succeed**: `site-preview` skips the mirror, and
+`site-sync` skips the publish, so the live site goes stale. In both cases the
+`::warning::` and the run's step summary name the fix. The sync script,
+[`scripts/sync_to_site.sh`](scripts/sync_to_site.sh), no-ops with a warning if
+the site has no `assets/tools/skills-evals/` directory yet.
+
 ## Tests
 
 Two hermetic suites — no real `claude` binary is ever invoked, no network, no
