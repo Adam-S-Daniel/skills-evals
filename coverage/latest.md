@@ -18,7 +18,7 @@
 | adam-coding-anywhere | debug-github-workflows | covered | 4 |  |
 | adam-coding-anywhere | disarm-inherited-reach | covered | 1 |  |
 | adam-coding-anywhere | github-actions-repo-settings | covered | 1 |  |
-| adam-coding-anywhere | review-bash-ci-reliability | covered | 4 |  |
+| adam-coding-anywhere | review-bash-ci-reliability | covered | 5 |  |
 | adam-coding-anywhere | skills-doctor | covered | 4 |  |
 | adam-coding-anywhere | vendor-release-impact-issues | covered | 4 |  |
 | adam-coding-anywhere | workflow-path-audit | covered | 4 |  |
@@ -68,6 +68,6 @@ None.
 
 ## Fixture metadata readiness
 
-- Fixtures: 91; draft: 11.
-- Context declared: 24; missing: 67; guidance unproven: 0.
+- Fixtures: 92; draft: 11.
+- Context declared: 25; missing: 67; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.

@@ -1,17 +1,15 @@
 {
+  "fixture_readiness": {
+    "context_declared": 25,
+    "context_missing": 67,
+    "draft": 11,
+    "guidance_unproven": 0,
+    "paired_context_delivery_verified": false,
+    "total": 92
+  },
+  "generated_at": "2026-10-31T11:12:17Z",
   "include_private_names": false,
   "problems": [],
-  "publication": {
-    "as_of": "2026-10-30T15:07:24Z",
-    "guidance_revision": "0a51ed75e0e149b265768cf36c15e6a596080b42",
-    "public_registry_revisions": {
-      "adam-agentskills": "0e81a5e9989c5f92a2af774f9d714e137a7262f9",
-      "adamdaniel.ai": "f9254863389fe9111024493d8d4c3366d6e9d72c",
-      "cms-platform": "820814576cd6fd807457d6ebb2e9bfb5e2985b80"
-    },
-    "repository_revision": "65b2a68c0f4eb9ce5f3e9a6d36dd73781b928e85",
-    "run_id": "41077667243"
-  },
   "registries": [
     {
       "counts": {
@@ -75,7 +73,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "review-bash-ci-reliability",
@@ -193,8 +191,7 @@
           "skill": "rename-pdfs",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adam-agentskills"
+      ]
     },
     {
       "counts": {
@@ -312,8 +309,7 @@
           "skill": "test-canary",
           "status": "skipped"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/cms-platform"
+      ]
     },
     {
       "counts": {
@@ -335,8 +331,7 @@
           "skill": "embeddable-tool-pages",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai"
+      ]
     },
     {
       "counts": {
@@ -352,11 +347,13 @@
       "skills": []
     }
   ],
-  "schema": 1,
+  "schema": 2,
+  "status": "complete",
   "totals": {
     "covered": 25,
     "gap": 2,
     "skipped": 11,
     "total": 38
-  }
+  },
+  "unresolved": []
 }
