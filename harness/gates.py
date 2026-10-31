@@ -207,7 +207,9 @@ INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable",
                          # that never wrote its block): INCONCLUSIVE, never
                          # the agent's failure.
                          "delivery_failed", "guard_error", "guard_miss",
-                         "guard_contaminated")
+                         "guard_contaminated",
+                         # Its own session's receipt disagreed (#139).
+                         "delivery_unproven", "receipt_contaminated")
 #: The start of a FAILED check's detail that names a scorer failure rather
 #: than anything the agent did: harness/scorers/commands.py's
 #: `ScorerSandboxUnavailable` message, `scorer_sandbox_unavailable exit=<n>`,

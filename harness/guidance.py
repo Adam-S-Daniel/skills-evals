@@ -95,6 +95,7 @@ no filesystem writes, no clock, no network.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 import string
@@ -983,3 +984,154 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
             and not contaminated,
             "model": model, "setting_sources": setting_sources, "error": None,
             "reply": reply[:500]}
+
+
+# ---------------------------------------------------------------------------
+# the receipt — what the arm's OWN session says it loaded (#139)
+#
+# The probe above asks a model what it can see, so its proof rests on the
+# model cooperating. The CLI also records, deterministically and for free,
+# which memory files it put in context: every persisted transcript (measured
+# on CLI 2.1.316) carries one entry
+#   {"type": "attachment",
+#    "attachment": {"type": "instructions",
+#                   "files": [{"path": <absolute>, "type": "User"|"Project"|...,
+#                              "content": <text>}]}}
+# at session start. `content` is the file AS LOADED: the CLI strips HTML
+# comments (the marked block's BEGIN/END lines) and surrounding whitespace,
+# so it is never byte-equal to the delivered file; the token paragraph
+# survives, and is what the receipt checks for. A session that loads no
+# memory file at all writes no such entry, which is why the control keeps its
+# decoy: an arm with no entry is unproven, never "clean".
+#
+# The receipt is read from the agent arm's own session, after it ran, so it
+# proves what THAT session had in context rather than what a separate probe
+# call had. No hook, no settings file: nothing is added to the arm's profile.
+
+RECEIPT_MIN_CLI = "2.1.312"
+#: Bytes of transcript read per session file, as a bound on a hostile one.
+RECEIPT_MAX_BYTES = 64 * 1024 * 1024
+RECEIPT_FILES_MAX = 64
+OUTSIDE = "<outside the arm's scratch>"
+MANAGED = "<managed policy>"
+
+
+def read_instruction_files(projects_dir: Path | None, session_id) -> list | None:
+    """The `files` of the first `instructions` entry in this session's
+    transcript, `$CLAUDE_CONFIG_DIR/projects/*/<session_id>.jsonl`; None when
+    there is no transcript or no such entry. Torn or non-JSON lines are
+    skipped. The project directory is globbed rather than recomputed: past
+    200 characters the CLI hashes the name."""
+    if (projects_dir is None or not isinstance(session_id, str)
+            or not session_id or "/" in session_id or session_id.startswith(".")):
+        return None
+    try:
+        candidates = sorted(Path(projects_dir).glob(f"*/{session_id}.jsonl"))
+    except OSError:
+        return None
+    for path in candidates:
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            with path.open("rb") as stream:
+                data = stream.read(RECEIPT_MAX_BYTES)
+        except OSError:
+            continue
+        for line in data.decode("utf-8", "replace").splitlines():
+            if '"instructions"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            attachment = entry.get("attachment") if isinstance(entry, dict) else None
+            if not isinstance(attachment, dict) or attachment.get("type") != "instructions":
+                continue
+            files = attachment.get("files")
+            return [f for f in files if isinstance(f, dict)] if isinstance(files, list) else []
+    return None
+
+
+def _relative(path, roots: dict) -> str | None:
+    """`path` as `<root name>/<rel>` when it resolves inside one of `roots`,
+    else None. Both sides resolved, so a `..` segment or a symlink out is
+    judged by where it lands."""
+    try:
+        resolved = Path(os.path.realpath(str(path)))
+    except (OSError, ValueError):
+        return None
+    for name, root in roots.items():
+        base = Path(os.path.realpath(str(root)))
+        if resolved == base or resolved.is_relative_to(base):
+            rel = resolved.relative_to(base).as_posix()
+            return name if rel == "." else f"{name}/{rel}"
+    return None
+
+
+def receipt_verdict(files: list | None, *, roots: dict, delivered: Path,
+                    memory_type: str, token: str | None,
+                    forbidden: tuple = ()) -> dict:
+    """Judge one arm's receipt. Pure but for resolving paths.
+
+    `roots` names every directory the arm may load memory from ({"config":
+    its scratch config dir, "ws": its workspace}); `delivered` is the file
+    the harness wrote its payload to and `memory_type` the CLI's type for it
+    (`User` for the user channel, `Project` for the project fallback).
+
+    ok only when: the session wrote an instructions entry; it loaded
+    `delivered` as `memory_type`; that file's loaded text carries `token`
+    (when the arm was given one); no loaded file lies outside `roots`; no
+    `User` file other than `delivered` was loaded; and no loaded file carries
+    a token this arm was not delivered. The record keeps relative paths only,
+    never an absolute host path, and never file content."""
+    if files is None:
+        return {"proof": "transcript", "ok": False, "reason": "delivery_unproven",
+                "detail": "the arm's session wrote no instructions entry (no "
+                          "transcript, or a CLI older than "
+                          f"{RECEIPT_MIN_CLI}), so what it loaded is unknown",
+                "files": []}
+    want = _relative(delivered, roots)
+    record, outside, extra_user, foreign, seen = [], [], [], [], False
+    for entry in files[:RECEIPT_FILES_MAX]:
+        content = entry.get("content") if isinstance(entry.get("content"), str) else ""
+        kind = entry.get("type") if isinstance(entry.get("type"), str) else None
+        rel = _relative(entry.get("path", ""), roots) if isinstance(
+            entry.get("path"), str) else None
+        data = content.encode("utf-8", "replace")
+        record.append({"path": rel or OUTSIDE, "memory_type": kind,
+                       "bytes": len(data),
+                       "sha256": hashlib.sha256(data).hexdigest()})
+        if rel is None and kind == "Managed":
+            # Machine policy memory (/etc/claude-code/CLAUDE.md): the same
+            # file for every arm on the machine, so it cannot bias a pair,
+            # and it is not the user or project memory under test. Recorded,
+            # never a host path.
+            record[-1]["path"] = MANAGED
+            continue
+        if rel is None:
+            outside.append(kind)
+            continue
+        if rel == want and kind == memory_type:
+            seen = seen or token is None or token in content
+        elif kind == "User":
+            extra_user.append(rel)
+        if any(other and other in content for other in forbidden):
+            foreign.append(rel)
+    if outside:
+        return {"proof": "transcript", "ok": False, "reason": "receipt_contaminated",
+                "detail": f"the arm's session loaded {len(outside)} memory "
+                          "file(s) from outside its scratch config dir and "
+                          "workspace, so the per-arm isolation did not hold",
+                "files": record}
+    if extra_user or foreign:
+        names = ", ".join(sorted(set(extra_user + foreign)))[:300]
+        return {"proof": "transcript", "ok": False, "reason": "receipt_contaminated",
+                "detail": f"the arm's session loaded memory nobody delivered "
+                          f"to it ({names})", "files": record}
+    if not seen:
+        return {"proof": "transcript", "ok": False, "reason": "delivery_unproven",
+                "detail": f"the arm's session did not load {want} as "
+                          f"{memory_type} memory carrying the token it was "
+                          "delivered", "files": record}
+    return {"proof": "transcript", "ok": True, "reason": None, "detail": None,
+            "files": record}

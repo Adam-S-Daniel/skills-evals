@@ -670,6 +670,9 @@ class TestGuidanceArmsRecordVersions(unittest.TestCase):
              mock.patch.object(run_eval.guidance, "deliver", return_value=info), \
              mock.patch.object(run_eval.guidance, "agent_env", return_value={}), \
              mock.patch.object(run_eval.guidance, "run_guard", return_value=guard), \
+             mock.patch.object(run_eval.guidance, "receipt_verdict", return_value={
+                 "proof": "transcript", "ok": True, "reason": None,
+                 "detail": None, "files": []}), \
              mock.patch.object(run_eval, "_guard_error",
                                return_value={"type": "guard", "detail": "d"}), \
              mock.patch.object(run_eval, "run_agent", return_value=agent or {

@@ -695,6 +695,7 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                 mock.patch.object(run_eval.guidance, 'deliver', return_value=delivery), \
                 mock.patch.object(run_eval.guidance, 'run_guard', return_value={'ok': True}), \
                 mock.patch.object(run_eval, 'run_agent', agent), \
+                mock.patch.object(run_eval.guidance, 'receipt_verdict', return_value={"proof": "transcript", "ok": True, "reason": None, "detail": None, "files": []}), \
                 mock.patch.object(run_eval.judge, 'score') as judge:
             result = run_eval._run_guidance_arm(arm, fixture, seed, ctx, args, 'test')
         self.assertEqual(result['error']['type'], 'workspace_git_tampered')

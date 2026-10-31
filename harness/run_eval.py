@@ -353,6 +353,24 @@ def validate_mapping_keys(fixture: dict, fixture_path: Path) -> None:
     for key in MAPPING_FIXTURE_KEYS:
         _require_mapping(fixture, key, fixture_path)
     guidance.check_env_block(fixture.get("env"), f"{fixture_path}: `env:`")
+    proof = (fixture.get("guard") or {}).get("proof", "probe")
+    if proof not in GUARD_PROOFS:
+        raise guidance.GuidanceError(
+            f"{fixture_path}: `guard.proof` is {proof!r}; expected one of "
+            f"{', '.join(GUARD_PROOFS)}")
+
+
+#: How a guidance arm proves its delivery before it is scored (#139). Every
+#: arm's own session receipt is checked either way; `probe` (the default)
+#: also runs the paid magic-token probe first, `receipt` skips it.
+GUARD_PROOFS = ("probe", "receipt")
+#: The error types of an arm whose own session receipt failed (#139).
+RECEIPT_ERRORS = ("delivery_unproven", "receipt_contaminated")
+
+
+def guard_proof(fixture: dict) -> str:
+    """The fixture's `guard.proof`, validated at load."""
+    return (fixture.get("guard") or {}).get("proof", "probe")
 
 
 # The CEILING every knob above is checked against, and the predicate that
@@ -2822,7 +2840,14 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # `--resume`s the session, and a non-persisted session cannot be resumed
     # ("No conversation found", measured), so a multi-turn arm persists and
     # `_archive_session_dir` moves what it wrote out of the profile.
-    if not arm.get("followups"):
+    #
+    # A receipt arm (#139, a guidance arm) persists too: the instructions
+    # entry its receipt is read from exists only in a persisted transcript
+    # (CLI 2.1.316, measured). Only on a scratch profile, which the arm
+    # removes with the rest of its scratch, so nothing lands under a real
+    # HOME.
+    receipt = bool(arm.get("instructions_receipt")) and not shared_profile
+    if not arm.get("followups") and not receipt:
         cmd.append("--no-session-persistence")
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
@@ -2958,16 +2983,24 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                "raw": data})
 
         if len(turns) > 1:
-            return traced(_combine_turns(turns, texts[1:]))
-        data = turns[0]
-        return traced({
-            "transcript": data.get("result"),
-            "usage": data.get("usage"),
-            "cost_usd": data.get("total_cost_usd"),
-            "num_turns": data.get("num_turns"),
-            "duration_ms": data.get("duration_ms"),
-            "raw": data,
-        })
+            answer = _combine_turns(turns, texts[1:])
+        else:
+            data = turns[0]
+            answer = {
+                "transcript": data.get("result"),
+                "usage": data.get("usage"),
+                "cost_usd": data.get("total_cost_usd"),
+                "num_turns": data.get("num_turns"),
+                "duration_ms": data.get("duration_ms"),
+                "raw": data,
+            }
+        if arm.get("instructions_receipt"):
+            # What the FIRST turn's session loaded; in memory only, never
+            # written to raw.json or a summary (the caller keeps paths and
+            # digests). Read before the finally archives the directory.
+            answer["instructions"] = (guidance.read_instruction_files(
+                projects, turns[0].get("session_id")) if receipt else None)
+        return traced(answer)
     finally:
         if session_dir is not None and not preexisting:
             _archive_session_dir(session_dir, arm.get("session_scratch"))
@@ -6280,6 +6313,10 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             extra.update({"bytes": delivered["bytes"], "installed": True,
                           "hook_verdict": delivered["hook_verdict"],
                           "hook_returncode": 0})
+            receipt_expect = {
+                "roots": {"config": Path(env["CLAUDE_CONFIG_DIR"]), "ws": workspace},
+                "delivered": Path(env["CLAUDE_CONFIG_DIR"]) / "CLAUDE.md",
+                "memory_type": "User", "token": None, "forbidden": ()}
         else:
             workspace, home = scratch / "ws", scratch / "home"
             config, tmpdir = scratch / "config", scratch / "tmp"
@@ -6356,27 +6393,39 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                            if "guidance_violations" in extra else {})}
 
             setting_sources = guidance.SETTING_SOURCES[channel]
+            receipt_expect = {
+                "roots": {"config": config, "ws": workspace},
+                # Where `guidance.deliver` wrote it (its own `dest`).
+                "delivered": (config if channel == "user" else workspace) / "CLAUDE.md",
+                "memory_type": "User" if channel == "user" else "Project",
+                "token": arm_token, "forbidden": forbidden}
             # The guard's preflight model: the fixture's own `model:` pin when it
             # has one, else the CLI's default. When the model roster (#67) lands,
             # its `preflight` entry — the cheapest model that can answer a
             # tool-free probe — is what this line consults instead.
             preflight_model = args.model or fixture.get("model")
-            guard_started = _now()
-            with run_canary.collecting_results() as guard_results:
-                guard = guidance.run_guard(
-                    workspace=workspace, token=arm_token,
-                    expected=guidance.guard_expectation(arm["mode"]), env=env,
-                    # The other side, for EVERY arm: it must not report a token
-                    # it was not delivered.
-                    forbidden_tokens=forbidden,
-                    setting_sources=setting_sources, model=preflight_model,
-                    timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
+            # `guard: {proof: receipt}` (#139): the agent session's own
+            # receipt, checked after it runs, is the whole proof and the
+            # paid probe is skipped. The default, `probe`, runs both.
+            if guard_proof(fixture) == "receipt":
+                guard = {"ok": True, "skipped": "receipt"}
+            else:
+                guard_started = _now()
+                with run_canary.collecting_results() as guard_results:
+                    guard = guidance.run_guard(
+                        workspace=workspace, token=arm_token,
+                        expected=guidance.guard_expectation(arm["mode"]), env=env,
+                        # The other side, for EVERY arm: it must not report a
+                        # token it was not delivered.
+                        forbidden_tokens=forbidden,
+                        setting_sources=setting_sources, model=preflight_model,
+                        timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
+                guard_results, guard_events = _split_events(guard_results)
+                _TELEMETRY.timed("guard", guard_started, guard_results, outcome=(
+                    guard.get("error") or {}).get("type") or "ok",
+                    events=guard_events)
 
             extra["guard"] = guard
-            guard_results, guard_events = _split_events(guard_results)
-            _TELEMETRY.timed("guard", guard_started, guard_results, outcome=(
-                guard.get("error") or {}).get("type") or "ok",
-                events=guard_events)
 
             if not guard["ok"]:
                 error = _guard_error(guard)
@@ -6404,6 +6453,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             # A multi-turn arm's transcript lands under `config`, inside this
             # scratch, and goes when the scratch does: never archived.
             "session_scratch": str(scratch),
+            # The receipt (#139): persist the session in the scratch profile
+            # and hand back the instructions entry it wrote.
+            "instructions_receipt": True,
             "read_denied": run_checkouts(args, guidance_dir=ctx["guidance_dir"]),
             "read_denied_outputs": run_outputs(args),
         }
@@ -6430,6 +6482,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         agent_usage = None if "error" in result else model_usage(raw)
         judge_models: list = []
 
+        receipt = None
         if "error" in result:
             error = {"type": result["error"], "detail": result.get("detail", "")}
         else:
@@ -6439,6 +6492,29 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
+            receipt = guidance.receipt_verdict(result.get("instructions"),
+                                               **receipt_expect)
+            extra["receipt"] = receipt
+        if receipt is not None and not receipt["ok"]:
+            # INCONCLUSIVE, exactly as a failed guard: what the arm's own
+            # session loaded does not match what was delivered to it, so
+            # nothing it did is scored or judged.
+            error = {"type": receipt["reason"],
+                     "detail": receipt["detail"] + "; no score is written for it"}
+            _write_summary(args.results_dir, None, arm["name"], timestamp, error,
+                           agent_summary, None, None, raw, key=ctx["key"],
+                           extra=extra, harness_version=harness_version,
+                           permission_mode=permission_mode, models=agent_models,
+                           tool_trace=tool_trace, effort=effort,
+                           agent_usage=agent_usage, agent_model=agent_model)
+            return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                    "agent": agent_summary, "objective_checks": None,
+                    "judge": None, "guard": guard, "inconclusive": True,
+                    "models_used": agent_models, "receipt": receipt,
+                    **({"pairing": "in_place"} if plan is not None else {}),
+                    **({"guidance_violations": extra["guidance_violations"]}
+                       if "guidance_violations" in extra else {})}
+        if "error" not in result:
             checks = arm["objective_checks"] or fixture.get("objective_checks", [])
             scored = dict(fixture)
             scored["objective_checks"] = substitute_token(
@@ -6485,7 +6561,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         done = {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
                 "judge": judge_result, "guard": guard, "inconclusive": False,
-                "models_used": agent_models,
+                "models_used": agent_models, "receipt": extra.get("receipt"),
                 **({"pairing": "in_place"} if plan is not None else {}),
                 **({"guidance_violations": extra["guidance_violations"]}
                    if "guidance_violations" in extra else {})}
@@ -6564,6 +6640,8 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         guard = s.get("guard") or {}
         if s.get("pairing") == "in_place":
             guard_str = "offline proof only (in place)"
+        elif guard.get("skipped") == "receipt":
+            guard_str = "receipt only"
         elif guard.get("ok"):
             guard_str = "ok (saw it)" if guard.get("expected") else "ok (clean)"
         elif guard.get("observed") is None:
@@ -6571,6 +6649,10 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         else:
             guard_str = (f"INCONCLUSIVE (expected {guard.get('expected')}, "
                          f"observed {guard.get('observed')})")
+        receipt = s.get("receipt")
+        if receipt is not None:
+            guard_str += ("; receipt ok" if receipt.get("ok")
+                          else f"; receipt {receipt.get('reason')}")
         err = s.get("error")
         err_str = (" ".join(f"{err['type']}: {err['detail']}".split())
                    .replace("|", "\\|")[:200] if err else "")
@@ -6759,8 +6841,15 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
         guard = arm_summary["guard"]
         # A `delivery_failed` arm never reached the guard, so there is no
         # expected/observed pair to report — only the delivery's own detail.
-        preamble = (f"guard expected {guard['expected']}, observed "
-                    f"{guard['observed']} — ") if guard else "delivery — "
+        # A receipt failure (#139) comes after a passing (or skipped) guard,
+        # so its own detail is the whole story.
+        if (arm_summary["error"] or {}).get("type") in RECEIPT_ERRORS:
+            preamble = "receipt — "
+        elif guard and "expected" in guard:
+            preamble = (f"guard expected {guard['expected']}, observed "
+                        f"{guard['observed']} — ")
+        else:
+            preamble = "delivery — "
         print(f"INCONCLUSIVE {arm_summary['arm']} (mode "
               f"{arm_summary['mode']}): {preamble}"
               f"{arm_summary['error']['detail']}")

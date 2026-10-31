@@ -129,6 +129,16 @@ count = sum(json.loads(line)["env"]["CLAUDE_CONFIG_DIR"] == cfg
             for line in Path(os.environ["REC_LOG"]).read_text().splitlines())
 if cfg and (mode == "write_profile" or (mode == "write_profile_second" and count == 2)):
     Path(cfg, "settings.json").write_text("{{}}")
+if cfg and "--no-session-persistence" not in argv and (Path(cfg) / "CLAUDE.md").is_file():
+    # The instructions entry the real CLI writes in a persisted transcript
+    # (#139): the arm's receipt.
+    import re
+    project = Path(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd())))
+    project.mkdir(parents=True, exist_ok=True)
+    with open(project / "s1.jsonl", "a") as fh:
+        fh.write(json.dumps({{"type": "attachment", "attachment": {{"type": "instructions",
+            "files": [{{"path": str(Path(cfg) / "CLAUDE.md"), "type": "User",
+                        "content": (Path(cfg) / "CLAUDE.md").read_text()}}]}}}}) + "\\n")
 print(json.dumps({{"type": "result", "is_error": False, "result": "done",
                   "total_cost_usd": 0, "usage": {{}}, "num_turns": 1,
                   "duration_ms": 1, "session_id": "s1", "modelUsage": {{}}}}))

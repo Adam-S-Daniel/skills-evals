@@ -179,6 +179,25 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   judge and the guidance guard probe never take it. Any other value is a
   configuration error (rc 2) at load.
 
+- **`guard: {proof: probe | receipt}`** (guidance subject, optional;
+  default `probe`) — how a guidance arm proves its delivery (#139). Every
+  guidance arm, in either pairing, persists its session in its scratch
+  profile and is checked against its own **receipt**: the `instructions`
+  entry the CLI writes into a persisted transcript (CLI 2.1.312 or newer;
+  measured on 2.1.316), which lists each loaded memory file's path, type and
+  content with HTML comments removed. The arm is scored only when it loaded
+  the delivered file as the expected type (`User`, or `Project` under the
+  project fallback) carrying the token it was handed, loaded nothing from
+  outside its scratch config dir and workspace (machine `Managed` policy
+  memory excepted and recorded), loaded no other `User` file, and carries no
+  token it was not handed. Otherwise it is INCONCLUSIVE (`delivery_unproven`
+  or `receipt_contaminated`, exit 2, no score). The summary's `receipt`
+  records each file's scratch-relative path, type, byte length and sha256,
+  never an absolute host path or content. `probe` also runs the paid
+  magic-token probe before the agent; `receipt` skips it, so the receipt is
+  the whole proof. Skill arms are unchanged: they keep
+  `--no-session-persistence` and the operator's profile, and carry no receipt.
+
 - **`strip_agent_context:`** (optional, `true` or `false`; default `false`)
   — for a real-work seed copied from a fleet repository. Before `deps:`
   and `setup:` run, and before the seed commit, the harness

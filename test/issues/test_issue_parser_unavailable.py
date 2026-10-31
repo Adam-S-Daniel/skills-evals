@@ -247,6 +247,7 @@ class TestGuidanceArmScorerUnavailable(unittest.TestCase):
              mock.patch.object(run_eval.guidance, "agent_env", return_value={}), \
              mock.patch.object(run_eval.guidance, "run_guard", return_value=guard), \
              mock.patch.object(run_eval, "run_agent", return_value=agent), \
+             mock.patch.object(run_eval.guidance, "receipt_verdict", return_value={"proof": "transcript", "ok": True, "reason": None, "detail": None, "files": []}), \
              mock.patch.object(run_eval.judge, "score", judge_score), \
              mock.patch("builtins.__import__", side_effect=_without_parser):
             result = run_eval._run_guidance_arm(
