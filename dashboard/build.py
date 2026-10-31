@@ -390,6 +390,8 @@ def routines(cfg, triggers, workflow_runs, now):
             health = "Failing"
         elif last_result == "Cancelled":
             health = "Check"
+        elif not last_run and next_run and parse(next_run) > now:
+            health = "Not run yet"
         elif r.get("expect_every_hours") and (
                 not last_run or now - parse(last_run) > timedelta(hours=2 * r["expect_every_hours"])):
             health = "Late"

@@ -83,7 +83,7 @@
       <button class="pd-tile" data-go="routines" id="tile-routines">
         <span class="pd-tile-label">Routines healthy</span>
         <span class="pd-tile-num"><span class="dash-skeleton" data-source="routine_health" data-field="ok">—</span> <small>of <span data-source="routine_health" data-field="active">—</span></small></span>
-        <span class="pd-tile-note"><span data-source="routine_health" data-field="attention">—</span> late, failing or to check; retired ones not counted</span>
+        <span class="pd-tile-note"><span data-source="routine_health" data-field="attention">—</span> late, failing or to check; retired and not-yet-run ones not counted</span>
       </button>
       <button class="pd-tile" data-go="loop" id="tile-loop">
         <span class="pd-tile-label">Loop gaps closed</span>
@@ -753,12 +753,14 @@ dash.calc('headline', {
 });
 dash.calc('routine_health', {
   title: 'Routine health counts',
-  description: 'Routines not retired, how many are healthy, and how many are late, failing, paused or need a check.',
+  description: 'Routines not retired and already run once, how many are healthy, and how many are late, failing, paused or need a check.',
   inputs: ['routines'],
   fn: (routines) => {
     const active = routines.filter((r) => r.health !== 'Retired');
+    // A routine that has not had its first run yet is neither healthy nor a problem.
     const ok = active.filter((r) => r.health === 'OK').length;
-    return [{ active: active.length, ok, attention: active.length - ok }];
+    const fresh = active.filter((r) => r.health === 'Not run yet').length;
+    return [{ active: active.length - fresh, ok, attention: active.length - fresh - ok }];
   },
 });
 dash.calc('pr_counts', {
@@ -1192,7 +1194,7 @@ dash.calc('new_runs', {
     renderTable('tbl-routines', 'routines', [{ field: 'name', link: 'link' }, { field: 'what' }, { field: 'schedule' }, { field: 'last_run', fmt: dt }, { field: 'health', pill: true }, { field: 'note' }], (r) => r.name);
     renderTable('tbl-checkins', 'checkins', [{ field: 'when', fmt: dt }, { field: 'what' }], (r) => r.id, { sort: { field: 'when', dir: 'asc' } });
     renderTable('tbl-gate', 'gate', [{ field: 'condition', link: 'link' }, { field: 'status', pill: true }, { field: 'detail' }], (r) => r.condition);
-    renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace('/pull/', '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });
+    renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace(/\/(pull|issues)\//, '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });
   }
 
   dash.onData(draw);
