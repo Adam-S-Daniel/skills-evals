@@ -117,6 +117,7 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .chip.alone .ic { background: var(--warning); }
 .chip.none .ic { background: var(--axis); }
 .chip.insufficient .ic { background: transparent; border: 2px solid var(--axis); }
+.chip.canttell .ic { background: transparent; border: 2px dashed var(--axis); }
 .chip.early .ic { background: transparent; border: 2px solid var(--good); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -169,7 +170,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* ------------------------------------------------------------------ */
 const SCHEMA_VERSION = 1;
 const WINDOW_WEEKS = 26;          // pool runs from the last 26 weeks
-const MIN_PAIRED_RUNS = 3;        // runs per model before a chip can say more than "Not enough data"
+const MIN_PAIRED_RUNS = 5;        // the loop's own floor (gate-policy.yml min_runs); used where no loop verdict exists
 const HELPS_MIN_GAIN = 0.05;      // 5 percentage points better on at least one model
 const WORSE_TOLERANCE = -0.05;    // and never more than 5 points worse on any model
 const EPS = 1e-9;                 // float tolerance for the comparisons above
@@ -232,21 +233,23 @@ const STRINGS = {
     none: 'No measurable difference',
     worse: 'Getting worse',
     early: 'Early sign: helps',
+    canttell: 'Test cannot tell',
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'On at least one model, Claude passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it, and was never more than ' + pts(WORSE_TOLERANCE) + ' points worse on any model.',
-    alone: 'It helps when it is the only rule present, but adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
-    none: 'There have been enough attempts, but the difference with and without it is too small to count as help.',
+    helps: 'The improvement loop decided to keep it: its statistical test is at least 90% confident that, on some model and task, Claude passes at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
+    alone: 'It helps when it is the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
+    none: 'The improvement loop is at least 97.5% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
+    canttell: 'Claude already passes this test without it, so the test cannot show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be.',
-    early: 'Fewer than ' + MIN_PAIRED_RUNS + ' comparison runs on every model so far, so the result is not final, but every model tried passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
-    insufficient: 'Fewer than ' + MIN_PAIRED_RUNS + ' comparison runs on every model in the last ' + WINDOW_WEEKS + ' weeks, so it is too early to say.'
+    early: 'The improvement loop has not decided yet (it needs at least ' + MIN_PAIRED_RUNS + ' runs per side and a confident result), but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
+    insufficient: 'The improvement loop has not decided yet: it needs at least ' + MIN_PAIRED_RUNS + ' runs per side and a confident result, and the early results do not clearly point either way.'
   },
-  chipOrder: ['helps', 'alone', 'early', 'none', 'worse', 'insufficient'],
+  chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'A description of what this skill is for is not available.',
-  skillsNote: 'One card per tested skill, the most helpful first: skills that help, then those with an early sign of help, then those that make no measurable difference, then those without enough data yet, then any getting worse. Within each group, the skill that gave the biggest gain in checks passed comes first. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means the skill helped that week.',
+  skillsNote: 'One card per tested skill, the most helpful first: skills that help, then those with an early sign of help, then those the test cannot judge, then those without enough data yet, then those the loop decided to remove, then any getting worse. Within each group, the skill that gave the biggest gain in checks passed comes first. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means the skill helped that week.',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One card per section. Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
   sortLabel: 'Order sections by',
@@ -286,6 +289,9 @@ const STRINGS = {
 
   verdict: {
     retain: 'Official decision: keep it.',
+    keep: 'Official decision: keep it.',
+    'cannot-discriminate': 'Official decision: the test cannot tell, because its checks do not separate the two sides.',
+    'shorten-or-merge': 'Official decision: shorten it or merge it into another section.',
     retire: 'Official decision: remove it.',
     'retire-pending': 'Official decision: remove it, after another removal finishes.',
     retired: 'It has been removed.',
@@ -296,7 +302,8 @@ const STRINGS = {
   verdictOther: (v) => 'Official decision: ' + v + '.',
 
   wholeHeading: 'Does the guidance help at all?',
-  wholeNote: 'All the rules compared with no rules, pooled across every section\'s task.',
+  wholeNote: 'All the rules compared with no rules, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler rule: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the rules, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
+  wholeRule: 'The simple rule in the note above, not a decision by the improvement loop.',
   wholeAnswer: {
     helps: 'Yes. With the rules, Claude passed measurably more checks.',
     alone: 'Yes. With the rules, Claude passed measurably more checks.',
@@ -603,16 +610,34 @@ function hasRegression(alerts, subjectKind, name) {
     && (a.subject === subjectKind) && a.name === name);
 }
 
-/* The chip rule. `pooled` comes from poolRuns. */
+/* The loop's verdict (harness/gates.py, via the data file) -> the chip it
+   earns. A verdict not listed here is not final, so the page's early rule
+   decides between 'early' and 'insufficient'. */
+const VERDICT_CHIPS = {
+  keep: 'helps', retain: 'helps', 'shorten-or-merge': 'alone', 'helps-only-alone': 'alone',
+  retire: 'none', 'retire-pending': 'none', retired: 'none',
+  ceiling: 'canttell', 'cannot-discriminate': 'canttell'
+};
+
+function earlyOrInsufficient(pooled) {
+  // Not final, but say so when every model tried so far clearly gained.
+  const tried = pooled.models.filter((m) => m.n > 0 && m.gain !== null);
+  return tried.length && tried.every((m) => m.gain >= HELPS_MIN_GAIN - EPS) ? 'early' : 'insufficient';
+}
+
+/* The chip rule. `pooled` comes from poolRuns. With `opts.verdict` (skills
+   and sections: the loop's own decision, null when it has none), the chip
+   follows the loop. Without one (the whole-guidance headline, which the loop
+   does not judge), the page's simple rule applies at the loop's run floor. */
 function chipFor(pooled, opts) {
   const o = opts || {};
   if (o.regression) return 'worse';
-  const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
-  if (!eligible.length) {
-    // Too few runs for a final call, but say so when every model tried so far clearly gained.
-    const tried = pooled.models.filter((m) => m.n > 0 && m.gain !== null);
-    return tried.length && tried.every((m) => m.gain >= HELPS_MIN_GAIN - EPS) ? 'early' : 'insufficient';
+  if (Object.prototype.hasOwnProperty.call(o, 'verdict')) {
+    const v = typeof o.verdict === 'string' ? o.verdict : '';
+    return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled);
   }
+  const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
+  if (!eligible.length) return earlyOrInsufficient(pooled);
   const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS)
     && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
   if (!helps) return 'none';
@@ -781,9 +806,10 @@ function sparkline(points, refMs) {
     h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
 }
 
-function chip(kind) {
-  return h('span', { class: 'chip ' + kind, title: STRINGS.chips[kind] + ': ' + STRINGS.chipRules[kind], tabindex: 0,
-    'aria-label': STRINGS.chips[kind] + '. ' + STRINGS.chipRules[kind] },
+function chip(kind, ruleText) {
+  const rule = ruleText || STRINGS.chipRules[kind];
+  return h('span', { class: 'chip ' + kind, title: STRINGS.chips[kind] + ': ' + rule, tabindex: 0,
+    'aria-label': STRINGS.chips[kind] + '. ' + rule },
     h('span', { class: 'ic', 'aria-hidden': 'true' }), STRINGS.chips[kind]);
 }
 
@@ -846,10 +872,11 @@ function context(doc) {
   return { refMs: refMs, order: roster.map((a) => a && a.model).filter(Boolean), alerts: doc.alerts };
 }
 
-/* Skill cards, most helpful first: a proven gain, then an early sign of one, then no measurable
-   difference, then not enough data yet, then getting worse; by pooled gain
+/* Skill cards, most helpful first: the loop's keep, then an early sign of
+   help, then the test cannot tell, then not enough data, then removal, then
+   getting worse; by pooled gain
    within each group. */
-const SKILL_RANK = ['helps', 'early', 'none', 'insufficient', 'worse'];
+const SKILL_RANK = ['helps', 'early', 'canttell', 'insufficient', 'none', 'worse'];
 
 function skillItems(doc) {
   const c = context(doc);
@@ -858,7 +885,7 @@ function skillItems(doc) {
     .map((s) => {
       const pooled = poolRuns(s.runs, 'skills', c.refMs, c.order);
       return { name: String(s.name || ''), raw: s, pooled: pooled,
-        chip: chipFor(pooled, { subject: 'skills', regression: hasRegression(c.alerts, 'skill', s.name) }),
+        chip: chipFor(pooled, { subject: 'skills', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'skill', s.name) }),
         sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
     }).sort((a, b) => {
       const ra = SKILL_RANK.indexOf(a.chip), rb = SKILL_RANK.indexOf(b.chip);
@@ -885,7 +912,7 @@ function sectionItems(doc, sortBy) {
   const items = secs.filter((s) => s && s.id).map((s) => {
     const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
     return { id: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
-      chip: chipFor(pooled, { subject: 'guidance', regression: hasRegression(c.alerts, 'guidance', s.id) }),
+      chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
       sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
       perKb: gainPerKb(pooled, s.bytes) };
   });
@@ -1059,7 +1086,7 @@ function buildPage(doc, mode, opts) {
       h('section', { class: 'headline' }, h('h2', null, STRINGS.wholeHeading),
         h('div', { class: 'panel' },
           h('div', { class: 'head', style: 'display:flex;gap:8px;justify-content:space-between;align-items:flex-start' },
-            h('p', { class: 'answer' }, STRINGS.wholeAnswer[whole.chip]), chip(whole.chip)),
+            h('p', { class: 'answer' }, STRINGS.wholeAnswer[whole.chip]), chip(whole.chip, STRINGS.wholeRule)),
           h('p', { class: 'note' }, STRINGS.wholeNote),
           h('p', { class: 'sent' }, clean(whole.sentence)),
           legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
@@ -1160,7 +1187,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, DEFAULT_DATA_URL,
+    SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, VERDICT_CHIPS, HELPS_MIN_GAIN, WORSE_TOLERANCE, DEFAULT_DATA_URL,
     STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
