@@ -94,7 +94,7 @@ exception's type (never its message), and the others are still decided.
 AFTER harness/gates.py's verdict, ONE RETIREMENT PER EVALUATION: of several
 skills whose verdict is `retire`, only the one with the most arm runs (then
 the first by name) keeps it; the rest are `retire-pending`. Nothing is read
-from an earlier gates file: confirmation is harness/gates.py's, at two looks,
+from an earlier gates file: confirmation is harness/gates.py's anytime-valid bound,
 and a standing retirement belongs to part 2, which reads the open pull
 requests from GitHub.
 

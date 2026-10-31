@@ -58,8 +58,7 @@ def cell(fixture, model, cls="no-benefit"):
     return {"fixture": fixture, "model": model, "class": cls,
             "with": {"runs": 10}, "without": {"runs": 11},
             "objective": {"delta": 0.0, "benefit_lower": -0.1, "retire_upper": 0.04},
-            "judge": {"delta": 0.1, "benefit_lower": -0.2, "retire_upper": 0.3},
-            "looks": [{"n": 5, "class": cls}, {"n": 10, "class": cls}]}
+            "judge": {"delta": 0.1, "benefit_lower": -0.2, "retire_upper": 0.3}}
 
 
 def gates_doc(mode="proposal", verdicts=None):
@@ -269,7 +268,7 @@ class ProposalTests(Base):
         body = fake.calls[-1][1]
         self.assertIn(retire_skill.ISSUE_MARKER.format(skill=SKILL), body)
         self.assertIn(f"plugins/{PLUGIN}/skills/{SKILL}", body)
-        self.assertIn("| basic | claude-opus-5-5 | 10 | 11 | 0.040 | 0.300 | 5, 10 |", body)
+        self.assertIn("| basic | claude-opus-5-5 | 10 | 11 | 0.040 | 0.300 |", body)
         self.assertEqual(fake.pushes, [])
         self.assertFalse(any(args[0] == "pr" for args in writes))
         self.assertUntouched()
@@ -611,7 +610,7 @@ class VerdictTests(Base):
     def test_a_retire_the_cells_do_not_support_is_refused(self):
         bad = {
             "a cell is not no-benefit": [cell("basic", MODELS[0]),
-                                         cell("basic", MODELS[1], "no-benefit-pending")],
+                                         cell("basic", MODELS[1], "insufficient")],
             "a roster model is missing": [cell("basic", MODELS[0])],
             "an extra model": [cell("basic", m) for m in [*MODELS, "claude-old"]],
             "no cell": [],
@@ -875,9 +874,6 @@ class InputTypeTests(Base):
             "a reason not text": gates_doc(verdicts={SKILL: {"verdict": "retire",
                                                              "reason": {"x": 1},
                                                              "cells": good}}),
-            "looks a number": gates_doc(verdicts={SKILL: {
-                "verdict": "retire", "reason": "r",
-                "cells": [{**c, "looks": 5} for c in good]}}),
         }
         for mode in ("proposal", "auto"):
             for name, doc in docs.items():
@@ -1146,8 +1142,8 @@ class SkillImpactTests(unittest.TestCase):
             f"## 2026-10-27 — {PLUGIN}/{SKILL} — remove\n\n"
             "- Motivation: the retirement verdict is `retire` "
             "([skills-evals#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)): "
-            "every cell (2 fixture(s) x 2 roster model(s)) shows no benefit at two fixed "
-            "looks.\n"
+            "every cell (2 fixture(s) x 2 roster model(s)) shows no benefit at the retire "
+            "confidence level.\n"
             f"- Change: `plugins/{PLUGIN}/skills/{SKILL}/` removed, the skill dropped from "
             f"`scripts/plugin_layout.json` and the README table, bundle `{PLUGIN}` 1.2.7 -> "
             "2.0.0 (a removal is a breaking change), by skills-evals' "

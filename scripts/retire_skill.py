@@ -355,8 +355,7 @@ def retiring(gates: dict) -> str | None:
                               "no-benefit")
         fixture = c.get("fixture")
         if not (fixture is None or isinstance(fixture, str) and NAME_RE.fullmatch(fixture)) \
-                or not isinstance(c.get("model"), str) \
-                or not isinstance(c.get("looks"), list):
+                or not isinstance(c.get("model"), str):
             raise RetireError(f"{skill}: a retire verdict with a malformed cell")
     pairs = [(c["fixture"], c["model"]) for c in cells]
     fixtures = {f for f, _ in pairs}
@@ -475,16 +474,14 @@ def _figure(block, field):
 def evidence(gates: dict, skill: str) -> str:
     """A Markdown table of the verdict's cells."""
     rows = ["| Fixture | Model | Runs with | Runs without | Objective upper | "
-            "Judge upper | Looks |", "|---|---|---|---|---|---|---|"]
+            "Judge upper |", "|---|---|---|---|---|---|"]
     for cell in gates["skills"][skill]["cells"]:
         arms = [cell.get(a) if isinstance(cell.get(a), dict) else {}
                 for a in ("with", "without")]
-        looks = ", ".join(str(look.get("n")) for look in cell.get("looks") or []
-                          if isinstance(look, dict))
         rows.append(f"| {cell.get('fixture') or '(flat)'} | {cell.get('model')} | "
                     f"{arms[0].get('runs', 'n/a')} | {arms[1].get('runs', 'n/a')} | "
                     f"{_figure(cell.get('objective'), 'retire_upper')} | "
-                    f"{_figure(cell.get('judge'), 'retire_upper')} | {looks} |")
+                    f"{_figure(cell.get('judge'), 'retire_upper')} |")
     return "\n".join(rows)
 
 
@@ -510,7 +507,7 @@ def impact_entry(gates: dict, skill: str, plugin: str, run_url: str | None,
             f"- Motivation: the retirement verdict is `retire` "
             f"([skills-evals#70](https://github.com/{EVALS_REPO}/issues/70)): every cell "
             f"({len(fixtures)} fixture(s) x {len(gates['roster_models'])} roster model(s)) "
-            f"shows no benefit at two fixed looks.\n"
+            f"shows no benefit at the retire confidence level.\n"
             f"- Change: `plugins/{plugin}/skills/{skill}/` removed, the skill dropped from "
             f"`{LAYOUT_FILE}` and the README table, bundle `{plugin}` {versions[0]} -> "
             f"{versions[1]} (a removal is a breaking change), by skills-evals' "
@@ -920,7 +917,7 @@ def prepare_branch(checkout: Path, action: dict) -> None:
     _commit(checkout,
             f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
             "skills-evals#70's scheduled retirement found no benefit in every cell at "
-            "two fixed looks.")
+            "the retire confidence level.")
     if action.get("repin"):
         run_registry_script(checkout, LOCK_GENERATOR, "--repin")
         run_registry_script(checkout, LOCK_GENERATOR, "--check-current")
@@ -1191,7 +1188,7 @@ def guidance_impact_entry(gates: dict, section: str, run_url: str | None) -> str
             f"- Motivation: skills-evals#124's retirement verdict is `retire`: the whole "
             f"guidance with and without the section shows no benefit in every cell "
             f"({len(fixtures)} fixture(s) x {len(gates['roster_models'])} roster model(s)) "
-            f"at two fixed looks.\n"
+            f"at the retire confidence level.\n"
             f"- Change: removed the section and its eval-coverage.yml row, by "
             f"skills-evals' scheduled retirement ({where}).\n"
             f"- Eval: n={runs} pooled arm runs (full vs full-minus-section) as of "
@@ -1351,7 +1348,7 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
          "skills-evals#124's scheduled retirement found no benefit of the whole "
-         "guidance with the section over it without, in every cell at two fixed looks."
+         "guidance with the section over it without, in every cell at the retire confidence level."
          f"\n\n{AGENT_TRAILER}")
 
 

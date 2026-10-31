@@ -312,7 +312,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                             for a in roster["arms"]],
                    "judge": {"model": roster["judge"]["id"],
                              "reason": roster["judge"].get("reason")}},
-        "policy": {k: policy[k] for k in ("min_runs", "min_cli_versions", "objective_margin")},
+        "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
+                                          "min_cli_versions", "objective_margin")},
         "skills": skills, "guidance": {"sections": sections},
         "coverage": coverage, "alerts": alerts}
 

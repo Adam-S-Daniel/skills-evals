@@ -821,13 +821,18 @@ class GuidanceVerdictTests(unittest.TestCase):
                          + pair_runs("alone", FLAT, FLAT))
         self.assertEqual(v["verdict"], "keep")
 
-    def test_only_a_confirmed_retire_becomes_shorten_or_merge(self):
-        v = self.verdict(pair_runs("in_situ", FLAT[:4], FLAT[:4])
-                         + pair_runs("alone", GAIN, FLAT[:10], ([8.0] * 10, FLAT_JUDGE)))
-        self.assertEqual(v["verdict"], "insufficient")
-        v = self.verdict(pair_runs("in_situ", FLAT[:5], FLAT[:5])
-                         + pair_runs("alone", GAIN, FLAT[:10], ([8.0] * 10, FLAT_JUDGE)))
-        self.assertEqual(v["verdict"], "retire-pending")
+    def test_only_a_retire_becomes_shorten_or_merge(self):
+        # One in-situ run per arm shows one CLI version: insufficient, which
+        # stands whatever the alone pair shows.
+        alone = pair_runs("alone", GAIN, FLAT[:10], ([8.0] * 10, FLAT_JUDGE))
+        v = self.verdict(pair_runs("in_situ", FLAT[:1], FLAT[:1]) + alone)
+        self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("insufficient", "insufficient"))
+        self.assertEqual(v["alone"]["verdict"], "keep")
+        # Three runs, on priors measured over both pairs' runs, retire in
+        # situ (no fixed looks, 2026-10-31), and the alone benefit makes it
+        # shorten-or-merge.
+        v = self.verdict(pair_runs("in_situ", FLAT[:3], FLAT[:3]) + alone)
+        self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("retire", "shorten-or-merge"))
 
     def test_runs_of_the_other_pair_never_enter_a_cell(self):
         v = self.verdict(pair_runs("alone", FLAT, FLAT))
@@ -913,7 +918,7 @@ class ComputeGuidanceTests(unittest.TestCase):
         (run_dir / arm / "summary.json").write_text(json.dumps(summary))
 
     def write_runs(self, n=20, alone_gain=False):
-        # One trial per run: the 10- and 20-run looks decide, not the 5.
+        # One trial per run, twenty runs per arm.
         for r in range(n):
             j = 7.0 + (r % 2) / 5
             for arm, mode in MODES.items():
@@ -976,7 +981,7 @@ class ComputeGuidanceTests(unittest.TestCase):
 def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=None):
     roster = ["model-a", "model-b"]
     cells = [{"fixture": "fx", "model": m, "class": (classes or {}).get(m, "no-benefit"),
-              "looks": [{"n": 5}, {"n": 10}], "with": {"runs": 10}, "without": {"runs": 10},
+              "with": {"runs": 10}, "without": {"runs": 10},
               "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2}}
              for m in roster]
     return {"schema_version": 1, "as_of": "20261020T000000Z", "roster_models": roster,
