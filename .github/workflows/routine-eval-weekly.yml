@@ -33,13 +33,27 @@ name: Weekly routine evals
 #   week's plan with no way to run until the next Tuesday. The plan job's
 #   default-branch condition and the fire workflow's allowance guard bound a
 #   manual run exactly as a scheduled one.
+# * Top-up (Adam, 2026-10-31: "use what is available rather than stopping
+#   short"): the planner books each fire at its estimated cost, so the
+#   Tuesday sweep stops once those estimates fill the room, even when the
+#   fires then cost less. Every three hours the sweep plans again from the
+#   newest ingested results and meter reading, so the room that real costs
+#   left is spent before the account week resets. A top-up with nothing due
+#   or no room plans nothing (`count` 0). The concurrency group keeps two
+#   sweeps from planning the same cells at once: a queued sweep waits for
+#   the running one (cancel-in-progress false).
 # * Not a pull_request or push workflow, so no path filter and no required
 #   check. Inputs are never interpolated into `run:`; matrix values reach
 #   the shell through `env` and are revalidated before the dispatch.
 on:
   schedule:
     - cron: "0 7 * * 2"
+    - cron: "37 */3 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: routine-eval-weekly
+  cancel-in-progress: false
 
 permissions: {}
 
