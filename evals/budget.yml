@@ -25,12 +25,13 @@
 # 30 points: all automated evals together, in each allowance week of the
 # account (Monday 17:00 UTC to the next; Adam, 2026-10-26), so a sanctioned
 # push in one week is not charged to the next.
-# Temporarily 60 points for the week ending 2026-11-02 17:00 UTC (Adam,
+# Temporarily raised for the week ending 2026-11-02 17:00 UTC (Adam,
 # 2026-10-27: 50, after two improve fires' estimated charge had left 2.5
 # points, which blocked every fire; 2026-10-28: "a smidge" more, 55; then
-# 60, so the first guidance-improve fire could go); back to 0.30 after
-# that reset.
-weekly_cap: 0.60
+# 60, so the first guidance-improve fire could go; 2026-10-31: 1.00, "run
+# evals up to the 80% stop", so only `stop_when_account_above` binds); back
+# to 0.30 after that reset.
+weekly_cap: 1.00
 
 # 3 points: one run stops starting new work once the meter has moved this
 # much since the run's first reading.
