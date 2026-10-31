@@ -237,7 +237,7 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'The improvement loop decided to keep it: its statistical test is at least 90% confident that, on some model and task, Claude passes at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
+    helps: 'The improvement loop decided to keep it: its statistical test is confident (a 90% range that stays above zero) that, on some model and task, Claude passes more checks with it than without it.',
     alone: 'It helps when it is the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
     none: 'The improvement loop is at least 97.5% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
     canttell: 'Claude already passes this test without it, so the test cannot show whether it helps. It needs a harder test.',
