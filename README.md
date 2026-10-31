@@ -691,8 +691,9 @@ and what to do instead of going blank.
 `newest_run` (UTC ISO 8601); `source` (repository and the two commits used);
 `roster` (`arms[]` and `judge`, each a model id and its `reason`; the page
 derives display names such as "Claude Sonnet 5.5" from the ids, never from
-code); `skills[]` (public registries only: `name`, census `status` and
-`skip_reason`, gate `verdict`, and paired `runs[]` with `with`/`without`
+code); `skills[]` (public registries only: `name`, `description` from the
+skill's `SKILL.md` front matter, census `status` and `skip_reason`, gate
+`verdict`, and paired `runs[]` with `with`/`without`
 `{trials, checks_passed, checks_total, judge_mean, cost_usd}` and a GitHub
 `report_url`); `guidance.sections[]` (manifest `id`, `heading`, `bytes`,
 `status`, verdicts, and `runs[]` whose `modes` hold any of `none`, `section`,

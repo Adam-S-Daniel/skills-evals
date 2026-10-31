@@ -233,6 +233,33 @@ def build_alerts(gates_doc: dict, regressions: dict | None, issues: dict,
     return alerts
 
 
+def skill_description(registries: dict | None, registry: str | None, name: str) -> str | None:
+    """What the skill is for: the `description` in its SKILL.md front matter, in
+    the census registry's checkout, whitespace collapsed. None when the checkout
+    is absent, the skill has no single SKILL.md there, or it has no description.
+    An `@` is dropped (a package name such as `@scope/pkg` reads the same
+    without it), so a description never trips `finish`."""
+    entry = (registries or {}).get(registry or "")
+    if not entry or not compute_gates.run_eval._SKILL_NAME_RE.fullmatch(name):
+        return None
+    root = Path(entry["path"])
+    matches = [p for p in sorted(root.glob(f"**/skills/{name}/SKILL.md"))
+               if p.is_file() and not p.is_symlink()]
+    if len(matches) != 1:
+        return None
+    try:
+        text = matches[0].read_text(encoding="utf-8")
+        if not text.startswith("---"):
+            return None
+        front = yaml.safe_load(text.split("---", 2)[1])
+    except (OSError, UnicodeDecodeError, IndexError, yaml.YAMLError):
+        return None
+    desc = front.get("description") if isinstance(front, dict) else None
+    if not isinstance(desc, str) or not desc.strip():
+        return None
+    return " ".join(desc.replace("@", "").split())
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -249,6 +276,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     for name, row in sorted(census_rows.items()):
         verdict = gates_doc["skills"].get(name) or {}
         skills.append({"name": name, "registry": row["registry"], "bundle": row.get("bundle"),
+                       "description": skill_description(registries, row["registry"], name),
                        "status": row.get("status"), "skip_reason": row.get("reason"),
                        "verdict": verdict.get("verdict"), "verdict_reason": verdict.get("reason"),
                        "runs": by_skill.get(name, [])})

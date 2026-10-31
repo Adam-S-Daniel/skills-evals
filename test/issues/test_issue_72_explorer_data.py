@@ -171,7 +171,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["coverage"], {"as_of": "2026-10-31T14:00:00Z", "covered": 3,
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
-            self.assertEqual(sorted(s), ["bundle", "name", "registry", "runs", "skip_reason",
+            self.assertEqual(sorted(s), ["bundle", "description", "name", "registry", "runs",
+                                         "skip_reason",
                                          "status", "verdict", "verdict_reason"])
 
     def test_with_and_without_are_paired_and_counted(self):
@@ -190,6 +191,26 @@ class ShapeAndMathTests(unittest.TestCase):
                          "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/"
                          "eval-results/results/alpha/20261030T100000Z/report.md")
         self.assertEqual(runs[1]["fixture"], "fx-one")
+
+    def test_the_description_comes_from_the_registry_skill_md(self):
+        reg = self.t.root / "reg"
+        md = reg / "plugins" / "bundle-one" / "skills" / "alpha" / "SKILL.md"
+        md.parent.mkdir(parents=True)
+        md.write_text("---\nname: alpha\ndescription: >-\n  Do the alpha thing\n  with @scope/pkg.\n"
+                      "  Use when asked.\n---\nbody\n", encoding="utf-8")
+        nested = reg / "plugins" / "bundle-one" / "skills" / "beta" / "SKILL.md"
+        nested.parent.mkdir(parents=True)
+        nested.write_text("no front matter\n", encoding="utf-8")
+        doc = explorer_data.build(self.t.tree, self.t.roster, self.t.policy, self.t.evals, AS_OF,
+                                  SHA_A, SHA_B, registries={"pub": {"path": reg}}, manifest=[])
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["description"],
+                         "Do the alpha thing with scope/pkg. Use when asked.")
+        self.assertIsNone(by["beta"]["description"])
+        self.assertIsNone(by["gamma"]["description"])
+        explorer_data.finish(doc)  # the dropped @ keeps the safety net quiet
+        self.assertIsNone(explorer_data.skill_description({"pub": {"path": reg}}, "pub", ".."))
+        self.assertIsNone(explorer_data.skill_description(None, "pub", "alpha"))
 
     def test_an_unpaired_run_is_not_listed(self):
         self.assertEqual(self.skill("beta")["runs"], [])

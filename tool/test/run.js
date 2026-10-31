@@ -94,8 +94,15 @@ test('data-as-of time is shown in US Eastern', () => {
 });
 
 // --- chips ---------------------------------------------------------------
-test('chip: Not enough data below the paired-run minimum on every model', () => {
-  eq(chipOf([skillRun('a', 0, 9, 0, 9), skillRun('a', 1, 9, 0, 9), skillRun('b', 0, 9, 0, 9)], 'skills'), 'insufficient');
+test('chip: Not enough data below the paired-run minimum when the early signal is mixed or small', () => {
+  eq(chipOf([skillRun('a', 0, 5, 5, 9), skillRun('a', 1, 5, 5, 9), skillRun('b', 0, 9, 0, 9)], 'skills'), 'insufficient');
+  eq(chipOf([skillRun('a', 0, 9, 0, 9), skillRun('b', 0, 3, 9, 9)], 'skills'), 'insufficient');
+  eq(chipOf([], 'skills'), 'insufficient');
+});
+test('chip: Early sign when every model tried gains >= 5 points below the minimum', () => {
+  eq(chipOf([skillRun('a', 0, 9, 0, 9), skillRun('a', 1, 9, 0, 9), skillRun('b', 0, 9, 0, 9)], 'skills'), 'early');
+  eq(chipOf([skillRun('a', 0, 7, 1, 7)], 'skills', true), 'worse');
+  ok(P.STRINGS.chips.early && P.STRINGS.chipRules.early && P.STRINGS.wholeAnswer.early, 'early strings');
 });
 test('chip: Helps at >= 5 points on one model and not worse beyond 5 on any', () => {
   const runs = [0, 1, 2].map((d) => skillRun('a', d, 21, 20, 20 * 1)).map((r) => Object.assign(r, { with: arm(11, 20), without: arm(10, 20) }));
@@ -128,7 +135,7 @@ test('chip: guidance Helps only on its own', () => {
   eq(chipOf([0, 1, 2].map((d) => secRun('a', d, 7, 3, d === 0 ? 7 : null, d === 0 ? 7 : null, 8)), 'guidance'), 'helps');
 });
 test('chip: the guidance subject applies the shared rules too', () => {
-  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'insufficient');
+  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'early');
   eq(chipOf([0, 1, 2].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
@@ -136,14 +143,40 @@ test('fixture cards get the expected chips', () => {
   const skills = Object.fromEntries(P.skillItems(fixture).map((i) => [i.name, i.chip]));
   eq(skills['example-skill-alpha'], 'helps');
   eq(skills['example-skill-beta'], 'none');
-  eq(skills['example-skill-gamma'], 'insufficient');
+  eq(skills['example-skill-gamma'], 'early');
   eq(skills['example-skill-delta'], 'worse');
   ok(!('example-skill-epsilon' in skills), 'skipped skill without runs has no card');
   const secs = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i.chip]));
   eq(secs['anything-you-name-gets-its-link'], 'helps');
   eq(secs['security'], 'alone');
   eq(secs['git-practices'], 'none');
-  eq(secs['workstation-layout'], 'insufficient');
+  eq(secs['workstation-layout'], 'early');
+});
+test('skills sort by helpfulness: chip group first, then gain, highest first', () => {
+  const items = P.skillItems(fixture);
+  eq(items.map((i) => i.name).join(','),
+    'example-skill-alpha,example-skill-gamma,example-skill-leaky,example-skill-beta,example-skill-delta');
+  const rank = ['helps', 'early', 'none', 'insufficient', 'worse'];
+  items.forEach((it, i) => {
+    if (i === 0) return;
+    const p = items[i - 1];
+    const rp = rank.indexOf(p.chip), rc = rank.indexOf(it.chip);
+    ok(rp < rc || (rp === rc && (p.pooled.all.gain === null ? it.pooled.all.gain === null
+      : it.pooled.all.gain === null || p.pooled.all.gain >= it.pooled.all.gain)), 'order at ' + it.name);
+  });
+});
+test('each skill card says what the skill is for', () => {
+  eq(P.purposeOf('Write ADRs under docs/decisions/. Use when asked.'), 'Write ADRs under docs/decisions/.');
+  eq(P.purposeOf('Debug e.g. workflows. Trigger on CI.'), 'Debug e.g. workflows.');
+  eq(P.purposeOf('No final stop'), 'No final stop');
+  eq(P.purposeOf(null), null);
+  const page = P.textOf(P.buildPage(fixture, 'skills', {}));
+  ok(page.includes('Invented description of what example-skill-alpha is for.'), 'purpose on the card');
+  ok(!page.includes('Use when the test says so'), 'trigger text left off');
+  const noDesc = JSON.parse(JSON.stringify(fixture));
+  noDesc.skills.forEach((x) => { delete x.description; });
+  ok(P.textOf(P.buildPage(noDesc, 'skills', {})).includes(P.STRINGS.purposeMissing), 'fallback when absent');
+  eq(P.purposeOf('   '), null);
 });
 test('sections sort by gain per KB, or by size', () => {
   const byValue = P.sectionItems(fixture, 'value').map((i) => i.id);
