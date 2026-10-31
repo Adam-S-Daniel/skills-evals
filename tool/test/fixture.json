@@ -35,7 +35,7 @@
       "bundle": "example-bundle",
       "status": "covered",
       "skip_reason": null,
-      "verdict": "insufficient",
+      "verdict": "keep",
       "verdict_reason": "a cell is insufficient or missing",
       "runs": [
         {
@@ -173,7 +173,7 @@
       "bundle": "example-bundle",
       "status": "covered",
       "skip_reason": null,
-      "verdict": "ceiling",
+      "verdict": "retire",
       "verdict_reason": "both arms pass every check",
       "runs": [
         {
@@ -344,7 +344,7 @@
       "bundle": "example-bundle",
       "status": "covered",
       "skip_reason": null,
-      "verdict": "retain",
+      "verdict": "keep",
       "verdict_reason": "helps on every cell",
       "runs": [
         {
@@ -540,7 +540,7 @@
         "bytes": 886,
         "status": "covered",
         "skip_reason": null,
-        "verdict": "retain",
+        "verdict": "keep",
         "verdict_reason": "helps in situ",
         "alone_verdict": "retain",
         "runs": [
@@ -774,7 +774,7 @@
         "bytes": 431,
         "status": "covered",
         "skip_reason": null,
-        "verdict": "insufficient",
+        "verdict": "shorten-or-merge",
         "verdict_reason": "needs more runs",
         "alone_verdict": "retain",
         "runs": [
@@ -1057,7 +1057,7 @@
         "bytes": 1396,
         "status": "covered",
         "skip_reason": null,
-        "verdict": "insufficient",
+        "verdict": "retire",
         "verdict_reason": "needs more runs",
         "alone_verdict": "insufficient",
         "runs": [

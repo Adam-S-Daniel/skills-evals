@@ -105,18 +105,18 @@ test('chip: Early sign when every model tried gains >= 5 points below the minimu
   ok(P.STRINGS.chips.early && P.STRINGS.chipRules.early && P.STRINGS.wholeAnswer.early, 'early strings');
 });
 test('chip: Helps at >= 5 points on one model and not worse beyond 5 on any', () => {
-  const runs = [0, 1, 2].map((d) => skillRun('a', d, 21, 20, 20 * 1)).map((r) => Object.assign(r, { with: arm(11, 20), without: arm(10, 20) }));
+  const runs = [0, 1, 2, 3, 4].map((d) => skillRun('a', d, 21, 20, 20 * 1)).map((r) => Object.assign(r, { with: arm(11, 20), without: arm(10, 20) }));
   eq(chipOf(runs, 'skills'), 'helps', 'exactly +0.05');
-  const mixed = runs.concat([0, 1, 2].map((d) => Object.assign(skillRun('b', d, 0, 0, 20), { with: arm(9, 20), without: arm(10, 20) })));
+  const mixed = runs.concat([0, 1, 2, 3, 4].map((d) => Object.assign(skillRun('b', d, 0, 0, 20), { with: arm(9, 20), without: arm(10, 20) })));
   eq(chipOf(mixed, 'skills'), 'helps', '+0.05 and -0.05 is still helps');
 });
 test('chip: No measurable difference when the gain is small', () => {
-  const runs = [0, 1, 2].map((d) => Object.assign(skillRun('a', d, 0, 0, 100), { with: arm(54, 100), without: arm(50, 100) }));
+  const runs = [0, 1, 2, 3, 4].map((d) => Object.assign(skillRun('a', d, 0, 0, 100), { with: arm(54, 100), without: arm(50, 100) }));
   eq(chipOf(runs, 'skills'), 'none');
 });
 test('chip: a model worse beyond 5 points blocks Helps', () => {
-  const a = [0, 1, 2].map((d) => skillRun('a', d, 9, 3, 9));
-  const b = [0, 1, 2].map((d) => Object.assign(skillRun('b', d, 0, 0, 100), { with: arm(40, 100), without: arm(50, 100) }));
+  const a = [0, 1, 2, 3, 4].map((d) => skillRun('a', d, 9, 3, 9));
+  const b = [0, 1, 2, 3, 4].map((d) => Object.assign(skillRun('b', d, 0, 0, 100), { with: arm(40, 100), without: arm(50, 100) }));
   eq(chipOf(a.concat(b), 'skills'), 'none');
 });
 test('chip: Getting worse when a regression alert names it', () => {
@@ -125,19 +125,36 @@ test('chip: Getting worse when a regression alert names it', () => {
   ok(!P.hasRegression(fixture.alerts, 'guidance', 'example-skill-delta'), 'subject must match');
 });
 test('chip: guidance Helps when the section also helps with the other rules present', () => {
-  const runs = [0, 1, 2].map((d) => secRun('a', d, 7, 3, 7, 4, 8));
+  const runs = [0, 1, 2, 3, 4].map((d) => secRun('a', d, 7, 3, 7, 4, 8));
   eq(chipOf(runs, 'guidance'), 'helps');
 });
 test('chip: guidance Helps only on its own', () => {
-  const runs = [0, 1, 2].map((d) => secRun('a', d, 7, 3, 7, 7, 8));
+  const runs = [0, 1, 2, 3, 4].map((d) => secRun('a', d, 7, 3, 7, 7, 8));
   eq(chipOf(runs, 'guidance'), 'alone');
   // without enough ablation runs, the second rule cannot fire
-  eq(chipOf([0, 1, 2].map((d) => secRun('a', d, 7, 3, d === 0 ? 7 : null, d === 0 ? 7 : null, 8)), 'guidance'), 'helps');
+  eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 7, 3, d === 0 ? 7 : null, d === 0 ? 7 : null, 8)), 'guidance'), 'helps');
 });
 test('chip: the guidance subject applies the shared rules too', () => {
   eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'early');
-  eq(chipOf([0, 1, 2].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
+  eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
+});
+test('with a loop verdict, the chip follows the loop, not the page rule', () => {
+  const strong = [skillRun('a', 0, 9, 0, 9)];
+  const many = [0, 1, 2, 3, 4].map((d) => skillRun('a', d, 9, 0, 9));
+  const ch = (runs, verdict, reg) => P.chipFor(P.poolRuns(runs, 'skills', refMs, []), { subject: 'skills', verdict, regression: reg });
+  eq(ch(strong, 'keep'), 'helps');
+  eq(ch(many, 'insufficient'), 'early', 'a big gain the loop has not confirmed is only an early sign');
+  eq(ch(many, null), 'early', 'no verdict yet');
+  eq(ch([skillRun('a', 0, 5, 5, 9)], 'insufficient'), 'insufficient');
+  eq(ch(many, 'retire'), 'none');
+  eq(ch(many, 'retire-pending'), 'none');
+  eq(ch(many, 'ceiling'), 'canttell');
+  eq(ch(many, 'cannot-discriminate'), 'canttell');
+  eq(ch(many, 'shorten-or-merge'), 'alone');
+  eq(ch(many, 'keep', true), 'worse', 'a regression alert still wins');
+  eq(ch(many, 'something-new'), 'early', 'an unknown verdict is not final');
+  P.STRINGS.chipOrder.forEach((k) => ok(P.STRINGS.chips[k] && P.STRINGS.chipRules[k], 'strings for ' + k));
 });
 test('fixture cards get the expected chips', () => {
   const skills = Object.fromEntries(P.skillItems(fixture).map((i) => [i.name, i.chip]));
@@ -156,7 +173,7 @@ test('skills sort by helpfulness: chip group first, then gain, highest first', (
   const items = P.skillItems(fixture);
   eq(items.map((i) => i.name).join(','),
     'example-skill-alpha,example-skill-gamma,example-skill-leaky,example-skill-beta,example-skill-delta');
-  const rank = ['helps', 'early', 'none', 'insufficient', 'worse'];
+  const rank = ['helps', 'early', 'canttell', 'insufficient', 'none', 'worse'];
   items.forEach((it, i) => {
     if (i === 0) return;
     const p = items[i - 1];
