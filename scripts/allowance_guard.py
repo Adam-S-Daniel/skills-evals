@@ -120,7 +120,10 @@ points under the 95% stop. A fire that started `PENDING_FULL_HOLD` or more
 before the reading has finished inside it (a routine run stops at 30
 minutes), so when the fires' start times are known the bound charges only
 the fires after that cut that no ingested run accounts for: a recent one the
-full reservation, an older one the overrun.
+full reservation, an older one the overrun. An ingested run inside the
+reading whose summaries say it had ended by then (`usage.ended_at`) has no
+call after it, so it is not charged the overrun either (2026-11-01 13:54
+UTC: seven one-minute runs that had all ended held 3.5 points that way).
 
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
@@ -363,6 +366,22 @@ def inside_reading(run_dir: Path, at: datetime) -> bool:
     return seen > 0
 
 
+def ended_before(run_dir: Path, at: datetime) -> bool:
+    """Whether one ingested run had ended by `at`: every summary readable
+    with a run-level `usage.ended_at` no later than it. A run that ended
+    before the reading has its last call inside it too."""
+    seen = 0
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        ended = _snapshot_time({"at": usage.get("ended_at")}) \
+            if isinstance(usage, dict) else None
+        if ended is None or ended > at:
+            return False
+        seen += 1
+    return seen > 0
+
+
 def all_runs(tree: Path) -> list[Path]:
     """Every run directory under `<tree>/routine-results/`, any age."""
     root = tree / DEST_ROOT
@@ -583,7 +602,7 @@ def account(tree: Path, limits: dict, now: datetime,
             if not inside_reading(run_dir, at):
                 outside += run_cost(run_dir, limits)
             elif _parse_stamp(RUN_ID_RE.fullmatch(run_dir.name).group("stamp")) \
-                    + PENDING_FULL_HOLD > at:
+                    + PENDING_FULL_HOLD > at and not ended_before(run_dir, at):
                 # Maybe still running at the reading: its last call is after it.
                 outside += limits["per_run_overrun"]
         late_pending = eval_pending
