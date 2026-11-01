@@ -1485,11 +1485,36 @@ def regenerate_readme(tree: Path) -> None:
         raise Rejected("the registry's README table generator failed")
 
 
+#: The registry's ADR 0013 layout pin, read by its
+#: test_the_shipped_plugins_match_the_adr_0013_layout; retire_skill.py edits
+#: the same file the other way.
+LAYOUT_FILE = "scripts/plugin_layout.json"
+
+
+def add_to_layout(tree: Path, plugin: str, subject: str) -> None:
+    """List `subject` under `plugin` in the layout pin, sorted, in the
+    registry's canonical form (json.dumps, indent 2, one trailing newline)."""
+    _no_symlink_on(tree, LAYOUT_FILE)
+    path = tree / LAYOUT_FILE
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise Rejected(f"the registry has no readable {LAYOUT_FILE}") from None
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    entry = plugins.get(plugin) if isinstance(plugins, dict) else None
+    skills = entry.get("skills") if isinstance(entry, dict) else None
+    if not isinstance(skills, list) or subject in skills:
+        raise Rejected(f"{LAYOUT_FILE} has no skill list for the plugin, or lists the skill")
+    entry["skills"] = sorted(skills + [subject])
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+
+
 def apply(staged: Path, tree: Path) -> dict:
     """In an adam-agentskills checkout: the patch, as data, then what the
     registry requires of a new skill (its pull-request template and CI):
     the bundle version bumped in both manifests (check_plugin_versions.py),
     the README skill table regenerated (generate_readme_table.py --check),
+    the skill listed in the ADR 0013 layout pin (scripts/plugin_layout.json),
     and a `docs/skill-impact.md` entry. `relock=true` means the bundle is in
     the registry's own skills.lock: commit, then re-pin the lock on that
     commit (`generate_skills_lock.py --repin`) and commit it, or
@@ -1522,6 +1547,7 @@ def apply(staged: Path, tree: Path) -> dict:
         if versions is not None and moved != versions:
             raise Rejected("the two plugin manifests disagree on the version")
         versions = moved
+    add_to_layout(tree, plugin, subject)
     _no_symlink_on(tree, "docs/skill-impact.md")
     insert_impact(tree / "docs" / "skill-impact.md", impact_entry(record, versions))
     _no_symlink_on(tree, "README.md")

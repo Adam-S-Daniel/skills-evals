@@ -395,6 +395,21 @@ jobs:
             echo "::error::apply printed no relock decision"
             exit 1
           fi
+          # The registry's own checks on the finished tree, before anything is
+          # pushed: a draft its required checks would reject never becomes a
+          # pull request (adam-agentskills#102 opened red on a layout pin and a
+          # payload reference). These are the default branch's own scripts
+          # and pinned dev requirements; the drafted files are read, never run.
+          python3 -m pip install -q -r "$reg/requirements-dev.txt"
+          if ! (cd "$reg" \
+                && python3 scripts/check_skills.py > "$RUNNER_TEMP/check_skills.out" \
+                && python3 scripts/generate_readme_table.py --check \
+                && python3 scripts/generate_skills_lock.py --check-current \
+                && python3 -m pytest -q -p no:cacheprovider scripts/test_check_consistency.py); then
+            grep -E '^  \[' "$RUNNER_TEMP/check_skills.out" | grep -v '\[british-spelling\]' || true
+            echo "::error::the drafted ${SUBJECT} skill fails adam-agentskills' own checks; no pull request is opened"
+            exit 1
+          fi
           commit="$(git -C "$reg" rev-parse HEAD)"
           git -C "$reg" -c "http.https://github.com/.extraheader=$auth" \
             push origin "HEAD:refs/heads/${target}"

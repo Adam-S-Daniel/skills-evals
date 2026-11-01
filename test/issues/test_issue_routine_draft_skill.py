@@ -640,6 +640,18 @@ class GateTests(unittest.TestCase):
         self.assertIn("python3 scripts/generate_skills_lock.py --repin", skill)
         self.assertIn('grep -qxF -- "relock=false"', skill)
         self.assertIn("--repo adam-agentskills", skill)
+        # The registry's own required checks run on the finished tree before
+        # the push, so a draft they reject is never opened (adam-agentskills#102).
+        push = skill.index('push origin "HEAD:refs/heads/${target}"')
+        for check in ('pip install -q -r "$reg/requirements-dev.txt"',
+                      "python3 scripts/check_skills.py",
+                      "python3 scripts/generate_readme_table.py --check",
+                      "python3 scripts/generate_skills_lock.py --check-current",
+                      "pytest -q -p no:cacheprovider scripts/test_check_consistency.py"):
+            self.assertIn(check, skill)
+            self.assertLess(skill.index(check), push, check)
+        self.assertLess(skill.index("generate_skills_lock.py --repin"),
+                        skill.index("generate_skills_lock.py --check-current"))
 
     def test_the_guards_can_fail(self):
         self.assertIsNotNone(lock_problem("actions/checkout@v4", GATE))
