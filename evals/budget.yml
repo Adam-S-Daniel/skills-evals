@@ -43,13 +43,15 @@ weekly_cap: 1.00
 # also cause.
 per_run_cap: 0.01
 
-# Added to every run's measured spend: the meter is read as an agent call
-# begins, so the run's last call (and any judge call after it) is never
-# inside the measured delta. 0.2 points (Adam, 2026-11-01, until judge-call
-# cost data exists; was 0.5): at the measured 0.29 points per agent dollar,
-# one agent call cost 0.04 points at the median and 0.34 at most over the
-# 258 metered runs to then; judge calls record no cost yet.
-per_run_overrun: 0.002
+# Added to every run's measured spend: the meter is read as each call
+# begins, so the run's last call (agent or judge) is never inside the
+# measured delta. Set to the 95th percentile of each run's largest single
+# call (Adam, 2026-11-01: "Use p95 now and in the future"); recalculate with
+# `python3 scripts/run_costs.py --results-tree <persistent/eval-results>`,
+# which prints the value to use. Over 258 metered runs, at 0.220 points per
+# dollar of agent, judge and guard calls, that call was 0.180 points at p95
+# (0.311 at most). Was 0.5 points, then 0.2.
+per_run_overrun: 0.0018
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of

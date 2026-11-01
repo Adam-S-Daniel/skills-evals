@@ -130,7 +130,7 @@ weekly allowance):
 |---|---|---|
 | `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
-| `per_run_overrun` | 0.002 | added to every run: its last call is never measured (Adam, 2026-11-01, until judge-call cost data exists; was 0.005) |
+| `per_run_overrun` | 0.0018 | added to every run: its last call is never measured. The 95th percentile of each run's largest single call (Adam, 2026-11-01, standing rule; `scripts/run_costs.py` prints the value; was 0.005, then 0.002) |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this (0.95 until the 2026-11-02 reset) |
 
 Three layers enforce it:

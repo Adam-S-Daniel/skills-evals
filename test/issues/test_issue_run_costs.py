@@ -1,5 +1,7 @@
 """scripts/run_costs.py: one row per run and the cost percentiles that size
 evals/budget.yml (Adam, 2026-11-01: keep the script to recalculate them)."""
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -97,9 +99,16 @@ class RunCostsTests(unittest.TestCase):
 
     def test_main_writes_csv_and_prints_report(self):
         out = self.tree / "runs.csv"
-        self.assertEqual(run_costs.main(["--results-tree", str(self.tree),
-                                         "--evals", str(self.tree / "none"),
-                                         "--csv", str(out)]), 0)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.assertEqual(run_costs.main(["--results-tree", str(self.tree),
+                                             "--evals", str(self.tree / "none"),
+                                             "--csv", str(out)]), 0)
+        # Adam's standing rule: the overrun is the p95 of the largest call.
+        # Largest calls are 1.00 (run A) and 2.00 (run B) dollars: p95 1.95.
+        expected = 1.95 * 3 / 4.05 / 100
+        self.assertIn(f"per_run_overrun for evals/budget.yml (p95 of the largest call): "
+                      f"{expected:.4f}", printed.getvalue())
         self.assertEqual(len(out.read_text(encoding="utf-8").splitlines()), 4)
 
 
