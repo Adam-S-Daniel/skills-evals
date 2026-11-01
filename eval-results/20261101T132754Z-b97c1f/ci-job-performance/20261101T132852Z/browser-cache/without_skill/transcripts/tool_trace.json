@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013Si3Jw4vagVzwdShHmgj9q",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml -L 20",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013Si3Jw4vagVzwdShHmgj9q",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HJXfp7uhgF4qx1knKC7mMX",
+      "name": "Bash",
+      "input": "for r in 71001 71004 72001 72002 72003 72004; do echo \"== $r\"; gh api repos/example-org/example-repo/actions/runs/$r/jobs --jq '.jobs[] | .name as $n | .steps[] | select(.name|test(\"cache|Install|Run\"...",
+      "input_chars": 269,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HJXfp7uhgF4qx1knKC7mMX",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (59.7KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"total_count\": 3,\n  \"jobs\": [\n    {\n      \"id\": 810011,\n      \"run_id\": 71001,\n      \"workflow_name\": \"e2e\",\n      \"head_branch\": \"main\",\n      \"head_sha\": \"3f6c1e23f6c1e23f6...",
+      "output_chars": 2196,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013jhqCE59osqAsdXURBjsXE",
+      "name": "Bash",
+      "input": "cd $TMPDIR; for r in 71001 71004 72001 72002 72003 72004; do gh api repos/example-org/example-repo/actions/runs/$r/jobs > j$r.json; done\npython3 -I - <<'E'\nimport json,datetime as d\np=lambda s:d.datet...",
+      "input_chars": 751,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013jhqCE59osqAsdXURBjsXE",
+      "is_error": false,
+      "output": "== 71001\ne2e (chromium) 93 | Install dependencies:succ:8s Install browser OS dependenc:succ:24s Install browser:succ:11s Run Playwright tests:succ:42s\ne2e (firefox) 97 | Install dependencies:succ:13s Install browser OS dependenc:succ:20s Install browser:succ:5s Run Playwright tests:succ:51s\ne2e (web...",
+      "output_chars": 3420,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RxedWMU8DbRFrVqiFLR9cv",
+      "name": "Bash",
+      "input": "python3 -I - <<'E'\nf='.github/workflows/e2e.yml'\ns=open(f).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Only chromium benefits: its download (~11s...",
+      "input_chars": 593,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RxedWMU8DbRFrVqiFLR9cv",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/e2e.yml b/.github/workflows/e2e.yml\nindex b90594a..7972250 100644\n--- a/.github/workflows/e2e.yml\n+++ b/.github/workflows/e2e.yml\n@@ -31,12 +31,16 @@ jobs:\n           cache-dependency-path: e2e/package-lock.json\n       - name: Install dependencies\n         run: npm ci\n...",
+      "output_chars": 1097,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
