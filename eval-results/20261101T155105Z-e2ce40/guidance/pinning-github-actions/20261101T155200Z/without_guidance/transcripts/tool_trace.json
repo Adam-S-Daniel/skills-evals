@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012ygBE47MH6PMxwgWw9oUeH",
+      "name": "Bash",
+      "input": "cat REFS.txt; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 53,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012ygBE47MH6PMxwgWw9oUeH",
+      "is_error": false,
+      "output": "# `git ls-remote --tags <url>`, captured for this offline sandbox.\n\n## https://github.com/actions/checkout\nbd4aa0d1a48d757a118d3fe9d4f547b843d5a2ca\trefs/tags/v4.2.2\n9459ac0c7a9a78b5ac15c6e471312de28ff87692\trefs/tags/v4.2.2^{}\n\n## https://github.com/actions/setup-node\n87788e64c72e96ca086359b8905b54f0...",
+      "output_chars": 657,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ji2MLQYqtcZRTUFyK7DCiF",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ji2MLQYqtcZRTUFyK7DCiF",
+      "is_error": false,
+      "output": "name: ci\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@d5e50132c4d90c4ae953c821b3d1d9eaa7242950\n      - run: npm ci && npm test",
+      "output_chars": 227,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015UG8UbdoxYwHSHy7B8isZy",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 73,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015UG8UbdoxYwHSHy7B8isZy",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
