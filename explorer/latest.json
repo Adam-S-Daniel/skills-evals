@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T12:45:18Z",
+ "generated_at": "2026-11-01T12:46:38Z",
  "guidance": {
   "sections": [
    {
@@ -899,7 +899,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T12:43:23Z",
+ "newest_run": "2026-11-01T12:44:34Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -1284,7 +1284,29 @@
     "scheduled": true
    },
    "registry": "cms-platform",
-   "runs": [],
+   "runs": [
+    {
+     "at": "2026-11-01T12:44:34Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T124341Z-34d262/consumer-repo-provisioning/20261101T124434Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.1111202,
+      "judge_mean": 6.6,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 11,
+      "checks_total": 19,
+      "cost_usd": 0.2031033,
+      "judge_mean": 4.6,
+      "trials": 1
+     }
+    }
+   ],
    "skip_reason": null,
    "stakes": {
     "covered_by": null,
@@ -1295,8 +1317,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": null,
-   "verdict_reason": null
+   "verdict": "insufficient",
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -6295,7 +6317,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "82f39c31785408447816c680eb159692716c409e",
-  "results_commit": "a0c0dec3327a4bc66b42b169e940594a58e1a459"
+  "results_commit": "d0ef92623d31a5d716a59e169396dfdd2f611c09"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
