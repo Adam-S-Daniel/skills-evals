@@ -289,6 +289,8 @@ const STRINGS = {
   nextDue: (when) => 'Next test: a re-check due ' + when + '.',
   nextNone: 'Next test: none planned right now.',
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
+  stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
+  stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
   confidence: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
   confidenceSection: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
@@ -1024,6 +1026,13 @@ function nextLine(nt, refMs, kind) {
   return h('p', { class: 'meta' }, text);
 }
 
+function stakesLine(st) {
+  if (!st || typeof st !== 'object' || typeof st.reason !== 'string') return null;
+  if (st.level === 'high') return h('p', { class: 'meta' }, STRINGS.stakesHigh(clean(st.reason)));
+  if (st.level === 'none' && typeof st.covered_by === 'string') return h('p', { class: 'meta' }, STRINGS.stakesNone(clean(st.reason), clean(st.covered_by)));
+  return null;
+}
+
 function confidenceLine(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps) || !ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
@@ -1043,6 +1052,7 @@ function skillCard(it, refMs, doc) {
     h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
     usageLine(it.raw.usage, doc && doc.usage, refMs),
     nextLine(it.raw.next_test, refMs, 'skill'),
+    stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
     confidenceLine(it.raw.confidence, doc && doc.policy, 'skills'),
@@ -1056,6 +1066,7 @@ function sectionCard(it, refMs, doc) {
     h('p', { class: 'gl' }, gloss),
     h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
     nextLine(it.raw.next_test, refMs, 'section'),
+    stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
     confidenceLine(it.raw.confidence, doc && doc.policy, 'guidance'),

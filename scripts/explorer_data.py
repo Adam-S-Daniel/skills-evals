@@ -26,7 +26,9 @@ more than what it carries:
 
 Each skill and section also carries `confidence` (the levels its gate
 bounds reach, `subject_confidence`) and `next_test` (its place in the
-planner's eval queue or its next re-check, `test_queue`); each skill carries
+planner's eval queue or its next re-check, `test_queue`) and `stakes`
+(its evals/stakes.yml level, `normal` with no row; scripts/stakes.py); each
+skill carries
 `usage`, its invocations in `usage/weekly-local.json`, whose window is the
 top-level `usage` (None without a census: unknown, not zero).
 
@@ -54,6 +56,7 @@ import compute_gates  # noqa: E402
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import plan_week  # noqa: E402
 import skill_usage  # noqa: E402
+import stakes as stakes_mod  # noqa: E402
 
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -308,7 +311,7 @@ def test_queue(cells: list, model_weights: dict, now) -> dict:
     scheduled cell: `position` (1 = next) is the subject's first cell in the
     planner's eval bands, in `plan_week.allocate`'s order before the budget
     cuts it off; a subject with no cell in a band gets `due`, the earliest
-    re-check of a cell the planner re-checks (newest run + RECHECK_AFTER), or
+    re-check of a cell the planner re-checks (newest run + plan_week.recheck_after), or
     neither when no test is planned. `scheduled` is False (from the caller)
     for a subject with no fixture on `evals/scheduled.yml`. The
     budget decides how far down the queue a sweep gets, so this is an order,
@@ -338,10 +341,10 @@ def test_queue(cells: list, model_weights: dict, now) -> dict:
             continue
         entry = out.setdefault(subject, {"position": None, "band": None, "due": None,
                                          "scheduled": True})
-        if newest is None or (cell["class"] in ("missing", "insufficient")
-                              and cell.get("verdict") != "keep"):
+        if newest is None or cell.get("stakes") == "none" \
+                or (cell["class"] in ("missing", "insufficient") and cell.get("verdict") != "keep"):
             continue
-        due = plan_week._iso(newest + plan_week.RECHECK_AFTER)
+        due = plan_week._iso(newest + plan_week.recheck_after(cell))
         if entry["due"] is None or due < entry["due"]:
             entry["due"] = due
     return out
@@ -394,6 +397,12 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                            plan_week.model_weights(tree, gates_doc["roster_models"]), now)
     counts, usage_window = usage_counts(tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
+    table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
+
+    def stakes_of(kind, name):
+        entry = table.get((kind, name))
+        return {"level": entry["stakes"], "reason": entry["reason"],
+                "covered_by": entry["covered_by"]} if entry else {"level": "normal"}
 
     skills = []
     for name, row in sorted(census_rows.items()):
@@ -405,6 +414,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "current_text_runs": current_text_runs(verdict),
                        "confidence": subject_confidence(verdict),
                        "next_test": queue.get(("skill", name), unqueued),
+                       "stakes": stakes_of("skill", name),
                        "usage": None if usage_window is None
                        else {"invocations": counts.get(name, 0)},
                        "runs": by_skill.get(name, [])})
@@ -425,6 +435,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "alone_verdict": (verdict.get("alone") or {}).get("verdict"),
             "confidence": subject_confidence(verdict),
             "next_test": queue.get(("guidance", row["id"]), unqueued),
+            "stakes": stakes_of("guidance", row["id"]),
             "runs": by_section.get(row["id"], [])})
 
     renumber(sections)

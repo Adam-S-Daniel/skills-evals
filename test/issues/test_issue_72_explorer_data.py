@@ -177,7 +177,10 @@ class ShapeAndMathTests(unittest.TestCase):
             self.assertEqual(sorted(s), ["bundle", "confidence", "current_text_runs", "description",
                                          "name",
                                          "next_test", "registry", "runs", "skip_reason",
-                                         "status", "usage", "verdict", "verdict_reason"])
+                                         "stakes", "status", "usage", "verdict",
+                                         "verdict_reason"])
+            # No evals/stakes.yml row: normal.
+            self.assertEqual(s["stakes"], {"level": "normal"})
             # No usage census in the tree: unknown, not zero. No schedule: no test.
             self.assertIsNone(s["usage"])
             self.assertEqual(s["next_test"], {"position": None, "band": None, "due": None,
@@ -219,6 +222,16 @@ class ShapeAndMathTests(unittest.TestCase):
         explorer_data.finish(doc)  # the dropped @ keeps the safety net quiet
         self.assertIsNone(explorer_data.skill_description({"pub": {"path": reg}}, "pub", ".."))
         self.assertIsNone(explorer_data.skill_description(None, "pub", "alpha"))
+
+    def test_stakes_rows_reach_the_document(self):
+        (self.t.evals / "alpha").mkdir(parents=True, exist_ok=True)
+        (self.t.evals / "stakes.yml").write_text(
+            "skills:\n  - {skill: alpha, stakes: high, reason: invented reason}\n",
+            encoding="utf-8")
+        by = {s["name"]: s for s in self.t.build()["skills"]}
+        self.assertEqual(by["alpha"]["stakes"], {"level": "high", "reason": "invented reason",
+                                                 "covered_by": None})
+        self.assertEqual(by["beta"]["stakes"], {"level": "normal"})
 
     def test_an_unpaired_run_is_not_listed(self):
         self.assertEqual(self.skill("beta")["runs"], [])

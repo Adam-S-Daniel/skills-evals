@@ -199,6 +199,16 @@ test('cards sort by next test first, then by how well they are faring', () => {
   ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
   ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
 });
+test('stakes show on the card for high and no-eval subjects only', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.skills[0].stakes = { level: 'high', reason: 'a wrong pin runs third-party code' };
+  doc.skills[1].stakes = { level: 'none', reason: 'a hook refuses it', covered_by: 'Adam-S-Daniel/example:hooks/check.sh' };
+  doc.skills[2].stakes = { level: 'normal' };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked every 4 weeks instead of 8.'), 'high line');
+  ok(text.includes('No eval needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
+  eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
+});
 test('the confidence line shows whole percents and never rounds up to certainty', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   doc.skills[0].confidence = { helps: 0.8571, no_help: 0.9999 };

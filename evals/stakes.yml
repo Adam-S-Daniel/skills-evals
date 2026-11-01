@@ -1,0 +1,60 @@
+# Stakes: how much a skill or guidance section matters, from what it is for.
+#
+# Adam, 2026-11-01 ("Yes, build it"): rank subjects by what they protect, not
+# only by how often they are used. A subject with no row is `normal`. Only
+# `high` and `none` need a row, each with a one-line `reason`.
+#
+#   high    it prevents irreversible or public harm: a leaked secret or
+#           personal data, a compromised dependency, a destroyed process or
+#           history, a post that reads as the owner's own. The planner tests
+#           it first within each band and re-checks a decided one after
+#           RECHECK_AFTER_HIGH (4 weeks) instead of RECHECK_AFTER (8 weeks).
+#   normal  everything else (the default).
+#   none    it needs no eval because a check enforces it wherever it applies.
+#           The planner plans no eval fire for it. `covered_by` is required
+#           and names that check as `<owner>/<repo>:<path>`, with the owner
+#           one of the fleet's two (`Adam-S-Daniel`, `jodidaniel`). A `none`
+#           tag does not exempt a guidance section from its reading cost, and
+#           it is not a way to shield a weak rule from removal: if the named
+#           check stops enforcing it, the row goes.
+#
+# Fields per row, exactly: `skill` (a directory under evals/) or `section`
+# (a directory under evals/guidance/), `stakes`, `reason`, and `covered_by`
+# for `none` only. scripts/stakes.py refuses anything else, a name with no
+# fixture directory here (so a private skill name can never land in this
+# public file), and a duplicate; test/issues/test_issue_stakes.py loads this
+# file on every CI run.
+#
+# No `none` rows yet: the candidate, "Agent-made GitHub contributions carry a
+# marker", has a hook (_agent-guidance .claude/hooks/github-write-marker.sh),
+# but no session settings file wires it outside that repo, so it does not
+# enforce the rule everywhere the rule applies.
+skills:
+  - skill: github-actions-sha-pinning
+    stakes: high
+    reason: a wrong pin runs a third party's code with the repo's tokens
+  - skill: disarm-inherited-reach
+    stakes: high
+    reason: a scratch copy that keeps its remote can push to or delete production
+  - skill: consumer-repo-provisioning
+    stakes: high
+    reason: it sets token scopes and secrets; an over-broad token is a standing leak
+sections:
+  - section: security
+    stakes: high
+    reason: injection, committed secrets and disabled TLS or auth are hard to undo
+  - section: data-exposure-in-ci
+    stakes: high
+    reason: anything printed to a public log or history is public for good
+  - section: name-becomes-scanner-data
+    stakes: high
+    reason: a flagged name stays in history after a rename and fails every push's scan
+  - section: pinning-github-actions
+    stakes: high
+    reason: a wrong pin runs a third party's code with the repo's tokens
+  - section: test-that-can-signal-kills-every-session
+    stakes: high
+    reason: a mocked pid once killed every user process on the machine
+  - section: agent-contribution-markers
+    stakes: high
+    reason: an unmarked post or an approval reads as the owner's own words

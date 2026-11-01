@@ -68,7 +68,12 @@ THE BANDS (rule D), in order:
          known cost. With none known, the median of the known estimates
          across candidates, else the improve charge (neutral, like use).
      Each ranking row records whether use and cost were known.
-  5. re-checks: decided cells whose newest run is over 8 weeks old.
+  5. re-checks: decided cells whose newest run is over 8 weeks old (4
+     weeks for a high-stakes subject).
+  STAKES (evals/stakes.yml, scripts/stakes.py; Adam, 2026-11-01): within
+  bands 2, 3 and 5 a high-stakes subject's cells go first, before the
+  band's own order; a `none` subject (a named check enforces it) plans no
+  eval fire at all. Every other subject is `normal`.
   6. bare baselines (ADR 0012, bare baseline addendum; Adam, 2026-10-27:
      "one time per model per version of model"): one fire with `arms:
      bare`, `BARE_TRIALS` trials, per (scheduled fixture that runs in place,
@@ -236,6 +241,7 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 import allowance_guard as guard  # noqa: E402
 import improve_outcomes as outcomes_mod  # noqa: E402
 import plan_scheduled_evals as schedule  # noqa: E402
+import stakes as stakes_mod  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 #: A skill here is private (Adam, 2026-10-31): its results come from the
@@ -262,6 +268,8 @@ STOP_AFTER_REJECTIONS = 3
 STOP_FOR = timedelta(days=90)
 INFRA_RETRIES = 2
 RECHECK_AFTER = timedelta(weeks=8)
+#: A decided high-stakes subject is re-checked this soon (evals/stakes.yml).
+RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
@@ -500,6 +508,12 @@ def model_costs(cells: list) -> dict:
     return {m: statistics.median(v) for m, v in known.items()}
 
 
+def recheck_after(cell: dict) -> timedelta:
+    """How long after its newest run a decided cell is re-checked: sooner
+    for a high-stakes subject (evals/stakes.yml)."""
+    return RECHECK_AFTER_HIGH if cell.get("stakes") == "high" else RECHECK_AFTER
+
+
 def eval_items(ctx: dict, now: datetime) -> tuple:
     """(fires by band, work items) for the eval cells. A subject (skill or
     guidance section) already kept plans no missing or near fire: one
@@ -513,6 +527,11 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
+        stakes = cell.get("stakes", "normal")
+        if stakes == "none":
+            continue  # a check enforces it; evals/stakes.yml names the check
+        # High stakes go first in every band but safety.
+        rank = 0 if stakes == "high" else 1
         item = {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
                 "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
                 "change_type": None, "weight": weights.get(cell["model"], 0.0)}
@@ -526,9 +545,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
             # tested again.
-            if newest is not None and now - newest >= RECHECK_AFTER:
+            if newest is not None and now - newest >= recheck_after(cell):
                 bands["recheck"].append({**item, "band": "recheck",
-                                         "order": (newest.timestamp(),)})
+                                         "order": (rank, newest.timestamp())})
         elif cell["class"] == "missing":
             if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
                 broken = {"kind": "fixture-broken", "change_type": "fixture",
@@ -539,13 +558,13 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                 work.append(broken)
             else:
                 bands["missing"].append({**item, "band": "missing",
-                                         "order": (price, -item["weight"])})
+                                         "order": (rank, price, -item["weight"])})
         elif cell["class"] == "insufficient":
             bands["near"].append({**item, "band": "near",
-                                  "order": (least, price, -item["weight"])})
-        elif newest is not None and now - newest >= RECHECK_AFTER:
+                                  "order": (rank, least, price, -item["weight"])})
+        elif newest is not None and now - newest >= recheck_after(cell):
             bands["recheck"].append({**item, "band": "recheck",
-                                     "order": (newest.timestamp(),)})
+                                     "order": (rank, newest.timestamp())})
     return bands, work
 
 
@@ -969,6 +988,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 and now - started >= FIRE_RESULT_WINDOW:
             key = (title["target"], title["model"])
             fired.setdefault(key, []).append(started)
+    table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
     for fixture in scheduled:
         subject, ident = _fixture_subject(evals_dir, fixture)
@@ -995,6 +1015,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
+                "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),
                 "without_runs": len(runs.get("without", [])), "newest": newest,
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
