@@ -40,7 +40,9 @@ POOLED EVIDENCE (Adam, 2026-10-25), replacing #70's four weekly sweeps.
     (`arm_context.others_digest`) and frozen guidance
     (`context.guidance.digest`), can form the cell, and of those pairs the
     one with the most runs in its smaller arm, on roster models, is chosen;
-    a tie, or no such pair, chooses none and the cell is `insufficient`. So
+    a tie on that count goes to the pair with the newer newest run, and
+    only a full tie, or no such pair, chooses none and the cell is
+    `insufficient`. So
     a without arm from older guidance cannot be pooled against a with arm
     from newer guidance. The arm context cannot be computed from main (it
     is the frozen context a run deployed), so the pair with the most runs
@@ -786,7 +788,10 @@ def _joint_context(with_runs: list, without_runs: list, models: list):
     the non-subject skills (`arm_context.others_digest`) and the frozen
     guidance (`context.guidance.digest`). A candidate is a with group and a
     without group of one pair key, scored by its smaller arm's run count; the
-    best candidate is the cell's, and a tie or no candidate chooses none. No
+    best candidate is the cell's; a tie on that count goes to the candidate
+    with the newer newest run (Adam, 2026-11-01: an equal tie had dropped a
+    cell back to insufficient), and only a full tie, or no candidate, chooses
+    none. No
     single run's self-report chooses either (round 4), and the two arms can
     no longer be pooled from different guidance or skill sets."""
     def groups(runs):
@@ -794,15 +799,18 @@ def _joint_context(with_runs: list, without_runs: list, models: list):
         for run in runs:
             if run["model"] in models and run["arm_context_digest"] and run.get("pair_key"):
                 key = (run["arm_context_digest"], run["pair_key"])
-                counts[key] = counts.get(key, 0) + 1
+                n, newest = counts.get(key, (0, ""))
+                counts[key] = (n + 1, max(newest, run["timestamp"]))
         return counts
-    candidates = sorted(((min(n_with, n_without), with_ctx, without_ctx, pair)
-                         for (with_ctx, pair), n_with in groups(with_runs).items()
-                         for (without_ctx, other), n_without in groups(without_runs).items()
+    candidates = sorted(((min(n_with, n_without), max(new_with, new_without),
+                          with_ctx, without_ctx, pair)
+                         for (with_ctx, pair), (n_with, new_with) in groups(with_runs).items()
+                         for (without_ctx, other), (n_without, new_without)
+                         in groups(without_runs).items()
                          if pair == other), reverse=True)
-    if not candidates or (len(candidates) > 1 and candidates[0][0] == candidates[1][0]):
+    if not candidates or (len(candidates) > 1 and candidates[0][:2] == candidates[1][:2]):
         return None, None, None
-    return candidates[0][1:]
+    return candidates[0][2:]
 
 
 def pooled_fixture(run: dict, skill: str, expected: dict) -> str:
