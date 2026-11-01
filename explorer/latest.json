@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T15:49:24Z",
+ "generated_at": "2026-11-01T15:54:18Z",
  "guidance": {
   "sections": [
    {
@@ -198,7 +198,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [],
@@ -225,7 +225,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -592,7 +592,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -645,22 +645,60 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": null,
+    "alone_verdict": "insufficient",
     "bytes": 1153,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 5,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-01T15:52:00Z",
+      "cli_version": "2.1.316",
+      "fixture": "new-workflow",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.10535130000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.1045189,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0587327,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0624661,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T155105Z-e2ce40/guidance/pinning-github-actions/20261101T155200Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "covered_by": null,
@@ -668,8 +706,8 @@
      "reason": "a wrong pin runs a third party's code with the repo's tokens"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": null,
@@ -684,7 +722,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [],
@@ -975,7 +1013,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T15:47:43Z",
+ "newest_run": "2026-11-01T15:52:00Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6645,7 +6683,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "97ab3fa25d7829f26690bd02bf317ac75c04e359",
-  "results_commit": "13b8b587555b7c875e5b02361cd450e8be267802"
+  "results_commit": "236040b01f92bf0a0d9743b5c67127634f6be935"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
