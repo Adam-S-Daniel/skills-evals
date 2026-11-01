@@ -81,7 +81,18 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             # A private skill (#81): results go to adam-agentskills-private.
             "evals/adam-writing-style/proposal-bio",
             "evals/adam-writing-style/recruiter-reply",
-            "evals/adam-writing-style/self-appraisal-opening"]
+            "evals/adam-writing-style/self-appraisal-opening",
+            # Skills with eval runs that were never scheduled (2026-11-01).
+            "evals/ci-job-performance/browser-cache",
+            "evals/debug-github-workflows/git-identity",
+            "evals/debug-github-workflows/secret-name",
+            "evals/debug-github-workflows/swallowed-failure",
+            "evals/debug-github-workflows/wrong-branch",
+            "evals/vendor-release-impact-issues/closed-duplicate",
+            "evals/vendor-release-impact-issues/closing-keywords",
+            "evals/vendor-release-impact-issues/issue-hygiene",
+            "evals/vendor-release-impact-issues/stamps-skip-quotes",
+            "evals/finding-unknowns"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
