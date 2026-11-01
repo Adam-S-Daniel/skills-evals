@@ -1,1 +1,6 @@
-{"color": "orange", "label": "skill eval coverage", "message": "25 covered, 11 skipped, 2 GAP \u00b7 2026-10-31 (run 41210883181)", "schemaVersion": 1}
+{
+  "color": "orange",
+  "label": "Coverage",
+  "message": "25 covered \u00b7 11 skipped \u00b7 2 gap \u00b7 2026-11-01",
+  "schemaVersion": 1
+}
