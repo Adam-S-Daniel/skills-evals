@@ -1365,7 +1365,8 @@ def gather(args, now: datetime) -> dict:
                           _fire_pair(evidence["fire_runs"], now, since),
                           guard.improve_counts(evidence["fire_runs"], now, since),
                           since,
-                          improve_started=guard.improve_starts(evidence["fire_runs"], now, since))
+                          improve_started=guard.improve_starts(evidence["fire_runs"], now, since),
+                          eval_started=guard.eval_fire_starts(evidence["fire_runs"], now, since))
     print(guard.describe(state))
     skills = skill_contexts(evals_dir, args.results_tree,
                             compute_gates.parse_as_of(args.as_of), registries,

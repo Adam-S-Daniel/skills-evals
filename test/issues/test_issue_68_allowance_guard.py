@@ -1634,3 +1634,69 @@ class StopLimitTests(unittest.TestCase):
         self.assertAlmostEqual(guard.room(state),
                                state["cap"] - state["spent"] - state["pending"], places=12)
 
+
+
+class FiresWithoutResultsTests(unittest.TestCase):
+    """2026-11-01 10:40 UTC: the account read 84% and the stop was 95%, but
+    the bound charged 15 fires without results that had stopped hours before
+    the reading (7.5 points it already held), so three fires were refused 3
+    points under the stop. With the fires' start times, the bound charges
+    only the fires the reading cannot hold."""
+
+    SNAP = ReadingBoundTests.SNAP
+    LIMITS = {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 0.95}
+
+    setUp = ReadingBoundTests.setUp
+    add_run = ReadingBoundTests.add_run
+    week = ReadingBoundTests.week
+
+    def state(self, eval_started, fires=None, recent=0):
+        fires = len(eval_started) if fires is None else fires
+        return guard.account(self.tree, self.LIMITS, NOW, (fires, recent), (0, 0),
+                             since=NOW - guard.WINDOW, eval_started=eval_started)
+
+    def test_old_fires_without_results_are_inside_the_reading(self):
+        self.week(used=0.84, runs=10)
+        old = [self.SNAP - timedelta(hours=4)] * 16
+        without = self.state(None, fires=26)
+        self.assertAlmostEqual(without["bound"], 0.84 + 16 * 0.005, places=12)
+        self.assertEqual(guard.fits(without), 0)  # the refusal
+        state = self.state([datetime(2026, 10, 20, h, tzinfo=timezone.utc)
+                            for h in range(10)] + old)
+        self.assertAlmostEqual(state["bound"], 0.84, places=12)
+        self.assertAlmostEqual(state["stop_left"], 0.11, places=12)
+        self.assertEqual(guard.fits(state), 3)
+
+    def test_fires_after_the_cut_without_results_keep_their_charge(self):
+        self.week(used=0.84, runs=10)
+        late = self.SNAP - guard.PENDING_FULL_HOLD + timedelta(minutes=1)
+        recent = NOW - timedelta(minutes=5)
+        starts = [datetime(2026, 10, 20, h, tzinfo=timezone.utc) for h in range(10)]
+        state = self.state(starts + [late, recent], recent=1)
+        # The late one stopped or finished: the overrun; the recent one: in full.
+        self.assertAlmostEqual(state["bound"], 0.84 + 0.005 + RESERVE, places=12)
+
+    def test_a_late_ingested_run_accounts_for_its_fire(self):
+        self.week(used=0.84, runs=10)
+        stamp = self.SNAP - timedelta(minutes=10)
+        self.add_run(stamp.strftime("%Y%m%dT%H%M%SZ"),
+                     [snapshot(0.84, at=self.SNAP - timedelta(minutes=1))], delta=0.01)
+        starts = [datetime(2026, 10, 20, h, tzinfo=timezone.utc) for h in range(10)]
+        state = self.state(starts + [stamp])
+        # Inside the reading but maybe running at it: the overrun, once.
+        self.assertAlmostEqual(state["bound"], 0.84 + 0.005, places=12)
+
+    def test_eval_fire_starts_leave_out_improve_and_failed_fires(self):
+        def row(i, title, conclusion="success"):
+            return {"id": i, "display_title": title, "conclusion": conclusion,
+                    "status": "completed", "run_started_at": "2026-10-20T10:00:00Z",
+                    "created_at": "2026-10-20T10:00:00Z", "updated_at": "2026-10-20T10:20:00Z"}
+        runs = [row(1, "Fire eval routine: eval evals/a claude-sonnet-5-5"),
+                row(2, "Fire eval routine: improve writing-adrs"),
+                row(3, "Fire eval routine: eval evals/b claude-sonnet-5-5", "failure")]
+        starts = guard.eval_fire_starts(runs, NOW)
+        self.assertEqual(starts, [datetime(2026, 10, 20, 10, tzinfo=timezone.utc)])
+
+    def test_naive_start_times_are_refused(self):
+        with self.assertRaises(guard.GuardError):
+            self.state([datetime(2026, 10, 20, 10)])
