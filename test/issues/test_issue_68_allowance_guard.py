@@ -1292,6 +1292,9 @@ class RefreshFireTests(unittest.TestCase):
         state = self.state(self.blocked())
         state["spent"] = state["cap"]
         state["pace_room"] = 0.0
+        # Spend the reading does not hold (from runs after it), so it gives
+        # no bound below spent plus pending.
+        state["bound"] = None
         self.assertFalse(guard.check(state, "eval"))
 
     def test_main_names_the_refresh_fire(self):
@@ -1307,6 +1310,153 @@ class RefreshFireTests(unittest.TestCase):
                               improve_starts=lambda now: starts)
         self.assertEqual(code, 0, out.getvalue())
         self.assertIn("allowed as the one refresh fire", out.getvalue())
+
+
+class ReadingBoundTests(unittest.TestCase):
+    """2026-11-01: the guard counted 29.5 points spent over 41 ingested runs
+    plus 67.5 pending while the account meter read 72% of the week, and
+    refused every fire. Unmeasured eval runs inside the reading were charged
+    in full in `spent` and again inside the reading that held the covered
+    improve fires. The reading bounds what is committed: it plus the full
+    charge of everything not inside it (Adam: "Seems like there is room for
+    more runs now; the week is almost over")."""
+
+    SNAP = NOW - timedelta(hours=1)
+    WIDE = {**LIMITS, "weekly_cap": 1.0}  # evals/budget.yml that week
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    def add_run(self, stamp, snapshots, delta=None):
+        """One ingested run: unmeasured (`delta` None) unless given."""
+        run = self.tree / "routine-results" / f"{stamp}-a1b2c3"
+        path = run / "k" / stamp / "with_skill" / "summary.json"
+        path.parent.mkdir(parents=True)
+        block = usage_block(delta)
+        if snapshots is not None:
+            block["measured"]["meter"] = {"snapshots": snapshots, "omitted": 0}
+        path.write_text(json.dumps({"arm": "x", "usage": block}), encoding="utf-8")
+        return run
+
+    def week(self, used=0.72, runs=10):
+        """`runs` unmeasured eval runs, all finished inside the reading; the
+        first carries the newest snapshot, at `used`."""
+        self.add_run("20261020T100000Z", [snapshot(used, at=self.SNAP)])
+        # Stamped after the week's reset (Monday 2026-10-19 17:00 UTC), so
+        # `main`'s window counts them too.
+        for hour in range(runs - 1):
+            stamp = datetime(2026, 10, 20, hour, tzinfo=timezone.utc)
+            self.add_run(stamp.strftime("%Y%m%dT%H%M%SZ"),
+                         [snapshot(0.5, at=stamp + timedelta(minutes=10))])
+
+    def state(self, limits=None, fires=10, improve_started=()):
+        started = list(improve_started)
+        return guard.account(self.tree, limits or self.WIDE, NOW,
+                             (fires + len(started), 0), (len(started), 0),
+                             since=NOW - guard.WINDOW, improve_started=started)
+
+    @staticmethod
+    def old_room(state):
+        """`room` as it was before 2026-11-01."""
+        return max(state["cap"] - state["spent"], state["pace_room"]) - state["pending"]
+
+    def test_the_2026_11_01_shape_is_no_longer_refused(self):
+        self.week()
+        state = self.state(improve_started=[self.SNAP - timedelta(days=1)] * 8)
+        self.assertEqual(state["improve_covered"], 8)
+        self.assertAlmostEqual(state["spent"], 10 * RESERVE, places=12)
+        # The eight covered fires are held at the whole 72-point reading.
+        self.assertAlmostEqual(state["pending"], 0.72, places=12)
+        self.assertLess(self.old_room(state), RESERVE)  # the old math refused
+        # Everything here is inside the reading: it bounds the whole spend.
+        self.assertAlmostEqual(state["bound"], 0.72, places=12)
+        self.assertAlmostEqual(state["committed"], 0.72, places=12)
+        self.assertAlmostEqual(guard.room(state), 1.0 - 0.72, places=12)
+        self.assertEqual(guard.fits(state), 8)
+        self.assertTrue(guard.check(state, "eval"))
+        self.assertIn("; the account reading bounds committed use at 72.0 points",
+                      guard.describe(state))
+
+    def test_main_allows_the_fire_the_old_math_refused(self):
+        self.week()
+        path = self.tree / "budget.yml"
+        path.write_text(VALID_BUDGET.replace("weekly_cap: 0.30", "weekly_cap: 1.0"),
+                        encoding="utf-8")
+        starts = [self.SNAP - timedelta(days=1)] * 8
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["fits", "--results-tree", str(self.tree),
+                               "--budget", str(path)], now=NOW,
+                              fire_count=lambda now: (18, 0),
+                              improve_count=lambda now: (8, 0),
+                              improve_starts=lambda now: starts)
+        self.assertEqual(code, 0)
+        self.assertIn("\nfires=8\n", out.getvalue())
+
+    def test_inside_reading_needs_every_snapshot_readable_and_not_after_it(self):
+        at = self.SNAP
+        cases = {
+            "all before": ([snapshot(0.1, at=at - timedelta(hours=2)),
+                            snapshot(0.1, at=at - timedelta(seconds=1))], True),
+            "one after": ([snapshot(0.1, at=at - timedelta(hours=2)),
+                           snapshot(0.1, at=at + timedelta(seconds=1))], False),
+            "unreadable time": ([{"at": "yesterday"}], False),
+            "no snapshot": ([], False),
+            "no meter": (None, False),
+        }
+        for index, (name, (snaps, inside)) in enumerate(cases.items()):
+            with self.subTest(case=name):
+                run = self.add_run(f"20261019T0{index}0000Z", snaps)
+                self.assertIs(guard.inside_reading(run, at), inside)
+        bad = self.tree / "routine-results" / "20261019T090000Z-a1b2c3" / "summary.json"
+        bad.parent.mkdir(parents=True)
+        bad.write_text("{not json", encoding="utf-8")
+        self.assertFalse(guard.inside_reading(bad.parent, at))
+
+    def test_runs_outside_the_reading_are_charged_in_full_in_the_bound(self):
+        self.week(runs=1)
+        # No snapshot: its use may be after the reading, its cost in full.
+        self.add_run("20261020T120000Z", None, delta=0.04)
+        # Inside, but started under PENDING_FULL_HOLD before the reading: its
+        # last call can end after it, so the overrun.
+        self.add_run("20261020T140000Z", [snapshot(0.5, at=self.SNAP - timedelta(minutes=5))],
+                     delta=0.02)
+        state = self.state(fires=3)
+        self.assertAlmostEqual(state["bound"], 0.72 + (0.04 + 0.005) + 0.005, places=12)
+        # Above spent plus pending here, so it changes nothing.
+        self.assertAlmostEqual(state["committed"], state["spent"] + state["pending"],
+                               places=12)
+
+    def test_uncovered_improve_fires_and_eval_pending_keep_their_full_charge(self):
+        self.week()
+        newer = self.SNAP - guard.IMPROVE_MAX_RUN + timedelta(seconds=1)
+        # Two eval fires without results (old: the overrun each), one improve
+        # fire the reading does not cover.
+        state = self.state(fires=12, improve_started=[newer])
+        self.assertEqual(state["improve_covered"], 0)
+        self.assertAlmostEqual(
+            state["bound"], 0.72 + 2 * 0.005 + state["improve_charge"], places=12)
+
+    def test_no_usable_snapshot_leaves_the_accounting_unchanged(self):
+        self.week()
+        stale = NOW + timedelta(hours=1)  # ahead of the clock: not read
+        self.add_run("20261020T150000Z", [snapshot(0.01, at=stale)], delta=0.02)
+        state = self.state(improve_started=[NOW - timedelta(days=1)])
+        self.assertIsNone(state["account_used"])
+        self.assertIsNone(state["bound"])
+        self.assertEqual(state["committed"], state["spent"] + state["pending"])
+        self.assertAlmostEqual(guard.room(state), self.old_room(state), places=12)
+        self.assertNotIn("bounds committed use", guard.describe(state))
+
+    def test_heavy_owner_use_leaves_the_cap_as_it_was(self):
+        # A normal week: the reading holds much more than the evals spent.
+        self.add_run("20261020T100000Z", [snapshot(0.70, at=self.SNAP)], delta=0.02)
+        state = self.state(limits=LIMITS, fires=3)
+        self.assertGreater(state["bound"], state["spent"] + state["pending"])
+        self.assertEqual(state["committed"], state["spent"] + state["pending"])
+        self.assertAlmostEqual(guard.room(state), self.old_room(state), places=12)
+        self.assertEqual(guard.fits(state), int((0.30 - 0.025 - 2 * 0.005) // RESERVE))
 
 
 # ---------------------------------------------------------------------------
