@@ -134,7 +134,7 @@ private repository: branch `persistent/usage-events` of
 `events/<YYYY-MM>/<machine>.jsonl`. The census writes them with
 `--events-out`; the publish script merges them in after the public publish.
 
-- **Skill records:** `{"v":1,"id","ts","kind":"skill","name","model","surface":"local","root","machine","session_id","session_title","cwd_repo","branch"}`.
+- **Skill records:** `{"v":1,"id","ts","kind":"skill","name","model","effort","context_tokens","surface":"local","root","machine","session_id","session_title","cwd_repo","branch"}`.
   `id` is the tool-use id, or the user entry's uuid for a typed command;
   `name` is the skill id as invoked (`plugin:skill`), raw but capped;
   `root` is `wsl`, `windows` or `cowork`; `session_title` is the
@@ -143,8 +143,11 @@ private repository: branch `persistent/usage-events` of
   exists. `model` is the session's model at the call (for a typed command,
   the next assistant turn's that is not `<synthetic>`), sanitized like the
   census keys (non-model-id values become `other`), null when unknown;
-  records written before this change have no `model` and are not rewritten
-  (merge keeps existing lines byte for byte).
+  `effort` (the turn's effort level, allowlisted, else `other`) and
+  `context_tokens` (input plus cached input tokens on that turn, i.e. how
+  full the context was) come from the same assistant turn, null when
+  unknown; earlier records lack them and are not rewritten (merge keeps
+  existing lines byte for byte).
 - **Hook records:** `{"v":1,"id","ts","kind":"hook","event","repo","checks","failed","surface":"local","root","machine"}`,
   `id` being the SHA-256 of the machine name and the raw log line.
 - **Merge.** By `id`: existing lines are kept as they are, new ids are added,

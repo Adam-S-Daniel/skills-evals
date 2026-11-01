@@ -62,7 +62,7 @@ def write_transcript(path: Path, entries: list, mtime: datetime = NOW) -> Path:
 
 
 def skill_call(skill, call_id="toolu_01", when="2026-09-03T10:00:00Z",
-               model=None, message_id=None):
+               model=None, message_id=None, usage=None, **top_level):
     message = {"role": "assistant",
                "content": [{"type": "tool_use", "id": call_id, "name": "Skill",
                             "input": {"skill": skill}}]}
@@ -70,7 +70,10 @@ def skill_call(skill, call_id="toolu_01", when="2026-09-03T10:00:00Z",
         message["model"] = model
     if message_id is not None:
         message["id"] = message_id
-    return {"type": "assistant", "timestamp": when, "message": message}
+    if usage is not None:
+        message["usage"] = usage
+    return {"type": "assistant", "timestamp": when, "message": message,
+            **top_level}
 
 
 def typed(text, when="2026-09-03T10:00:00Z", as_items=False):
