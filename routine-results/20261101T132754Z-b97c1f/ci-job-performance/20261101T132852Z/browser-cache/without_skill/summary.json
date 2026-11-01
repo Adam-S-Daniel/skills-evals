@@ -1,0 +1,366 @@
+{
+  "skill": "ci-job-performance",
+  "arm": "without_skill",
+  "timestamp": "20261101T132852Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.101387,
+    "num_turns": 5,
+    "duration_ms": 26827,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 15042,
+      "cache_read_input_tokens": 186512,
+      "output_tokens": 2241,
+      "output_tokens_details": {
+        "thinking_tokens": 529
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 15042,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 688,
+          "cache_read_input_tokens": 42285,
+          "cache_creation_input_tokens": 1311,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1311
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "run-timings-read-without-writes",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "firefox-leg-restores-no-browser-cache",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "chromium-leg-still-restores-the-cache",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "browser-cache-keyed-on-the-lockfile",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "browser-install-runs-on-every-leg",
+      "passed": false,
+      "detail": "command_nonzero exit=1 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "only-the-workflow-changed",
+      "passed": true,
+      "detail": "unchanged (README.md, e2e/package-lock.json, e2e/package.json, e2e/playwright.config.ts, e2e/tests/about.spec.ts, e2e/tests/contact.spec.ts, e2e/tests/home.spec.ts, e2e/tests/pricing.spec.ts, e2e/tests/sitemap.spec.ts)"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gh/replay/api/repos/example-org/example-repo/actions/jobs/810011/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810012/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810013/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810021/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810022/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810023/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810031/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810032/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810033/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810041/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810042/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810043/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820011/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820012/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820013/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820021/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820022/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820023/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820031/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820032/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820033/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820041/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820042/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820043/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/runs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71001.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71001/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71002.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71002/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71003.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71003/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71004.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71004/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72001.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72001/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72002.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72002/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72003.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72003/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72004.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72004/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/workflows/e2e.yml/runs.json, .gh/replay/auth-status.txt, .gh/replay/cache-list.json, .gh/replay/run-list.json, .gh/replay/run-view-71001.json, .gh/replay/run-view-71001.log, .gh/replay/run-view-71002.json, .gh/replay/run-view-71002.log, .gh/replay/run-view-71003.json, .gh/replay/run-view-71003.log, .gh/replay/run-view-71004.json, .gh/replay/run-view-71004.log, .gh/replay/run-view-72001.json, .gh/replay/run-view-72001.log, .gh/replay/run-view-72002.json, .gh/replay/run-view-72002.log, .gh/replay/run-view-72003.json, .gh/replay/run-view-72003.log, .gh/replay/run-view-72004.json, .gh/replay/run-view-72004.log, .gh/replay/workflow-list.json, bin/gh)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 4,
+        "rationale": "The fix limits the cache to chromium, keys it on e2e/package-lock.json, and bases the verdict on restore and download step times from six runs, but `playwright install` still has the `cache-hit != 'true'` guard, so on a chromium cache hit it is skipped instead of running on every leg, and that failure caps correctness at 4."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "Only .github/workflows/e2e.yml was edited, nothing was committed or pushed, and the invocation log shows only read-only gh calls (the staged .gh-invocations.log looks like harness instrumentation, not an agent edit)."
+      },
+      {
+        "name": "explanation",
+        "score": 7,
+        "rationale": "The reply gives clear per-browser download and restore figures, names the runs they came from, explains the cold-cache save in 72001 and that run-to-run noise is as large as the cache's effect, and notes install-deps cannot be cached; it does not give a run count for each figure or call install-deps the dominant cost."
+      }
+    ],
+    "overall": 5.6000000000000005
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1263,
+      "output_tokens": 23,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2241,
+      "cache_read_input_tokens": 186512,
+      "cache_creation_input_tokens": 15042,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.006270387291494995,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "browser-cache",
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "9f78cf9151021434be8b04ef463f7ce2df823beb37d78de58470586afcdb6da8",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261101T132754Z-b97c1f",
+    "session_id": "cse_01SphsQASb4PLocodhKduwhK",
+    "harness_commit": "82f39c31785408447816c680eb159692716c409e",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-01T13:28:52Z",
+    "ended_at": "2026-11-01T13:30:09Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-01T13:28:55.676Z",
+      "to_at": "2026-11-01T13:29:59Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.85,
+          "to": 0.85,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQASb4PLocodhKduwhK",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-01T13:29:18Z",
+      "ended_at": "2026-11-01T13:30:09Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-01T13:29:18Z",
+          "ended_at": "2026-11-01T13:29:47Z",
+          "duration_ms": 28345,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-01T13:29:59Z",
+          "ended_at": "2026-11-01T13:30:09Z",
+          "duration_ms": 9712,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-01T13:29:18Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793638800,
+              "rateLimitType": "seven_day",
+              "utilization": 0.85,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.85,
+                  "resetsAt": 1793638800,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-01T13:29:59Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1793638800,
+              "rateLimitType": "seven_day",
+              "utilization": 0.85,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.85,
+                  "resetsAt": 1793638800,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 28345,
+        "num_turns": 5,
+        "cost_usd": 0.101387,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1263,
+            "output_tokens": 23,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00013780000000000002
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2241,
+            "cache_read_input_tokens": 186512,
+            "cache_creation_input_tokens": 15042,
+            "cost_usd": 0.10124920000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 15042
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 9712,
+        "num_turns": 1,
+        "cost_usd": 0.0935735,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 4805,
+            "output_tokens": 24,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.0004925
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 822,
+            "cache_read_input_tokens": 27725,
+            "cache_creation_input_tokens": 8886,
+            "cost_usd": 0.093081
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 8886
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
