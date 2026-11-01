@@ -154,6 +154,11 @@ evals/
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence / agents-only probe workspaces
+  fan-out-triage/          # A/B eval drafted from a lesson: 4 fixtures
+    keyword-lookalikes/
+    shifted-draft/
+    single-file/
+    three-files/
   real-work/               # subject: any, draft: real pull requests replayed (decision Q4)
     <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196, cms-platform-761, cms-platform-760
       fixture.yaml         # the issue as the prompt, a repo_tests check, interface_strings
