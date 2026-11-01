@@ -1700,3 +1700,51 @@ class FiresWithoutResultsTests(unittest.TestCase):
     def test_naive_start_times_are_refused(self):
         with self.assertRaises(guard.GuardError):
             self.state([datetime(2026, 10, 20, 10)])
+
+
+class EndedRunTests(unittest.TestCase):
+    """2026-11-01 13:54 UTC: seven one-minute runs inside the 85% reading,
+    all ended before it, were each charged the overrun as if still running,
+    3.5 points that kept the next fire out."""
+
+    SNAP = ReadingBoundTests.SNAP
+
+    setUp = ReadingBoundTests.setUp
+    add_run = ReadingBoundTests.add_run
+    week = ReadingBoundTests.week
+    state = FiresWithoutResultsTests.state
+    LIMITS = FiresWithoutResultsTests.LIMITS
+
+    def late_run(self, ended):
+        stamp = self.SNAP - timedelta(minutes=10)
+        run = self.tree / "routine-results" / f"{stamp.strftime('%Y%m%dT%H%M%SZ')}-a1b2c3"
+        for arm in ("with_skill", "without_skill"):
+            path = run / "k" / "t" / arm / "summary.json"
+            path.parent.mkdir(parents=True)
+            block = usage_block(0.0)
+            block["measured"]["meter"] = {
+                "snapshots": [snapshot(0.84, at=self.SNAP - timedelta(minutes=9))],
+                "omitted": 0}
+            if ended is not None:
+                block["ended_at"] = ended.strftime("%Y-%m-%dT%H:%M:%SZ")
+            path.write_text(json.dumps({"arm": arm, "usage": block}), encoding="utf-8")
+        return run, stamp
+
+    def starts(self, stamp):
+        return [datetime(2026, 10, 20, h, tzinfo=timezone.utc) for h in range(10)] + [stamp]
+
+    def test_a_run_that_ended_before_the_reading_has_no_overrun(self):
+        self.week(used=0.84, runs=10)
+        run, stamp = self.late_run(self.SNAP - timedelta(minutes=8))
+        self.assertTrue(guard.ended_before(run, self.SNAP))
+        self.assertAlmostEqual(self.state(self.starts(stamp))["bound"], 0.84, places=12)
+
+    def test_a_run_that_ended_after_or_says_nothing_keeps_it(self):
+        for ended in (self.SNAP + timedelta(seconds=1), None):
+            with self.subTest(ended=ended):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                self.week(used=0.84, runs=10)
+                run, stamp = self.late_run(ended)
+                self.assertFalse(guard.ended_before(run, self.SNAP))
+                self.assertAlmostEqual(self.state(self.starts(stamp))["bound"],
+                                       0.84 + 0.005, places=12)
