@@ -523,7 +523,12 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         if not cell.get("section") and cell["skill"] in removal:
             bands["safety"].append({**item, "band": "safety", "order": ()})
         elif kept and cell["class"] in ("missing", "insufficient"):
-            continue
+            # More runs cannot change a keep, but its re-check still comes
+            # due, or a kept subject with an unsettled cell would never be
+            # tested again.
+            if newest is not None and now - newest >= RECHECK_AFTER:
+                bands["recheck"].append({**item, "band": "recheck",
+                                         "order": (newest.timestamp(),)})
         elif cell["class"] == "missing":
             if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
                 broken = {"kind": "fixture-broken", "change_type": "fixture",

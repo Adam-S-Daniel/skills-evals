@@ -182,6 +182,44 @@ test('skills sort by helpfulness: chip group first, then gain, highest first', (
       : it.pooled.all.gain === null || p.pooled.all.gain >= it.pooled.all.gain)), 'order at ' + it.name);
   });
 });
+test('cards sort by next test first, then by how well they are faring', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  const set = (name, nt) => { doc.skills.find((x) => x.name === name).next_test = nt; };
+  set('example-skill-delta', { position: 1, band: 'missing', due: null, scheduled: true });
+  set('example-skill-beta', { position: 2, band: 'near', due: null, scheduled: true });
+  set('example-skill-gamma', { position: null, band: null, due: '2026-12-20T00:00:00Z', scheduled: true });
+  set('example-skill-leaky', { position: null, band: null, due: '2026-12-01T15:00:00Z', scheduled: true });
+  eq(P.skillItems(doc).map((i) => i.name).join(','),
+    'example-skill-delta,example-skill-beta,example-skill-leaky,example-skill-gamma,example-skill-alpha');
+  const sec = JSON.parse(JSON.stringify(fixture));
+  sec.guidance.sections.find((x) => x.id === 'git-practices').next_test = { position: 1, band: 'missing', due: null, scheduled: true };
+  eq(P.sectionItems(sec, 'next')[0].id, 'git-practices');
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(text.includes('Next test: 1st skill in line for the next round of tests.'), 'queued line');
+  ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
+  ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
+});
+test('the confidence line shows whole percents and never rounds up to certainty', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.skills[0].confidence = { helps: 0.8571, no_help: 0.9999 };
+  doc.skills[1].confidence = { helps: null, no_help: null };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(text.includes('How sure the loop is: 85% that it helps, over 99% that any gain is under 5 points. It keeps a skill at 85% and removes one at 95%.'), 'levels');
+  ok(text.includes(P.STRINGS.confidenceNone), 'no-figure line');
+});
+test('real-use counts show on skill cards with the census window', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 2517, surface: 'local' };
+  doc.skills[0].usage = { invocations: 9 };
+  doc.skills[1].usage = { invocations: 1 };
+  doc.skills[2].usage = { invocations: 0 };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(text.includes('Used 9 times in my real work from Sep 7 to Oct 31.'), 'plural, UTC window start');
+  ok(text.includes('Used 1 time in my real work from Sep 7 to Oct 31.'), 'singular');
+  ok(text.includes('Not used in my real work from Sep 7 to Oct 31.'), 'zero');
+  ok(text.includes('2,517 of my Claude Code sessions'), 'session count note');
+  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('real work from'), 'no census, no line');
+});
 test('each skill card says what the skill is for', () => {
   eq(P.purposeOf('Write ADRs under docs/decisions/. Use when asked.'), 'Write ADRs under docs/decisions/.');
   eq(P.purposeOf('Debug e.g. workflows. Trigger on CI.'), 'Debug e.g. workflows.');
