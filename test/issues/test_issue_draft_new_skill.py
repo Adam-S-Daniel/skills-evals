@@ -1151,6 +1151,12 @@ class Apply(Staged):
         readme = load_module(self.tree / "scripts/generate_readme_table.py", "t_readme")
         self.assertEqual(readme.render(True), 0)
         self.assertIn(f"/{PLUGIN}:{SUBJECT}", (self.tree / "README.md").read_text())
+        # The ADR 0013 layout pin lists the new skill, sorted, in canonical form.
+        layout_text = (self.tree / dns.LAYOUT_FILE).read_text()
+        layout = json.loads(layout_text)["plugins"][PLUGIN]["skills"]
+        self.assertIn(SUBJECT, layout)
+        self.assertEqual(layout, sorted(layout))
+        self.assertEqual(layout_text, json.dumps(json.loads(layout_text), indent=2) + "\n")
         # check_plugin_versions.py imports jsonschema at load time, which
         # adam-agentskills' CI installs and this repo's does not; the bump
         # itself is asserted above either way.

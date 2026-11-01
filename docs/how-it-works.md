@@ -387,7 +387,13 @@ Draft mode is what consumes the `new-skill` kind:
    branch without running it. Accepted: a draft pull request in
    adam-agentskills with the skill, then a draft pull request here with
    only `evals/<subject>/` and its README layout line (merge the skill
-   first). Rejected: the record stays on its branch and the subject is not
+   first). The skill's branch carries what the registry's checks read (the
+   bundle version, the README table, the layout pin in
+   `scripts/plugin_layout.json`, a `docs/skill-impact.md` entry, a
+   `skills.lock` re-pin), and the gate runs the registry's own
+   `check_skills.py`, README and lock checks and its layout test on that
+   tree before pushing, so a draft they would reject is never opened.
+   Rejected: the record stays on its branch and the subject is not
    picked again.
 
 **The decline path.** When the agent-checks lane finds a hook proposal
