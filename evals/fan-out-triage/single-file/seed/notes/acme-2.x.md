@@ -1,0 +1,26 @@
+# acme 2.x release notes
+
+- [R-01] `acme.hooks.postBuild` now receives a build context object instead of the config.
+- [R-02] Added `acme cache prune` to remove unused cache entries.
+- [R-03] `acme build` now reports the build target in its summary line.
+- [R-04] Fixed a typo in the French help text.
+- [R-05] Deprecated `acme login --sso`; use `acme auth start --sso` instead.
+- [R-06] Reduced the install size of the Linux x64 package by 4 percent.
+- [R-07] Fixed a typo in the Portuguese help text.
+- [R-08] Added a `--json` flag to `acme list`.
+- [R-09] Updated the colors of the bundled changelog viewer.
+- [R-10] Improved startup time on Windows ARM.
+- [R-11] Removed the `legacy_resolver` option from `acme.toml`; the new resolver is always on.
+- [R-12] Added shell completions for fish.
+- [R-13] `acme publish --registry` now rejects plain `http://` URLs.
+- [R-14] `acme install` now prints a progress bar on interactive terminals.
+- [R-15] Fixed `acme init` printing the wrong template name in verbose mode.
+- [R-16] Documented the `ACME_LOG_LEVEL` variable in the man page.
+- [R-17] Removed the `legacy_resolver` option from the `acme init` templates.
+- [R-18] Fixed a race when two `acme watch` processes share one cache directory.
+- [R-19] Added Korean translations for error messages.
+- [R-20] `acme.hooks.preBuild` now receives a build context object instead of the config.
+- [R-21] Fixed a crash when `acme doctor` runs without a TTY.
+- [R-22] Deprecated `acme login --browser`; use `acme auth start` instead.
+- [R-23] Added a `--registry-timeout` flag to `acme publish`.
+- [R-24] `acme install --ci` now fails when the lockfile is out of date.

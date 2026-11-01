@@ -1,0 +1,3 @@
+[build]
+target = "node18"
+legacy_resolver = true

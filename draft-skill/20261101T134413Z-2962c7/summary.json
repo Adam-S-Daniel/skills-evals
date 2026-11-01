@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "run_id": "20261101T134413Z-2962c7",
+  "decision": "accepted",
+  "reasons": [
+    "every one of 4 fixtures has results for both arms",
+    "with_skill passed every objective check on 2 of 4 fixtures",
+    "summed objective pass rate: with_skill 3.690, without_skill 0.652"
+  ],
+  "subject": "fan-out-triage",
+  "plugin": "adam-coding-anywhere",
+  "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
+  "registry_sha": "c0030df6f6306950a23c4e4e948f106ed62b2546",
+  "evidence_count": 1,
+  "trials": 1,
+  "triage": {
+    "mechanical": false,
+    "reason": "Whether a triage candidate is real needs reading the source item against the repo, and chunking or inventory quality is judgment; a commit, push or CI check cannot see how an agent fanned out work."
+  },
+  "fixtures": {
+    "keyword-lookalikes": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 7,
+        "total": 7,
+        "pass_rate": 1.0,
+        "tokens": 240864.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 1,
+        "total": 7,
+        "pass_rate": 0.14285714285714285,
+        "tokens": 229394.0
+      }
+    },
+    "shifted-draft": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 5,
+        "total": 5,
+        "pass_rate": 1.0,
+        "tokens": 243092.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 1,
+        "total": 5,
+        "pass_rate": 0.2,
+        "tokens": 156285.0
+      }
+    },
+    "single-file": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 5,
+        "total": 6,
+        "pass_rate": 0.8333333333333334,
+        "tokens": 161042.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 1,
+        "total": 6,
+        "pass_rate": 0.16666666666666666,
+        "tokens": 192576.0
+      }
+    },
+    "three-files": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 6,
+        "total": 7,
+        "pass_rate": 0.8571428571428571,
+        "tokens": 203019.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 1,
+        "total": 7,
+        "pass_rate": 0.14285714285714285,
+        "tokens": 197189.0
+      }
+    }
+  },
+  "skill_creator_commit": "2a40fd2e7c52207aa903bd33fc4c65716126966e",
+  "tokens_basis": "model_usage_total"
+}
