@@ -549,9 +549,15 @@ def deliver_guidance(hook: bytes | None, payload: bytes, *, scratch: Path,
     header = (guidance.BEGIN_MARK.encode("utf-8") + b"\n"
               + f"<!-- fleet-guidance-version: {_sha256(payload)[:8]} -->\n".encode()
               + f"<!-- fleet-guidance-delivered: {PAYLOAD_MTIME} -->\n".encode())
-    wanted = {header + payload + _END_MARK + b"\n"}
+    bodies = [payload]
     if payload.startswith(_REPO_HEADER):
-        wanted.add(header + payload[len(_REPO_HEADER):] + _END_MARK + b"\n")
+        bodies.append(payload[len(_REPO_HEADER):])
+    # Since _agent-guidance#393 (2026-11-01) the hook ends the block with a
+    # check value line, the last 8 hex of the payload's sha256; a pinned
+    # revision from before it writes none.
+    check = f"fleet-guidance check value: {_sha256(payload)[56:]}\n".encode()
+    wanted = {header + body + tail + _END_MARK + b"\n"
+              for body in bodies for tail in (b"", check)}
     if raw not in wanted:
         raise DeliveryError("delivery_failed", "the complete delivered file or metadata differs from the payload")
     body = raw[len(header):]
