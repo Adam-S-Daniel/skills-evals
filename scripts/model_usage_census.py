@@ -188,6 +188,44 @@ def published_key(model) -> str | None:
     return OTHER_KEY
 
 
+#: Effort levels Claude Code records; any other non-empty value is `other`.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _effort(entry: dict) -> str | None:
+    """The turn's effort level from the entry's top level, allowlisted."""
+    value = entry.get("perTurnEffort")
+    if value is None:
+        value = entry.get("effort")
+    if value is None or value == "":
+        return None
+    if isinstance(value, str) and value in EFFORT_LEVELS:
+        return value
+    return OTHER_KEY
+
+
+def _context_tokens(message: dict) -> int | None:
+    """Input plus cached input tokens on the turn: how full the context was.
+    Only non-negative ints count; None when none of the three is valid."""
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    total = None
+    for field in ("input_tokens", "cache_read_input_tokens",
+                  "cache_creation_input_tokens"):
+        value = usage.get(field)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            total = (total or 0) + value
+    return total
+
+
+def _turn_facts(entry: dict, message: dict) -> dict:
+    """What one assistant entry says about its turn, for a skill record."""
+    return {"model": published_key(message.get("model")),
+            "effort": _effort(entry),
+            "context_tokens": _context_tokens(message)}
+
+
 def _turn_key(entry: dict, message: dict):
     """What identifies one API turn across the several entries it writes.
 
@@ -348,17 +386,21 @@ def _event_ts(when: datetime) -> str:
 
 def _skill_event(entry: dict, when: datetime, event_id, name: str,
                  cache: dict, machine: str, root: str,
-                 model: str | None = None) -> dict:
+                 model: str | None = None, effort: str | None = None,
+                 context_tokens: int | None = None) -> dict:
     """One private record of a skill invocation. `session_title` is filled
     in when the whole transcript has been read. `model` is the sanitized
-    key of the model running at the call, or None when unknown."""
+    key of the model running at the call, or None when unknown; `effort`
+    and `context_tokens` come from the same assistant turn, None when
+    unknown."""
     ts = _event_ts(when)
     session = _text(entry.get("sessionId"))
     if not _text(event_id):
         # No tool-use id or entry uuid: an id that is still stable across runs.
         event_id = hashlib.sha256(f"{session}\n{ts}\n{name}".encode("utf-8")).hexdigest()
     return {"v": 1, "id": _text(event_id), "ts": ts, "kind": "skill",
-            "name": name[:EVENT_TEXT_CAP], "model": model, "surface": "local", "root": root,
+            "name": name[:EVENT_TEXT_CAP], "model": model,
+            "effort": effort, "context_tokens": context_tokens, "surface": "local", "root": root,
             "machine": machine,
             "session_id": session, "session_title": None,
             "cwd_repo": cwd_repo(entry.get("cwd"), cache),
@@ -679,10 +721,10 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                     # (an interrupt or an API error), not a model's turn.
                     if kind == "assistant" and pending_model \
                             and message.get("model") != "<synthetic>":
-                        turn_model = published_key(message.get("model"))
-                        if turn_model is not None:
+                        facts = _turn_facts(entry, message)
+                        if facts["model"] is not None:
                             for pending in pending_model:
-                                pending["model"] = turn_model
+                                pending.update(facts)
                             pending_model.clear()
                     when = parse_ts(entry.get("timestamp"))
                     if when is None:
@@ -728,7 +770,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                 file_events.append(_skill_event(
                                     entry, when, call, raw, repos, machine,
                                     kind_of_root,
-                                    published_key(message.get("model"))))
+                                    **_turn_facts(entry, message)))
                     key = published_key(message.get("model"))
                     if key is None:
                         continue

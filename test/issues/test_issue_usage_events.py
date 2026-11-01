@@ -79,7 +79,7 @@ class EventTests(unittest.TestCase):
         self.assertEqual(records, [{
             "v": 1, "id": "toolu_01", "ts": "2026-09-03T10:00:00.000Z", "kind": "skill",
             "name": "adam-coding-anywhere:workflow-path-audit", "model": None,
-            "surface": "local",
+            "effort": None, "context_tokens": None, "surface": "local",
             "root": "wsl", "machine": census.machine_name(), "session_id": SESSION,
             "session_title": None, "cwd_repo": None, "branch": "feature/example"}])
 
@@ -108,6 +108,52 @@ class EventTests(unittest.TestCase):
              "message": {"role": "assistant", "content": [],
                          "model": "claude-opus-4-1"}}])
         self.assertEqual([r["model"] for r in records], ["claude-opus-4-1"])
+
+    def test_a_skill_call_records_effort_and_context_tokens(self):
+        records = self.events([with_session(skill_call(
+            "workflow-path-audit", "toolu_01", model="claude-sonnet-4-5",
+            usage={"input_tokens": 10, "cache_read_input_tokens": 200,
+                   "cache_creation_input_tokens": 3, "output_tokens": 999},
+            perTurnEffort="xhigh", effort="low"))])
+        self.assertEqual([(r["effort"], r["context_tokens"]) for r in records],
+                         [("xhigh", 213)])
+
+    def test_effort_falls_back_to_the_effort_field(self):
+        records = self.events([with_session(skill_call(
+            "workflow-path-audit", "toolu_01", model="claude-sonnet-4-5",
+            effort="max"))])
+        self.assertEqual([r["effort"] for r in records], ["max"])
+
+    def test_an_unknown_effort_is_recorded_as_other(self):
+        records = self.events([with_session(skill_call(
+            "workflow-path-audit", "toolu_01", model="claude-sonnet-4-5",
+            perTurnEffort="ludicrous"))])
+        self.assertEqual([r["effort"] for r in records], ["other"])
+
+    def test_a_typed_command_takes_effort_and_tokens_from_the_next_real_turn(self):
+        records = self.events([
+            with_session(typed("<command-name>/finding-unknowns</command-name>"),
+                         uuid="aaaaaaaa-0000-4000-8000-000000000005"),
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:04Z",
+             "perTurnEffort": "low",
+             "message": {"role": "assistant", "content": [],
+                         "model": "<synthetic>", "usage": {"input_tokens": 1}}},
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:05Z",
+             "perTurnEffort": "high",
+             "message": {"role": "assistant", "content": [],
+                         "model": "claude-opus-4-1",
+                         "usage": {"input_tokens": 5, "cache_read_input_tokens": 7}}}])
+        self.assertEqual([(r["model"], r["effort"], r["context_tokens"])
+                          for r in records], [("claude-opus-4-1", "high", 12)])
+
+    def test_bad_usage_gives_no_context_tokens(self):
+        for usage in ("lots", {"input_tokens": "5", "cache_read_input_tokens": True,
+                               "cache_creation_input_tokens": -1}):
+            with self.subTest(usage=usage):
+                records = self.events([with_session(skill_call(
+                    "workflow-path-audit", "toolu_01", model="claude-sonnet-4-5",
+                    usage=usage))])
+                self.assertEqual([r["context_tokens"] for r in records], [None])
 
     def test_a_non_model_id_value_is_recorded_as_other(self):
         arn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/x"
