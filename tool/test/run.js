@@ -216,7 +216,7 @@ test('failure state when the fetch fails', async () => {
   const t = P.textOf(P.buildFailure(res, mode));
   ok(t.includes(P.STRINGS.failFetch), 'says it could not load');
   ok(t.includes('explorer/latest.json'), 'names the file');
-  ok(t.includes('What to do'), 'says what to do');
+  ok(t.includes('Try reloading'), 'says what to do');
 });
 test('failure state on HTTP 404', async () => {
   const res = await P.loadData(P.DEFAULT_DATA_URL, () => Promise.resolve({ ok: false, status: 404 }), 1);
