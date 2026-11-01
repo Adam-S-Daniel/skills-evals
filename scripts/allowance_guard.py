@@ -9,7 +9,9 @@ this script is the layer that runs BEFORE any spend:
 
   check  routine-eval-fire.yml runs it before the fire step, in every mode,
          and a refusal stops the fire. A fire may go only when
-         spent + pending + one run's reservation <= weekly_cap.
+         spent + pending + one run's reservation <= weekly_cap, where a
+         usable account reading can bound spent plus pending (2026-11-01,
+         below).
   fits   prints how many more fires fit now; scripts/plan_week.py spends
          `room` itself, at each fire's historical cost, so the weekly sweep
          plans only what fits.
@@ -78,6 +80,30 @@ cap. It stays safe even when runs overlapped and their deltas count the
 same use twice: spent plus the hold is still at least the eval runs' own
 `per_run_overrun` plus the whole reading, and each run's unmeasured last
 call is what that overrun is for.
+
+The same double count remained for eval runs with no measured delta: `spent`
+charges each one the full reservation, while the hold subtracts only measured
+deltas. On 2026-11-01 the guard counted 29.5 points spent over 41 ingested
+runs plus 67.5 pending (8 improve fires held at the 72.0% reading less 9.0)
+while the account meter itself read 72% of the week, and refused every fire
+although the account had room (Adam: "Seems like there is room for more runs
+now; the week is almost over"). So when the newest snapshot is usable, the
+reading also bounds what the evals have committed: `used` (everything the
+account used before the reading, the evals' own runs and the owner's use
+included), plus the full `run_cost` of every ingested run not entirely inside
+the reading (an unread summary, no snapshot, or a snapshot after it), plus
+`per_run_overrun` for each run inside it that may still have been running
+then (it started less than `PENDING_FULL_HOLD` before the reading: its last
+call began at its last snapshot and can end after it), plus the eval-fire
+part of pending, plus the full charge of every improve fire the reading does
+not cover. `committed` is the smaller of that bound and spent plus pending,
+and `room` takes the cap's share from it. It is safe because `used` already
+holds every eval run's real use before the reading, so the bound is never
+below what the evals have truly committed: the minimum only removes double
+counting, and everything after the reading is still charged at its full
+estimate. In a normal week the owner's own use makes the bound the larger
+one, and nothing changes.
+
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
 (`refresh`); without that the holds lasted the week (2026-10-27).
@@ -297,6 +323,28 @@ def delta_inside(run_dir: Path, at: datetime) -> float:
                for usage in blocks.values())
 
 
+def inside_reading(run_dir: Path, at: datetime) -> bool:
+    """Whether one ingested run is entirely inside the reading at `at`: every
+    summary readable with a `usage` block, at least one meter snapshot, and
+    every snapshot readable and no later than `at` (the test `delta_inside`
+    uses, measured or not). Anything else is outside, charged in full."""
+    seen = 0
+    for path in _summary_paths(run_dir):
+        summary = _load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if not isinstance(usage, dict):
+            return False
+        measured = usage.get("measured")
+        reading = measured.get("meter") if isinstance(measured, dict) else None
+        snapshots = reading.get("snapshots") if isinstance(reading, dict) else None
+        for snapshot in snapshots if isinstance(snapshots, list) else ():
+            stamp = _snapshot_time(snapshot)
+            if stamp is None or stamp > at:
+                return False
+            seen += 1
+    return seen > 0
+
+
 def all_runs(tree: Path) -> list[Path]:
     """Every run directory under `<tree>/routine-results/`, any age."""
     root = tree / DEST_ROOT
@@ -449,7 +497,9 @@ def account(tree: Path, limits: dict, now: datetime,
     before the newest usable snapshot (`improve_covered` of them) be held
     together at no more than its account-wide `account_used`, less
     `eval_inside`, the measured deltas of the ingested runs inside that
-    reading."""
+    reading. `committed` is spent plus pending, or no more than `bound`, what
+    the newest usable reading bounds the evals' committed use at (None
+    without one; module docstring, 2026-11-01)."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -494,15 +544,30 @@ def account(tree: Path, limits: dict, now: datetime,
         eval_inside = sum(delta_inside(run_dir, at) for run_dir in runs)
     improve_held = (improve_7d - covered) * charge + (
         min(covered * charge, max(0.0, used - eval_inside)) if covered else 0.0)
-    pending = (recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
-               + improve_held)
+    eval_pending = recent * reserve + (unresulted - recent) * limits["per_run_overrun"]
+    pending = eval_pending + improve_held
+    # The reading bounds what is committed (module docstring, 2026-11-01).
+    bound = None
+    if used is not None:
+        at = newest_snapshot(runs)[0]
+        outside = 0.0
+        for run_dir in runs:
+            if not inside_reading(run_dir, at):
+                outside += run_cost(run_dir, limits)
+            elif _parse_stamp(RUN_ID_RE.fullmatch(run_dir.name).group("stamp")) \
+                    + PENDING_FULL_HOLD > at:
+                # Maybe still running at the reading: its last call is after it.
+                outside += limits["per_run_overrun"]
+        bound = used + outside + eval_pending + (improve_7d - covered) * charge
+    committed = spent + pending if bound is None else min(spent + pending, bound)
     # Finished (IMPROVE_MAX_RUN or more ago) but newer than the reading, so
     # still held in full until an ingested run brings a newer snapshot.
     finished = 0
     if improve_started:
         finished = min(improve_7d - covered, max(0, sum(
             1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
-    return {"spent": spent, "pending": pending, "runs": len(runs),
+    return {"spent": spent, "pending": pending, "committed": committed,
+            "bound": bound, "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
@@ -513,16 +578,23 @@ def account(tree: Path, limits: dict, now: datetime,
 
 
 def room(state: dict) -> float:
-    """The points left now: max(cap - spent, pace_room) - pending (`fits`).
-    The weekly planner (scripts/plan_week.py) spends it at each fire's
-    historical cost."""
-    return max(state["cap"] - state["spent"],
-               state.get("pace_room", 0.0)) - state["pending"]
+    """The points left now: max(cap - committed, pace_room - pending)
+    (`fits`), where committed is spent plus pending, never more than the
+    account reading's `bound` when there is one (`account`; module docstring,
+    2026-11-01). It is taken from the state's spent and pending here, not
+    from its `committed`, so a state built or changed by hand stays
+    consistent. The weekly planner (scripts/plan_week.py) spends it at each
+    fire's historical cost."""
+    committed = state["spent"] + state["pending"]
+    if state.get("bound") is not None:
+        committed = min(committed, state["bound"])
+    return max(state["cap"] - committed,
+               state.get("pace_room", 0.0) - state["pending"])
 
 
 def fits(state: dict) -> int:
     """How many more fires, each reserved in full, fit: the largest n with
-    n * reservation <= max(cap - spent - pending, pace_room - pending)
+    n * reservation <= `room`, max(cap - committed, pace_room - pending)
     (within EPSILON). The fixed cap left is a floor; late in an under-pace
     week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
     both: the snapshot behind the pace room may predate those fires, and
@@ -608,7 +680,10 @@ def describe(state: dict) -> str:
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
                 f"{points(state.get('week_elapsed') or 0.0)}% of its week gone, "
-                f"so pace allows {points(state.get('pace_room', 0.0))} points before pending fires")
+                f"so pace allows {points(state.get('pace_room', 0.0))} points before pending fires"
+                + (f"; the account reading bounds committed use at "
+                   f"{points(state['bound'])} points"
+                   if state.get("bound") is not None else ""))
     return f"{line}; no recent account reading, so no pace room"
 
 

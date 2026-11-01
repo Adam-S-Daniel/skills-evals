@@ -160,7 +160,10 @@ Three layers enforce it:
    cost for the whole week: twelve eval fires at their measured mean
    (twelve full reservations until anything is measured). The fire goes
    only if one more reservation (an improve fire's charge, in improve mode)
-   still fits under `weekly_cap`. If the GitHub API cannot be read, the
+   still fits under `weekly_cap`. When a recent account meter reading is
+   usable, that sum is never taken above the reading plus the full charge
+   of everything not inside it (since 2026-11-01), so eval runs the reading
+   already holds are not counted twice. If the GitHub API cannot be read, the
    fire is refused. The log shows numbers only.
 3. **The weekly plan** (`scripts/plan_week.py`, see "The weekly plan"
    below). The Tuesday sweep spends the room left at each fire's historical
