@@ -1118,12 +1118,22 @@ class VerdictTests(unittest.TestCase):
         # No pair key at all (a summary from before others_digest).
         result = self.verdict(flat_cell(pair=None), ["model-a"])
         self.assertEqual(result["verdict"], "insufficient")
-        # Two pairs with as many runs in their smaller arms: neither.
+        # Two pairs with as many runs in their smaller arms: the one with the
+        # newer runs (Adam, 2026-11-01), and neither only when that ties too.
         tie = (flat_cell(6, pair="others:G1")
                + series("with", FLAT[:6], FLAT_JUDGE, start=40, ctx="w2", pair="others:G2")
                + series("without", FLAT[:6], FLAT_JUDGE, start=40, ctx="o2",
                         pair="others:G2"))
         self.assertEqual(self.verdict(tie, ["model-a"])["cells"][0]["key"]["with_context"],
+                         "w2")
+        full_tie = (series("with", FLAT[:6], FLAT_JUDGE, start=40, ctx="w1", pair="others:G1")
+                    + series("without", FLAT[:6], FLAT_JUDGE, start=40, ctx="o1",
+                             pair="others:G1")
+                    + series("with", FLAT[:6], FLAT_JUDGE, start=40, ctx="w2",
+                             pair="others:G2")
+                    + series("without", FLAT[:6], FLAT_JUDGE, start=40, ctx="o2",
+                             pair="others:G2"))
+        self.assertEqual(self.verdict(full_tie, ["model-a"])["cells"][0]["key"]["with_context"],
                          None)
         # The pair with more runs in its SMALLER arm wins, not the larger.
         lopsided = (series("with", FLAT[:20], FLAT_JUDGE, pair="others:G1")
