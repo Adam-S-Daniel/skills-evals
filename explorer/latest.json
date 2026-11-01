@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T21:15:44Z",
+ "generated_at": "2026-11-01T21:17:10Z",
  "guidance": {
   "sections": [
    {
@@ -1051,7 +1051,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T21:14:02Z",
+ "newest_run": "2026-11-01T21:15:09Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -1233,6 +1233,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-01T21:15:09Z",
+     "cli_version": "2.1.316",
+     "fixture": "browser-cache",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T211416Z-706447/ci-job-performance/20261101T211509Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.1342486,
+      "judge_mean": 4.6000000000000005,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.0993824,
+      "judge_mean": 5.800000000000001,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-01T18:56:49Z",
      "cli_version": "2.1.316",
@@ -6826,7 +6847,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "664f9228f66ea048f944c15c90f19b347ca51f99",
-  "results_commit": "0cf07a1200e8e71ac30bb2ab0d430dd0033c7d26"
+  "results_commit": "a49190d24bd23588b6708d9e057c5bb84838d7d5"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
