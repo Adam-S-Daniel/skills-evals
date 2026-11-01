@@ -213,13 +213,13 @@ const STRINGS = {
 
   introHeading: 'What you are looking at',
   introSkills: [
-    'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I write each one to help Claude do that task better — but writing one is easy, and knowing it actually helps is not.',
-    'So I test them. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
-    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Tried" says how many times the comparison has run — the more runs, the more I trust the result.'
+    'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don\'t write most of them myself. I\'ve set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
+    'So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
+    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Tried" says how many times the comparison has run — the more runs, the more the result can be trusted.'
   ],
   introGuidance: [
-    'The guidance is a page of rules Claude reads at the start of every working session on my projects. I wrote nearly every rule after a real mistake, so it doesn\'t happen twice. The page is split into sections, one topic each.',
-    'To test a section, I give Claude an ordinary task with that section\'s trap hidden inside it and run it four ways: with only that section, with no rules at all, with every rule, and with every rule except that one. Fixed checks score each attempt.',
+    'The guidance is a page of rules Claude reads at the start of every working session on my projects. Claude writes most of the rules too: when something goes wrong, the session that hit it records the lesson as a rule so it doesn\'t happen twice. This page shows whether each one earns its place. The page is split into sections, one topic each.',
+    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and run it four ways: with only that section, with no rules at all, with every rule, and with every rule except that one. Fixed checks score each attempt.',
     'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the other rules are present; the "all but this one" bar shows that.'
   ],
   glossaryHeading: 'Words used on this page',
@@ -230,6 +230,7 @@ const STRINGS = {
     ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
     ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
     ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
+    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its rules and budget; day to day, it runs without me.'],
     ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
   ],
   glossaryGuidance: [
@@ -249,7 +250,7 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'My improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it — specifically, an 85% confidence range that stays above zero, and stays valid no matter how often the loop checks.',
+    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it — specifically, an 85% confidence range that stays above zero, and stays valid no matter how often the loop checks.',
     alone: 'It helps when it\'s the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
     none: 'The loop is at least 97.5% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
@@ -260,7 +261,7 @@ const STRINGS = {
   chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
 
   skillsHeading: 'Does each skill help?',
-  purposeMissing: 'No description of what this skill is for, as far as I can find.',
+  purposeMissing: 'No description of what this skill is for was found.',
   skillsNote: 'One card per tested skill, most helpful first: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse. Within each group, the biggest gain in checks passed comes first. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One card per section. Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
@@ -355,12 +356,12 @@ const STRINGS = {
   dataFile: (url) => 'Data file: ' + url,
 
   failHeading: 'The results could not be shown',
-  failFetch: 'I couldn\'t load the results file.',
+  failFetch: 'The results file couldn\'t be loaded.',
   failParse: 'The results file loaded, but it is not readable.',
   failSchema: (got) => 'The results file is in a format this page does not understand (version ' + got + '; this page reads version ' + SCHEMA_VERSION + ').',
   failBadUrl: 'The page was asked to read results from an address it does not trust, so it did not.',
   failFile: (url) => 'File: ' + url,
-  failWhat: 'Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; I\'d be grateful if you opened an issue at https://github.com/Adam-S-Daniel/skills-evals/issues with the file name above.'
+  failWhat: 'Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at https://github.com/Adam-S-Daniel/skills-evals/issues with the file name above.'
 };
 
 /* ------------------------------------------------------------------ */
