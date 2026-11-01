@@ -47,6 +47,15 @@ ISOLATION_ONLY: dict[str, str] = {
     "evals/ci-watcher-loops": _NO_CONTEXT_YET,
     "evals/editorial-label-audit": _NO_CONTEXT_YET,
     "evals/consumer-repo-provisioning": _NO_CONTEXT_YET,
+    "evals/ci-job-performance/browser-cache": _NO_CONTEXT_YET,
+    "evals/debug-github-workflows/git-identity": _NO_CONTEXT_YET,
+    "evals/debug-github-workflows/secret-name": _NO_CONTEXT_YET,
+    "evals/debug-github-workflows/swallowed-failure": _NO_CONTEXT_YET,
+    "evals/debug-github-workflows/wrong-branch": _NO_CONTEXT_YET,
+    "evals/vendor-release-impact-issues/closed-duplicate": _NO_CONTEXT_YET,
+    "evals/vendor-release-impact-issues/closing-keywords": _NO_CONTEXT_YET,
+    "evals/vendor-release-impact-issues/issue-hygiene": _NO_CONTEXT_YET,
+    "evals/vendor-release-impact-issues/stamps-skip-quotes": _NO_CONTEXT_YET,
     # In place would mean a context repository holding the private skill;
     # its results stay in the private repository (#81).
     "evals/adam-writing-style/proposal-bio": _PRIVATE,
@@ -78,6 +87,13 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # adamdaniel.ai lock already carries the cms-platform skill, so both arms
     # match.
     "evals/platform-release-and-bump": ((25099, 14017, 882787),) * 2,
+    # As the fixture's own comment records them (2026-10-25): no adopted
+    # skills in the context, the with arm adds the subject.
+    "evals/finding-unknowns": ((25099, 0, 0), (25099, 763, 12452)),
+    # Not re-measured: the largest figures each committed budget allows
+    # under HEADROOM, as for platform-release-and-bump.
+    "evals/github-actions-repo-settings/drift-diagnosis": ((24478, 6107, 672169),) * 2,
+    "evals/github-actions-repo-settings/onboarding": ((24478, 6107, 672169),) * 2,
 }
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
@@ -105,11 +121,11 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_twenty_one_skill_and_thirty_two_guidance_fixtures(self):
+    def test_the_schedule_names_thirty_three_skill_and_thirty_two_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 53)
-        self.assertEqual(len(set(paths)), 53)
-        self.assertEqual(len(fixtures()), 21)
+        self.assertEqual(len(paths), 65)
+        self.assertEqual(len(set(paths)), 65)
+        self.assertEqual(len(fixtures()), 33)
         self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
                          sorted(str(p.parent.relative_to(ROOT)) for p in
                                 (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))
@@ -196,11 +212,15 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
 
     def test_each_fixture_still_declares_its_isolation_pair(self):
         # --pairing isolation stays runnable: the skill alone against nothing.
+        # A skill fixture with no `arms:` runs the harness's fixed
+        # with_skill/without_skill pair (finding-unknowns is one).
+        default = {"with_skill": {"install": "copy"}, "without_skill": {"install": "none"}}
         for path, fixture in fixtures().items():
             with self.subTest(fixture=path):
-                self.assertEqual(list(fixture["arms"]), ["with_skill", "without_skill"])
-                self.assertEqual(fixture["arms"]["with_skill"]["install"], "copy")
-                self.assertEqual(fixture["arms"]["without_skill"]["install"], "none")
+                arms = fixture.get("arms", default)
+                self.assertEqual(list(arms), ["with_skill", "without_skill"])
+                self.assertEqual(arms["with_skill"]["install"], "copy")
+                self.assertEqual(arms["without_skill"]["install"], "none")
 
 
 class ScheduleReadinessNotes(unittest.TestCase):
