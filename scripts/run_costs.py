@@ -284,6 +284,9 @@ def report(summary: dict) -> list[str]:
                      "when it is the last call): " + ", ".join(
                          f"{'max' if share == 1.0 else f'p{share * 100:g}'} {value:.3f}"
                          for share, value in summary["largest_call_points"].items()))
+        # Adam, 2026-11-01: the overrun is the p95 of this, now and in future.
+        lines.append("per_run_overrun for evals/budget.yml (p95 of the largest call): "
+                     f"{summary['largest_call_points'][0.95] / 100:.4f}")
     if summary.get("runs_with_judge_cost"):
         judge = summary["judge_usd_per_run"]
         lines.append(f"judge dollars per run ({summary['runs_with_judge_cost']} runs): "
