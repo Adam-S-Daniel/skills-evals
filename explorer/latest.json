@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T21:22:14Z",
+ "generated_at": "2026-11-01T21:37:08Z",
  "guidance": {
   "sections": [
    {
@@ -198,7 +198,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -263,7 +263,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [
@@ -630,7 +630,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
@@ -695,7 +695,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -748,22 +748,60 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": null,
+    "alone_verdict": "insufficient",
     "bytes": 918,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.12243195218325775,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 5,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-01T21:34:49Z",
+      "cli_version": "2.1.316",
+      "fixture": "stop-worker",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.12472720000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.1022392,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0561748,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1290826,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T213353Z-79b342/guidance/test-that-can-signal-kills-every-session/20261101T213449Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "covered_by": null,
@@ -771,8 +809,8 @@
      "reason": "a mocked pid once killed every user process on the machine"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": null,
@@ -1051,7 +1089,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T21:20:19Z",
+ "newest_run": "2026-11-01T21:34:49Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6868,7 +6906,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "4e785f5af1d5250b5173926cc596334195dfd175",
-  "results_commit": "128a92255f4ed7472ea8d5a254bc509ac63a471e"
+  "results_commit": "19695808c64d31a3ccf0b5e057945ffd3eae45a5"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
