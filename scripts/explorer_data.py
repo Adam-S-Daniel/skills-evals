@@ -260,6 +260,19 @@ def skill_description(registries: dict | None, registry: str | None, name: str) 
     return " ".join(desc.replace("@", "").split())
 
 
+def current_text_runs(verdict: dict) -> int:
+    """How many eval runs were made on the subject's CURRENT text: the with-arm
+    run entries across its verdict cells (a guidance section's in-situ cells and
+    its `alone` cells). Only the with arm counts because `gates.pool_cells` keeps
+    a with-arm run only when its `tested_digest` equals the subject's digest on
+    main, so an edit empties it; a without-arm run pools across text changes and
+    says nothing about the current text. A cell with no `with` key counts 0, and
+    a subject with no verdict has 0."""
+    cells = list(verdict.get("cells") or [])
+    cells += (verdict.get("alone") or {}).get("cells") or []
+    return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -279,6 +292,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "description": skill_description(registries, row["registry"], name),
                        "status": row.get("status"), "skip_reason": row.get("reason"),
                        "verdict": verdict.get("verdict"), "verdict_reason": verdict.get("reason"),
+                       "current_text_runs": current_text_runs(verdict),
                        "runs": by_skill.get(name, [])})
 
     guidance_verdicts = gates_doc.get("guidance") or {}
@@ -291,6 +305,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "bytes": row.get("bytes"), "status": row.get("status"),
             "skip_reason": row.get("reason"), "verdict": verdict.get("verdict"),
             "verdict_reason": verdict.get("reason"),
+            "current_text_runs": current_text_runs(verdict),
             "alone_verdict": (verdict.get("alone") or {}).get("verdict"),
             "runs": by_section.get(row["id"], [])})
 
