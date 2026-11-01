@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T15:29:57Z",
+ "generated_at": "2026-11-01T15:33:56Z",
  "guidance": {
   "sections": [
    {
@@ -198,7 +198,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [],
@@ -225,7 +225,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -580,22 +580,60 @@
     "verdict_reason": null
    },
    {
-    "alone_verdict": null,
+    "alone_verdict": "insufficient",
     "bytes": 1003,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 5,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-01T15:32:14Z",
+      "cli_version": "2.1.316",
+      "fixture": "bundle-lock-name",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.099593,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.1013042,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.0468075,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.1078268,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T153103Z-01255d/guidance/name-becomes-scanner-data/20261101T153214Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "covered_by": null,
@@ -603,8 +641,8 @@
      "reason": "a flagged name stays in history after a rename and fails every push's scan"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": null,
@@ -619,7 +657,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [],
@@ -646,7 +684,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [],
@@ -937,7 +975,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T15:27:43Z",
+ "newest_run": "2026-11-01T15:32:14Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6565,7 +6603,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "6ddfb79ed56fa7f9b40400261c469875d88e9f91",
-  "results_commit": "f6310c8ed49f25c51ce81d943c87b553e0decb51"
+  "results_commit": "f75b0dc8af29f4091522a5eea1e2292c5a229750"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
