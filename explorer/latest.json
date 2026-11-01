@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T18:38:24Z",
+ "generated_at": "2026-11-01T18:42:33Z",
  "guidance": {
   "sections": [
    {
@@ -189,19 +189,57 @@
     "alone_verdict": "insufficient",
     "bytes": 431,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Security",
     "id": "security",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 5,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-01T18:40:35Z",
+      "cli_version": "2.1.316",
+      "fixture": "search-query",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1052724,
+        "judge_mean": 8.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1132031,
+        "judge_mean": 8.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.050976799999999996,
+        "judge_mean": 8.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.10812609999999999,
+        "judge_mean": 8.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T183939Z-1dd465/guidance/security/20261101T184035Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "covered_by": null,
@@ -225,7 +263,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
@@ -592,7 +630,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -657,7 +695,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -722,7 +760,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [],
@@ -1013,7 +1051,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T18:35:58Z",
+ "newest_run": "2026-11-01T18:40:35Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6704,7 +6742,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "94fcd95577fd57ebee4ee908903ae0638f3ac64b",
-  "results_commit": "c20c610c03ffd39c2c24a7f635d75186830aeb53"
+  "results_commit": "dd924af58dc5dc3e25802d0ca573700fa7517d89"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
