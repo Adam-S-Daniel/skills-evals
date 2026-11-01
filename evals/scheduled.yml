@@ -128,3 +128,5 @@ fixtures:
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
   - path: evals/finding-unknowns
     readiness: "In-place pair on skills-evals, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/github-actions-repo-settings/drift-diagnosis
+    readiness: "In-place pair on repo-settings, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled until the eval runner routine cloned repo-settings (2026-11-01); hermetic checks exercised by test."

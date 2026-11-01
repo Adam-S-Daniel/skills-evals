@@ -90,6 +90,9 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # Not re-measured either: the largest figures its committed budget
     # allows under HEADROOM, recorded for both arms.
     "evals/finding-unknowns": ((25099, 763, 12452),) * 2,
+    # Not re-measured either (context repo-settings): the largest figures
+    # its committed budget allows under HEADROOM, recorded for both arms.
+    "evals/github-actions-repo-settings/drift-diagnosis": ((24478, 6107, 672169),) * 2,
 }
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
@@ -117,11 +120,11 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_thirty_one_skill_and_thirty_two_guidance_fixtures(self):
+    def test_the_schedule_names_thirty_two_skill_and_thirty_two_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 63)
-        self.assertEqual(len(set(paths)), 63)
-        self.assertEqual(len(fixtures()), 31)
+        self.assertEqual(len(paths), 64)
+        self.assertEqual(len(set(paths)), 64)
+        self.assertEqual(len(fixtures()), 32)
         self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
                          sorted(str(p.parent.relative_to(ROOT)) for p in
                                 (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))

@@ -92,7 +92,9 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/vendor-release-impact-issues/closing-keywords",
             "evals/vendor-release-impact-issues/issue-hygiene",
             "evals/vendor-release-impact-issues/stamps-skip-quotes",
-            "evals/finding-unknowns"]
+            "evals/finding-unknowns",
+            # In place on repo-settings, which the routine clones from 2026-11-01.
+            "evals/github-actions-repo-settings/drift-diagnosis"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
