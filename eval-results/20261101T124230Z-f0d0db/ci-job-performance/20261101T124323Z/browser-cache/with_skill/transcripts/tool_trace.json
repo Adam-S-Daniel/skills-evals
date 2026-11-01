@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U7nanDoEChHaGTyL46qScp",
+      "name": "Skill",
+      "input": "ci-job-performance",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U7nanDoEChHaGTyL46qScp",
+      "is_error": false,
+      "output": "Launching skill: ci-job-performance",
+      "output_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DLikcbGJgHQx4KDojvPK8Q",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DLikcbGJgHQx4KDojvPK8Q",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    name: e2e (${{ matrix.browser }})\n14\t    runs-on: ubuntu-latest\n15\t    timeout-minutes: 20\n16\t    strategy:\n17\t      fail-fast: false\n18\t      matrix:\n19\t       ...",
+      "output_chars": 1463,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012vYarp8j5Z6eeQjkbpsHWY",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 20 --json databaseId,conclusion,event,createdAt,headBranch",
+      "input_chars": 125,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012vYarp8j5Z6eeQjkbpsHWY",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 4504,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015VnDh6aqx23FFbS3sRCZb6",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs --jq '.jobs[] | .name as $j | .steps[] | select(.name|test(\"cache|brow...",
+      "input_chars": 308,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015VnDh6aqx23FFbS3sRCZb6",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (73.4KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"...",
+      "output_chars": 2223,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Nkz49novfzPe2GyxcJDTor",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs > $TMPDIR/$r.json; done; python3 -I - <<EOF\nimport json,os,datetime as d\nt=lambda s:...",
+      "input_chars": 687,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Nkz49novfzPe2GyxcJDTor",
+      "is_error": false,
+      "output": "71001 e2e (chromium) total 93 {'Install browser OS dependencies': 24, 'Install browser': 11, 'Run Playwright tests': 42}\n71001 e2e (firefox) total 97 {'Install browser OS dependencies': 20, 'Install browser': 5, 'Run Playwright tests': 51}\n71001 e2e (webkit) total 94 {'Install browser OS dependencie...",
+      "output_chars": 3598,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L9D4u3NwXt3zWRxoEfUzPo",
+      "name": "Bash",
+      "input": "python3 -I - <<'EOF'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Only chromium is cached: its ~10-12s dow...",
+      "input_chars": 654,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L9D4u3NwXt3zWRxoEfUzPo",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 6 +++++-\n 1 file changed, 5 insertions(+), 1 deletion(-)\n      # Only chromium is cached: its ~10-12s download costs more than the ~5-6s\n      # cache restore. firefox (~4-5s) and webkit (~6-7s) download in about the\n      # time a restore takes, so caching them is a was...",
+      "output_chars": 972,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
