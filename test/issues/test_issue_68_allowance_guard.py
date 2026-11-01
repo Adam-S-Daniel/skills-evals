@@ -104,10 +104,12 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # Adam, 2026-10-31: up to the 80% account stop until the 2026-11-02
-        # reset, then 0.30 again (restore LIMITS here when evals/budget.yml
+        # Adam, 2026-10-31: up to the account stop until the 2026-11-02
+        # reset, then 0.30 again; 2026-11-01: the stop raised to 95% until
+        # then, 80% again after (restore LIMITS here when evals/budget.yml
         # goes back).
-        self.assertEqual(budget.load_budget(), {**LIMITS, "weekly_cap": 1.0})
+        self.assertEqual(budget.load_budget(),
+                         {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 0.95})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -943,9 +945,10 @@ class PaceRoomTests(unittest.TestCase):
                 self.assertEqual(guard.fits(state), max(0, 10 - extra))
 
     def test_the_fixed_cap_stays_the_floor_as_fires_pend(self):
-        # At 60% the pace room, 0.20 * 6/7 = 0.171, is under the 0.275 the
-        # cap leaves, so the cap's count holds as fires pend.
-        self.metered([snapshot(0.60)])
+        # At 50% the pace room, 0.30 * 6/7 = 0.257, is under the 0.275 the
+        # cap leaves, and the 0.30 left under the stop is over it, so the
+        # cap's count holds as fires pend.
+        self.metered([snapshot(0.50)])
         for extra in range(9):
             with self.subTest(pending_fires=extra):
                 state = self.state((1 + extra, 1 + extra))
@@ -1322,7 +1325,9 @@ class ReadingBoundTests(unittest.TestCase):
     more runs now; the week is almost over")."""
 
     SNAP = NOW - timedelta(hours=1)
-    WIDE = {**LIMITS, "weekly_cap": 1.0}  # evals/budget.yml that week
+    # evals/budget.yml that week, with the stop out of the way: StopLimitTests
+    # covers the stop as a fire limit.
+    WIDE = {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 1.0}
 
     def setUp(self):
         self.tree = Path(tempfile.mkdtemp())
@@ -1381,7 +1386,9 @@ class ReadingBoundTests(unittest.TestCase):
     def test_main_allows_the_fire_the_old_math_refused(self):
         self.week()
         path = self.tree / "budget.yml"
-        path.write_text(VALID_BUDGET.replace("weekly_cap: 0.30", "weekly_cap: 1.0"),
+        path.write_text(VALID_BUDGET.replace("weekly_cap: 0.30", "weekly_cap: 1.0")
+                        .replace("stop_when_account_above: 0.80",
+                                 "stop_when_account_above: 1.0"),
                         encoding="utf-8")
         starts = [self.SNAP - timedelta(days=1)] * 8
         out = io.StringIO()
@@ -1451,12 +1458,15 @@ class ReadingBoundTests(unittest.TestCase):
 
     def test_heavy_owner_use_leaves_the_cap_as_it_was(self):
         # A normal week: the reading holds much more than the evals spent.
-        self.add_run("20261020T100000Z", [snapshot(0.70, at=self.SNAP)], delta=0.02)
+        self.add_run("20261020T100000Z", [snapshot(0.40, at=self.SNAP)], delta=0.02)
         state = self.state(limits=LIMITS, fires=3)
         self.assertGreater(state["bound"], state["spent"] + state["pending"])
         self.assertEqual(state["committed"], state["spent"] + state["pending"])
         self.assertAlmostEqual(guard.room(state), self.old_room(state), places=12)
-        self.assertEqual(guard.fits(state), int((0.30 - 0.025 - 2 * 0.005) // RESERVE))
+        # Well under the stop, so the stop does not bind either.
+        self.assertGreater(state["stop_left"], guard.room(state))
+        self.assertEqual(guard.fits(state),
+                         int((self.old_room(state) + guard.EPSILON) // RESERVE))
 
 
 # ---------------------------------------------------------------------------
@@ -1565,4 +1575,62 @@ class WeekWindowTests(unittest.TestCase):
                 (tree / "routine-results" / f"{stamp}-ab12cd").mkdir(parents=True)
             runs = guard.ingested_runs(tree, NOW, guard.window_start(NOW))
             self.assertEqual([r.name for r in runs], ["20261019T170000Z-ab12cd"])
+
+
+class StopLimitTests(unittest.TestCase):
+    """Adam, 2026-11-01, "Unify the limit": the guard found 22.5 points of
+    room under a 100-point cap while the account was past the 80% in-run
+    stop, so every fire it allowed stopped on its first reading. The stop is
+    now a fire limit too."""
+
+    SNAP = ReadingBoundTests.SNAP
+    CAPPED = {**LIMITS, "weekly_cap": 1.0}  # stop 0.80
+
+    setUp = ReadingBoundTests.setUp
+    add_run = ReadingBoundTests.add_run
+    week = ReadingBoundTests.week
+    state = ReadingBoundTests.state
+
+    def test_past_the_stop_no_fire_fits(self):
+        self.week(used=0.82)
+        state = self.state(limits=self.CAPPED)
+        self.assertLess(state["stop_left"], 0)
+        self.assertLessEqual(guard.room(state), 0)
+        self.assertEqual(guard.fits(state), 0)
+        self.assertFalse(guard.check(state, "eval"))
+        self.assertFalse(guard.check(state, "improve"))
+        self.assertIn("0.0 below the 80.0% stop", guard.describe(state))
+
+    def test_below_the_stop_room_is_what_is_left_under_it(self):
+        self.week(used=0.72)
+        state = self.state(limits=self.CAPPED)
+        self.assertAlmostEqual(state["stop_left"], 0.80 - state["bound"], places=12)
+        self.assertAlmostEqual(guard.room(state), state["stop_left"], places=12)
+        self.assertEqual(guard.fits(state), 2)
+
+    def test_raising_the_stop_raises_the_room(self):
+        self.week(used=0.82)
+        state = self.state(limits={**self.CAPPED, "stop_when_account_above": 0.95})
+        self.assertAlmostEqual(guard.room(state), 0.95 - state["bound"], places=12)
+        self.assertEqual(guard.fits(state), 3)
+
+    def test_no_refresh_fire_past_the_stop(self):
+        self.week(used=0.82)
+        finished = NOW - guard.IMPROVE_MAX_RUN - timedelta(minutes=1)
+        state = self.state(limits=self.CAPPED, improve_started=[finished])
+        self.assertTrue(state["improve_finished"])
+        self.assertFalse(guard.refresh(state))
+        # The same shape under the stop may still refresh.
+        under = self.state(limits={**self.CAPPED, "stop_when_account_above": 1.0},
+                           improve_started=[finished])
+        self.assertTrue(guard.refresh(under))
+
+    def test_no_usable_reading_leaves_only_the_in_run_stop(self):
+        self.week()
+        stale = NOW + timedelta(hours=1)
+        self.add_run("20261020T150000Z", [snapshot(0.99, at=stale)], delta=0.02)
+        state = self.state(limits=self.CAPPED)
+        self.assertIsNone(state["stop_left"])
+        self.assertAlmostEqual(guard.room(state),
+                               state["cap"] - state["spent"] - state["pending"], places=12)
 

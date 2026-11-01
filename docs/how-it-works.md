@@ -131,7 +131,7 @@ weekly allowance):
 | `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.03 | one run stops starting new work after this much |
 | `per_run_overrun` | 0.005 | added to every run: its last call is never measured |
-| `stop_when_account_above` | 0.80 | a run stops once the account's weekly meter reads this |
+| `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this (0.95 until the 2026-11-02 reset) |
 
 Three layers enforce it:
 
@@ -163,7 +163,10 @@ Three layers enforce it:
    still fits under `weekly_cap`. When a recent account meter reading is
    usable, that sum is never taken above the reading plus the full charge
    of everything not inside it (since 2026-11-01), so eval runs the reading
-   already holds are not counted twice. If the GitHub API cannot be read, the
+   already holds are not counted twice. The same reading plus everything
+   after it must also stay under `stop_when_account_above`: one limit for
+   fires and runs, so no fire starts that the in-run stop would end at once
+   (Adam, 2026-11-01). If the GitHub API cannot be read, the
    fire is refused. The log shows numbers only.
 3. **The weekly plan** (`scripts/plan_week.py`, see "The weekly plan"
    below). The Tuesday sweep spends the room left at each fire's historical

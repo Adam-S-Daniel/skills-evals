@@ -44,5 +44,8 @@ per_run_overrun: 0.005
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of
-# the allowance from Adam's own work.
-stop_when_account_above: 0.80
+# the allowance from Adam's own work. Since 2026-11-01 it is also the fire
+# limit: scripts/allowance_guard.py starts no fire past it (Adam, "Unify the
+# limit"). Raised to 95 for the week ending 2026-11-02 17:00 UTC (Adam,
+# 2026-11-01: "Raise to 95%"); back to 0.80 after that reset.
+stop_when_account_above: 0.95
