@@ -108,8 +108,10 @@ class BudgetFileTests(unittest.TestCase):
         # reset, then 0.30 again; 2026-11-01: the stop raised to 95% until
         # then, 80% again after (restore LIMITS here when evals/budget.yml
         # goes back).
+        # 2026-11-01 (permanent): the per-run cap is 1 point.
         self.assertEqual(budget.load_budget(),
-                         {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 0.95})
+                         {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 0.95,
+                          "per_run_cap": 0.01})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
