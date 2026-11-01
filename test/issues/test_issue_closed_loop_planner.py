@@ -1499,6 +1499,172 @@ class BareBaselineTests(unittest.TestCase):
                 state["pending"], min(state["improve_charge"], 0.05), places=12)
 
 
+class WatchdogTests(unittest.TestCase):
+    """routine-eval-watchdog.yml: re-plan when a guard hold ends or a sweep
+    has been idle WATCHDOG_IDLE, without overlapping sweeps (2026-11-01: a
+    fire that never pushed results stalled evals 16:11 to 18:33 UTC)."""
+
+    ANCHOR = datetime(2026, 11, 1, 16, 11, tzinfo=timezone.utc)
+
+    @staticmethod
+    def fire(started, conclusion="success"):
+        return {"status": "completed", "conclusion": conclusion,
+                "run_started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+    @staticmethod
+    def sweep(created, ended=None, status="completed"):
+        stamp = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+        return {"status": status, "created_at": stamp(created),
+                "updated_at": stamp(ended or created)}
+
+    def test_the_stalled_fire_re_plans_two_minutes_after_its_hold(self):
+        fires = [self.fire(datetime(2026, 11, 1, 15, 55, tzinfo=timezone.utc))]
+        due = plan_week.watchdog_due(self.ANCHOR, fires)
+        self.assertEqual(due, datetime(2026, 11, 1, 16, 42, tzinfo=timezone.utc))
+        self.assertEqual(plan_week.watchdog_decide([], fires, due, self.ANCHOR),
+                         ("dispatch", due))
+        self.assertEqual(plan_week.watchdog_decide([], fires, due - timedelta(seconds=1),
+                                                   self.ANCHOR), ("wait", due))
+
+    def test_ended_failed_and_unparsable_fires_fall_back_to_the_idle_limit(self):
+        fires = [self.fire(self.ANCHOR - timedelta(minutes=45)),
+                 self.fire(self.ANCHOR - timedelta(minutes=5), conclusion="failure"),
+                 {"conclusion": "success", "run_started_at": "not a time"}, "junk"]
+        self.assertEqual(plan_week.watchdog_due(self.ANCHOR, fires),
+                         self.ANCHOR + timedelta(minutes=50))
+
+    def test_the_earliest_hold_wins(self):
+        fires = [self.fire(self.ANCHOR - timedelta(minutes=10)),
+                 self.fire(self.ANCHOR - timedelta(minutes=30))]
+        self.assertEqual(plan_week.watchdog_due(self.ANCHOR, fires),
+                         self.ANCHOR + timedelta(minutes=17))
+
+    def test_a_newer_sweep_stands_the_timer_down(self):
+        newer = [self.sweep(self.ANCHOR + timedelta(minutes=3), status="queued")]
+        self.assertEqual(plan_week.watchdog_decide(newer, [], self.ANCHOR + timedelta(hours=1),
+                                                   self.ANCHOR), ("stand-down", None))
+
+    def test_check_mode_anchors_on_the_newest_finished_sweep(self):
+        sweeps = [self.sweep(self.ANCHOR - timedelta(minutes=5), self.ANCHOR),
+                  self.sweep(self.ANCHOR - timedelta(hours=2), self.ANCHOR - timedelta(hours=1))]
+        late = self.ANCHOR + timedelta(minutes=50)
+        self.assertEqual(plan_week.watchdog_decide(sweeps, [], late), ("dispatch", late))
+        self.assertEqual(plan_week.watchdog_decide(sweeps, [], late - timedelta(minutes=1)),
+                         ("wait", late))
+        running = [self.sweep(self.ANCHOR, status="in_progress"), *sweeps]
+        self.assertEqual(plan_week.watchdog_decide(running, [], late), ("stand-down", None))
+        self.assertEqual(plan_week.watchdog_decide([], [], late), ("dispatch", late))
+
+    def test_wait_mode_sleeps_until_due_then_dispatches(self):
+        clock = [self.ANCHOR]
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            clock[0] += timedelta(seconds=seconds)
+        fires = [self.fire(self.ANCHOR - timedelta(minutes=16))]
+        go, reason = plan_week.watchdog("wait", lambda since: [], lambda since: fires,
+                                        lambda: self.fail("wait mode reads no timers"),
+                                        3300, lambda: clock[0], sleep)
+        self.assertTrue(go, reason)
+        self.assertEqual(slept, [31 * 60])
+
+    def test_wait_mode_stands_down_when_a_sweep_starts_while_it_sleeps(self):
+        clock = [self.ANCHOR]
+        sweeps = []
+
+        def sleep(seconds):
+            clock[0] += timedelta(seconds=seconds)
+            sweeps.append(self.sweep(self.ANCHOR + timedelta(minutes=1), status="in_progress"))
+        go, _ = plan_week.watchdog("wait", lambda since: list(sweeps), lambda since: [],
+                                   lambda: False, 3300, lambda: clock[0], sleep)
+        self.assertFalse(go)
+
+    def test_wait_mode_gives_up_at_max_wait(self):
+        clock = [self.ANCHOR]
+
+        def sleep(seconds):
+            clock[0] += timedelta(seconds=seconds)
+        go, reason = plan_week.watchdog("wait", lambda since: [], lambda since: [],
+                                        lambda: False, 600, lambda: clock[0], sleep)
+        self.assertFalse(go)
+        self.assertIn("waited 600s", reason)
+
+    def test_check_mode_stands_down_while_a_timer_is_armed_and_never_sleeps(self):
+        never = lambda seconds: self.fail("check mode sleeps")  # noqa: E731
+        go, reason = plan_week.watchdog("check", lambda since: [], lambda since: [],
+                                        lambda: True, 3300, lambda: self.ANCHOR, never)
+        self.assertFalse(go)
+        self.assertIn("armed", reason)
+        old = [self.sweep(self.ANCHOR - timedelta(hours=2), self.ANCHOR - timedelta(hours=1))]
+        go, _ = plan_week.watchdog("check", lambda since: old, lambda since: [],
+                                   lambda: False, 3300, lambda: self.ANCHOR, never)
+        self.assertTrue(go)
+        fresh = [self.sweep(self.ANCHOR - timedelta(minutes=5), self.ANCHOR)]
+        go, _ = plan_week.watchdog("check", lambda since: fresh, lambda since: [],
+                                   lambda: False, 3300, lambda: self.ANCHOR, never)
+        self.assertFalse(go)
+
+    def test_fetch_runs_reads_one_page_and_fails_closed(self):
+        seen = []
+
+        def get(path, token):
+            seen.append(path)
+            return {"workflow_runs": [{"id": 1}]}
+        self.assertEqual(plan_week.fetch_runs("routine-eval-weekly.yml", "t",
+                                              {"created": ">=2026-11-01T00:00:00Z"}, get),
+                         [{"id": 1}])
+        self.assertIn("/actions/workflows/routine-eval-weekly.yml/runs?created=%3E%3D2026",
+                      seen[0])
+        self.assertIn("per_page=100", seen[0])
+        with self.assertRaises(io_mod.EvidenceError):
+            plan_week.fetch_runs("routine-eval-weekly.yml", "t", {}, lambda p, t: {})
+
+    def test_the_sweep_arms_the_watchdog_last_whatever_it_concluded(self):
+        doc = yaml.safe_load((ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+        job = doc["jobs"]["watchdog"]
+        self.assertEqual(job["needs"], ["plan", "dispatch"])
+        self.assertTrue(job["if"].startswith("always() && "))
+        self.assertEqual(job["permissions"], {"actions": "write"})
+        self.assertIn("gh workflow run routine-eval-watchdog.yml", job["steps"][0]["run"])
+        self.assertEqual(doc["concurrency"], {"group": "routine-eval-weekly",
+                                              "cancel-in-progress": False})
+
+    def test_the_watchdog_workflow_shape(self):
+        doc = yaml.safe_load((ROOT / ".github/workflows/routine-eval-watchdog.yml").read_text())
+        triggers = doc.get("on", doc.get(True))
+        # workflow_run would be a fourth level after push, ingest and sweep.
+        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"])
+        self.assertEqual(doc["concurrency"], {
+            "group": "routine-eval-watchdog-${{ github.event_name }}",
+            "cancel-in-progress": True})
+        self.assertEqual(doc["permissions"], {})
+        job = doc["jobs"]["watch"]
+        self.assertEqual(job["permissions"], {"contents": "read", "actions": "write"})
+        self.assertGreater(job["timeout-minutes"] * 60, plan_week.WATCHDOG_MAX_WAIT)
+        steps = {s.get("id"): s for s in job["steps"]}
+        self.assertEqual(steps["watch"]["env"]["MODE"],
+                         "${{ github.event_name == 'schedule' && 'check' || 'wait' }}")
+        self.assertIn('plan_week.py watchdog --mode "$MODE"', steps["watch"]["run"])
+        replan = job["steps"][-1]
+        self.assertEqual(replan["if"], "steps.watch.outputs.dispatch == 'true'")
+        self.assertIn("gh workflow run routine-eval-weekly.yml", replan["run"])
+        for step in job["steps"]:
+            self.assertNotIn("${{", step.get("run", ""))
+        lock = (ROOT / ".github/workflows/actions.lock").read_text()
+        self.assertIn("'.github/workflows/routine-eval-watchdog.yml':", lock)
+
+    def test_main_writes_the_dispatch_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_file = Path(tmp) / "out"
+            out_file.write_text("")
+            with mock.patch.object(plan_week, "watchdog", return_value=(True, "due")), \
+                 mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(out_file), "GH_TOKEN": ""}), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(plan_week.main(["watchdog", "--mode", "check"]), 0)
+            self.assertEqual(out_file.read_text(), "dispatch=true\n")
+
+
 class DocsTests(unittest.TestCase):
 
     def test_adr_0012_records_the_bare_baseline_addendum(self):
@@ -1523,6 +1689,12 @@ class DocsTests(unittest.TestCase):
         row = next(line for line in text.splitlines()
                    if line.startswith("  | `routine-eval-weekly.yml`"))
         self.assertIn("plan_week.py", row)
+
+    def test_agents_md_table_names_the_watchdog(self):
+        text = (ROOT / "AGENTS.md").read_text()
+        row = next(line for line in text.splitlines()
+                   if line.startswith("  | `routine-eval-watchdog.yml`"))
+        self.assertIn("plan_week.py watchdog", row)
 
 
 if __name__ == "__main__":

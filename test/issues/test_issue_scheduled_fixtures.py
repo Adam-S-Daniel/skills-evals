@@ -583,7 +583,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(workflow["concurrency"],
                          {"group": "routine-eval-weekly", "cancel-in-progress": False})
         jobs = workflow["jobs"]
-        self.assertEqual(set(jobs), {"plan", "dispatch"})
+        self.assertEqual(set(jobs), {"plan", "dispatch", "watchdog"})
         self.assertEqual(jobs["plan"]["permissions"],
                          {"contents": "read", "actions": "read", "issues": "read",
                           "pull-requests": "read"})
@@ -613,6 +613,10 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(steps[order[3]]["run"], "sleep 60")
         fire = steps[order[2]]
         wait = steps[order[1]]
+        # The watchdog arm (routine-eval-watchdog.yml) dispatches with the job
+        # token and nothing else.
+        arm = jobs["watchdog"]["steps"][0]
+        self.assertEqual(jobs["watchdog"]["permissions"], {"actions": "write"})
         for job in jobs.values():
             self.assertNotIn("concurrency", job)
             for item in job["steps"]:
@@ -621,7 +625,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                     self.assertIsNone(lock_problem(item["uses"], "routine-eval-weekly.yml"))
                     if "checkout@" in item["uses"]:
                         self.assertEqual(item["with"]["persist-credentials"], False)
-                if item not in (fire, plan_step, wait):
+                if item not in (fire, plan_step, wait, arm):
                     self.assertNotIn("GH_TOKEN", item.get("env", {}))
                 # The private results (#81): the read-only registry App's
                 # token, never the job's, reaches the lookup and checkouts.
