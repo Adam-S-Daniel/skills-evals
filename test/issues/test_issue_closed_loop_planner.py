@@ -492,6 +492,18 @@ class BandTests(unittest.TestCase):
         plan = plan_week.build_plan(ctx(cells=kept[:1], removal_prs=["k"], room=1.0), NOW)
         self.assertEqual([f["band"] for f in plan["fires"]], ["safety"])
 
+    def test_a_kept_subject_with_an_unsettled_cell_is_still_rechecked(self):
+        # A keep is not forever: an old enough unsettled cell of a kept
+        # subject comes back in the recheck band, a recent one does not.
+        old, recent = "20260801T000000Z", "20261020T000000Z"
+        cells = [{**cell("evals/k/a", "heavy", "insufficient", runs=1, newest=old, skill="k"),
+                  "verdict": "keep"},
+                 {**cell("evals/r/a", "heavy", "insufficient", runs=1, newest=recent,
+                         skill="r"), "verdict": "keep"}]
+        plan = plan_week.build_plan(ctx(cells=cells, room=1.0), NOW)
+        self.assertEqual([(f["fixture"], f["band"]) for f in plan["fires"]],
+                         [("evals/k/a", "recheck")])
+
     def test_the_cheaper_model_goes_first(self):
         priced = [{**cell("evals/a", "heavy", "insufficient", runs=1), "usd_per_arm_trial": 0.33},
                   {**cell("evals/a", "light", "insufficient", runs=1), "usd_per_arm_trial": 0.11},

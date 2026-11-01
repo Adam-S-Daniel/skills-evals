@@ -193,6 +193,11 @@ const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Adam-S-Daniel/skills-
 const TIME_ZONE = 'America/New_York';
 
 const pts = (x) => Math.round(Math.abs(x) * 100);
+const KEEP_AT = '85%', REMOVE_AT = '95%';
+const ordinal = (n) => { const t = n % 100, u = n % 10;
+  return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
+/* A level in [0, 1) as a whole percent, never rounded up to a certainty. */
+const pctOf = (x) => x >= 0.995 ? 'over 99%' : Math.floor(x * 100) + '%';
 
 /* ------------------------------------------------------------------ */
 /* Every sentence the page shows, in one place.                       */
@@ -252,7 +257,7 @@ const STRINGS = {
   chipRules: {
     helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it — specifically, an 85% confidence range that stays above zero, and stays valid no matter how often the loop checks.',
     alone: 'It helps when it\'s the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
-    none: 'The loop is at least 97.5% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
+    none: 'The loop is at least 95% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
     early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
@@ -262,10 +267,11 @@ const STRINGS = {
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, most helpful first: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse. Within each group, the biggest gain in checks passed comes first. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
+  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section. Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
+  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
   sortLabel: 'Order sections by',
+  sortNext: 'Next test',
   sortValue: 'Help per word',
   sortSize: 'Size',
   noCards: 'Nothing has been tested yet.',
@@ -279,6 +285,16 @@ const STRINGS = {
   notTried: 'Not tried in the last ' + WINDOW_WEEKS + ' weeks.',
   pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
   judgeScores: (a, b) => 'judge score ' + a + ' with, ' + b + ' without (out of 10)',
+  nextQueued: (n, kind) => 'Next test: ' + ordinal(n) + ' ' + kind + ' in line for the next round of tests.',
+  nextDue: (when) => 'Next test: a re-check due ' + when + '.',
+  nextNone: 'Next test: none planned right now.',
+  nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
+  confidence: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
+  confidenceSection: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
+  confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
+  used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
+    : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
+  usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.',
   size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
 
   barWith: 'With the skill',
@@ -455,6 +471,15 @@ function fmtDateTime(ms) {
     timeZone: TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
   }).format(new Date(ms));
   return s + ' ' + STRINGS.et;
+}
+
+/* A UTC calendar day (a census window edge, which is a UTC Monday), shown
+   as that day rather than shifted into Eastern time. */
+function fmtUtcDay(ms, refMs) {
+  if (!isFinite(ms)) return STRINGS.unknown;
+  const opts = { timeZone: 'UTC', month: 'short', day: 'numeric' };
+  if (isFinite(refMs) && new Date(ms).getUTCFullYear() !== new Date(refMs).getUTCFullYear()) opts.year = 'numeric';
+  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
 }
 
 function fmtCount(x) {
@@ -890,6 +915,37 @@ function context(doc) {
    getting worse; by pooled gain
    within each group. */
 const SKILL_RANK = ['helps', 'early', 'canttell', 'insufficient', 'none', 'worse'];
+const SECTION_RANK = ['helps', 'alone', 'early', 'canttell', 'insufficient', 'none', 'worse'];
+
+/* When the loop tests a subject next, as a sort key: queued (by place in
+   line), then a re-check (soonest first), then nothing planned, then not on
+   the schedule. */
+function nextKey(nt) {
+  const n = nt && typeof nt === 'object' ? nt : {};
+  if (typeof n.position === 'number' && isFinite(n.position)) return [0, n.position];
+  const due = parseTime(n.due);
+  if (isFinite(due)) return [1, due];
+  return [n.scheduled ? 2 : 3, 0];
+}
+
+function byNext(a, b) {
+  const ka = nextKey(a.raw.next_test), kb = nextKey(b.raw.next_test);
+  return ka[0] - kb[0] || ka[1] - kb[1];
+}
+
+/* How well a subject is faring: its label's rank, then the pooled gain. */
+function byFaring(rank) {
+  return (a, b) => {
+    const ra = rank.indexOf(a.chip), rb = rank.indexOf(b.chip);
+    if (ra !== rb) return ra - rb;
+    const ga = a.pooled.all.gain, gb = b.pooled.all.gain;
+    if (ga !== null && gb !== null && ga !== gb) return gb - ga;
+    if ((ga === null) !== (gb === null)) return ga === null ? 1 : -1;
+    return 0;
+  };
+}
+
+const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
 function skillItems(doc) {
   const c = context(doc);
@@ -900,14 +956,7 @@ function skillItems(doc) {
       return { name: String(s.name || ''), raw: s, pooled: pooled,
         chip: chipFor(pooled, { subject: 'skills', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'skill', s.name) }),
         sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
-    }).sort((a, b) => {
-      const ra = SKILL_RANK.indexOf(a.chip), rb = SKILL_RANK.indexOf(b.chip);
-      if (ra !== rb) return ra - rb;
-      const ga = a.pooled.all.gain, gb = b.pooled.all.gain;
-      if (ga !== null && gb !== null && ga !== gb) return gb - ga;
-      if ((ga === null) !== (gb === null)) return ga === null ? 1 : -1;
-      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
-    });
+    }).sort((a, b) => byNext(a, b) || byFaring(SKILL_RANK)(a, b) || byName(a, b));
 }
 
 /* What a skill is for: the first sentence of its SKILL.md description (the
@@ -924,12 +973,13 @@ function sectionItems(doc, sortBy) {
   const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
   const items = secs.filter((s) => s && s.id).map((s) => {
     const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
-    return { id: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
+    return { id: String(s.id), name: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
       chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
       sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
       perKb: gainPerKb(pooled, s.bytes) };
   });
   if (sortBy === 'size') items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
+  else if (sortBy !== 'value') items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK)(a, b) || byName(a, b));
   else items.sort((a, b) => {
     if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
     if (a.perKb === null) return 1;
@@ -965,23 +1015,50 @@ function introView(mode) {
       h('dl', { class: 'gloss' }, chipKinds.map((k) => [h('dt', null, chip(k)), h('dd', null, STRINGS.chipRules[k])]))));
 }
 
-function skillCard(it, refMs) {
+function nextLine(nt, refMs, kind) {
+  const n = nt && typeof nt === 'object' ? nt : {};
+  let text;
+  if (typeof n.position === 'number' && isFinite(n.position)) text = STRINGS.nextQueued(n.position, kind);
+  else if (isFinite(parseTime(n.due))) text = STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
+  else text = n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
+  return h('p', { class: 'meta' }, text);
+}
+
+function confidenceLine(c, policy, subject) {
+  const ok = (x) => typeof x === 'number' && isFinite(x);
+  if (!c || !ok(c.helps) || !ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
+  const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
+  const f = subject === 'guidance' ? STRINGS.confidenceSection : STRINGS.confidence;
+  return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin));
+}
+
+function usageLine(u, window, refMs) {
+  if (!u || typeof u.invocations !== 'number' || !window) return null;
+  return h('p', { class: 'meta' }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs)));
+}
+
+function skillCard(it, refMs, doc) {
   return h('article', { class: 'card' },
     h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
     h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
+    usageLine(it.raw.usage, doc && doc.usage, refMs),
+    nextLine(it.raw.next_test, refMs, 'skill'),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
+    confidenceLine(it.raw.confidence, doc && doc.policy, 'skills'),
     verdictLine(it.raw.verdict));
 }
 
-function sectionCard(it, refMs) {
+function sectionCard(it, refMs, doc) {
   const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
   return h('article', { class: 'card' },
     h('div', { class: 'head' }, h('h3', null, clean(it.raw.heading || it.id)), chip(it.chip)),
     h('p', { class: 'gl' }, gloss),
     h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
+    nextLine(it.raw.next_test, refMs, 'section'),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
+    confidenceLine(it.raw.confidence, doc && doc.policy, 'guidance'),
     verdictLine(it.raw.verdict));
 }
 
@@ -1108,15 +1185,18 @@ function buildPage(doc, mode, opts) {
         chipSummary(items, mode),
         h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
           h('div', { class: 'seg', role: 'group', 'aria-label': STRINGS.sortLabel },
-            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'false' : 'true', onclick: hd.sortValue || null }, STRINGS.sortValue),
+            h('button', { type: 'button', 'aria-pressed': o.sortBy !== 'size' && o.sortBy !== 'value' ? 'true' : 'false', onclick: hd.sortNext || null }, STRINGS.sortNext),
+            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'value' ? 'true' : 'false', onclick: hd.sortValue || null }, STRINGS.sortValue),
             h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
-        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs))) : h('p', null, STRINGS.noCards))
+        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards))
     ];
   } else {
     const items = skillItems(doc);
+    const u = doc.usage;
     body = [h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
+      u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
-      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs))) : h('p', null, STRINGS.noCards))];
+      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards))];
   }
   return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
 }
@@ -1143,8 +1223,8 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
   (function boot() {
     const app = document.getElementById('app');
     const tip = document.getElementById('tip');
-    const state = { mode: modeFromSearch(location.search), sortBy: 'value', doc: null, url: DEFAULT_DATA_URL, notice: null };
-    try { const s = localStorage.getItem('explorer-sort'); if (s === 'size' || s === 'value') state.sortBy = s; } catch (e) { /* storage unavailable */ }
+    const state = { mode: modeFromSearch(location.search), sortBy: 'next', doc: null, url: DEFAULT_DATA_URL, notice: null };
+    try { const s = localStorage.getItem('explorer-sort'); if (s === 'size' || s === 'value' || s === 'next') state.sortBy = s; } catch (e) { /* storage unavailable */ }
 
     function mount(node) {
       while (app.firstChild) app.removeChild(app.firstChild);
@@ -1164,7 +1244,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
     function render() {
       mount(buildPage(state.doc, state.mode, { sortBy: state.sortBy, url: state.url, notice: state.notice, handlers: {
         skills: () => setMode('skills'), guidance: () => setMode('guidance'),
-        sortValue: () => setSort('value'), sortSize: () => setSort('size') } }));
+        sortNext: () => setSort('next'), sortValue: () => setSort('value'), sortSize: () => setSort('size') } }));
     }
     function showTip(target) {
       const text = target && target.getAttribute && target.getAttribute('data-tip');

@@ -24,6 +24,12 @@ more than what it carries:
     64-hex digest, so a future field added by mistake fails loudly instead
     of publishing.
 
+Each skill and section also carries `confidence` (the levels its gate
+bounds reach, `subject_confidence`) and `next_test` (its place in the
+planner's eval queue or its next re-check, `test_queue`); each skill carries
+`usage`, its invocations in `usage/weekly-local.json`, whose window is the
+top-level `usage` (None without a census: unknown, not zero).
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran. Counts are per arm over the scored trials (infrastructure failures and
@@ -46,6 +52,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import compute_gates  # noqa: E402
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
+import plan_week  # noqa: E402
+import skill_usage  # noqa: E402
 
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -260,6 +268,101 @@ def skill_description(registries: dict | None, registry: str | None, name: str) 
     return " ".join(desc.replace("@", "").split())
 
 
+def subject_confidence(verdict: dict) -> dict:
+    """How sure the gate is, as levels in [0, 1): `helps`, the highest
+    confidence at which some cell's delta (objective or judge) is above 0, and
+    `no_help`, the highest at which every cell's objective delta is under the
+    margin (a cell with no objective figure gives 0). Both None while no
+    cell has a figure. The keep and remove rules compare these with the policy levels;
+    the page shows them as percentages."""
+    cells = verdict.get("cells") or []
+    if not cells:
+        return {"helps": None, "no_help": None}
+    helps = [d["helps_confidence"] for c in cells for d in (c.get("objective"), c.get("judge"))
+             if isinstance(d, dict) and "helps_confidence" in d]
+    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
+    if not helps:
+        return {"helps": None, "no_help": None}
+    return {"helps": max(helps), "no_help": min(no_help)}
+
+
+#: The eval bands the page lists as the test queue, in the planner's order.
+QUEUE_BANDS = ("safety", "missing", "near", "recheck")
+
+
+def test_queue(cells: list, model_weights: dict, now) -> dict:
+    """{(kind, name): {"position", "band", "due"}} for every subject with a
+    scheduled cell: `position` (1 = next) is the subject's first cell in the
+    planner's eval bands, in `plan_week.allocate`'s order before the budget
+    cuts it off; a subject with no cell in a band gets `due`, the earliest
+    re-check of a cell the planner re-checks (newest run + RECHECK_AFTER), or
+    neither when no test is planned. `scheduled` is False (from the caller)
+    for a subject with no fixture on `evals/scheduled.yml`. The
+    budget decides how far down the queue a sweep gets, so this is an order,
+    not a date."""
+    ctx = {"cells": cells, "model_weights": model_weights, "removal_prs": [],
+           "reservation": 1.0, "overrun": 1.0, "points_per_usd": None}
+    bands, _work = plan_week.eval_items(ctx, now)
+
+    def key(cell_or_item):
+        section = next((c["section"] for c in cells if c["fixture"] == cell_or_item["fixture"]
+                        and c.get("section")), None)
+        return ("guidance", section) if section else ("skill", cell_or_item["skill"])
+
+    out, position = {}, 0
+    for band in QUEUE_BANDS:
+        for item in sorted(bands[band], key=lambda i: (*i["order"], i["cost"], i["fixture"],
+                                                       i["model"], i["skill"])):
+            subject = key(item)
+            if subject not in out:
+                position += 1
+                out[subject] = {"position": position, "band": band, "due": None,
+                                "scheduled": True}
+    for cell in cells:
+        subject = key(cell)
+        newest = plan_week._stamp_time(cell["newest"])
+        if subject in out and out[subject]["position"] is not None:
+            continue
+        entry = out.setdefault(subject, {"position": None, "band": None, "due": None,
+                                         "scheduled": True})
+        if newest is None or (cell["class"] in ("missing", "insufficient")
+                              and cell.get("verdict") != "keep"):
+            continue
+        due = plan_week._iso(newest + plan_week.RECHECK_AFTER)
+        if entry["due"] is None or due < entry["due"]:
+            entry["due"] = due
+    return out
+
+
+def renumber(subjects: list) -> None:
+    """Number the queued subjects of one list 1, 2, ... in queue order (in
+    place), so a place in line counts only subjects the page lists: an
+    unlisted (private) subject ahead in the planner's queue leaves no gap."""
+    queued = sorted((s for s in subjects if s["next_test"]["position"] is not None),
+                    key=lambda s: s["next_test"]["position"])
+    for rank, subject in enumerate(queued, 1):
+        subject["next_test"] = {**subject["next_test"], "position": rank}
+
+
+def usage_counts(tree: Path) -> tuple:
+    """({skill: invocations}, the window) from `usage/weekly-local.json`:
+    every week of the file summed, so a skill the census never saw is 0 while
+    the file exists. ({}, None) without a readable file (unknown, not zero).
+    The census already folds every non-public name into `other`; the caller
+    attaches a count only to a listed skill."""
+    doc = skill_usage.load(tree / "usage" / "weekly-local.json")
+    if doc is None:
+        return {}, None
+    counts = {}
+    for row in doc["rows"]:
+        if row["kind"] == "skill" and isinstance(row.get("invocations"), int):
+            counts[row["name"]] = counts.get(row["name"], 0) + row["invocations"]
+    source = next((s for s in doc["sources"] if s.get("scope") == "transcripts"), {})
+    window = {"from": source.get("from"), "to": source.get("to"),
+              "sessions_scanned": source.get("sessions_scanned"), "surface": source.get("surface")}
+    return counts, window
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -271,6 +374,13 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     census_rows, coverage = public_census(load_census(tree))
     roster = yaml.safe_load(roster_path.read_text(encoding="utf-8"))
     by_skill, by_section = skill_runs(index), guidance_runs(index)
+    now = plan_week._stamp_time(compact)
+    queue = {}
+    if (evals_dir / "scheduled.yml").is_file():
+        queue = test_queue(plan_week.eval_cells(evals_dir, gates_doc, [], now),
+                           plan_week.model_weights(tree, gates_doc["roster_models"]), now)
+    counts, usage_window = usage_counts(tree)
+    unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
 
     skills = []
     for name, row in sorted(census_rows.items()):
@@ -279,7 +389,13 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "description": skill_description(registries, row["registry"], name),
                        "status": row.get("status"), "skip_reason": row.get("reason"),
                        "verdict": verdict.get("verdict"), "verdict_reason": verdict.get("reason"),
+                       "confidence": subject_confidence(verdict),
+                       "next_test": queue.get(("skill", name), unqueued),
+                       "usage": None if usage_window is None
+                       else {"invocations": counts.get(name, 0)},
                        "runs": by_skill.get(name, [])})
+
+    renumber(skills)
 
     guidance_verdicts = gates_doc.get("guidance") or {}
     rows = manifest or [{"id": s, "heading": s, "status": "covered"} for s in sorted(by_section)]
@@ -292,7 +408,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "skip_reason": row.get("reason"), "verdict": verdict.get("verdict"),
             "verdict_reason": verdict.get("reason"),
             "alone_verdict": (verdict.get("alone") or {}).get("verdict"),
+            "confidence": subject_confidence(verdict),
+            "next_test": queue.get(("guidance", row["id"]), unqueued),
             "runs": by_section.get(row["id"], [])})
+
+    renumber(sections)
 
     try:
         regressions = json.loads((tree / "regressions" / "latest.json").read_text(encoding="utf-8"))
@@ -315,7 +435,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                           "min_cli_versions", "objective_margin")},
         "skills": skills, "guidance": {"sections": sections},
-        "coverage": coverage, "alerts": alerts}
+        "coverage": coverage, "alerts": alerts, "usage": usage_window}
 
 
 def finish(doc: dict) -> str:

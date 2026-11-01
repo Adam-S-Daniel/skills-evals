@@ -508,6 +508,11 @@ class CellTests(unittest.TestCase):
                                boundary(wm, om, POLICY["retire_confidence"],
                                         gates.MIN_PRIOR_VARIANCE, POLICY["prior_strength"]),
                                places=12)
+        # The display level for the same cell: removing at retire_confidence
+        # means the level reached under the margin is at least that.
+        self.assertGreaterEqual(result["objective"]["no_help_confidence"],
+                                POLICY["retire_confidence"])
+        self.assertLess(result["objective"]["helps_confidence"], POLICY["benefit_confidence"])
         self.assertEqual(result["class"], "no-benefit")
 
     def test_one_run_per_arm_with_no_history_is_insufficient(self):
@@ -2069,6 +2074,32 @@ class ComputeGatesTests(unittest.TestCase):
         self.assertEqual(doc["skills"]["one"]["raw_verdict"], "retire")
 
     # --- Round 6 -----------------------------------------------------------
+
+
+class ConfidenceReachedTests(unittest.TestCase):
+    """The display level the explorer page shows: the level at which the
+    confidence sequence's bound just touches the threshold."""
+
+    def test_the_bound_sits_on_the_threshold_at_the_level_reached(self):
+        a, b = [0.9, 0.8, 1.0], [0.5, 0.6]
+        delta = sum(a) / 3 - sum(b) / 2
+        level = gates.confidence_reached(a, b, 0.0625, 4, delta)
+        self.assertTrue(0 < level < 1)
+        lower, _ = gates.confidence_sequence(a, b, level, 0.0625, 4)
+        self.assertAlmostEqual(lower, 0.0, places=9)
+        margin = 0.05
+        level = gates.confidence_reached(b, a, 0.0625, 4, margin - (-delta))
+        _, upper = gates.confidence_sequence(b, a, level, 0.0625, 4)
+        self.assertAlmostEqual(upper, margin, places=9)
+
+    def test_the_wrong_side_reaches_no_confidence(self):
+        self.assertEqual(gates.confidence_reached([0.2], [0.6], 0.0625, 4, -0.4), 0.0)
+        self.assertEqual(gates.confidence_reached([0.2], [0.2], 0.0625, 4, 0.0), 0.0)
+
+    def test_more_runs_raise_it(self):
+        one = gates.confidence_reached([0.9], [0.5], 0.0625, 4, 0.4)
+        four = gates.confidence_reached([0.9] * 4, [0.5] * 4, 0.0625, 4, 0.4)
+        self.assertLess(one, four)
 
 
 if __name__ == "__main__":

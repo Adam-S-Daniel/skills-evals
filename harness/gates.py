@@ -386,6 +386,27 @@ def confidence_sequence(a: list, b: list, level: float, prior: float,
     return delta - half, delta + half
 
 
+def confidence_reached(a: list, b: list, prior: float, strength: float,
+                       distance: float) -> float:
+    """The highest level at which `confidence_sequence(a, b, level, ...)`
+    still clears a bound `distance` away from mean(a) - mean(b): solving
+    half(alpha) = distance for alpha, alpha = sqrt((I + r) / r) *
+    exp(-distance^2 I^2 / (2 (I + r))), and the level is 1 - alpha. With
+    `distance` = delta it is the confidence that the delta is above 0; with
+    `distance` = margin - delta, that it is under the margin. 0 when the
+    point estimate is already on the wrong side. Needs a run on each arm."""
+    if not a or not b:
+        raise ValueError("a confidence sequence needs a run on each arm")
+    if distance <= 0:
+        return 0.0
+    se2 = (moderated_variance(a, prior, strength) / len(a)
+           + moderated_variance(b, prior, strength) / len(b))
+    info, rho = 1 / se2, 1 / prior
+    alpha = math.sqrt((info + rho) / rho) * math.exp(
+        -distance * distance * info * info / (2 * (info + rho)))
+    return max(0.0, 1 - alpha)
+
+
 def confident_checks(with_rates: dict, without_rates: dict, level: float,
                      priors: dict, strength: float) -> list:
     """Check keys whose with-minus-without delta of per-run pass rates has a
@@ -636,17 +657,23 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     wm, om = arms["with"]["run_means"], arms["without"]["run_means"]
     objective_ok = bool(wm and om)
 
-    def delta(a, b, prior):
-        return {"delta": _mean(a) - _mean(b),
+    def delta(a, b, prior, margin):
+        d = _mean(a) - _mean(b)
+        return {"delta": d,
                 "benefit_lower": confidence_sequence(
                     a, b, policy["benefit_confidence"], prior, strength)[0],
                 "retire_upper": confidence_sequence(
-                    a, b, policy["retire_confidence"], prior, strength)[1]}
+                    a, b, policy["retire_confidence"], prior, strength)[1],
+                # The levels the two bounds reach, for display (the explorer
+                # page): confident above 0, and confident under the margin.
+                "helps_confidence": confidence_reached(a, b, prior, strength, d),
+                "no_help_confidence": confidence_reached(a, b, prior, strength,
+                                                         margin - d)}
 
     def objective_benefit():
         """The objective delta and the per-check keep (Holm): the reason the
         objective shows benefit, or None."""
-        out["objective"] = delta(wm, om, priors["objective"])
+        out["objective"] = delta(wm, om, priors["objective"], policy["objective_margin"])
         if out["objective"]["benefit_lower"] > 0:
             return "objective delta's lower bound is above 0"
         by_check = [{k: [r["numbers"]["check_rates"][k] for r in runs
@@ -678,7 +705,7 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
             return done("benefit", reason)
         if not judge_ok:
             return done("insufficient", judge_words)
-        out["judge"] = delta(wj, oj, priors["judge"])
+        out["judge"] = delta(wj, oj, priors["judge"], policy["judge_margin"])
         if out["judge"]["benefit_lower"] > 0:
             return done("benefit", "judge delta's lower bound is above 0")
         if judge_ceiling:
@@ -696,7 +723,7 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     if reason:
         return done("benefit", reason)
     if judge_ok:
-        out["judge"] = delta(wj, oj, priors["judge"])
+        out["judge"] = delta(wj, oj, priors["judge"], policy["judge_margin"])
         if out["judge"]["benefit_lower"] > 0:
             return done("benefit", "judge delta's lower bound is above 0")
     if objective_ceiling:

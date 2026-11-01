@@ -155,7 +155,8 @@ class ShapeAndMathTests(unittest.TestCase):
         d = self.doc
         self.assertEqual(sorted(d), ["alerts", "coverage", "generated_at", "guidance",
                                      "newest_run", "policy", "roster", "schema_version",
-                                     "skills", "source"])
+                                     "skills", "source", "usage"])
+        self.assertIsNone(d["usage"])
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")
@@ -172,9 +173,13 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["coverage"], {"as_of": "2026-10-31T14:00:00Z", "covered": 3,
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
-            self.assertEqual(sorted(s), ["bundle", "description", "name", "registry", "runs",
-                                         "skip_reason",
-                                         "status", "verdict", "verdict_reason"])
+            self.assertEqual(sorted(s), ["bundle", "confidence", "description", "name",
+                                         "next_test", "registry", "runs", "skip_reason",
+                                         "status", "usage", "verdict", "verdict_reason"])
+            # No usage census in the tree: unknown, not zero. No schedule: no test.
+            self.assertIsNone(s["usage"])
+            self.assertEqual(s["next_test"], {"position": None, "band": None, "due": None,
+                                              "scheduled": False})
 
     def test_with_and_without_are_paired_and_counted(self):
         runs = self.skill("alpha")["runs"]
@@ -421,6 +426,84 @@ class AlertTests(unittest.TestCase):
         doc = t.build(issues={"skills-evals:regression:alpha": url})
         found = [a for a in doc["alerts"] if a["kind"] == "regression"]
         self.assertEqual([(a["name"], a["url"]) for a in found], [("alpha", url)])
+
+
+def qcell(skill, fixture, cls, newest=None, verdict=None, section=None, runs=1):
+    return {"skill": "" if section else skill, "section": section, "fixture": fixture,
+            "model": "model-a", "class": cls, "verdict": verdict, "with_runs": runs,
+            "without_runs": runs, "newest": newest, "usd_per_fire": None,
+            "usd_per_arm_trial": None, "empty_fires": 0}
+
+
+class QueueConfidenceUsageTests(unittest.TestCase):
+    """The page's order (next test first), its confidence line and its
+    real-use count (Adam, 2026-11-01)."""
+
+    NOW = explorer_data.plan_week._stamp_time("20261101T000000Z")
+
+    def test_queue_follows_the_planner_bands_then_the_recheck_date(self):
+        cells = [qcell("near", "evals/near", "insufficient", newest="20261030T000000Z", runs=2),
+                 qcell("miss", "evals/miss", "missing"),
+                 qcell("", "evals/guidance/sec/fx", "insufficient", runs=1,
+                       newest="20261030T000000Z", section="sec"),
+                 qcell("kept", "evals/kept", "benefit", newest="20261025T000000Z",
+                       verdict="keep"),
+                 qcell("open", "evals/open", "insufficient", newest="20261025T000000Z",
+                       verdict="keep")]
+        q = explorer_data.test_queue(cells, {"model-a": 1.0}, self.NOW)
+        self.assertEqual(q[("skill", "miss")]["position"], 1)
+        self.assertEqual(q[("skill", "miss")]["band"], "missing")
+        # The fewer-runs near cell (the section's) goes before the other.
+        self.assertEqual(q[("guidance", "sec")]["position"], 2)
+        self.assertEqual(q[("skill", "near")]["position"], 3)
+        # Kept: no fire now, a re-check eight weeks after the newest run.
+        self.assertEqual(q[("skill", "kept")], {"position": None, "band": None,
+                                                "due": "2026-12-20T00:00:00Z",
+                                                "scheduled": True})
+        self.assertEqual(q[("skill", "open")]["due"], "2026-12-20T00:00:00Z")
+
+    def test_renumber_counts_only_listed_subjects(self):
+        rows = [{"next_test": {"position": 5}}, {"next_test": {"position": None}},
+                {"next_test": {"position": 2}}]
+        explorer_data.renumber(rows)
+        self.assertEqual([r["next_test"]["position"] for r in rows], [2, None, 1])
+
+    def test_confidence_is_the_best_help_and_the_weakest_no_help(self):
+        verdict = {"cells": [
+            {"objective": {"helps_confidence": 0.4, "no_help_confidence": 0.7},
+             "judge": {"helps_confidence": 0.9, "no_help_confidence": 0.1}},
+            {"objective": {"helps_confidence": 0.2, "no_help_confidence": 0.3}}]}
+        self.assertEqual(explorer_data.subject_confidence(verdict),
+                         {"helps": 0.9, "no_help": 0.3})
+        # A cell with no figure blocks a no-help claim; no figure at all is None.
+        verdict["cells"].append({"class": "missing"})
+        self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
+        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}),
+                         {"helps": None, "no_help": None})
+        self.assertEqual(explorer_data.subject_confidence({}), {"helps": None, "no_help": None})
+
+    def test_usage_counts_listed_skills_and_names_its_window(self):
+        t = Tree(self)
+        t.pair("alpha", "20261030T100000Z", [Tree.trial(5, 5, 8.0, 0.25)],
+               [Tree.trial(1, 5, 4.0, 0.25)])
+        rows = [{"week": w, "kind": "skill", "name": n, "repo": None, "surface": "local",
+                 "invocations": k, "sessions": 1, "blocked": None, "overridden": None,
+                 "outcome": None}
+                for w, n, k in (("2026-10-19", "alpha", 2), ("2026-10-26", "alpha", 3),
+                                ("2026-10-26", "other", 7))]
+        t.write_json("usage/weekly-local.json", {
+            "generated_at": "2026-10-31T16:00:00Z", "schema": 1, "rows": rows,
+            "sources": [{"surface": "local", "scope": "transcripts",
+                         "from": "2026-10-19T00:00:00Z", "to": "2026-10-31T16:00:00Z",
+                         "sessions_scanned": 40}]})
+        doc = t.build()
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["usage"], {"invocations": 5})
+        self.assertEqual(by["beta"]["usage"], {"invocations": 0})
+        self.assertEqual(doc["usage"], {"from": "2026-10-19T00:00:00Z",
+                                        "to": "2026-10-31T16:00:00Z",
+                                        "sessions_scanned": 40, "surface": "local"})
+        explorer_data.finish(doc)
 
 
 class WorkflowTests(unittest.TestCase):
