@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T12:46:38Z",
+ "generated_at": "2026-11-01T13:05:01Z",
  "guidance": {
   "sections": [
    {
@@ -198,7 +198,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [],
@@ -216,19 +216,57 @@
     "alone_verdict": "insufficient",
     "bytes": 1197,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 5,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-01T13:03:09Z",
+      "cli_version": "2.1.316",
+      "fixture": "dispatch-email-input",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 6,
+        "checks_total": 6,
+        "cost_usd": 0.1046838,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.0945774,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.0538669,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.11852489999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T130209Z-5f3399/guidance/data-exposure-in-ci/20261101T130309Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "covered_by": null,
@@ -554,7 +592,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [],
@@ -581,7 +619,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [],
@@ -608,7 +646,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [],
@@ -899,7 +937,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T12:44:34Z",
+ "newest_run": "2026-11-01T13:03:09Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6317,7 +6355,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "82f39c31785408447816c680eb159692716c409e",
-  "results_commit": "d0ef92623d31a5d716a59e169396dfdd2f611c09"
+  "results_commit": "33bccff02269f3046d9b191ad999de6884897320"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
