@@ -215,7 +215,8 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
-5. **Re-checks**: decided cells not measured for eight weeks.
+5. **Re-checks**: decided cells not measured for eight weeks (four for a
+   high-stakes subject).
 6. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
@@ -225,6 +226,18 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    run already ingested, or a bare fire that succeeded or is still running,
    counts as done; a new roster model gets its own. Bare runs are listed
    apart (`bare_runs` in the verdict document) and never pooled into a cell.
+
+**Stakes** (Adam, 2026-11-01). `evals/stakes.yml` gives a skill or guidance
+section a stakes level from what it is for, with a one-line reason; a
+subject with no row is `normal`. A `high` subject prevents irreversible or
+public harm: its cells go first within the missing, near and re-check
+bands, and it is re-checked after four weeks. A `none` subject needs no eval
+because a check enforces it everywhere it applies: its row must name that
+check as `<owner>/<repo>:<path>`, and the plan fires nothing for it.
+`scripts/stakes.py --check` refuses an unknown field, a name with no fixture
+directory here (so no private skill name can land in the public file), a
+`none` row without its check and a duplicate; the explorer cards show both
+levels.
 
 `routine-eval-fire.yml` accepts `arms: bare` in eval mode only, and only for
 a fixture whose `fixture.yaml` has a top-level `context` mapping; its run is
