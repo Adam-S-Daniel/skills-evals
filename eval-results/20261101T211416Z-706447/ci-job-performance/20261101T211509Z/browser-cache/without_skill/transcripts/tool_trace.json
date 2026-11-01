@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014XGThcXBzAAefJTMtiA5W6",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml && gh run list -R example-org/example-repo --workflow e2e.yml -L 20",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014XGThcXBzAAefJTMtiA5W6",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013hNqpbrb7GR7jSrpeNXT5p",
+      "name": "Bash",
+      "input": "for r in 71001 71003 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs -q '.jobs[] | \"\\(.name) \\(.startedAt) \\(.completedAt)\", (.steps[] | select(.name|t...",
+      "input_chars": 323,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013hNqpbrb7GR7jSrpeNXT5p",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.5KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"...",
+      "output_chars": 2223,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AeTAowibbMc6nAszcfNdTK",
+      "name": "Bash",
+      "input": "for r in 71001 71003 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs 2><path> | python3 -I -c '\nimport sys,json\nfrom datetime import datetime as D\np=la...",
+      "input_chars": 616,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AeTAowibbMc6nAszcfNdTK",
+      "is_error": false,
+      "output": "== 71001\ne2e (chromium) 93 s\n   Install browser OS dependencies            24s success\n   Install browser                            11s success\n   Run Playwright tests                       42s success\ne2e (firefox) 97 s\n   Install browser OS dependencies            20s success\n   Install browser  ...",
+      "output_chars": 4924,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ToWaJr8QcAkcCMrjjBEcr4",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lxcqw28b97ABM4zbpvsuN3",
+      "name": "Bash",
+      "input": "git diff --stat",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ToWaJr8QcAkcCMrjjBEcr4",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 89,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lxcqw28b97ABM4zbpvsuN3",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 5 +++++\n 1 file changed, 5 insertions(+)",
+      "output_chars": 69,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
