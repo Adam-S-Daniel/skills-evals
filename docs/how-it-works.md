@@ -187,6 +187,26 @@ Known gaps:
   successfully, so two dispatched at the same moment do not see each other.
   The weekly plan accounts for its own fires up front.
 
+**The cost estimate** (Adam, 2026-11-01). The meter reads whole points, and
+only as each call starts, so a run's last agent call and any judge call after
+the last reading are never in its `usage.meter_delta`. Every summary's
+run-level `usage` therefore also carries `cost_estimate`: the CLI's own dollar
+figure (`total_cost_usd`, else its `modelUsage` costs) for every call of the run (agent, judge and guard),
+summed as `usd` and split as `agent_usd`, `judge_usd` and `guard_usd`, plus
+`last_agent_call_usd` (the run's final agent call, which the meter never
+sees; for a session with follow-ups, that call's own share), `metered_usd`
+(the calls the delta spans) and `calls_with_cost` / `calls_without_cost`. A
+trial's own dollars per role stay in `usage.measured.<role>.cost_usd`. Nothing
+is rounded until display: report.md shows the dollars to the cent, labeled as
+an estimate. The harness cannot calibrate points, so its `points_per_usd` and
+`points` are null with a reason. When a routine run is ingested,
+`scripts/ingest_routine_results.py estimate` writes
+`routine-results/<run id>/cost_estimate.json` beside it, once: each
+invocation's block with `points` = `usd` × the rate measured over the runs
+already ingested (their weekly meter movement, with no overrun added, over
+their `metered_usd`). The estimate is collected to size `per_run_overrun`;
+nothing charges from it.
+
 ### The weekly plan
 
 `routine-eval-weekly.yml` runs `scripts/plan_week.py` every Tuesday at 07:00

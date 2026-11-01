@@ -208,7 +208,7 @@ def _tree(root: Path) -> list[str]:
 def _stable_bytes(path: Path) -> bytes:
     """A result file's bytes without what differs from one run to the next
     whatever the harness does: a summary's `run` and `usage` blocks (#370:
-    the harness commit, wall-clock times) and the report's two lines made
+    the harness commit, wall-clock times) and the report's three lines made
     from them. Both blocks are a summary's last two keys, so the rest
     re-serializes to the bytes the harness wrote before them. Also without
     `judge_selection` (#371), the key before those two, which names the judge
@@ -224,7 +224,8 @@ def _stable_bytes(path: Path) -> bytes:
         return json.dumps(summary, indent=2).encode("utf-8")
     if path.name == "report.md":
         return b"".join(line for line in path.read_bytes().splitlines(keepends=True)
-                        if not line.startswith((b"- Run: ", b"- Account meter")))
+                        if not line.startswith((b"- Run: ", b"- Account meter",
+                                                        b"- Estimated cost")))
     return path.read_bytes()
 
 

@@ -3715,6 +3715,16 @@ _NO_RUN_END = ("no call the harness makes prints a meter event after its last "
                "call (agent, judge or guard) has started (one real call "
                "observed: one event, as the call began); reading the meter at "
                "run end would need an added call")
+#: What `usage.cost_estimate` is (owner decision, 2026-11-01): the meter
+#: reads whole points as each call starts, so a run's last calls are never in
+#: it, and this is the dollar side of every call to set beside it.
+COST_ESTIMATE_BASIS = ("an estimate from the CLI's own per-call dollar figures "
+                       "(total_cost_usd, else modelUsage costUSD), times the "
+                       "measured points-per-dollar rate; not a meter reading")
+#: Why `points_per_usd` and `points` are null in every summary: the harness
+#: has no ingested runs to calibrate on.
+_POINTS_AT_INGEST = ("calibrated at ingest, where the ingested runs are: "
+                     "routine-results/<run id>/cost_estimate.json")
 
 
 def _now() -> datetime:
@@ -3827,6 +3837,61 @@ def _role_usage(role: str, calls: list, results: list) -> dict:
            else f"the {role} call ended without a result")
     return {**block, "reasons": {name: why for name, value in block.items()
                                  if value is None}}
+
+
+def _call_costs(role: str, calls: list, results: list) -> list:
+    """Each of one role's queued calls' own dollar cost, in call order, or
+    None where its results do not say. A single call costs what
+    `_role_usage` reads. Several calls are one resumed session (an agent's
+    follow-ups): one result whose `turns` are the calls' own results, each
+    `total_cost_usd` cumulative for the session (`_combine_turns`), so a
+    call costs its total less the one before it."""
+    if len(calls) == 1:
+        return [_role_usage(role, calls, results)["cost_usd"]]
+    turns = results[0].get("turns") if len(results) == 1 else None
+    if not isinstance(turns, list) or len(turns) != len(calls):
+        return [None] * len(calls)
+    costs, before = [], 0
+    for turn in turns:
+        total = _token_count(turn.get("total_cost_usd")) if isinstance(turn, dict) else None
+        costs.append(None if total is None or before is None or total < before
+                     else total - before)
+        before = total
+    return costs
+
+
+def _cost_estimate(costs: list, span: tuple | None, api_billed: bool) -> dict:
+    """`usage.cost_estimate`: the run's dollars, summed over every call that
+    carries a dollar figure (`costs`, `(role, usd or None)` in call order).
+    `metered_usd` is the dollars of the calls `meter_delta` spans (`span`,
+    the first snapshot's call up to but not including the last one's), which
+    is what a points-per-dollar rate is calibrated on. Nothing is rounded."""
+    known = [(role, usd) for role, usd in costs if usd is not None]
+    agent = [usd for role, usd in costs if role == "agent"]
+    inside = [usd for _, usd in costs[span[0]:span[1]]] if span else []
+    block = {"usd": sum(usd for _, usd in known),
+             **{f"{role}_usd": sum(usd for mine, usd in known if mine == role)
+                for role in USAGE_ROLES},
+             "metered_usd": (sum(inside) if inside and None not in inside
+                             else None),
+             "last_agent_call_usd": agent[-1] if agent else None,
+             "calls_with_cost": len(known),
+             "calls_without_cost": len(costs) - len(known),
+             "points_per_usd": None, "points": None,
+             "basis": COST_ESTIMATE_BASIS}
+    reasons = {"points_per_usd": _POINTS_AT_INGEST, "points": _POINTS_AT_INGEST}
+    if block["metered_usd"] is None:
+        reasons["metered_usd"] = (
+            _API_BILLED if api_billed
+            else "a call inside the measured meter span carried no dollar figure"
+            if None in inside
+            else "no meter delta spans a call: fewer than two meter snapshots "
+                 "from different calls")
+    if block["last_agent_call_usd"] is None:
+        reasons["last_agent_call_usd"] = (
+            "the run's last agent call carried no dollar figure" if agent
+            else "no agent call was made")
+    return {**block, "reasons": reasons}
 
 
 def _sum_measured(trials: list) -> dict:
@@ -4023,6 +4088,8 @@ class _RunTelemetry:
         # had started before the call that printed it.
         self.calls_seen = 0
         self.snapshot_calls: list[int] = []
+        # Each of the run's CLI calls' (role, dollar cost or None), in order.
+        self.call_costs: list[tuple] = []
         self.unreadable = 0
         self.written: list[Path] = []
 
@@ -4111,6 +4178,8 @@ class _RunTelemetry:
                 shots += self._call_snapshots(call.get("events") or [],
                                               group["role"], index,
                                               call["started"])
+            self.call_costs += [(group["role"], cost) for cost in _call_costs(
+                group["role"], group["calls"], group["results"])]
         self.snapshots += shots
         kept = _cap_snapshots(shots)
         first = started or min((c["started"] for g in groups for c in g["calls"]),
@@ -4154,9 +4223,10 @@ class _RunTelemetry:
         self.calls_seen += 1
         call = {"started": started, "ended": ended,
                 "duration_ms": int((ended - started).total_seconds() * 1000)}
+        results = [r for r in results if isinstance(r, dict)]
+        self.call_costs += [(role, cost) for cost in _call_costs(role, [call], results)]
         measured["ended_at"] = _stamp(ended)
-        measured[role] = _role_usage(role, [call], [
-            r for r in results if isinstance(r, dict)])
+        measured[role] = _role_usage(role, [call], results)
         new = self._call_snapshots(list(events), role, 0, started)
         self.snapshots += new
         if new and measured["meter"] is not None:
@@ -4221,6 +4291,10 @@ class _RunTelemetry:
                     "id": session if RUN_NAME.fullmatch(session) else None,
                     "usage": None, "note": "not measured"},
                 "limit_promotion": None, "price_table_version": None,
+                "cost_estimate": _cost_estimate(
+                    self.call_costs, None if delta is None else
+                    (self.snapshot_calls[0], self.snapshot_calls[-1]),
+                    self._api_billed()),
                 "reasons": reasons, **stopped}
 
     def usage(self, trials: list | None) -> dict:
@@ -4261,15 +4335,31 @@ class _RunTelemetry:
         delta = level["meter_delta"]
         if delta is None:
             why = level["reasons"]["meter_delta"]
-            return [*lines, f"- Account meter: no change recorded ({why})"]
-        moved = ", ".join(f"{name} {window['from']} to {window['to']}"
-                          for name, window in delta["windows"].items())
-        late = delta["uncovered"]["calls_from_last_snapshot"]
-        return [*lines, "- Account meter (account-wide, so anything else the "
-                        "account ran is in it; read as each agent, judge or guard "
-                        "call starts, "
-                        f"so the {late} call(s) from the last reading on are "
-                        f"not in it): {moved}, from {len(self.snapshots)} snapshots"]
+            lines.append(f"- Account meter: no change recorded ({why})")
+        else:
+            moved = ", ".join(f"{name} {window['from']} to {window['to']}"
+                              for name, window in delta["windows"].items())
+            late = delta["uncovered"]["calls_from_last_snapshot"]
+            lines.append("- Account meter (account-wide, so anything else the "
+                         "account ran is in it; read as each agent, judge or "
+                         "guard call starts, "
+                         f"so the {late} call(s) from the last reading on are "
+                         f"not in it): {moved}, from {len(self.snapshots)} snapshots")
+        return [*lines, _cost_estimate_line(level["cost_estimate"])]
+
+
+def _cost_estimate_line(estimate: dict) -> str:
+    """report.md's line for `usage.cost_estimate`, the one place its
+    dollars are rounded (to cents)."""
+    last = estimate["last_agent_call_usd"]
+    missing = estimate["calls_without_cost"]
+    return ("- Estimated cost (an estimate from the CLI's own per-call dollar "
+            f"figures, not a meter reading): ${estimate['usd']:.2f} over "
+            f"{estimate['calls_with_cost']} call(s); agent "
+            f"${estimate['agent_usd']:.2f}, judge ${estimate['judge_usd']:.2f}, "
+            f"guard ${estimate['guard_usd']:.2f}; last agent call "
+            + ("not known" if last is None else f"${last:.2f}")
+            + (f"; {missing} call(s) without a dollar figure" if missing else ""))
 
 
 _TELEMETRY = _RunTelemetry()

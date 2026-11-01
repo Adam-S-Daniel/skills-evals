@@ -57,7 +57,7 @@ RUN_NULLABLE = ("billing", "runner", "location", "id", "session_id",
 USAGE_KEYS = {"schema_version", "started_at", "ended_at", "meter",
               "meter_delta", "concurrent_runs", "other_account_activity",
               "asserted_quiet_by", "outer_session", "limit_promotion",
-              "price_table_version", "measured", "reasons"}
+              "price_table_version", "cost_estimate", "measured", "reasons"}
 USAGE_NULLABLE = ("ended_at", "meter", "meter_delta", "concurrent_runs",
                   "limit_promotion", "price_table_version")
 MEASURED_KEYS = {"scope", "started_at", "ended_at", "calls", "meter", "agent",
@@ -67,6 +67,11 @@ ROLE_KEYS = {"calls", "duration_ms", "num_turns", "cost_usd", "cost_basis",
              "models", "cache_creation", "reasons"}
 ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation",
                  "models")
+COST_ESTIMATE_NULLABLE = ("metered_usd", "last_agent_call_usd",
+                          "points_per_usd", "points")
+COST_ESTIMATE_KEYS = {"usd", "agent_usd", "judge_usd", "guard_usd",
+                      *COST_ESTIMATE_NULLABLE, "calls_with_cost",
+                      "calls_without_cost", "basis", "reasons"}
 #: `meter_delta.uncovered` for a run whose only calls printed its snapshots.
 def uncovered(before: int, from_last: int) -> dict:
     return {"calls_before_first_snapshot": before,
@@ -176,6 +181,10 @@ class Checks(unittest.TestCase):
         for role in ("agent", "judge", "guard"):
             self.assertEqual(set(measured[role]), ROLE_KEYS, role)
             self.assert_reasons(measured[role], ROLE_NULLABLE, role)
+        estimate = usage["cost_estimate"]
+        self.assertEqual(set(estimate), COST_ESTIMATE_KEYS)
+        self.assert_reasons(estimate, COST_ESTIMATE_NULLABLE, "usage.cost_estimate")
+        self.assertEqual((estimate["points_per_usd"], estimate["points"]), (None, None))
         json.dumps(summary, allow_nan=False)
 
 
@@ -733,6 +742,114 @@ class MeasuredTests(Checks):
     # (#371) is made after its trial's summary was written, and `amend` adds
     # it to that summary.
 
+    # -- usage.cost_estimate (owner decision, 2026-11-01) ------------------
+
+    def estimate(self) -> dict:
+        """The run's cost estimate as `finish()` would write it now."""
+        return run_eval._TELEMETRY._run_level()["cost_estimate"]
+
+    def judged(self, usd: float) -> None:
+        """Queue one judge call whose CLI result says it cost `usd`."""
+        started = self.clock.now()
+        self.clock.advance(3)
+        run_eval._TELEMETRY.timed("judge", started, [
+            {"total_cost_usd": usd, "modelUsage": {}}])
+
+    def test_the_cost_estimate_covers_every_call_and_names_the_last_agent_call(self):
+        # Agent, judge, agent, judge; only the agent calls print the meter,
+        # so the delta spans the first agent call and its judge call.
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(), [meter(0.72)]))))
+        self.judged(0.04)
+        self.written()
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(total_cost_usd=0.1), [meter(0.73)]))))
+        self.judged(0.03)
+        self.written("with_skill")
+        estimate = self.estimate()
+        self.assertEqual(set(estimate), COST_ESTIMATE_KEYS)
+        self.assertAlmostEqual(estimate["usd"], 0.42, places=12)
+        self.assertAlmostEqual(estimate["agent_usd"], 0.35, places=12)
+        self.assertAlmostEqual(estimate["judge_usd"], 0.07, places=12)
+        self.assertEqual(estimate["guard_usd"], 0)
+        self.assertAlmostEqual(estimate["metered_usd"], 0.29, places=12)
+        self.assertEqual(estimate["last_agent_call_usd"], 0.1)
+        self.assertEqual((estimate["calls_with_cost"], estimate["calls_without_cost"]),
+                         (4, 0))
+        self.assertEqual((estimate["points_per_usd"], estimate["points"]), (None, None))
+        self.assertEqual(estimate["basis"], run_eval.COST_ESTIMATE_BASIS)
+        self.assertEqual(set(estimate["reasons"]), {"points_per_usd", "points"})
+
+    def test_the_cost_estimate_keeps_full_precision(self):
+        self.agent(Cli(self.clock, json.dumps(result_object(total_cost_usd=0.123456789))))
+        self.judged(0.000000001)
+        self.written()
+        self.assertEqual(self.estimate()["usd"], 0.123456789 + 0.000000001)
+
+    def test_a_follow_up_sessions_last_call_costs_only_its_own_share(self):
+        # Each resumed result's total is cumulative for the session.
+        cli = Cli(self.clock, json.dumps(result_object(total_cost_usd=0.1)),
+                  json.dumps(result_object()))
+        self.agent(cli, followups=["go on"])
+        self.written()
+        estimate = self.estimate()
+        self.assertEqual(estimate["agent_usd"], 0.25)
+        self.assertAlmostEqual(estimate["last_agent_call_usd"], 0.15, places=12)
+        self.assertEqual(estimate["calls_with_cost"], 2)
+
+    def test_a_call_without_a_dollar_figure_is_counted_never_guessed(self):
+        self.agent(Cli(self.clock, raises=subprocess.TimeoutExpired("claude", 30)))
+        self.written()
+        estimate = self.estimate()
+        self.assertEqual((estimate["usd"], estimate["calls_with_cost"],
+                          estimate["calls_without_cost"]), (0, 0, 1))
+        self.assertIsNone(estimate["last_agent_call_usd"])
+        self.assertEqual(estimate["reasons"]["last_agent_call_usd"],
+                         "the run's last agent call carried no dollar figure")
+        self.assertIsNone(estimate["metered_usd"])
+
+    def test_a_run_with_no_call_has_a_zero_estimate_and_says_why(self):
+        self.written()
+        estimate = self.estimate()
+        self.assertEqual((estimate["usd"], estimate["calls_with_cost"],
+                          estimate["calls_without_cost"]), (0, 0, 0))
+        self.assertEqual(estimate["reasons"]["last_agent_call_usd"],
+                         "no agent call was made")
+
+    def test_a_judge_call_added_after_its_summary_is_in_the_estimate(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        summary = self.written()
+        self.amended(summary)
+        estimate = self.estimate()
+        # The added judge result carries its modelUsage costs alone.
+        self.assertAlmostEqual(estimate["judge_usd"], 0.25, places=12)
+        self.assertAlmostEqual(estimate["usd"], 0.5, places=12)
+        self.assertEqual(estimate["last_agent_call_usd"], 0.25)
+
+    def test_an_api_billed_run_has_no_metered_dollars_and_says_why(self):
+        run_eval._TELEMETRY.begin(flags(run_billing="api"))
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(), [meter(0.72)]))))
+        self.agent(Cli(self.clock, json.dumps(
+            verbose_array(result_object(), [meter(0.73)]))))
+        self.written()
+        estimate = self.estimate()
+        self.assertEqual(estimate["usd"], 0.5)
+        self.assertIsNone(estimate["metered_usd"])
+        self.assertEqual(estimate["reasons"]["metered_usd"], run_eval._API_BILLED)
+
+    def test_the_cost_estimate_is_shared_by_every_summary_of_the_run(self):
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        first = self.tmp / "results" / "s" / self.TS / "without_skill" / "summary.json"
+        self.written()
+        self.agent(Cli(self.clock, json.dumps(result_object())))
+        self.written("with_skill")
+        run_eval._TELEMETRY.finish()
+        for path in (first, first.parent.parent / "with_skill" / "summary.json"):
+            usage = json.loads(path.read_text(encoding="utf-8"))["usage"]
+            self.assertEqual(usage["cost_estimate"]["usd"], 0.5, path)
+            self.assertEqual(usage["cost_estimate"]["calls_with_cost"], 2, path)
+
     def amended(self, summary: dict, seconds: float = 3) -> dict:
         """`summary` after a judge call of `seconds`, begun two seconds after
         the summary was written, is added to it."""
@@ -1287,6 +1404,17 @@ class EndToEndTests(Checks):
         self.assertEqual((aggregate["scope"], aggregate["calls"]), ("arm", None))
         self.assertEqual((aggregate["agent"]["calls"], aggregate["agent"]["cost_usd"],
                           aggregate["judge"]["calls"]), (2, 0.1, 2))
+        # Four agent and four judge calls at the stand-in's 0.05 each; the
+        # delta spans the first six (its last snapshot is the fourth agent
+        # call's), and the last agent call is outside it.
+        estimate = usage["cost_estimate"]
+        self.assertAlmostEqual(estimate["usd"], 0.4, places=12)
+        self.assertAlmostEqual(estimate["agent_usd"], 0.2, places=12)
+        self.assertAlmostEqual(estimate["judge_usd"], 0.2, places=12)
+        self.assertAlmostEqual(estimate["metered_usd"], 0.3, places=12)
+        self.assertEqual(estimate["last_agent_call_usd"], 0.05)
+        self.assertEqual((estimate["calls_with_cost"], estimate["calls_without_cost"]),
+                         (8, 0))
 
     def test_judge_calls_that_print_no_meter_event_are_counted_as_uncovered(self):
         # The default (`--judge auto`) on a tie: no judge call until both
@@ -1515,6 +1643,11 @@ class EndToEndTests(Checks):
             "is in it; read as each agent, judge or guard call starts, so the "
             "1 call(s) from the last reading on are not in it): five_hour 0.01 to 0.01, "
             "seven_day 0.72 to 0.74, from 2 snapshots", report)
+        # Dollars are rounded here, at display, and nowhere else.
+        self.assertIn(
+            "- Estimated cost (an estimate from the CLI's own per-call dollar "
+            "figures, not a meter reading): $0.10 over 2 call(s); agent $0.10, "
+            "judge $0.00, guard $0.00; last agent call $0.05", report)
         self.assertEqual(report[0], f"# Eval report: {self.SKILL}")
 
     def test_a_report_without_a_meter_reading_says_why(self):
@@ -1855,7 +1988,53 @@ class IngestTests(Checks):
                 with self.assertRaises(ingest.Rejected):
                     self.check(self.changed(*path, value=value))
 
+    def test_a_cost_estimate_is_accepted_and_a_summary_from_before_it_ingests(self):
+        estimate = self.good["usage"]["cost_estimate"]
+        # Two agent calls of 0.25; the delta spans the first.
+        self.assertEqual((estimate["usd"], estimate["agent_usd"],
+                          estimate["metered_usd"], estimate["last_agent_call_usd"]),
+                         (0.5, 0.5, 0.25, 0.25))
+        self.check(self.good)
+        self.check(self.edited((("usage", "cost_estimate"), DROP)))
+        self.check(self.edited(
+            (("usage", "cost_estimate", "last_agent_call_usd"), None),
+            (("usage", "cost_estimate", "reasons", "last_agent_call_usd"),
+             "no agent call was made")))
+
+    def test_a_cost_estimate_the_harness_never_writes_is_rejected(self):
+        estimate = ("usage", "cost_estimate")
+        cases = {
+            "negative dollars": [((*estimate, "judge_usd"), -0.01),
+                                 ((*estimate, "usd"), 0.49)],
+            "text dollars": [((*estimate, "usd"), "0.5")],
+            "a boolean count": [((*estimate, "calls_with_cost"), True)],
+            "a negative count": [((*estimate, "calls_without_cost"), -1)],
+            "not the sum of its roles": [((*estimate, "usd"), 0.6)],
+            "dollars without a call": [((*estimate, "calls_with_cost"), 0)],
+            "last agent call above the agent's": [
+                ((*estimate, "last_agent_call_usd"), 0.75)],
+            "metered above the total": [((*estimate, "metered_usd"), 0.75)],
+            "points the harness cannot know": [
+                ((*estimate, "points_per_usd"), 0.04),
+                ((*estimate, "reasons", "points_per_usd"), DROP)],
+            "points without a reason dropped": [((*estimate, "points"), 0.02)],
+            "another basis": [((*estimate, "basis"), "a guess")],
+            "a null without a reason": [((*estimate, "metered_usd"), None)],
+            "a reason for a value": [((*estimate, "reasons", "usd"), "why")],
+            "an extra key": [((*estimate, "points_rounded"), 0.02)],
+            "a missing key": [((*estimate, "guard_usd"), DROP)],
+            "not an object": [(estimate, [0.5])],
+            "infinite dollars": [((*estimate, "usd"), float("inf"))],
+        }
+        for name, edits in cases.items():
+            with self.subTest(case=name):
+                with self.assertRaises(ingest.Rejected):
+                    self.check(self.edited(*edits))
+
     def test_the_ingesters_constants_match_the_harness(self):
+        self.assertEqual(ingest.COST_ESTIMATE_BASIS, run_eval.COST_ESTIMATE_BASIS)
+        self.assertEqual(set(ingest.COST_ESTIMATE_KEYS),
+                         set(self.good["usage"]["cost_estimate"]))
         self.assertEqual(ingest.RUN_CHOICES, run_eval.RUN_CHOICES)
         self.assertEqual(ingest.RUN_NAME_RE.pattern, run_eval.RUN_NAME.pattern)
         self.assertEqual(ingest.MAX_METER_SNAPSHOTS, run_eval.METER_MAX_SNAPSHOTS)
