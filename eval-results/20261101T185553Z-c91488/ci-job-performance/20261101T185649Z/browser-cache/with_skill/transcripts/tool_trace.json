@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GcJkasB2rYPVtJnHE1uZ6a",
+      "name": "Skill",
+      "input": "ci-job-performance",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GcJkasB2rYPVtJnHE1uZ6a",
+      "is_error": false,
+      "output": "Launching skill: ci-job-performance",
+      "output_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014mH3rNgXnNQsx5TNUoEjKh",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list -R example-org/example-repo --workflow e2e.yml -L 15",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014mH3rNgXnNQsx5TNUoEjKh",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BNvAYkFoDUbMQa7QnaCR7v",
+      "name": "Bash",
+      "input": "for r in 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs --jq '.jobs[] | .name as $j | .steps[] | select(.name|test(\"cache|Install|Ru...",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BNvAYkFoDUbMQa7QnaCR7v",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (65KB). Full output saved to: <path><redacted><path>\n\nPreview (first 2KB):\n== 71002\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-13T15:41:27Z\",\n  \"databaseId\": 71002,\n  \"displayTitle\": \"Bump eslint to 9.38.0\",\n  \"event\": \"push\",\n  \"headBran...",
+      "output_chars": 2215,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WpG7VUdqTJZgRC7hxQiKXu",
+      "name": "Bash",
+      "input": "for r in 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r -R example-org/example-repo --json jobs | jq -r '.jobs[] | .name as $j | ([.steps[]|select(.name|test(\"cache|Install...",
+      "input_chars": 386,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WpG7VUdqTJZgRC7hxQiKXu",
+      "is_error": false,
+      "output": "== 71002\ne2e (chromium) total 93s | Install dependencies: 10s; Install browser OS dependenc: 19s; Install browser: 10s; Run Playwright tests: 44s\ne2e (firefox) total 105s | Install dependencies: 9s; Install browser OS dependenc: 26s; Install browser: 4s; Run Playwright tests: 58s\ne2e (webkit) total ...",
+      "output_chars": 3608,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KP5ozUQAJrVQE75VVS4ha6",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Only chromium: its download (~10-12s) costs m...",
+      "input_chars": 597,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KP5ozUQAJrVQE75VVS4ha6",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 6 +++++-\n 1 file changed, 5 insertions(+), 1 deletion(-)",
+      "output_chars": 85,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
