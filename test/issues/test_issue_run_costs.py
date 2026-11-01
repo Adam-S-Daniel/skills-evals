@@ -17,7 +17,7 @@ def _write(path: Path, doc: dict) -> None:
     path.write_text(json.dumps(doc), encoding="utf-8")
 
 
-def _trial(cost, judge=None, delta=None):
+def _trial(cost, judge=None, delta=None, judge_usd=None):
     doc = {"skill": "demo", "fixture": "demo/case", "arm": "with_skill",
            "cross_model": {"model": "claude-sonnet-5-5"},
            "agent": {"cost_usd": cost, "num_turns": 3, "duration_ms": 60000,
@@ -25,9 +25,12 @@ def _trial(cost, judge=None, delta=None):
            "objective_checks": [{"passed": True}, {"passed": False}]}
     if judge is not None:
         doc["judge"] = judge
+    doc["usage"] = {}
     if delta is not None:
-        doc["usage"] = {"meter_delta": {"windows": {"seven_day": {
-            "delta": delta, "from": 0.40, "to": 0.40 + delta}}}}
+        doc["usage"]["meter_delta"] = {"windows": {"seven_day": {
+            "delta": delta, "from": 0.40, "to": 0.40 + delta}}}
+    if judge_usd is not None:
+        doc["usage"]["measured"] = {"judge": {"cost_usd": judge_usd}}
     return doc
 
 
@@ -39,7 +42,7 @@ class RunCostsTests(unittest.TestCase):
         # Run A: two trials, one judged with a recorded judge cost, plus an
         # aggregate roll-up that must not count as a trial.
         _write(base / "run-a/demo/case/with_skill/trial-1/summary.json",
-               _trial(1.0, {"overall": 0.8, "cost_usd": 0.05}, delta=0.01))
+               _trial(1.0, {"overall": 0.8}, delta=0.01, judge_usd=0.05))
         _write(base / "run-a/demo/case/with_skill/trial-2/summary.json",
                _trial(1.0, {"status": "skipped"}))
         _write(base / "run-a/demo/case/with_skill/summary.json",
@@ -78,9 +81,12 @@ class RunCostsTests(unittest.TestCase):
         self.assertAlmostEqual(summary["percentiles"][0.5], 1.5)
         self.assertAlmostEqual(summary["percentiles"][0.99], 1.99)
         self.assertAlmostEqual(summary["max"], 2.0)
-        # 3 points over 4 agent dollars.
-        self.assertAlmostEqual(summary["points_per_usd"], 0.75)
-        self.assertAlmostEqual(summary["agent_call_points"]["max"], 1.5)
+        # 3 points over 4.05 dollars: agent 4.00 plus the 0.05 judge call.
+        rate = 3 / 4.05
+        self.assertAlmostEqual(summary["points_per_usd"], rate)
+        # Largest call: 1.00 in run A, 2.00 in run B.
+        self.assertAlmostEqual(summary["largest_call_points"][1.0], 2.0 * rate)
+        self.assertAlmostEqual(summary["largest_call_points"][0.5], 1.5 * rate)
         self.assertEqual(summary["runs_with_judge_cost"], 1)
 
     def test_percentile_interpolates_linearly(self):

@@ -16,11 +16,12 @@ data, never executing anything, and writes one CSV row per run. It prints:
   * the distribution of each metered run's weekly-meter delta in points
     (percent of the weekly allowance), with the 50th, 90th, 95th, 97.5th
     and 99th percentiles and the maximum;
-  * points per agent dollar (all metered points over those runs' agent
-    API-equivalent dollars) and, from it, the estimated points of one agent
-    call (median, 95th percentile, maximum), the part of a run the meter
-    never sees when it is the run's last call;
-  * judge-call dollars, once runs record them.
+  * points per dollar: all metered points over those runs' API-equivalent
+    dollars for every call (agent, judge from `usage.measured.judge`, guard
+    from `usage.measured.guard`) and, from it, each run's largest single
+    call in points, the most the meter can miss when that call is the
+    run's last (the evidence for `per_run_overrun`);
+  * judge-call dollars per run.
 
 The meter reports whole points and counts the whole account, so Adam's own
 use during a run is in it: the deltas, and so the rate, lean high. Rounding
@@ -81,7 +82,7 @@ def _new_run(run_id: str, source: str) -> dict:
             "models": set(), "judge_models": set(), "trials": 0, "trial_errors": 0,
             "judged": 0, "objective_decided": 0, "judge_scores": [], "checks": 0,
             "checks_passed": 0, "agent_usd": 0.0, "trial_usd": [], "judge_usd": 0.0,
-            "judge_costed": 0, "turns": 0, "out_tokens": 0, "agent_ms": 0, "usage": None,
+            "guard_usd": 0.0, "call_usd": [], "judge_costed": 0, "turns": 0, "out_tokens": 0, "agent_ms": 0, "usage": None,
             "subject_kind": None, "subject": None, "cli": None, "pairing": None, "mode": None}
 
 
@@ -150,9 +151,15 @@ def collect(tree: Path) -> dict:
             elif _number(judge.get("overall")):
                 run["judged"] += 1
                 run["judge_scores"].append(judge["overall"])
-            if _number(judge.get("cost_usd")):
-                run["judge_usd"] += judge["cost_usd"]
-                run["judge_costed"] += 1
+            measured = (doc.get("usage") or {}).get("measured") if isinstance(
+                doc.get("usage"), dict) else None
+            measured = measured if isinstance(measured, dict) else {}
+            for role in ("judge", "guard"):
+                call = measured.get(role) if isinstance(measured.get(role), dict) else {}
+                if _number(call.get("cost_usd")):
+                    run[f"{role}_usd"] += call["cost_usd"]
+                    run["judge_costed"] += 1 if role == "judge" else 0
+                    run["call_usd"].append(call["cost_usd"])
             for model in doc.get("judge_models_used") or []:
                 if isinstance(model, str):
                     run["judge_models"].add(model)
@@ -164,6 +171,7 @@ def collect(tree: Path) -> dict:
             if _number(agent.get("cost_usd")):
                 run["agent_usd"] += agent["cost_usd"]
                 run["trial_usd"].append(agent["cost_usd"])
+                run["call_usd"].append(agent["cost_usd"])
             run["turns"] += agent.get("num_turns") if _number(agent.get("num_turns")) else 0
             run["agent_ms"] += agent.get("duration_ms") if _number(agent.get("duration_ms")) else 0
             usage = agent.get("usage") if isinstance(agent.get("usage"), dict) else {}
@@ -208,6 +216,9 @@ def rows(runs: dict, evals: Path | None = None) -> list[dict]:
             "agent_api_equiv_usd": run["agent_usd"],
             "max_trial_agent_usd": max(run["trial_usd"]) if run["trial_usd"] else "",
             "judge_usd": run["judge_usd"] if run["judge_costed"] else "",
+            "guard_usd": run["guard_usd"],
+            "total_usd": run["agent_usd"] + run["judge_usd"] + run["guard_usd"],
+            "max_call_usd": max(run["call_usd"]) if run["call_usd"] else "",
             "agent_turns": run["turns"], "agent_output_tokens": run["out_tokens"],
             "agent_minutes": run["agent_ms"] / 60000,
             "cli_version": (run["cli"] or "").replace(" (Claude Code)", ""),
@@ -239,15 +250,16 @@ def summarize(table: list[dict]) -> dict:
     summary["mean"] = sum(points) / len(points)
     summary["percentiles"] = {share: percentile(points, share) for share in PERCENTILES}
     summary["max"] = max(points)
-    priced = [r for r in metered if r["agent_api_equiv_usd"] > 0 and r["trials"]]
-    dollars = sum(r["agent_api_equiv_usd"] for r in priced)
+    priced = [r for r in metered if r["total_usd"] > 0]
+    dollars = sum(r["total_usd"] for r in priced)
     if dollars:
+        # Every call the run made (agent, judge, guard) is billed to the meter.
         rate = sum(r["meter_delta_points"] for r in priced) / dollars
-        calls = [r["agent_api_equiv_usd"] / r["trials"] for r in priced]
+        calls = [r["max_call_usd"] for r in priced]
         summary["points_per_usd"] = rate
-        summary["agent_call_points"] = {"median": percentile(calls, 0.5) * rate,
-                                        "p95": percentile(calls, 0.95) * rate,
-                                        "max": max(calls) * rate}
+        summary["largest_call_points"] = {share: percentile(calls, share) * rate
+                                          for share in PERCENTILES}
+        summary["largest_call_points"][1.0] = max(calls) * rate
     judged = [r["judge_usd"] for r in table if r["judge_usd"] != ""]
     summary["runs_with_judge_cost"] = len(judged)
     if judged:
@@ -266,10 +278,12 @@ def report(summary: dict) -> list[str]:
         f"p{share * 100:g} {value:.2f}" for share, value in summary["percentiles"].items())
         + f"; max {summary['max']:.2f}")
     if "points_per_usd" in summary:
-        call = summary["agent_call_points"]
-        lines.append(f"points per agent dollar: {summary['points_per_usd']:.3f}; one agent call: "
-                     f"median {call['median']:.3f}, p95 {call['p95']:.3f}, "
-                     f"max {call['max']:.3f} points")
+        lines.append(f"points per dollar (agent, judge and guard calls): "
+                     f"{summary['points_per_usd']:.3f}")
+        lines.append("each run's largest single call, in points (the most the meter can miss "
+                     "when it is the last call): " + ", ".join(
+                         f"{'max' if share == 1.0 else f'p{share * 100:g}'} {value:.3f}"
+                         for share, value in summary["largest_call_points"].items()))
     if summary.get("runs_with_judge_cost"):
         judge = summary["judge_usd_per_run"]
         lines.append(f"judge dollars per run ({summary['runs_with_judge_cost']} runs): "
