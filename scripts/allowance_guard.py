@@ -113,6 +113,15 @@ reading plus everything charged after it), and the refresh fire is refused
 once the reading is at or past the stop. Without a usable reading only the
 in-run stop applies, as before.
 
+Fires without results (2026-11-01): the bound still charged every eval fire
+without an ingested run, so 15 fires that had stopped hours before the 84%
+reading held 7.5 points it already held, and three fires were refused 3
+points under the 95% stop. A fire that started `PENDING_FULL_HOLD` or more
+before the reading has finished inside it (a routine run stops at 30
+minutes), so when the fires' start times are known the bound charges only
+the fires after that cut that no ingested run accounts for: a recent one the
+full reservation, an older one the overrun.
+
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
 (`refresh`); without that the holds lasted the week (2026-10-27).
@@ -487,7 +496,8 @@ def pace(runs: list[Path], limits: dict, now: datetime):
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
             since: datetime | None = None,
-            improve_started: list | None = None) -> dict:
+            improve_started: list | None = None,
+            eval_started: list | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed, improve_fires, improve_charge,
     improve_covered, eval_inside} for the
@@ -508,7 +518,11 @@ def account(tree: Path, limits: dict, now: datetime,
     `eval_inside`, the measured deltas of the ingested runs inside that
     reading. `committed` is spent plus pending, or no more than `bound`, what
     the newest usable reading bounds the evals' committed use at (None
-    without one; module docstring, 2026-11-01)."""
+    without one; module docstring, 2026-11-01). `eval_started`, the start
+    times of the window's successful eval fires (improve fires left out),
+    lets the bound charge only the fires the reading cannot hold: those
+    started less than `PENDING_FULL_HOLD` before it with no ingested run
+    (module docstring, 2026-11-01 fires without results)."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -520,6 +534,11 @@ def account(tree: Path, limits: dict, now: datetime,
     # Improve fires are among the fires; they never produce routine-results.
     fires_7d = max(0, fires_7d - improve_7d)
     fires_24h = max(0, fires_24h - improve_24h)
+    if eval_started is not None and (
+            not isinstance(eval_started, list)
+            or any(not isinstance(start, datetime) or start.tzinfo is None
+                   for start in eval_started)):
+        raise GuardError("eval fire start times are not aware datetimes")
     if improve_started is not None and (
             not isinstance(improve_started, list)
             or any(not isinstance(start, datetime) or start.tzinfo is None
@@ -567,7 +586,19 @@ def account(tree: Path, limits: dict, now: datetime,
                     + PENDING_FULL_HOLD > at:
                 # Maybe still running at the reading: its last call is after it.
                 outside += limits["per_run_overrun"]
-        bound = used + outside + eval_pending + (improve_7d - covered) * charge
+        late_pending = eval_pending
+        if eval_started is not None:
+            # A fire that started `PENDING_FULL_HOLD` or more before the
+            # reading has finished (or stopped) inside it, results or not.
+            cut = at - PENDING_FULL_HOLD
+            late_runs = sum(
+                1 for run_dir in runs
+                if _parse_stamp(RUN_ID_RE.fullmatch(run_dir.name).group("stamp")) >= cut)
+            late = max(0, sum(1 for start in eval_started if start >= cut) - late_runs)
+            late_recent = min(recent, late)
+            late_pending = min(eval_pending, late_recent * reserve
+                               + (late - late_recent) * limits["per_run_overrun"])
+        bound = used + outside + late_pending + (improve_7d - covered) * charge
     committed = spent + pending if bound is None else min(spent + pending, bound)
     # One limit (Adam, 2026-11-01, "Unify the limit"): the in-run stop is
     # also a fire limit, so no fire starts that the stop would end at once.
@@ -789,14 +820,36 @@ def _live_improve(now: datetime, since: datetime | None = None) -> tuple[int, in
     return improve_counts(_live_improve_runs(now), now, since)
 
 
+def eval_fire_starts(runs: list, now: datetime,
+                     since: datetime | None = None) -> list[datetime]:
+    """The start times of the successful fires since `since` (default seven
+    days before `now`) among the runs API's rows that are not improve or
+    guidance-improve fires."""
+    since = since or now - WINDOW
+    improve_ids = {f["id"] for f in improve_outcomes.charged_fires(runs)}
+    starts = []
+    for run in runs:
+        if not isinstance(run, dict) or run.get("conclusion") != "success" \
+                or run.get("id") in improve_ids:
+            continue
+        started = improve_outcomes.parse_time(run.get("run_started_at")) \
+            or improve_outcomes.parse_time(run.get("created_at"))
+        if started is not None and started >= since:
+            starts.append(started)
+    return starts
+
+
 def _live_improve_both(now: datetime, since: datetime | None = None):
-    """(`improve_counts`, `improve_starts`) of one fetch of the fire runs."""
+    """(`improve_counts`, `improve_starts`, `eval_fire_starts`) of one fetch
+    of the fire runs."""
     runs = _live_improve_runs(now)
-    return improve_counts(runs, now, since), improve_starts(runs, now, since)
+    return (improve_counts(runs, now, since), improve_starts(runs, now, since),
+            eval_fire_starts(runs, now, since))
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
-         fire_count=None, improve_count=None, improve_starts=None) -> int:
+         fire_count=None, improve_count=None, improve_starts=None,
+         eval_starts=None) -> int:
     """`fire_count` and `improve_count`, functions of `now` returning
     `(fires_7d, fires_24h)` (all fires, and the improve fires among them),
     stand in for the API in tests, and `improve_starts`, a function of `now`
@@ -822,10 +875,12 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
         if improve_count:
             improve = improve_count(now)
             started = improve_starts(now) if improve_starts else None
+            evals = eval_starts(now) if eval_starts else None
         else:
-            # One fetch feeds both the counts and the start times.
-            improve, started = _live_improve_both(now, since)
-        state = account(args.results_tree, limits, now, fires, improve, since, started)
+            # One fetch feeds the counts and the start times.
+            improve, started, evals = _live_improve_both(now, since)
+        state = account(args.results_tree, limits, now, fires, improve, since, started,
+                        eval_started=evals)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")
