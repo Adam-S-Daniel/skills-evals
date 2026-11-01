@@ -78,9 +78,51 @@ class EventTests(unittest.TestCase):
             "adam-coding-anywhere:workflow-path-audit", "toolu_01"))])
         self.assertEqual(records, [{
             "v": 1, "id": "toolu_01", "ts": "2026-09-03T10:00:00.000Z", "kind": "skill",
-            "name": "adam-coding-anywhere:workflow-path-audit", "surface": "local",
+            "name": "adam-coding-anywhere:workflow-path-audit", "model": None,
+            "surface": "local",
             "root": "wsl", "machine": census.machine_name(), "session_id": SESSION,
             "session_title": None, "cwd_repo": None, "branch": "feature/example"}])
+
+    def test_a_skill_call_records_the_assistant_entrys_model(self):
+        records = self.events([with_session(skill_call(
+            "workflow-path-audit", "toolu_01", model="claude-sonnet-4-5"))])
+        self.assertEqual([r["model"] for r in records], ["claude-sonnet-4-5"])
+
+    def test_a_typed_command_gets_the_next_assistant_turns_model(self):
+        records = self.events([
+            with_session(typed("<command-name>/finding-unknowns</command-name>"),
+                         uuid="aaaaaaaa-0000-4000-8000-000000000002"),
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:05Z",
+             "message": {"role": "assistant", "content": [],
+                         "model": "claude-opus-4-1"}}])
+        self.assertEqual([r["model"] for r in records], ["claude-opus-4-1"])
+
+    def test_a_synthetic_turn_does_not_fill_a_typed_commands_model(self):
+        records = self.events([
+            with_session(typed("<command-name>/finding-unknowns</command-name>"),
+                         uuid="aaaaaaaa-0000-4000-8000-000000000004"),
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:04Z",
+             "message": {"role": "assistant", "content": [],
+                         "model": "<synthetic>"}},
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:05Z",
+             "message": {"role": "assistant", "content": [],
+                         "model": "claude-opus-4-1"}}])
+        self.assertEqual([r["model"] for r in records], ["claude-opus-4-1"])
+
+    def test_a_non_model_id_value_is_recorded_as_other(self):
+        arn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/x"
+        records = self.events([with_session(skill_call(
+            "workflow-path-audit", "toolu_01", model=arn))])
+        self.assertEqual([r["model"] for r in records], ["other"])
+
+    def test_no_model_on_any_assistant_turn_leaves_it_none(self):
+        records = self.events([
+            with_session(typed("<command-name>/finding-unknowns</command-name>"),
+                         uuid="aaaaaaaa-0000-4000-8000-000000000003"),
+            {"type": "assistant", "timestamp": "2026-09-03T10:00:05Z",
+             "message": {"role": "assistant", "content": []}},
+            skill_call("workflow-path-audit", "toolu_01")])
+        self.assertEqual([r["model"] for r in records], [None, None])
 
     def test_a_typed_command_uses_the_entry_uuid_and_drops_the_slash(self):
         records = self.events([with_session(

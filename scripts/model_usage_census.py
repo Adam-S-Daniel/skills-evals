@@ -347,16 +347,18 @@ def _event_ts(when: datetime) -> str:
 
 
 def _skill_event(entry: dict, when: datetime, event_id, name: str,
-                 cache: dict, machine: str, root: str) -> dict:
+                 cache: dict, machine: str, root: str,
+                 model: str | None = None) -> dict:
     """One private record of a skill invocation. `session_title` is filled
-    in when the whole transcript has been read."""
+    in when the whole transcript has been read. `model` is the sanitized
+    key of the model running at the call, or None when unknown."""
     ts = _event_ts(when)
     session = _text(entry.get("sessionId"))
     if not _text(event_id):
         # No tool-use id or entry uuid: an id that is still stable across runs.
         event_id = hashlib.sha256(f"{session}\n{ts}\n{name}".encode("utf-8")).hexdigest()
     return {"v": 1, "id": _text(event_id), "ts": ts, "kind": "skill",
-            "name": name[:EVENT_TEXT_CAP], "surface": "local", "root": root,
+            "name": name[:EVENT_TEXT_CAP], "model": model, "surface": "local", "root": root,
             "machine": machine,
             "session_id": session, "session_title": None,
             "cwd_repo": cwd_repo(entry.get("cwd"), cache),
@@ -638,6 +640,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
         seen = this_root if kind_of_root == "cowork" else set()
         invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
         file_events: list[dict] = []
+        pending_model: list[dict] = []  # typed-command events awaiting a model
         title = None
         first_when = first_uuid = None
         texts: list[str] | None = None
@@ -672,6 +675,15 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                     message = entry.get("message")
                     if not isinstance(message, dict):
                         continue
+                    # "<synthetic>" marks a message Claude Code wrote itself
+                    # (an interrupt or an API error), not a model's turn.
+                    if kind == "assistant" and pending_model \
+                            and message.get("model") != "<synthetic>":
+                        turn_model = published_key(message.get("model"))
+                        if turn_model is not None:
+                            for pending in pending_model:
+                                pending["model"] = turn_model
+                            pending_model.clear()
                     when = parse_ts(entry.get("timestamp"))
                     if when is None:
                         continue
@@ -690,10 +702,12 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                 invoked.add((typed, week))
                                 if record:
                                     raw = _typed_command(message)
-                                    file_events.append(_skill_event(
+                                    event = _skill_event(
                                         entry, when, entry.get("uuid"),
                                         raw[1:] if raw.startswith("/") else raw,
-                                        repos, machine, kind_of_root))
+                                        repos, machine, kind_of_root)
+                                    file_events.append(event)
+                                    pending_model.append(event)
                         continue
                     if allowlist is not None and isinstance(message.get("content"), list):
                         for item in message["content"]:
@@ -713,7 +727,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                             if record and _text(raw):
                                 file_events.append(_skill_event(
                                     entry, when, call, raw, repos, machine,
-                                    kind_of_root))
+                                    kind_of_root,
+                                    published_key(message.get("model"))))
                     key = published_key(message.get("model"))
                     if key is None:
                         continue
