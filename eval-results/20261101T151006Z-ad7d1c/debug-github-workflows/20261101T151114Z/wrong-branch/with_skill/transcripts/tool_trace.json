@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0141HdrzvVUHA6fyTSCHwqCk",
+      "name": "Skill",
+      "input": "debug-github-workflows",
+      "input_chars": 22,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0141HdrzvVUHA6fyTSCHwqCk",
+      "is_error": false,
+      "output": "Launching skill: debug-github-workflows",
+      "output_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018w57Vn37HqfEsxcAiYrJmz",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 85,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018w57Vn37HqfEsxcAiYrJmz",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .claude/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n9125596 initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.z...",
+      "output_chars": 344,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012V4WSQ8XTF3SpEmLHfCYGT",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; ls bin test; cat .gitmodules; command -v gh",
+      "input_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012V4WSQ8XTF3SpEmLHfCYGT",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 412,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016mEbAmTKWsdVKVwD4gF5bW",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -5; echo ---; python3 -m unittest test.test_current 2>&1 | tail -5; git log --stat --oneline | head -30; ls src",
+      "input_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016mEbAmTKWsdVKVwD4gF5bW",
+      "is_error": false,
+      "output": "----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n---\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n9125596 initial commit\n .../api/repos/example-org/example-service.json   ...",
+      "output_chars": 1590,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017ukyzUL9afKfFpD4cdDXHS",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | head -12; echo ---; python3 -m unittest test.test_current 2>&1 | head -15; cat test/test_current.py src/sequence.py README.md; echo ---; cat .gh/replay/run-...",
+      "input_chars": 244,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017ukyzUL9afKfFpD4cdDXHS",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent call last):\n  Fil...",
+      "output_chars": 2598,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012NkxtMrCUkREphUaTYZAxV",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s test -t . 2>&1 | tail -4; python3 -m unittest discover -s test 2>&1 | tail -4; cat .gh/replay/*.json 2><path> | head -0; cat .gh/api/repos/example-org/example-service/c...",
+      "input_chars": 287,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012NkxtMrCUkREphUaTYZAxV",
+      "is_error": false,
+      "output": "                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<path>\", line 332, in discover\n    raise ImportError('Start directory is not importable: %r' % start_dir)\nImportError: Start directory is not importable: '<path>'\n-------------------------------------------------------------...",
+      "output_chars": 479,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HSkFDxSCrmHnJUGMs5a9yN",
+      "name": "Bash",
+      "input": "cat \".gh/replay/api/repos/example-org/example-service/compare/main...fix/ci-test-discovery.json\"",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HSkFDxSCrmHnJUGMs5a9yN",
+      "is_error": false,
+      "output": "{\n  \"url\": \"https://example.net/repos/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"html_url\": \"https://example.com/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"status\": \"ahead\",\n  \"ahead_by\": 1,\n  \"behind_by\": 0,\n  \"total_commits\": 1,\n  \"base_commit\"...",
+      "output_chars": 1042,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
