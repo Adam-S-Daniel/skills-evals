@@ -104,6 +104,15 @@ counting, and everything after the reading is still charged at its full
 estimate. In a normal week the owner's own use makes the bound the larger
 one, and nothing changes.
 
+One limit (Adam, 2026-11-01, "Unify the limit"): the in-run
+`stop_when_account_above` stop is also a fire limit. On 2026-11-01 the guard
+found 22.5 points of room under the cap while the account meter was already
+past the 80% stop, so every fire it let go stopped on its first reading. Now
+`room` is never more than `stop_left`, the stop less that same bound (the
+reading plus everything charged after it), and the refresh fire is refused
+once the reading is at or past the stop. Without a usable reading only the
+in-run stop applies, as before.
+
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
 (`refresh`); without that the holds lasted the week (2026-10-27).
@@ -560,6 +569,9 @@ def account(tree: Path, limits: dict, now: datetime,
                 outside += limits["per_run_overrun"]
         bound = used + outside + eval_pending + (improve_7d - covered) * charge
     committed = spent + pending if bound is None else min(spent + pending, bound)
+    # One limit (Adam, 2026-11-01, "Unify the limit"): the in-run stop is
+    # also a fire limit, so no fire starts that the stop would end at once.
+    stop_left = None if bound is None else limits["stop_when_account_above"] - bound
     # Finished (IMPROVE_MAX_RUN or more ago) but newer than the reading, so
     # still held in full until an ingested run brings a newer snapshot.
     finished = 0
@@ -567,7 +579,8 @@ def account(tree: Path, limits: dict, now: datetime,
         finished = min(improve_7d - covered, max(0, sum(
             1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
     return {"spent": spent, "pending": pending, "committed": committed,
-            "bound": bound, "runs": len(runs),
+            "bound": bound, "stop_left": stop_left,
+            "stop": limits["stop_when_account_above"], "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
             "cap": limits["weekly_cap"], "pace_room": room,
             "account_used": used, "week_elapsed": elapsed,
@@ -581,15 +594,20 @@ def room(state: dict) -> float:
     """The points left now: max(cap - committed, pace_room - pending)
     (`fits`), where committed is spent plus pending, never more than the
     account reading's `bound` when there is one (`account`; module docstring,
-    2026-11-01). It is taken from the state's spent and pending here, not
+    2026-11-01), and never more than `stop_left`, what the account has below
+    `stop_when_account_above` once the bound is counted (one limit for
+    fires and runs, Adam, 2026-11-01). It is taken from the state's spent and pending here, not
     from its `committed`, so a state built or changed by hand stays
     consistent. The weekly planner (scripts/plan_week.py) spends it at each
     fire's historical cost."""
     committed = state["spent"] + state["pending"]
     if state.get("bound") is not None:
         committed = min(committed, state["bound"])
-    return max(state["cap"] - committed,
+    left = max(state["cap"] - committed,
                state.get("pace_room", 0.0) - state["pending"])
+    if state.get("stop_left") is not None:
+        left = min(left, state["stop_left"])
+    return left
 
 
 def fits(state: dict) -> int:
@@ -682,7 +700,9 @@ def describe(state: dict) -> str:
                 f"{points(state.get('week_elapsed') or 0.0)}% of its week gone, "
                 f"so pace allows {points(state.get('pace_room', 0.0))} points before pending fires"
                 + (f"; the account reading bounds committed use at "
-                   f"{points(state['bound'])} points"
+                   f"{points(state['bound'])} points, "
+                   f"{points(max(0.0, state['stop_left']))} below the "
+                   f"{points(state['stop'])}% stop"
                    if state.get("bound") is not None else ""))
     return f"{line}; no recent account reading, so no pace room"
 
@@ -709,6 +729,10 @@ def refresh(state: dict) -> bool:
     results. Its own reservation is held in full, and the in-run stop
     still bounds it."""
     if not state.get("improve_finished") or state.get("recent"):
+        return False
+    # A reading at or past the in-run stop: the fire would stop at once.
+    if state.get("account_used") is not None and state.get("stop") is not None \
+            and state["account_used"] >= state["stop"]:
         return False
     left = room(state) + state["improve_finished_held"] + EPSILON
     return left >= state["reservation"]
