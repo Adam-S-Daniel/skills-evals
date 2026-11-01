@@ -1,0 +1,386 @@
+# Eval fixture: fan-out-triage (shifted-draft)
+# A teammate's draft triage cites IDs shifted by two while its reasons are right.
+# Seeded with a made-up vendor ("acme") release list and a small repo that
+# uses a handful of its surfaces; the answer key is fixed in the checks.
+
+skill: fan-out-triage
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+judge:
+  weights:
+    triage-discipline: 0.6
+    restraint: 0.4
+
+prompt: >
+  A teammate started triaging the acme 2.x release notes excerpt in notes/ against this repo; their draft is triage/draft.tsv. Finish the job and put the final triage in triage/results.tsv. I plan to paste item text into issues straight from your file, so it has to be right.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: results-follow-the-contract
+    description: triage/results.tsv has exactly one 5-field row per item, no duplicates
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+
+        import glob, json, re, sys
+        mode, cfg = sys.argv[1], json.loads(sys.argv[2])
+        ITEM = re.compile(r"^\s*[-*]\s+\[(?P<id>[A-Z0-9-]+)\]\s+(?P<text>\S.*)$")
+        def bad(msg):
+            print("FAIL:", msg); sys.exit(1)
+        def words(s, n=None):
+            t = re.sub(r"[`*_]", "", s).split()
+            return [x.lower() for x in (t[:n] if n else t)]
+        items = {}
+        for pat in cfg["items"]:
+            for p in sorted(glob.glob(pat)):
+                for line in open(p, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: items[m["id"]] = m["text"]
+        if not items: bad("no source items found")
+        def load(path):
+            try: raw = open(path, encoding="utf-8").read().split("\n")
+            except OSError: bad(path + " is missing")
+            rows, notes = [], []
+            for ln in raw:
+                if not ln.strip(): continue
+                if ln.startswith("#"): notes.append(ln); continue
+                f = ln.split(" | ")
+                if len(f) != 5: bad("row without 5 ' | ' fields: " + ln[:60])
+                rows.append([x.strip() for x in f])
+            return rows, notes
+        rows, notes = load("triage/results.tsv")
+        if mode == "contract":
+            ids = [r[0] for r in rows]
+            if len(set(ids)) != len(ids): bad("duplicate IDs")
+            if set(ids) != set(items): bad("rows do not cover exactly the source items")
+            for r in rows:
+                if r[3] not in ("strong", "weak", "none"): bad("strength " + r[3])
+        elif mode == "ids":
+            for r in rows:
+                if r[0] not in items: bad("unknown ID " + r[0])
+                if words(r[1]) != words(items[r[0]], 8): bad("words column does not match source text for " + r[0])
+        elif mode == "key":
+            got = {r[0]: r for r in rows}
+            for i, target in cfg["expect"].items():
+                r = got.get(i)
+                if not r or r[3] != "strong" or r[2].strip("`").lstrip("./") != target: bad(f"{i} should be strong -> {target}")
+            for i in cfg["not_strong"]:
+                r = got.get(i)
+                if r and r[3] == "strong": bad(f"{i} is not an affected item but was marked strong")
+        elif mode == "reason-names-file":
+            for r in rows:
+                if r[3] == "strong" and r[2] not in r[4]: bad("strong reason does not name " + r[2])
+        elif mode == "readcount":
+            last = [n for n in notes if re.fullmatch(r"# items read: \d+", n)]
+            if not last: bad("no '# items read: N' line")
+            if int(last[-1].split(": ")[1]) != len(items): bad("items read is not the item count")
+        elif mode == "chunks":
+            for src in cfg["items"]:
+                base = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                crow, cnotes = load(f"triage/chunks/{base}.tsv")
+                want = set()
+                for line in open(src, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: want.add(m["id"])
+                if {r[0] for r in crow} != want: bad(f"chunk {base} does not hold exactly its own items")
+                c = [n for n in cnotes if re.fullmatch(r"# items read: \d+", n)]
+                if not c or int(c[-1].split(": ")[1]) != len(want): bad(f"chunk {base} read count wrong")
+        elif mode == "inventory":
+            try: text = open("triage/inventory.md", encoding="utf-8").read()
+            except OSError: bad("triage/inventory.md is missing")
+            good, covered = 0, set()
+            for path, ln in re.findall(r"([\w./-]+\.[A-Za-z]+):(\d+)", text):
+                try: n = len(open(path, encoding="utf-8").read().split("\n")) - 1
+                except OSError: bad("reference to a missing file " + path)
+                if not 1 <= int(ln) <= max(n, 1): bad(f"line out of range {path}:{ln}")
+                good += 1; covered.add(path)
+            if good < cfg["min"]: bad("too few references")
+            for f in cfg["files"]:
+                if f not in covered: bad("inventory never cites " + f)
+        else: bad("unknown mode")
+        print("ok")
+      - contract
+      - '{"items":["notes/*.md"]}'
+  - id: ids-match-their-source-text
+    description: Every row's words column is the first 8 words of that ID's own text
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+
+        import glob, json, re, sys
+        mode, cfg = sys.argv[1], json.loads(sys.argv[2])
+        ITEM = re.compile(r"^\s*[-*]\s+\[(?P<id>[A-Z0-9-]+)\]\s+(?P<text>\S.*)$")
+        def bad(msg):
+            print("FAIL:", msg); sys.exit(1)
+        def words(s, n=None):
+            t = re.sub(r"[`*_]", "", s).split()
+            return [x.lower() for x in (t[:n] if n else t)]
+        items = {}
+        for pat in cfg["items"]:
+            for p in sorted(glob.glob(pat)):
+                for line in open(p, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: items[m["id"]] = m["text"]
+        if not items: bad("no source items found")
+        def load(path):
+            try: raw = open(path, encoding="utf-8").read().split("\n")
+            except OSError: bad(path + " is missing")
+            rows, notes = [], []
+            for ln in raw:
+                if not ln.strip(): continue
+                if ln.startswith("#"): notes.append(ln); continue
+                f = ln.split(" | ")
+                if len(f) != 5: bad("row without 5 ' | ' fields: " + ln[:60])
+                rows.append([x.strip() for x in f])
+            return rows, notes
+        rows, notes = load("triage/results.tsv")
+        if mode == "contract":
+            ids = [r[0] for r in rows]
+            if len(set(ids)) != len(ids): bad("duplicate IDs")
+            if set(ids) != set(items): bad("rows do not cover exactly the source items")
+            for r in rows:
+                if r[3] not in ("strong", "weak", "none"): bad("strength " + r[3])
+        elif mode == "ids":
+            for r in rows:
+                if r[0] not in items: bad("unknown ID " + r[0])
+                if words(r[1]) != words(items[r[0]], 8): bad("words column does not match source text for " + r[0])
+        elif mode == "key":
+            got = {r[0]: r for r in rows}
+            for i, target in cfg["expect"].items():
+                r = got.get(i)
+                if not r or r[3] != "strong" or r[2].strip("`").lstrip("./") != target: bad(f"{i} should be strong -> {target}")
+            for i in cfg["not_strong"]:
+                r = got.get(i)
+                if r and r[3] == "strong": bad(f"{i} is not an affected item but was marked strong")
+        elif mode == "reason-names-file":
+            for r in rows:
+                if r[3] == "strong" and r[2] not in r[4]: bad("strong reason does not name " + r[2])
+        elif mode == "readcount":
+            last = [n for n in notes if re.fullmatch(r"# items read: \d+", n)]
+            if not last: bad("no '# items read: N' line")
+            if int(last[-1].split(": ")[1]) != len(items): bad("items read is not the item count")
+        elif mode == "chunks":
+            for src in cfg["items"]:
+                base = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                crow, cnotes = load(f"triage/chunks/{base}.tsv")
+                want = set()
+                for line in open(src, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: want.add(m["id"])
+                if {r[0] for r in crow} != want: bad(f"chunk {base} does not hold exactly its own items")
+                c = [n for n in cnotes if re.fullmatch(r"# items read: \d+", n)]
+                if not c or int(c[-1].split(": ")[1]) != len(want): bad(f"chunk {base} read count wrong")
+        elif mode == "inventory":
+            try: text = open("triage/inventory.md", encoding="utf-8").read()
+            except OSError: bad("triage/inventory.md is missing")
+            good, covered = 0, set()
+            for path, ln in re.findall(r"([\w./-]+\.[A-Za-z]+):(\d+)", text):
+                try: n = len(open(path, encoding="utf-8").read().split("\n")) - 1
+                except OSError: bad("reference to a missing file " + path)
+                if not 1 <= int(ln) <= max(n, 1): bad(f"line out of range {path}:{ln}")
+                good += 1; covered.add(path)
+            if good < cfg["min"]: bad("too few references")
+            for f in cfg["files"]:
+                if f not in covered: bad("inventory never cites " + f)
+        else: bad("unknown mode")
+        print("ok")
+      - ids
+      - '{"items":["notes/*.md"]}'
+  - id: affected-items-carry-the-right-id
+    description: The three affected items are strong with the right file under their own IDs; decoys are not strong
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+
+        import glob, json, re, sys
+        mode, cfg = sys.argv[1], json.loads(sys.argv[2])
+        ITEM = re.compile(r"^\s*[-*]\s+\[(?P<id>[A-Z0-9-]+)\]\s+(?P<text>\S.*)$")
+        def bad(msg):
+            print("FAIL:", msg); sys.exit(1)
+        def words(s, n=None):
+            t = re.sub(r"[`*_]", "", s).split()
+            return [x.lower() for x in (t[:n] if n else t)]
+        items = {}
+        for pat in cfg["items"]:
+            for p in sorted(glob.glob(pat)):
+                for line in open(p, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: items[m["id"]] = m["text"]
+        if not items: bad("no source items found")
+        def load(path):
+            try: raw = open(path, encoding="utf-8").read().split("\n")
+            except OSError: bad(path + " is missing")
+            rows, notes = [], []
+            for ln in raw:
+                if not ln.strip(): continue
+                if ln.startswith("#"): notes.append(ln); continue
+                f = ln.split(" | ")
+                if len(f) != 5: bad("row without 5 ' | ' fields: " + ln[:60])
+                rows.append([x.strip() for x in f])
+            return rows, notes
+        rows, notes = load("triage/results.tsv")
+        if mode == "contract":
+            ids = [r[0] for r in rows]
+            if len(set(ids)) != len(ids): bad("duplicate IDs")
+            if set(ids) != set(items): bad("rows do not cover exactly the source items")
+            for r in rows:
+                if r[3] not in ("strong", "weak", "none"): bad("strength " + r[3])
+        elif mode == "ids":
+            for r in rows:
+                if r[0] not in items: bad("unknown ID " + r[0])
+                if words(r[1]) != words(items[r[0]], 8): bad("words column does not match source text for " + r[0])
+        elif mode == "key":
+            got = {r[0]: r for r in rows}
+            for i, target in cfg["expect"].items():
+                r = got.get(i)
+                if not r or r[3] != "strong" or r[2].strip("`").lstrip("./") != target: bad(f"{i} should be strong -> {target}")
+            for i in cfg["not_strong"]:
+                r = got.get(i)
+                if r and r[3] == "strong": bad(f"{i} is not an affected item but was marked strong")
+        elif mode == "reason-names-file":
+            for r in rows:
+                if r[3] == "strong" and r[2] not in r[4]: bad("strong reason does not name " + r[2])
+        elif mode == "readcount":
+            last = [n for n in notes if re.fullmatch(r"# items read: \d+", n)]
+            if not last: bad("no '# items read: N' line")
+            if int(last[-1].split(": ")[1]) != len(items): bad("items read is not the item count")
+        elif mode == "chunks":
+            for src in cfg["items"]:
+                base = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                crow, cnotes = load(f"triage/chunks/{base}.tsv")
+                want = set()
+                for line in open(src, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: want.add(m["id"])
+                if {r[0] for r in crow} != want: bad(f"chunk {base} does not hold exactly its own items")
+                c = [n for n in cnotes if re.fullmatch(r"# items read: \d+", n)]
+                if not c or int(c[-1].split(": ")[1]) != len(want): bad(f"chunk {base} read count wrong")
+        elif mode == "inventory":
+            try: text = open("triage/inventory.md", encoding="utf-8").read()
+            except OSError: bad("triage/inventory.md is missing")
+            good, covered = 0, set()
+            for path, ln in re.findall(r"([\w./-]+\.[A-Za-z]+):(\d+)", text):
+                try: n = len(open(path, encoding="utf-8").read().split("\n")) - 1
+                except OSError: bad("reference to a missing file " + path)
+                if not 1 <= int(ln) <= max(n, 1): bad(f"line out of range {path}:{ln}")
+                good += 1; covered.add(path)
+            if good < cfg["min"]: bad("too few references")
+            for f in cfg["files"]:
+                if f not in covered: bad("inventory never cites " + f)
+        else: bad("unknown mode")
+        print("ok")
+      - key
+      - '{"items":["notes/*.md"],"expect":{"Q-08":"src/plugins/lint.js","Q-11":"scripts/deploy.sh","Q-12":"acme.toml"},"not_strong":["Q-01","Q-02","Q-03","Q-04","Q-05","Q-06","Q-07","Q-09","Q-10"]}'
+  - id: read-count-is-the-item-count
+    description: The results end with an items-read count equal to the item count
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+
+        import glob, json, re, sys
+        mode, cfg = sys.argv[1], json.loads(sys.argv[2])
+        ITEM = re.compile(r"^\s*[-*]\s+\[(?P<id>[A-Z0-9-]+)\]\s+(?P<text>\S.*)$")
+        def bad(msg):
+            print("FAIL:", msg); sys.exit(1)
+        def words(s, n=None):
+            t = re.sub(r"[`*_]", "", s).split()
+            return [x.lower() for x in (t[:n] if n else t)]
+        items = {}
+        for pat in cfg["items"]:
+            for p in sorted(glob.glob(pat)):
+                for line in open(p, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: items[m["id"]] = m["text"]
+        if not items: bad("no source items found")
+        def load(path):
+            try: raw = open(path, encoding="utf-8").read().split("\n")
+            except OSError: bad(path + " is missing")
+            rows, notes = [], []
+            for ln in raw:
+                if not ln.strip(): continue
+                if ln.startswith("#"): notes.append(ln); continue
+                f = ln.split(" | ")
+                if len(f) != 5: bad("row without 5 ' | ' fields: " + ln[:60])
+                rows.append([x.strip() for x in f])
+            return rows, notes
+        rows, notes = load("triage/results.tsv")
+        if mode == "contract":
+            ids = [r[0] for r in rows]
+            if len(set(ids)) != len(ids): bad("duplicate IDs")
+            if set(ids) != set(items): bad("rows do not cover exactly the source items")
+            for r in rows:
+                if r[3] not in ("strong", "weak", "none"): bad("strength " + r[3])
+        elif mode == "ids":
+            for r in rows:
+                if r[0] not in items: bad("unknown ID " + r[0])
+                if words(r[1]) != words(items[r[0]], 8): bad("words column does not match source text for " + r[0])
+        elif mode == "key":
+            got = {r[0]: r for r in rows}
+            for i, target in cfg["expect"].items():
+                r = got.get(i)
+                if not r or r[3] != "strong" or r[2].strip("`").lstrip("./") != target: bad(f"{i} should be strong -> {target}")
+            for i in cfg["not_strong"]:
+                r = got.get(i)
+                if r and r[3] == "strong": bad(f"{i} is not an affected item but was marked strong")
+        elif mode == "reason-names-file":
+            for r in rows:
+                if r[3] == "strong" and r[2] not in r[4]: bad("strong reason does not name " + r[2])
+        elif mode == "readcount":
+            last = [n for n in notes if re.fullmatch(r"# items read: \d+", n)]
+            if not last: bad("no '# items read: N' line")
+            if int(last[-1].split(": ")[1]) != len(items): bad("items read is not the item count")
+        elif mode == "chunks":
+            for src in cfg["items"]:
+                base = src.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+                crow, cnotes = load(f"triage/chunks/{base}.tsv")
+                want = set()
+                for line in open(src, encoding="utf-8"):
+                    m = ITEM.match(line.rstrip("\n"))
+                    if m: want.add(m["id"])
+                if {r[0] for r in crow} != want: bad(f"chunk {base} does not hold exactly its own items")
+                c = [n for n in cnotes if re.fullmatch(r"# items read: \d+", n)]
+                if not c or int(c[-1].split(": ")[1]) != len(want): bad(f"chunk {base} read count wrong")
+        elif mode == "inventory":
+            try: text = open("triage/inventory.md", encoding="utf-8").read()
+            except OSError: bad("triage/inventory.md is missing")
+            good, covered = 0, set()
+            for path, ln in re.findall(r"([\w./-]+\.[A-Za-z]+):(\d+)", text):
+                try: n = len(open(path, encoding="utf-8").read().split("\n")) - 1
+                except OSError: bad("reference to a missing file " + path)
+                if not 1 <= int(ln) <= max(n, 1): bad(f"line out of range {path}:{ln}")
+                good += 1; covered.add(path)
+            if good < cfg["min"]: bad("too few references")
+            for f in cfg["files"]:
+                if f not in covered: bad("inventory never cites " + f)
+        else: bad("unknown mode")
+        print("ok")
+      - readcount
+      - '{"items":["notes/*.md"]}'
+  - id: repo-and-notes-untouched
+    description: The repo files and the release notes are unchanged
+    type: files_unchanged
+    paths: ["acme.toml", "ci/pipeline.yml", "scripts/deploy.sh", "docs/runbook.md", "src/plugins/lint.js", "notes/*.md", "triage/draft.tsv"]
+
+judge_rubric: >
+  Score 0-10 on each dimension with a one-sentence rationale. (1) triage-discipline - did the agent build a dependency inventory with real file:line references before judging items, keep one row per item in a fixed ID-first format, and verify IDs against the source text rather than trusting its own output, and accept a strong match only after reading the item against the code? Cap at 4 if it never checked its IDs. (2) restraint - did it avoid changing the repo's own files and notes and avoid flagging items that merely share a keyword with the repo? Cap at 4 if it edited a source file.

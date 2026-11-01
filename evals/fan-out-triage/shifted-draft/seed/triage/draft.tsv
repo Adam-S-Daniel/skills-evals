@@ -1,0 +1,12 @@
+Q-03 | - | weak | shares a keyword but our use is unaffected
+Q-04 | - | none | no inventory line uses this
+Q-05 | - | none | no inventory line uses this
+Q-06 | - | none | no inventory line uses this
+Q-07 | - | weak | shares a keyword but our use is unaffected
+Q-08 | - | none | no inventory line uses this
+Q-09 | - | none | no inventory line uses this
+Q-10 | src/plugins/lint.js | strong | src/plugins/lint.js depends on it (inventory)
+Q-11 | - | weak | shares a keyword but our use is unaffected
+Q-12 | - | none | no inventory line uses this
+Q-01 | scripts/deploy.sh | strong | scripts/deploy.sh depends on it (inventory)
+Q-02 | acme.toml | strong | acme.toml depends on it (inventory)
