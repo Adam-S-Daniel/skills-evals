@@ -20,7 +20,8 @@ name: Ingest routine eval results
 #   differs, so a re-run is a no-op and a conflicting one fails.
 #   Only summary.json and report.md are kept (KEEP_LONG_TERM); a validated
 #   tool_trace.json is dropped. `git add` runs without -f, so
-#   persistent/eval-results' .gitignore stays in force.
+#   persistent/eval-results' .gitignore stays in force. `estimate` then adds
+#   `cost_estimate.json` beside the run, computed from the tree alone.
 # * Branch names, shas and file content are never interpolated into a `run:`
 #   block: the event is read from $GITHUB_EVENT_PATH by the validator, which
 #   emits only values that matched a strict pattern, and every later step
@@ -135,6 +136,13 @@ jobs:
             if grep -qxF -- "changed=false" <<<"$placed"; then
               echo "run ${RUN_ID} is already on persistent/eval-results; nothing to commit"
               exit 0
+            fi
+            # The run's points estimate, calibrated on the runs already on
+            # the tree; written once, beside the run it estimates. Its
+            # failure costs the estimate, never the results.
+            if ! python3 scripts/ingest_routine_results.py estimate \
+                 --tree "$tree" --run-id "$RUN_ID"; then
+              echo "::warning::no cost_estimate.json was written for run ${RUN_ID}"
             fi
             git -C "$tree" add -- "routine-results/${RUN_ID}"
             git -C "$tree" \

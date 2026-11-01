@@ -996,6 +996,130 @@ def uses_nodes(node):
             yield from uses_nodes(item)
 
 
+class EstimateTests(unittest.TestCase):
+    """`estimate`: a placed run's cost_estimate.json, its points at the rate
+    the runs already on the tree measured (owner decision, 2026-11-01)."""
+
+    EARLIER = "20261005T000000Z-aaaaaa"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.tree = self.tmp / "tree"
+
+    @staticmethod
+    def cost(usd: float, metered=None) -> dict:
+        reasons = dict.fromkeys(("points_per_usd", "points"),
+                                run_eval._POINTS_AT_INGEST)
+        if metered is None:
+            reasons["metered_usd"] = "no meter delta spans a call"
+        return {"usd": usd, "agent_usd": usd, "judge_usd": 0, "guard_usd": 0,
+                "metered_usd": metered, "last_agent_call_usd": usd,
+                "calls_with_cost": 1, "calls_without_cost": 0,
+                "points_per_usd": None, "points": None,
+                "basis": run_eval.COST_ESTIMATE_BASIS, "reasons": reasons}
+
+    def run_dir(self, run_id: str, *invocations) -> Path:
+        """A run on the tree: one summary per (moved, cost_estimate or None)."""
+        root = self.tree / "routine-results" / run_id
+        for k, (moved, estimate) in enumerate(invocations):
+            usage = {"started_at": f"invocation-{k}", "meter_delta": None
+                     if moved is None else {"windows": {"seven_day": {
+                         "delta": moved, "window_reset": False}}}}
+            if estimate is not None:
+                usage["cost_estimate"] = estimate
+            path = root / "s" / f"t{k}" / "with_skill" / "summary.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"usage": {**usage, "measured": {}}}),
+                            encoding="utf-8")
+        return root
+
+    def written(self) -> dict:
+        path = self.tree / "routine-results" / RUN_ID / ingest.ESTIMATE_NAME
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_points_are_dollars_at_the_rate_earlier_runs_measured(self):
+        # 0.02 points over 0.5 metered dollars, and 0.01 over 0.25: 0.04.
+        self.run_dir(self.EARLIER, (0.02, self.cost(0.8, 0.5)),
+                     (0.01, self.cost(0.3, 0.25)))
+        self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)), (0.0, self.cost(0.5)))
+        self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "true"})
+        doc = self.written()
+        self.assertEqual(doc["calibration"]["invocations"], 2)
+        self.assertAlmostEqual(doc["calibration"]["points_per_usd"], 0.04, places=12)
+        self.assertEqual(doc["calibration"]["basis"], ingest.CALIBRATION_BASIS)
+        self.assertEqual(doc["usd"], 2.0)
+        self.assertAlmostEqual(doc["points"], 0.08, places=12)
+        first, second = doc["invocations"]
+        self.assertAlmostEqual(first["points"], 0.06, places=12)
+        self.assertAlmostEqual(second["points"], 0.02, places=12)
+        self.assertEqual(first["points_per_usd"], doc["calibration"]["points_per_usd"])
+        # Its own figures are carried as the harness wrote them.
+        self.assertEqual((first["usd"], first["metered_usd"]), (1.5, 0.75))
+        self.assertEqual(set(first["reasons"]), set())
+        self.assertEqual(set(second["reasons"]), {"metered_usd"})
+
+    def test_the_run_itself_and_unmeasured_invocations_are_not_calibrated_on(self):
+        self.run_dir(self.EARLIER, (None, self.cost(0.8, 0.5)),
+                     (0.02, self.cost(0.8)), (0.02, None))
+        self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        ingest.estimate(self.tree, RUN_ID)
+        doc = self.written()
+        self.assertEqual(doc["calibration"]["invocations"], 0)
+        self.assertIsNone(doc["calibration"]["points_per_usd"])
+        self.assertIsNone(doc["points"])
+        only = doc["invocations"][0]
+        self.assertIsNone(only["points"])
+        self.assertIn("no run ingested before this one", only["reasons"]["points"])
+        self.assertEqual(only["reasons"]["points"], only["reasons"]["points_per_usd"])
+
+    def test_it_is_written_once_and_never_rewritten(self):
+        self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "true"})
+        before = self.written()
+        self.run_dir(self.EARLIER, (0.02, self.cost(0.8, 0.5)))
+        self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "false"})
+        self.assertEqual(self.written(), before)
+
+    def test_a_run_from_before_the_estimate_gets_no_file(self):
+        self.run_dir(RUN_ID, (0.03, None))
+        self.assertEqual(ingest.estimate(self.tree, RUN_ID), {"estimated": "false"})
+        self.assertFalse((self.tree / "routine-results" / RUN_ID /
+                          ingest.ESTIMATE_NAME).exists())
+
+    def test_a_malformed_earlier_run_is_skipped_not_trusted(self):
+        earlier = self.run_dir(self.EARLIER, (0.02, self.cost(0.8, 0.5)))
+        (earlier / "s" / "t0" / "with_skill" / "summary.json").write_text(
+            "{not json", encoding="utf-8")
+        odd = self.cost(0.8, "lots")
+        self.run_dir("20261005T000001Z-bbbbbb", (True, self.cost(0.8, 0.5)),
+                     (0.02, odd), (0.02, self.cost(0.8, float("inf"))))
+        self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        ingest.estimate(self.tree, RUN_ID)
+        self.assertEqual(self.written()["calibration"]["invocations"], 0)
+
+    def test_a_run_id_that_is_not_one_is_rejected(self):
+        with self.assertRaises(ingest.Rejected):
+            ingest.estimate(self.tree, "../elsewhere")
+
+    def test_the_cli_prints_what_it_did(self):
+        self.run_dir(RUN_ID, (0.03, self.cost(1.5, 0.75)))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = ingest.main(["estimate", "--tree", str(self.tree), "--run-id", RUN_ID])
+        self.assertEqual((code, out.getvalue()), (0, "estimated=true\n"))
+
+    def test_the_workflow_estimates_after_placing_and_before_adding(self):
+        bodies = [body for _, body in run_blocks(load(INGEST))
+                  if "ingest_routine_results.py estimate" in body]
+        self.assertEqual(len(bodies), 1)
+        body = bodies[0]
+        self.assertLess(body.index("ingest_routine_results.py place"),
+                        body.index("ingest_routine_results.py estimate"))
+        self.assertLess(body.index("ingest_routine_results.py estimate"),
+                        body.index('git -C "$tree" add'))
+
+
 class WorkflowShapeTests(unittest.TestCase):
 
     @classmethod

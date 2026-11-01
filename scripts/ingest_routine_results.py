@@ -37,6 +37,13 @@ for $GITHUB_OUTPUT):
   validate --repo DIR --base REF --source REF --branch NAME
            [--expect-sha SHA] --out DIR
   place    --staged DIR --tree DIR
+  estimate --tree DIR --run-id ID
+
+`estimate` writes `routine-results/<run id>/cost_estimate.json` beside a run
+just placed (owner decision, 2026-11-01): each run_eval invocation's
+`usage.cost_estimate` with its `points` filled in, at the points-per-dollar
+rate the runs already on the tree measure (`calibrate`). It reads only the
+tree, never the branch, and never rewrites a file that is there.
 """
 
 from __future__ import annotations
@@ -728,7 +735,7 @@ USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
 #: `budget_stop` (#68): present only on a run that stopped starting work for
 #: its weekly allowance budget, so every summary written before it still
 #: ingests. run_eval.budget_stop_reading's keys and reasons.
-USAGE_OPTIONAL = ("budget_stop",)
+USAGE_OPTIONAL = ("budget_stop", "cost_estimate")
 BUDGET_STOP_KEYS = ("reason", "utilization", "moved", "limit")
 BUDGET_STOP_REASONS = ("per_run_cap", "account_above")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
@@ -745,6 +752,17 @@ ROLE_NULLABLE = ("num_turns", "cost_usd", "cost_basis", "cache_creation", "model
 ROLE_KEYS = ("calls", "duration_ms", *ROLE_NULLABLE, "reasons")
 ROLE_MODEL_KEYS = (*MODEL_TOKEN_KEYS, "cost_usd")
 CACHE_SPLIT_KEYS = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+#: `cost_estimate` (owner decision, 2026-11-01): optional, so a summary
+#: written before it still ingests. run_eval._cost_estimate's keys and basis.
+COST_ESTIMATE_USD = ("usd", *(f"{role}_usd" for role in USAGE_ROLES))
+COST_ESTIMATE_NULLABLE = ("metered_usd", "last_agent_call_usd",
+                          "points_per_usd", "points")
+COST_ESTIMATE_KEYS = (*COST_ESTIMATE_USD, *COST_ESTIMATE_NULLABLE,
+                      "calls_with_cost", "calls_without_cost", "basis", "reasons")
+COST_ESTIMATE_BASIS = ("an estimate from the CLI's own per-call dollar figures "
+                       "(total_cost_usd, else modelUsage costUSD), times the "
+                       "measured points-per-dollar rate; not a meter reading")
+MAX_USD = 10 ** 6
 
 
 def _reasons(block: dict, where: str, nullable) -> None:
@@ -935,11 +953,43 @@ def check_budget_stop(stop, where: str, billing) -> None:
         raise Rejected(f"{where}: the reading does not reach its limit")
 
 
+def check_cost_estimate(estimate, where: str) -> None:
+    """`usage.cost_estimate`: exactly its keys, every dollar figure a number
+    from 0, the total the sum of its roles', the last agent call and the
+    metered span within the dollars they are part of, and the points null:
+    the harness never calibrates them (ingest does, in cost_estimate.json)."""
+    where = f"{where}.cost_estimate"
+    _object(estimate, where, COST_ESTIMATE_KEYS, COST_ESTIMATE_KEYS)
+    for name in COST_ESTIMATE_USD:
+        _number(estimate[name], f"{where}.{name}", 0, MAX_USD)
+    for name in ("metered_usd", "last_agent_call_usd"):
+        _number(estimate[name], f"{where}.{name}", 0, MAX_USD, null=True)
+    for name in ("calls_with_cost", "calls_without_cost"):
+        _integer(estimate[name], f"{where}.{name}", 0, MAX_COUNT)
+    if estimate["points_per_usd"] is not None or estimate["points"] is not None:
+        raise Rejected(f"{where}: the harness never calibrates points")
+    if estimate["basis"] != COST_ESTIMATE_BASIS:
+        raise Rejected(f"{where}.basis is not the harness's")
+    usd, slack = estimate["usd"], 1e-9 * max(1.0, estimate["usd"])
+    parts = sum(estimate[f"{role}_usd"] for role in USAGE_ROLES)
+    if abs(usd - parts) > slack:
+        raise Rejected(f"{where}.usd is not the sum of its roles")
+    if estimate["calls_with_cost"] == 0 and usd != 0:
+        raise Rejected(f"{where}: dollars without a call that carries them")
+    for name, within in (("metered_usd", usd), ("last_agent_call_usd",
+                                                 estimate["agent_usd"])):
+        if estimate[name] is not None and estimate[name] > within + slack:
+            raise Rejected(f"{where}.{name} is more than it is part of")
+    _reasons(estimate, where, COST_ESTIMATE_NULLABLE)
+
+
 def check_usage(usage, where: str, run: dict) -> None:
     where = f"{where}: usage"
     _object(usage, where, USAGE_KEYS + USAGE_OPTIONAL, USAGE_KEYS)
     if "budget_stop" in usage:
         check_budget_stop(usage["budget_stop"], where, run["billing"])
+    if "cost_estimate" in usage:
+        check_cost_estimate(usage["cost_estimate"], where)
     _integer(usage["schema_version"], f"{where}.schema_version", 1, 1)
     _span(usage, where)
     _check_meter(usage, where, run["billing"])
@@ -1264,6 +1314,111 @@ def added_files(repo: str, base: str, tip: str,
 
 
 # ---------------------------------------------------------------------------
+# The cost estimate's points (owner decision, 2026-11-01).
+
+ESTIMATE_NAME = "cost_estimate.json"
+ESTIMATE_SCHEMA_VERSION = 1
+CALIBRATION_BASIS = (
+    "weekly meter points (usage.meter_delta seven_day, no overrun added) over "
+    "the dollars of the calls that delta spans (cost_estimate.metered_usd), "
+    "summed over every run_eval invocation of the runs ingested before this "
+    "one that measured both")
+
+
+def _invocations(run_dir: Path) -> list:
+    """One ingested run's run_eval invocations: each distinct run-level
+    `usage` block (every summary of an invocation carries the same one), in
+    summary path order. A symlink, an oversize summary or one that does not
+    parse is skipped."""
+    blocks = {}
+    for path in sorted(run_dir.rglob("summary.json")):
+        try:
+            if path.is_symlink() or path.stat().st_size > SIZE_CAPS["summary.json"]:
+                continue
+            summary = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+            continue
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        if isinstance(usage, dict):
+            level = {key: value for key, value in usage.items() if key != "measured"}
+            blocks.setdefault(json.dumps(level, sort_keys=True), usage)
+    return list(blocks.values())
+
+
+def _week_moved(usage: dict):
+    """How far one invocation's weekly meter moved, or None when it was
+    not measured (no delta, or the window reset), as allowance_guard reads it."""
+    delta = usage.get("meter_delta")
+    windows = delta.get("windows") if isinstance(delta, dict) else None
+    week = windows.get("seven_day") if isinstance(windows, dict) else None
+    moved = week.get("delta") if isinstance(week, dict) else None
+    if not is_number(moved) or week.get("window_reset") is not False:
+        return None
+    return max(0.0, float(moved))
+
+
+def calibrate(tree: Path, skip: str) -> dict:
+    """The points-per-dollar rate measured over the ingested runs on `tree`
+    other than `skip`: their weekly meter movement over the dollars of the
+    calls it spans. No overrun is added: it is what these estimates are
+    collected to size. The rate is None until some invocation measured both."""
+    points = dollars = 0.0
+    used = 0
+    root = tree / DEST_ROOT
+    runs = sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()
+                  and p.name != skip) if root.is_dir() else []
+    for run_dir in runs:
+        for usage in _invocations(run_dir):
+            estimate = usage.get("cost_estimate")
+            metered = estimate.get("metered_usd") if isinstance(estimate, dict) else None
+            moved = _week_moved(usage)
+            if moved is None or not is_number(metered) or not 0 < metered <= MAX_USD:
+                continue
+            points += moved
+            dollars += metered
+            used += 1
+    return {"invocations": used, "meter_points": points, "metered_usd": dollars,
+            "points_per_usd": points / dollars if dollars and points else None}
+
+
+def estimate(tree: Path, run_id: str) -> dict:
+    """Write `cost_estimate.json` for the ingested run `run_id`, unless one
+    is there or no invocation of it carries `usage.cost_estimate` (a run
+    from before it). Full precision; nothing is rounded."""
+    if not re.fullmatch(RUN_ID, run_id):
+        raise Rejected("run id is not a routine run id")
+    run_dir = tree / DEST_ROOT / run_id
+    target = run_dir / ESTIMATE_NAME
+    if target.exists() or target.is_symlink() or not run_dir.is_dir() \
+            or run_dir.is_symlink():
+        return {"estimated": "false"}
+    found = [u["cost_estimate"] for u in _invocations(run_dir)
+             if isinstance(u.get("cost_estimate"), dict)]
+    if not found:
+        return {"estimated": "false"}
+    calibration = calibrate(tree, run_id)
+    rate = calibration["points_per_usd"]
+    why = ("no run ingested before this one measured both a weekly meter delta "
+           "and the dollars it spans")
+    invocations = []
+    for block in found:
+        reasons = {k: v for k, v in block["reasons"].items()
+                   if k not in ("points_per_usd", "points")}
+        if rate is None:
+            reasons.update(points_per_usd=why, points=why)
+        invocations.append({**block, "points_per_usd": rate,
+                            "points": None if rate is None else block["usd"] * rate,
+                            "reasons": reasons})
+    doc = {"schema_version": ESTIMATE_SCHEMA_VERSION, "run_id": run_id,
+           "calibration": {**calibration, "basis": CALIBRATION_BASIS},
+           "usd": sum(i["usd"] for i in invocations),
+           "points": None if rate is None else sum(i["points"] for i in invocations),
+           "invocations": invocations}
+    target.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    return {"estimated": "true"}
+
+
+# ---------------------------------------------------------------------------
 # Subcommands.
 
 def validate(repo: str, base: str, source: str, branch: str,
@@ -1410,6 +1565,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("place")
     p.add_argument("--staged", required=True, type=Path)
     p.add_argument("--tree", required=True, type=Path)
+    p = sub.add_parser("estimate")
+    p.add_argument("--tree", required=True, type=Path)
+    p.add_argument("--run-id", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "resolve":
@@ -1417,6 +1575,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "validate":
             result = validate(args.repo, args.base, args.source, args.branch,
                               args.expect_sha or None, args.out)
+        elif args.command == "estimate":
+            result = estimate(args.tree, args.run_id)
         else:
             result = place(args.staged, args.tree)
     except Rejected as exc:
