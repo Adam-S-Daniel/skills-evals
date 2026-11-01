@@ -43,8 +43,10 @@ name: Weekly routine evals
 #   refused. A three-hourly cron did this first, but GitHub never started
 #   it (15:37, 18:37 and 21:37 UTC on 2026-10-31, even after re-enabling
 #   the workflow) while other schedules in this repo ran. A top-up with
-#   nothing due or no room plans nothing (`count` 0), which ends the chain
-#   until the next backstop. The concurrency group keeps two sweeps from
+#   nothing due or no room plans nothing (`count` 0). The last job arms
+#   routine-eval-watchdog.yml, which re-plans when a guard hold still
+#   running at the sweep's end expires, or 50 minutes on (2026-11-01: a fire
+#   that never pushed results left nothing to wake a sweep for 2h22m). The concurrency group keeps two sweeps from
 #   planning the same cells at once: a queued sweep waits for the running
 #   one (cancel-in-progress false), and a newer queued sweep replaces an
 #   older one. A `workflow_run` run uses the default branch's copy of this
@@ -297,3 +299,26 @@ jobs:
       # The routine's fire limit: about one fire a minute.
       - name: Space the next fire
         run: sleep 60
+
+  # Arms the re-plan timer (routine-eval-watchdog.yml) at every sweep's end,
+  # whatever the plan or dispatch concluded: a fire that never pushes results
+  # wakes no ingest, so its hold ending would otherwise re-plan nothing.
+  watchdog:
+    needs: [plan, dispatch]
+    if: always() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Arm the re-plan watchdog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if ! gh workflow run routine-eval-watchdog.yml \
+            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" > /dev/null 2>&1; then
+            echo "::error::Watchdog dispatch failed"
+            exit 1
+          fi

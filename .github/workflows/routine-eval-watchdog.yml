@@ -1,0 +1,73 @@
+name: Routine eval watchdog
+
+# Re-plans the weekly sweep when nothing else will (2026-11-01: a 15:55 UTC
+# fire never pushed results, so no ingest woke a sweep when its guard hold
+# ended, and evals stalled from 16:11 to 18:33 UTC).
+#
+# * Wait mode (workflow_dispatch): every routine-eval-weekly.yml run
+#   dispatches this as its last job, so a timer is armed at each sweep's end.
+#   It sleeps until the first guard hold still running at that moment ends
+#   (plus two minutes), or 50 minutes, whichever is first, then dispatches
+#   the sweep. Any sweep created after it was armed stands it down, and a
+#   newer timer cancels it (cancel-in-progress), so only the newest sweep's
+#   timer is live. Not workflow_run: GitHub stops a workflow_run chain at
+#   three levels, and push, ingest, sweep is already three.
+# * Check mode (schedule): a backstop if a timer was lost. It never sleeps,
+#   stands down while a wait-mode run is in progress or a sweep is queued
+#   or running, and otherwise dispatches when the newest finished sweep's
+#   end is past the same due time. GitHub never started this repository's
+#   three-hourly sweep cron (2026-10-31), so the timer chain, not this, is
+#   the mechanism.
+# * The sweep's own concurrency group (routine-eval-weekly) keeps two sweeps
+#   from overlapping. Not a pull_request or push workflow: no path filter,
+#   no required check. Logic and tests: scripts/plan_week.py `watchdog`,
+#   test/issues/test_issue_closed_loop_planner.py WatchdogTests.
+on:
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: routine-eval-watchdog-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  watch:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
+      - name: Wait for a hold to end or the idle limit
+        id: watch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ github.event_name == 'schedule' && 'check' || 'wait' }}
+        run: python3 scripts/plan_week.py watchdog --mode "$MODE"
+      - name: Re-plan the sweep
+        if: steps.watch.outputs.dispatch == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if ! gh workflow run routine-eval-weekly.yml \
+            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" > /dev/null 2>&1; then
+            echo "::error::Sweep dispatch failed"
+            exit 1
+          fi

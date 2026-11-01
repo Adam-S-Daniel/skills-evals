@@ -50,6 +50,9 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-python@v7.1.0'
     '.github/workflows/routine-eval-results-pushed.yml': []
+    '.github/workflows/routine-eval-watchdog.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/setup-python@v7.1.0'
     '.github/workflows/routine-eval-weekly.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'

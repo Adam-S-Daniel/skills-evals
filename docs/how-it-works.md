@@ -191,7 +191,8 @@ Known gaps:
 
 `routine-eval-weekly.yml` runs `scripts/plan_week.py` every Tuesday at 07:00
 UTC, and again after each ingested result (with the daily health audit as a
-backstop) to spend room that fires costing less than their estimate left behind (G5, G6; Adam lifted the three-PR gate on 2026-10-26, see the
+backstop, and `routine-eval-watchdog.yml` re-planning when a guard hold left
+running at a sweep's end expires, or 50 minutes on) to spend room that fires costing less than their estimate left behind (G5, G6; Adam lifted the three-PR gate on 2026-10-26, see the
 [ADR 0010 addendum](decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decision-4-addendum-2026-10-26)).
 It computes the retirement verdicts over the results branch, then plans
 eval fires (one reviewed fixture from `evals/scheduled.yml` on one roster

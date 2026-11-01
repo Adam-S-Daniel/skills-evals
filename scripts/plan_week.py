@@ -7,6 +7,7 @@ improve, by priority band, inside the weekly allowance (G5, G6).
                       [--max-fires 30] [--out FILE]
     plan_week.py validate-fire        (the matrix leg's env; exit 0 or 1)
     plan_week.py wait-slot [--max-wait SECONDS]
+    plan_week.py watchdog --mode wait|check [--max-wait SECONDS]
 
 The rules are the thresholds design's (eval-loop thresholds, version 2,
 2026-10-25), A (eligibility), C (stopping) and D (bands); B (acceptance)
@@ -232,6 +233,7 @@ import statistics
 import subprocess
 import sys
 import time
+import urllib.parse
 
 SCRIPTS = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS.parent
@@ -294,6 +296,18 @@ MAX_IN_FLIGHT = 3
 EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
+#: watchdog (routine-eval-watchdog.yml): re-plan this long after the last
+#: sweep when nothing else has started one, and this long after a fire's
+#: hold ends, so the guard's own clock is past it. A fire that never pushes
+#: results wakes no ingest, so without this nothing re-plans when its hold
+#: frees the room (2026-11-01: a 15:55 UTC fire stalled the evals 16:11 to
+#: 18:33 UTC). `check` mode, the schedule's, uses the newest finished
+#: sweep's end as the anchor and never sleeps.
+WATCHDOG_IDLE = timedelta(minutes=50)
+WATCHDOG_MARGIN = timedelta(minutes=2)
+WATCHDOG_MAX_WAIT = 3300
+WEEKLY_WORKFLOW = "routine-eval-weekly.yml"
+WATCHDOG_WORKFLOW = "routine-eval-watchdog.yml"
 LESSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: The trigger lane: a skill whose fresh usage weight (invocations over
 #: skill_usage.weight's four weeks) is at most this rarely triggers at all.
@@ -1524,6 +1538,93 @@ def wait_slot(fetch, max_wait: int, clock=lambda: datetime.now(timezone.utc),
         waited += POLL_SECONDS
 
 
+def watchdog_due(anchor: datetime, fire_runs: list) -> datetime:
+    """When to re-plan after a sweep at `anchor`: WATCHDOG_IDLE after it, or
+    earlier, WATCHDOG_MARGIN after the first guard hold (a successful fire's
+    PENDING_FULL_HOLD) that was still running at `anchor` ends."""
+    due = anchor + WATCHDOG_IDLE
+    for run in fire_runs:
+        if not isinstance(run, dict) or run.get("conclusion") != "success":
+            continue
+        started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
+        if started is None:
+            continue
+        ends = started + guard.PENDING_FULL_HOLD
+        if ends > anchor:
+            due = min(due, ends + WATCHDOG_MARGIN)
+    return due
+
+
+def watchdog_decide(sweeps: list, fire_runs: list, now: datetime,
+                    anchor: datetime | None = None) -> tuple:
+    """("dispatch" | "wait" | "stand-down", due or None).
+
+    With `anchor` (wait mode, armed at a sweep's end): any sweep created after
+    it stands this watchdog down, since that sweep arms its own. Without
+    (check mode): any sweep not finished stands it down, and the anchor is the
+    newest finished sweep's end; no sweep at all is due now."""
+    rows = [r for r in sweeps if isinstance(r, dict)]
+    if anchor is not None:
+        for run in rows:
+            created = outcomes_mod.parse_time(run.get("created_at"))
+            if created is None or created > anchor:
+                return "stand-down", None
+    else:
+        if any(r.get("status") != "completed" for r in rows):
+            return "stand-down", None
+        ends = [outcomes_mod.parse_time(r.get("updated_at")) for r in rows]
+        ends = [t for t in ends if t is not None]
+        if not ends:
+            return "dispatch", now
+        anchor = max(ends)
+    due = watchdog_due(anchor, fire_runs)
+    return ("dispatch" if now >= due else "wait"), due
+
+
+def fetch_runs(workflow: str, token: str, query: dict, get=outcomes_mod.github_get) -> list:
+    """One page (newest first, 100) of `workflow`'s runs matching `query`."""
+    doc = get(f"/repos/{SELF_REPO}/actions/workflows/{workflow}/runs?"
+              + urllib.parse.urlencode({**query, "per_page": "100"}), token)
+    found = doc.get("workflow_runs") if isinstance(doc, dict) else None
+    if not isinstance(found, list):
+        raise outcomes_mod.EvidenceError("the workflow runs API answered without a run list")
+    return found
+
+
+def watchdog(mode: str, fetch_sweeps, fetch_fires, timers_alive, max_wait: int,
+             clock=lambda: datetime.now(timezone.utc), sleep=time.sleep) -> tuple:
+    """Run the watchdog: (dispatch?, reason). `wait` mode anchors at its own
+    start and sleeps until due (at most `max_wait` seconds in all); `check`
+    mode decides once and stands down while a wait-mode watchdog is alive.
+    `fetch_sweeps(since)` and `fetch_fires(since)` return runs created at or
+    after `since`; `timers_alive()` is whether a wait-mode run is in
+    progress."""
+    start = clock()
+    if mode == "check":
+        if timers_alive():
+            return False, "a waiting watchdog is armed"
+        anchor = None
+        sweeps = fetch_sweeps(start - timedelta(days=1))
+    else:
+        anchor = start
+    while True:
+        now = clock()
+        if anchor is not None:
+            sweeps = fetch_sweeps(anchor)
+        since = (anchor or now) - guard.PENDING_FULL_HOLD - WATCHDOG_IDLE
+        action, due = watchdog_decide(sweeps, fetch_fires(since), now, anchor)
+        if action == "stand-down":
+            return False, "a newer sweep is queued or running"
+        if action == "dispatch":
+            return True, f"re-plan due {_iso(due)}"
+        if mode == "check":
+            return False, f"next re-plan due {_iso(due)}"
+        left = max_wait - (now - start).total_seconds()
+        if left <= 0:
+            return False, f"waited {max_wait}s; re-plan due {_iso(due)}"
+        sleep(max(1, min((due - now).total_seconds(), left)))
+
+
 def guidance_headroom(section: str, tree: Path, evals_dir: Path, guidance_dir: Path,
                       as_of: str) -> tuple:
     """(ok, message) for the fire check (module docstring, FIRE CHECK)."""
@@ -1569,6 +1670,9 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     p = sub.add_parser("wait-slot")
     p.add_argument("--max-wait", type=int, default=1500)
+    p = sub.add_parser("watchdog")
+    p.add_argument("--mode", choices=("wait", "check"), required=True)
+    p.add_argument("--max-wait", type=int, default=WATCHDOG_MAX_WAIT)
     args = parser.parse_args(argv)
     try:
         if args.command == "validate-fire":
@@ -1588,6 +1692,22 @@ def main(argv: list | None = None) -> int:
             if not ok:
                 print(f"::error::{MAX_IN_FLIGHT} or more fires stayed in flight; not dispatching")
             return 0 if ok else 1
+        if args.command == "watchdog":
+            token = os.environ.get("GH_TOKEN", "")
+            stamp = lambda moment: ">=" + moment.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+            go, reason = watchdog(
+                args.mode,
+                lambda since: fetch_runs(WEEKLY_WORKFLOW, token, {"created": stamp(since)}),
+                lambda since: outcomes_mod.fetch_fire_runs(SELF_REPO, token, since),
+                lambda: bool(fetch_runs(WATCHDOG_WORKFLOW, token,
+                                        {"event": "workflow_dispatch",
+                                         "status": "in_progress"})),
+                args.max_wait)
+            print(f"watchdog: {reason}")
+            if os.environ.get("GITHUB_OUTPUT"):
+                with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                    out.write(f"dispatch={'true' if go else 'false'}\n")
+            return 0
         if not 1 <= args.max_fires <= 30:
             raise PlanError("the fire cap must be 1 to 30")
         now = datetime.now(timezone.utc)
