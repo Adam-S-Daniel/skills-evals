@@ -111,7 +111,7 @@ class BudgetFileTests(unittest.TestCase):
         # 2026-11-01 (permanent): the per-run cap is 1 point.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 1.0, "stop_when_account_above": 0.95,
-                          "per_run_cap": 0.01})
+                          "per_run_cap": 0.01, "per_run_overrun": 0.002})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
