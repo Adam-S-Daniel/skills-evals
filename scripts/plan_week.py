@@ -858,6 +858,17 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
     chosen = allocate(bands, ctx["room"], max_fires)
+    if not chosen and ctx.get("refresh"):
+        # The guard's one refresh fire (allowance_guard.refresh): only an
+        # ingested eval run brings a newer account reading, and without one
+        # the stale holds refuse every fire until the weekly reset (2026-11-01,
+        # the loop sat idle from 06:26 to 10:30 UTC with room left). The first
+        # eval fire in band order, at most one reservation.
+        evals = {band: [i for i in items if i["mode"] == "eval"]
+                 for band, items in bands.items()}
+        chosen = allocate(evals, ctx["reservation"], 1)
+        for item in chosen:
+            bands[item["band"]].remove(item)
     # Improve fires last: a long improve run in flight never holds up evals.
     chosen.sort(key=lambda i: i["mode"] in IMPROVE_MODES)
     fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
@@ -1363,6 +1374,8 @@ def gather(args, now: datetime) -> dict:
     return {"policy": gates_doc["policy"], "reservation": state["reservation"],
             "overrun": limits["per_run_overrun"], "improve_charge": state["improve_charge"],
             "room": guard.room(state),
+            # One eval fire may go only to bring a newer reading.
+            "refresh": guard.fits(state) < 1 and guard.refresh(state),
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,

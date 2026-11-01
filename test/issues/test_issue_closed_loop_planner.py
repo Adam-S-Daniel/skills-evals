@@ -450,6 +450,24 @@ class BandTests(unittest.TestCase):
         self.assertEqual(bands.count("near"), 2)
         self.assertEqual(bands.count("missing"), 8)
 
+    def test_no_room_plans_one_refresh_eval_fire_when_the_guard_allows_it(self):
+        # 2026-11-01: a stale reading left room at -18.6 points; the guard
+        # allowed one refresh fire, but the planner planned none, so the loop
+        # sat idle with no newer reading coming.
+        cells = [cell(f"evals/m{i}", "heavy", "missing") for i in range(3)]
+        plan = plan_week.build_plan(ctx(cells=cells, room=-0.186, refresh=True,
+                                        skills={"writing-adrs": skill()}), NOW)
+        self.assertEqual(len(plan["fires"]), 1)
+        self.assertEqual(plan["fires"][0]["mode"], "eval")
+        self.assertEqual(plan["fires"][0]["fixture"], "evals/m0")
+        self.assertEqual(plan["unplanned"]["missing"], 2)
+
+    def test_no_refresh_fire_without_the_guards_leave_or_when_fires_fit(self):
+        cells = [cell(f"evals/m{i}", "heavy", "missing") for i in range(3)]
+        self.assertEqual(plan_week.build_plan(ctx(cells=cells, room=-0.186), NOW)["fires"], [])
+        roomy = plan_week.build_plan(ctx(cells=cells, room=1.0, refresh=True), NOW)
+        self.assertEqual(len(roomy["fires"]), 3)
+
     def test_near_cells_go_fewest_runs_first_then_heaviest_model(self):
         # No `_next_look` (2026-10-31): the order is the smaller arm's run
         # count, then model weight.
