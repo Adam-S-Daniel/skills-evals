@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-10-31T23:25:12Z",
+ "generated_at": "2026-11-01T00:50:47Z",
  "guidance": {
   "sections": [
    {
@@ -17,6 +17,7 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
@@ -27,6 +28,9 @@
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -38,12 +42,13 @@
      "helps": 0.6771607569792633,
      "no_help": 0.0
     },
+    "current_text_runs": 4,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 1,
+     "position": 6,
      "scheduled": true
     },
     "runs": [
@@ -123,6 +128,9 @@
      }
     ],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -134,16 +142,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Finding your unknowns",
     "id": "finding-your-unknowns",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 9,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -155,6 +167,7 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Workstation layout",
     "id": "workstation-layout",
     "next_test": {
@@ -165,6 +178,9 @@
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -176,16 +192,22 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Security",
     "id": "security",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 20,
+     "position": 4,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "injection, committed secrets and disabled TLS or auth are hard to undo"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -197,16 +219,22 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 1,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "anything printed to a public log or history is public for good"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -218,16 +246,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Read before you start",
     "id": "read-before-you-start",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 12,
+     "position": 14,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -239,16 +271,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 7,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -260,6 +296,7 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Two GitHub connectors, and which one you are holding",
     "id": "two-github-connectors",
     "next_test": {
@@ -270,6 +307,9 @@
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -281,6 +321,7 @@
      "helps": 0.4214714871135178,
      "no_help": 0.0
     },
+    "current_text_runs": 4,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -366,6 +407,11 @@
      }
     ],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "an unmarked post or an approval reads as the owner's own words"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -377,16 +423,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
     "id": "github-404-means-not-authorized",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 9,
+     "position": 13,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -398,16 +448,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
     "id": "fleet-spans-two-owners",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 6,
+     "position": 10,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -419,6 +473,7 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "\"The watch finished\" is not \"CI passed\"",
     "id": "watch-finished-is-not-ci-passed",
     "next_test": {
@@ -429,6 +484,9 @@
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -440,16 +498,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "A successful `git push` does not mean your commit exists",
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 8,
+     "position": 12,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -461,16 +523,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Dependency updates",
     "id": "dependency-updates",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 8,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -482,16 +548,22 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 10,
+     "position": 2,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "a flagged name stays in history after a rename and fails every push's scan"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -503,16 +575,22 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 11,
+     "position": 3,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "a wrong pin runs a third party's code with the repo's tokens"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -524,16 +602,22 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 23,
+     "position": 5,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "covered_by": null,
+     "level": "high",
+     "reason": "a mocked pid once killed every user process on the machine"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -545,16 +629,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 22,
+     "position": 23,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -566,16 +654,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Skills ecosystem",
     "id": "skills-ecosystem",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 21,
+     "position": 22,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -587,6 +679,7 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Two setup gaps you may close, and must not nag about",
     "id": "two-setup-gaps",
     "next_test": {
@@ -597,6 +690,9 @@
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -608,16 +704,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 7,
+     "position": 11,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -629,16 +729,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Docker",
     "id": "section-docker",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 13,
+     "position": 15,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -650,16 +754,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": ".NET / C#",
     "id": "section-dotnet",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 14,
+     "position": 16,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -671,16 +779,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Go",
     "id": "section-go",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 15,
+     "position": 17,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -692,16 +804,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "JavaScript",
     "id": "section-javascript",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 16,
+     "position": 18,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -713,16 +829,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Python",
     "id": "section-python",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 17,
+     "position": 19,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": "insufficient",
     "verdict_reason": "a cell is insufficient or missing"
@@ -734,16 +854,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "Rust",
     "id": "section-rust",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 18,
+     "position": 20,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -755,16 +879,20 @@
      "helps": null,
      "no_help": null
     },
+    "current_text_runs": 0,
     "heading": "TypeScript",
     "id": "section-typescript",
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 19,
+     "position": 21,
      "scheduled": true
     },
     "runs": [],
     "skip_reason": null,
+    "stakes": {
+     "level": "normal"
+    },
     "status": "covered",
     "verdict": null,
     "verdict_reason": null
@@ -802,6 +930,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Add one or more email addresses to a Fastmail account as selectable \"From\" (sending) identities by triggering the add-from-address GitHub Actions workflow in the Adam-S-Daniel/fastmail-actions repo (which does the JMAP work with the FASTMAIL_API_TOKEN repo secret). Trigger when the user wants to \"add a from address\", \"add a sending identity\", \"let me send as X\", \"add an alias I can send from\", or \"register a new From address in Fastmail\". Supports a dry-run (whatif) preview. For discovering which received alias addresses are worth adding, use the add-received-from-addresses skill instead.",
    "name": "add-from-address",
    "next_test": {
@@ -813,6 +942,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "dispatches a workflow in the fastmail-actions repository that edits a real Fastmail account's sending identities with a real API token; a hermetic fixture cannot exercise it",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -826,6 +958,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Discover which of a Fastmail account's own alias addresses are worth being able to send from, and add them as \"From\" identities, by triggering the add-received-from-addresses GitHub Actions workflow in the Adam-S-Daniel/fastmail-actions repo (which does the JMAP work with the FASTMAIL_API_TOKEN repo secret). It scans every message for distinct X-Delivered-To addresses, keeps only those you actually correspond through, drops any that are already identities, and adds the rest. Trigger when the user wants to \"add From addresses for aliases I actually use\", \"find alias addresses worth sending from\", or \"set up identities for the addresses that receive my mail\". Supports a dry-run (whatif) preview. To add a specific known address, use the add-from-address skill instead.",
    "name": "add-received-from-addresses",
    "next_test": {
@@ -837,6 +970,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -850,17 +986,21 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Understand and safely change how the Decap /admin config is built \u2014 the gem-shipped admin machinery, the build-time render hook, the site-owned collections seam, the window.CMS_* identity injection, and the base_collections opt-out. Use when editing theme/admin/* (config.base.yml, the JS/HTML shells, the reviews dashboards), changing the render hook or its CLI mirror, debugging why /admin renders wrong/missing collections or wrong identity, adding a per-site collection, or hiding the platform's built-in collections. Trigger on mentions of \"admin config\", \"config.base.yml\", \"render-decap-config\", \"decap_config_hook\", \"collections.site.yml\", \"base_collections\", \"CMS_REPO / window.CMS_*\", or \"/admin shows the wrong collections\".",
    "name": "admin-config-render",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 1,
+    "position": 2,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -874,6 +1014,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Deploy, update, or troubleshoot the platform AWS bootstrap CloudFormation stack for a site. Use when setting up AWS infrastructure for the first time, adding new resources, diagnosing CloudFormation errors, checking stack outputs, or explaining what the bootstrap provisions.",
    "name": "aws-bootstrap",
    "next_test": {
@@ -885,6 +1026,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": "staleness is the failure mode, not procedure quality",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -898,6 +1042,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Write, run, and maintain Playwright e2e tests across the browser/viewport/accessibility matrix. Use when adding new e2e tests, updating the test matrix, debugging cross-browser failures, or understanding how the browser testing infrastructure works.",
    "name": "browser-testing",
    "next_test": {
@@ -909,6 +1054,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -922,13 +1070,14 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
    "name": "ci-job-performance",
    "next_test": {
-    "band": null,
+    "band": "missing",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 13,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -976,6 +1125,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -989,32 +1141,9 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Patterns for setting up reliable agent self-feedback when waiting on long-running GitHub Actions workflows in this repo (cms-publish-loop-host, deploy-production, e2e matrix). The default temptation \u2014 `RUN=$(gh workflow run X && gh run list --jq ...)` chained into a polling `until` loop \u2014 silently breaks because both commands' stdout concatenate into the variable. Use the patterns here when chaining \"wait for PR merge \u2192 trigger workflow \u2192 watch completion\" or any multi-step CI poll. Trigger when the user asks to watch a workflow, set up a feedback loop, monitor PR completion, or any \"let me know when X finishes\" task that involves the gh CLI.",
    "name": "ci-watcher-loops",
-   "next_test": {
-    "band": "missing",
-    "due": null,
-    "position": 2,
-    "scheduled": true
-   },
-   "registry": "cms-platform",
-   "runs": [],
-   "skip_reason": null,
-   "status": "covered",
-   "usage": {
-    "invocations": 0
-   },
-   "verdict": null,
-   "verdict_reason": null
-  },
-  {
-   "bundle": null,
-   "confidence": {
-    "helps": null,
-    "no_help": null
-   },
-   "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
-   "name": "cms-stuck-pr-triage",
    "next_test": {
     "band": "missing",
     "due": null,
@@ -1024,6 +1153,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -1037,8 +1169,9 @@
     "helps": null,
     "no_help": null
    },
-   "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
-   "name": "code-quality",
+   "current_text_runs": 0,
+   "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
+   "name": "cms-stuck-pr-triage",
    "next_test": {
     "band": "missing",
     "due": null,
@@ -1048,6 +1181,37 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
+   "status": "covered",
+   "usage": {
+    "invocations": 0
+   },
+   "verdict": null,
+   "verdict_reason": null
+  },
+  {
+   "bundle": null,
+   "confidence": {
+    "helps": null,
+    "no_help": null
+   },
+   "current_text_runs": 0,
+   "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
+   "name": "code-quality",
+   "next_test": {
+    "band": "missing",
+    "due": null,
+    "position": 5,
+    "scheduled": true
+   },
+   "registry": "cms-platform",
+   "runs": [],
+   "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -1061,6 +1225,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Compare pairs of PDFs (name.pdf + name<suffix>.pdf in the same folder) to determine whether they would produce identical printouts and whether their embedded text differs \u2014 e.g. to safely delete redundant \"-signed\" or \"-needsocr\" duplicates. Recursively finds every pair under a directory, rasterizes pages and compares hashes, and diffs extracted text. Triggers: \"compare pdf pairs\", \"find duplicate pdfs\", \"are these pdfs identical\", \"which suffixed pdfs can I delete\", \"dedupe scanned pdfs\".",
    "name": "compare-pdfpairs",
    "next_test": {
@@ -1072,6 +1237,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -1085,17 +1253,23 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 1,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "covered_by": null,
+    "level": "high",
+    "reason": "it sets token scopes and secrets; an over-broad token is a standing leak"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -1109,13 +1283,14 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
-    "band": null,
+    "band": "missing",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 6,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -1583,6 +1758,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 1
@@ -1596,12 +1774,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -1923,6 +2102,11 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "covered_by": null,
+    "level": "high",
+    "reason": "a scratch copy that keeps its remote can push to or delete production"
+   },
    "status": "covered",
    "usage": {
     "invocations": 9
@@ -1936,17 +2120,21 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Diagnose and fix Decap's persistent \"Decap CMS is adding labels to N of your Editorial Workflow entries\" dialog, which appears (and never clears) on /admin \u2014 on prod AND every preview deploy. Use when an editor reports that dialog, when the Workflow tab churns, or when setting up the daily audit that catches the condition. Covers the cause (an open cms/* PR missing its decap-cms/<status> label), the audit script + reusable workflow \u2014 which SELF-HEALS by applying the missing label since v0.1.48 \u2014 the e2e guard, and the manual escalation path for when self-heal fails. Trigger on \"adding labels dialog\", \"editorial workflow dialog stuck\", \"label migration\", \"decap-cms/draft label\", \"editorial-label-audit\", or \"audit-editorial-labels\".",
    "name": "editorial-label-audit",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -1960,12 +2148,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
    "name": "embeddable-tool-pages",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -2287,6 +2476,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -2300,6 +2492,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Automate Fastmail email workflows via a local browser session. Use this skill ONLY when running on Adam's computer with access to his browser (e.g. via Claude desktop / Cowork mode with Claude in Chrome). Do NOT use in headless environments such as the Claude Code CLI, CI pipelines, or any context without an interactive browser available. Trigger when the user wants to: search Fastmail for emails by sender, subject, or keyword; read email threads or attachment contents (including spreadsheets); compose and send new messages; or draft and send replies. Trigger on \"Fastmail\", \"check my email\", \"search my inbox\", \"reply to\", or similar email-management requests. Not for adding From addresses or sending identities; those use add-from-address / add-received-from-addresses.",
    "name": "fastmail",
    "next_test": {
@@ -2311,6 +2504,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 1
@@ -2324,13 +2520,14 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Surface and resolve the ambiguities in a task before, during, and after implementation \u2014 the blind-spot pass, the self-interview, reference-driven specs, implementation notes, and a post-hoc explainer or quiz. Use at the start of any non-trivial build, when working in an unfamiliar codebase or a new domain, when acceptance criteria are subjective (\"make it feel polished\", \"clean this up\"), when a plan keeps needing rework mid-implementation, or when the user says \"help me find my unknowns\", \"what am I missing\", \"poke holes in this\", \"what haven't I thought about\". Also use after a change lands, to produce the explainer or comprehension check that proves the work is understood.",
    "name": "finding-unknowns",
    "next_test": {
-    "band": null,
+    "band": "near",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 17,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -2567,6 +2764,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -2580,6 +2780,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Configure and enforce GitHub repository security settings as code: require actions to be pinned to full-length commit SHAs, require approval for all outside collaborators' fork pull-request workflow runs, and protect the default branch via a repository ruleset. The settings-as-code engine, its schema, and the fleet fan-out live in the repo-settings repo, which this skill points to; it also carries manual `gh api` recipes. Trigger when: setting up a new repo, running a security audit, onboarding a repo to org standards, enforcing settings across a fleet, or when asked to configure or harden Actions security settings. Trigger on mentions of \"actions settings\", \"repo security settings\", \"repo settings as code\", \"settings drift\", \"fork approval\", \"outside collaborators\", \"actions policy\", \"branch protection\", \"ruleset\", \"harden repo\", \"actions event policy\", or \"pull_request_target policy\".",
    "name": "github-actions-repo-settings",
    "next_test": {
@@ -2844,6 +3045,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -2857,12 +3061,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 15,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -3142,6 +3347,11 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "covered_by": null,
+    "level": "high",
+    "reason": "a wrong pin runs a third party's code with the repo's tokens"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -3155,6 +3365,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Launch a new, top-level, interactive Claude Code session in a new Windows Terminal tab \u2014 native Windows or inside WSL \u2014 in a chosen folder, optionally remote-controllable and optionally seeded with an initial prompt or a handoff file. Use this WHENEVER the user asks to start / open / launch / spawn a new (top-level, separate, fresh, detached, background) Claude Code session, hand off to a fresh session, or launch Claude in a new terminal, tab or window, on Windows or in WSL, even if they don't name every detail.",
    "name": "launch-top-level-claude-session",
    "next_test": {
@@ -3166,6 +3377,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 13
@@ -3179,6 +3393,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Inventory and clean up Claude Code auto-memory stores under ~/.claude/projects/<munged-path>/memory/ on this machine. List decoded paths, file counts, sizes, and freshness; identify ORPHANED stores for human review; keep undecodable or ambiguous stores UNRESOLVED and never delete on that basis. Trigger on \"clean up claude memory\", \"migrate claude memory\", \"inventory memory stores\", \"orphaned memory\", or mentions of `~/.claude/projects`. LOCAL-ONLY: requires this machine's ~/.claude directory; do not invoke in a hosted/cloud session without it.",
    "name": "migrate-claude-memory",
    "next_test": {
@@ -3190,6 +3405,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 1
@@ -3203,6 +3421,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "OCR scanned PDFs with OCRmyPDF, preserve the originals, and review page appearance and searchable text before replacing any files.",
    "name": "ocr-pdfs",
    "next_test": {
@@ -3214,6 +3433,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -3227,41 +3449,21 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Audit PDF files to determine whether OCR (optical character recognition) is needed to make them fully text-searchable. Use this skill whenever the user asks about PDF searchability, OCR status, whether PDFs have embedded text, which PDFs are scans, or wants to audit/inventory a folder of PDFs for text extraction readiness. Also triggers for: \"which PDFs need OCR\", \"are my PDFs searchable\", \"do these PDFs have text layers\", \"audit my PDFs\", \"find scanned PDFs\".",
    "name": "pdf-ocr-audit",
-   "next_test": {
-    "band": "missing",
-    "due": null,
-    "position": 7,
-    "scheduled": true
-   },
-   "registry": "adam-agentskills",
-   "runs": [],
-   "skip_reason": null,
-   "status": "covered",
-   "usage": {
-    "invocations": 0
-   },
-   "verdict": null,
-   "verdict_reason": null
-  },
-  {
-   "bundle": null,
-   "confidence": {
-    "helps": null,
-    "no_help": null
-   },
-   "description": "Cut a new cms-platform release (vX.Y.Z) and reconcile BOTH consumer repos (adamdaniel.ai, jodidaniel.com) to it in single-version lockstep. Use when you've merged a platform fix and need it to flow to consumers, when bumping platform_ref, or when the pin-consistency guard fails after a partial bump. Covers the release dispatch, the exact set of references to bump (platform_ref, gem tag+revision, workflow and composite ref pins), the pin-consistency check, and the lockstep invariant. Trigger on \"cut a release\", \"release vX.Y.Z\", \"bump platform_ref\", \"reconcile consumers\", \"platform-pin-consistency\", or \"flow the fix to consumers\".",
-   "name": "platform-release-and-bump",
    "next_test": {
     "band": "missing",
     "due": null,
     "position": 8,
     "scheduled": true
    },
-   "registry": "cms-platform",
+   "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -3275,8 +3477,9 @@
     "helps": null,
     "no_help": null
    },
-   "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
-   "name": "post-failure-comment",
+   "current_text_runs": 0,
+   "description": "Cut a new cms-platform release (vX.Y.Z) and reconcile BOTH consumer repos (adamdaniel.ai, jodidaniel.com) to it in single-version lockstep. Use when you've merged a platform fix and need it to flow to consumers, when bumping platform_ref, or when the pin-consistency guard fails after a partial bump. Covers the release dispatch, the exact set of references to bump (platform_ref, gem tag+revision, workflow and composite ref pins), the pin-consistency check, and the lockstep invariant. Trigger on \"cut a release\", \"release vX.Y.Z\", \"bump platform_ref\", \"reconcile consumers\", \"platform-pin-consistency\", or \"flow the fix to consumers\".",
+   "name": "platform-release-and-bump",
    "next_test": {
     "band": "missing",
     "due": null,
@@ -3286,6 +3489,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -3299,6 +3505,35 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
+   "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
+   "name": "post-failure-comment",
+   "next_test": {
+    "band": "missing",
+    "due": null,
+    "position": 10,
+    "scheduled": true
+   },
+   "registry": "cms-platform",
+   "runs": [],
+   "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
+   "status": "covered",
+   "usage": {
+    "invocations": 0
+   },
+   "verdict": null,
+   "verdict_reason": null
+  },
+  {
+   "bundle": null,
+   "confidence": {
+    "helps": null,
+    "no_help": null
+   },
+   "current_text_runs": 0,
    "description": "Work with PR preview environments for a platform site. Use when checking preview status, debugging failed deployments, understanding the S3/CloudFront pipeline, fixing the preview bot comment, investigating cache issues, or explaining how previews are deployed and torn down.",
    "name": "preview-environments",
    "next_test": {
@@ -3310,6 +3545,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": "staleness is the failure mode, not procedure quality",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -3323,17 +3561,21 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Rename already-searchable PDFs in a specified folder to descriptive, date-prefixed names, proposing each name from the PDF's own content and prompting for per-file confirmation or edit before applying. Use after running `ocr-pdfs` to clean up scanner-output filenames like \"Scan from 2024-03-15.pdf\", \"QuickScan_001.pdf\", or \"Document(47).pdf\" \u2014 or for any folder of PDFs that already have text layers but unhelpful filenames. Triggers: \"rename my pdfs\", \"clean up pdf filenames\", \"rename searchable pdfs\", \"give my pdfs descriptive names\", \"rename scanned pdfs\", \"tidy pdf names\".",
    "name": "rename-pdfs",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 10,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 1
@@ -3347,12 +3589,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -3653,6 +3896,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -3666,12 +3912,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -3930,6 +4177,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -3943,6 +4193,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Sync Claude Code settings.json between a Windows home and a WSL home, merging per property and keeping OS-bound keys per file. Triggers on requests to \"sync Claude Code settings\", \"merge my settings.json\", \"keep WSL and Windows Claude settings in sync\", or mentions of reconciling %USERPROFILE%\\.claude\\settings.json with ~/.claude/settings.json in WSL. Windows-only (needs PowerShell 7+ and access to the WSL UNC share). Use when the user wants the two settings.json files reconciled, not when they want a single file edited in place.",
    "name": "sync-cc-settings-between-wsl-and-windows",
    "next_test": {
@@ -3954,6 +4205,9 @@
    "registry": "adam-agentskills",
    "runs": [],
    "skip_reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -3967,6 +4221,7 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Internal propagation canary for the cms-platform bundle. It carries no guidance; never invoke it in normal work.",
    "name": "test-canary",
    "next_test": {
@@ -3978,6 +4233,9 @@
    "registry": "cms-platform",
    "runs": [],
    "skip_reason": "internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
+   "stakes": {
+    "level": "normal"
+   },
    "status": "skipped",
    "usage": {
     "invocations": 0
@@ -3991,13 +4249,14 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
-    "band": null,
+    "band": "missing",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 12,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -4276,6 +4535,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -4289,12 +4551,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL \u2014 Register-ScheduledTask / Set-ScheduledTask on a RunLevel=HighestAvailable task, a service change (Set-Service, Stop-Service, New-Service), an LSA rights grant such as \"Log on as a batch job\" (SeBatchLogonRight, secedit, ntrights), an HKLM registry write, or any other change to Windows state from a WSL session. Use it BEFORE attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 20,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -4574,6 +4837,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -4587,12 +4853,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 21,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -4977,6 +5244,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 0
@@ -4990,12 +5260,13 @@
     "helps": null,
     "no_help": null
    },
+   "current_text_runs": 0,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 22,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -5947,6 +6218,9 @@
     }
    ],
    "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
    "status": "covered",
    "usage": {
     "invocations": 6
@@ -5957,8 +6231,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "e8baefb077139a6c176c3227985ffba68e53c0a7",
-  "results_commit": "f272f5ea366674cc3995caee4dd5580e89306bb7"
+  "repository_commit": "6c9363522c9170fb75c3bcbb6186fcdc3ea0f126",
+  "results_commit": "966835eceb3c02645ae8718931a1580f51170c02"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
