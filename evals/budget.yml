@@ -33,9 +33,15 @@
 # to 0.30 after that reset.
 weekly_cap: 1.00
 
-# 3 points: one run stops starting new work once the meter has moved this
-# much since the run's first reading.
-per_run_cap: 0.03
+# 1 point: one run stops starting new work once the meter has moved this
+# much since the run's first reading. Adam, 2026-11-01, permanently: of the
+# 258 metered runs to then, none moved the meter 3 points, 5 moved it 2 and
+# 74 moved it 1 (95th and 97.5th percentiles 1 point, 99th 2), so the
+# 3-point value (set with the guard in #388, before any run was measured)
+# reserved several times what a run spends. The meter reads whole points
+# only, so a run stops at its first 1-point tick, which Adam's own use can
+# also cause.
+per_run_cap: 0.01
 
 # Half a point, added to every run's measured spend: the meter is read as an
 # agent call begins, so the run's last call (and any judge call after it) is
