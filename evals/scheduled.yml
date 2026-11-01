@@ -108,3 +108,23 @@ fixtures:
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
   - path: evals/adam-writing-style/self-appraisal-opening
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
+  - path: evals/ci-job-performance/browser-cache
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/debug-github-workflows/git-identity
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/debug-github-workflows/secret-name
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/debug-github-workflows/swallowed-failure
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/debug-github-workflows/wrong-branch
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/vendor-release-impact-issues/closed-duplicate
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/vendor-release-impact-issues/closing-keywords
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/vendor-release-impact-issues/issue-hygiene
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/vendor-release-impact-issues/stamps-skip-quotes
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
+  - path: evals/finding-unknowns
+    readiness: "In-place pair on skills-evals, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
