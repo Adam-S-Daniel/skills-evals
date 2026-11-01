@@ -7,7 +7,7 @@
   "skipped": 11,
   "total": 35
  },
- "generated_at": "2026-11-01T21:37:08Z",
+ "generated_at": "2026-11-01T21:40:21Z",
  "guidance": {
   "sections": [
    {
@@ -1089,7 +1089,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T21:34:49Z",
+ "newest_run": "2026-11-01T21:38:21Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -1580,6 +1580,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-01T21:38:21Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T213729Z-978b58/consumer-repo-provisioning/20261101T213821Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 19,
+      "cost_usd": 0.1084991,
+      "judge_mean": 6.199999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.10953740000000001,
+      "judge_mean": 4.9,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-01T21:20:19Z",
      "cli_version": "2.1.316",
@@ -6906,7 +6927,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "4e785f5af1d5250b5173926cc596334195dfd175",
-  "results_commit": "19695808c64d31a3ccf0b5e057945ffd3eae45a5"
+  "results_commit": "f3ee7c94dbda9b35f5b1f02106ae0a5d4fe7e933"
  },
  "usage": {
   "from": "2026-09-07T00:00:00Z",
