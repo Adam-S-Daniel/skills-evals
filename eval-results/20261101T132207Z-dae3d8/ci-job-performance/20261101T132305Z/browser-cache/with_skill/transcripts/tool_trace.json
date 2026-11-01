@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QdNcUn5CkHeA8TgoiLnbyf",
+      "name": "Skill",
+      "input": "ci-job-performance",
+      "input_chars": 18,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QdNcUn5CkHeA8TgoiLnbyf",
+      "is_error": false,
+      "output": "Launching skill: ci-job-performance",
+      "output_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014KKjT943HQsKEMp3pQJK8Z",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014KKjT943HQsKEMp3pQJK8Z",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    name: e2e (${{ matrix.browser }})\n14\t    runs-on: ubuntu-latest\n15\t    timeout-minutes: 20\n16\t    strategy:\n17\t      fail-fast: false\n18\t      matrix:\n19\t       ...",
+      "output_chars": 1463,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S9K5kF1RfnHj46g4GAwtnV",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 12 --json databaseId,conclusion,createdAt,headBranch 2>&1 | head -30",
+      "input_chars": 135,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S9K5kF1RfnHj46g4GAwtnV",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 866,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MRzf9b2uK69mTn4HsFRVQZ",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml --limit 12 --json databaseId,createdAt,conclusion --jq '.[]|\"\\(.databaseId) \\(.createdAt) \\(.conclusion)\"'; for id in $(gh run list -R exampl...",
+      "input_chars": 557,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MRzf9b2uK69mTn4HsFRVQZ",
+      "is_error": true,
+      "output": "Exit code 1\n[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e...",
+      "output_chars": 10039,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QJDCg7po61avFDyzaLofbR",
+      "name": "Bash",
+      "input": "for id in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $id\"; gh run view $id -R example-org/example-repo --json jobs > $TMPDIR/r$id.json 2>&1; python3 -I - $TMPDIR/r$id.json <<'E'\nimpo...",
+      "input_chars": 752,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QJDCg7po61avFDyzaLofbR",
+      "is_error": false,
+      "output": "== 71001\ne2e (chromium) | Install dependencies[success]=8s ; Install browser OS dependencies[success]=24s ; Install browser[success]=11s ; Run Playwright tests[success]=42s | total 93\ne2e (firefox) | Install dependencies[success]=13s ; Install browser OS dependencies[success]=20s ; Install browser[s...",
+      "output_chars": 5174,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013Cv4AygzL8ABe8bfuYgZA3",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013Cv4AygzL8ABe8bfuYgZA3",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
