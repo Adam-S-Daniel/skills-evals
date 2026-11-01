@@ -19,6 +19,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import yaml
@@ -173,7 +174,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["coverage"], {"as_of": "2026-10-31T14:00:00Z", "covered": 3,
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
-            self.assertEqual(sorted(s), ["bundle", "confidence", "description", "name",
+            self.assertEqual(sorted(s), ["bundle", "confidence", "current_text_runs", "description",
+                                         "name",
                                          "next_test", "registry", "runs", "skip_reason",
                                          "status", "usage", "verdict", "verdict_reason"])
             # No usage census in the tree: unknown, not zero. No schedule: no test.
@@ -359,6 +361,44 @@ class GuidanceTests(unittest.TestCase):
         t.guidance_arm("sec-one", "20261030T120000Z", "with_guidance_full", "full", 4)
         run = t.build(manifest=MANIFEST)["guidance"]["sections"][0]["runs"][0]
         self.assertEqual(list(run["modes"]), ["full"])
+
+
+def cell(n_with, n_without):
+    return {"runs": {"with": [{"run": i} for i in range(n_with)],
+                     "without": [{"run": i} for i in range(n_without)]}}
+
+
+class CurrentTextRunsTests(unittest.TestCase):
+    """`current_text_runs` counts with-arm runs only: they are the runs on the
+    subject's current text (without-arm runs pool across text changes)."""
+
+    def build_with(self, gates_doc):
+        t = Tree(self)
+        gates_doc = {"policy": {"benefit_confidence": 0.85, "retire_confidence": 0.95,
+                                "min_cli_versions": 2, "objective_margin": 0.05},
+                     **gates_doc}
+        with mock.patch.object(explorer_data.compute_gates, "compute", return_value=gates_doc):
+            return t.build(manifest=MANIFEST)
+
+    def test_a_skill_counts_with_arm_runs_only(self):
+        doc = self.build_with({"skills": {"alpha": {"verdict": "retain", "cells": [
+            cell(1, 2), cell(1, 1)]}}, "guidance": {}})
+        alpha = next(s for s in doc["skills"] if s["name"] == "alpha")
+        self.assertEqual(alpha["current_text_runs"], 2)
+
+    def test_a_skill_with_no_verdict_or_no_with_key_reports_zero(self):
+        doc = self.build_with({"skills": {"beta": {"verdict": "insufficient", "cells": [
+            {"runs": {"without": [{"run": 0}]}}, {"runs": {}}]}}, "guidance": {}})
+        counts = {s["name"]: s["current_text_runs"] for s in doc["skills"]}
+        self.assertEqual(counts, {"alpha": 0, "beta": 0, "gamma": 0,
+                                  "skipped-skill": 0})
+
+    def test_a_guidance_section_counts_in_situ_and_alone_cells(self):
+        doc = self.build_with({"skills": {}, "guidance": {"sec-one": {
+            "verdict": "retain", "cells": [cell(2, 5)],
+            "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
+        counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
+        self.assertEqual(counts, {"sec-one": 4, "sec-two": 0})
 
 
 class AlertTests(unittest.TestCase):
