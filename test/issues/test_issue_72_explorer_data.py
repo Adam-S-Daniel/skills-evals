@@ -157,11 +157,14 @@ class ShapeAndMathTests(unittest.TestCase):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
         self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
-                                     "coverage", "generated_at", "guidance",
-                                     "newest_run", "policy", "roster", "schema_version",
+                                     "coverage", "fires_without_results", "generated_at",
+                                     "guidance", "newest_run", "policy", "removed_skills",
+                                     "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
-        # No evals/scheduled.yml, so no fixture is in the #545 scope.
+        # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
+        # #555's: no fire file either, so the summary is unknown.
+        self.assertIsNone(d["fires_without_results"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
@@ -171,8 +174,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["roster"], {"arms": [{"model": "model-a", "reason": "invented reason a"}],
                                        "judge": {"model": "model-j",
                                                  "reason": "invented judge reason"}})
-        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.95,
-                                       "min_cli_versions": 2, "objective_margin": 0.05})
+        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.90,
+                                       "min_cli_versions": 2, "objective_margin": 0.15})
         self.assertIsInstance(d["skills"], list)
         self.assertIsInstance(d["guidance"]["sections"], list)
         self.assertIsInstance(d["alerts"], list)
@@ -362,6 +365,21 @@ class RemovedSectionsTests(unittest.TestCase):
         self.assertEqual(removed[0]["reverse_url"],
                          "https://github.com/Adam-S-Daniel/_agent-guidance/pulls"
                          "?q=is%3Apr+head%3Aretire-guidance%2Fbravo")
+
+    def test_removed_skills_come_from_the_registrys_impact_file(self):
+        root = Path(tempfile.mkdtemp(prefix="removed-skills-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "docs").mkdir()
+        (root / "docs" / "skill-impact.md").write_text(
+            "# Skill impact\n\n## 2026-11-21 — adam-coding-anywhere/example-skill — remove\n\n"
+            "- Motivation: m\n\n## 2026-11-19 — adam-coding-anywhere/other — edit\n\n- m\n",
+            encoding="utf-8")
+        removed = explorer_data.removed_skills({"adam-agentskills": {"path": root}})
+        self.assertEqual([(r["name"], r["plugin"], r["date"]) for r in removed],
+                         [("example-skill", "adam-coding-anywhere", "2026-11-21")])
+        self.assertIn("head%3Aretire-skill%2Fexample-skill", removed[0]["reverse_url"])
+        self.assertEqual(explorer_data.removed_skills({}), [])
+        self.assertEqual(explorer_data.removed_skills({"other-registry": {"path": root}}), [])
 
     def test_no_checkout_or_file_lists_nothing(self):
         self.assertEqual(explorer_data.removed_sections(None), [])
@@ -636,7 +654,9 @@ class WorkflowTests(unittest.TestCase):
     def test_permissions_are_minimal(self):
         self.assertEqual(self.doc["permissions"], {})
         build, publish = self.doc["jobs"]["build"], self.doc["jobs"]["publish"]
-        self.assertEqual(build["permissions"], {"contents": "read", "issues": "read"})
+        # #555: `actions: read` lists the fire runs for `fires_without_results`.
+        self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
+                                                "issues": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
         self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish"])
         self.assertEqual(publish["needs"], "build")

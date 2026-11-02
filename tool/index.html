@@ -363,12 +363,16 @@ const STRINGS = {
   removedHeading: 'Removed sections',
   removedNote: 'Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
   removedLink: 'removal and revert',
+  removedSkillsHeading: 'Removed skills',
+  removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date' },
   // #545: this alert carries fields, not text, so the page words it.
   alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
   alertDetails: 'Details',
+  // #555: past events, worded from counts; `since` is the oldest counted fire.
+  firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
 
   engineersHeading: 'For engineers',
   engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
@@ -1130,7 +1134,10 @@ function alertText(a) {
 function alertsView(doc, mode) {
   const want = mode === 'guidance' ? 'guidance' : 'skill';
   const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
-  return h('section', null, h('h2', null, STRINGS.alertsHeading),
+  const f = doc.fires_without_results;
+  const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === 'string'
+    ? h('p', { class: 'note' }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
+  return h('section', null, h('h2', null, STRINGS.alertsHeading), fires,
     alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
       const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
       const l = link(a.url, STRINGS.alertDetails);
@@ -1181,6 +1188,17 @@ function removedView(doc) {
   if (!removed.length) return null;
   return h('section', null, h('h2', null, STRINGS.removedHeading), h('p', { class: 'note' }, STRINGS.removedNote),
     h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.id)), ' ', clean(r.date), ' ',
+      link(r.reverse_url, STRINGS.removedLink)))));
+}
+
+/* Skills the evals removed (#557), with the date and a link to the removal
+   pull request, whose Revert button restores the skill. */
+function removedSkillsView(doc) {
+  const removed = (Array.isArray(doc.removed_skills) ? doc.removed_skills : [])
+    .filter((r) => r && typeof r.name === 'string' && typeof r.date === 'string');
+  if (!removed.length) return null;
+  return h('section', null, h('h2', null, STRINGS.removedSkillsHeading), h('p', { class: 'note' }, STRINGS.removedSkillsNote),
+    h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.name)), ' ', clean(r.date), ' ',
       link(r.reverse_url, STRINGS.removedLink)))));
 }
 
@@ -1235,7 +1253,8 @@ function buildPage(doc, mode, opts) {
     body = [h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
-      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards))];
+      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      removedSkillsView(doc)];
   }
   return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
 }

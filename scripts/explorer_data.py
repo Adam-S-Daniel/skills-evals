@@ -7,6 +7,7 @@
                    [--evals-dir DIR] [--guidance-manifest eval-coverage.yml]
                    [--guidance DIR] [--registry NAME=PATH ...]
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
+                   [--fire-runs FILE]
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -55,6 +56,19 @@ remove runs now test main's copy of the subject, not the deployed one, so an
 older deployed copy no longer keeps a with arm from pooling. The context
 beside the subject is still the pin's, which is why `context-drift` stays.
 
+`fires_without_results` (#555, 2026-11-02) is a document-level, report-only
+summary of the last FIRE_WINDOW_DAYS of successful eval fires
+(`routine-eval-fire.yml` runs, `--fire-runs`): `since` (the oldest counted
+fire), `without_results` (fires no results came back for), `rejected`
+(results came back but none validated; per fixture when an arm summary's
+model cannot be read) and `sweeps` (the without-results fires grouped by
+starts at most FIRE_SWEEP_GAP apart: start, end, count). Only fires on
+the SCOPE FILTER's fixtures count (`fire_scope`: public, non-private,
+scheduled skill fixtures and manifest guidance sections), so a private fire
+moves nothing; no name, title or run id is published. None is unknown (no
+readable fire file, or a `fetched_at` out of bounds), never 0. The per-cell
+alert waits for #570.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran. Counts are per arm over the scored trials (infrastructure failures and
@@ -81,6 +95,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import compute_gates  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
+import improve_outcomes  # noqa: E402
 import plan_week  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
@@ -180,6 +195,35 @@ def removed_sections(guidance_dir: Path | None) -> list:
                             f"{section}")}
            for date, section in REMOVED_HEADING_RE.findall(text)]
     return sorted(out, key=lambda r: (r["date"], r["id"]), reverse=True)
+
+
+#: A skill removal's heading in adam-agentskills' docs/skill-impact.md, as
+#: scripts/retire_skill.py `impact_entry` writes it.
+REMOVED_SKILL_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — ([a-z0-9-]+)/([a-z0-9][a-z0-9-]*) — remove\s*$",
+                              re.MULTILINE)
+SKILL_REGISTRY = "adam-agentskills"
+
+
+def removed_skills(registries: dict | None) -> list:
+    """The skills removed so far from the public registry (#557: Adam,
+    2026-11-02, every removal tracked and reversible), newest first, from
+    the `remove` entries of its docs/skill-impact.md: {"name", "plugin",
+    "date", "reverse_url"}, the last the skill's removal pull requests,
+    whose Revert button restores it. [] without that checkout or file."""
+    entry = (registries or {}).get(SKILL_REGISTRY)
+    # compute_gates.flag_registries' entries carry the checkout as `path`.
+    root = entry.get("path") if isinstance(entry, dict) else entry
+    if root is None:
+        return []
+    try:
+        text = (Path(root) / "docs" / "skill-impact.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    out = [{"name": skill, "plugin": plugin, "date": date,
+            "reverse_url": (f"https://github.com/Adam-S-Daniel/{SKILL_REGISTRY}/pulls"
+                            f"?q=is%3Apr+head%3Aretire-skill%2F{skill}")}
+           for date, plugin, skill in REMOVED_SKILL_RE.findall(text)]
+    return sorted(out, key=lambda r: (r["date"], r["name"]), reverse=True)
 
 
 def guidance_runs(index: dict) -> dict:
@@ -544,6 +588,191 @@ def health_alerts(evals_dir: Path, skill_names: set, repositories: dict | None,
     return alerts, drift_unknown, rows
 
 
+#: #555 (2026-11-02): the fire-runs window the workflow fetches and the
+#: summary covers. A fire leaves it as it ages, which is a real change.
+FIRE_WINDOW_DAYS = 14
+#: Fires without results whose starts are at most this far apart are one
+#: sweep (a routine-eval-weekly run dispatches its fires minutes apart).
+FIRE_SWEEP_GAP = plan_week.OUTAGE_GAP
+#: The fetch time is the workflow's own clock, so it is checked against the
+#: build's wall clock (no later than this past it) and against the results
+#: tip (no earlier than this before it): a stale or forged file is unknown.
+FETCH_SKEW = timedelta(minutes=5)
+FETCH_MAX_LAG = timedelta(days=1)
+
+
+def load_fire_runs(path: Path | None):
+    """{"fetched_at": the wrapper's string, "runs": [run rows]} from
+    `--fire-runs` (`{"fetched_at", "pages"}`, the pages of a slurped
+    `gh api --paginate` over the runs API), or None when the file is absent,
+    unreadable or not that shape. The file is UNTRUSTED: nothing in it is
+    printed, and only the rows' fields `fire_counts` reads are ever used."""
+    if path is None:
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or not isinstance(doc.get("pages"), list):
+        return None
+    runs = []
+    for page in doc["pages"]:
+        if not isinstance(page, dict) or not isinstance(page.get("workflow_runs"), list):
+            return None
+        runs += page["workflow_runs"]
+    return {"fetched_at": doc.get("fetched_at"), "runs": runs}
+
+
+def fire_scope(evals_dir: Path, skill_names: set, section_ids: set) -> dict:
+    """#555's SCOPE FILTER, applied before any fire is counted: {fixture
+    path: ("skill", skill, fixture name or None) | ("guidance", section,
+    fixture name)} over the exact, committed `evals/scheduled.yml` entries
+    that are not private (`fixture_hold_reason`), whose skill is a listed
+    (public census) one outside `private_skills`, or whose section is in the
+    guidance manifest: `health_fixtures`' rules without its `context:`
+    requirement. The subject comes from `plan_week._fixture_subject`, as
+    eval_cells reads it, never from the directory name. A real-work row,
+    unreadable fixture or other subject is out, so a private fire never
+    moves a count."""
+    committed = plan_week.schedule.committed_fixtures(evals_dir.parent)
+    scheduled = plan_week.schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
+    private = plan_week.private_skills(evals_dir)
+    out = {}
+    for fixture in scheduled:
+        if plan_week.fixture_hold_reason(evals_dir.parent / fixture) == plan_week.HOLD_PRIVATE:
+            continue
+        try:
+            subject, ident = plan_week._fixture_subject(evals_dir, fixture)
+        except (plan_week.PlanError, OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        parts = fixture.split("/")
+        if subject == "skill" and ident in skill_names and ident not in private \
+                and len(parts) in (2, 3):
+            out[fixture] = ("skill", ident, parts[2] if len(parts) == 3 else None)
+        elif subject == "guidance" and ident in section_ids:
+            out[fixture] = ("guidance", ident, parts[3])
+    return out
+
+
+def _delivered(index: dict, target: tuple, model: str, start: datetime, end: datetime) -> bool:
+    """A validated run of the fire's cell stamped in [start, end]. Skill and
+    guidance records share `skill` (a guidance record's is the bare section
+    id), so the run path tells them apart: a guidance run sits under
+    `/guidance/<section>/`. Bare runs are left out: a bare fire is never
+    counted, so a bare run never answers one."""
+    kind, ident, name = target
+    for record in (*index["runs"], *index["guidance_runs"]):
+        path = "/" + record["path"] + "/"
+        in_guidance = "/guidance/" in path
+        if (kind == "guidance") != in_guidance or (
+                kind == "guidance" and f"/guidance/{ident}/" not in path):
+            continue
+        if record["skill"] != ident or record["fixture"] != name or record["model"] != model:
+            continue
+        stamp = plan_week._stamp_time(record["timestamp"])
+        if stamp is not None and start <= stamp <= end:
+            return True
+    return False
+
+
+def _arrived(summaries: dict, target: tuple, model: str, start: datetime, end: datetime) -> bool:
+    """An ingested routine folder (`routine-results/<run id>/`) holds an arm
+    summary for the fire's fixture, stamped (the harness timestamp, key[2]) in
+    [start, end]: results came back, valid or not. The summary's model
+    (`cross_model.model`) and, for guidance, its `fixture_name` are read
+    through compute_gates' bounded `_read` and must match when readable; an
+    unreadable one matches on the fixture (guidance: the section) alone, so
+    the count is then per fixture, not per cell. Guidance keys never carry
+    the fixture (`_summaries` skips those that do)."""
+    kind, ident, name = target
+    key = f"guidance/{ident}" if kind == "guidance" else ident
+    for (run_dir, subject, stamp_text, fixture, _arm), entry in summaries.items():
+        if not run_dir.startswith("routine-results/") or subject != key:
+            continue
+        if kind == "skill" and fixture != name:
+            continue
+        stamp = plan_week._stamp_time(stamp_text)
+        if stamp is None or not start <= stamp <= end:
+            continue
+        doc = compute_gates._read(entry["summary"]) if entry["summary"] else None
+        if doc is not None:
+            found = compute_gates.run_eval._arm_model([doc])
+            if found is not None and found != model:
+                continue
+            if kind == "guidance" and isinstance(doc.get("fixture_name"), str) \
+                    and doc["fixture_name"] != name:
+                continue
+        return True
+    return False
+
+
+def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
+                as_of: datetime, wall_clock: datetime):
+    """#555's document-level `fires_without_results`, or None (unknown, never
+    0) with no readable fire file or a `fetched_at` past the wall clock plus
+    FETCH_SKEW or before `as_of` minus FETCH_MAX_LAG. `now` is `fetched_at`,
+    so the result depends on the file and the tree, not on when it is built.
+
+    A fire counts when its title passes improve_outcomes.parse_title (mode
+    eval, not bare, a model: a model-less fire is skipped as the planner skips
+    it), it concluded `success`, its target is in `scope` (`fire_scope`), it
+    started inside the window and at least plan_week.FIRE_RESULT_WINDOW
+    before `now`. Each counted fire is delivered (`_delivered` within the
+    window after its start), rejected (results arrived, `_arrived`, but none
+    validated) or without results. Only times and counts are published;
+    dropped rows are counted to stderr by reason, never by title."""
+    if fires is None:
+        return None
+    fetched = improve_outcomes.parse_time(fires.get("fetched_at"))
+    if fetched is None or fetched > wall_clock + FETCH_SKEW or fetched < as_of - FETCH_MAX_LAG:
+        return None
+    now = fetched.astimezone(timezone.utc)
+    oldest = now - timedelta(days=FIRE_WINDOW_DAYS)
+    dropped: dict = {}
+    seen, counted = set(), []
+    for run in fires["runs"]:
+        reason = None
+        title = improve_outcomes.parse_title(run.get("display_title")) if isinstance(run, dict) else None
+        start = improve_outcomes.parse_time(run.get("run_started_at") or run.get("created_at")) \
+            if isinstance(run, dict) else None
+        if title is None:
+            reason = "not a fire row"
+        elif not isinstance(run.get("id"), int) or run["id"] in seen:
+            reason = "no id or a duplicate"
+        elif title["mode"] != "eval" or title["bare"] or not title["model"]:
+            reason = "not a paired eval fire with a model"
+        elif run.get("conclusion") != "success" or start is None:
+            reason = "not a successful fire"
+        elif title["target"] not in scope:
+            reason = "out of scope"
+        elif not oldest <= start <= now - plan_week.FIRE_RESULT_WINDOW:
+            reason = "outside the window"
+        if reason:
+            dropped[reason] = dropped.get(reason, 0) + 1
+            continue
+        seen.add(run["id"])
+        counted.append((start.astimezone(timezone.utc), scope[title["target"]], title["model"]))
+    for reason, n in sorted(dropped.items()):
+        print(f"explorer_data: fire rows dropped ({reason}): {n}", file=sys.stderr)
+    without, rejected = [], 0
+    for start, target, model in sorted(counted, key=lambda c: c[0]):
+        end = start + plan_week.FIRE_RESULT_WINDOW
+        if _delivered(index, target, model, start, end):
+            continue
+        if _arrived(summaries, target, model, start, end):
+            rejected += 1
+        else:
+            without.append(start)
+    # The planner's grouping (plan_week.fire_sweeps), unbounded span: one
+    # chaining rule for both, so the two cannot drift apart.
+    sweeps = [[s[0], s[-1], len(s)] for s in plan_week.fire_sweeps(without, FIRE_SWEEP_GAP)]
+    return {"window_days": FIRE_WINDOW_DAYS,
+            "since": plan_week._iso(min(c[0] for c in counted)) if counted else None,
+            "without_results": len(without), "rejected": rejected,
+            "sweeps": [{"start": plan_week._iso(a), "end": plan_week._iso(b), "fires": n}
+                       for a, b, n in sweeps]}
+
+
 def skill_description(registries: dict | None, registry: str | None, name: str) -> str | None:
     """What the skill is for: the `description` in its SKILL.md front matter, in
     the census registry's checkout, whitespace collapsed. None when the checkout
@@ -683,7 +912,11 @@ def usage_counts(tree: Path) -> tuple:
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
-          issues: dict | None = None, context_repos: dict | None = None) -> dict:
+          issues: dict | None = None, context_repos: dict | None = None,
+          fire_runs: dict | None = None, wall_clock: datetime | None = None) -> dict:
+    """The public document. `fire_runs` is `load_fire_runs`' result (None:
+    `fires_without_results` is unknown) and `wall_clock` the build's clock,
+    used only to bound the fire file's `fetched_at` (#555)."""
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
@@ -752,6 +985,12 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         health, drift_unknown, _rows = health_alerts(
             evals_dir, {s["name"] for s in skills}, context_repos, now)
         alerts += health
+    fires = None
+    if (evals_dir / "scheduled.yml").is_file():
+        scope = fire_scope(evals_dir, {s["name"] for s in skills},
+                           {r["id"] for r in (manifest or [])})
+        fires = fire_counts(fire_runs, index, compute_gates._summaries(tree), scope, now,
+                            wall_clock or datetime.now(timezone.utc))
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
@@ -766,10 +1005,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                              "reason": roster["judge"].get("reason")}},
         "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                           "min_cli_versions", "objective_margin")},
-        "skills": skills,
+        "skills": skills, "removed_skills": removed_skills(registries),
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
-        "context_drift_unknown": drift_unknown, "usage": usage_window}
+        "context_drift_unknown": drift_unknown, "fires_without_results": fires,
+        "usage": usage_window}
 
 
 def finish(doc: dict) -> str:
@@ -834,6 +1074,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--context-repo", action="append", metavar="OWNER/REPO=PATH",
                         help="a consumer checkout (full history) for the #545 alert; "
                              "repeatable, as run_eval's flag")
+    parser.add_argument("--fire-runs", type=Path, metavar="FILE",
+                        help="{fetched_at, pages}: the slurped runs-API pages of "
+                             "routine-eval-fire.yml (#555); absent or unreadable is unknown")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -852,7 +1095,8 @@ def main(argv: list[str] | None = None) -> int:
                     args.as_of, args.repository_commit, args.results_commit,
                     compute_gates.flag_registries(args.registry), args.guidance,
                     load_manifest(args.guidance_manifest), issues,
-                    context_mod.parse_context_repos(args.context_repo))
+                    context_mod.parse_context_repos(args.context_repo),
+                    load_fire_runs(args.fire_runs), datetime.now(timezone.utc))
         text = finish(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)

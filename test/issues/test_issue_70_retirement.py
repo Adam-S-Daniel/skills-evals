@@ -50,7 +50,12 @@ POLICY = gates.parse_gate_policy(POLICY_FILE.read_text(encoding="utf-8"))["skill
 #: (`test_with_no_history_the_committed_margin_takes_forty_eight_runs`).
 #: The cell rules are tested at a wider margin; the compute_gates tests use
 #: the committed policy on judge-carried fixtures.
-TEST_POLICY = {**POLICY, "objective_margin": 0.4}
+#: The removal rule these mechanics tests were written against (before Adam's
+#: 2026-11-02 change to 0.15 / 90% / judge 1.5, #557), pinned so they keep
+#: testing the mechanics whatever the committed numbers are.
+LEGACY_POLICY = {**POLICY, "objective_margin": 0.05, "judge_margin": 0.5,
+                 "retire_confidence": 0.95}
+TEST_POLICY = {**LEGACY_POLICY, "objective_margin": 0.4}
 CLIS = ["1.0.0 (Claude Code)", "1.0.1 (Claude Code)"]
 T = 100
 #: Runs that differ a little from run to run, the same on both arms.
@@ -148,9 +153,11 @@ class PolicyTests(unittest.TestCase):
     def test_committed_policy_loads_with_its_numbers(self):
         # Adam, 2026-10-31: decide on confidence alone, 85% to keep and 95%
         # to remove.
+        # Adam, 2026-11-02 (#557): skills take the guidance removal rule,
+        # 90% that the skill does not help by 0.15 (judge 1.5); keep at 85%.
         self.assertEqual(POLICY, {
-            "objective_margin": 0.05, "judge_margin": 0.5, "benefit_confidence": 0.85,
-            "retire_confidence": 0.95, "check_confidence": 0.85,
+            "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.85,
+            "retire_confidence": 0.90, "check_confidence": 0.85,
             "min_cli_versions": 2, "prior_strength": 4, "ceiling_fraction": 0.90,
             "judge_ceiling": 9.0, "floor_fraction": 0.10,
             "retirement_mode": "auto"})
@@ -785,15 +792,16 @@ class CellTests(unittest.TestCase):
         self.assertEqual(cell(*runs, carried=True)["class"], "no-benefit")
         # At the committed objective margin the judge is tight, the
         # objective is not.
-        result = cell(*runs, carried=True, policy=POLICY)
-        self.assertLess(result["judge"]["retire_upper"], POLICY["judge_margin"])
+        result = cell(*runs, carried=True, policy=LEGACY_POLICY)
+        self.assertLess(result["judge"]["retire_upper"], LEGACY_POLICY["judge_margin"])
         self.assertEqual((result["class"], result["reason"]),
                          ("insufficient", "the objective interval is not tight enough yet"))
         # Without objective checks the judge alone decides.
         def judge_only(role):
             return [arm_run(role, [{**trial(overall=j), "objective_checks": []}
                                    for j in figures(FLAT_JUDGE[r])], r) for r in range(10)]
-        result = cell(judge_only("with"), judge_only("without"), carried=True, policy=POLICY)
+        result = cell(judge_only("with"), judge_only("without"), carried=True,
+                      policy=LEGACY_POLICY)
         self.assertEqual(result["class"], "no-benefit")
 
     def test_class_c_ceiling_on_the_judge_figure(self):
@@ -835,17 +843,18 @@ class AnytimeTests(unittest.TestCase):
 
     def test_a_small_noisy_difference_is_insufficient(self):
         # A 0.05 gain under a run-to-run spread of about 0.1: neither a
-        # confident gain nor inside the committed margin, at any count here.
+        # confident gain nor inside the 0.05 margin of the rule before 2026-11-02,
+        # at any count here.
         gain = [(85, 85, 85), (65, 65, 65)] * 10
         base = [(80, 80, 80), (60, 60, 60)] * 10
         for n in (2, 4, 10, 20):
             with self.subTest(n=n):
                 result = cell(series("with", gain[:n], FLAT_JUDGE),
-                              series("without", base[:n], FLAT_JUDGE), policy=POLICY)
+                              series("without", base[:n], FLAT_JUDGE), policy=LEGACY_POLICY)
                 self.assertEqual(result["class"], "insufficient", result["reason"])
                 self.assertLess(result["objective"]["benefit_lower"], 0)
                 self.assertGreaterEqual(result["objective"]["retire_upper"],
-                                        POLICY["objective_margin"])
+                                        LEGACY_POLICY["objective_margin"])
 
     def test_no_benefit_needs_min_cli_versions(self):
         runs = flat_cell(cli=CLIS[0])
@@ -862,15 +871,15 @@ class AnytimeTests(unittest.TestCase):
 
     def test_with_no_history_the_committed_margin_takes_forty_eight_runs(self):
         # On the fallback priors (sd 0.25, as with no run history), flat runs
-        # reach the committed 0.05 objective and 0.5 judge margins at the
-        # 95% retire level only at 48 runs per arm.
+        # reach the 0.05 objective and 0.5 judge margins at the 95% retire
+        # level (the rule before 2026-11-02) only at 48 runs per arm.
         fallback = gates.FALLBACK_PRIOR_VARIANCE
         priors = {"objective": fallback, "judge": fallback * 100, "check": fallback}
         for n, want in ((20, "insufficient"), (47, "insufficient"), (48, "no-benefit")):
             with self.subTest(n=n):
                 result = cell(series("with", (FLAT * 3)[:n], (FLAT_JUDGE * 3)[:n]),
                               series("without", (FLAT * 3)[:n], (FLAT_JUDGE * 3)[:n]),
-                              policy=POLICY, priors=priors)
+                              policy=LEGACY_POLICY, priors=priors)
                 self.assertEqual(result["class"], want, result["reason"])
 
     def test_a_later_run_can_undo_no_benefit(self):
@@ -1535,10 +1544,10 @@ class ComputeGatesTests(unittest.TestCase):
         return run_ids
 
 
-    def run_gates(self, name, registry=True, as_of=AS_OF):
+    def run_gates(self, name, registry=True, as_of=AS_OF, policy_file=None):
         out = self.tmp / name
         args = ["--results-tree", str(self.tree), "--roster", str(self.roster),
-                "--policy", str(POLICY_FILE), "--evals-dir", str(self.evals),
+                "--policy", str(policy_file or POLICY_FILE), "--evals-dir", str(self.evals),
                 "--as-of", as_of, "--out", str(out)]
         if registry:
             args += ["--registry", f"adam-agentskills={self.registry}"]
@@ -1692,14 +1701,25 @@ class ComputeGatesTests(unittest.TestCase):
     def test_two_runs_are_insufficient_and_three_retire(self):
         # No fixed looks (2026-10-31): the verdict is retaken on every run.
         # At two runs per arm the judge's 95% upper bound is still above the
-        # committed 0.5 margin; a third run brings it under.
+        # 0.5 margin of the rule before 2026-11-02; a third run brings it under.
+        legacy = self.tmp / "legacy-policy.yml"
+        legacy.write_text(POLICY_FILE.read_text(encoding="utf-8").replace(
+            "skills:\n  objective_margin: 0.15\n  judge_margin: 1.5",
+            "skills:\n  objective_margin: 0.05\n  judge_margin: 0.5").replace(
+            "  retire_confidence: 0.90\n  check_confidence: 0.85\n  min_cli_versions: 2\n"
+            "  prior_strength: 4\n  ceiling_fraction: 0.90\n  judge_ceiling: 9.0\n"
+            "  floor_fraction: 0.10\n  retirement_mode: auto\n# Guidance",
+            "  retire_confidence: 0.95\n  check_confidence: 0.85\n  min_cli_versions: 2\n"
+            "  prior_strength: 4\n  ceiling_fraction: 0.90\n  judge_ceiling: 9.0\n"
+            "  floor_fraction: 0.10\n  retirement_mode: auto\n# Guidance"), encoding="utf-8")
+        self.assertEqual(gates.load_gate_policy(legacy)["skills"]["retire_confidence"], 0.95)
         self.write("flat", FLAT[:2], FLAT_JUDGE)
-        _, doc = self.run_gates("1.json")
+        _, doc = self.run_gates("1.json", policy_file=legacy)
         self.assertEqual(doc["skills"]["flat"]["verdict"], "insufficient")
         cell_ = doc["skills"]["flat"]["cells"][0]
-        self.assertGreaterEqual(cell_["judge"]["retire_upper"], POLICY["judge_margin"])
+        self.assertGreaterEqual(cell_["judge"]["retire_upper"], LEGACY_POLICY["judge_margin"])
         self.write("flat", FLAT[2:3], FLAT_JUDGE[2:3], start=2)
-        _, doc = self.run_gates("2.json")
+        _, doc = self.run_gates("2.json", policy_file=legacy)
         self.assertEqual(doc["skills"]["flat"]["verdict"], "retire")
         self.assertEqual(doc["skills"]["flat"]["cells"][0]["with"]["runs"], 3)
 

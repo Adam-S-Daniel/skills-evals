@@ -31,6 +31,15 @@ name: Publish explorer data
 #   checkout makes both alerts "unknown", never silently clean. Measured
 #   locally on 2026-11-02 (18 in-scope fixtures, full clones): the build took
 #   10 to 15 s, the alerts about 2 s of it, so the job's timeout stays.
+# * #555 (2026-11-02): `build` also holds `actions: read` to list the last 14
+#   days of routine-eval-fire.yml runs for the document-level
+#   `fires_without_results` summary. The token is in that one step's env, the
+#   step is `continue-on-error` and swallows its own failure (a missing file
+#   makes the summary unknown, never 0), and it prints nothing but a fixed
+#   line with an exit code: the run titles name fixtures, private ones too,
+#   and only explorer_data.py's scope filter may decide what is public. The
+#   window start and the fetch time come from the runner's clock, never from
+#   `${{ }}` context. `publish` keeps `contents: write` alone.
 
 on:
   workflow_run:
@@ -57,6 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
       issues: read
     steps:
@@ -142,6 +152,35 @@ jobs:
             --json number,url,body --limit 200 \
             > "$RUNNER_TEMP/regression-issues.json"
 
+      - name: List the recent eval fires
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/fire-runs.json"
+          raw="$RUNNER_TEMP/fire-runs.raw"
+          # Taken before the call: a fire the listing judges old enough
+          # (2 hours before this) was old enough when the listing began.
+          fetched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          since=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          rc=0
+          { gh api --method GET --paginate --slurp \
+              -f event=workflow_dispatch -f "created=>=$since" -f per_page=100 \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/routine-eval-fire.yml/runs" \
+              > "$raw" 2>/dev/null \
+            && python3 -I -c 'import json, sys
+          pages = json.load(open(sys.argv[2], encoding="utf-8"))
+          json.dump({"fetched_at": sys.argv[1], "pages": pages}, open(sys.argv[3], "w", encoding="utf-8"))' \
+              "$fetched_at" "$raw" "$out.tmp" 2>/dev/null \
+            && mv "$out.tmp" "$out"; } || rc=$?
+          rm -f "$raw"
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out" "$out.tmp"
+            echo "fire runs unavailable (exit $rc)"
+          fi
+          exit 0
+
       - name: Build the explorer data
         working-directory: skills-evals
         run: |
@@ -167,6 +206,7 @@ jobs:
             --context-repo "Adam-S-Daniel/_agent-guidance=$GITHUB_WORKSPACE/agent-guidance" \
             --context-repo "Adam-S-Daniel/repo-settings=$GITHUB_WORKSPACE/context-repo-settings" \
             --context-repo "Adam-S-Daniel/wsl-automation=$GITHUB_WORKSPACE/context-wsl-automation" \
+            --fire-runs "$RUNNER_TEMP/fire-runs.json" \
             --out "$RUNNER_TEMP/explorer/latest.json"
 
       - name: Upload the explorer data

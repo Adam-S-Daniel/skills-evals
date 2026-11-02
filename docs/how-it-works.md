@@ -157,10 +157,28 @@ Three layers enforce it:
    minutes, so a fire with no results two hours later failed or never
    started). An improve fire (or a guidance-improve fire) never lands
    results, so it is charged its own
-   cost for the whole week: twelve eval fires at their measured mean
-   (twelve full reservations until anything is measured). The fire goes
+   cost for the whole week: eight eval fires at their measured mean
+   (eight full reservations until anything is measured; twelve until
+   2026-11-02, when the account meter around improve fires measured 2.3 to
+   5.3 eval fires each, #572; eight is a ceiling until each improve run's
+   cost is recorded). The fire goes
    only if one more reservation (an improve fire's charge, in improve mode)
-   still fits under `weekly_cap`. When a recent account meter reading is
+   still fits under `weekly_cap`. An improve or guidance-improve fire must
+   also pass the **improve cap** (#572, 2026-11-02): the week's improve
+   fires of both kinds, successful or still running (a running one only
+   when its run id is lower than this fire's, so of two dispatched together
+   the earlier goes), stay under 20% of `weekly_cap` divided by the improve
+   charge, except that each kind gets one fire per account week however
+   small the share. The cap follows `weekly_cap` as configured, so a
+   temporary raise loosens it too. With both floors used at eight units,
+   about 2 × 0.04 = 0.08 of the allowance is held, 27% of a 0.30 cap: above
+   the 20% share, by the approved floor rule. In the week of 2026-10-26 eight
+   improve fires, all dispatched by hand or by an agent, held more than the
+   whole cap; the guard runs for every dispatcher, so the cap is there, and
+   the weekly plan applies the same test. A capped fire prints
+   `improve cap: share allows N, used M (this kind K)` and exits 3. Until
+   each improve run's cost is measured (#572 part 1), a fire that passed the
+   guard and then failed uses no slot. When a recent account meter reading is
    usable, that sum is never taken above the reading plus the full charge
    of everything not inside it (since 2026-11-01), so eval runs the reading
    already holds are not counted twice. The same reading plus everything
@@ -188,7 +206,8 @@ Known gaps:
   eval spend. That overcounts, which is the safe direction.
 - **Fires racing each other**: a fire counts only fires that have finished
   successfully, so two dispatched at the same moment do not see each other.
-  The weekly plan accounts for its own fires up front.
+  The weekly plan accounts for its own fires up front. The improve cap
+  alone also counts running improve fires with a lower run id (#572).
 
 **The cost estimate** (Adam, 2026-11-01). The meter reads whole points, and
 only as each call starts, so a run's last agent call and any judge call after
@@ -236,7 +255,9 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    are ranked in the same list (every session loads the guidance, so its use
    is the census's session count scaled to four weeks). The highest-value
    eligible section is a `guidance-improve` fire, one per plan, at three
-   trials and the improve charge
+   trials and the improve charge. Before allocation the band is walked in
+   value order through the guard's improve cap, counting each kept fire, and
+   fires it would refuse stay unplanned
    ([ADR 0005 addendum](decisions/0005-improvement-loop-reuses-skill-creator.md#routine-guidance-improve-mode-addendum-2026-10-27));
    only a section id the fire workflow refuses stays a work item for a
    local `scripts/propose_guidance_edit.py` run.
@@ -354,12 +375,16 @@ as prose.
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
 then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
-`retire` (no benefit on every fixture and roster model, at 95% confidence on an anytime-valid bound)
+`retire` (90% confidence on an anytime-valid bound, on every fixture and roster model, that the skill does not improve results by 0.15 or more: Adam, 2026-11-02)
 gets, in `retirement_mode: auto` (the committed value in
 `evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
 labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
-adam-agentskills ADR 0021), one loop pull request at a time: nothing is
+adam-agentskills ADR 0021). Each removal also files an `agent-authored`
+skills-evals issue that mentions Adam, links the removal pull request and
+says how to reverse it (close it, or press Revert once merged), and the
+explorer lists removed skills and sections (#557). One loop pull request
+is open at a time: nothing is
 opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
 request is open there, and a closed `retire-skill/<skill>` one means the
 skill is decided. That branch carries everything the registry's required
@@ -503,14 +528,19 @@ The same job also reads an `_agent-guidance` checkout. Five sections have
 fixtures under `evals/guidance/<section id>/<name>/`, and
 `anything-you-name-gets-its-link` has four. Each fixture runs the section
 inside the whole guidance against the guidance without it, and the section
-alone against no guidance. A section that adds nothing in situ is `retire`.
-If it helps only when alone, it is `shorten-or-merge` instead, because the
-rest of the guidance already covers it. Both verdicts become one
-skills-evals issue in `proposal` mode, which is the committed
-`guidance.retirement_mode`. In `auto` mode a `retire` would open an
-auto-merging removal pull request in `_agent-guidance` that passes that
-repository's own checks. A `shorten-or-merge` verdict never removes the
-section. Preview with
+alone against no guidance. The in-situ runs are pooled by the rest of the
+guidance each ran beside (#557): every version of the rest counts, as a
+stratum, so an edit elsewhere in the guidance no longer starts the evidence
+over. A section is `retire` when the gate is 90% confident that it does not
+improve results by 0.15 or more across those strata (Adam, 2026-11-02:
+the guidance block of `evals/gate-policy.yml`; skills use the same rule).
+There is no separate confirmation step. If a `retire` section helps only
+when alone, it is `shorten-or-merge` instead, because the rest of the
+guidance already covers it. In `auto` mode, the committed
+`guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
+request in `_agent-guidance` that passes that repository's own checks; in
+`proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`
+verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
 
 ## 4. Where to look for current results
