@@ -2060,9 +2060,10 @@ def _launch_read_paths(path_env: str, home: Path, workspace: Path | None) -> lis
         for path in (given, given.resolve()):
             if path not in out and not any(_within(path, root) for root in roots):
                 out.append(path)
-    for path in (Path(home) / ".gitconfig", Path(home) / ".config" / "git"):
-        if path not in out:
-            out.append(path)
+    for given in (Path(home) / ".gitconfig", Path(home) / ".config" / "git"):
+        for path in (given, given.resolve()):
+            if path not in out:
+                out.append(path)
     return out
 
 

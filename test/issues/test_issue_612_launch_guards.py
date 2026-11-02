@@ -111,7 +111,7 @@ class LaunchGuardTests(unittest.TestCase):
     def test_a_fixture_may_not_redirect_git(self):
         for name in ("GIT_DIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT",
                      "GIT_CONFIG_KEY_0", "GIT_CONFIG_PARAMETERS",
-                     "GIT_CEILING_DIRECTORIES"):
+                     "GIT_CEILING_DIRECTORIES", "XDG_CONFIG_HOME"):
             with self.subTest(name=name):
                 with self.assertRaises(guidance.GuidanceError) as caught:
                     guidance.check_env_block({name: "x"}, "f")
@@ -129,6 +129,17 @@ class LaunchGuardTests(unittest.TestCase):
                      self.home / ".config" / "git"):
             self.assertIn(f"Edit(/{path})", deny)
             self.assertIn(f"Edit(/{path}/**)", deny)
+
+    def test_a_symlinked_gitconfig_denies_its_target_too(self):
+        # A dotfiles setup links ~/.gitconfig elsewhere; git reads the target.
+        dotfiles = self.root / "dotfiles"
+        dotfiles.mkdir()
+        (dotfiles / "gitconfig").write_text("[user]\n\tname = x\n", encoding="utf-8")
+        (self.home / ".gitconfig").symlink_to(dotfiles / "gitconfig")
+        self.assertNotIn("error", self.run_arm(followups=()))
+        argv = self.calls()[0]["argv"]
+        deny = json.loads(argv[argv.index("--settings") + 1])["permissions"]["deny"]
+        self.assertIn(f"Edit(/{(dotfiles / 'gitconfig').resolve()})", deny)
 
     def test_a_path_entry_that_holds_the_workspace_refuses_the_arm(self):
         out = self.run_arm(env={"PATH": f"{self.ws.parent}:/usr/bin:/bin"})

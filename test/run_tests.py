@@ -27803,8 +27803,11 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                         | {"HOME", "TMPDIR", "XDG_CONFIG_HOME", "CLAUDE_BIN"})}
         fixture_env = set(run_eval.load_fixture(self.STUCK_DIR)["env"])
         # CLI_FORCED_ENV is SET at the spawn (auto-memory off), not inherited.
+        # GIT_CEILING_DIRECTORIES is SET at the spawn too (#612): git must not
+        # search the workspace's parents for a repository.
         expected = (allowlisted | fixture_env | set(run_eval.guidance.CLI_FORCED_ENV)
-                    | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN"})
+                    | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN",
+                       "GIT_CEILING_DIRECTORIES"})
         self.assertEqual(set(seen), expected,
                          f"unexpected: {sorted(set(seen) - expected)}; "
                          f"missing: {sorted(expected - set(seen))}")

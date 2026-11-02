@@ -346,12 +346,15 @@ def check_env_entry(name, value, where: str) -> None:
 # outside the sandbox at every launch, and the harness watches only the
 # configuration git finds there by default (run_eval._workspace_git_snapshot,
 # #609, #612), so a fixture may not redirect it. `GIT_CEILING_DIRECTORIES`
-# is the harness's own, set on every launch.
+# is the harness's own, set on every launch. `XDG_CONFIG_HOME` moves git's
+# global configuration to `$XDG_CONFIG_HOME/git/config`; the harness sets it
+# for each arm itself.
 GIT_REDIRECT_ENV = frozenset({
     "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_CEILING_DIRECTORIES",
     "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_CONFIG", "GIT_CONFIG_GLOBAL",
     "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_COUNT",
     "GIT_CONFIG_PARAMETERS", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR",
+    "XDG_CONFIG_HOME",
 })
 GIT_REDIRECT_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
