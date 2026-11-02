@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014MJwENTPAvoaCPv9zBY5EJ",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows; grep -il \"release notes\" .github/workflows/*",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014MJwENTPAvoaCPv9zBY5EJ",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nCHANGES.md\nREADME.md\nbin\nscripts\ndocs.yml\nrelease-notes.yml\n.github/workflows/release-notes.yml",
+      "output_chars": 224,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KTU7nBbS57eXHpAuTLrwfm",
+      "name": "Bash",
+      "input": "cat .github/workflows/release-notes.yml; ls bin scripts; git log --oneline | head",
+      "input_chars": 81,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KTU7nBbS57eXHpAuTLrwfm",
+      "is_error": false,
+      "output": "name: Release notes\n\non:\n  release:\n    types: [published]\n\npermissions:\n  contents: read\n\njobs:\n  notes:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Publish release notes\n        env:\n          # The release bot's token...",
+      "output_chars": 698,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012yKJeYKffyqsmsmb5rVj65",
+      "name": "Bash",
+      "input": "cat scripts/render_notes.py; cat bin/gh | head -30; cat CHANGES.md | head -30",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012yKJeYKffyqsmsmb5rVj65",
+      "is_error": false,
+      "output": "\"\"\"Print the CHANGES.md section for one tag.\"\"\"\n\nimport sys\nfrom pathlib import Path\n\n\ndef section(text, tag):\n    lines, keep = [], False\n    for line in text.splitlines():\n        if line.startswith(\"## \"):\n            keep = line[3:].strip() == tag\n            continue\n        if keep:\n          ...",
+      "output_chars": 2422,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DiiyWDqYTbJNXDgeSBYzEh",
+      "name": "Bash",
+      "input": "echo $GH_REPLAY_DIR; ls $GH_REPLAY_DIR 2>&1 | head; gh run list --workflow release-notes.yml 2>&1 | head; gh release list 2>&1 | head",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DiiyWDqYTbJNXDgeSBYzEh",
+      "is_error": false,
+      "output": "<path>\napi\nauth-status.txt\nrun-list.json\nrun-view-43001.json\nrun-view-43001.log\nrun-view-43002.json\nrun-view-43002.log\nsecret-list.txt\nworkflow-list.json\n[\n  {\n    \"databaseId\": 43002,\n    \"name\": \"Release notes\",\n    \"workflowName\": \"Release notes\",\n    \"headBranch\": \"v1.4.0\",\n    \"headSha\": \"55555...",
+      "output_chars": 480,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FpQc4sKUYfo8WV8uMwjQTA",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR && cat run-view-43002.log; echo ----; cat run-view-43001.log | tail -20; cat secret-list.txt auth-status.txt",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FpQc4sKUYfo8WV8uMwjQTA",
+      "is_error": false,
+      "output": "notes\tPublish release notes\t2026-01-12T16:00:05Z ##[group]Run python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z gh release edit \"$TAG\" --notes-file note...",
+      "output_chars": 2210,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018MKKUkLvMsraL2pWKWSTrd",
+      "name": "Bash",
+      "input": "cd <path> && grep -rn \"RELEASE_NOTES_\" --exclude-dir=.gh --exclude-dir=.git . ; cat .github/workflows/docs.yml | head -20",
+      "input_chars": 148,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018MKKUkLvMsraL2pWKWSTrd",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\n./.github/workflows/release-notes.yml:19:          GH_TOKEN: <redacted> secrets.RELEASE_NOTES_TOKEN }}\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile...",
+      "output_chars": 777,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DiD67JQ4uytYBTeuGM24Hv",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DwXEMxh5xNPEkvWYQCgtPE",
+      "name": "Bash",
+      "input": "git diff --stat && python3 scripts/render_notes.py v1.4.0",
+      "input_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DiD67JQ4uytYBTeuGM24Hv",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 109,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DwXEMxh5xNPEkvWYQCgtPE",
+      "is_error": false,
+      "output": " .github/workflows/release-notes.yml | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n- Add the `export` command.\n- Keep empty sections out of generated pages.",
+      "output_chars": 164,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
