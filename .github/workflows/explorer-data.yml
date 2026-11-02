@@ -23,6 +23,14 @@ name: Publish explorer data
 #   `skills-evals:regression:` markers (`issues: read`).
 # * No private registry is checked out: the census on the results branch is the
 #   only source of which skills are public.
+# * #544/#545 (2026-11-02): the `broken` and `context-drift` alerts read each
+#   in-place fixture's consumer `skills.lock` at its pin and along the
+#   consumer's first-parent history, so every `--context-repo` checkout is
+#   full history (`fetch-depth: 0`; adamdaniel.ai also `filter: blob:none`,
+#   its media blobs are large and only lock blobs are read). A shallow
+#   checkout makes both alerts "unknown", never silently clean. Measured
+#   locally on 2026-11-02 (18 in-scope fixtures, full clones): the build took
+#   10 to 15 s, the alerts about 2 s of it, so the job's timeout stays.
 
 on:
   workflow_run:
@@ -57,6 +65,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: skills-evals
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out the results branch
@@ -71,6 +80,7 @@ jobs:
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: registry-agentskills
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out cms-platform
@@ -78,6 +88,7 @@ jobs:
         with:
           repository: Adam-S-Daniel/cms-platform
           path: registry-cms
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out adamdaniel.ai
@@ -85,6 +96,8 @@ jobs:
         with:
           repository: Adam-S-Daniel/adamdaniel.ai
           path: registry-site
+          fetch-depth: 0
+          filter: blob:none
           persist-credentials: false
 
       - name: Check out _agent-guidance
@@ -92,6 +105,23 @@ jobs:
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: agent-guidance
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out repo-settings
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/repo-settings
+          path: context-repo-settings
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out wsl-automation
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/wsl-automation
+          path: context-wsl-automation
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -130,6 +160,13 @@ jobs:
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --guidance-manifest "$GITHUB_WORKSPACE/agent-guidance/agents-md/eval-coverage.yml" \
             --regression-issues "$RUNNER_TEMP/regression-issues.json" \
+            --context-repo "Adam-S-Daniel/skills-evals=$GITHUB_WORKSPACE/skills-evals" \
+            --context-repo "Adam-S-Daniel/adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --context-repo "Adam-S-Daniel/cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --context-repo "Adam-S-Daniel/adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --context-repo "Adam-S-Daniel/_agent-guidance=$GITHUB_WORKSPACE/agent-guidance" \
+            --context-repo "Adam-S-Daniel/repo-settings=$GITHUB_WORKSPACE/context-repo-settings" \
+            --context-repo "Adam-S-Daniel/wsl-automation=$GITHUB_WORKSPACE/context-wsl-automation" \
             --out "$RUNNER_TEMP/explorer/latest.json"
 
       - name: Upload the explorer data
