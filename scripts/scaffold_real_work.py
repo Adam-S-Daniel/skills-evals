@@ -845,6 +845,48 @@ def _walk(root: Path):
             yield Path(directory) / name
 
 
+# Lexical policy: at most two distinct code-shaped tokens in the issue part
+# may also occur in solution additions. Ordinary words and symptom prose are
+# not code tokens. See DESIGN.md for calibration and limitations.
+CODE_OVERLAP_LIMIT = 2
+CODE_TOKEN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*(?:[./:-][A-Za-z0-9_$-]+)*")
+LOCAL_PATH = re.compile(r"(?<![A-Za-z0-9:])(?:~/|/home/|/tmp/)")
+
+
+def substantive_tokens(text: str) -> set[str]:
+    """Code-shaped lexical tokens; Markdown formatting does not affect them."""
+    marked = {token for span in re.findall(r"`+([^`]+)`+", text)
+              for token in CODE_TOKEN.findall(span)}
+    return {token for token in CODE_TOKEN.findall(text)
+            if re.search(r"[./:_$]|[a-z][A-Z]", token) or "-" in token and token in marked}
+
+
+def shared_code_tokens(fixture: dict, fixture_dir: Path) -> set[str]:
+    snapshot = answer_leak.preexisting_text(fixture, fixture_dir)
+    # Only snapshot code still carried in the prompt counts: authors may omit
+    # a follow-up's solution instructions rather than discard its whole issue.
+    issue_tokens = substantive_tokens(snapshot) & substantive_tokens(fixture["prompt"])
+    additions = "\n".join(answer_leak.added_lines(
+        (fixture_dir / PATCH_FILE).read_text(encoding="utf-8")))
+    return issue_tokens & set(CODE_TOKEN.findall(additions))
+
+
+def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
+    """Lexical admission rules, shared by build, check and the static gate.
+
+    Messages are fixed/count-only because the gate reads an untrusted branch.
+    These conservative checks establish eligibility, not semantic correctness.
+    """
+    problems = []
+    if LOCAL_PATH.search(fixture["prompt"]):
+        problems.append("the prompt contains a local filesystem path")
+    overlap = shared_code_tokens(fixture, fixture_dir)
+    if len(overlap) > CODE_OVERLAP_LIMIT:
+        problems.append(f"the issue part of the task shares {len(overlap)} substantive code tokens "
+                        f"with solution additions (limit {CODE_OVERLAP_LIMIT})")
+    return problems
+
+
 def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str], list[str]]:
     """(problems, warnings) for one fixture directory, executing nothing.
 
@@ -922,10 +964,11 @@ def static_problems(fixture_dir: Path, detail: bool = False) -> tuple[list[str],
     if any(path.name == FIXTURE_FILE for path in _walk(seed)):
         problems.append(f"seed carries an eval {FIXTURE_FILE}")
     try:
+        problems += answer_rules(fixture, fixture_dir)
         hits = answer_leak.leaked_runs(
             fixture["prompt"], "\n".join(answer_leak.fixture_added_lines(fixture_dir)),
             fixture.get("interface_strings", ()), answer_leak.preexisting_text(fixture, fixture_dir))
-    except (UnicodeDecodeError, OSError) as error:
+    except (guidance.GuidanceError, UnicodeDecodeError, OSError) as error:
         return problems + [f"the answer-leak lint could not read the fixture: "
                            f"{type(error).__name__}"], []
     warnings = []

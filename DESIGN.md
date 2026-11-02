@@ -498,6 +498,50 @@ through `fixture_added_lines`. The scaffolder rejects a hit (Adam,
 `scripts/scaffold_real_work.py`, "The scaffolder and its gate" below). The
 miner, earlier in the pipeline, records a hit as a warning (Q3 below).
 
+**Scaffold admission: code-token overlap and local paths.** The common static
+validator in [`scripts/scaffold_real_work.py`](scripts/scaffold_real_work.py)
+runs two further lexical rules in `build`, `check` and the routine scaffold
+gate (`answer_rules`). They are admission checks; the four-word lint still
+applies afterward.
+
+1. The issue portion still carried in the prompt may share at most **two
+   distinct substantive code tokens** with `solution.patch` added lines,
+   including comments. Tokens are case-sensitive identifier/path/file runs
+   with camel case, underscores, dollar signs, dots, slashes or colons;
+   hyphen-only tokens count only when the issue marks them as code, so
+   ordinary prose such as "near-duplicate" does not count. The earlier-issue
+   exemption does not waive this rule: a review follow-up can prescribe the
+   answer before its own fix begins. Tokens in omitted snapshot sections do
+   not count.
+2. The prompt must not carry local filesystem paths starting with `~/`,
+   `/home/` or `/tmp/`; omit local evidence references.
+
+Calibration uses the actual scaffold branches from
+[the rejected CSS draft](https://github.com/Adam-S-Daniel/skills-evals/pull/325)
+and [the rejected review-follow-up draft](https://github.com/Adam-S-Daniel/skills-evals/pull/326),
+plus [the tags-input API control](https://github.com/Adam-S-Daniel/cms-platform/pull/761)
+and [the tag aggregation API control](https://github.com/Adam-S-Daniel/cms-platform/pull/760).
+The distinct-token counts are respectively 3, 3, 2 and 1. The limit of two
+allows the controls' symptom/API overlap while rejecting the follow-up's
+`stopImmediatePropagation`, `live-url-banner.js` and `autosave-on-hide.js`.
+Offline regression inputs preserve the original prompts, snapshots, patches,
+checkers and relevant seed files in
+[`test/fixtures/scaffold-answer-leaks.json`](test/fixtures/scaffold-answer-leaks.json).
+The overlap heuristic misses unmarked plain word or numeric literals, so it
+supplements human review.
+
+Three earlier committed drafts no longer pass admission:
+[`_agent-guidance-196`](evals/real-work/_agent-guidance-196/fixture.yaml)
+(8 shared tokens), [`cms-platform-221`](evals/real-work/cms-platform-221/fixture.yaml)
+(11 shared tokens and a local path) and
+[`cms-platform-761`](evals/real-work/cms-platform-761/fixture.yaml) (4 shared
+tokens: its committed prompt gained a "Cause:" line naming the fix after the
+calibration snapshot was taken). Their historical evidence stays intact, and
+none is on `evals/scheduled.yml`. Two further rules from the same work
+(interface-string provenance and a behavioral checker for styling-only fixes)
+need a checker AST and are tracked in
+[#595](https://github.com/Adam-S-Daniel/skills-evals/issues/595).
+
 **What "pre-existing" rests on.** A fixture's `issue_before_fix:` names a
 file in the fixture directory (outside `seed/`) holding the issue's title and
 body as they stood before the pull request's first commit, and three keys
