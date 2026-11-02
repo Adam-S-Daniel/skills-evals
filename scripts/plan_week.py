@@ -1529,9 +1529,14 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
+        # Pooled as the gate pools in-situ cells (#557): every current-content
+        # run grouped by the rest of the guidance it ran beside, not only the
+        # largest same-rest group `_joint_context` keeps, so the improve
+        # evidence counts the same runs the section's verdict does.
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
                                  compute_gates.expected_guidance(evals_dir, section,
-                                                                 guidance_dir))
+                                                                 guidance_dir),
+                                 strata=True)
         try:
             row = proposer.load_row(guidance_dir, section)
         except proposer.Refusal:

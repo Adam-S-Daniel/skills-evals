@@ -1309,6 +1309,45 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(got["finding-your-unknowns"]["verdict"], "insufficient")
         self.assertNotIn("_delivery", got)
 
+    def test_guidance_contexts_pool_every_rest_of_guidance_as_the_gate_does(self):
+        # #557: the gate pools an in-situ cell's current-content runs across
+        # every rest of the guidance (strata), so the improve evidence must
+        # count a run beside a minority rest too, not only `_joint_context`'s
+        # largest same-rest group.
+        section = "anything-you-name-gets-its-link"
+        expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t"}
+                    for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
+
+        def run(name, role, checks, rest, stamp):
+            return {"skill": section, "fixture": name, "model": "m", "role": role,
+                    "pair": "in_situ", "tested_digest": "t",
+                    "fixture_digest": f"fd-{name}", "arm_context_digest": rest,
+                    "pair_key": rest, "timestamp": stamp, "path": f"{name}-{stamp}",
+                    "trials": [trial(checks)]}
+        runs = [run("done-summary", "with", {"a": True, "b": True}, "rest-1", "20261020T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-1",
+                    "20261020T000000Z"),
+                run("done-summary", "with", {"a": True, "b": True}, "rest-1", "20261021T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-1",
+                    "20261021T000000Z"),
+                # The minority rest: its with-arm run fails both checks.
+                run("done-summary", "with", {"a": False, "b": False}, "rest-2",
+                    "20261022T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-2",
+                    "20261022T000000Z")]
+        doc = {"roster_models": ["m"], "guidance": {section: {"verdict": "insufficient"}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            with mock.patch.object(plan_week_compute_gates, "build_index",
+                                   return_value={"guidance_runs": runs}), \
+                 mock.patch.object(plan_week_compute_gates, "expected_guidance",
+                                   return_value=expected):
+                got = plan_week.guidance_contexts(ROOT / "evals", tree, "20261026T120000Z",
+                                                  doc, tree)
+        # 4 of 6 with-arm checks passed over both rests: headroom 1/3. The
+        # largest group alone (rest-1) would read 0.
+        self.assertAlmostEqual(got[section]["evidence"]["headroom"], 1 / 3)
+
     def test_the_fire_check_refuses_a_section_with_no_train_headroom(self):
         # 2026-10-28: a hand-dispatched guidance-improve fire on a section at
         # 72/72 ran its whole loop before rejecting. The fire workflow now
