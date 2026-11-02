@@ -1,0 +1,35 @@
+{
+ "workflow_runs": [
+  {
+   "repo": "Adam-S-Daniel/skills-evals",
+   "workflow": "ci.yml",
+   "event": "pull_request",
+   "status": "completed",
+   "conclusion": "success",
+   "created_at": "2026-01-06T11:00:00Z",
+   "updated_at": "2026-01-06T11:06:05Z",
+   "html_url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/101",
+   "display_title": "Example change to a fixture"
+  },
+  {
+   "repo": "Adam-S-Daniel/skills-evals",
+   "workflow": "routine-eval-weekly.yml",
+   "event": "schedule",
+   "status": "in_progress",
+   "conclusion": null,
+   "created_at": "2026-01-06T12:30:00Z",
+   "updated_at": "2026-01-06T12:31:00Z",
+   "html_url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/102",
+   "display_title": "Weekly sweep"
+  }
+ ],
+ "routine_runs": [
+  {
+   "trigger_id": "trig_example1",
+   "name": "Example routine",
+   "fired_at": "2026-01-06T09:00:00Z",
+   "finished_at": "2026-01-06T09:12:30Z",
+   "status": "ROUTINE_RUN_STATUS_FAILED"
+  }
+ ]
+}

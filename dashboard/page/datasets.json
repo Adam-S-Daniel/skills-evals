@@ -271,6 +271,17 @@
   "staleAfterHours": 48,
   "title": "Routines"
  },
+ "run_stream": {
+  "description": "GitHub Actions runs in the attached repos and scheduled-task runs from the last 7 days, gathered by Claude's watcher every hour.",
+  "schedule": "Refreshed by Claude's watcher every hour until Mon Nov 9",
+  "source": {
+   "kind": "file",
+   "name": "run_stream.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 2,
+  "title": "Run console"
+ },
  "threads": {
   "description": "The threads in this project and their state, from the project's thread list.",
   "schedule": "Updated by Claude on request",
