@@ -553,6 +553,27 @@ class InPlaceSemanticConsistencyTests(unittest.TestCase):
         doc = self.guidance_record("without")
         self.check(doc)
 
+    def test_subject_source_and_revision_are_optional_and_checked(self):
+        # skills-evals#548: older summaries lack both keys.
+        def with_keys(**keys):
+            doc = self.record("with")
+            doc["context_subject"].update(keys)
+            return doc
+
+        self.check(with_keys(subject_source="main", subject_revision="a" * 40))
+        self.check(with_keys(subject_source="candidate", subject_revision=None))
+        self.check(self.record("with"))
+        for keys, message in (
+                ({"subject_source": "other", "subject_revision": None}, "main or candidate"),
+                ({"subject_source": "main", "subject_revision": "abc1234"}, "malformed"),
+                ({"subject_source": "main", "subject_revision": "A" * 40}, "malformed"),
+                ({"subject_source": "candidate", "subject_revision": "a" * 40}, "no revision"),
+                ({"subject_source": "main"}, "go together"),
+                ({"subject_revision": "a" * 40}, "go together")):
+            with self.subTest(keys=keys):
+                with self.assertRaisesRegex(ingest.Rejected, message):
+                    self.check(with_keys(**keys))
+
     def test_rejects_added_subject_without_arm_guidance_change(self):
         doc = self.guidance_record("without")
         doc["arm_context"]["guidance_digest"] = "7" * 64

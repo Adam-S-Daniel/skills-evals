@@ -481,6 +481,11 @@ SUBJECT_KEYS = {
                  "end_char", "start_byte", "end_byte", "bytes", "deployed_digest",
                  "tested_digest", "tested_bytes"),
 }
+#: Optional in a skill context_subject (skills-evals#548): which copy the with
+#: arm tested, "main" (the registry checkout's) or "candidate"
+#: (--subject-candidate), and for "main" the checkout's HEAD commit. Older
+#: summaries lack both.
+SUBJECT_OPTIONAL = {"skill": ("subject_source", "subject_revision")}
 ARM_CONTEXT_KEYS = ("skills", "skills_digest", "guidance_bytes",
                     "guidance_digest", "subject_present")
 #: Optional in arm_context (#70): the digest of the arm's skills other than
@@ -571,7 +576,8 @@ def check_in_place(doc, where: str, parts: dict) -> None:
     kind = "guidance" if parts["key"].startswith("guidance/") else "skill"
     if not isinstance(subject, dict) or subject.get("kind") != kind:
         raise Rejected(f"{where}: context_subject kind does not match its key")
-    _object(subject, f"{where}: context_subject", SUBJECT_KEYS[kind], SUBJECT_KEYS[kind])
+    _object(subject, f"{where}: context_subject",
+            SUBJECT_KEYS[kind] + SUBJECT_OPTIONAL.get(kind, ()), SUBJECT_KEYS[kind])
     if subject["action"] not in ("removed", "added"):
         raise Rejected(f"{where}: context_subject.action is not removed or added")
     _pattern(subject["tested_digest"], f"{where}: tested digest", DIGEST_RE)
@@ -592,6 +598,18 @@ def check_in_place(doc, where: str, parts: dict) -> None:
             raise Rejected(f"{where}: removed subject is not in a deployed source bundle")
         if subject["skill"] != doc.get("skill"):
             raise Rejected(f"{where}: context_subject.skill does not match its key")
+        if ("subject_source" in subject) != ("subject_revision" in subject):
+            raise Rejected(f"{where}: context_subject subject_source and "
+                           "subject_revision go together")
+        if "subject_source" in subject:
+            if subject["subject_source"] not in ("main", "candidate"):
+                raise Rejected(f"{where}: context_subject.subject_source is not "
+                               "main or candidate")
+            if subject["subject_source"] == "main":
+                _pattern(subject["subject_revision"], f"{where}: subject revision",
+                         SHA_RE)
+            elif subject["subject_revision"] is not None:
+                raise Rejected(f"{where}: a candidate subject has no revision")
     else:
         if subject["section"] != doc.get("section"):
             raise Rejected(f"{where}: context_subject.section does not match its key")
