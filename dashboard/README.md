@@ -63,6 +63,11 @@ prompt that tells it to.
    compare its `last_run` with the PRs merged since the previous refresh. A merge
    with no run means the GitHub trigger did not fire: fix it, or tell the owner.
 
+The run console is fed by the watcher: it writes `inputs/run_stream.json` (workflow
+runs from `gh api repos/<repo>/actions/runs?created=>=<7 days ago>`, plus
+scheduled-task runs from `list_triggers`/`get_trigger`, accumulated across passes)
+and uploads `run_stream.json`.
+
 ## What stays hand-maintained, and why
 
 Everything else comes from a read. These lists are in `config/` because no

@@ -433,6 +433,59 @@ def routines(cfg, triggers, workflow_runs, now, workflow_states=None):
     return rows
 
 
+WORKFLOW_STATE = {"queued": "Queued", "waiting": "Queued", "pending": "Queued", "requested": "Queued",
+                  "in_progress": "Running"}
+CONCLUSION_STATE = {"success": "Succeeded", "failure": "Failed", "timed_out": "Failed",
+                    "startup_failure": "Failed", "cancelled": "Cancelled", "skipped": "Skipped",
+                    "neutral": "Skipped", "action_required": "Needs approval"}
+ROUTINE_STATE = {"SUCCEEDED": "Succeeded", "FAILED": "Failed", "PENDING": "Running", "RUNNING": "Running"}
+STREAM_DAYS = 7
+STREAM_CAP = 500
+PROBLEM_STATES = ("Failed", "Cancelled", "Needs approval")
+
+
+def run_stream(dump, now):
+    """Recent workflow runs and scheduled-task runs, newest first, for the console tab."""
+    cutoff = now - timedelta(days=STREAM_DAYS)
+    seen = {}
+
+    def add(key, at, row):
+        when = parse(at)
+        if key and when and when >= cutoff and key not in seen:
+            seen[key] = {"key": key, "at": iso(when), **row}
+
+    for w in dump.get("workflow_runs") or []:
+        if w.get("status") == "completed":
+            c = w.get("conclusion") or ""
+            state = CONCLUSION_STATE.get(c, c.replace("_", " ").capitalize() or "Done")
+            start, end = parse(w.get("created_at")), parse(w.get("updated_at"))
+            dur = int((end - start).total_seconds()) if start and end else None
+        else:
+            state = WORKFLOW_STATE.get(w.get("status"), str(w.get("status") or "").replace("_", " ").capitalize())
+            dur = None
+        add(w.get("html_url"), w.get("created_at"), {
+            "kind": "workflow", "source": (w.get("repo") or "").split("/")[-1], "name": w.get("workflow"),
+            "title": w.get("display_title") or w.get("workflow"), "state": state,
+            "duration_s": max(dur, 0) if dur is not None else None, "link": w.get("html_url")})
+    for r in dump.get("routine_runs") or []:
+        status = str(r.get("status") or "").replace("ROUTINE_RUN_STATUS_", "")
+        done = status not in ("PENDING", "RUNNING") and r.get("finished_at")
+        dur = int((parse(r["finished_at"]) - parse(r["fired_at"])).total_seconds()) if done and r.get("fired_at") else None
+        add(f"{r.get('trigger_id')}@{r.get('fired_at')}", r.get("fired_at"), {
+            "kind": "routine", "source": "scheduled task", "name": r.get("name"), "title": r.get("name"),
+            "state": ROUTINE_STATE.get(status, status.replace("_", " ").capitalize()),
+            "duration_s": max(dur, 0) if dur is not None else None,
+            "link": "https://claude.ai/scheduled-task/" + str(r.get("trigger_id"))})
+    # Problems stay for the whole window; the cap trims only the rest, so a busy week cannot hide a failure.
+    rows = sorted(seen.values(), key=lambda r: r["at"], reverse=True)
+    problems = [r for r in rows if r["state"] in PROBLEM_STATES]
+    keep = {id(r) for r in problems} | {id(r) for r in [r for r in rows if r["state"] not in PROBLEM_STATES][:STREAM_CAP]}
+    rows = [r for r in rows if id(r) in keep]
+    return rows or [{"key": PLACEHOLDER_ID, "at": None, "kind": None, "source": None,
+                     "name": "No runs in the last 7 days", "title": None, "state": None,
+                     "duration_s": None, "link": None}]
+
+
 def checkins(trigger_list, channel_id, now):
     """Pending one-shot scheduled tasks of this project (list_triggers, recurring=false)."""
     rows = [{"when": t["run_once_at"], "what": t.get("name") or "Check-in", "id": t["id"]}
@@ -539,6 +592,7 @@ def build(results, inputs, config, now):
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
+    out["run_stream"] = run_stream(inp("run_stream.json", {}), now)
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
     out["waiting"] = waiting(snap, inp("needs_owner.json", []), inp("waiting_reviews.json", []),
                              inp("open_pr_heads.json", {}), thread_dump, inp("link_states.json", {}), site)

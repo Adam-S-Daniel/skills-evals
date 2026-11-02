@@ -32,6 +32,8 @@
 .pd-good { color: var(--color-ok); }
 .pd-warn { color: var(--color-warn); }
 .pd-bad { color: var(--color-bad); }
+.pd-console td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: smaller; }
+.pd-check { display: inline-flex; align-items: center; gap: var(--cds-gap-xs); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
 .pd-search { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-bg); color: var(--color-fg); max-width: 20rem; }
 .pd-chips { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs); }
 .pd-chip { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); border-radius: 999px; border: 1px solid var(--color-border-line); background: none; color: var(--color-fg-muted); cursor: pointer; }
@@ -74,6 +76,7 @@
     <button class="pd-tab" role="tab" id="tab-cleanup" data-page="cleanup">Cleanup</button>
     <button class="pd-tab" role="tab" id="tab-work" data-page="work">PRs and issues</button>
     <button class="pd-tab" role="tab" id="tab-routines" data-page="routines">Routines</button>
+    <button class="pd-tab" role="tab" id="tab-console" data-page="console">Console</button>
     <button class="pd-tab" role="tab" id="tab-decisions" data-page="decisions">Decisions</button>
   </nav>
 
@@ -457,6 +460,21 @@
       <div class="pd-scroll">
         <table class="pd-table" id="tbl-checkins" data-source="checkins" data-row-key="id">
           <thead><tr><th data-field="when">When</th><th data-field="what">What</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONSOLE -->
+  <section class="pd-page" id="console" data-page-id="console" hidden>
+    <div class="pd-card" id="card-console">
+      <h2>Run console</h2>
+      <p class="pd-note">Every GitHub Actions run in the attached repos and every scheduled-task run from the last 7 days, newest first. Claude's watcher refreshes it about every 30 minutes and chases failures.</p>
+      <label class="pd-check"><input type="checkbox" id="console-problems"> Problems only</label>
+      <div class="pd-scroll">
+        <table class="pd-table pd-console" id="tbl-console" data-source="run_stream" data-row-key="key">
+          <thead><tr><th data-field="at">When</th><th data-field="state">State</th><th data-field="source">Where</th><th data-field="name">Job</th><th data-field="title">Run</th><th data-field="duration_s">Took</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -933,7 +951,7 @@ dash.calc('new_runs', {
     const t = String(txt || '');
     if (/^(Done|OK|Met|Succeeded|Passed|ok)$/i.test(t)) s.classList.add('pd-good');
     else if (/stalled|stopped|not started|failed/i.test(t)) s.classList.add('pd-bad');
-    else if (/waiting|partly|needs|not yet|in progress/i.test(t)) s.classList.add('pd-warn');
+    else if (/waiting|partly|needs|not yet|in progress|^(Running|Queued)$/i.test(t)) s.classList.add('pd-warn');
     s.textContent = t;
     return s;
   };
@@ -980,12 +998,13 @@ dash.calc('new_runs', {
           const txt = c.fmt ? c.fmt(v, r) : (v ?? '');
           if (u) { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.textContent = txt; td.append(a); }
           else td.textContent = txt;
-        } else td.textContent = v == null ? '' : c.fmt ? c.fmt(v, r) : v;
+        } else td.textContent = v == null && !c.fmtNull ? '' : c.fmt ? c.fmt(v, r) : v;
         tr.append(td);
       }
       tbody.append(tr);
     }
   };
+  document.getElementById('console-problems').addEventListener('change', () => draw());
   document.querySelectorAll('.pd-table').forEach((table) => {
     table.querySelectorAll('th').forEach((th) => th.addEventListener('click', () => {
       const cur = sortState[table.id];
@@ -1262,6 +1281,9 @@ dash.calc('new_runs', {
     renderTable('tbl-issues', 'open_issues', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'labels' }, { field: 'updated_at', ago: true }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'updated_at', dir: 'desc' } });
     renderTable('tbl-threads', 'threads', [{ field: 'title', link: 'link' }, { field: 'state', pill: true }, { field: 'last_active', ago: true }], (r) => r.title);
     renderTable('tbl-routines', 'routines', [{ field: 'name', link: 'link' }, { field: 'what' }, { field: 'schedule' }, { field: 'last_run', ago: true }, { field: 'health', pill: true }, { field: 'note' }], (r) => r.name);
+    const problemsOnly = document.getElementById('console-problems').checked;
+    const took = (v, r) => (v == null ? (r.state === 'Queued' ? 'queued' : 'running') : v >= 3600 ? Math.floor(v / 3600) + 'h ' + String(Math.floor(v % 3600 / 60)).padStart(2, '0') + 'm' : Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's');
+    renderTable('tbl-console', 'run_stream', [{ field: 'at', ago: true }, { field: 'state', pill: true }, { field: 'source' }, { field: 'name' }, { field: 'title', link: 'link' }, { field: 'duration_s', num: true, fmtNull: true, fmt: took }], (r) => r.key, { sort: { field: 'at', dir: 'desc' }, filter: (r) => !problemsOnly || ['Failed', 'Cancelled', 'Needs approval'].includes(r.state) });
     renderTable('tbl-checkins', 'checkins', [{ field: 'when', ago: true }, { field: 'what' }], (r) => r.id, { sort: { field: 'when', dir: 'asc' } });
     renderTable('tbl-gate', 'gate', [{ field: 'condition', link: 'link' }, { field: 'status', pill: true }, { field: 'detail' }], (r) => r.condition);
     renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace(/\/(pull|issues)\//, '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });

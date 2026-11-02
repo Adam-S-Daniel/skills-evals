@@ -259,6 +259,69 @@ class DashboardBuildTests(unittest.TestCase):
         waiting = json.loads((out / "waiting.json").read_text())
         self.assertNotIn("Paused idea", [r["item"] for r in waiting])  # labeled on-hold
 
+    def test_run_stream_maps_states_windows_dedupes_and_sorts(self):
+        def wf(url, at, status="completed", conclusion="success", end=None):
+            return {"repo": "o/skills-evals", "workflow": "ci.yml", "event": "push", "status": status,
+                    "conclusion": conclusion, "created_at": at, "updated_at": end or at, "html_url": url,
+                    "display_title": "T " + url}
+        cases = [("queued", None, "Queued"), ("waiting", None, "Queued"), ("in_progress", None, "Running"),
+                 ("completed", "success", "Succeeded"), ("completed", "failure", "Failed"),
+                 ("completed", "timed_out", "Failed"), ("completed", "cancelled", "Cancelled"),
+                 ("completed", "skipped", "Skipped"), ("completed", "action_required", "Needs approval"),
+                 ("completed", "stale", "Stale")]
+        for status, conclusion, want in cases:
+            with self.subTest(status=status, conclusion=conclusion):
+                row = build.run_stream({"workflow_runs": [wf("u", "2026-01-06T12:00:00Z", status, conclusion)]}, NOW)[0]
+                self.assertEqual(row["state"], want)
+        dump = {
+            "workflow_runs": [
+                wf("old", "2025-12-30T12:59:59Z"),  # just outside 7 days
+                wf("edge", "2025-12-30T13:00:00Z"),
+                wf("new", "2026-01-06T12:00:00Z", end="2026-01-06T12:02:05Z"),
+                wf("new", "2026-01-06T12:00:00Z"),  # duplicate
+                wf("live", "2026-01-06T12:30:00Z", "in_progress", None),
+            ],
+            "routine_runs": [
+                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                 "finished_at": "2026-01-06T09:10:30Z", "status": "ROUTINE_RUN_STATUS_FAILED"},
+                {"trigger_id": "t1", "name": "Nightly", "fired_at": "2026-01-06T09:00:00Z",
+                 "finished_at": None, "status": "ROUTINE_RUN_STATUS_RUNNING"},
+                {"trigger_id": "t2", "name": "Sweep", "fired_at": "2026-01-06T12:45:00Z",
+                 "finished_at": "2026-01-06T12:50:00Z", "status": "ROUTINE_RUN_STATUS_PENDING"},
+                {"trigger_id": "t3", "name": "Odd", "fired_at": "2026-01-06T08:00:00Z",
+                 "finished_at": None, "status": "ROUTINE_RUN_STATUS_SUCCEEDED"},
+            ],
+        }
+        rows = build.run_stream(dump, NOW)
+        self.assertEqual([r["key"] for r in rows],
+                         ["t2@2026-01-06T12:45:00Z", "live", "new", "t1@2026-01-06T09:00:00Z",
+                          "t3@2026-01-06T08:00:00Z", "edge"])
+        by = {r["key"]: r for r in rows}
+        self.assertEqual(by["new"]["duration_s"], 125)
+        self.assertEqual((by["new"]["source"], by["new"]["name"], by["new"]["kind"]),
+                         ("skills-evals", "ci.yml", "workflow"))
+        self.assertIsNone(by["live"]["duration_s"])
+        r = by["t1@2026-01-06T09:00:00Z"]
+        self.assertEqual((r["state"], r["duration_s"], r["kind"], r["source"], r["title"]),
+                         ("Failed", 630, "routine", "scheduled task", "Nightly"))
+        self.assertEqual(r["link"], "https://claude.ai/scheduled-task/t1")
+        pending = by["t2@2026-01-06T12:45:00Z"]
+        self.assertEqual((pending["state"], pending["duration_s"]), ("Running", None))
+
+    def test_run_stream_caps_rows_and_has_a_placeholder(self):
+        runs = [{"repo": "o/r", "workflow": "w", "status": "queued", "created_at": "2026-01-06T12:00:00Z",
+                 "html_url": f"u{i}"} for i in range(600)]
+        self.assertEqual(len(build.run_stream({"workflow_runs": runs}, NOW)), 500)
+        # An older failure past the cap is still listed: the cap trims only runs that went fine.
+        failed = {"repo": "o/r", "workflow": "w", "status": "completed", "conclusion": "failure",
+                  "created_at": "2026-01-01T12:00:00Z", "updated_at": "2026-01-01T12:01:00Z", "html_url": "old-fail"}
+        rows = build.run_stream({"workflow_runs": runs + [failed]}, NOW)
+        self.assertEqual(len(rows), 501)
+        self.assertEqual(rows[-1]["key"], "old-fail")
+        for dump in ({}, {"workflow_runs": [dict(runs[0], created_at="2025-01-01T00:00:00Z")]}):
+            rows = build.run_stream(dump, NOW)
+            self.assertEqual([r["key"] for r in rows], ["none"])
+
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
