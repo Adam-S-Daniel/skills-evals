@@ -384,6 +384,16 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     except gates.MalformedSummary:
         return None, "malformed trial summary"
     pair, role = GUIDANCE_MODES[summary["mode"]]
+    payload = digests.get("section_payload")
+    if "section_payload" in digests and not (
+            _string(payload) and ingest.DIGEST_RE.fullmatch(payload)):
+        return None, "no guidance pooling key"
+    # The alone pair's arms load the section's payload (file intro plus
+    # extent) or nothing, so an edit elsewhere in the corpus does not change
+    # what they ran against: pool by the payload, not by the rest. A run
+    # without the payload (recorded before it existed) keeps the rest key.
+    alone = pair == "alone" and payload is not None
+    context = (("none" if role == "without" else payload) if alone else digests["rest"])
     carried, has_checks = _fixture_class(evals_dir, subject, name, records)
     harness = summary.get("harness")
     clis = ([harness["version"]] if isinstance(harness, dict)
@@ -392,7 +402,7 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
             "pair": pair, "timestamp": timestamp, "path": run_dir, "report": report,
             "tested_digest": digests["section"],
             "fixture_digest": summary["fixture_digest"],
-            "arm_context_digest": digests["rest"], "pair_key": digests["rest"],
+            "arm_context_digest": context, "pair_key": "alone" if alone else digests["rest"],
             "cli_versions": clis, "run": summary["run"],
             "judge_conditional": summary.get("judge_conditional") is not False,
             "judge_carried": carried, "fixture_checks": has_checks,

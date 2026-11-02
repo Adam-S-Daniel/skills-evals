@@ -311,6 +311,9 @@ SUMMARY_ALLOWED = SUMMARY_REQUIRED + (
     "receipt",)
 #: A guidance summary's `guidance_digests` (harness/guidance.py content_digests).
 GUIDANCE_DIGEST_KEYS = ("section", "rest")
+#: Allowed, not required: the digest of the `section` arm's tokenless payload,
+#: which summaries from before it was recorded lack.
+GUIDANCE_DIGEST_OPTIONAL = ("section_payload",)
 #: A summary's `judge_selection` (#371): which model judges the arm, and the
 #: rule that chose it. Null when the run selected no judge.
 JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
@@ -1166,8 +1169,9 @@ def check_summary(doc, where: str, parts: dict) -> None:
         _pattern(doc["fixture_name"], f"{where}: fixture_name", NAME_RE)
     if "guidance_digests" in doc:
         _object(doc["guidance_digests"], f"{where}: guidance_digests",
-                GUIDANCE_DIGEST_KEYS, GUIDANCE_DIGEST_KEYS)
-        for field in GUIDANCE_DIGEST_KEYS:
+                GUIDANCE_DIGEST_KEYS + GUIDANCE_DIGEST_OPTIONAL, GUIDANCE_DIGEST_KEYS)
+        for field in GUIDANCE_DIGEST_KEYS + tuple(
+                f for f in GUIDANCE_DIGEST_OPTIONAL if f in doc["guidance_digests"]):
             _pattern(doc["guidance_digests"][field],
                      f"{where}: guidance_digests.{field}", DIGEST_RE)
     for field in ("errors", "scored"):

@@ -279,6 +279,17 @@ class SuspectTests(unittest.TestCase):
         self.assertEqual(row["suspects"], ["skill content changed", "CLI version changed",
                                            "arm context changed"])
 
+    def test_a_window_spanning_the_payload_switch_is_not_an_arm_context_change(self):
+        def alone(day, context):
+            return {**run("s", "with", day, 4, pair="alone", context=context),
+                    "pair_key": "alone" if context.startswith("p") else context}
+        runs = ([alone(d, "rest1") for d in (1, 2, 3)]
+                + [alone(d, "payload1") for d in (4, 5, 6)])
+        self.assertEqual(verdict_of(runs, guidance=True)["suspects"], [])
+        runs = ([alone(d, "payload1") for d in (1, 2, 3)]
+                + [alone(d, "payload2") for d in (4, 5, 6)])
+        self.assertEqual(verdict_of(runs, guidance=True)["suspects"], ["arm context changed"])
+
     def test_a_section_says_section(self):
         runs = ([run("s", "with", d, 4, pair="in_situ", tested="old") for d in (1, 2, 3)]
                 + [run("s", "with", d, 2, pair="in_situ", tested="new") for d in (4, 5, 6)])
