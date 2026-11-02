@@ -855,7 +855,7 @@ def render_digest(date: str, files: Sequence[tuple[str, dict]], redactor: Redact
             shown = ", ".join(repos[:DIGEST_REPOS]) + (
                 f" and {len(repos) - DIGEST_REPOS} more" if len(repos) > DIGEST_REPOS else "")
             lines += [f"### {card_title(p['subject'])}", "",
-                      f"- Seen in {p['evidence_count']} records, {md_escape(span)}"
+                      f"- Seen in {p['evidence_count']} record{'' if p['evidence_count'] == 1 else 's'}, {md_escape(span)}"
                       + (f"; repos: {shown}" if shown else ""),
                       f"- File: `{name}`"]  # proposal_filename() allows only [A-Za-z0-9_.-]
             if p.get("check_sketch"):
