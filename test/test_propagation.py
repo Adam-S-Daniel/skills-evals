@@ -1994,5 +1994,75 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
             "`[skip ci]` does not gate.")
 
 
+class PropagationTriggerTests(unittest.TestCase):
+    """`pull_request` runs only when a PR touches what these jobs read.
+
+    The list is checked against the import closure of the three entry points,
+    parsed with `ast`, so a new harness module cannot fall outside it. Push to
+    main and the schedule stay unfiltered: they are where upstream registry
+    drift still shows up.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+    ENTRY_POINTS = ("harness/run_propagation.py", "scripts/eval_coverage.py",
+                    "test/test_propagation.py")
+
+    def setUp(self):
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        # PyYAML reads the bare key `on` as True.
+        self.on = doc.get("on", doc.get(True))
+
+    def _closure(self):
+        import ast
+        seen, todo = set(), list(self.ENTRY_POINTS)
+        while todo:
+            rel = todo.pop()
+            if rel in seen or not (REPO_ROOT / rel).is_file():
+                continue
+            seen.add(rel)
+            tree = ast.parse((REPO_ROOT / rel).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    mods = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    mods = [node.module]
+                else:
+                    continue
+                for mod in mods:
+                    for base in ("", "harness/", "scripts/"):
+                        stem = base + mod.replace(".", "/")
+                        todo += [stem + ".py", stem + "/__init__.py"]
+        return seen
+
+    def _matches(self, path, patterns):
+        # GitHub's `**` crosses directories; fnmatch's `*` already does.
+        return any(fnmatch.fnmatch(path, pat) for pat in patterns)
+
+    def test_pull_request_paths_cover_every_file_the_jobs_import(self):
+        patterns = self.on["pull_request"]["paths"]
+        closure = self._closure()
+        self.assertIn("harness/run_propagation.py", closure)
+        missed = sorted(p for p in closure if not self._matches(p, patterns))
+        self.assertEqual(missed, [], "add these to on.pull_request.paths")
+
+    def test_pull_request_paths_cover_the_workflow_and_its_inputs(self):
+        patterns = self.on["pull_request"]["paths"]
+        for path in (".github/workflows/propagation.yml",
+                     ".github/workflows/actions.lock",
+                     ".claude/hooks/skills-bootstrap.sh", "skills.lock",
+                     "evals/propagation/fixture.yaml",
+                     "evals/some-skill/fixture.yaml",
+                     "evals/non-coverage.yml"):
+            self.assertTrue(self._matches(path, patterns), path)
+        self.assertFalse(self._matches("dashboard/page/index.html", patterns))
+
+    def test_push_schedule_and_dispatch_stay_unfiltered(self):
+        self.assertEqual(self.on["push"], {"branches": ["main"]})
+        self.assertIn("schedule", self.on)
+        self.assertIn("workflow_dispatch", self.on)
+        self.assertNotIn("paths-ignore", self.on["pull_request"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

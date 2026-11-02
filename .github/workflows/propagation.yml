@@ -36,19 +36,29 @@
 #   hermetic mutation suite alone. See evals/propagation/ROUTINE.md, now
 #   marked HISTORY, for what that layer did and why.
 #
-# * DELIBERATELY NO `paths:` filter, contrary to the fleet's usual rule. The
-#   arms probe an unpinned upstream registry — adam-agentskills at `main` —
-#   so a pull request that touches nothing here can still be the first place
-#   real delivery drift shows up; filtering this workflow to its own paths
-#   would mean that drift only surfaces at the next 05:41 schedule. `gate`'s
-#   mutation suite is hermetic Python with no CLI to install, so it stays
-#   cheap and always-present on the same trigger rather than being split onto
-#   a filtered one of its own.
+# * `pull_request` is FILTERED to the files these jobs read (Adam, 2026-11-02:
+#   a dashboard-only PR was running every arm). The arms still probe an
+#   unpinned upstream registry, adam-agentskills at `main`, so drift there can
+#   now go unseen by an unrelated pull request; it surfaces at the next push to
+#   main or the 05:41 schedule instead, and both stay unfiltered for that
+#   reason. Nothing here is a required context, so a skipped run blocks no
+#   merge. When a job starts reading a new file, add it to the list.
 
 name: Propagation
 
 on:
   pull_request:
+    paths:
+      - ".github/workflows/propagation.yml"
+      - ".github/workflows/actions.lock"
+      - ".claude/hooks/**"
+      - "skills.lock"
+      - "harness/**"
+      - "scripts/eval_coverage.py"
+      - "test/test_propagation.py"
+      - "evals/propagation/**"
+      - "evals/**/fixture.yaml"
+      - "evals/non-coverage.yml"
   push:
     branches: [main]
   # :41 rather than :00 because GitHub queues the whole platform's cron on the
