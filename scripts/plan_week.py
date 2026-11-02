@@ -82,6 +82,13 @@ THE BANDS (rule D), in order:
          known cost. With none known, the median of the known estimates
          across candidates, else the improve charge (neutral, like use).
      Each ranking row records whether use and cost were known.
+     IMPROVE CAP (#572, 2026-11-02): before allocation the band is walked
+     in allocate's own order, and an item goes only when
+     `allowance_guard.improve_cap` allows it with the earlier kept items
+     counted, exactly the test the guard applies to each fire (Adam's 0.20
+     share of weekly_cap for the account week, at least one fire of each
+     kind). Cut items count as unplanned. The share above is of one sweep's
+     room; this one is of the whole week's cap, and binds every dispatcher.
   5. re-checks: decided cells whose newest run is over 8 weeks old (4
      weeks for a high-stakes subject).
   STAKES (evals/stakes.yml, scripts/stakes.py; Adam, 2026-11-01): within
@@ -897,11 +904,36 @@ def allocate(bands: dict, room: float, max_fires: int) -> list:
     return chosen
 
 
+def improve_capped(items: list, improve_state: dict | None) -> tuple:
+    """(kept, cut) of the improve band's `items` under the improve cap
+    (#572): walked in allocate's own order with a copy of the guard's counts,
+    each item kept only when `allowance_guard.improve_cap` allows it with the
+    earlier kept items counted, the test the guard applies to each fire in
+    turn. With no `improve_state` (a hand-built ctx, the explorer) there is
+    no cap."""
+    if improve_state is None:
+        return list(items), []
+    state = {**improve_state,
+             "improve_by_kind": dict(improve_state.get("improve_by_kind") or {})}
+    kept, cut = [], []
+    for item in sorted(items, key=lambda i: (*i["order"], i["cost"], i["fixture"],
+                                             i["model"], i["skill"])):
+        if guard.improve_cap(state, item["mode"]):
+            state["improve_by_kind"][item["mode"]] = \
+                state["improve_by_kind"].get(item["mode"], 0) + 1
+            kept.append(item)
+        else:
+            cut.append(item)
+    return kept, cut
+
+
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure."""
     bands, work = eval_items(ctx, now)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
+    improve_state = ctx.get("improve_state")
+    improve, capped = improve_capped(improve, improve_state)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
     chosen = allocate(bands, ctx["room"], max_fires)
@@ -929,7 +961,12 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     return {"schema_version": 1, "generated_at": _iso(now), "room": ctx["room"],
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
             "points_per_usd": ctx.get("points_per_usd"), "fires": fires,
-            "unplanned": {band: len(items) for band, items in bands.items()},
+            "unplanned": {band: len(items) + (len(capped) if band == "improve" else 0)
+                          for band, items in bands.items()},
+            # Whether one more fire of each kind passed the improve cap
+            # before this plan (#572); None without a cap.
+            "improve_allowed": None if improve_state is None else
+            {mode: guard.improve_cap(improve_state, mode) for mode in IMPROVE_MODES},
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
@@ -1508,12 +1545,15 @@ def gather(args, now: datetime) -> dict:
                                      mode="guidance-improve")
     gprs, gremoval = guidance_prs(evidence.get("guidance_prs", []))
     since = guard.window_start(now)
+    # No own run: every not-completed improve fire counts (#572).
+    by_kind, in_flight = guard.improve_kind_counts(evidence["fire_runs"], now, since)
     state = guard.account(args.results_tree, limits, now,
                           _fire_pair(evidence["fire_runs"], now, since),
                           guard.improve_counts(evidence["fire_runs"], now, since),
                           since,
                           improve_started=guard.improve_starts(evidence["fire_runs"], now, since),
-                          eval_started=guard.eval_fire_starts(evidence["fire_runs"], now, since))
+                          eval_started=guard.eval_fire_starts(evidence["fire_runs"], now, since),
+                          improve_by_kind=by_kind, improve_in_flight=in_flight)
     print(guard.describe(state))
     skills = skill_contexts(evals_dir, args.results_tree,
                             compute_gates.parse_as_of(args.as_of), registries,
@@ -1526,6 +1566,9 @@ def gather(args, now: datetime) -> dict:
     return {"policy": gates_doc["policy"], "reservation": state["reservation"],
             "overrun": limits["per_run_overrun"], "improve_charge": state["improve_charge"],
             "room": guard.room(state),
+            # What allowance_guard.improve_cap reads, for build_plan's walk.
+            "improve_state": {key: state[key] for key in (
+                "cap", "improve_charge", "improve_by_kind", "improve_in_flight")},
             # One eval fire may go only to bring a newer reading.
             "refresh": guard.fits(state) < 1 and guard.refresh(state),
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),

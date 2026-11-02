@@ -127,6 +127,24 @@ reading whose summaries say it had ended by then (`usage.ended_at`) has no
 call after it, so it is not charged the overrun either (2026-11-01 13:54
 UTC: seven one-minute runs that had all ended held 3.5 points that way).
 
+Improve cap (#572, 2026-11-02): in the week of 2026-10-26 eight improve and
+guidance-improve fires went, every one dispatched by hand or by an agent, not
+by the planner, and each passed this check because it asked only for room
+for one charge. Held together they exceeded the whole cap, and nearly every
+eval fire was refused for the rest of the week. So the guard, which runs for
+every dispatcher, now also caps how many go: Adam's improve share of the
+weekly cap, `IMPROVE_WEEKLY_SHARE` (0.20) x weekly_cap as configured, allows
+`floor(share / improve_charge)` fires of both kinds together, and each kind
+(skill `improve`, `guidance-improve`) has a floor of one per account week, so
+the improvement loop never stops outright when one charge exceeds the share
+(`improve_cap`). The count is the window's successful fires of each kind plus
+its not-completed ones with a lower run id than the caller's (two fires
+dispatched together never refuse each other; the earlier goes). A refused
+fire prints `IMPROVE_CAP_REFUSAL` and exits 3. Known limit until #572 part
+(1) measures each improve run: a fire that passed the guard but whose run
+then ended other than success (a failure after the guard) uses no slot, as
+it is not charged either.
+
 Only an ingested eval run brings a newer snapshot, so when those full
 charges leave no room for one, one eval fire may still go to bring it
 (`refresh`); without that the holds lasted the week (2026-10-27).
@@ -221,13 +239,25 @@ PACE_CLOCK_SKEW = timedelta(minutes=5)
 #: An improve run measures baseline and candidate on every fixture of the
 #: skill at three trials each, about 24 agent trials for a four-fixture skill
 #: (thresholds doc), where an eval fire (arms both, one trial) runs two.
-IMPROVE_FIRE_UNITS = 12
+#: It was 12 until 2026-11-02 (#572): eval_fire_cost measured about 0.00497
+#: (268 of 270 runs measured), and the three usable account-meter brackets
+#: around improve fires came to 2.3x, 4.7x and 5.3x that per fire (1.3x to
+#: 7.3x with the meter's +-0.01 reading error), upper bounds since the
+#: owner's own use is inside them. 8 covers every bracket. It is a ceiling,
+#: recomputed from measured cost once #572 part (1) records each improve run.
+IMPROVE_FIRE_UNITS = 8
 #: The longest an improve fire runs: the routine's improve step gets 90
 #: minutes, plus setup, the push and the ingest. A fire that started this long
 #: before a meter snapshot is finished, so the snapshot already counts it.
 IMPROVE_MAX_RUN = timedelta(hours=2)
 #: The fire modes charged `improve_charge`, held all week (see above).
 IMPROVE_MODES = ("improve", "guidance-improve")
+#: Adam's improve share of the weekly cap (#572, 2026-11-02): the same 0.20
+#: plan_week.SHARES gives the improve band, but there it is a share of the
+#: room left in one sweep, and here of weekly_cap as configured, for the
+#: whole account week. Following weekly_cap means a temporary raise loosens
+#: this cap too, Adam's lever. `improve_cap` enforces it for every dispatcher.
+IMPROVE_WEEKLY_SHARE = 0.20
 # A refusal exits 3, apart from 1 (an unreadable spend, fail closed): the
 # weekly planner plans surplus fires at their historical cost, so the guard
 # refusing one at full reservation is the planned outcome (#524). The fire
@@ -235,6 +265,9 @@ IMPROVE_MODES = ("improve", "guidance-improve")
 REFUSED_EXIT = 3
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
+#: The improve cap's refusal (#572): numbers only, never a skill or section.
+IMPROVE_CAP_REFUSAL = ("::error::improve cap: share allows {allowed}, used {used} "
+                       "(this kind {mine}); nothing was fired (#572)")
 
 
 class GuardError(Exception):
@@ -523,7 +556,9 @@ def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
             since: datetime | None = None,
             improve_started: list | None = None,
-            eval_started: list | None = None) -> dict:
+            eval_started: list | None = None,
+            improve_by_kind: dict | None = None,
+            improve_in_flight: dict | None = None) -> dict:
     """{spent, pending, runs, fires, recent, reservation, cap, pace_room,
     account_used, week_elapsed, improve_fires, improve_charge,
     improve_covered, eval_inside} for the
@@ -548,7 +583,10 @@ def account(tree: Path, limits: dict, now: datetime,
     times of the window's successful eval fires (improve fires left out),
     lets the bound charge only the fires the reading cannot hold: those
     started less than `PENDING_FULL_HOLD` before it with no ingested run
-    (module docstring, 2026-11-01 fires without results)."""
+    (module docstring, 2026-11-01 fires without results).
+    `improve_by_kind` and `improve_in_flight`, dicts keyed by improve mode
+    (`improve_kind_counts`), are the successful and the not-completed
+    improve fires of each kind, stored for `improve_cap` only (#572)."""
     try:
         fires_7d, fires_24h = fires
         improve_7d, improve_24h = improve
@@ -570,6 +608,15 @@ def account(tree: Path, limits: dict, now: datetime,
             or any(not isinstance(start, datetime) or start.tzinfo is None
                    for start in improve_started)):
         raise GuardError("improve start times are not aware datetimes")
+    kinds = []
+    for given in (improve_by_kind, improve_in_flight):
+        given = {} if given is None else given
+        if not isinstance(given, dict) or any(
+                mode not in IMPROVE_MODES or isinstance(count, bool)
+                or not isinstance(count, int) or count < 0
+                for mode, count in given.items()):
+            raise GuardError("improve counts by kind are not non-negative integers")
+        kinds.append({mode: given.get(mode, 0) for mode in IMPROVE_MODES})
     if since is None:
         since = window_start(now)
     runs = ingested_runs(tree, now, since)
@@ -644,7 +691,33 @@ def account(tree: Path, limits: dict, now: datetime,
             "improve_fires": improve_7d, "improve_charge": charge,
             "improve_covered": covered, "eval_inside": eval_inside,
             "improve_finished": finished,
-            "improve_finished_held": finished * charge}
+            "improve_finished_held": finished * charge,
+            "improve_by_kind": kinds[0], "improve_in_flight": kinds[1]}
+
+
+def improve_numbers(state: dict, mode: str) -> tuple:
+    """(allowed, used, mine) for the improve cap (#572): the fires the share
+    allows (None when `improve_charge` is not positive: every measured cost
+    was zero, so the share sets no limit), the fires of both kinds counted,
+    successful or not completed, and those of `mode`'s kind. A hand-built
+    state without the counts reads as none used."""
+    charge = state["improve_charge"]
+    allowed = None if charge <= 0 else math.floor(
+        IMPROVE_WEEKLY_SHARE * state["cap"] / charge + EPSILON)
+    by_kind = state.get("improve_by_kind") or {}
+    in_flight = state.get("improve_in_flight") or {}
+    used = sum(by_kind.get(m, 0) + in_flight.get(m, 0) for m in IMPROVE_MODES)
+    mine = by_kind.get(mode, 0) + in_flight.get(mode, 0)
+    return allowed, used, mine
+
+
+def improve_cap(state: dict, mode: str) -> bool:
+    """Whether one more fire of improve `mode` may go under the improve cap
+    (#572, module docstring): fewer than the share allows are counted, or
+    none of its own kind is (the per-kind floor of one per account week).
+    The guard's `check` and the weekly planner both call this."""
+    allowed, used, mine = improve_numbers(state, mode)
+    return allowed is None or used < allowed or mine == 0
 
 
 def room(state: dict) -> float:
@@ -751,6 +824,10 @@ def describe(state: dict) -> str:
     if state.get("improve_finished"):
         line += (f"; {state['improve_finished']} finished after it, held in full "
                  f"until a newer reading")
+    if "improve_charge" in state:
+        allowed, used, _ = improve_numbers(state, IMPROVE_MODES[0])
+        line += (f"; improve cap {'none' if allowed is None else allowed}, "
+                 f"used {used}")
     used = state.get("account_used")
     if state.get("pace_room", 0.0) > 0 or used is not None:
         return (f"{line}; account at {points(used or 0.0)}% with "
@@ -764,13 +841,17 @@ def describe(state: dict) -> str:
     return f"{line}; no recent account reading, so no pace room"
 
 
-def check(state: dict, mode: str = "eval") -> bool:
-    """Whether one more fire, reserved in full (an improve fire at
-    `improve_charge`), stays within the cap."""
+def check(state: dict, mode: str = "eval") -> str | None:
+    """None when one more fire, reserved in full (an improve fire at
+    `improve_charge`), stays within the cap and, for an improve mode, the
+    improve cap (#572); otherwise the one refusal line `main` prints."""
     if mode in IMPROVE_MODES:
-        return room(state) + EPSILON >= state["improve_charge"]
+        if not improve_cap(state, mode):
+            allowed, used, mine = improve_numbers(state, mode)
+            return IMPROVE_CAP_REFUSAL.format(allowed=allowed, used=used, mine=mine)
+        return None if room(state) + EPSILON >= state["improve_charge"] else REFUSAL
     # Only an eval fire's ingested results carry a meter snapshot.
-    return fits(state) >= 1 or (mode == "eval" and refresh(state))
+    return None if fits(state) >= 1 or (mode == "eval" and refresh(state)) else REFUSAL
 
 
 def refresh(state: dict) -> bool:
@@ -826,6 +907,30 @@ def improve_starts(runs: list, now: datetime,
             if f["conclusion"] == "success" and f["started"] >= since]
 
 
+def improve_kind_counts(runs: list, now: datetime, since: datetime | None = None,
+                        own_id: int | None = None) -> tuple:
+    """({mode: successful fires}, {mode: fires not completed}) of each
+    improve mode since `since` (default seven days before `now`) among the
+    runs API's rows, for the improve cap (#572). A not-completed fire counts
+    only when its run id is lower than `own_id`, the caller's own run
+    (GITHUB_RUN_ID), so the guard never counts itself and of two fires
+    dispatched together the earlier goes; with no `own_id` (the planner)
+    every not-completed fire counts. Its window is the success count's."""
+    since = since or now - WINDOW
+    by_kind = {mode: 0 for mode in IMPROVE_MODES}
+    in_flight = {mode: 0 for mode in IMPROVE_MODES}
+    for fire in improve_outcomes.charged_fires(runs):
+        if fire["started"] < since:
+            continue
+        mode = "improve" if "skill" in fire else "guidance-improve"
+        if fire["status"] not in (None, "completed"):
+            if own_id is None or fire["id"] < own_id:
+                in_flight[mode] += 1
+        elif fire["conclusion"] == "success":
+            by_kind[mode] += 1
+    return by_kind, in_flight
+
+
 def _live_improve_runs(now: datetime) -> list:
     """The fire runs of the last seven days, fetched once."""
     repo = os.environ.get("GITHUB_REPOSITORY", "")
@@ -865,21 +970,32 @@ def eval_fire_starts(runs: list, now: datetime,
     return starts
 
 
+def _own_run_id() -> int | None:
+    """This run's id (GITHUB_RUN_ID), or None outside Actions or when it is
+    not a number; then every not-completed fire counts, this one included:
+    the safe direction."""
+    value = os.environ.get("GITHUB_RUN_ID", "")
+    return int(value) if value.isdigit() else None
+
+
 def _live_improve_both(now: datetime, since: datetime | None = None):
-    """(`improve_counts`, `improve_starts`, `eval_fire_starts`) of one fetch
-    of the fire runs."""
+    """(`improve_counts`, `improve_starts`, `eval_fire_starts`,
+    `improve_kind_counts`) of one fetch of the fire runs."""
     runs = _live_improve_runs(now)
     return (improve_counts(runs, now, since), improve_starts(runs, now, since),
-            eval_fire_starts(runs, now, since))
+            eval_fire_starts(runs, now, since),
+            improve_kind_counts(runs, now, since, _own_run_id()))
 
 
 def main(argv: list[str] | None = None, now: datetime | None = None,
          fire_count=None, improve_count=None, improve_starts=None,
-         eval_starts=None) -> int:
+         eval_starts=None, improve_kinds=None) -> int:
     """`fire_count` and `improve_count`, functions of `now` returning
     `(fires_7d, fires_24h)` (all fires, and the improve fires among them),
     stand in for the API in tests, and `improve_starts`, a function of `now`
-    returning the improve fires' start times (used with `improve_count`)."""
+    returning the improve fires' start times (used with `improve_count`), and
+    `improve_kinds`, one returning `improve_kind_counts`' pair (none counted
+    when it is not given)."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=("check", "fits"))
     parser.add_argument("--results-tree", type=Path, required=True,
@@ -891,7 +1007,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     parser.add_argument("--mode", choices=("eval", "scaffold", "draft", *IMPROVE_MODES),
                         default="eval",
                         help="the fire's mode: an improve or guidance-improve fire "
-                             "needs room for improve_charge")
+                             "needs room for improve_charge and a slot under the "
+                             "improve cap")
     args = parser.parse_args(argv)
     now = now or datetime.now(timezone.utc)
     try:
@@ -902,11 +1019,13 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
             improve = improve_count(now)
             started = improve_starts(now) if improve_starts else None
             evals = eval_starts(now) if eval_starts else None
+            by_kind, in_flight = improve_kinds(now) if improve_kinds else (None, None)
         else:
             # One fetch feeds the counts and the start times.
-            improve, started, evals = _live_improve_both(now, since)
+            improve, started, evals, (by_kind, in_flight) = _live_improve_both(now, since)
         state = account(args.results_tree, limits, now, fires, improve, since, started,
-                        eval_started=evals)
+                        eval_started=evals, improve_by_kind=by_kind,
+                        improve_in_flight=in_flight)
     except (GuardError, budget_file.BudgetError) as exc:
         # Fail closed: an unknown spend is never read as room to spend.
         print(f"::error::allowance guard: {exc}; refusing")
@@ -920,8 +1039,9 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
     if args.command == "fits":
         print(f"fires={fits(state)}")
         return 0
-    if not check(state, args.mode):
-        print(REFUSAL)
+    refusal = check(state, args.mode)
+    if refusal is not None:
+        print(refusal)
         return REFUSED_EXIT
     if args.mode not in IMPROVE_MODES and fits(state) < 1:
         print("allowed as the one refresh fire: its results bring a newer account reading")

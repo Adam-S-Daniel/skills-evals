@@ -584,7 +584,7 @@ class GuardTests(unittest.TestCase):
         state = self.spent(fires=(16, 0))
         self.assertAlmostEqual(state["pending"], 10 * 0.005, places=12)
         self.assertEqual(state["recent"], 0)
-        self.assertTrue(guard.check(state))
+        self.assertIsNone(guard.check(state))
 
     def test_fires_inside_the_day_stay_reserved_in_full(self):
         state = self.spent(fires=(3, 3))
@@ -669,9 +669,9 @@ class GuardTests(unittest.TestCase):
     def test_the_check_is_spent_plus_pending_plus_one_reservation(self):
         # Seven fires reserved (0.245) leave room for one more (0.28 <= 0.30);
         # eight (0.28) do not (0.315).
-        self.assertTrue(guard.check(self.spent(fires=(7, 7))))
+        self.assertIsNone(guard.check(self.spent(fires=(7, 7))))
         self.assertEqual(guard.fits(self.spent(fires=(7, 7))), 1)
-        self.assertFalse(guard.check(self.spent(fires=(8, 8))))
+        self.assertIsNotNone(guard.check(self.spent(fires=(8, 8))))
         self.assertEqual(guard.fits(self.spent(fires=(8, 8))), 0)
         self.assertEqual(guard.fits(self.spent(fires=(0, 0))), 8)
         state = self.spent()
@@ -933,7 +933,7 @@ class PaceRoomTests(unittest.TestCase):
         self.assertAlmostEqual(state["account_used"], 0.36, places=12)
         self.assertAlmostEqual(state["week_elapsed"], 6 / 7, places=12)
         self.assertEqual(guard.fits(state), 10)
-        self.assertTrue(guard.check(state))
+        self.assertIsNone(guard.check(state))
         self.assertEqual(guard.fires_that_fit(self.tree, LIMITS, NOW, (1, 1)), 10)
 
     def test_fires_without_results_come_off_the_pace_room(self):
@@ -1209,15 +1209,20 @@ class ImproveCoverageTests(unittest.TestCase):
         def run(starts):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
+                # Three skill improve fires, so a guidance-improve fire is
+                # still under its kind's floor of the improve cap (#572) and
+                # only the room decides.
                 code = guard.main(["check", "--results-tree", str(self.tree),
-                                   "--budget", str(budget), "--mode", "improve"],
-                                  now=NOW, fire_count=lambda now: (2, 0),
-                                  improve_count=lambda now: (2, 0),
-                                  improve_starts=starts)
-            return code
-        # Two charges alone are over the 30-point cap; covered, they are 5.
-        self.assertEqual(run(lambda now: [self.SNAP - timedelta(days=1)] * 2), 0)
-        self.assertEqual(run(None), guard.REFUSED_EXIT)
+                                   "--budget", str(budget), "--mode", "guidance-improve"],
+                                  now=NOW, fire_count=lambda now: (3, 0),
+                                  improve_count=lambda now: (3, 0),
+                                  improve_starts=starts,
+                                  improve_kinds=lambda now: ({"improve": 3}, {}))
+            return code, out.getvalue().splitlines()[-1]
+        # 2026-11-02: three charges (eight units each since #572) are over
+        # the 30-point cap and the pace room; covered, they are 3.
+        self.assertEqual(run(lambda now: [self.SNAP - timedelta(days=1)] * 3)[0], 0)
+        self.assertEqual(run(None), (guard.REFUSED_EXIT, guard.REFUSAL))
 
     def test_improve_starts_reads_successful_improve_fires_in_the_window(self):
         def row(n, title, when, conclusion="success"):
@@ -1270,25 +1275,25 @@ class RefreshFireTests(unittest.TestCase):
         self.assertEqual(guard.fits(state), 0)
         self.assertEqual(state["improve_finished"], len(self.blocked()))
         self.assertTrue(guard.refresh(state))
-        self.assertTrue(guard.check(state, "eval"))
+        self.assertIsNone(guard.check(state, "eval"))
         self.assertIn("finished after it, held in full", guard.describe(state))
 
     def test_the_refresh_never_admits_an_improve_scaffold_or_draft_fire(self):
         state = self.state(self.blocked())
         for mode in ("improve", "guidance-improve", "scaffold", "draft"):
             with self.subTest(mode=mode):
-                self.assertFalse(guard.check(state, mode))
+                self.assertIsNotNone(guard.check(state, mode))
 
     def test_a_recent_eval_fire_without_results_stops_another_refresh(self):
         state = self.state(self.blocked(), fires=2, recent=1)  # one is the ingested run
         self.assertEqual(state["recent"], 1)
-        self.assertFalse(guard.check(state, "eval"))
+        self.assertIsNotNone(guard.check(state, "eval"))
 
     def test_improve_fires_still_running_give_no_refresh(self):
         running = [NOW - guard.IMPROVE_MAX_RUN + timedelta(seconds=1)] * len(self.blocked())
         state = self.state(running)
         self.assertEqual(state["improve_finished"], 0)
-        self.assertFalse(guard.check(state, "eval"))
+        self.assertIsNotNone(guard.check(state, "eval"))
 
     def test_covered_fires_are_not_counted_as_finished(self):
         state = self.state([self.SNAP - guard.IMPROVE_MAX_RUN] * 3)
@@ -1301,7 +1306,7 @@ class RefreshFireTests(unittest.TestCase):
         # Spend the reading does not hold (from runs after it), so it gives
         # no bound below spent plus pending.
         state["bound"] = None
-        self.assertFalse(guard.check(state, "eval"))
+        self.assertIsNotNone(guard.check(state, "eval"))
 
     def test_main_names_the_refresh_fire(self):
         budget = self.tree / "budget.yml"
@@ -1382,7 +1387,7 @@ class ReadingBoundTests(unittest.TestCase):
         self.assertAlmostEqual(state["committed"], 0.72, places=12)
         self.assertAlmostEqual(guard.room(state), 1.0 - 0.72, places=12)
         self.assertEqual(guard.fits(state), 8)
-        self.assertTrue(guard.check(state, "eval"))
+        self.assertIsNone(guard.check(state, "eval"))
         self.assertIn("; the account reading bounds committed use at 72.0 points",
                       guard.describe(state))
 
@@ -1580,6 +1585,144 @@ class WeekWindowTests(unittest.TestCase):
             self.assertEqual([r.name for r in runs], ["20261019T170000Z-ab12cd"])
 
 
+class ImproveCapTests(unittest.TestCase):
+    """#572, 2026-11-02: eight improve and guidance-improve fires in the week
+    of 2026-10-26, every one dispatched by hand or by an agent, each passed
+    the room test alone and together held more than the whole cap. The guard
+    now caps them at Adam's 0.20 share of weekly_cap, with a floor of one per
+    kind per account week."""
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tree, ignore_errors=True)
+
+    @staticmethod
+    def state(charge, by_kind=None, in_flight=None, cap=0.30):
+        return {"cap": cap, "spent": 0.0, "pending": 0.0, "pace_room": 0.0,
+                "reservation": RESERVE, "improve_charge": charge, "runs": 0,
+                "improve_by_kind": by_kind or {}, "improve_in_flight": in_flight or {}}
+
+    def test_a_share_of_none_still_allows_one_fire_of_each_kind(self):
+        # 0.20 x 0.30 = 0.06 < 0.20: the share allows no fire at all.
+        self.assertEqual(guard.improve_numbers(self.state(0.20), "improve"), (0, 0, 0))
+        for mode in guard.IMPROVE_MODES:
+            with self.subTest(mode=mode):
+                self.assertTrue(guard.improve_cap(self.state(0.20), mode))
+        skill_used = self.state(0.20, {"improve": 1})
+        self.assertFalse(guard.improve_cap(skill_used, "improve"))
+        self.assertTrue(guard.improve_cap(skill_used, "guidance-improve"))
+        both = self.state(0.20, {"improve": 1}, {"guidance-improve": 1})
+        self.assertFalse(guard.improve_cap(both, "guidance-improve"))
+
+    def test_the_share_sets_how_many_go_together(self):
+        # 0.20 x 0.30 / 0.02 = 3 fires of both kinds together.
+        self.assertEqual(guard.improve_numbers(self.state(0.02, {"improve": 2}), "improve"),
+                         (3, 2, 2))
+        self.assertTrue(guard.improve_cap(self.state(0.02, {"improve": 2}), "improve"))
+        full = self.state(0.02, {"improve": 2}, {"improve": 1})
+        self.assertFalse(guard.improve_cap(full, "improve"))
+        # Its kind's floor still lets the first guidance-improve fire go.
+        self.assertTrue(guard.improve_cap(full, "guidance-improve"))
+        # The cap follows weekly_cap as configured: a raise loosens it.
+        self.assertTrue(guard.improve_cap({**full, "cap": 0.40}, "improve"))
+
+    def test_a_charge_of_zero_sets_no_limit(self):
+        state = self.state(0.0, {"improve": 50, "guidance-improve": 50})
+        self.assertEqual(guard.improve_numbers(state, "improve"), (None, 100, 50))
+        self.assertTrue(guard.improve_cap(state, "improve"))
+        self.assertIsNone(guard.check(state, "improve"))
+
+    def test_a_hand_built_state_without_counts_has_none_used(self):
+        state = self.state(0.20)
+        del state["improve_by_kind"], state["improve_in_flight"]
+        self.assertEqual(guard.improve_numbers(state, "guidance-improve"), (0, 0, 0))
+
+    def test_not_completed_fires_count_below_the_own_run_id_only(self):
+        since = NOW - timedelta(days=1)
+        t = NOW - timedelta(hours=1)
+
+        def row(n, title, when, status="completed", conclusion="success"):
+            stamp = when.strftime("%Y-%m-%dT%H:%M:%SZ")
+            return {"id": n, "display_title": title, "status": status,
+                    "conclusion": conclusion, "created_at": stamp,
+                    "run_started_at": stamp, "updated_at": stamp}
+        runs = [row(2, "Fire eval routine: improve a ", t),
+                row(3, "Fire eval routine: guidance-improve sec ", t, "in_progress", None),
+                row(4, "Fire eval routine: improve a ", t, "completed", "failure"),
+                row(5, "Fire eval routine: improve b ", t, "queued", None),
+                row(10, "Fire eval routine: improve c ", t, "in_progress", None),
+                row(15, "Fire eval routine: improve d ", t, "queued", None),
+                row(6, "Fire eval routine: eval evals/x m", t, "in_progress", None),
+                # Before the window: neither a success nor one in flight counts.
+                row(1, "Fire eval routine: improve a ", since - timedelta(minutes=1)),
+                row(7, "Fire eval routine: guidance-improve sec ",
+                    since - timedelta(minutes=1), "in_progress", None)]
+        # Run 10 is this run: it and the later-dispatched 15 do not count.
+        self.assertEqual(guard.improve_kind_counts(runs, NOW, since, own_id=10),
+                         ({"improve": 1, "guidance-improve": 0},
+                          {"improve": 1, "guidance-improve": 1}))
+        # The planner has no own run: every not-completed fire counts.
+        self.assertEqual(guard.improve_kind_counts(runs, NOW, since)[1],
+                         {"improve": 3, "guidance-improve": 1})
+
+    def test_the_live_fetch_passes_the_own_run_id(self):
+        t = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        runs = [{"id": n, "display_title": "Fire eval routine: improve a ",
+                 "status": "in_progress", "conclusion": None, "created_at": t,
+                 "run_started_at": t, "updated_at": t} for n in (9, 10)]
+        with mock.patch.object(guard, "_live_improve_runs", return_value=runs), \
+                mock.patch.dict(os.environ, {"GITHUB_RUN_ID": "10"}):
+            got = guard._live_improve_both(NOW, NOW - timedelta(days=1))
+        self.assertEqual(got[3][1], {"improve": 1, "guidance-improve": 0})
+
+    def test_account_stores_the_counts_and_refuses_bad_ones(self):
+        state = guard.account(self.tree, LIMITS, NOW, (2, 0), (2, 0),
+                              improve_by_kind={"improve": 2},
+                              improve_in_flight={"guidance-improve": 1})
+        self.assertEqual((state["improve_by_kind"], state["improve_in_flight"]),
+                         ({"improve": 2, "guidance-improve": 0},
+                          {"improve": 0, "guidance-improve": 1}))
+        self.assertIn("; improve cap 0, used 3", guard.describe(state))
+        for bad in ({"improve": -1}, {"improve": True}, {"eval": 1}, [1]):
+            with self.subTest(bad=bad):
+                with self.assertRaises(guard.GuardError):
+                    guard.account(self.tree, LIMITS, NOW, (0, 0), improve_by_kind=bad)
+
+    def run_main(self, mode, kinds, improve=(1, 0)):
+        budget = self.tree / "budget.yml"
+        budget.write_text(VALID_BUDGET, encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = guard.main(["check", "--results-tree", str(self.tree),
+                               "--budget", str(budget), "--mode", mode],
+                              now=NOW, fire_count=lambda now: improve,
+                              improve_count=lambda now: improve,
+                              improve_kinds=lambda now: kinds)
+        return code, out.getvalue().splitlines()
+
+    def test_a_capped_fire_exits_3_with_one_numbers_only_line(self):
+        # Nothing measured: the charge is 8 x 0.035 = 0.28, so the share
+        # (0.06) allows none, and this kind's floor is used. The room is not
+        # what refuses it: no improve fire is held here.
+        code, lines = self.run_main("improve", ({"improve": 1}, {}), improve=(0, 0))
+        self.assertEqual(code, guard.REFUSED_EXIT)
+        refusal = guard.IMPROVE_CAP_REFUSAL.format(allowed=0, used=1, mine=1)
+        self.assertEqual(lines[-1], refusal)
+        self.assertEqual(sum(1 for line in lines if line.startswith("::error::")), 1)
+        self.assertNotIn(guard.REFUSAL, lines)
+        self.assertNotRegex(refusal, r"improve a|sec")
+
+    def test_eval_scaffold_and_draft_fires_are_not_capped(self):
+        state = self.state(0.20, {"improve": 5, "guidance-improve": 5})
+        for mode in ("eval", "scaffold", "draft"):
+            with self.subTest(mode=mode):
+                self.assertIsNone(guard.check(state, mode))
+        for mode in ("eval", "scaffold", "draft"):
+            with self.subTest(main=mode):
+                self.assertEqual(self.run_main(mode, ({"improve": 5}, {}),
+                                               improve=(0, 0))[0], 0)
+
+
 class StopLimitTests(unittest.TestCase):
     """Adam, 2026-11-01, "Unify the limit": the guard found 22.5 points of
     room under a 100-point cap while the account was past the 80% in-run
@@ -1600,8 +1743,9 @@ class StopLimitTests(unittest.TestCase):
         self.assertLess(state["stop_left"], 0)
         self.assertLessEqual(guard.room(state), 0)
         self.assertEqual(guard.fits(state), 0)
-        self.assertFalse(guard.check(state, "eval"))
-        self.assertFalse(guard.check(state, "improve"))
+        self.assertIsNotNone(guard.check(state, "eval"))
+        # Refused by the stop, not the improve cap (#572): nothing is counted.
+        self.assertEqual(guard.check(state, "improve"), guard.REFUSAL)
         self.assertIn("0.0 below the 80.0% stop", guard.describe(state))
 
     def test_below_the_stop_room_is_what_is_left_under_it(self):
