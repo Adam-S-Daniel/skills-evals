@@ -96,6 +96,7 @@ Messages never quote file content.
 from __future__ import annotations
 
 import argparse
+import ast
 import contextlib
 import hashlib
 import json
@@ -871,6 +872,161 @@ def shared_code_tokens(fixture: dict, fixture_dir: Path) -> set[str]:
     return issue_tokens & set(CODE_TOKEN.findall(additions))
 
 
+#: An interface string written as a callable: a dotted or `::`-qualified
+#: name, optionally followed by a parameter list of bare names (a trailing
+#: `:` marks a Ruby keyword parameter). Lexical: it
+#: reads the declared string, never code (the checker's calls come from
+#: `checker_call_names`, which parses).
+SIGNATURE = re.compile(r"(?:[A-Za-z_$][\w$]*(?:\.|::))*([A-Za-z_$][\w$]*)"
+                       r"(?:\(\s*(?:[A-Za-z_$][\w$]*:?\s*(?:,\s*[A-Za-z_$][\w$]*:?\s*)*)?\))?")
+#: Literals a parameter list may not name: a signature brings a callable and
+#: its parameter names, never a value.
+SIGNATURE_LITERALS = {"true", "false", "True", "False", "null", "undefined", "None", "nil"}
+CHECKER_PARSE_TIMEOUT = 20
+
+
+class CheckerParseError(Exception):
+    """A checker file that could not be parsed, or a parser that could not run."""
+
+
+def _python_calls(source: str) -> set[str]:
+    """Called names, and names a test supplies as a function: a keyword
+    argument or a dict key whose value is a lambda (an injected dependency)."""
+    tree = ast.parse(source)
+    calls = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                calls.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                calls.add(node.func.attr)
+            calls.update(k.arg for k in node.keywords
+                         if k.arg and isinstance(k.value, ast.Lambda))
+        elif isinstance(node, ast.Dict):
+            calls.update(k.value for k, v in zip(node.keys, node.values)
+                         if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                         and isinstance(v, ast.Lambda))
+    return calls
+
+
+#: Ripper's call shapes; the method name is the `@ident` (or `@const`) child.
+_RUBY_CALLS = {"call", "fcall", "vcall", "command", "command_call", "method_add_arg"}
+
+
+def _ruby_calls(source: str) -> set[str]:
+    # Ripper parses stdin only; it never loads the fixture or a test framework.
+    result = subprocess.run(
+        ["ruby", "-rripper", "-rjson", "-e",
+         "tree = Ripper.sexp(STDIN.read); exit 1 unless tree; print JSON.generate(tree)"],
+        input=source, text=True, capture_output=True, timeout=CHECKER_PARSE_TIMEOUT, check=True)
+    calls = set()
+    stack = [json.loads(result.stdout)]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, list):
+            continue
+        if node and isinstance(node[0], str) and node[0] in _RUBY_CALLS:
+            for child in node[1:]:
+                if isinstance(child, list) and len(child) >= 2 and child[0] in ("@ident", "@const"):
+                    calls.add(child[1])
+        stack.extend(node)
+    return calls
+
+
+def checker_call_names(fixture_dir: Path) -> set[str]:
+    """Every name the fixture's checker files call, by one parse per
+    language: Python's `ast`, Acorn for JavaScript (scripts/checker_call_names.js)
+    and Ruby's Ripper. No fixture code runs. Selection and skips are not
+    modeled (skills-evals#595): a name called anywhere in a checker file
+    counts. CheckerParseError when a file does not parse or a parser cannot
+    run; other suffixes are not read."""
+    calls: set[str] = set()
+    js: dict[str, str] = {}
+    root = fixture_dir / CHECKER_DIR
+    try:
+        for path in sorted(_walk(root)):
+            if not path.is_file() or path.is_symlink():
+                continue
+            suffix = path.suffix.lower()
+            if suffix not in (".py", ".js", ".mjs", ".cjs", ".rb"):
+                continue
+            source = path.read_text(encoding="utf-8")
+            if suffix == ".py":
+                calls |= _python_calls(source)
+            elif suffix == ".rb":
+                calls |= _ruby_calls(source)
+            else:
+                js[path.relative_to(root).as_posix()] = source
+        if js:
+            result = subprocess.run(
+                ["node", str(REPO_ROOT / "scripts" / "checker_call_names.js")],
+                input=json.dumps({"sources": js}), text=True, capture_output=True,
+                timeout=CHECKER_PARSE_TIMEOUT, check=True)
+            calls |= set(json.loads(result.stdout)["calls"])
+    except (OSError, UnicodeDecodeError, ValueError, SyntaxError, RecursionError,
+            KeyError, TypeError, subprocess.SubprocessError) as error:
+        raise CheckerParseError(type(error).__name__) from None
+    return calls
+
+
+def exempting_interface_strings(fixture: dict, fixture_dir: Path) -> list[str]:
+    """The declared interface strings that exempt a four-word run the lint
+    would otherwise report: a string that exempts nothing changes no verdict,
+    so only these are checked (skills-evals#595)."""
+    strings = fixture.get(answer_leak.KEY) or ()
+    if not strings:
+        return []
+    bare = set(answer_leak.leaked_runs(
+        fixture["prompt"], "\n".join(answer_leak.fixture_added_lines(fixture_dir)), (),
+        answer_leak.preexisting_text(fixture, fixture_dir)))
+    return [text for text in strings
+            if any(" ".join(run) in bare for run in answer_leak._runs(answer_leak.words(text)))]
+
+
+def interface_provenance(fixture: dict, fixture_dir: Path) -> list[str]:
+    """skills-evals#595: an interface string that exempts a leaked run must
+    already occur in the seed (as whole words, or as a seed file's path), or
+    be a callable the checker calls: a name, or a signature of a name and
+    bare parameter names, whose name a checker file calls or supplies as a
+    function (an injected dependency the code under test calls). Anything else, a
+    new message, selector or literal the task asks for, exempts nothing; the
+    scaffolder rewrites the task text instead (the integrator, 2026-11-02).
+    Fixed, count-only messages: the gate reads an untrusted branch."""
+    exempting = exempting_interface_strings(fixture, fixture_dir)
+    if not exempting:
+        return []
+    seed = fixture_dir / SEED_DIR
+    seed_files = [p for p in _walk(seed) if p.is_file() and not p.is_symlink()]
+    seed_paths = {p.relative_to(seed).as_posix() for p in seed_files}
+    seed_texts = [p.read_text(encoding="utf-8", errors="replace") for p in seed_files]
+    unproven = []
+    for text in exempting:
+        if text in seed_paths or any(
+                re.search(r"(?<![\w$])" + re.escape(text) + r"(?![\w$])", body)
+                for body in seed_texts):
+            continue
+        unproven.append(text)
+    if not unproven:
+        return []
+    calls = None
+    problems = 0
+    for text in unproven:
+        match = SIGNATURE.fullmatch(text.strip())
+        names = set(re.findall(r"[A-Za-z_$][\w$]*", text))
+        if not match or names & SIGNATURE_LITERALS:
+            problems += 1
+            continue
+        if calls is None:
+            try:
+                calls = checker_call_names(fixture_dir)
+            except CheckerParseError:
+                return ["the checker could not be parsed to prove an interface string"]
+        if match[1] not in calls:
+            problems += 1
+    return ([f"{problems} interface string(s) exempt a leaked run but are neither in the seed "
+             "nor a callable the checker calls"] if problems else [])
+
+
 def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
     """Lexical admission rules, shared by build, check and the static gate.
 
@@ -884,6 +1040,7 @@ def answer_rules(fixture: dict, fixture_dir: Path) -> list[str]:
     if len(overlap) > CODE_OVERLAP_LIMIT:
         problems.append(f"the issue part of the task shares {len(overlap)} substantive code tokens "
                         f"with solution additions (limit {CODE_OVERLAP_LIMIT})")
+    problems += interface_provenance(fixture, fixture_dir)
     return problems
 
 

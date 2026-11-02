@@ -252,7 +252,16 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   200 characters: the identifiers and messages a hidden test checks
   verbatim, which the task text must therefore name. A run inside one
   declared string is not an answer-leak hit (see "The answer-leak lint"
-  below). Validated at load.
+  below). Validated at load. A string that exempts a run the lint would
+  otherwise report must already occur in the seed (as whole words, or as a
+  seed file's path), or be a callable the checker calls or supplies as a
+  function: a name, or a name with a list of bare parameter names, found by
+  parsing the checker (Python's `ast`, Acorn, Ruby's Ripper). A new message,
+  selector or literal exempts nothing, so the task text is rewritten instead
+  (skills-evals#595; the integrator, 2026-11-02). Which tests the checker
+  selects or skips is not modeled: a name called anywhere in a checker file
+  counts, so a scaffold can exempt one identifier and its parameter names by
+  calling it in a test nothing runs.
 - **`issue_before_fix:`** (optional) — a fixture-relative path to a regular
   file outside `seed/`, at most 256 KiB, holding the issue's text as it stood
   before the pull request's first commit. A run of that text is not an

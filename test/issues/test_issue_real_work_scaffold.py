@@ -523,8 +523,11 @@ class AnswerLeakTests(_BuildCase):
     def test_a_task_text_quoting_the_new_test_is_refused(self):
         self.assertRefused(r"four-word run", task_text="Check that self.assertEqual(add(2, 3), 5) holds.")
 
-    def test_an_interface_string_exempts_it(self):
-        self.build(task_text=self.LEAKY, interface_strings=["sum the two operands"])
+    def test_a_prose_interface_string_no_longer_exempts_it(self):
+        # skills-evals#595: a new message or phrase the task asks for is
+        # not in the seed and is not a callable, so it exempts nothing.
+        self.assertRefused(r"interface string", task_text=self.LEAKY,
+                           interface_strings=["sum the two operands"])
 
     def test_the_issues_earlier_text_exempts_it(self):
         self.set_graphql(graphql(body="Please sum the two operands."))
@@ -872,10 +875,93 @@ class RedGreenTests(_BuildCase):
 # Historical drafts written before the lexical admission rules; their evidence
 # stays, none is scheduled, and they no longer pass admission.
 HISTORICAL_ADMISSION_FAILURES = {
-    "_agent-guidance-196": {"substantive code tokens"},
+    # skills-evals#595: its "first and only commit" is a new message the task
+    # asks for, which no longer exempts a leaked run (the integrator,
+    # 2026-11-02: the scaffolder rewrites the task text instead).
+    "_agent-guidance-196": {"substantive code tokens",
+                            "interface string(s) exempt a leaked run"},
     "cms-platform-221": {"local filesystem", "substantive code tokens"},
     "cms-platform-761": {"substantive code tokens"},
 }
+
+
+class InterfaceProvenanceTests(unittest.TestCase):
+    """skills-evals#595: an interface string that exempts a leaked run must be
+    in the seed, or a callable the checker calls or supplies as a function,
+    found by a real parse (Python ast, Acorn, Ruby Ripper)."""
+
+    LEAK = "make_widget(alpha, beta, gamma)"
+
+    def fixture(self, checker: dict, seed: dict | None = None, strings=None,
+                prompt=None, leak=None) -> tuple[dict, Path]:
+        leak = leak or self.LEAK
+        root = Path(tempfile.mkdtemp(prefix="provenance-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        for name, body in {"tool.py": "def old():\n    pass\n", **(seed or {})}.items():
+            (root / "seed" / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / "seed" / name).write_text(body, encoding="utf-8")
+        for name, body in checker.items():
+            (root / "checker" / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / "checker" / name).write_text(body, encoding="utf-8")
+        (root / "solution.patch").write_text(
+            "diff --git a/tool.py b/tool.py\n--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n"
+            f"+def {leak}:\n+    return 'sum the two operands'\n", encoding="utf-8")
+        fixture = {"prompt": prompt or (f"Add {leak} so it can sum the two operands "
+                                        "for the widget."),
+                   "interface_strings": strings if strings is not None else [leak]}
+        return fixture, root
+
+    def problems(self, *args, **kw):
+        fixture, root = self.fixture(*args, **kw)
+        return scaffold.interface_provenance(fixture, root)
+
+    def test_a_signature_the_python_checker_calls_is_admitted(self):
+        self.assertEqual(self.problems({"test_tool.py": "from tool import make_widget\n"
+                                        "def test_it():\n    assert make_widget(1, 2, 3)\n"}), [])
+
+    def test_a_signature_the_checker_never_calls_is_refused(self):
+        problems = self.problems({"test_tool.py": "def test_it():\n    assert other(1)\n"})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("1 interface string(s)", problems[0])
+
+    def test_a_name_in_a_comment_or_string_is_not_a_call(self):
+        self.assertTrue(self.problems({"test_tool.py": "# make_widget(1, 2, 3)\n"
+                                       "NOTE = 'make_widget(1, 2, 3)'\n"}))
+
+    def test_the_javascript_checker_calls_or_supplies_it(self):
+        self.assertEqual(self.problems({"t.test.js": "test('x', () => make_widget(1, 2, 3));\n"}), [])
+        supplied = ("const deps = { make_widget: overrides.make_widget || (() => null) };\n"
+                    "run(deps);\n")
+        self.assertEqual(self.problems({"t.test.js": supplied}), [])
+        self.assertTrue(self.problems({"t.test.js": "const make_widget = 3;\n"}))
+
+    @unittest.skipUnless(shutil.which("ruby"), "needs ruby")
+    def test_the_ruby_checker_calls_it(self):
+        self.assertEqual(self.problems({"test_tool.rb": "def test_it\n  make_widget(1, 2, 3)\nend\n"}), [])
+
+    def test_a_string_already_in_the_seed_is_admitted(self):
+        self.assertEqual(self.problems({}, seed={"api.md": f"Call {self.LEAK} to build one.\n"}), [])
+
+    def test_prose_and_literals_are_never_callables(self):
+        self.assertTrue(self.problems({"test_tool.py": "make_widget(1)\n"},
+                                      strings=["sum the two operands"]))
+        self.assertTrue(self.problems({"test_tool.py": "make_widget(1)\n"},
+                                      leak="make_widget(alpha, True, gamma)"))
+
+    def test_a_string_that_exempts_nothing_is_not_checked(self):
+        self.assertEqual(self.problems({}, strings=["unrelated_name"],
+                                       prompt="Fix the widget please."), [])
+
+    def test_an_unparseable_checker_fails_closed_with_fixed_text(self):
+        problems = self.problems({"test_tool.py": "def broken(:\n"})
+        self.assertEqual(problems, ["the checker could not be parsed to prove an interface string"])
+
+    def test_a_missing_parser_fails_closed(self):
+        fixture, root = self.fixture({"t.test.js": "make_widget(1, 2, 3);\n"})
+        with mock.patch.object(scaffold.subprocess, "run",
+                               side_effect=FileNotFoundError("node")):
+            self.assertEqual(scaffold.interface_provenance(fixture, root),
+                             ["the checker could not be parsed to prove an interface string"])
 
 
 class CommittedFixturesTests(unittest.TestCase):
@@ -1600,7 +1686,9 @@ class WorkflowShapeTests(unittest.TestCase):
         text = GATE.read_text(encoding="utf-8")
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
-        self.assertEqual(len(found), 4)
+        # checkout x2, setup-python, setup-node (#595's checker parse),
+        # create-github-app-token.
+        self.assertEqual(len(found), 5)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertIsNone(lock_problem(node.value, GATE))
