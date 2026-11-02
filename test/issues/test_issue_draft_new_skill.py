@@ -313,6 +313,14 @@ class Select(Case):
         rel = self.put("2026-10-26", proposal(repos=repos))
         self.assertEqual(self.select()["proposal"], rel)
 
+    def test_the_unattributed_pool_is_skipped_and_a_real_subject_picked(self):
+        self.put("2026-10-26", proposal(subject="none", evidence_count=403))
+        real = self.put("2026-10-26", proposal(subject="aaa", evidence_count=2))
+        self.assertEqual(self.select(), {"proposal": real, "count": "1",
+                                         "hook_declined": "0"})
+        with self.assertRaisesRegex(dns.Rejected, "unattributed pool"):
+            dns.check_proposal(proposal(subject="none"))
+
     def test_a_proposal_too_big_to_fire_is_never_picked(self):
         self.put("2026-10-26", proposal(examples=["é" * 2000] * 20))
         self.assertEqual(self.select()["count"], "0")
