@@ -552,6 +552,25 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                                      mode='eval').body
                 self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
                 allowed_reads.add(id(sinks[0]))
+            if path == harness / 'skill_digest.py':
+                # The lock digest's ignored-file listing (#536): one sink that
+                # must match the registry generator's `ignored_paths`, so it
+                # keeps the user's global excludes. Never a workspace.
+                method = next(node for node in tree.body
+                              if isinstance(node, ast.FunctionDef) and node.name == 'git_ignored')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run(["git", "-c", "core.autocrlf=false", '
+                                     '"-c", "core.eol=lf", "-c", "core.fsmonitor=false", '
+                                     '"-c", "core.hooksPath=/dev/null", "-C", str(repo), '
+                                     '"ls-files", "--others", "--ignored", "--exclude-standard", '
+                                     '"-z"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, '
+                                     'stdin=subprocess.DEVNULL, check=False)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
             bindings = {}
             imported_sinks = set()
             for node in ast.walk(tree):
