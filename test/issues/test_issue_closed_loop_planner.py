@@ -243,7 +243,7 @@ class GuardImproveChargeTests(unittest.TestCase):
                                "--budget", str(budget_path)],
                               now=NOW, fire_count=lambda now: (0, 0),
                               improve_count=lambda now: (0, 0))
-        self.assertEqual(code, 1)
+        self.assertEqual(code, guard.REFUSED_EXIT)
         self.assertIn(guard.REFUSAL, out.getvalue())
 
     def test_improve_counts_read_titles(self):
