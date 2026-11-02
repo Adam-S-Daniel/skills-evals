@@ -262,7 +262,7 @@ class TestScheduledFixtures(unittest.TestCase):
 
     def test_dispatch_rejects_invalid_types_nul_and_paths(self):
         for value in [False, True, 0, 123, [], {}, "\0" + EXPECTED[0],
-                      EXPECTED[0] + "\n", "evals/../" + EXPECTED[0], "evals/workflow-path-audit", "evals/nope"]:
+                      "evals/../" + EXPECTED[0], "evals/workflow-path-audit", "evals/nope"]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": value}})
         for inputs in [False, 0, [], "fixture"]:
@@ -331,7 +331,7 @@ class TestScheduledFixtures(unittest.TestCase):
 
     def test_each_matrix_leg_selects_before_its_own_exchange(self):
         jobs = doc()["jobs"]
-        for name, parallel in [("eval", 2), ("publish", 1)]:
+        for name, parallel in [("eval", 3), ("publish", 1)]:
             self.assertEqual(jobs[name]["strategy"], {"fail-fast": False, "max-parallel": parallel,
                              "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})
         steps = jobs["eval"]["steps"]
@@ -340,13 +340,14 @@ class TestScheduledFixtures(unittest.TestCase):
         self.assertLess(select, exchange)
         self.assertEqual(sum(s["name"].startswith("Mint OIDC") for s in steps), 1)
         selection = steps[select]
-        self.assertEqual(selection["env"]["SCHEDULE_FIXTURE"], "${{ github.event_name == 'schedule' && matrix.fixture || '' }}")
+        self.assertEqual(selection["env"]["MATRIX_FIXTURE"], "${{ matrix.fixture }}")
+        self.assertNotIn("SCHEDULE_FIXTURE", selection["env"])
         for path in EXPECTED:
             with tempfile.TemporaryDirectory() as tmp:
                 base = Path(tmp)
                 event = base / "event.json"
                 event.write_text(json.dumps({"inputs": {"fixture": "evals/nope"}}))
-                env = dict(os.environ, SCHEDULE_FIXTURE=path, MATRIX_KEY=path[6:], MATRIX_SLOT="0", GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(base / "out"), RUNNER_TEMP=tmp)
+                env = dict(os.environ, MATRIX_FIXTURE=path, MATRIX_KEY=path[6:], MATRIX_SLOT="0", GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(base / "out"), RUNNER_TEMP=tmp)
                 result = subprocess.run(["bash", "-c", selection["run"]], cwd=ROOT, env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual((base / "eval-fixture").read_text(), path)

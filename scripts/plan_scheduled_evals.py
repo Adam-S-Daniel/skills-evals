@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan only reviewed scheduled fixtures, or the single dispatch fixture.
+"""Plan only reviewed scheduled fixtures, or the dispatch fixture list (1 to 20).
 
 The routine sweep's banded, allowance-cut plan is scripts/plan_week.py,
 which reads the reviewed list through `scheduled_fixtures` here.
@@ -16,6 +16,7 @@ import re
 import subprocess
 
 DEFAULT_FIXTURE = "evals/workflow-path-audit/required-check-routing"
+MAX_DISPATCH_FIXTURES = 20
 
 
 def committed_fixtures(root):
@@ -101,10 +102,18 @@ def plan(root, event_name, event):
             inputs = {}
         if not isinstance(inputs, dict):
             raise ValueError("dispatch inputs must be an object")
-        fixture = inputs.get("fixture")
-        if fixture is None or fixture == "":
-            fixture = DEFAULT_FIXTURE
-        fixtures = [fixture]
+        raw = inputs.get("fixture")
+        if raw is None:
+            raw = ""
+        if not isinstance(raw, str):
+            raise ValueError("dispatch fixture must be a string")
+        fixtures = raw.split()
+        if not fixtures:
+            fixtures = [DEFAULT_FIXTURE]
+        if len(fixtures) > MAX_DISPATCH_FIXTURES:
+            raise ValueError("dispatch names too many fixtures")
+        if len(set(fixtures)) != len(fixtures):
+            raise ValueError("dispatch repeats a fixture")
     else:
         raise ValueError("unsupported eval event")
     return {"include": [{"fixture": fixture,
