@@ -26,8 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 import skill_digest  # noqa: E402
 
-VECTOR_ALL_FILES = "96340f59ccf69609964a10ba95e4cd4b5d084b5d62788160e4f7c6a6a3e4a7c5"
-VECTOR_GIT_IGNORED_SKIPPED = "87f9323f9df51c6d274a0dcd02e452509518c7f384d1fc7919e6e25532db5275"
+VECTOR_ALL_FILES = "681c4d1df407b995d4a9b9d2dbf56a701aed027ce41258fd2868092f1997b4f2"
+VECTOR_GIT_IGNORED_SKIPPED = "800541b28e245722ce9d8d6a6e69223ae8359b7b818a64c344ef060af52e2096"
 
 
 #: Precomposed (NFC) `e` with acute, written as an escape so the source's own
@@ -54,7 +54,7 @@ def build_vector_tree(work: Path) -> Path:
         ".gitignore": b"__pycache__/\n*.log\n",
         "SKILL.md": b"---\nname: vector\n---\n# Vector\n",
         "a/b/c.txt": b"nested\n",
-        "nul.bin": b"before\x00after",
+        "has-nul-byte.bin": b"before\x00after",  # never `nul.*`: a Windows device name
         NON_ASCII_NAME: "caf\u00e9\n".encode("utf-8"),
         "empty.txt": b"",
         "__pycache__/x.pyc": b"\x00compiled",
