@@ -130,3 +130,17 @@ fixtures:
     readiness: "In-place pair on skills-evals, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
   - path: evals/github-actions-repo-settings/drift-diagnosis
     readiness: "In-place pair on repo-settings, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled until the eval runner routine cloned repo-settings (2026-11-01); hermetic checks exercised by test."
+  - path: evals/review-bash-ci-reliability/drift-report-capture
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/review-bash-ci-reliability/empty-repo-discovery
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/review-bash-ci-reliability/nightly-snapshot
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/review-bash-ci-reliability/test-runner-assertions
+    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/skills-doctor/one-row-rejects-the-lock
+    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/skills-doctor/personal-copy-outranks-repo
+    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
+  - path: evals/skills-doctor/ssh-remote-is-durable
+    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."

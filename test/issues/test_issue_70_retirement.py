@@ -2086,6 +2086,40 @@ class ComputeGatesTests(unittest.TestCase):
     # --- Round 6 -----------------------------------------------------------
 
 
+class ExpectedContentSkipTests(unittest.TestCase):
+    """expected_content leaves out a fixture listed in evals/unscheduled.yml
+    and a `draft: true` one (Adam, 2026-11-02); everything else is expected."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.evals = self.tmp / "evals"
+        for name, extra in (("kept", ""), ("listed", ""), ("drafty", "draft: true\n")):
+            directory = self.evals / "demo" / name
+            directory.mkdir(parents=True)
+            (directory / "fixture.yaml").write_text(
+                f"skill: demo\nprompt: p\n{extra}", encoding="utf-8")
+
+    def write(self, text):
+        (self.evals / "unscheduled.yml").write_text(text, encoding="utf-8")
+
+    def test_a_listed_fixture_and_a_draft_are_skipped_and_the_rest_kept(self):
+        self.write("fixtures:\n  - path: evals/demo/listed\n    reason: Example reason.\n")
+        self.assertEqual(sorted(compute_gates.expected_content(self.evals, "demo", {})), ["kept"])
+
+    def test_no_unscheduled_file_expects_every_non_draft_fixture(self):
+        self.assertEqual(sorted(compute_gates.expected_content(self.evals, "demo", {})),
+                         ["kept", "listed"])
+
+    def test_a_malformed_unscheduled_file_fails_closed(self):
+        for text in ("fixtures: [", "- just\n- a list\n", "fixtures: nope\n",
+                     "fixtures:\n  - reason: no path\n"):
+            with self.subTest(text=text):
+                self.write(text)
+                with self.assertRaises(ValueError):
+                    compute_gates.expected_content(self.evals, "demo", {})
+
+
 class ConfidenceReachedTests(unittest.TestCase):
     """The display level the explorer page shows: the level at which the
     confidence sequence's bound just touches the threshold."""

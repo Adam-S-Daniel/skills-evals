@@ -96,7 +96,16 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/vendor-release-impact-issues/stamps-skip-quotes",
             "evals/finding-unknowns",
             # In place on repo-settings, which the routine clones from 2026-11-01.
-            "evals/github-actions-repo-settings/drift-diagnosis"]
+            "evals/github-actions-repo-settings/drift-diagnosis",
+            # In place, with a context; the rest of both skills' fixtures
+            # (Adam, 2026-11-02: leaving one out needs a reason).
+            "evals/review-bash-ci-reliability/drift-report-capture",
+            "evals/review-bash-ci-reliability/empty-repo-discovery",
+            "evals/review-bash-ci-reliability/nightly-snapshot",
+            "evals/review-bash-ci-reliability/test-runner-assertions",
+            "evals/skills-doctor/one-row-rejects-the-lock",
+            "evals/skills-doctor/personal-copy-outranks-repo",
+            "evals/skills-doctor/ssh-remote-is-durable"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"

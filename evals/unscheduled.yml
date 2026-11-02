@@ -1,0 +1,38 @@
+# Skill fixtures deliberately NOT on evals/scheduled.yml, each with a written
+# reason. Adam's decision of 2026-11-02 (D6): "require a reason to leave one
+# out". Why it matters: scripts/compute_gates.py `expected_content` expects
+# every fixture of a skill on main, and retirement (harness/gates.py) turns a
+# missing cell into "insufficient"; plan_week.py fires only scheduled fixtures,
+# so an unscheduled fixture that is not listed here blocks its skill's
+# retirement forever. A fixture listed here, and any `draft: true` fixture
+# (unready by definition; `scaffold_real_work.py promote` schedules it later),
+# is not expected.
+#
+# The rule, enforced by test/issues/test_issue_371_scheduled_fixtures.py:
+# every non-draft skill fixture on main is on scheduled.yml or listed here
+# with a non-empty reason; a listed path exists, is a skill fixture and is not
+# also scheduled; no path is listed twice. Remove an entry when you schedule
+# the fixture.
+fixtures:
+  - path: evals/browser-testing
+    reason: "Adam's 2026-10-26 decision is to skip browser-testing (scaffold_real_work.py NEVER_PROMOTE), and an in-place plan cannot resolve its skill: it is neither adopted by the pinned context nor in a registry checkout (skill_not_found), so no budget can be measured."
+  - path: evals/fan-out-triage/keyword-lookalikes
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/fan-out-triage/shifted-draft
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/fan-out-triage/single-file
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/fan-out-triage/three-files
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/workflow-path-audit/companion-skip-pair
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/workflow-path-audit/moved-test-dir
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/workflow-path-audit/workflow-doc-in-step
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/writing-adrs/existing-convention
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/writing-adrs/supersede
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/writing-adrs/why-no-comment-trail
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
