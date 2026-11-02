@@ -359,8 +359,161 @@
    "subject": "skill",
    "text": "The task evals/vendor-release-impact-issues/stamps-skip-quotes is not scheduled: no context.",
    "url": null
+  },
+  {
+   "drift_since": "2026-10-12T17:00:22Z",
+   "fixture": "evals/embeddable-tool-pages",
+   "kind": "context-drift",
+   "model": null,
+   "name": "embeddable-tool-pages",
+   "repository": "Adam-S-Daniel/adamdaniel.ai",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/skills-doctor/bucketed-account-store",
+   "kind": "broken",
+   "model": null,
+   "name": "skills-doctor",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-23T18:24:01Z",
+   "fixture": "evals/skills-doctor/bucketed-account-store",
+   "kind": "context-drift",
+   "model": null,
+   "name": "skills-doctor",
+   "repository": "Adam-S-Daniel/adam-agentskills",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/github-actions-sha-pinning",
+   "kind": "broken",
+   "model": null,
+   "name": "github-actions-sha-pinning",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-24T12:13:42Z",
+   "fixture": "evals/github-actions-sha-pinning",
+   "kind": "context-drift",
+   "model": null,
+   "name": "github-actions-sha-pinning",
+   "repository": "Adam-S-Daniel/adamdaniel.ai",
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-11T14:22:36Z",
+   "fixture": "evals/windows-elevation-from-wsl",
+   "kind": "context-drift",
+   "model": null,
+   "name": "windows-elevation-from-wsl",
+   "repository": "Adam-S-Daniel/wsl-automation",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/platform-release-and-bump",
+   "kind": "broken",
+   "model": null,
+   "name": "platform-release-and-bump",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-08T14:56:43Z",
+   "fixture": "evals/platform-release-and-bump",
+   "kind": "context-drift",
+   "model": null,
+   "name": "platform-release-and-bump",
+   "repository": "Adam-S-Daniel/adamdaniel.ai",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/github-actions-repo-settings/drift-diagnosis",
+   "kind": "broken",
+   "model": null,
+   "name": "github-actions-repo-settings",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-05T13:51:59Z",
+   "fixture": "evals/github-actions-repo-settings/drift-diagnosis",
+   "kind": "context-drift",
+   "model": null,
+   "name": "github-actions-repo-settings",
+   "repository": "Adam-S-Daniel/repo-settings",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/skills-doctor/one-row-rejects-the-lock",
+   "kind": "broken",
+   "model": null,
+   "name": "skills-doctor",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-23T18:24:01Z",
+   "fixture": "evals/skills-doctor/one-row-rejects-the-lock",
+   "kind": "context-drift",
+   "model": null,
+   "name": "skills-doctor",
+   "repository": "Adam-S-Daniel/adam-agentskills",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/skills-doctor/personal-copy-outranks-repo",
+   "kind": "broken",
+   "model": null,
+   "name": "skills-doctor",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-23T18:24:01Z",
+   "fixture": "evals/skills-doctor/personal-copy-outranks-repo",
+   "kind": "context-drift",
+   "model": null,
+   "name": "skills-doctor",
+   "repository": "Adam-S-Daniel/adam-agentskills",
+   "subject": "skill"
+  },
+  {
+   "fixture": "evals/skills-doctor/ssh-remote-is-durable",
+   "kind": "broken",
+   "model": null,
+   "name": "skills-doctor",
+   "reasons": [
+    "pin-deploys-older-copy"
+   ],
+   "subject": "skill"
+  },
+  {
+   "drift_since": "2026-10-23T18:24:01Z",
+   "fixture": "evals/skills-doctor/ssh-remote-is-durable",
+   "kind": "context-drift",
+   "model": null,
+   "name": "skills-doctor",
+   "repository": "Adam-S-Daniel/adam-agentskills",
+   "subject": "skill"
   }
  ],
+ "broken_unknown": 0,
+ "context_drift_unknown": 0,
  "coverage": {
   "as_of": null,
   "covered": 25,
@@ -368,7 +521,7 @@
   "skipped": 11,
   "total": 36
  },
- "generated_at": "2026-11-02T17:52:07Z",
+ "generated_at": "2026-11-02T17:53:33Z",
  "guidance": {
   "sections": [
    {
@@ -765,7 +918,7 @@
    },
    {
     "alone_verdict": null,
-    "bytes": 1267,
+    "bytes": 1283,
     "confidence": {
      "helps": null,
      "no_help": null
@@ -7493,8 +7646,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "c044b8ad61d7d77645ab278a1f00de1a12404c04",
-  "results_commit": "a51a48c2d720ad5fa8ee1b8addd045ad5d97ab98"
+  "repository_commit": "168f4d8b5d2fb7d37e6f4fb9df78810c7e4cead1",
+  "results_commit": "3c90e031cdb3e8cf033af4dc8f9a9febf6ea4d1c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
