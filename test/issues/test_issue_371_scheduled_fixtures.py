@@ -117,7 +117,10 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # match.
     "evals/platform-release-and-bump": ((25099, 14017, 882787),) * 2,
     # Not re-measured either: the largest figures its committed budget
-    # allows under HEADROOM, recorded for both arms.
+    # allows under HEADROOM, recorded for both arms. Back-computed from the
+    # budget, so not a measurement of either arm: its context carries no
+    # skill and its with arm adds one (skills-evals#559 measured 0 and 763
+    # catalog bytes).
     "evals/finding-unknowns": ((25099, 763, 12452),) * 2,
     # Not re-measured either (context repo-settings): the largest figures
     # its committed budget allows under HEADROOM, recorded for both arms.
@@ -167,6 +170,32 @@ REMEASURED.update({
     "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI_NOW,) * 2,
     # adamdaniel.ai ddf1c992 -> da05fc6b (after its #4569 lock re-pin).
     "evals/platform-release-and-bump": ((25512, 14803, 875774),) * 2,
+})
+# REMEASURED is a recorded snapshot, not something this module can recompute.
+# Since skills-evals#559 the with arm tests main's copy of an adopted subject,
+# not the deployed one. Re-measured 2026-11-02 through `run_eval._in_place_plan`
+# against the local clones, at each fixture's pinned context revision, with
+# main's copy from registry checkouts at adam-agentskills d5f3da19 and
+# cms-platform cd59b51f: drift-diagnosis, github-actions-sha-pinning,
+# platform-release-and-bump and the four skills-doctor fixtures. Each pinned
+# context already deploys main's digest of its subject, so main's copy changed
+# no figure above.
+# The adopted fixtures: the with arm swaps the deployed copy for main's,
+# which can be smaller than the copy the context measured, so the with arm
+# may measure below the context alone. The added ones only add a skill.
+ADOPTED = frozenset({
+    "evals/disarm-inherited-reach",
+    "evals/github-actions-repo-settings/drift-diagnosis",
+    "evals/github-actions-sha-pinning",
+    "evals/platform-release-and-bump",
+    *(f"evals/review-bash-ci-reliability/{name}"
+      for name in ("drift-report-capture", "empty-repo-discovery", "nightly-snapshot",
+                   "release-pipeline", "test-runner-assertions")),
+    *(f"evals/skills-doctor/{name}"
+      for name in ("bucketed-account-store", "one-row-rejects-the-lock",
+                   "personal-copy-outranks-repo", "ssh-remote-is-durable")),
+    "evals/workflow-path-audit/required-check-routing",
+    "evals/writing-adrs/bootstrap",
 })
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
@@ -294,6 +323,14 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
         self.assertEqual(set(MEASURED), set(fixtures()) - set(ISOLATION_ONLY))
         self.assertEqual(set(MEASURED_KEYS), set(context.BUDGET_KEYS))
         self.assertLessEqual(set(REMEASURED), set(MEASURED))
+        added = {"evals/finding-unknowns", "evals/embeddable-tool-pages",
+                 "evals/windows-elevation-from-wsl"}
+        self.assertFalse(added & ADOPTED)
+        # A new in-place fixture is classified, never exempted by default.
+        self.assertEqual(ADOPTED | added, set(MEASURED))
+        for path, (measured_context, measured) in REMEASURED.items():
+            if any(arm < alone for arm, alone in zip(measured, measured_context)):
+                self.assertIn(path, ADOPTED)
         for path, fixture in fixtures().items():
             if path in ISOLATION_ONLY:
                 continue
@@ -303,7 +340,8 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
                 with self.subTest(fixture=path, key=key):
                     budget = fixture["context"]["budget"][key]
                     self.assertGreaterEqual(sized_on[index], sized_on_context[index])
-                    self.assertGreaterEqual(measured[index], measured_context[index])
+                    if path not in ADOPTED:
+                        self.assertGreaterEqual(measured[index], measured_context[index])
                     self.assertEqual(budget, math.ceil(sized_on[index] * HEADROOM))
                     # What the pinned context measures today must fit.
                     self.assertLessEqual(measured[index], budget)

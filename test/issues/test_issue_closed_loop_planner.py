@@ -1466,12 +1466,14 @@ class BareBaselineTests(unittest.TestCase):
     def test_a_bare_fire_is_not_an_empty_fire_of_the_cells_pair(self):
         fixture = "evals/writing-adrs/bootstrap"
         gates_doc = {"roster_models": ["m1"], "skills": {}}
-        old = NOW - timedelta(days=1)
+        # NOW is before EMPTY_FIRES_SINCE (#559), which would count neither.
+        now = plan_week.EMPTY_FIRES_SINCE + timedelta(days=2)
+        old = now - timedelta(days=1)
         bare = [fire(i, f"Fire eval routine: eval bare {fixture} m1", old) for i in (1, 2)]
         pair = [fire(i, f"Fire eval routine: eval {fixture} m1", old) for i in (3, 4)]
 
         def empty(runs):
-            cells = plan_week.eval_cells(ROOT / "evals", gates_doc, runs, NOW)
+            cells = plan_week.eval_cells(ROOT / "evals", gates_doc, runs, now)
             return next(c for c in cells if c["fixture"] == fixture)["empty_fires"]
         self.assertEqual(empty(bare), 0)
         self.assertEqual(empty(pair), 2)

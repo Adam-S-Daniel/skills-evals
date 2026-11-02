@@ -367,10 +367,8 @@ const STRINGS = {
   removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
-    'not-schedulable': 'Not being tested', broken: 'Runs cannot count', 'context-drift': 'Context out of date' },
-  // #544/#545: these two alerts carry fields, not text, so the page words them.
-  alertReasons: { 'pin-deploys-older-copy': 'its pinned repository still deploys an older copy of the skill, so its runs test that copy and cannot count toward the current one' },
-  alertBroken: (task, why) => 'The task ' + task + ' needs a new pin: ' + why + '.',
+    'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date' },
+  // #545: this alert carries fields, not text, so the page words it.
   alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
   alertDetails: 'Details',
 
@@ -1122,13 +1120,9 @@ function coverageView(doc, mode) {
     h('div', { class: 'cols' }, group('covered', STRINGS.covered), group('skipped', STRINGS.skipped), group('gap', STRINGS.gap)));
 }
 
-// The sentence for an alert that carries fields instead of `text` (#544, #545);
+// The sentence for an alert that carries fields instead of `text` (#545);
 // null when it has neither, so the label stands alone.
 function alertText(a) {
-  if (a.kind === 'broken' && Array.isArray(a.reasons) && a.reasons.length) {
-    const why = a.reasons.map((r) => Object.prototype.hasOwnProperty.call(STRINGS.alertReasons, r) ? STRINGS.alertReasons[r] : clean(r));
-    return STRINGS.alertBroken(clean(a.fixture), why.join('; '));
-  }
   if (a.kind === 'context-drift' && typeof a.drift_since === 'string') {
     return STRINGS.alertDrift(clean(a.fixture), clean(a.repository), fmtDay(parseTime(a.drift_since)));
   }

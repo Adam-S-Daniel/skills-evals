@@ -2261,12 +2261,14 @@ class TestIssue97(unittest.TestCase):
         self.assertGreater(budget, 0,
                            "eval.yml's eval job must carry a timeout-minutes "
                            "— this assertion must not pass vacuously")
+        # The job runs up to MAX_DISPATCH_TRIALS trials, so the per-knob
+        # ceiling is one trial's share of the job budget.
         self.assertEqual(
-            run_eval.MAX_TIMEOUT_S, budget,
+            run_eval.MAX_TIMEOUT_S, budget // self.MAX_DISPATCH_TRIALS,
             "harness/run_eval.py's MAX_TIMEOUT_S must equal eval.yml's "
-            "`timeout-minutes` x 60 for the eval job: it is the ceiling every "
-            "timeout knob is checked against, and a knob larger than the job "
-            "budget can only outlive it")
+            "`timeout-minutes` x 60 / the dispatch trials maximum: it is the "
+            "ceiling every timeout knob is checked against, and a knob larger "
+            "than one trial's budget can only outlive the job")
 
     def test_a_timeout_above_the_job_budget_is_a_named_configuration_error(self):
         root = self._checkout()
@@ -4047,32 +4049,28 @@ class TestIssue97(unittest.TestCase):
         self.assertFalse(inputs["fixture"].get("required"),
                          "manual dispatch can omit the fixture input")
 
-    def test_the_fixture_input_is_read_from_the_event_file_never_interpolated(self):
-        # `${{ inputs.fixture }}` inside a run: block is a shell-injection
-        # surface in the one workflow that holds a live API key. The value is
-        # read from $GITHUB_EVENT_PATH as data instead.
+    def test_no_run_block_interpolates_an_input_and_the_fixture_comes_from_the_matrix(self):
+        # `${{ inputs.* }}` inside a run: block is a shell-injection surface
+        # in the one workflow that holds a live API key. The fixture list is
+        # split and validated by the plan job and reaches each leg through the
+        # matrix; `trials` is read from $GITHUB_EVENT_PATH as data.
         for step in self._eval_steps():
             run = step.get("run") or ""
             with self.subTest(step=step.get("name")):
                 self.assertNotIn("${{", run)
         scripts = [s.get("run") or "" for s in self._eval_steps()]
-        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s
-                   and "inputs.fixture" in s]
-        self.assertEqual(len(reading), 1,
-                         "exactly one step reads the fixture input, and it "
-                         "reads it from the event file")
-        # The one other reader is "Propose a roster change", which reads the
-        # boolean `roster_only` from the same file to word its issue text
-        # (#203 round 1) — never the fixture.
-        others = [s for s in scripts if "GITHUB_EVENT_PATH" in s
-                  and "inputs.fixture" not in s]
-        for other in others:
-            self.assertIn(".inputs.roster_only", other)
+        self.assertEqual([s for s in scripts if "inputs.fixture" in s], [],
+                         "no eval step re-reads the fixture input from the event")
+        # The only event-file readers: the trials step and "Propose a roster
+        # change" (the boolean `roster_only`, #203 round 1).
+        for reader in (s for s in scripts if "GITHUB_EVENT_PATH" in s):
+            self.assertTrue(".inputs.trials" in reader or ".inputs.roster_only" in reader,
+                            reader)
 
     def test_the_fixture_is_validated_before_any_credential_step(self):
         names = [(s.get("name") or "") for s in self._eval_steps()]
         validate = next(i for i, s in enumerate(self._eval_steps())
-                        if "GITHUB_EVENT_PATH" in (s.get("run") or ""))
+                        if (s.get("name") or "").startswith("Select and validate the fixture"))
         credential = next(i for i, name in enumerate(names)
                           if name.startswith("Mint OIDC token"))
         self.assertLess(validate, credential,
@@ -4084,21 +4082,27 @@ class TestIssue97(unittest.TestCase):
                       "validation step wrote, not from the event again")
 
     def _validation_script(self) -> str:
-        for step in self._eval_steps():
-            if "GITHUB_EVENT_PATH" in (step.get("run") or ""):
-                return step["run"]
-        self.fail("no validation step found")
+        return self._step_named("Select and validate the fixture")["run"]
 
     def _run_validation(self, event: dict | None,
                         cwd: Path | None = None) -> subprocess.CompletedProcess:
         tmp = Path(tempfile.mkdtemp(prefix="eval-dispatch-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        # The step takes its fixture from the matrix (MATRIX_FIXTURE), never
+        # from the event; `event` keeps the old test rows' shape. A non-string
+        # row is rendered as the JSON an env var would carry.
+        fixture = ((event or {}).get("inputs") or {}).get("fixture", "")
+        if not isinstance(fixture, str):
+            fixture = json.dumps(fixture)
         event_path = tmp / "event.json"
         event_path.write_text(json.dumps(event if event is not None else {}),
                               encoding="utf-8")
         # A real runner always provides GITHUB_OUTPUT (the step writes the
         # validated `eval_key` there; publication uses the matching matrix key).
         env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
+                   MATRIX_FIXTURE=fixture,
+                   MATRIX_KEY=fixture[len("evals/"):] if fixture.startswith("evals/") else "x",
+                   MATRIX_SLOT="0",
                    RUNNER_TEMP=str(tmp), GITHUB_OUTPUT=str(tmp / "gh-output"))
         proc = subprocess.run(["bash", "-c", self._validation_script()],
                               cwd=str(cwd or REPO_ROOT), env=env,
@@ -4125,13 +4129,15 @@ class TestIssue97(unittest.TestCase):
                 self.assertEqual(
                     proc.output, f"eval_key={fixture[len('evals/'):]}\n")
 
-    def test_the_validation_step_defaults_when_the_event_carries_no_input(self):
-        # Manual dispatch may omit `inputs` or leave the fixture input empty.
+    def test_the_validation_step_refuses_a_leg_with_no_fixture(self):
+        # The plan job defaults an empty dispatch list; a leg that still
+        # arrives without a fixture is a fault, never a silent default.
         for event in ({}, {"inputs": {}}, {"inputs": {"fixture": ""}}):
             with self.subTest(event=event):
                 proc = self._run_validation(event)
-                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-                self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertIn("carries no fixture", proc.stdout + proc.stderr)
+                self.assertIsNone(proc.selected)
 
     # Every value the step must refuse, driven through the real `run:` block.
     # Two shapes of refusal, both exit 1 before the token exchange: a value
@@ -4240,59 +4246,6 @@ class TestIssue97(unittest.TestCase):
                     f"into a public log\n{output}")
                 self.assertIsNone(proc.selected)
                 self.assertIsNone(proc.key)
-
-    # A real NUL, written as an escape so this source file carries none.
-    NUL = chr(0)
-
-    def test_a_nul_byte_in_the_dispatch_value_is_refused_before_substitution(self):
-        # N3 (code). `jq -r` emits a NUL faithfully; bash's `$( )` then DROPS
-        # it, with only a warning on stderr — so every check in the step is
-        # judging a string the dispatcher did not send, and the step's own
-        # `fixture:` log line names something else again. Measured on
-        # c5ea933, through this same `run:` block: a value whose JSON spelling
-        # is the NUL escape followed by evals/workflow-path-audit was ACCEPTED
-        # as that fixture, rc 0, with $RUNNER_TEMP/eval-fixture written and
-        # only "warning: command substitution: ignored null byte in input" to
-        # show for it.
-        #
-        # It failed SAFE — whatever survives the substitution still has to
-        # match a committed path — but the gate never saw the byte it would
-        # refuse, which is not what this workflow's header says it does.
-        for label, value in (
-            ("leading", self.NUL + "evals/workflow-path-audit/required-check-routing"),
-            ("trailing", "evals/workflow-path-audit/required-check-routing" + self.NUL),
-            # Collapses to a COMMITTED name once the NUL is dropped — the
-            # shape that was accepted.
-            ("embedded, collapsing to a committed name",
-             "evals/workflow" + self.NUL + "-path-audit/required-check-routing"),
-            # Collapses to nothing committed: refused before, refused now, but
-            # by the NUL rule rather than by accident.
-            ("embedded, collapsing to nothing committed",
-             "evals/no" + self.NUL + "pe"),
-        ):
-            with self.subTest(value=label):
-                proc = self._run_validation({"inputs": {"fixture": value}})
-                output = proc.stdout + proc.stderr
-                self.assertEqual(proc.returncode, 1,
-                                 f"{label}: a NUL anywhere in the dispatch "
-                                 f"value must fail the step\n{output}")
-                self.assertIn("NUL byte", output,
-                              f"{label}: refused by a NAMED rule\n{output}")
-                self.assertIsNone(
-                    proc.selected,
-                    f"{label}: reached $RUNNER_TEMP/eval-fixture, so the "
-                    "token exchange would have run")
-                self.assertIsNone(proc.key)
-                self.assertNotIn(
-                    self.ECHO_MARKER.split("-")[0], output,
-                    "and the value is not echoed back into a public log")
-                self.assertNotIn("evals/workflow", output, output)
-        # The accepted rows are unchanged: the gate runs before the
-        # substitution and a value with no NUL never reaches it.
-        proc = self._run_validation(
-            {"inputs": {"fixture": "evals/workflow-path-audit/required-check-routing"}})
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertEqual(proc.selected, "evals/workflow-path-audit/required-check-routing")
 
     @staticmethod
     def _commit_selection_tree(root: Path) -> None:
@@ -5028,6 +4981,9 @@ class TestIssue97(unittest.TestCase):
         return (isinstance(fixture.get("skill"), str)
                 and isinstance(fixture.get("prompt"), str))
 
+    # The most trials one eval.yml leg runs (its `trials` input is 1 to 3).
+    MAX_DISPATCH_TRIALS = 3
+
     def test_every_fixture_fits_inside_the_workflow_job_timeout(self):
         # #287. This used to check guidance fixtures only and counted one
         # agent call per arm, so rename-pdfs (a skill fixture with one
@@ -5040,7 +4996,7 @@ class TestIssue97(unittest.TestCase):
         job_budget_s = doc["jobs"]["eval"]["timeout-minutes"] * 60
         # The budget below assumes the invocation eval.yml really makes:
         # `--arm both` (two skill arms, or the guidance fixture's declared
-        # arms), one trial, no `--timeout` override and no `--no-judge`.
+        # arms), one trial per `--trials` unit, no `--timeout` override and no `--no-judge`.
         # Parsed from the step, so a flag added there fails here instead of
         # silently making the arithmetic wrong.
         step = next(step for step in doc["jobs"]["eval"]["steps"]
@@ -5048,7 +5004,10 @@ class TestIssue97(unittest.TestCase):
         tokens = shlex.split(step["run"].replace("\\\n", " "))
         self.assertIn("run_eval.py", " ".join(tokens))
         self.assertEqual(tokens[tokens.index("--arm") + 1], "both")
-        for flag in ("--trials", "--timeout", "--no-judge"):
+        # `--trials` is the dispatch's 1 to 3 trials count (default 1), so
+        # the arithmetic below is per trial times MAX_DISPATCH_TRIALS.
+        self.assertEqual(tokens[tokens.index("--trials") + 1], "$trials")
+        for flag in ("--timeout", "--no-judge"):
             self.assertNotIn(
                 flag, tokens,
                 f"eval.yml's run step now passes {flag}: the per-fixture "
@@ -5070,11 +5029,12 @@ class TestIssue97(unittest.TestCase):
             per_arm, arms = (self._guidance_fixture_budget(fixture)
                              if guidance_subject
                              else self._skill_fixture_budget(fixture))
-            worst_case = per_arm * arms
+            worst_case = per_arm * arms * self.MAX_DISPATCH_TRIALS
             with self.subTest(fixture=name):
                 self.assertLessEqual(
                     worst_case, job_budget_s * 0.75,
-                    f"{name}: {arms} arms x {per_arm}s per arm = "
+                    f"{name}: {self.MAX_DISPATCH_TRIALS} trials x {arms} arms "
+                    f"x {per_arm}s per arm = "
                     f"{worst_case}s does not leave room inside eval.yml's "
                     f"{job_budget_s}s job timeout for the CLI install and the "
                     "badge commit (0.75 x the job timeout is the ceiling). "
@@ -5149,7 +5109,7 @@ class TestIssue97(unittest.TestCase):
             "the header must say the report's cost column counts the scored "
             "leg only — the guard probes are real calls and are not in it")
         text = EVAL_WORKFLOW.read_text(encoding="utf-8")
-        comment = text[:text.index("    timeout-minutes: 45")]
+        comment = text[:text.index("    timeout-minutes: 135")]
         self.assertFalse(
             "2 arms x 10 min agent budget + judges + setup" in text,
             "the stale timeout-minutes comment must be gone")
