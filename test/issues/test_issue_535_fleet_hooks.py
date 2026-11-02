@@ -320,9 +320,16 @@ class MaterializeTests(HookBase):
         self.assertEqual(plan["fleet_hooks"].digest, self.plan()["fleet_hooks"].digest)
 
     def test_a_guidance_pair_gets_the_set_too(self):
+        # The consumer ships another dated-phrasing pass: a guidance plan
+        # takes the template at the loaded guidance revision, a skill plan
+        # what the consumer shipped.
+        self.metadata["revision"] = self.ship({".githooks/dated-phrasing.js": b"// consumer\n"})
         plan = self.plan(section="python")
         scratch, *_ = self.prepare("with", plan)
         self.assertEqual(self.hook_files(scratch)["agent-checks"][0], RUNNER)
+        self.assertEqual(plan["fleet_hooks"].files["dated-phrasing.js"],
+                         TEMPLATES["dated-phrasing.js"])
+        self.assertEqual(self.plan()["fleet_hooks"].files["dated-phrasing.js"], b"// consumer\n")
 
     def test_an_unhooked_arm_gets_nothing(self):
         scratch, *_ = self.prepare("with", self.plan(hooks=False))
@@ -335,10 +342,21 @@ class MaterializeTests(HookBase):
         self.assertEqual(before, fleet_hooks.tree_digest(directory))
         fleet_hooks.unlock(directory)
         runner = directory / fleet_hooks.HOOKS_SUBDIR / "agent-checks"
-        for change in (lambda: runner.chmod(0o777), lambda: runner.write_bytes(b"x"),
-                       lambda: (directory / "extra").write_bytes(b"")):
-            change()
-            self.assertNotEqual(fleet_hooks.tree_digest(directory), before)
+        link = directory / "link"
+        changes = {
+            "file mode": lambda: runner.chmod(0o777),
+            "bytes": lambda: runner.write_bytes(b"x"),
+            "new file": lambda: (directory / "extra").write_bytes(b""),
+            "new empty directory": lambda: (directory / "empty").mkdir(),
+            "new symlink": lambda: link.symlink_to("a"),
+            "symlink target": lambda: (link.unlink(), link.symlink_to("b")),
+            "root mode": lambda: directory.chmod(0o700),
+        }
+        for what, change in changes.items():
+            with self.subTest(change=what):
+                previous = fleet_hooks.tree_digest(directory)
+                change()
+                self.assertNotEqual(fleet_hooks.tree_digest(directory), previous)
 
     def test_unlock_lets_the_scratch_go(self):
         scratch = Path(tempfile.mkdtemp(prefix="fleet-hooks-test-"))
@@ -411,6 +429,41 @@ class InjectionTests(HookBase):
         pushed = self.git_in(workspace, env, "push", "-q", str(bare), "HEAD:refs/heads/topic")
         self.assertEqual(pushed.returncode, 0, pushed.stderr)
         self.assertEqual(self.runner_log(workspace), f"pre-push {bare}\n")
+
+    def test_the_hook_command_runs_no_path_lookup_outside_the_sandbox(self):
+        # Outside the sandbox PATH is the agent's: a stand-in for anything
+        # the command could run before its namespace check never runs.
+        _, workspace, env = self.arm()
+        marks, stand_ins = self.root / "marks", self.root / "stand-ins"
+        marks.mkdir()
+        stand_ins.mkdir()
+        for name in ("cat", "readlink", "bash", "sh"):
+            (stand_ins / name).write_text(f"#!/bin/sh\ntouch {marks / name}\nexit 0\n")
+            (stand_ins / name).chmod(0o755)
+        planted = dict(env, PATH=f"{stand_ins}:{env['PATH']}")
+        self.stage_secret(workspace, env)
+        done = subprocess.run(["/usr/bin/git", "-c", "user.name=a", "-c", "user.email=a@example.com",
+                               "commit", "-q", "-m", "outside"], cwd=workspace, env=planted,
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(sorted(p.name for p in marks.iterdir()), [])
+        self.assertEqual(self.runner_log(workspace), "")
+
+    def test_an_empty_or_missing_receipt_runs_nothing_inside_the_sandbox(self):
+        # An empty line reads as an empty id; an empty file, or none, fails the read.
+        for receipt in ("\n", "", None):
+            with self.subTest(receipt=receipt):
+                scratch, workspace, env = self.arm()
+                directory = scratch / fleet_hooks.DIRNAME
+                fleet_hooks.unlock(directory)
+                if receipt is None:
+                    (directory / fleet_hooks.RECEIPT).unlink()
+                else:
+                    (directory / fleet_hooks.RECEIPT).write_text(receipt)
+                self.stage_secret(workspace, env)
+                done = self.git_in(workspace, env, "commit", "-q", "-m", "secret")
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(self.runner_log(workspace), "")
 
     def test_a_commit_from_outside_the_sandbox_runs_nothing(self):
         # A Claude Code hook runs outside the sandbox with the agent's
@@ -789,11 +842,24 @@ class PoolingTests(MainRun):
                 path.relative_to(self.root / "results").as_posix()))
             digests.add(doc["context"]["fleet_hooks_digest"])
         self.assertEqual(digests, {self.freeze().digest})
-        bad = json.loads(path.read_bytes())
-        bad["context"]["fleet_hooks_digest"] = "sha256:" + "0" * 64
-        with self.assertRaises(ingest.Rejected):
-            ingest.check_summary(bad, path.name, ingest.parse_result_path(
-                path.relative_to(self.root / "results").as_posix()))
+        for value in ("sha256:" + "0" * 64, None):
+            with self.subTest(value=value):
+                bad = json.loads(path.read_bytes())
+                bad["context"]["fleet_hooks_digest"] = value
+                with self.assertRaises(ingest.Rejected):
+                    ingest.check_summary(bad, path.name, ingest.parse_result_path(
+                        path.relative_to(self.root / "results").as_posix()))
+
+    def test_compute_gates_skips_a_present_but_null_digest(self):
+        proc = self.run_main("none")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        path = self.root / "results" / "sample" / self.TS / "with_skill" / "summary.json"
+        doc = json.loads(path.read_bytes())
+        doc["context"]["fleet_hooks_digest"] = None
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        index = compute_gates.build_index(self.root, self.root / "evals", "99991231T235959Z")
+        self.assertEqual(index["skipped"], {"malformed arm summary": 1})
+        self.assertEqual([run["role"] for run in index["runs"]], ["without"])
 
     def test_an_unhooked_summary_has_no_digest(self):
         proc = self.run_main("none", hooks=False)

@@ -323,12 +323,15 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   is refused (`fleet_hooks_origin_exists`). The hook command reads the
   harness's own network namespace id (`/proc/self/ns/net`) from
   `fleet-hooks/harness-netns` and runs the frozen runner only when its
-  own differs, that is inside the sandbox; anything else exits 0, so a
+  own differs, that is inside the sandbox, and looks nothing up on `PATH`
+  before that check (`read`, `/usr/bin/readlink`, `/usr/bin/bash`), since
+  outside the sandbox `PATH` is the agent's; anything else exits 0, so a
   Claude Code hook's commit runs no `.agent-checks/local.sh`. The command
   runs the frozen runner even when the seed carries no `.githooks/`,
   since the context repository's clone would. The directory is
   write-denied (`Edit` deny rules and `sandbox.filesystem.denyWrite`), its
-  tree digest (paths, modes, bytes) is read before the first turn and
+  tree digest (the root's mode, and every entry's path and mode with a
+  file's bytes or a link's target, directories included) is read before the first turn and
   after each, and any change is `agent_wrote_agent_config`. The frozen
   `agent-checks-guard.sh` is the arm's one PreToolUse hook, through
   `--settings`, with the sync's matcher and timeout. A Claude Code hook
@@ -352,7 +355,7 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   this addendum), and the isolation runs that are pooled are never hooked.
 - **Not built here: the guidance alone pair.** The addendum's "plus
   `section`/`none` when the fixture opts in" has no opt-in yet; the alone
-  pair never runs the hooks. Follow-up: #TBD. Until then a hooked section
+  pair never runs the hooks. Follow-up: [skills-evals#605](https://github.com/Adam-S-Daniel/skills-evals/issues/605). Until then a hooked section
   whose in-situ verdict is `retire` while it helps alone reads, as
   before, "the rest of the guidance covers it", though the fleet hooks
   may be what covers it; no hooked in-place guidance run reaches the
@@ -365,7 +368,12 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   a Bash command in the arm's sandbox sees a network namespace other than
   the harness's, needs a real CLI call and waits for the first opt-in;
   until then the receipt rests on the sandbox's `--unshare-net`, which the
-  tests stand in for with `bwrap --unshare-net`. A managed
+  tests stand in for with `bwrap --unshare-net`. The probe must also show
+  that the agent's own Git sees the injected keys: the CLI was seen to
+  rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
+  pairs and setting `hook.<event>.enabled=false`), and whether it does the
+  same for sandboxed Bash tool commands is unverified. If it does, the
+  hooks never reach the agent's Git. A managed
   `disableAllHooks` would drop the guard without a word. And the agent can
   still switch its own hooks off, by `git remote set-url origin` to a
   non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not

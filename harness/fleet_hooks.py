@@ -119,10 +119,12 @@ def include_text(directory: str) -> str:
     root = shlex.quote(directory)
     lines = ["# Written by skills-evals harness/fleet_hooks.py (ADR 0012, fleet hooks addendum)."]
     for event in EVENTS:
-        command = (f"d={root}; r=$(cat \"$d/{RECEIPT}\" 2>/dev/null) "
-                   "&& n=$(readlink /proc/self/ns/net 2>/dev/null) "
+        # Nothing is looked up on PATH before the namespace check: outside
+        # the sandbox, PATH is the agent's (a `$WORKSPACE/bin` stand-in).
+        command = (f"d={root}; read -r r 2>/dev/null < \"$d/{RECEIPT}\" "
+                   "&& n=$(/usr/bin/readlink /proc/self/ns/net 2>/dev/null) "
                    "&& [ -n \"$r\" ] && [ -n \"$n\" ] && [ \"$n\" != \"$r\" ] || exit 0; "
-                   f"exec bash \"$d/{HOOKS_SUBDIR}/{RUNNER}\" {event}")
+                   f"exec /usr/bin/bash \"$d/{HOOKS_SUBDIR}/{RUNNER}\" {event}")
         lines += [f'[hook "agent-checks-{event}"]', f"\tevent = {event}",
                   f"\tcommand = {_config_value(command)}"]
     return "\n".join(lines) + "\n"
@@ -275,7 +277,7 @@ def unlock(directory: Path) -> None:
 def tree_digest(directory: Path) -> str:
     """Every path under `directory` with its mode and bytes (or link target),
     read before the first turn and after each; any change is the agent's."""
-    digest = hashlib.sha256()
+    digest = hashlib.sha256(b"root\0" + str(Path(directory).lstat().st_mode).encode() + b"\n")
     for current, dirs, files in os.walk(directory):
         dirs.sort()
         for name in sorted(dirs + files):
