@@ -319,10 +319,14 @@ GUIDANCE_DIGEST_OPTIONAL = ("section_payload",)
 JUDGE_SELECTION_KEYS = ("model", "rule", "arm_tier", "judge_tier")
 JUDGE_SELECTION_RULES = ("tier-above-arm", "roster-judge", "fixture-pin")
 AGENT_KEYS = ("usage", "cost_usd", "num_turns", "duration_ms")
-#: `harness` keys every summary has carried since #71; `effort` came later
-#: and is optional, so an older summary still ingests.
+#: `harness` keys every summary has carried since #71; `effort` and
+#: `git_version` (#535, run_eval.git_version) came later and are optional, so
+#: an older summary still ingests.
 HARNESS_KEYS = ("name", "version", "permission_mode")
-HARNESS_ALLOWED = HARNESS_KEYS + ("effort",)
+HARNESS_ALLOWED = HARNESS_KEYS + ("effort", "git_version")
+#: `harness.git_version`: `git --version`'s first line, as run_eval reduces
+#: it (VERSION_MAX_CHARS characters of [A-Za-z0-9._() -]), or null.
+GIT_VERSION_RE = re.compile(r"git version [0-9][A-Za-z0-9._() -]{0,51}")
 #: run_eval's agent effort levels (guidance.EFFORT_LEVELS; a test pins the
 #: two together). Null is the CLI's default.
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
@@ -1143,6 +1147,8 @@ def check_summary(doc, where: str, parts: dict) -> None:
     if harness.get("effort") is not None \
             and harness["effort"] not in EFFORT_LEVELS:
         raise Rejected(f"{where}: harness.effort is not a known level")
+    _pattern(harness.get("git_version"), f"{where}: harness.git_version",
+             GIT_VERSION_RE, null=True)
     if ("run" in doc) != ("usage" in doc):
         raise Rejected(f"{where}: run and usage come together")
     if "run" in doc:

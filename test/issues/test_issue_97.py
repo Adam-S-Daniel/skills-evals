@@ -2503,6 +2503,10 @@ class TestIssue97(unittest.TestCase):
         # arm's summary.json — the same shape as run_canary's.
         ("harness/run_eval.py", "claude_version", "subprocess.run",
          "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
+        # #535: the `git` an arm runs, read once per run and recorded as
+        # `harness.git_version`, bounded like claude_version's probe.
+        ("harness/run_eval.py", "git_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
         # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
@@ -3045,6 +3049,7 @@ class TestIssue97(unittest.TestCase):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
         ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
+        ("harness/run_eval.py", "git_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
@@ -3133,7 +3138,7 @@ class TestIssue97(unittest.TestCase):
             return fn(**kwargs)
         if name == "probe":
             return fn(cwd=tmp, home=tmp, tmpdir=tmp)
-        if name == "claude_version":
+        if name in ("claude_version", "git_version"):
             return fn()
         if name == "run_leg":
             return fn(tmp, "p", "", model=None, **kwargs)

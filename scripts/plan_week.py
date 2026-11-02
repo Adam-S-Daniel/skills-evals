@@ -1034,6 +1034,7 @@ def _fixture_subject(evals_dir: Path, fixture: str) -> tuple:
 
 
 HOLD_PRIVATE = "private, paused"
+HOLD_GIT = "git too old for fleet hooks"
 
 
 def fixture_hold_reason(directory: Path) -> str | None:
@@ -1043,7 +1044,13 @@ def fixture_hold_reason(directory: Path) -> str | None:
     a skill fixture with no `context:` mapping ("no context") or a null
     `guidance_revision` pin ("null pin") is held, and a private-registry
     fixture ("private, paused") waits for a private context. A guidance or
-    real-work fixture runs in situ and needs no context."""
+    real-work fixture runs in situ and needs no context.
+
+    A fixture that opts into the fleet hooks (`fleet_hooks:` present and not
+    false; ADR 0012, fleet hooks addendum, #535) is held ("git too old for
+    fleet hooks") while this host's `git` is older than Git 2.54, which
+    config-based hooks need (run_eval.git_supports_fleet_hooks). The harness
+    refuses such a run too (`git_too_old_for_fleet_hooks`)."""
     import yaml  # noqa: PLC0415
     try:
         doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
@@ -1052,6 +1059,10 @@ def fixture_hold_reason(directory: Path) -> str | None:
     doc = doc if isinstance(doc, dict) else {}
     if doc.get("registry") == PRIVATE_REGISTRY_URL:
         return HOLD_PRIVATE
+    if doc.get("fleet_hooks", False) is not False:
+        import run_eval  # noqa: PLC0415
+        if not run_eval.git_supports_fleet_hooks(run_eval.git_version()):
+            return HOLD_GIT
     if doc.get("subject") in ("guidance", "any"):
         return None
     if not isinstance(doc.get("context"), dict):
