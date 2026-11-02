@@ -36,6 +36,20 @@
 #   boundary: write access to their default branches is equivalent to key
 #   access.
 #
+# * This workflow does NOT run in-place pairs (skills-evals#587). An
+#   in-place fixture (a top-level `context:` mapping in fixture.yaml,
+#   plan_scheduled_evals.declares_context) needs the hosted container that
+#   run_eval.py's `delivery.require_hosted` checks for, and this runner never
+#   is one, so the arm would fail only AFTER the WIF mint. The `plan` job
+#   refuses every such fixture before any credential exists: it leaves the
+#   matrix, and the step summary lists it with the reason (the cloud routine
+#   is the in-place runner). There is no fallback to isolation, which would
+#   mix isolation and in-place results in one subject's verdict data. When
+#   nothing is left, `plan` outputs `count=0` and every later job is
+#   skipped (a `roster_only` dispatch still refreshes the roster), so the
+#   run ends successfully having minted nothing. Each eval leg refuses an
+#   in-place fixture again, defensively, before its own mint.
+#
 # * _agent-guidance is now inside that same boundary, and this is new with
 #   the guidance subject (#97). A guidance fixture's `with` arm delivers a
 #   payload assembled from that repo's agents-md/base.md into the agent's
@@ -50,7 +64,8 @@
 #   list with readiness evidence (ADR 0008). A contents: read planning job
 #   emits the matrix; dispatch takes a whitespace-separated `fixture` list (max
 #   20, default evals/workflow-path-audit/required-check-routing, each entry
-#   validated against the committed set by the plan job, one matrix leg each)
+#   validated against the committed set by the plan job, one matrix leg each,
+#   in-place fixtures refused as above)
 #   and a `trials` input (1 to 3), the latter read from $GITHUB_EVENT_PATH as
 #   data, never interpolated into run:. Every eval leg revalidates its own selection
 #   against Git's committed evals/**/fixture.yaml set before its own exchange.
@@ -60,7 +75,8 @@
 #   legs upload diagnostics separately. Publishers independently validate the
 #   fixture/key in fresh checkouts and download only the matching success
 #   artifact. They serialize writes, even when a sibling eval fails. The
-#   roster/disarm/proposal/wait jobs still run once per workflow run.
+#   roster/disarm/proposal/wait jobs still run once per workflow run, and
+#   only when the plan left a fixture to run or the dispatch is roster_only.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   Anthropic secret exists (the one stored secret in this workflow is the
@@ -214,7 +230,9 @@ on:
           One or more whitespace-separated committed fixture paths (max 20,
           one matrix leg each), e.g. evals/workflow-path-audit/required-check-routing
           or evals/guidance/_delivery. Each is validated against the committed
-          evals/**/fixture.yaml set before any credential is minted.
+          evals/**/fixture.yaml set before any credential is minted. An
+          in-place fixture (top-level `context:`) is refused there and
+          listed in the run summary: the cloud routine runs those.
         required: false
         default: evals/workflow-path-audit/required-check-routing
       trials:
@@ -340,7 +358,12 @@ on:
 # (and repository admins) create, update or delete `roster/proposal`
 # closes that gap once it is live; until then it stands.
 #
-# `plan` (contents: read) admits the event/list into a fixture/key/slot matrix.
+# `plan` (contents: read) admits the event/list into a fixture/key/slot matrix,
+# refusing in-place fixtures (skills-evals#587), and outputs `count`, the
+# legs left. `roster` `needs: plan` for that gate alone: it runs when
+# `count` is not `0` or the dispatch is `roster_only`, and `disarm`,
+# `roster-pr` and `roster-wait` do not run when `roster` was skipped, so a
+# run with nothing left to evaluate mints no credential at all.
 # `publish` (contents: write) uses that same matrix on fresh runners with no
 # agent. It requires the confirmed-clear gate, no cancellation, and an eval
 # matrix that finished (success OR failure). Each leg reads only its unique
@@ -418,8 +441,11 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 5
+    # `count` is the number of legs left after in-place fixtures are
+    # refused (skills-evals#587); `0` gates every later job off.
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@v7.0.1
@@ -432,6 +458,8 @@ jobs:
           python-version: "3.12"
       - name: Install planning dependency
         run: pip install pyyaml==6.0.3
+      # Also refuses in-place fixtures and lists them, with the reason, in
+      # the step summary (skills-evals#587).
       - name: Plan reviewed fixtures
         id: plan
         working-directory: skills-evals
@@ -442,6 +470,13 @@ jobs:
     # B1 (round 3 on #209): computes, renders, admits and pushes the
     # roster proposal. NEVER runs the agent, NEVER checks out the fixture
     # registries, and NEVER `needs: eval` — see the header comment above.
+    # skills-evals#587: `needs: plan` for its `count` only. This job mints
+    # a WIF bearer, so it runs only when the plan left a fixture to run, or
+    # for a `roster_only` dispatch (which needs no fixture, and runs even
+    # when the plan failed, as before). `!cancelled()` keeps that
+    # `roster_only` case alive past a failed plan.
+    needs: plan
+    if: ${{ !cancelled() && (inputs.roster_only || (needs.plan.result == 'success' && needs.plan.outputs.count != '0')) }}
     permissions:
       contents: read
       id-token: write
@@ -1267,9 +1302,13 @@ jobs:
   # cancellation window instead of merely narrowing it after the fact.
   # `needs: roster` only, deliberately never `eval`: this job must complete
   # (or fail loudly-but-harmlessly) before the agent runs, not after.
+  #
+  # skills-evals#587: skipped when `roster` was, which happens only when the
+  # plan left nothing to evaluate: no agent runs, so there is nothing to
+  # disarm for.
   disarm:
     needs: roster
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    if: ${{ !cancelled() && needs.roster.result != 'skipped' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1358,8 +1397,11 @@ jobs:
     # 4 on #209). A failed or skipped `roster-pr` likewise just means no
     # arming and the committed roster. But a `roster-wait` that did not
     # CONFIRM the arming cleared keeps this job from running at all (S1,
-    # the clause below). Skipped entirely for a `roster_only` dispatch.
-    if: ${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
+    # the clause below). Skipped entirely for a `roster_only` dispatch, and
+    # when the plan refused every fixture (`count` is `0`, skills-evals#587;
+    # `roster-wait` is then skipped too, so this clause, not that one, is
+    # what keeps the empty matrix from running).
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     # Job-level, not workflow-level (F2). B1 (round 4 on #209, blocker):
     # `contents: write` is GONE — this job runs the bypass-permissions
@@ -1538,7 +1580,9 @@ jobs:
 
       - name: Check out repo-settings (in-place context)
         # Read-only deployed context for in-place fixtures (ADR 0012), NOT a
-        # skill registry: never passed as --registry.
+        # skill registry: never passed as --registry. No in-place fixture
+        # reaches this job today (the plan refuses them, skills-evals#587);
+        # the checkout stays for when this runner can host in-place delivery.
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/repo-settings
@@ -1548,7 +1592,9 @@ jobs:
 
       - name: Check out wsl-automation (in-place context)
         # Read-only deployed context for in-place fixtures (ADR 0012), NOT a
-        # skill registry: never passed as --registry.
+        # skill registry: never passed as --registry. No in-place fixture
+        # reaches this job today (the plan refuses them, skills-evals#587);
+        # the checkout stays for when this runner can host in-place delivery.
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/wsl-automation
@@ -1703,6 +1749,15 @@ jobs:
           # The planner always sets the matrix key and slot; check that they
           # match this fixture.
           python3 scripts/plan_scheduled_evals.py --validate "$fixture" "${MATRIX_KEY:-}" "${MATRIX_SLOT:-}" >/dev/null
+          # skills-evals#587, defensive: the plan job already refused every
+          # in-place fixture, so this never fires on a planned leg. Same rule
+          # as the routine: a top-level `context` mapping in fixture.yaml.
+          # An assignment, so a failing python3 fails the step (set -e).
+          pairing="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import plan_scheduled_evals as p; print("in_place" if p.declares_context(sys.argv[1]) else "isolation")' "$fixture")"
+          if [ "$pairing" != "isolation" ]; then
+            echo "::error::eval.yml: in-place pair: runs only in the cloud routine, which hosts in-place delivery; eval.yml cannot (skills-evals#587)"
+            exit 1
+          fi
           printf '%s' "$key" > "$RUNNER_TEMP/eval-key"
           echo "eval_key=$key" >> "$GITHUB_OUTPUT"
           echo "fixture: $fixture"
@@ -1837,13 +1892,14 @@ jobs:
           # its arms and judge exactly as every run before the harness default
           # became `auto` (#71), so the badge window stays like-for-like. Moving
           # it to `auto` is an owner decision, not a side effect.
-          # Same rule as the routine (scripts/plan_scheduled_evals.py): a
-          # top-level `context` mapping in fixture.yaml means in_place.
-          pairing="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import plan_scheduled_evals as p; print("in_place" if p.declares_context(sys.argv[1]) else "isolation")' "$fixture")"
+          # Always isolation: the plan job, and the selection step of this
+          # leg again, refused every in-place fixture before the mint
+          # (skills-evals#587), so only fixtures that ARE isolation pairs
+          # reach here; nothing is downgraded to isolation.
           python3 harness/run_eval.py "$fixture" \
             --arm both \
             --trials "$trials" \
-            --pairing "$pairing" \
+            --pairing isolation \
             --permission-mode bypassPermissions \
             --run-billing api --run-runner actions --run-location cloud \
             --guidance ../_agent-guidance \
@@ -2094,8 +2150,10 @@ jobs:
     # B1.4 (round 2, spec-roster-mode-r2.md): only on `main` — a dispatch on
     # any other ref never has a `$GITHUB_SHA` worth trusting as "the
     # committed policy", so this job (and the auto-merge surface it alone
-    # holds) never runs for one.
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    # holds) never runs for one. skills-evals#587: nor when `roster` was
+    # skipped (the plan left nothing to evaluate), so a run with nothing
+    # to do never mints the roster App token either.
+    if: ${{ !cancelled() && needs.roster.result != 'skipped' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Round 6 (ADR 0003, "the roster PR is the App's"): GITHUB_TOKEN here
@@ -3123,9 +3181,12 @@ jobs:
   # Main-only, like `roster-pr` and `disarm`; skipped on a `roster_only`
   # dispatch (no eval runs, so there is nothing to wait for — an armed PR
   # then merges on its own, as before ADR 0004).
+  #
+  # skills-evals#587: skipped, like `disarm` and `roster-pr`, when `roster`
+  # was (nothing left to evaluate).
   roster-wait:
     needs: [roster, roster-pr]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && !inputs.roster_only }}
+    if: ${{ !cancelled() && needs.roster.result != 'skipped' && github.ref == 'refs/heads/main' && !inputs.roster_only }}
     runs-on: ubuntu-latest
     # Above the wait step's own timeout, which is above the poll cap (30
     # min by default), so the script — not a kill — normally ends the wait,

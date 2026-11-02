@@ -3761,7 +3761,8 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         # B1.4 (round 2): only on `main` — added to the original
         # `!cancelled()` gate, never replacing it.
         self.assertEqual(job.get("if"),
-                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+                         "${{ !cancelled() && needs.roster.result != 'skipped' "
+                         "&& github.ref == 'refs/heads/main' }}")
 
     def test_eval_job_needs_roster_and_is_not_fatal_to_a_roster_failure(self):
         # B1 (round 3 on #209): the `eval` job depends on `roster` (for the
@@ -3771,7 +3772,8 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         # blocker): `eval` now ALSO needs `disarm`, which must run and
         # finish (or fail harmlessly) before the agent starts.
         doc = self._doc()
-        self.assertIsNone(doc["jobs"]["roster"].get("needs"))
+        # skills-evals#587: `roster` needs `plan` for its `count` gate only.
+        self.assertEqual(doc["jobs"]["roster"].get("needs"), "plan")
         eval_job = doc["jobs"]["eval"]
         # ADR 0004: `eval` also waits for `roster-pr` (the arming) and
         # `roster-wait` (the bounded wait that resolves it). ADR 0008 adds
@@ -3781,7 +3783,7 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         # ADR 0004 review, S1 (fail closed): also gated on `roster-wait`
         # confirming the arming cleared (or being skipped, off `main`); a
         # failed `roster` or `disarm` is still never fatal.
-        self.assertEqual(eval_job.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        self.assertEqual(eval_job.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
         self.assertEqual(doc["jobs"]["disarm"].get("needs"), "roster")
 
 
@@ -5844,13 +5846,15 @@ class TestB1Round4JobGraph(unittest.TestCase):
         rp = self.jobs["roster-pr"]
         self.assertEqual(self._needs(rp), ["disarm", "roster"])
         self.assertEqual(rp.get("if"),
-                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+                         "${{ !cancelled() && needs.roster.result != 'skipped' "
+                         "&& github.ref == 'refs/heads/main' }}")
 
     def test_disarm_runs_on_main_only_after_roster(self):
         disarm = self.jobs["disarm"]
         self.assertEqual(self._needs(disarm), ["roster"])
         self.assertEqual(disarm.get("if"),
-                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+                         "${{ !cancelled() && needs.roster.result != 'skipped' "
+                         "&& github.ref == 'refs/heads/main' }}")
 
     def test_eval_waits_for_disarm_but_a_skipped_or_failed_one_never_blocks_it(self):
         ev = self.jobs["eval"]
@@ -5859,7 +5863,7 @@ class TestB1Round4JobGraph(unittest.TestCase):
         # arming cleared or was skipped — the gate logic itself is
         # evaluated in test_issue_eval_on_merged_roster.TestTheGates.
         self.assertEqual(self._needs(ev), ["disarm", "plan", "roster", "roster-pr", "roster-wait"])
-        self.assertEqual(ev.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
+        self.assertEqual(ev.get("if"), "${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
 
 class TestB1VerifyComparePredicate(unittest.TestCase):
