@@ -18,7 +18,12 @@ Subcommands:
               `<lessons-dir>/proposals/<date>/<subject>__<kind>.json` (the
               primary sink: cloud readers hold only Contents: read on the
               private repo). A lesson a commit- or push-time git hook can
-              enforce becomes `agent-check` first (Adam, 2026-10-26).
+              enforce becomes `agent-check` first (Adam, 2026-10-26). A
+              failure with no suspected subject becomes `new-skill` only
+              through a deterministic cluster subject (`tool-<tool>[-<word>]`
+              for repeated tool failures, `red-ci-<repo>` for red CI) seen in
+              at least `NEW_SKILL_MIN_SESSIONS` sessions; every other
+              unattributed failure stays a record, with no proposal.
               `--classify` asks the local `claude -p` to refine each kind
               (off by default).
   file-issues optional: turn one day's proposal files that pass the redaction
@@ -80,6 +85,8 @@ EXCERPT_CHARS = 160
 DEFAULT_SETTLE_HOURS = 24
 DEFAULT_MIN_REPEAT = 3
 NEW_SKILL_MIN_SESSIONS = 3
+SUBJECT = r"[a-z0-9][a-z0-9-]{0,63}"  # draft_new_skill.py's SUBJECT; a test keeps them equal
+SUBJECT_RE = re.compile(SUBJECT)
 MAX_EXAMPLES = 5
 LABEL = "lesson-proposal"
 MARKER_LABEL = "agent-authored"
@@ -673,14 +680,41 @@ def append_records(path: Path, records: Sequence[dict]) -> int:
 
 
 # ---------------------------------------------------------------- route ---
-def _kind(signal: str, subject_kind: str, sessions: int) -> str | None:
+def _kind(signal: str, subject_kind: str) -> str | None:
+    """The proposal kind for a record's signal and subject kind. An
+    unattributed failure has no kind here: it becomes `new-skill` only through
+    `cluster_subject` (a pool called `none` is not a skill candidate, #581)."""
     if signal == "rule":
         return {"skill": "skill-edit", "guidance": "guidance-edit"}.get(subject_kind, "memory-note")
     if subject_kind in ("skill", "guidance"):
         return "fixture-candidate"
     if subject_kind == "memory":
         return "memory-note"
-    return "new-skill" if sessions >= NEW_SKILL_MIN_SESSIONS else None
+    return None
+
+
+_TOOL_KEY_RE = re.compile(r"^([A-Za-z]+)(?::([A-Za-z0-9_.-]+))? failed \d+x:")
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]", "-", text.lower())).strip("-")[:64].strip("-")
+
+
+def cluster_subject(record: dict) -> str | None:
+    """A stable candidate-skill subject for an unattributed failure record, or
+    None (the record stays a record). Only two signals carry a stable key:
+    the leading `<tool>[:<command word>] failed Nx:` of a repeated tool
+    failure, and the repo of red CI after a push."""
+    signal = record.get("signal")
+    if signal == "repeated-tool-failure":
+        m = _TOOL_KEY_RE.match(record.get("excerpt", ""))
+        subject = _slug("tool-" + "-".join(g for g in m.groups() if g)) if m else ""
+    elif signal == "red-ci-after-push":
+        repo = record.get("repo", "")
+        subject = _slug("red-ci-" + repo) if repo and repo != "~" and _slug(repo) else ""
+    else:
+        return None
+    return subject if SUBJECT_RE.fullmatch(subject) else None
 
 
 def subject_label(subject: dict) -> str:
@@ -709,6 +743,7 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
         by_signal.setdefault((subj.get("kind", "none"), subj.get("name", ""), r["signal"]), []).append(r)
     clusters: dict[tuple[str, str], list[dict]] = {}
     sketches: dict[str, list[str]] = {}
+    candidates: dict[str, list[dict]] = {}  # cluster subject -> unattributed failures
     for (skind, sname, signal), rs in sorted(by_signal.items()):
         subject = subject_label({"kind": skind, "name": sname})
         rest = []
@@ -720,9 +755,18 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
                     sketches[subject].append(sketch)
             else:
                 rest.append(r)
-        kind = _kind(signal, skind, len({r["session"] for r in rest})) if rest else None
+        kind = _kind(signal, skind) if rest else None
         if kind is not None:
             clusters.setdefault((subject, kind), []).extend(rest)
+        elif skind == "none":
+            for r in rest:
+                cs = cluster_subject(r)
+                if cs:
+                    candidates.setdefault(cs, []).append(r)
+    for cs, rs in sorted(candidates.items()):
+        if len({r["session"] for r in rs}) >= NEW_SKILL_MIN_SESSIONS:
+            assert SUBJECT_RE.fullmatch(cs) and cs != "none", cs
+            clusters.setdefault((cs, "new-skill"), []).extend(rs)
     proposals = []
     for (subject, kind), rs in sorted(clusters.items()):
         rs = sorted(rs, key=lambda r: (r.get("date", ""), r["record_id"]))

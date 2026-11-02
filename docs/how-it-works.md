@@ -402,7 +402,12 @@ fixtures nested on 2026-10-26 (#422, #427).
 
 The session miner writes redacted lesson proposals to
 adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
-Draft mode is what consumes the `new-skill` kind:
+Draft mode is what consumes the `new-skill` kind. The miner gives that kind
+only to a cluster of failures with no suspected subject that spans at least
+three sessions: repeated tool failures grouped as `tool-<tool>[-<command word>]`
+(for example `tool-bash-gh`) and red CI after a push grouped as `red-ci-<repo>`.
+Other unattributed failures stay records with no proposal, and the subject
+`none` is never a `new-skill` ([#581](https://github.com/Adam-S-Daniel/skills-evals/issues/581)):
 
 1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). Proposals come
    from two sources: the miner's lessons, and skill proposals filed as
