@@ -120,6 +120,14 @@ there). An unpublished local edit, such as a dirty skill in a checkout,
 reads `unknown:unverified-commit`. A full digest, a path, a ref, a session
 id and a fork's name never leave the private side.
 
+CLOUD SKILL COPIES (#562 PR B, _agent-guidance ADR 0036) come from the
+shards cloud sessions' Stop hook writes to the same branch,
+`events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl` (`cloud_skill_records`: every
+field checked, a malformed line skipped), and become `skill-digest` rows with
+`surface: "cloud"` by the same chain (`cloud_digest_plan`). An id also in
+this run's records or a machine file counts once, as local. No cloud `skill`
+rows are written, and cloud coverage is records seen, never complete.
+
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
         [--weekly-out usage/weekly-local.json] [--events-out events.jsonl] \
@@ -1357,9 +1365,7 @@ def build_weekly_document(tally: dict, now: datetime,
                                None if hooks is None else hooks["runs_scanned"],
                                cloud_source)
     if digests is not None:
-        plan, digest_rows_ = digests
-        skill_usage.add_rows(doc, digest_rows_, skill_usage.digest_source(
-            parse_ts(plan["from"]), now, len(plan["uses"])))
+        add_digest_rows(doc, *digests, now)
     return doc
 
 
@@ -1481,43 +1487,130 @@ def _resolve_copies(copies: list) -> dict:
             "registry": copies[first]["registry"], "refs": []}
 
 
-def store_digests(store) -> dict:
-    """{id: resolved copy, or PRE_RECORD} over every skill line of the
-    machine files `store`/events/*/<machine>.jsonl, READ-ONLY. Files in
-    sorted order, lines in file order; links, unreadable files, malformed
-    lines and `cloud-*` files (MACHINE_RE on the stem) are skipped. An id
-    none of whose lines has a `digest` key is PRE_RECORD. PR B adds the cloud
-    shards' glob here, and only here."""
-    lines: dict = {}
+def _jsonl_dicts(path: Path):
+    """The JSON objects of `path`'s lines, in order; an unreadable file
+    yields nothing and a line that is not a JSON object is skipped."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    for raw in text.splitlines():
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(record, dict):
+            yield record
+
+
+def _machine_skill_records(store):
+    """(path, record) for every skill line, with a non-empty string `id`, of
+    the machine files `store`/events/*/<machine>.jsonl, READ-ONLY: links and
+    `cloud-*` files (MACHINE_RE on the stem) are skipped."""
     for path in sorted(Path(store).glob(f"{EVENTS_DIR}/*/*.jsonl")):
         if path.is_symlink() or not path.is_file() or not MACHINE_RE.fullmatch(path.stem):
             continue
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        for record in _jsonl_dicts(path):
+            if record.get("kind") == "skill" and isinstance(record.get("id"), str) \
+                    and record["id"]:
+                yield path, record
+
+
+def machine_skill_ids(store) -> set:
+    """The ids of every skill line in the store's machine files."""
+    return {record["id"] for _, record in _machine_skill_records(store)}
+
+
+# --- Cloud shards (#562 PR B; _agent-guidance ADR 0036) ----------------------
+# A cloud session's Stop hook writes one line per skill use to
+# events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl on the private branch, from the
+# main transcript and subagent transcripts. A session with push access could
+# write anything there, so every field of every line is checked against a
+# fixed shape, and a line that fails any check is skipped whole.
+
+CLOUD_SKILLS_DIR = "cloud-skills"
+#: The shard's file stem and every line's `session`: sha256(session id)[:16].
+CLOUD_SESSION_RE = re.compile(r"[0-9a-f]{16}")
+#: A Skill tool_use id, or a typed command's entry uuid.
+CLOUD_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
+#: The hook writes the literal `invalid` for any other name (reason bad-name).
+CLOUD_NAME_RE = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?")
+CLOUD_CLI_RE = re.compile(r"[0-9][0-9A-Za-z.+-]{0,31}")
+#: UTC with `Z`, as the hook builds it with strftime (milliseconds optional).
+CLOUD_TS_RE = re.compile(
+    r"(20[0-9]{2}|2100)-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z")
+#: Exactly these keys: a line with any other key, or without one, is skipped.
+CLOUD_KEYS = frozenset({"v", "id", "ts", "kind", "surface", "session", "cli", "name",
+                        "base_kind", "registry", "ref", "digest", "digest_null_reason"})
+
+
+def _cloud_line_ok(record: dict, month: str, session: str) -> bool:
+    """Whether a shard line has exactly the ADR 0036 shape. `month` and
+    `session` are the shard's own (directory and stem): a line filed under
+    another month or session is malformed."""
+    if set(record) != CLOUD_KEYS:
+        return False
+    ts, digest, reason = record["ts"], record["digest"], record["digest_null_reason"]
+    cli, registry, ref = record["cli"], record["registry"], record["ref"]
+    if not (type(record["v"]) is int and record["v"] == 1
+            and record["kind"] == "skill" and record["surface"] == "cloud"
+            and record["session"] == session
+            and isinstance(record["id"], str) and CLOUD_ID_RE.fullmatch(record["id"])
+            and isinstance(record["name"], str) and CLOUD_NAME_RE.fullmatch(record["name"])
+            and isinstance(ts, str) and CLOUD_TS_RE.fullmatch(ts) and ts[:7] == month
+            and parse_ts(ts) is not None
+            and (cli is None or isinstance(cli, str) and CLOUD_CLI_RE.fullmatch(cli))
+            and isinstance(record["base_kind"], str) and record["base_kind"] in BASE_KINDS
+            and (registry is None or _owner_repo(registry) is not None)
+            and (ref is None or isinstance(ref, str) and _COMMIT_RE.fullmatch(ref))):
+        return False
+    if digest is None:
+        return isinstance(reason, str) and reason in DIGEST_NULL_REASONS
+    return isinstance(digest, str) and bool(_DIGEST_HEX_RE.fullmatch(digest)) and reason is None
+
+
+def cloud_skill_records(store) -> list[dict]:
+    """Every well-formed line of `store`/events/<YYYY-MM>/cloud-skills/<16
+    hex>.jsonl, READ-ONLY, files in sorted order and lines in file order. A
+    month directory, `cloud-skills` directory or shard that is a link, a
+    month or stem of another shape, and every malformed line are skipped."""
+    out = []
+    for path in sorted(Path(store).glob(f"{EVENTS_DIR}/*/{CLOUD_SKILLS_DIR}/*.jsonl")):
+        month = path.parent.parent
+        if (not _MONTH_RE.fullmatch(month.name) or not CLOUD_SESSION_RE.fullmatch(path.stem)
+                or month.is_symlink() or path.parent.is_symlink() or path.is_symlink()
+                or not path.is_file()):
             continue
-        for raw in text.splitlines():
-            try:
-                record = json.loads(raw)
-            except ValueError:
-                continue
-            if not (isinstance(record, dict) and record.get("kind") == "skill"
-                    and isinstance(record.get("id"), str) and record["id"]):
-                continue
-            has_key, copy = _stored_copy(record)
-            entry = lines.setdefault(record["id"], {"keyless": False, "copies": []})
-            if not has_key:
-                entry["keyless"] = True
-            elif copy is not None:
-                entry["copies"].append(copy)
+        out += [record for record in _jsonl_dicts(path)
+                if _cloud_line_ok(record, month.name, path.stem)]
+    return out
+
+
+def store_digests(store) -> dict:
+    """{id: resolved copy, or PRE_RECORD} over every skill line of the
+    machine files `store`/events/*/<machine>.jsonl and the cloud shards
+    (`cloud_skill_records`), READ-ONLY. Machine files in sorted order, then
+    shards, lines in file order; malformed lines are skipped. An id stored in
+    both resolves across both. An id none of whose lines has a `digest` key
+    is PRE_RECORD (a shard line always has one)."""
+    lines: dict = {}
+    records = [record for _, record in _machine_skill_records(store)]
+    for record in records + cloud_skill_records(store):
+        has_key, copy = _stored_copy(record)
+        entry = lines.setdefault(record["id"], {"keyless": False, "copies": []})
+        if not has_key:
+            entry["keyless"] = True
+        elif copy is not None:
+            entry["copies"].append(copy)
     return {key: (_resolve_copies(entry["copies"]) if entry["copies"] else PRE_RECORD)
             for key, entry in lines.items() if entry["copies"] or entry["keyless"]}
 
 
 def skill_digest_plan(counted: list, stored: dict, start: datetime,
-                      public: dict) -> dict:
+                      public: dict, cloud: dict | None = None) -> dict:
     """The private plan for the `skill-digest` rows: {"from", "uses",
-    "registries"}. `counted` is census_all's tally["counted"] (this run's
+    "registries"}, plus "cloud" (`cloud_digest_plan`'s) when `cloud` is given. `counted` is census_all's tally["counted"] (this run's
     uses, a multiset: a resumed transcript can repeat an id and both count, as
     in the skill rows); `stored` is store_digests'. A use under `other` gets
     no row. A stored id is final; an id the store lacks takes this run's
@@ -1544,11 +1637,52 @@ def skill_digest_plan(counted: list, stored: dict, start: datetime,
                      "session": session if isinstance(session, str) else None, **copy})
     uses = [dict(use, week=use["week"].date().isoformat())
             for use in uses if use["week"] >= floor]
-    registries = sorted({public[use["registry"].lower()] for use in uses
+    every = uses + (cloud["uses"] if cloud is not None else [])
+    registries = sorted({public[use["registry"].lower()] for use in every
                          if use["digest"] is not None and use["registry"]
                          and use["registry"].lower() in public})
-    return {"from": floor.strftime(skill_usage.STAMP), "uses": uses,
+    plan = {"from": floor.strftime(skill_usage.STAMP), "uses": uses,
             "registries": registries}
+    if cloud is not None:
+        plan["cloud"] = cloud
+    return plan
+
+
+def cloud_digest_plan(records: list, local_ids: set, stored: dict, start: datetime,
+                      now: datetime, allowlist: frozenset[str],
+                      private: frozenset[str] = frozenset()) -> dict | None:
+    """The cloud part of the plan: {"from", "uses"}, or None when the store
+    holds no shard line at all (no record, no claim: before the hook ships,
+    cloud copies are unknown, not zero). One use per distinct id
+    of `records` (`cloud_skill_records`') whose `ts` is in the window
+    [`start`, `now`] and whose name is keyed to an allowlisted skill
+    (`skill_key`; `other` gets no row). An id in `local_ids` (this run's
+    records, or any machine file) is a local use, a teleported session, so
+    it counts once, there. A use's copy is the store's resolution of its id
+    (`stored`), so lines of one id resolve together. `from` is the later of
+    `start` and the Monday of the earliest valid line's week: the records
+    promise nothing before the first one, and after it only what was
+    uploaded (records seen, never complete)."""
+    if not records:
+        return None
+    floor, uses, seen = start, [], set(local_ids)
+    earliest = min((when for when in (parse_ts(r["ts"]) for r in records) if when <= now),
+                   default=None)
+    if earliest is not None:
+        floor = max(start, datetime.fromisoformat(skill_usage.week_monday(
+            iso_week(earliest))).replace(tzinfo=timezone.utc))
+    for record in records:
+        when = parse_ts(record["ts"])
+        if record["id"] in seen or when < floor or when > now:
+            continue
+        seen.add(record["id"])
+        key = skill_key(record["name"], allowlist, private)
+        copy = stored.get(record["id"])
+        if key == OTHER_KEY or not isinstance(copy, dict):
+            continue
+        uses.append({"week": skill_usage.week_monday(iso_week(when)), "name": key,
+                     "session": record["session"], **copy})
+    return {"from": floor.strftime(skill_usage.STAMP), "uses": uses}
 
 
 class MirrorCheck:
@@ -1600,45 +1734,62 @@ class MirrorCheck:
 
 
 def digest_rows(plan: dict, entries: list[dict], mirrors: dict) -> tuple[list, bool]:
-    """(the `skill-digest` rows of `plan`, whether a mirror was not read).
-    A use's public digest is, in order: `unknown:<reason>` with no digest;
+    """(the `skill-digest` rows of `plan`, local and, when the plan has a
+    cloud part, cloud; whether a mirror was not read). A use's public digest
+    is, in order: `unknown:<reason>` with no digest;
     `unknown:unlisted-registry` (repo null) for a registry that is not
     `private: false`, a fork among them; `unknown:unverified-commit` when the
     mirror does not show the content on a public branch; else the prefix."""
     check = MirrorCheck(entries, mirrors)
     public = {entry["repo"].lower(): entry["repo"] for entry in entries}
     groups: dict = {}
-    for use in plan["uses"]:
-        repo = public.get((use["registry"] or "").lower())
-        if use["digest"] is None:
-            shown = f"unknown:{use['reason']}"
-        elif repo is None:
-            shown = "unknown:unlisted-registry"
-        elif check.verified(repo, use["name"], use["digest"], use["refs"]):
-            shown = use["digest"][:12]
-        else:
-            shown = "unknown:unverified-commit"
-        group = groups.setdefault((use["week"], use["name"], repo, shown), [0, set()])
-        group[0] += 1
-        group[1].add(use["session"])
-    rows = [skill_usage.digest_row(week, name, repo, shown, n, len(sessions))
-            for (week, name, repo, shown), (n, sessions) in groups.items()]
+    parts = [(skill_usage.SURFACE_LOCAL, plan["uses"])]
+    if "cloud" in plan:
+        parts.append((skill_usage.SURFACE_CLOUD, plan["cloud"]["uses"]))
+    for surface, uses in parts:
+        for use in uses:
+            repo = public.get((use["registry"] or "").lower())
+            if use["digest"] is None:
+                shown = f"unknown:{use['reason']}"
+            elif repo is None:
+                shown = "unknown:unlisted-registry"
+            elif check.verified(repo, use["name"], use["digest"], use["refs"]):
+                shown = use["digest"][:12]
+            else:
+                shown = "unknown:unverified-commit"
+            group = groups.setdefault((surface, use["week"], use["name"], repo, shown),
+                                      [0, set()])
+            group[0] += 1
+            group[1].add(use["session"])
+    rows = [skill_usage.digest_row(week, name, repo, shown, n, len(sessions), surface)
+            for (surface, week, name, repo, shown), (n, sessions) in groups.items()]
     return rows, check.unread
 
 
+def add_digest_rows(doc: dict, plan: dict, rows: list, now: datetime) -> None:
+    """Add `rows` (`digest_rows`') to `doc`, with one `skill-records` source
+    per surface the plan covers: local always, cloud when it has a part."""
+    local = [r for r in rows if r["surface"] == skill_usage.SURFACE_LOCAL]
+    skill_usage.add_rows(doc, local, skill_usage.digest_source(
+        parse_ts(plan["from"]), now, len(plan["uses"])))
+    if "cloud" in plan:
+        skill_usage.add_rows(
+            doc, [r for r in rows if r["surface"] == skill_usage.SURFACE_CLOUD],
+            skill_usage.digest_source(parse_ts(plan["cloud"]["from"]), now,
+                                      len(plan["cloud"]["uses"]), skill_usage.SURFACE_CLOUD))
+
+
 def apply_digest_plan(plan_path, weekly_path, mirrors: dict) -> bool:
-    """Add the plan's `skill-digest` rows and their `skill-records` source to
-    the weekly file at `weekly_path`, in place; return whether a mirror was
-    not read. The publisher's second step, after it cloned the mirrors the
-    plan names."""
+    """Add the plan's `skill-digest` rows and their `skill-records` sources
+    to the weekly file at `weekly_path`, in place; return whether a mirror
+    was not read. The publisher's second step, after it cloned the mirrors
+    the plan names."""
     with open(plan_path, encoding="utf-8") as f:
         plan = json.load(f)
     with open(weekly_path, encoding="utf-8") as f:
         doc = json.load(f)
     rows, unread = digest_rows(plan, public_registry_entries(), mirrors)
-    now = parse_ts(doc["generated_at"])
-    skill_usage.add_rows(doc, rows, skill_usage.digest_source(
-        parse_ts(plan["from"]), now, len(plan["uses"])))
+    add_digest_rows(doc, plan, rows, parse_ts(doc["generated_at"]))
     _write_json(Path(weekly_path), doc)
     return unread
 
@@ -1780,8 +1931,14 @@ def main() -> int:
                  else None)
         digests = None
         if args.event_store is not None:
-            plan = skill_digest_plan(tally.get("counted", []), store_digests(args.event_store),
-                                     window_from(now, args.weeks), public)
+            stored, start = store_digests(args.event_store), window_from(now, args.weeks)
+            local_ids = {e["id"] for e in events if isinstance(e.get("id"), str)}
+            cloud_plan = cloud_digest_plan(
+                cloud_skill_records(args.event_store),
+                local_ids | machine_skill_ids(args.event_store), stored, start, now,
+                allowlist, private)
+            plan = skill_digest_plan(tally.get("counted", []), stored, start, public,
+                                     cloud_plan)
             if args.digest_plan_out is not None:
                 # PRIVATE: session ids and full digests. Owner-only, in the
                 # publisher's temp directory, never published.

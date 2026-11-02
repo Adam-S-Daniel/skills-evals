@@ -465,7 +465,8 @@ class CarryTests(unittest.TestCase):
             with self.subTest(to=to):
                 new = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
                 self.assertEqual(skill_usage.carry(self.previous(to), new),
-                                 {"cloud": None, "skill copies": carried})
+                                 {"cloud": None, "skill copies": carried,
+                                  "cloud skill copies": None})
                 kinds = [r["kind"] for r in new["rows"]]
                 self.assertEqual(kinds, ["skill-digest"] if carried else [])  # never local guidance
                 self.assertEqual(any(s["scope"] == "skill-records" for s in new["sources"]),

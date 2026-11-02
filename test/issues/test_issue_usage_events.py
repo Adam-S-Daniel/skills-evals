@@ -764,7 +764,8 @@ class PrivatePublishTests(unittest.TestCase):
                          "usage census: private events not published (reach)")
         # #562: the previous run read the (then empty) store, so its local
         # skill-records source is carried too.
-        self.assertIn("cloud: carried forward; skill copies: carried forward; published; "
+        self.assertIn("cloud: carried forward; skill copies: carried forward; "
+                      "cloud skill copies: not read; published; "
                       "private events: not published", proc.stdout)
         self.assertEqual(self.git("diff", "--name-only", first_head, self.head(),
                                   cwd=self.origin),
@@ -785,7 +786,8 @@ class PrivatePublishTests(unittest.TestCase):
         proc = self.run_script()
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertNotEqual(self.head(), before)
-        self.assertIn("cloud: not read; skill copies: not read; published", proc.stdout)
+        self.assertIn("cloud: not read; skill copies: not read; cloud skill copies: not read; "
+                      "published", proc.stdout)
         self.assertEqual(self.cloud_part(self.public_weekly()), ([], []))
 
     def test_a_missing_branch_is_not_a_failed_fetch(self):
@@ -828,11 +830,119 @@ class PrivatePublishTests(unittest.TestCase):
         self.assert_refused(self.run_script(), "unexpected staged paths", *before)
         self.assertNotIn("cloud-guidance", " ".join(self.tree()))
 
+    SHARD = "events/2026-09/cloud-skills/0123456789abcdef.jsonl"
+    WIDENED = r"cloud-[^/]*(/[0-9a-f]{16})?\.jsonl$"
+    NARROW = r"cloud-[^/]*\.jsonl$"                    # the regex before #562 PR B
+    FALL_THROUGH = ('    private_fail "unexpected staged paths"\n    return 1\n'
+                    '  done <<<"$staged"\n')
+
+    def stage_in_merge(self, rel):
+        """A stand-in interpreter that, for the merge step only, also writes
+        `rel` in the private clone."""
+        wrapper = self.tmp / "python-wrapper"
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "${1:-}" = "-" ] && [ -d "${4:-}/.git" ]; then\n'
+            f'  mkdir -p "$4/$(dirname {rel})"\n'
+            f'  echo invented > "$4/{rel}"\n'
+            "fi\n"
+            f'exec {sys.executable} "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        self.env["PYTHON"] = str(wrapper)
+
+    def script_variant(self, narrow: bool):
+        """A copy of the publisher whose last-resort refusal of an unknown
+        path is gone, so only the reservation regex can refuse a shard;
+        `narrow` also restores the regex before #562 PR B."""
+        text = type(self).SCRIPT.read_text(encoding="utf-8")
+        self.assertEqual(text.count(self.FALL_THROUGH), 1)
+        self.assertEqual(text.count(self.WIDENED), 1)
+        text = text.replace(self.FALL_THROUGH, '    continue\n  done <<<"$staged"\n')
+        if narrow:
+            text = text.replace(self.WIDENED, self.NARROW)
+        path = self.tmp / ("narrow.sh" if narrow else "widened.sh")
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_a_staged_cloud_skills_shard_is_refused(self):
+        self.seed_events_branch()
+        for rel in (self.SHARD, "events/2026-09/cloud-skills/not-a-session.jsonl"):
+            with self.subTest(rel):
+                self.stage_in_merge(rel)
+                before = self.events_head()
+                proc = self.run_script()
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                self.assertEqual(proc.stderr.strip(), "usage census: private events "
+                                 "not published (unexpected staged paths)")
+                self.assertEqual(self.events_head(), before)
+                self.assertNotIn("cloud-skills", " ".join(self.tree()))
+
+    def test_the_widened_reservation_regex_itself_refuses_a_shard(self):
+        """With the fall-through refusal removed, the widened regex still
+        refuses the shard; the control restores the narrow regex, and the
+        shard is committed, so the refusal above is the regex's."""
+        self.seed_events_branch()
+        self.stage_in_merge(self.SHARD)
+        self.SCRIPT = self.script_variant(narrow=False)
+        before = self.events_head(), self.head()
+        self.assert_refused(self.run_script(), "unexpected staged paths", *before)
+        self.SCRIPT = self.script_variant(narrow=True)
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(self.SHARD, self.tree())
+
+    def test_the_reservation_regex_matches_shards_and_cloud_files_only(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        regex = "^events/[0-9]{4}-[0-9]{2}/" + self.WIDENED
+        self.assertIn(f'[[ "$path" =~ {regex} ]]', text)
+        cases = {self.SHARD: True, "events/2026-09/cloud-guidance.jsonl": True,
+                 "events/2026-09/cloud-skills/0123.jsonl": False,
+                 "events/2026-09/cloud-skills/a/0123456789abcdef.jsonl": False,
+                 "events/2026-09/box-one.jsonl": False}
+        for path, refused in cases.items():
+            for pattern, expected in ((regex, refused),
+                                      ("^events/[0-9]{4}-[0-9]{2}/" + self.NARROW,
+                                       refused and "cloud-skills" not in path)):
+                with self.subTest(path=path, pattern=pattern):
+                    proc = subprocess.run(["bash", "-c", '[[ "$1" =~ $2 ]]', "-", path, pattern])
+                    self.assertEqual(proc.returncode == 0, expected)
+
+    def test_a_checked_out_shard_is_read_into_cloud_rows_and_left_alone(self):
+        seed = self.tmp / "shard-seed"
+        self.git("init", "--quiet", "-b", self.EVENTS, str(seed))
+        line = {"v": 1, "id": "toolu_cloud_01", "ts": "2026-09-02T10:00:00Z", "kind": "skill",
+                "surface": "cloud", "session": "0123456789abcdef", "cli": "2.1.312",
+                "name": "workflow-path-audit", "base_kind": "plugin-cache",
+                "registry": "example-fork/adam-agentskills", "ref": None,
+                "digest": "c" * 64, "digest_null_reason": None}
+        (seed / self.SHARD).parent.mkdir(parents=True)
+        (seed / self.SHARD).write_text(json.dumps(line) + "\n", encoding="utf-8")
+        self.git("add", "-A", cwd=seed)
+        self.git("commit", "--quiet", "-m", "seed", cwd=seed)
+        self.git("push", "--quiet", self.events_url(), self.EVENTS, cwd=seed)
+        original = (seed / self.SHARD).read_text(encoding="utf-8")
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("private events: 2 new of 2", proc.stdout)
+        self.assertEqual(self.git("show", f"{self.EVENTS}:{self.SHARD}",
+                                  cwd=self.events_origin()) + "\n", original)
+        weekly = self.public_weekly()
+        self.assertEqual([(r["name"], r["digest"], r["repo"], r["invocations"])
+                          for r in weekly["rows"]
+                          if r["kind"] == "skill-digest" and r["surface"] == "cloud"],
+                         [("workflow-path-audit", "unknown:unlisted-registry", None, 1)])
+        blob = json.dumps(weekly) + proc.stdout + proc.stderr
+        for private in ("0123456789abcdef", "example-fork", "c" * 13, "toolu_cloud_01"):
+            self.assertNotIn(private, blob)
+
     def test_the_created_branch_readme_warns_about_cloud_files(self):
         self.assertEqual(self.run_script().returncode, 0)
         readme = self.git("show", f"{self.EVENTS}:README.md", cwd=self.events_origin())
-        self.assertIn("cloud-* files are written by cloud hooks and cannot be "
-                      "regenerated; a re-created branch loses them.", readme)
+        self.assertIn("cloud-* files and the shards under events/<month>/cloud-skills/ "
+                      "are written by cloud hooks and cannot be regenerated; a "
+                      "re-created branch loses them.", readme)
+        self.assertIn("from its main transcript and subagent transcripts: records seen, "
+                      "never complete.", readme)
 
     def test_wsl_adds_windows_and_cowork_roots_and_windows_hook_logs(self):
         users = self.tmp / "users"
