@@ -74,6 +74,16 @@ id is published only when shaped like one, a repository only when it is
 public (`public_repos()`); everything else is `other`, and an `all` row per
 week counts every run, so the totals do not depend on either allowlist.
 
+CLOUD GUIDANCE records are read only when `--cloud-guidance DIR` names a
+checkout of the private `persistent/usage-events` branch: every
+`events/*/cloud-guidance.jsonl` under it, read-only, one record per cloud
+session. Their coverage is unknown: nothing says how
+many cloud sessions ran without writing one. The records are as untrusted as
+transcripts and `state` and `check_reported` cross a private-to-public
+boundary, so each is mapped through a fixed enum (anything else is `invalid`
+for `state`, `unknown` for `check_reported`); no session id, CLI version,
+repository count or guidance version is copied.
+
 PRIVATE EVENTS are the exception, and the only one: `--events-out` writes
 one JSON line per skill invocation, with its timestamp, session id and title,
 repository and branch. That file is NEVER published publicly:
@@ -85,7 +95,7 @@ the two public files.
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
         [--weekly-out usage/weekly-local.json] [--events-out events.jsonl] \
-        [--hook-logs PATH[:PATH...]]
+        [--hook-logs PATH[:PATH...]] [--cloud-guidance DIR]
 """
 
 from __future__ import annotations
@@ -479,6 +489,75 @@ def _bump(counts: dict, key: str, week: str) -> None:
     counts[key][week] = counts[key].get(week, 0) + 1
 
 
+# --- Cloud guidance records (`--cloud-guidance`) ----------------------------
+# One line per cloud session, appended by _agent-guidance's guidance-load hook
+# to events/<YYYY-MM>/cloud-guidance.jsonl on the private branch: {"v","ts",
+# "kind":"guidance-load","session","state","check_expected","check_reported",
+# "cli","repos","guidance_version","registry_sha",...}. Only `session`, `ts`,
+# `state` and `check_reported` are read.
+
+CLOUD_GUIDANCE_FILE = "cloud-guidance.jsonl"
+GUIDANCE_INVALID = "invalid"
+GUIDANCE_STATES = (GUIDANCE_FULL, GUIDANCE_STUB, GUIDANCE_NEITHER, GUIDANCE_UNKNOWN)
+CHECK_UNKNOWN = "unknown"
+CHECK_RESULTS = ("match", "mismatch", "none", "absent")
+
+
+def _enum(value, allowed: tuple, otherwise: str) -> str:
+    """`value` when it is one of the fixed strings in `allowed`, else
+    `otherwise`; never anything else, whatever the record held."""
+    return value if isinstance(value, str) and value in allowed else otherwise
+
+
+def cloud_guidance_tally(root, now: datetime, weeks: int = DEFAULT_WEEKS) -> dict:
+    """Weekly counts from `root`/events/*/cloud-guidance.jsonl, READ-ONLY.
+
+    Returns {"guidance": {state: {iso_week: n}}, "checks": {result:
+    {iso_week: n}}, "records_scanned": n, "earliest": datetime | None}.
+    A record counts only with a string `session` and a parseable `ts` inside
+    the census window (not before the Monday of its oldest week, not in a
+    later week than `now`'s); a session counts once across every file, at the
+    earliest `ts`, the first line winning a tie (files in sorted order).
+    Malformed lines, unreadable files and linked files are skipped without a
+    trace. `records_scanned` is the number of distinct sessions counted.
+    """
+    wanted = set(window_weeks(now, weeks))
+    start = datetime.fromisoformat(skill_usage.week_monday(window_weeks(now, weeks)[-1])
+                                   ).replace(tzinfo=timezone.utc)
+    first: dict[str, tuple[datetime, dict]] = {}
+    for path in sorted(Path(root).glob(f"{EVENTS_DIR}/*/{CLOUD_GUIDANCE_FILE}")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict) or not isinstance(record.get("session"), str) \
+                    or not record["session"] or not isinstance(record.get("ts"), str):
+                continue
+            when = parse_ts(record["ts"])
+            when = None if when is None else when.astimezone(timezone.utc)
+            if when is None or when < start or iso_week(when) not in wanted:
+                continue
+            kept = first.get(record["session"])
+            if kept is None or when < kept[0]:
+                first[record["session"]] = (when, record)
+    tally = {"guidance": {}, "checks": {}, "records_scanned": len(first),
+             "earliest": min((when for when, _ in first.values()), default=None)}
+    for when, record in first.values():
+        week = iso_week(when)
+        _bump(tally["guidance"], _enum(record.get("state"), GUIDANCE_STATES,
+                                       GUIDANCE_INVALID), week)
+        _bump(tally["checks"], _enum(record.get("check_reported"), CHECK_RESULTS,
+                                     CHECK_UNKNOWN), week)
+    return tally
+
+
 def census_counts(projects_dir: Path, now: datetime,
                   weeks: int = DEFAULT_WEEKS) -> dict:
     """{model_id: {iso_week: count}} over the trailing `weeks` ISO weeks.
@@ -857,10 +936,12 @@ def _document(counts: dict, now: datetime, weeks: int) -> dict:
 
 
 def build_weekly_document(tally: dict, now: datetime,
-                          weeks: int = DEFAULT_WEEKS, hooks: dict | None = None) -> dict:
+                          weeks: int = DEFAULT_WEEKS, hooks: dict | None = None,
+                          cloud: dict | None = None) -> dict:
     """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
     owns its schema. The window starts at the Monday of its oldest week.
-    `hooks` is `hook_tally()`'s result; None adds no hook rows or source."""
+    `hooks` is `hook_tally()`'s result; None adds no hook rows or source.
+    `cloud` is `cloud_guidance_tally()`'s; None adds no cloud rows or source."""
     rows = [skill_usage.row(week, "skill", name, n,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
@@ -873,8 +954,24 @@ def build_weekly_document(tally: dict, now: datetime,
                  for (week, name, repo, runner), (runs, blocked) in hooks["rows"].items()]
     oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
     window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
+    cloud_source = None
+    if cloud is not None:
+        rows += [skill_usage.guidance_row(week, state, n, skill_usage.SURFACE_CLOUD)
+                 for state, by_week in cloud["guidance"].items()
+                 for week, n in by_week.items()]
+        rows += [skill_usage.guidance_check_row(week, result, n)
+                 for result, by_week in cloud["checks"].items()
+                 for week, n in by_week.items()]
+        # The Monday of the earliest record's week: no coverage is claimed
+        # before the first record.
+        earliest = cloud["earliest"]
+        record_week = (None if earliest is None else datetime.fromisoformat(
+            skill_usage.week_monday(iso_week(earliest))).replace(tzinfo=timezone.utc))
+        cloud_source = {"from": max(window_from, record_week or window_from),
+                        "records_scanned": cloud["records_scanned"]}
     return skill_usage.document(rows, now, window_from, tally["sessions_scanned"],
-                                None if hooks is None else hooks["runs_scanned"])
+                                None if hooks is None else hooks["runs_scanned"],
+                                cloud_source)
 
 
 #: Where the private store keeps records: events/<YYYY-MM>/<machine>.jsonl.
@@ -974,6 +1071,10 @@ def main() -> int:
                         help="agent-checks run logs, separated by the OS path "
                              "separator; missing files are skipped (default: "
                              "agent-checks' own default path)")
+    parser.add_argument("--cloud-guidance", type=Path, default=None,
+                        help="checkout of the private persistent/usage-events "
+                             "branch; its events/*/cloud-guidance.jsonl are read "
+                             "(never written) into cloud guidance rows")
     parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
@@ -1041,8 +1142,11 @@ def main() -> int:
     status = (f"census: {len(document['counts'])} models, {total} assistant turns, "
               f"{args.weeks} weeks -> {args.out}")
     if args.weekly_out is not None:
+        cloud = (cloud_guidance_tally(args.cloud_guidance, now, args.weeks)
+                 if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
+                 else None)
         _write_json(args.weekly_out,
-                    build_weekly_document(tally, now, args.weeks, hooks))
+                    build_weekly_document(tally, now, args.weeks, hooks, cloud))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
     if args.events_out is not None:

@@ -1114,11 +1114,12 @@ dash.calc('new_runs', {
     renderTable('tbl-impact-names', 'usage_by_name', [{ field: 'kind', fmt: (v) => (v === 'hook' ? 'git hook' : v) }, { field: 'name' }, { field: 'invocations', num: true, fmt: nn }, { field: 'sessions', num: true, fmt: nn }, { field: 'blocked', num: true, fmt: nn }, { field: 'overridden', num: true, fmt: nn }, { field: 'repos', num: true }, { field: 'last_week' }], (r) => r.key, { sort: { field: 'invocations', dir: 'desc' }, filter: (r) => !kind || r.kind === kind });
     document.querySelectorAll('#tbl-impact-names tbody tr').forEach((tr) => tr.setAttribute('aria-selected', String(tr.dataset.key === sel)));
     // Without a selection, the repo and week tables sum every skill and check in scope.
+    // A guidance-check row counts the same sessions as the guidance rows, so a sum of sessions leaves it out.
     const roll = (src, keyOf) => {
       const rows = rowsOf(src).filter(inScope);
       if (sel) return rows;
       return [...d3.group(rows, keyOf)].map(([key, rs]) => ({ key, ...rs[0], invocations: d3.sum(rs, (r) => r.invocations || 0),
-        sessions: usageSum(rs, 'sessions'), blocked: usageSum(rs, 'blocked') }));
+        sessions: usageSum(rs.filter((r) => r.kind !== 'guidance-check'), 'sessions'), blocked: usageSum(rs, 'blocked') }));
     };
     const fillRows = (id, rows, cols) => {
       const tbody = document.querySelector('#' + id + ' tbody');

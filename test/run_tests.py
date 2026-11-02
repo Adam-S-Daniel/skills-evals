@@ -6599,6 +6599,50 @@ class TestIssue67(unittest.TestCase):
                            "a" * 64, "abcdef012345", "ABCDEF012345"):
                 self.assertNotIn(leaked, blob)
 
+            # Cloud guidance records are as untrusted: `state` and
+            # `check_reported` cross from the private branch to the public
+            # file through fixed enums, and the session, CLI version, repo
+            # count and guidance version never cross at all. Invented values.
+            cloud_dir = Path(tmp) / "events-branch" / "events" / "2026-09"
+            cloud_dir.mkdir(parents=True)
+            fake_session = "fake-session-0123"
+            fake_cli, fake_version = "9.9.9-fake", "fakeversion-1"
+            fake_prose = "fake prose about the merger"
+            fake_path = "/home/example/fake-private-path"
+            lines = []
+            for index, value in enumerate((fake_path, fake_prose, "f" * 64, 7,
+                                           ["full"], {"s": "full"}, None)):
+                lines.append(json.dumps(
+                    {"v": 1, "ts": "2026-09-03T10:00:00Z", "kind": "guidance-load",
+                     "session": f"{fake_session}-{index}", "cli": fake_cli,
+                     "repos": 3, "guidance_version": fake_version,
+                     "state": value, "check_reported": value}))
+            (cloud_dir / "cloud-guidance.jsonl").write_text(
+                "\n".join(lines) + "\n", encoding="utf-8")
+            before = sorted(p.name for p in (cloud_dir.parent.parent).rglob("*"))
+            cloud = model_usage_census.cloud_guidance_tally(
+                Path(tmp) / "events-branch", self.NOW, 8)
+            self.assertEqual(sorted(p.name for p in (cloud_dir.parent.parent).rglob("*")),
+                             before, "the reader must not write into the branch")
+            weekly = model_usage_census.build_weekly_document(
+                {"invocations": {}, "sessions": {}, "sessions_scanned": 0},
+                self.NOW, 8, None, cloud)
+            cloud_rows = [r for r in weekly["rows"] if r["surface"] == "cloud"]
+            self.assertEqual({(r["kind"], r["name"]) for r in cloud_rows},
+                             {("guidance", "invalid"), ("guidance-check", "unknown")})
+            self.assertEqual([r["sessions"] for r in cloud_rows], [7, 7])
+            source = [s for s in weekly["sources"] if s["surface"] == "cloud"][0]
+            self.assertEqual(source["scope"], "guidance-records")
+            self.assertEqual(source["records_scanned"], 7)
+            self.assertEqual(
+                datetime.strptime(source["from"], "%Y-%m-%dT%H:%M:%SZ").isoweekday(), 1,
+                "the cloud source starts on a week boundary")
+            self.assertTrue(source["from"].endswith("T00:00:00Z"))
+            blob = json.dumps(weekly)
+            for leaked in (fake_session, fake_cli, fake_version, fake_prose,
+                           fake_path, "f" * 64):
+                self.assertNotIn(leaked, blob)
+
     def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             projects = Path(tmp) / "projects" / "-tmp-x"
@@ -39473,6 +39517,9 @@ class TestPublishUsageCensus(unittest.TestCase):
             self.assertNotIn(leaked, blob)
 
     def test_an_unchanged_census_makes_no_commit(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        # The first run created the private branch, so the second is the first
+        # that reads it and adds the cloud source; the third changes nothing.
         self.assertEqual(self.run_script().returncode, 0)
         first = self.head()
         proc = self.run_script()

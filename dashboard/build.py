@@ -259,8 +259,10 @@ def roster(cfg):
 OUTCOME_KEYS = ["prs_opened", "prs_merged", "prs_closed_unmerged", "prs_reverted", "agent_prs_merged", "ci_red_after"]
 
 # Each producer names what it read in its own field: the transcript census counts sessions,
-# the local hook log counts git hook runs, the CI report counts repos.
-SCANNED_KEYS = [("sessions_scanned", "sessions"), ("runs_scanned", "git hook runs"), ("repos_scanned", "repos")]
+# the local hook log counts git hook runs, the CI report counts repos, the cloud guidance
+# records count cloud sessions.
+SCANNED_KEYS = [("sessions_scanned", "sessions"), ("runs_scanned", "git hook runs"), ("repos_scanned", "repos"),
+                ("records_scanned", "cloud sessions")]
 
 
 def scanned(s):

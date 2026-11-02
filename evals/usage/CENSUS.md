@@ -93,9 +93,59 @@ entry; a session stored twice (Cowork, or under two roots) counts once, and a
 subagent transcript (under a `subagents/` directory) is not counted. One row
 per (week, state) with a nonzero count: `name` is the state, `repo` and
 `invocations` are null, `sessions` the count. Readers that ask about skills
-(`weight()`) ignore them. Cloud sessions are not in local transcripts; a
-separate Stop hook in `_agent-guidance` will record those later. No guidance
-events go to the private events file.
+(`weight()`) ignore them. Cloud sessions are not in local transcripts; their
+rows are described next. No guidance events go to the private events file.
+
+## Cloud guidance rows
+
+A cloud session's Stop hook in `_agent-guidance`
+(`.claude/hooks/guidance-load-record.sh`) appends one record per session to
+`events/<YYYY-MM>/cloud-guidance.jsonl` on the private `persistent/usage-events`
+branch: `v`, `kind` `guidance-load`, `session` (a sha256 prefix, never the id),
+`ts`, `state`, `check_expected`, `check_reported`, `registry_sha` (always null:
+the bootstrap's install record names no commit, so a per-source install record
+is a follow-up issue), `cli`, `repos` and `guidance_version`.
+`scripts/publish_usage_census.sh` fetches that branch before the census and
+passes the checkout as `--cloud-guidance DIR`. The census reads every
+`events/*/cloud-guidance.jsonl` under it, read-only (it never writes a cloud
+file; `merge_events` already refuses a machine named `cloud-…`), and publishes:
+
+- `kind: "guidance"`, `surface: "cloud"`, `name` the session's `state` through
+  the fixed set `full`, `stub-only`, `neither`, `unknown` (anything else is
+  `invalid`);
+- `kind: "guidance-check"`, `surface: "cloud"`, `name` the session's
+  `check_reported` through `match`, `mismatch`, `none`, `absent` (anything
+  else, or a record without one, is `unknown`).
+
+Both count sessions (`sessions`; `invocations` and every other field null), so
+a hostile or corrupt value can only ever appear as `invalid` or `unknown`. A
+`guidance-check` row counts the same sessions as the `guidance` rows, so the
+dashboard leaves it out of a sum of sessions per week and surface. No session
+id, CLI version, repository count or guidance version reaches the public file.
+
+A record before the start of the census window (the Monday of its oldest week)
+is dropped, as is one in a later week than the census's. A session counts once,
+at its earliest `ts`, however many lines or month files hold it. A malformed
+line, or a record without a string `session` or a parseable `ts`, is skipped
+and counted nowhere public.
+
+The source is `{surface: "cloud", scope: "guidance-records", from, to,
+records_scanned}`, present only when the branch was read. `records_scanned`
+is the number of distinct sessions counted; `from` is the later of the census
+window's start and the Monday of the earliest record's week, so it is always a
+week boundary. **Coverage is unknown**: the hook records only the sessions it
+ran in, and the census cannot tell how many cloud sessions wrote nothing, so a
+count is a lower bound of unknown tightness, never a share of all sessions.
+
+If the fetch fails (the repository does not answer, or the clone fails; a
+branch that does not exist yet is not a failure), the publish still goes ahead,
+as it does for any private failure: the previous public file's cloud rows and
+cloud source are carried forward verbatim (they are already public), the local
+rows and `latest.json` are published as usual, the summary line says `cloud:
+carried forward`, and the script exits 1 at the end. A carried source whose
+`to` is more than 14 days old is dropped with its rows (the roster treats a
+census older than 14 days as missing, and an old count must not look current),
+and the summary says `cloud: not read`.
 
 ## Transcript roots
 
