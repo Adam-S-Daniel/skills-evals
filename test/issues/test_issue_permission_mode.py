@@ -50,7 +50,7 @@ def agent_reply() -> dict:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import install_arm_test_environment  # noqa: E402
+from arm_test_env import install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -82,6 +82,7 @@ def mode_values(argv: list[str]) -> list[str]:
 class RunAgentPermissionMode(unittest.TestCase):
 
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.workspace = Path(tempfile.mkdtemp(prefix="workspace-"))
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
 

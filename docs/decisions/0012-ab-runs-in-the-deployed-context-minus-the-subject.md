@@ -248,16 +248,32 @@ on the shared resolver `run_eval.main_copy` and the summary keys
   back from a second fire. A routine outage is not a broken fixture: each
   fire is classified once, as young, delivered (a run of the cell is stamped
   within `FIRE_RESULT_WINDOW` of its start, gates' output-only
-  `run_stamps_on_model`) or empty, and every classified fire is grouped into
-  sweeps (`OUTAGE_GAP`, 60 minutes, between starts; `OUTAGE_SPAN`, 2 hours,
-  from the first). A sweep with no delivered or young fire whose empty fires
-  cover at least `OUTAGE_CELLS` (3) cells is an outage (2026-11-01: six
-  fixtures fired, none produced anything): each cell's earliest empty fire
-  in one, at most `OUTAGE_EXCUSES` (1) within `RETRY_AFTER`, is excused, and
-  any later one counts, so fixtures broken together still go
-  fixture-broken, one fire later. Each recent outage is a `routine-outage`
-  work item. A sweep narrower than three cells cannot be told from broken
-  fixtures, so it counts.
+  `run_stamps_on_model`) or empty. Each empty fire is then judged on its own
+  window, `OUTAGE_GAP` (60 minutes) either side of its start (#583: centered
+  on the fire, so its verdict depends only on fires near it and cannot move
+  when a fire hours away ages out). One with no delivered or young fire in
+  its window whose window's empty fires cover at least `OUTAGE_CELLS` (3)
+  cells is an outage fire (2026-11-01: six fixtures fired, none produced
+  anything): each cell's earliest, at most `OUTAGE_EXCUSES` (1) within
+  `RETRY_AFTER`, is excused, and any later one counts, so fixtures broken
+  together still go fixture-broken, one fire later. One with a young fire in
+  its window waits. Each recent chain of outage fires is a `routine-outage`
+  work item. The routine is down from the start of an outage fire until a
+  paired eval fire on a known cell delivers (or, for the breaker only,
+  once fires 45 minutes old with nothing landed cover three cells in one
+  window with no delivery in or after it, so a burst trips it within the
+  hour). While down the planner holds improve and bare fires and sends one
+  probe at a time, a paired eval fire on any schedulable cell (settled and
+  fixture-broken ones included), fewest empty fires first, then the oldest
+  last fire, and none while a probe under 45 minutes old has landed
+  nothing; every plan lists a `routine-down` work item. Probes never count:
+  an empty fire sent while the routine was down is a down fire, unless it
+  is an outage fire in the outage's first 45 minutes, which keeps the
+  outage rule (the backstop). Without that, a lone empty probe, a window of
+  one cell, counted, and back-to-back outages benched the same healthy
+  head-of-band cells (2026-10-31 and 2026-11-01). The ambiguity left: a
+  window of fewer than three cells while the routine is up cannot be told
+  from broken fixtures, so it counts.
 - **The first regression rows after the switch compare copies, not an
   edit.** The previous window of with runs tested the deployed copy, the
   next one main's, so a first regression row on a fixture whose context
