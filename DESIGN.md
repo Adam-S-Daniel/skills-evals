@@ -1650,6 +1650,16 @@ transcript). Records and proposals land on adam-agentskills-private's
 schemas. Tests: `test/issues/test_issue_session_miner.py`, invented
 transcripts only.
 
+`route` also writes `lessons/proposals/<date>/DIGEST.md`, the file Adam reads
+first: the same proposals as plain-English cards, one section per kind
+(agent-check, new-skill, skill-edit, guidance-edit, memory-note,
+fixture-candidate; empty kinds skipped), each card with a readable subject,
+how often and when it was seen, the repos, the file name, the check sketch
+for an agent-check and up to three examples (re-scrubbed, trimmed to 160
+characters, Markdown-escaped). It is deterministic, is deleted and rewritten
+with the day's JSON files, and is not a proposal: `read_proposals` and the
+draft lane (`*__new-skill.json`) never read it.
+
 Daily run, from WSL, after a dry run first (`PRIVACY_DENYLIST_FILE` is a file
 outside every repo; `WIN_HOME` is the Windows profile as a WSL path, which
 also locates the desktop app's data; without it the script asks `cmd.exe`):

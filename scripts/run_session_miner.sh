@@ -11,7 +11,7 @@
 #      an orphan the first time) from the remote of the local clone;
 #   3. mine the WSL root, and the Windows root plus the desktop app's data
 #      when /mnt/c is reachable, into lessons/records/<date>.jsonl; route into
-#      lessons/proposals/<date>/<subject>__<kind>.json;
+#      lessons/proposals/<date>/<subject>__<kind>.json and DIGEST.md;
 #   4. commit "lessons: <date>" when anything changed, push, and verify with
 #      `git merge-base --is-ancestor`;
 #   5. only after that, move the new state file into place, so a failed push

@@ -193,6 +193,47 @@ class TestSignals(Base):
                           needs_action=True)
         self.assertEqual([r["signal"] for r in recs], ["abandoned"])
 
+    HARNESS = (
+        "<task-notification>Task done. Always use the cache.</task-notification>",
+        "<wake reason=timer>Actually, focus on the changelog.</wake>",
+        "<wake>No, that's wrong. Always use X.</wake>",
+        "<relay from=a>Always use X.</relay>",
+        "<coordinator-relay>Actually, switch to Y. Never use Z.</coordinator-relay>",
+        "<project_claude_message>Always use X.</project_claude_message>",
+        "<agent-message>No, that's wrong; instead do Y.</agent-message>",
+        "[Artifact comment sent to Claude] Always use X; no, that's wrong.",
+        "<system-reminder>Always use X. Actually, focus on Y.</system-reminder>",
+        "<system-reminder>Always use X (never closed)",
+        "RESTART BRIEFING: always use X; actually, instead do Y.",
+    )
+
+    def test_harness_messages_are_not_human_text(self):
+        for text in self.HARNESS:
+            self.assertIsNone(ms.human_text(user(text, 3)), text)
+        self.assertEqual(ms.human_text(user("Always use X.", 3)), "Always use X.")
+
+    def test_harness_messages_yield_no_lesson_records(self):
+        for text in self.HARNESS:
+            recs = self.extract([user("Go.", 0), assistant("Done.", 1), user(text, 2), assistant("Ok.", 3)])
+            self.assertEqual(recs, [], text)
+
+    def test_real_human_rule_still_recorded_among_harness_messages(self):
+        recs = self.extract([user("Go.", 0), assistant("Done.", 1),
+                             user("<task-notification>Always use Y.</task-notification>", 2),
+                             user("Always use X.", 3), assistant("Ok.", 4)])
+        self.assertEqual([(r["signal"], r["excerpt"]) for r in recs], [("rule", "Always use X.")])
+
+    def test_interrupt_then_notification_takes_the_next_human_text(self):
+        recs = self.extract([
+            user("Go.", 0), assistant("Working.", 1),
+            user("[Request interrupted by user for tool use]", 2),
+            user("<task-notification>Background task finished.</task-notification>", 3),
+            user("Please try the other approach.", 4), assistant("Ok.", 5)])
+        inter = [r for r in recs if r["signal"] == "interrupted"]
+        self.assertEqual(len(inter), 1)
+        self.assertIn("other approach", inter[0]["excerpt"])
+        self.assertNotIn("Background", inter[0]["excerpt"])
+
     def test_skill_and_guidance_usage_and_subject_attribution(self):
         recs = self.extract([
             user("Write an ADR for the cache choice.", 0),
@@ -480,7 +521,8 @@ class TestRoute(Base):
         self.assertEqual(ms.route(list(reversed(records)), self.redactor), props)
         day = self.lessons / "proposals" / "2026-10-20"
         ms.write_proposals(day, props)
-        self.assertEqual([f.name for f in day.iterdir()], ["skill-writing-adrs__fixture-candidate.json"])
+        self.assertEqual(sorted(f.name for f in day.iterdir()),
+                         ["DIGEST.md", "skill-writing-adrs__fixture-candidate.json"])
         self.assertEqual(ms.read_proposals(day), props)
 
     def test_route_cli_reads_all_records_and_dedupes(self):
@@ -524,6 +566,107 @@ class TestRoute(Base):
         self.assertEqual(props[0]["kind"], "fixture-candidate")
         ms.classify(props, lambda a, c, s: (1, "skill-edit"))
         self.assertEqual(props[0]["kind"], "fixture-candidate")
+
+
+class TestDigest(Base):
+    def proposals(self):
+        recs = [rec("repeated-tool-failure", session=f"s{i}", date=f"2026-10-1{i}",
+                    excerpt=f"Bash:gh failed 3x: bad `{i}` <b>x</b>") for i in range(3)]
+        recs += [rec("red-ci-after-push", session=f"c{i}", excerpt=f"checks failed {i}") for i in range(3)]
+        for r in recs[3:]:
+            r["repo"] = "adamdaniel-ai"
+        recs += [rec("correction", SKILL, "No, use `x` and <script>."),
+                 rec("correction", SKILL, "No, the ADR needs a Consequences section."),
+                 rec("rule", SKILL, "Always write the status line."),
+                 rec("rule", GUIDE, "From now on, short."),
+                 rec("rule", ("memory", "memory"), "Remember that I like tables."),
+                 rec("rule", excerpt="Never commit to main directly."),
+                 rec("correction", ("skill", "a_b"), "word " * 80)]
+        return ms.route(recs, self.redactor)
+
+    def digest(self, props=None, name="2026-10-20"):
+        day = self.tmp / "proposals" / name
+        ms.write_proposals(day, self.proposals() if props is None else props, self.redactor)
+        return day, (day / "DIGEST.md").read_text(encoding="utf-8")
+
+    def test_kind_order_titles_and_counts(self):
+        props = self.proposals()
+        _, text = self.digest(props)
+        self.assertTrue(text.startswith("# Lessons 2026-10-20\n\n"))
+        self.assertIn(f"{len(props)} proposals from {sum(p['evidence_count'] for p in props)} records; "
+                      "read the cards below, the JSON files are for machines.", text)
+        heads = [l for l in text.splitlines() if l.startswith("## ")]
+        self.assertEqual(heads, ["## agent-check", "## new-skill", "## skill-edit",
+                                 "## guidance-edit", "## memory-note", "## fixture-candidate"])
+        for title in ("### Bash `gh` commands kept failing", "### Red CI after pushes in adamdaniel-ai",
+                      "### Skill: writing-adrs", "### Guidance: security", "### Memory", "### Unattributed"):
+            self.assertIn(title, text)
+        self.assertIn("- Seen in 3 records, 2026-10-10\u20132026-10-12", text)
+        self.assertIn("- Seen in 3 records, 2026-10-18; repos: adamdaniel-ai", text)
+        self.assertIn("- File: `tool-bash-gh__new-skill.json`", text)
+        self.assertIn("- Check sketch: ", text)
+        self.assertIn("a git hook could enforce this", text)
+
+    def test_empty_kinds_are_skipped(self):
+        _, text = self.digest([p for p in self.proposals() if p["kind"] == "new-skill"])
+        self.assertEqual([l for l in text.splitlines() if l.startswith("## ")], ["## new-skill"])
+        _, empty = self.digest([], name="2026-10-21")
+        self.assertIn("0 proposals from 0 records", empty)
+
+    def test_markdown_is_escaped_and_examples_trimmed(self):
+        _, text = self.digest()
+        self.assertNotIn("<script>", text)
+        self.assertNotIn("<b>", text)
+        self.assertIn("&lt;script&gt;", text)
+        self.assertIn("\\`x\\`", text)
+        quotes = [l for l in text.splitlines() if l.startswith("> - ")]
+        self.assertTrue(quotes)
+        long = [q for q in quotes if "word word word" in q]
+        self.assertEqual(len(long), 1)
+        # 80 words in, 160 characters out: 37 for "date repo [signal] ", 123 of "word ".
+        self.assertEqual(long[0].count("word"), 24)
+        self.assertLessEqual(len(long[0]) - 4, 160 + 20)  # 160 chars plus escapes only
+
+    def test_examples_are_scrubbed_again(self):
+        props = self.proposals()
+        props[0]["examples"] = [f"leak {DENY_TERM} here", "mail me@example.com"]
+        _, text = self.digest(props)
+        self.assertNotIn(DENY_TERM, text)
+        self.assertNotIn("me@example.com", text)
+
+    def test_repos_show_top_five_and_a_count(self):
+        p = self.proposals()[0]
+        p["repos"] = [f"repo-{i}" for i in range(8)]
+        _, text = self.digest([p])
+        self.assertIn("repo-0, repo-1, repo-2, repo-3, repo-4 and 3 more", text)
+        self.assertNotIn("repo-5", text)
+
+    def test_deterministic_and_rewrite_drops_stale_cards(self):
+        props = self.proposals()
+        day, first = self.digest(props)
+        self.assertEqual(self.digest(list(reversed(props)))[1], first)
+        _, second = self.digest([p for p in props if p["kind"] != "memory-note"])
+        self.assertNotIn("### Memory", second)
+        self.assertEqual(sorted(f.name for f in day.glob("*.json")),
+                         sorted(ms.proposal_filename(p) for p in props if p["kind"] != "memory-note"))
+
+    def test_read_proposals_ignores_the_digest(self):
+        props = self.proposals()
+        day, _ = self.digest(props)
+        self.assertTrue((day / "DIGEST.md").is_file())
+        self.assertEqual(ms.read_proposals(day), props)
+        found = [p.name for p, _ in dns.proposal_files(day.parent.parent, "proposals")]
+        self.assertEqual(found, ["red-ci-adamdaniel-ai__new-skill.json", "tool-bash-gh__new-skill.json"])
+
+    def test_route_cli_writes_the_digest(self):
+        (self.lessons / "records").mkdir(parents=True)
+        r = rec("correction", SKILL)
+        (self.lessons / "records" / "2026-10-18.jsonl").write_text(json.dumps(r) + "\n", encoding="utf-8")
+        code, _ = self.run_main("route", "--lessons-dir", str(self.lessons), "--denylist", str(self.deny),
+                                "--no-local-names", "--now", NOW)
+        self.assertEqual(code, 0)
+        digest = self.lessons / "proposals" / "2026-10-20" / "DIGEST.md"
+        self.assertIn("### Skill: writing-adrs", digest.read_text(encoding="utf-8"))
 
 
 class TestFileIssues(Base):
@@ -660,8 +803,10 @@ class TestRunSessionMiner(unittest.TestCase):
         self.assertIn("1 sessions read", proc.stdout)
         self.assertTrue(proc.stdout.rstrip().endswith("committed"))
         files = self.git("--git-dir", str(self.priv), "ls-tree", "-r", "--name-only", "persistent/lessons")
-        # One unattributed correction in one session clusters into no proposal.
-        self.assertEqual(files.split(), ["lessons/records/2026-10-20.jsonl"])
+        # One unattributed correction in one session clusters into no proposal,
+        # but the day still gets its (empty) digest, committed under lessons/.
+        self.assertEqual(files.split(), ["lessons/proposals/2026-10-20/DIGEST.md",
+                                         "lessons/records/2026-10-20.jsonl"])
         self.assertEqual(self.git("--git-dir", str(self.priv), "ls-tree", "--name-only", "main"), "README.md")
         self.assertTrue(self.state.is_file())
         again = self.run_script()

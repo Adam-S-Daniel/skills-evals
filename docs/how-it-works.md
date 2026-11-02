@@ -543,6 +543,9 @@ fixtures nested on 2026-10-26 (#422, #427).
 
 The session miner writes redacted lesson proposals to
 adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
+Beside them it writes `DIGEST.md` for the same day: a human-readable summary of
+the proposals, grouped by kind, that is the first thing to read. It is
+regenerated with the JSON files and is not a proposal, so draft mode ignores it.
 Draft mode is what consumes the `new-skill` kind. The miner gives that kind
 only to a cluster of failures with no suspected subject that spans at least
 three sessions: repeated tool failures grouped as `tool-<tool>[-<command word>]`
