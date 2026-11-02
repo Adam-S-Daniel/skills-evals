@@ -233,6 +233,31 @@ class EligibilityTests(unittest.TestCase):
         # One fire short of broken, it still counts.
         self.assertEqual(focus_of(cells=[{**broken, "empty_fires": 1}]), ["s"])
 
+    def test_a_guidance_cell_with_two_empty_fires_is_fixture_broken_not_focus(self):
+        # Merge of #559 (EMPTY FIRES) with the focus band: an undecided
+        # guidance cell, missing or insufficient, with BROKEN_AFTER_FIRES
+        # empty fires is a work item, never a focus or guidance-rest fire.
+        for cell in (missing("s", "a"), near("s", 0.9)):
+            with self.subTest(cls=cell["class"]):
+                broken = {**cell, "empty_fires": 2}
+                plan = plan_week.build_plan(ctx(cells=[broken]), NOW)
+                self.assertEqual(plan["fires"], [])
+                self.assertEqual(plan["guidance_focus"], [])
+                self.assertEqual([(w["kind"], w["section"], w["fixture"])
+                                  for w in plan["work"]],
+                                 [("fixture-broken", "s", broken["fixture"])])
+
+    def test_a_pending_guidance_cell_plans_nothing(self):
+        # A pending fire may still land a run: no band, focus or
+        # guidance-rest included, plans the cell, and it is not broken.
+        focused = {**near("s", 0.9), "pending": True}
+        rest = {**missing("t", "a"), "pending": True}
+        plan = plan_week.build_plan(ctx(cells=[focused, rest]), NOW)
+        self.assertEqual(plan["fires"], [])
+        self.assertEqual(plan["work"], [])
+        self.assertEqual(plan["unplanned"]["focus"], 0)
+        self.assertEqual(plan["unplanned"]["guidance-rest"], 0)
+
     def test_nothing_eligible_leaves_the_focus_empty(self):
         cells = [near("s", 0.9, verdict="keep"), near("t", 0.9, verdict="shorten-or-merge"),
                  near("u", 0.9), gcell("u", "b", cls="ceiling", counted=(3, 3))]
