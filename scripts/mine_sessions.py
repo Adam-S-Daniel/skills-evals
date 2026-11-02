@@ -184,8 +184,13 @@ CI_RED_RE = re.compile(
 SKILL_BASE_RE = re.compile(r"Base directory for this skill:\s*\S*?/skills/([A-Za-z0-9_.-]+)")
 COMMAND_RE = re.compile(r"<command-name>/?([A-Za-z0-9_.:-]+)</command-name>")
 REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+# Harness-injected user-role messages: on the real data 97 of 571 records quoted
+# one as if Adam had typed it (74 of 107 redirections, 17 of 36 rules).
 NON_HUMAN_PREFIXES = ("<command-", "<local-command-", "Caveat:", "<bash-",
-                      "This session is being continued from a previous conversation")
+                      "This session is being continued from a previous conversation",
+                      "<task-notification>", "<wake ", "<wake>", "<relay ",
+                      "<coordinator-relay", "<project_claude_message", "<agent-message",
+                      "[Artifact comment", "<system-reminder>", "RESTART BRIEFING")
 
 # ------------------------------------------------------------ redaction ---
 # Each pattern skips its own placeholder, so scrub() is idempotent and
@@ -344,7 +349,9 @@ def _block_text(block) -> str:
 
 
 def human_text(entry: dict) -> str | None:
-    """The text a person typed, or None for tool results, meta and command output."""
+    """The text a person typed, or None for tool results, meta, command output
+    and harness-injected messages (NON_HUMAN_PREFIXES). A None never resets a
+    pending interrupt, so an interrupt is paired with the next real human text."""
     if entry.get("type") != "user" or entry.get("isMeta") or entry.get("isCompactSummary"):
         return None
     blocks = _blocks(entry.get("message"))

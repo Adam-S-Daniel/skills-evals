@@ -193,6 +193,47 @@ class TestSignals(Base):
                           needs_action=True)
         self.assertEqual([r["signal"] for r in recs], ["abandoned"])
 
+    HARNESS = (
+        "<task-notification>Task done. Always use the cache.</task-notification>",
+        "<wake reason=timer>Actually, focus on the changelog.</wake>",
+        "<wake>No, that's wrong. Always use X.</wake>",
+        "<relay from=a>Always use X.</relay>",
+        "<coordinator-relay>Actually, switch to Y. Never use Z.</coordinator-relay>",
+        "<project_claude_message>Always use X.</project_claude_message>",
+        "<agent-message>No, that's wrong; instead do Y.</agent-message>",
+        "[Artifact comment sent to Claude] Always use X; no, that's wrong.",
+        "<system-reminder>Always use X. Actually, focus on Y.</system-reminder>",
+        "<system-reminder>Always use X (never closed)",
+        "RESTART BRIEFING: always use X; actually, instead do Y.",
+    )
+
+    def test_harness_messages_are_not_human_text(self):
+        for text in self.HARNESS:
+            self.assertIsNone(ms.human_text(user(text, 3)), text)
+        self.assertEqual(ms.human_text(user("Always use X.", 3)), "Always use X.")
+
+    def test_harness_messages_yield_no_lesson_records(self):
+        for text in self.HARNESS:
+            recs = self.extract([user("Go.", 0), assistant("Done.", 1), user(text, 2), assistant("Ok.", 3)])
+            self.assertEqual(recs, [], text)
+
+    def test_real_human_rule_still_recorded_among_harness_messages(self):
+        recs = self.extract([user("Go.", 0), assistant("Done.", 1),
+                             user("<task-notification>Always use Y.</task-notification>", 2),
+                             user("Always use X.", 3), assistant("Ok.", 4)])
+        self.assertEqual([(r["signal"], r["excerpt"]) for r in recs], [("rule", "Always use X.")])
+
+    def test_interrupt_then_notification_takes_the_next_human_text(self):
+        recs = self.extract([
+            user("Go.", 0), assistant("Working.", 1),
+            user("[Request interrupted by user for tool use]", 2),
+            user("<task-notification>Background task finished.</task-notification>", 3),
+            user("Please try the other approach.", 4), assistant("Ok.", 5)])
+        inter = [r for r in recs if r["signal"] == "interrupted"]
+        self.assertEqual(len(inter), 1)
+        self.assertIn("other approach", inter[0]["excerpt"])
+        self.assertNotIn("Background", inter[0]["excerpt"])
+
     def test_skill_and_guidance_usage_and_subject_attribution(self):
         recs = self.extract([
             user("Write an ADR for the cache choice.", 0),
