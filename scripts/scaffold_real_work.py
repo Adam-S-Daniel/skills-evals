@@ -877,8 +877,13 @@ def shared_code_tokens(fixture: dict, fixture_dir: Path) -> set[str]:
 #: `:` marks a Ruby keyword parameter). Lexical: it
 #: reads the declared string, never code (the checker's calls come from
 #: `checker_call_names`, which parses).
-SIGNATURE = re.compile(r"(?:[A-Za-z_$][\w$]*(?:\.|::))*([A-Za-z_$][\w$]*)"
-                       r"(?:\(\s*(?:[A-Za-z_$][\w$]*:?\s*(?:,\s*[A-Za-z_$][\w$]*:?\s*)*)?\))?")
+SIGNATURE = re.compile(r"((?:[A-Za-z_$][A-Za-z0-9_$]*(?:\.|::))*)([A-Za-z_$][A-Za-z0-9_$]*)"
+                       r"(?:\(\s*([A-Za-z_$][A-Za-z0-9_$]*:?\s*(?:,\s*[A-Za-z_$][A-Za-z0-9_$]*:?\s*)*)?\))?")
+IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+#: The most lint words one identifier of a signature may contribute, so no
+#: single name, qualifier or parameter makes a four-word run by itself
+#: (`check_length_before_indexing` is four words to the lint).
+MAX_IDENTIFIER_WORDS = 3
 #: Literals a parameter list may not name: a signature brings a callable and
 #: its parameter names, never a value.
 SIGNATURE_LITERALS = {"true", "false", "True", "False", "null", "undefined", "None", "nil"}
@@ -988,7 +993,11 @@ def interface_provenance(fixture: dict, fixture_dir: Path) -> list[str]:
     already occur in the seed (as whole words, or as a seed file's path), or
     be a callable the checker calls: a name, or a signature of a name and
     bare parameter names, whose name a checker file calls or supplies as a
-    function (an injected dependency the code under test calls). Anything else, a
+    function (an injected dependency the code under test calls). Its
+    qualifiers (`Mod::Class.`) and parameter names must each be an
+    identifier the seed already holds, so only the name itself can be new,
+    and no identifier may be a literal or more than `MAX_IDENTIFIER_WORDS`
+    lint words. Anything else, a
     new message, selector or literal the task asks for, exempts nothing; the
     scaffolder rewrites the task text instead (the integrator, 2026-11-02).
     Fixed, count-only messages: the gate reads an untrusted branch."""
@@ -1008,12 +1017,24 @@ def interface_provenance(fixture: dict, fixture_dir: Path) -> list[str]:
         unproven.append(text)
     if not unproven:
         return []
+    seed_identifiers = {token for body in seed_texts for token in IDENTIFIER.findall(body)}
     calls = None
     problems = 0
     for text in unproven:
         match = SIGNATURE.fullmatch(text.strip())
-        names = set(re.findall(r"[A-Za-z_$][\w$]*", text))
-        if not match or names & SIGNATURE_LITERALS:
+        if not match:
+            problems += 1
+            continue
+        qualifiers = IDENTIFIER.findall(match[1])
+        params = IDENTIFIER.findall(match[3] or "")
+        identifiers = [*qualifiers, match[2], *params]
+        # Qualifiers and parameter names name what already exists (a
+        # module, a class, a value the code passes): the seed must hold
+        # each, so only the callable's own name can be new. No identifier
+        # is a literal or several lint words.
+        if (set(identifiers) & SIGNATURE_LITERALS
+                or any(i not in seed_identifiers for i in (*qualifiers, *params))
+                or any(len(answer_leak.words(i)) > MAX_IDENTIFIER_WORDS for i in identifiers)):
             problems += 1
             continue
         if calls is None:
@@ -1021,7 +1042,7 @@ def interface_provenance(fixture: dict, fixture_dir: Path) -> list[str]:
                 calls = checker_call_names(fixture_dir)
             except CheckerParseError:
                 return ["the checker could not be parsed to prove an interface string"]
-        if match[1] not in calls:
+        if match[2] not in calls:
             problems += 1
     return ([f"{problems} interface string(s) exempt a leaked run but are neither in the seed "
              "nor a callable the checker calls"] if problems else [])

@@ -258,10 +258,13 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   function: a name, or a name with a list of bare parameter names, found by
   parsing the checker (Python's `ast`, Acorn, Ruby's Ripper). A new message,
   selector or literal exempts nothing, so the task text is rewritten instead
-  (skills-evals#595; the integrator, 2026-11-02). Which tests the checker
-  selects or skips is not modeled: a name called anywhere in a checker file
-  counts, so a scaffold can exempt one identifier and its parameter names by
-  calling it in a test nothing runs.
+  (skills-evals#595; the integrator, 2026-11-02). A signature's qualifiers
+  and parameter names must already be identifiers in the seed, and no
+  identifier may be a literal or more than three lint words, so only the
+  callable's own name can be new. Which tests the checker selects or skips
+  is not modeled: a name called anywhere in a checker file counts, so a
+  scaffold can exempt one new identifier of up to three words by calling it
+  in a test nothing runs.
 - **`issue_before_fix:`** (optional) — a fixture-relative path to a regular
   file outside `seed/`, at most 256 KiB, holding the issue's text as it stood
   before the pull request's first commit. A run of that text is not an

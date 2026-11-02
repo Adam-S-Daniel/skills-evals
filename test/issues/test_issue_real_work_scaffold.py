@@ -897,7 +897,8 @@ class InterfaceProvenanceTests(unittest.TestCase):
         leak = leak or self.LEAK
         root = Path(tempfile.mkdtemp(prefix="provenance-"))
         self.addCleanup(shutil.rmtree, root, True)
-        for name, body in {"tool.py": "def old():\n    pass\n", **(seed or {})}.items():
+        seed_files = {"tool.py": "def old(alpha, beta, gamma):\n    pass\n", **(seed or {})}
+        for name, body in seed_files.items():
             (root / "seed" / name).parent.mkdir(parents=True, exist_ok=True)
             (root / "seed" / name).write_text(body, encoding="utf-8")
         for name, body in checker.items():
@@ -947,6 +948,27 @@ class InterfaceProvenanceTests(unittest.TestCase):
                                       strings=["sum the two operands"]))
         self.assertTrue(self.problems({"test_tool.py": "make_widget(1)\n"},
                                       leak="make_widget(alpha, True, gamma)"))
+
+    def test_qualifiers_must_already_be_in_the_seed(self):
+        # Review round 2: a qualifier chain was free text before its name.
+        leak = "the.fix.is.to.check.length.len(n)"
+        self.assertTrue(self.problems({"test_tool.py": "len(x)\n"}, leak=leak))
+        self.assertEqual(self.problems({"test_tool.py": "tools.make_widget(1, 2, 3)\n"},
+                                       seed={"main.py": "import tools\n"},
+                                       leak="tools.make_widget(alpha, beta, gamma)"), [])
+
+    def test_parameter_names_must_already_be_in_the_seed(self):
+        # Review round 2: `equal(first, and, only, commit)` with `equal`
+        # called by the checker exempted the prose "first and only commit".
+        self.assertTrue(self.problems({"test_tool.py": "equal(1, 1)\n"},
+                                      leak="equal(first, then, only, commit)"))
+
+    def test_one_identifier_cannot_carry_a_four_word_run(self):
+        leak = "check_length_before_indexing(n)"
+        self.assertTrue(self.problems({"test_tool.py": "check_length_before_indexing(1)\n"},
+                                      leak=leak))
+        self.assertTrue(self.problems({"test_tool.py": "f(1)\n"},
+                                      leak="f\u00e0checkingthings(alpha, beta, gamma)"))
 
     def test_a_string_that_exempts_nothing_is_not_checked(self):
         self.assertEqual(self.problems({}, strings=["unrelated_name"],
