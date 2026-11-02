@@ -357,7 +357,7 @@ RUN_RESULT = {"success": "Succeeded", "failure": "Failed", "cancelled": "Cancell
               "skipped": "Skipped"}
 
 
-def routines(cfg, triggers, workflow_runs, now):
+def routines(cfg, triggers, workflow_runs, now, workflow_states=None):
     """One row per routine. Config gives the words; the last and next run and health come from reads."""
     rows = []
     for r in cfg:
@@ -372,7 +372,10 @@ def routines(cfg, triggers, workflow_runs, now):
             next_run = t.get("next_run_at")
             enabled = t.get("enabled", True)
         elif src.get("kind") == "workflow":
-            runs = workflow_runs.get(src["repo"] + ":" + src["workflow"]) or []
+            key = src["repo"] + ":" + src["workflow"]
+            runs = workflow_runs.get(key) or []
+            # A workflow turned off in GitHub (disabled_manually, disabled_inactivity) reads as Paused.
+            enabled = (workflow_states or {}).get(key, "active") == "active"
             runs = sorted(runs, key=lambda x: x.get("created_at") or "", reverse=True)
             if runs:
                 last_run = runs[0].get("created_at")
@@ -509,7 +512,7 @@ def build(results, inputs, config, now):
     out["usage_rows"], out["usage_sources"] = usage(results)
     out["threads"] = threads(thread_dump, site)
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
-                               inp("workflow_runs.json", {}), now)
+                               inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
     out["waiting"] = waiting(snap, inp("needs_owner.json", []), inp("waiting_reviews.json", []),
                              inp("open_pr_heads.json", {}), thread_dump, inp("link_states.json", {}), site)
