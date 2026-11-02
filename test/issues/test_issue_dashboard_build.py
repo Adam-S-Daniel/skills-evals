@@ -135,6 +135,15 @@ class DashboardBuildTests(unittest.TestCase):
                 row = build.routines([cfg], triggers, runs, NOW)[0]
                 self.assertEqual((row["health"], row["last_result"]), (health, result))
 
+    def test_a_workflow_turned_off_in_github_reads_as_paused(self):
+        wf = routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"})
+        runs = {"o/r:w.yml": [{"created_at": "2026-01-06T00:00:00Z", "status": "completed", "conclusion": "success"}]}
+        for state, health in [("disabled_manually", "Paused"), ("disabled_inactivity", "Paused"), ("active", "OK")]:
+            with self.subTest(state=state):
+                row = build.routines([wf], {}, runs, NOW, {"o/r:w.yml": state})[0]
+                self.assertEqual(row["health"], health)
+        self.assertEqual(build.routines([wf], {}, runs, NOW)[0]["health"], "OK")
+
     def test_get_trigger_output_is_accepted_whole(self):
         full = {"t": {"trigger": {"enabled": True, "next_run_at": "2026-01-06T14:00:00.5Z",
                                   "last_run": {"status": "ROUTINE_RUN_STATUS_PENDING", "fired_at": "2026-01-06T12:59:00.1Z"}}}}

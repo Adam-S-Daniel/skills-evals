@@ -35,6 +35,7 @@ prompt that tells it to.
    | `triggers.json` | `get_trigger` for each routine in `config/routines.json` with `source.kind: trigger`, keyed by id: `enabled`, `next_run_at`, `last_run.{status,fired_at}` |
    | `trigger_list.json` | `list_triggers` with `recurring: false`, `enabled: true` (all pages): `id`, `name`, `run_once_at`, `enabled`, `hearth_channel_id` |
    | `workflow_runs.json` | `actions_list` `list_workflow_runs` for each `source.kind: workflow` routine, keyed `owner/repo:workflow.yml`: `created_at`, `status`, `conclusion`, `html_url` |
+   | `workflow_states.json` | `actions_get` `get_workflow` for the same workflows, keyed the same way: its `state` (`active`, `disabled_manually`, ...). A workflow that is not `active` shows as Paused; a missing file reads as active |
    | `needs_owner.json` | `search_issues` with `label:needs-owner is:open user:<owner>`, for each owner in `site.json` `github_owners`: `title`, `html_url`, `repository_url`, `state`, `created_at`, `labels` |
    | `waiting_reviews.json` | `actions_list` `list_workflow_runs` with `status: waiting` in each `environment_review_repos` repo: `repo`, `name` (the display title), `environment`, `head_sha`, `created_at`, and `job_url`, the waiting job's page (`list_workflow_jobs`) |
    | `open_pr_heads.json` | Open PRs' head shas, keyed by repo, for the same repos (`list_pull_requests`, `state: open`) |
