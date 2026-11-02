@@ -1,0 +1,344 @@
+{
+  "skill": "pdf-ocr-audit",
+  "arm": "without_skill",
+  "timestamp": "20261102T232307Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0844919,
+    "num_turns": 5,
+    "duration_ms": 23127,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 11516,
+      "cache_read_input_tokens": 178484,
+      "output_tokens": 2043,
+      "output_tokens_details": {
+        "thinking_tokens": 225
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 11516,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 427,
+          "cache_read_input_tokens": 38922,
+          "cache_creation_input_tokens": 1082,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1082
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "report-header",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*Full Path[`*]*[ \\t]*\\|[ \\t]*[`*]*OCR Needed\\?[`*]*[ \\t]*\\|[ \\t]*[`*]*Rationale[`*]*[ \\t]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "report-separator",
+      "passed": true,
+      "detail": "audit.md matches"
+    },
+    {
+      "id": "verdict-01",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:signed\\-lease\\-scan\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*No\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-02",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:quarterly\\-report\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*Yes\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-03",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:project\\-brief\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*Partial\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-04",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:meeting\\-notes\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*Inaccessible\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-05",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:scanned\\-invoice\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*No\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-06",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:annual\\-report\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*No\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-07",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:statement\\-2024\\-q1\\.pdf)[`*]*[ \\t]*\\|[ \\t]*[`*]*Yes\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "verdict-08",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?:/?(?:[^|`\\r\\n]*?/)?(?-i:archive/))?(?-i:POLICY\\.PDF)[`*]*[ \\t]*\\|[ \\t]*[`*]*No\\b(?![^|\\r\\n]*(?:\\?|\\b(?:maybe|might|probably|possibly|perhaps|unsure|not[ \\t]+sure|uncertain|unclear)\\b|\\bmay[ \\t]+(?:need|be|not|have|require)\\b|\\bleave[ \\t]+as[ \\t]+is\\b|(?:/|\\bor\\b|,[ \\t]*but\\b|\\bvs\\.?)[ \\t]*(?:Yes|No|Partial|Inaccessible)\\b))[^|\\r\\n]*\\|[ \\t]*[^|\\r\\n]*[^|\\r\\n \\t][^|\\r\\n]*\\|?[ \\t]*$/"
+    },
+    {
+      "id": "report-absolute-paths",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/signed\\-lease\\-scan\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/quarterly\\-report\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/project\\-brief\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/meeting\\-notes\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/scanned\\-invoice\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/annual\\-report\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/statement\\-2024\\-q1\\.pdf)[`*]*[ \\t]*\\|/; audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*/(?:[^|`\\r\\n]*?/)?(?-i:archive/POLICY\\.PDF)[`*]*[ \\t]*\\|/; audit.md contains /(?i)^[ \\t]*(?:>[ \\t]*)*\\|?[ \\t]*[`*]*(?=[^/|`*> \\t\\r\\n])(?:[^|`\\r\\n]*?/)?(?:archive/)?(?:(?-i:signed\\-lease\\-scan\\.pdf)|(?-i:quarterly\\-report\\.pdf)|(?-i:project\\-brief\\.pdf)|(?-i:meeting\\-notes\\.pdf)|(?-i:scanned\\-invoice\\.pdf)|(?-i:annual\\-report\\.pdf)|(?-i:statement\\-2024\\-q1\\.pdf)|(?-i:POLICY\\.PDF))[`*]*[ \\t]*\\|/"
+    },
+    {
+      "id": "report-summary",
+      "passed": false,
+      "detail": "audit.md lacks /(?i)^[ \\t]*(?:>[ \\t]*)*(?:[-*][ \\t]+)?[`*]*Summary[`*]*[ \\t]*:[`*]*[ \\t]*8[ \\t]+(?:files|PDFs)[ \\t]+total\\b[ \\t]*(?:[:\u2014\u2013-])[ \\t]*4[ \\t]+No\\b(?:[ \\t]+OCR[ \\t]+needed\\b)?[ \\t]*,[ \\t]*2[ \\t]+Yes\\b(?:[ \\t]+\\(need\\b[ \\t]+OCR\\))?[ \\t]*,[ \\t]*1[ \\t]+Partial\\b(?:[ \\t]*,[ \\t]*(?:and[ \\t]+)?|[ \\t]+and[ \\t]+)1[ \\t]+Inaccessible\\b\\.?[`*]*[ \\t]*$/"
+    },
+    {
+      "id": "archive-unchanged",
+      "passed": false,
+      "detail": "archive/.claude: added"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 1195,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2043,
+      "cache_read_input_tokens": 178484,
+      "cache_creation_input_tokens": 11516,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0062866071982945965,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "60c22b2ff964ae6c2bf40be719168cf3d5c5db2702b226761b460e1e79ca10c5",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261102T232211Z-058dea",
+    "session_id": "cse_01SphsQCgwKccr45myrz22RJ",
+    "harness_commit": "bd436bda2dce8788c2b8a02029f6245b9b6fb062",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-02T23:23:07Z",
+    "ended_at": "2026-11-02T23:24:06Z",
+    "meter": {
+      "snapshot_count": 2,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-02T23:23:07Z",
+      "to_at": "2026-11-02T23:23:42Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.24,
+          "to": 0.24,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQCgwKccr45myrz22RJ",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.20796939999999997,
+      "agent_usd": 0.20796939999999997,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": 0.12347749999999999,
+      "last_agent_call_usd": 0.0844919,
+      "calls_with_cost": 2,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-02T23:23:42Z",
+      "ended_at": "2026-11-02T23:24:06Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-02T23:23:42Z",
+          "ended_at": "2026-11-02T23:24:06Z",
+          "duration_ms": 24507,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-02T23:23:42Z",
+            "at_source": "call_start",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.24,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 24507,
+        "num_turns": 5,
+        "cost_usd": 0.0844919,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 1195,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+            "cost_usd": 0.00012950000000000003
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2043,
+            "cache_read_input_tokens": 178484,
+            "cache_creation_input_tokens": 11516,
+            "cost_usd": 0.08436239999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 11516
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
