@@ -158,9 +158,12 @@ KNOWN LIMITS, left for a later part:
     harder than it needs to be (Tarone's method would leave them out).
   * Scorer and harness changes are not part of the pooling key: runs scored
     before and after a scorer fix pool together.
-  * An adopted skill's `tested_digest` is its frozen context's deployed copy,
-    not the registry checkout's; when the two differ its runs do not pool
-    (insufficient, never a wrong retire). Real-work fixtures
+  * A run's `tested_digest` is main's copy of the skill when the run fired
+    (skills-evals#559; ADR 0012, addendum "main's copy"), and the gate
+    compares it with main's copy when the gates run. A skill edit in between
+    stops both arms pooling until a new with run lands (insufficient, never
+    a wrong retire); runs made before #559 tested the deployed copy and pool
+    only where it equals main's. Real-work fixtures
     (evals/real-work/, `subject: any`) are not a skill's fixtures on main,
     so their runs are not read.
 """
@@ -913,7 +916,13 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
     `expected` maps each fixture on main ("" for a flat one) to its
     {"fixture_digest", "tested_digest"}, either None when unknown. A run's
     fixture is `pooled_fixture`'s. The one place runs are grouped; swap it
-    to change the window."""
+    to change the window.
+
+    `newest_on_model` is the newest timestamp of ANY run of the cell's
+    fixture on its model, whatever its role or digests (None with no run).
+    It is output only and decides nothing here: the planner counts a fire
+    that landed a run, pooled or not, as a fire that produced something,
+    so a stale-digest run is not mistaken for an empty fire."""
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
@@ -929,8 +938,10 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
         key = {"tested_digest": tested, "fixture_digest": fdig,
                "with_context": with_context, "without_context": without_context}
         for model in models:
+            stamps = [r["timestamp"] for r in mine if r["model"] == model]
             cells[(fixture, model)] = {
-                "key": key, "on_model": sum(1 for r in mine if r["model"] == model),
+                "key": key, "on_model": len(stamps),
+                "newest_on_model": max(stamps) if stamps else None,
                 "with": [r for r in current_with if r["model"] == model
                          and r["arm_context_digest"] == with_context
                          and r.get("pair_key") == pair],
@@ -976,7 +987,7 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             carried = any(r["judge_carried"] for r in runs)
             cell = classify_cell(arms["with"], arms["without"], policy, carried, priors)
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
-                      **cell,
+                      "newest_on_model": pool["newest_on_model"], **cell,
                       "cost_usd": _finite_sum([r["numbers"]["cost_usd"] for r in runs]),
                       "cost_unknown_trials": sum(r["numbers"]["cost_unknown_trials"]
                                                  for r in runs),

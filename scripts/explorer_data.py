@@ -8,8 +8,7 @@
                    [--guidance DIR] [--registry NAME=PATH ...]
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
-                   [--evals-dir DIR] [--registry NAME=PATH ...]
-                   [--context-repo OWNER/REPO=PATH ...]
+                   [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
 It reuses scripts/compute_gates.py for the validated run index
 (`build_index`) and the verdicts (`compute`), then reshapes them for a page
@@ -35,26 +34,26 @@ skill carries
 `usage`, its invocations in `usage/weekly-local.json`, whose window is the
 top-level `usage` (None without a census: unknown, not zero).
 
-Two report-only alerts watch the scheduled in-place skill fixtures (#544,
-#545). Both see a fixture only after the HEALTH FILTER (`health_fixtures`):
-an exact `evals/scheduled.yml` entry that is committed, a skill subject with a
-public census row, not private (`plan_week.fixture_hold_reason` and
-`plan_week.private_skills`), with a `context:` block. Each alert carries only
+One report-only alert watches the scheduled in-place skill fixtures (#545).
+It sees a fixture only after the HEALTH FILTER (`health_fixtures`): an exact
+`evals/scheduled.yml` entry that is committed, a skill subject with a public
+census row, not private (`plan_week.fixture_hold_reason` and
+`plan_week.private_skills`), with a `context:` block. The alert carries only
 the kind, the skill, the fixture key, the public consumer repository and a
 date; never a SHA, digest, path, count or a sibling skill's name.
 
-  * `broken`, reason `pin-deploys-older-copy` (#544): the consumer's
-    `skills.lock` at the fixture's pin adopts the skill, and its digest
-    differs from the skill on main (`compute_gates.tested_digest`). The run
-    then tests the old deployed copy, its with arm never pools
-    (gates.pool_cells), and every fire is spent for nothing until a re-pin.
-    `broken_unknown` counts the fixtures it could not decide.
   * `context-drift` (#545): the other skills deployed beside the subject (its
     own bundle when adopted, every bundle otherwise) moved on the consumer's
     default branch since the pin, and stayed moved for `CONTEXT_DRIFT_DAYS`.
     `drift_since` is the committer date of the lock commit that last left the
     pin's entries. `context_drift_unknown` counts the undecided fixtures.
     `context-drift-report` prints the per-fixture detail locally (never in CI).
+
+#544's `broken` alert (reason `pin-deploys-older-copy`: the pin's lock
+deploys an older copy of the skill than main) is retired (#559): keep-or-
+remove runs now test main's copy of the subject, not the deployed one, so an
+older deployed copy no longer keeps a with arm from pooling. The context
+beside the subject is still the pin's, which is why `context-drift` stays.
 
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
@@ -289,8 +288,6 @@ def build_alerts(gates_doc: dict, regressions: dict | None, issues: dict,
 #: days ago and stayed moved. 7 days sits in that gap, so the alert asks for a
 #: re-pin about every 10 days instead of after every bump.
 CONTEXT_DRIFT_DAYS = 7
-#: The one reason #544's `broken` alert carries today.
-REASON_OLDER_COPY = "pin-deploys-older-copy"
 _LOCK_FILE = "skills.lock"
 
 
@@ -299,12 +296,12 @@ class _Undecided(Exception):
 
 
 def health_fixtures(evals_dir: Path, skill_names: set) -> list:
-    """The HEALTH FILTER (#544, #545), applied before any Git read or count:
+    """The HEALTH FILTER (#545), applied before any Git read or count:
     each scheduled fixture (an exact, committed `evals/scheduled.yml` entry)
     whose subject is a listed (public census) skill, that is not private
     (`fixture_hold_reason` and `private_skills`, so a private fixture whose
     skill name collides with a public one hides the name for both), and that
-    has a `context:` mapping. [{fixture, skill, bundle, registry, context}],
+    has a `context:` mapping. [{fixture, skill, bundle, context}],
     in schedule order. A guidance or `subject: any` row is never a subject."""
     committed = plan_week.schedule.committed_fixtures(evals_dir.parent)
     scheduled = plan_week.schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
@@ -326,7 +323,7 @@ def health_fixtures(evals_dir: Path, skill_names: set) -> list:
             continue
         out.append({"fixture": fixture, "skill": skill,
                     "bundle": doc["bundle"] if isinstance(doc.get("bundle"), str) else None,
-                    "registry": doc.get("registry"), "context": doc["context"]})
+                    "context": doc["context"]})
     return out
 
 
@@ -386,22 +383,21 @@ def _skills_map(raw: bytes) -> dict:
 def _subject_keys(skills: dict, skill: str, bundle: str | None) -> list:
     """The lock keys that adopt the subject, as delivery.resolve_skill_subject
     matches an adopted tree: the skill name, and the bundle when the fixture
-    names one. The registry does not narrow it: run_eval's `_in_place_plan`
-    passes a registry only when NO adopted tree matches, so an adopted copy is
-    what a run tests whatever registry the fixture names."""
+    names one. Only the bundle matters here: an adopted subject's own bundle is
+    the context #545 scopes to, whichever registry's main copy the run then
+    tests."""
     return sorted(k for k in skills if k.split("/", 1)[1] == skill
                   and (bundle is None or k.split("/", 1)[0] == bundle))
 
 
-def check_fixture_health(entry: dict, registries: dict, repositories: dict,
-                         now: datetime, cache: dict) -> dict:
-    """One in-scope fixture's #544 and #545 states. {"broken": "alert" | "ok" |
-    "n/a" | "unknown", "drift": the same, "drift_since": ISO time or None,
-    "detail": the local report's row}. No lock at the pin, or a lock that does
-    not adopt the subject, is "n/a" for #544 (nothing deployed to be stale);
-    #545 then scopes to every bundle. Any read that cannot be made is
-    "unknown", never a silent pass."""
-    out = {"broken": "unknown", "drift": "unknown", "drift_since": None,
+def check_fixture_health(entry: dict, repositories: dict, now: datetime,
+                         cache: dict) -> dict:
+    """One in-scope fixture's #545 state. {"drift": "alert" | "ok" | "n/a" |
+    "unknown", "drift_since": ISO time or None, "detail": the local report's
+    row}. No lock at the pin is "n/a"; a lock that does not adopt the subject
+    scopes to every bundle. Any read that cannot be made is "unknown", never a
+    silent pass."""
+    out = {"drift": "unknown", "drift_since": None,
            "detail": {"adopted": None, "scope": None, "changed": None, "added": None,
                       "removed": None, "drift_since": None}}
     ctx = entry["context"]
@@ -423,20 +419,12 @@ def check_fixture_health(entry: dict, registries: dict, repositories: dict,
     except context_mod.ContextError:
         return out
     if base is None:
-        out["broken"] = out["drift"] = "n/a"
+        out["drift"] = "n/a"
         return out
     adopted = _subject_keys(base, entry["skill"], entry["bundle"])
     if len(adopted) > 1:  # adopted under two bundles: delivery's ambiguous_skill
         return out
     out["detail"]["adopted"] = bool(adopted)
-    if not adopted:
-        out["broken"] = "n/a"
-    else:
-        pinned = context_mod._DIGEST.fullmatch(base[adopted[0]]).group(1).lower()
-        main = compute_gates.tested_digest(registries or {}, entry["skill"], entry["registry"])
-        if main is not None:
-            out["broken"] = "alert" if pinned != main else "ok"
-
     scope = adopted[0].split("/", 1)[0] if adopted else None
     out["detail"]["scope"] = scope or "all bundles"
 
@@ -512,28 +500,22 @@ def _drift_since(git, pin: str, in_scope, base: dict, path: Path, cache: dict) -
     return {"at": plan_week._iso(moment), "head": head_scope}
 
 
-def health_alerts(evals_dir: Path, skill_names: set, registries: dict | None,
-                  repositories: dict | None, now: datetime) -> tuple:
-    """(alerts, broken_unknown, context_drift_unknown, report rows) over the
-    HEALTH FILTER's fixtures only, so a private fixture moves no count."""
+def health_alerts(evals_dir: Path, skill_names: set, repositories: dict | None,
+                  now: datetime) -> tuple:
+    """(alerts, context_drift_unknown, report rows) over the HEALTH FILTER's
+    fixtures only, so a private fixture moves no count."""
     alerts, rows, cache = [], [], {}
-    broken_unknown = drift_unknown = 0
+    drift_unknown = 0
     for entry in health_fixtures(evals_dir, skill_names):
-        state = check_fixture_health(entry, registries or {}, repositories or {}, now, cache)
-        broken_unknown += state["broken"] == "unknown"
+        state = check_fixture_health(entry, repositories or {}, now, cache)
         drift_unknown += state["drift"] == "unknown"
-        rows.append({"fixture": entry["fixture"], "broken": state["broken"],
-                     "drift": state["drift"], **state["detail"]})
-        if state["broken"] == "alert":
-            alerts.append({"kind": "broken", "subject": "skill", "name": entry["skill"],
-                           "fixture": entry["fixture"], "model": None,
-                           "reasons": [REASON_OLDER_COPY]})
+        rows.append({"fixture": entry["fixture"], "drift": state["drift"], **state["detail"]})
         if state["drift"] == "alert":
             alerts.append({"kind": "context-drift", "subject": "skill", "name": entry["skill"],
                            "fixture": entry["fixture"], "model": None,
                            "repository": entry["context"]["repository"],
                            "drift_since": state["drift_since"]})
-    return alerts, broken_unknown, drift_unknown, rows
+    return alerts, drift_unknown, rows
 
 
 def skill_description(registries: dict | None, registry: str | None, name: str) -> str | None:
@@ -739,10 +721,10 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         regressions = None
     alerts = build_alerts(gates_doc, regressions if isinstance(regressions, dict) else None,
                           issues or {}, {s["name"] for s in skills}, {s["id"] for s in sections}, cells)
-    broken_unknown = drift_unknown = 0
+    drift_unknown = 0
     if (evals_dir / "scheduled.yml").is_file():
-        health, broken_unknown, drift_unknown, _rows = health_alerts(
-            evals_dir, {s["name"] for s in skills}, registries, context_repos, now)
+        health, drift_unknown, _rows = health_alerts(
+            evals_dir, {s["name"] for s in skills}, context_repos, now)
         alerts += health
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
@@ -759,7 +741,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                           "min_cli_versions", "objective_margin")},
         "skills": skills, "guidance": {"sections": sections},
-        "coverage": coverage, "alerts": alerts, "broken_unknown": broken_unknown,
+        "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "usage": usage_window}
 
 
@@ -785,19 +767,17 @@ def context_drift_report(argv: list[str]) -> int:
     parser.add_argument("--results-tree", required=True, type=Path)
     parser.add_argument("--as-of", required=True)
     parser.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
-    parser.add_argument("--registry", action="append", metavar="NAME=PATH")
     parser.add_argument("--context-repo", action="append", metavar="OWNER/REPO=PATH")
     args = parser.parse_args(argv)
     try:
         now = plan_week._stamp_time(compute_gates.parse_as_of(args.as_of))
         names = set(public_census(load_census(args.results_tree))[0])
-        _alerts, _bu, _du, rows = health_alerts(
-            args.evals_dir, names, compute_gates.flag_registries(args.registry),
-            context_mod.parse_context_repos(args.context_repo), now)
+        _alerts, _du, rows = health_alerts(
+            args.evals_dir, names, context_mod.parse_context_repos(args.context_repo), now)
     except (ValueError, OSError, context_mod.ContextError) as exc:
         print(f"explorer_data: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
-    cols = ("fixture", "broken", "drift", "adopted", "scope", "changed", "added", "removed",
+    cols = ("fixture", "drift", "adopted", "scope", "changed", "added", "removed",
             "drift_since")
     table = [cols] + [tuple("-" if r[c] is None else str(r[c]) for c in cols) for r in rows]
     widths = [max(len(line[i]) for line in table) for i in range(len(cols))]
@@ -825,7 +805,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="JSON {marker: issue url}, or the raw `gh issue list --json url,body` "
                              "list, for the regression alerts")
     parser.add_argument("--context-repo", action="append", metavar="OWNER/REPO=PATH",
-                        help="a consumer checkout (full history) for the #544/#545 alerts; "
+                        help="a consumer checkout (full history) for the #545 alert; "
                              "repeatable, as run_eval's flag")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)

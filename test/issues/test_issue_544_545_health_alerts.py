@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""skills-evals#544 and #545: the explorer's `broken` and `context-drift` alerts.
+"""skills-evals#545: the explorer's `context-drift` alert, and #544's retired
+`broken` alert.
 
-#544: an in-place fixture whose consumer `skills.lock`, at the fixture's pin,
-adopts an older copy of the skill than main has is `broken` (reason
-`pin-deploys-older-copy`): its with arm tests the old copy and never pools.
 #545: the skills deployed beside the subject moved on the consumer's
 first-parent history and stayed moved for CONTEXT_DRIFT_DAYS: `context-drift`
-with `drift_since`. Both are report-only and public, so the HEALTH FILTER must
+with `drift_since`. It is report-only and public, so the HEALTH FILTER must
 drop every private fixture before any Git read or count.
+#544's `broken` alert (reason `pin-deploys-older-copy`) is retired (#559):
+runs now test main's copy of the subject, so an older deployed copy no
+longer keeps a with arm from pooling, and nothing alerts on one.
 
 Hermetic: the consumer repositories are temporary Git repos, checked out the
 way actions/checkout does it (`git init` + `git fetch`, no set-head), every
@@ -156,16 +157,16 @@ class World:
 
     def run(self, names=("subj",), now=NOW):
         self.commit()
-        return explorer_data.health_alerts(self.evals, set(names), self.registries(),
-                                           self.repositories, now)
+        return explorer_data.health_alerts(self.evals, set(names), self.repositories, now)
 
 
 def kinds(alerts: list) -> list:
     return sorted((a["kind"], a["fixture"]) for a in alerts)
 
 
-class BrokenTests(unittest.TestCase):
-    """#544: a pin that deploys an older copy of the subject."""
+class LockTests(unittest.TestCase):
+    """The pin's lock: what it adopts sets #545's scope, and #544's `broken`
+    alert is gone (#559)."""
 
     def setUp(self):
         self.w = World(self)
@@ -179,45 +180,30 @@ class BrokenTests(unittest.TestCase):
         fx = self.w.fixture("subj", "subj", pin)
         return fx, self.w.run()
 
-    def test_an_adopted_stale_copy_is_broken(self):
-        fx, (alerts, bu, du, _rows) = self.one({"b1/subj": STALE, "b1/sib": "2" * 64})
-        self.assertEqual(alerts, [{"kind": "broken", "subject": "skill", "name": "subj",
-                                   "fixture": fx, "model": None,
-                                   "reasons": ["pin-deploys-older-copy"]}])
-        self.assertEqual((bu, du), (0, 0))
-
-    def test_an_adopted_current_copy_is_not(self):
-        _fx, (alerts, bu, _du, rows) = self.one({"b1/subj": CURRENT})
-        self.assertEqual(alerts, [])
-        self.assertEqual((bu, rows[0]["broken"]), (0, "ok"))
-
-    def test_a_lock_that_does_not_adopt_the_subject_is_not_applicable(self):
-        _fx, (alerts, bu, _du, rows) = self.one({"b1/sib": "2" * 64})
-        self.assertEqual((alerts, bu, rows[0]["broken"]), ([], 0, "n/a"))
+    def test_an_adopted_older_copy_no_longer_alerts(self):
+        # #544's case: runs test main's copy now, so a stale deployed copy is
+        # no defect; only the context beside it can drift.
+        _fx, (alerts, du, rows) = self.one({"b1/subj": STALE, "b1/sib": "2" * 64})
+        self.assertEqual((alerts, du), ([], 0))
+        self.assertEqual((rows[0]["drift"], rows[0]["adopted"], rows[0]["scope"]),
+                         ("ok", True, "b1"))
+        self.assertNotIn("broken", rows[0])
 
     def test_no_lock_at_the_pin_is_not_applicable(self):
-        _fx, (alerts, bu, du, rows) = self.one(None)
-        self.assertEqual((alerts, bu, du), ([], 0, 0))
-        self.assertEqual((rows[0]["broken"], rows[0]["drift"]), ("n/a", "n/a"))
+        _fx, (alerts, du, rows) = self.one(None)
+        self.assertEqual((alerts, du, rows[0]["drift"]), ([], 0, "n/a"))
 
     def test_an_invalid_lock_is_unknown(self):
-        _fx, (alerts, bu, du, _rows) = self.one(None, raw=b'{"skills": {}}')
-        self.assertEqual((alerts, bu, du), ([], 1, 1))
+        _fx, (alerts, du, _rows) = self.one(None, raw=b'{"skills": {}}')
+        self.assertEqual((alerts, du), ([], 1))
 
     def test_a_missing_checkout_is_unknown(self):
-        _fx, (alerts, bu, du, _rows) = self.one({"b1/subj": STALE}, mapped=False)
-        self.assertEqual((alerts, bu, du), ([], 1, 1))
+        _fx, (alerts, du, _rows) = self.one({"b1/subj": STALE}, mapped=False)
+        self.assertEqual((alerts, du), ([], 1))
 
     def test_a_skill_adopted_under_two_bundles_is_unknown(self):
-        _fx, (alerts, bu, du, _rows) = self.one({"b1/subj": STALE, "b2/subj": STALE})
-        self.assertEqual((alerts, bu, du), ([], 1, 1))
-
-    def test_an_adopted_skill_with_no_main_copy_is_unknown(self):
-        pin = self.c.commit({"b1/ghost": STALE}, 1)
-        self.w.repositories[CONSUMER] = self.c.checkout()
-        self.w.fixture("ghost", "ghost", pin)
-        alerts, bu, du, rows = self.w.run(names=("ghost",))
-        self.assertEqual((alerts, bu, du, rows[0]["broken"]), ([], 1, 0, "unknown"))
+        _fx, (alerts, du, _rows) = self.one({"b1/subj": STALE, "b2/subj": STALE})
+        self.assertEqual((alerts, du), ([], 1))
 
 
 class DriftTests(unittest.TestCase):
@@ -241,13 +227,13 @@ class DriftTests(unittest.TestCase):
 
     def test_no_lock_change_is_no_drift(self):
         self.c.commit(None, 5, note="unrelated")
-        alerts, _bu, du, rows = self.run_with()
+        alerts, du, rows = self.run_with()
         self.assertEqual((alerts, du, rows[0]["drift"]), ([], 0, "ok"))
 
     def test_an_in_scope_change_older_than_the_window_alerts_with_its_date(self):
         self.bump("b1/sib", "4" * 64, 5)
         self.c.commit(None, 6, note="unrelated")
-        alerts, _bu, du, _rows = self.run_with()
+        alerts, du, _rows = self.run_with()
         self.assertEqual(alerts, [{"kind": "context-drift", "subject": "skill", "name": "subj",
                                    "fixture": "evals/subj", "model": None,
                                    "repository": CONSUMER, "drift_since": day(5)}])
@@ -256,38 +242,38 @@ class DriftTests(unittest.TestCase):
     def test_the_window_is_the_re_pin_cadence(self):
         self.assertEqual(explorer_data.CONTEXT_DRIFT_DAYS, 7)
         self.bump("b1/sib", "4" * 64, 14)  # 6 days before NOW
-        alerts, _bu, du, rows = self.run_with()
+        alerts, du, rows = self.run_with()
         self.assertEqual((alerts, du, rows[0]["drift_since"]), ([], 0, day(14)))
         self.assertEqual(rows[0]["drift"], "ok")
 
     def test_a_change_exactly_at_the_window_alerts(self):
         self.bump("b1/sib", "4" * 64, 13)  # 7 days before NOW, to the second
-        alerts, _bu, _du, _rows = self.run_with()
+        alerts, _du, _rows = self.run_with()
         self.assertEqual([a["drift_since"] for a in alerts], [day(13)])
 
     def test_an_out_of_scope_change_is_not_drift_for_an_adopted_subject(self):
         self.bump("b2/other", "4" * 64, 5)
-        alerts, _bu, du, rows = self.run_with()
+        alerts, du, rows = self.run_with()
         self.assertEqual((alerts, du, rows[0]["scope"]), ([], 0, "b1"))
 
     def test_any_bundle_is_in_scope_when_the_subject_is_not_adopted(self):
         self.c.commit({"b2/other": "3" * 64, "b3/x": "5" * 64}, 2)
         pin = git(self.c.src, "rev-parse", "HEAD")
         self.c.commit({"b2/other": "4" * 64, "b3/x": "5" * 64}, 5)
-        alerts, _bu, _du, rows = self.run_with(revision=pin)
+        alerts, _du, rows = self.run_with(revision=pin)
         self.assertEqual([(a["kind"], a["drift_since"]) for a in alerts],
                          [("context-drift", day(5))])
-        self.assertEqual((rows[0]["broken"], rows[0]["scope"]), ("n/a", "all bundles"))
+        self.assertEqual((rows[0]["adopted"], rows[0]["scope"]), (False, "all bundles"))
 
     def test_the_subjects_own_bump_is_not_context(self):
         self.bump("b1/subj", "6" * 64, 5)
-        alerts, _bu, _du, _rows = self.run_with()
+        alerts, _du, _rows = self.run_with()
         self.assertEqual([a["kind"] for a in alerts], [])
 
     def test_a_change_reverted_to_the_pins_entries_is_no_drift(self):
         self.bump("b1/sib", "4" * 64, 3)
         self.c.commit(self.BASE, 5)
-        alerts, _bu, du, _rows = self.run_with()
+        alerts, du, _rows = self.run_with()
         self.assertEqual((alerts, du), ([], 0))
 
     def test_change_revert_change_dates_from_the_second_change(self):
@@ -295,23 +281,23 @@ class DriftTests(unittest.TestCase):
         self.c.commit(self.BASE, 4)
         self.bump("b1/sib", "5" * 64, 6)
         self.bump("b1/sib", "7" * 64, 8)  # still drifted: the date stays at 6
-        alerts, _bu, _du, _rows = self.run_with()
+        alerts, _du, _rows = self.run_with()
         self.assertEqual([a["drift_since"] for a in alerts], [day(6)])
 
     def test_a_shallow_clone_is_unknown(self):
         self.bump("b1/sib", "4" * 64, 5)
         pin = git(self.c.src, "rev-parse", "HEAD~1")
         self.c.commit(None, 6, note="unrelated")
-        alerts, bu, du, _rows = self.run_with(depth=3, revision=pin)
-        self.assertEqual((alerts, bu, du), ([], 0, 1))
+        alerts, du, _rows = self.run_with(depth=3, revision=pin)
+        self.assertEqual((alerts, du), ([], 1))
 
     def test_a_pin_that_is_not_an_ancestor_of_head_is_unknown(self):
         git(self.c.src, "checkout", "-q", "-b", "side")
         side = self.c.commit({**self.BASE, "b1/sib": "4" * 64}, 2)
         git(self.c.src, "checkout", "-q", "main")
         self.bump("b1/sib", "5" * 64, 5)
-        alerts, bu, du, _rows = self.run_with(revision=side)
-        self.assertEqual((alerts, bu, du), ([], 0, 1))
+        alerts, du, _rows = self.run_with(revision=side)
+        self.assertEqual((alerts, du), ([], 1))
 
     def test_a_pin_off_the_first_parent_chain_is_unknown(self):
         git(self.c.src, "checkout", "-q", "-b", "side")
@@ -319,13 +305,13 @@ class DriftTests(unittest.TestCase):
         git(self.c.src, "checkout", "-q", "main")
         self.c.commit(None, 3, note="main moves", note_file="main.txt")
         git(self.c.src, "merge", "-q", "--no-ff", "-m", "merge side", "side", date=day(4))
-        alerts, _bu, du, _rows = self.run_with(revision=side)
+        alerts, du, _rows = self.run_with(revision=side)
         self.assertEqual((alerts, du), ([], 1))
 
     def test_an_unreadable_lock_in_the_history_is_unknown(self):
         self.c.commit(None, 3, raw=b"not json")
         self.bump("b1/sib", "4" * 64, 5)
-        alerts, _bu, du, _rows = self.run_with()
+        alerts, du, _rows = self.run_with()
         self.assertEqual((alerts, du), ([], 1))
 
     def test_the_lock_history_reader_refuses_any_other_git_command(self):
@@ -342,16 +328,13 @@ class DriftTests(unittest.TestCase):
 class PrivacyTests(unittest.TestCase):
     """The HEALTH FILTER runs before any read or count, for both alerts."""
 
-    def world(self, case: str, private: bool) -> World:
+    def world(self, private: bool) -> World:
         w = World(self)
         c = Consumer(w.root, "c")
-        if case == "broken":
-            pin = c.commit({"b1/pub": STALE, "b1/col": STALE, "pb/" + PRIVATE_NAME: STALE}, 1)
-        else:
-            pin = c.commit({"b1/pub": CURRENT, "b1/col": CURRENT, "b1/sib": "2" * 64,
-                            "pb/" + PRIVATE_NAME: CURRENT, "pb/psib": "2" * 64}, 1)
-            c.commit({"b1/pub": CURRENT, "b1/col": CURRENT, "b1/sib": "4" * 64,
-                      "pb/" + PRIVATE_NAME: CURRENT, "pb/psib": "4" * 64}, 3)
+        pin = c.commit({"b1/pub": CURRENT, "b1/col": CURRENT, "b1/sib": "2" * 64,
+                        "pb/" + PRIVATE_NAME: CURRENT, "pb/psib": "2" * 64}, 1)
+        c.commit({"b1/pub": CURRENT, "b1/col": CURRENT, "b1/sib": "4" * 64,
+                  "pb/" + PRIVATE_NAME: CURRENT, "pb/psib": "4" * 64}, 3)
         w.repositories[CONSUMER] = c.checkout()
         for name in ("pub", "col"):
             w.skill("adam-agentskills", "b1", name)
@@ -401,46 +384,39 @@ class PrivacyTests(unittest.TestCase):
         return out
 
     def test_private_names_never_reach_the_document(self):
-        for case in ("broken", "context-drift"):
-            with self.subTest(case=case):
-                w = self.world(case, private=True)
-                doc, text = self.document(w)
-                self.assertNotIn(PRIVATE_NAME, text)
-                self.assertNotIn("private-twin", text)
-                health = [a for a in doc["alerts"] if a["kind"] == case]
-                # The colliding public fixture is filtered too; only `pub` alerts.
-                self.assertEqual([a["fixture"] for a in health], ["evals/pub"])
-                self.assertEqual((doc["broken_unknown"], doc["context_drift_unknown"]), (0, 0))
+        doc, text = self.document(self.world(private=True))
+        self.assertNotIn(PRIVATE_NAME, text)
+        self.assertNotIn("private-twin", text)
+        health = [a for a in doc["alerts"] if a["kind"] == "context-drift"]
+        # The colliding public fixture is filtered too; only `pub` alerts.
+        self.assertEqual([a["fixture"] for a in health], ["evals/pub"])
+        self.assertEqual(doc["context_drift_unknown"], 0)
+        self.assertNotIn("broken_unknown", doc)
 
     def test_negative_control_the_private_fixture_would_alert_unfiltered(self):
-        for case in ("broken", "context-drift"):
-            with self.subTest(case=case):
-                w = self.world(case, private=True)
-                with mock.patch.object(explorer_data, "health_fixtures", self.unfiltered):
-                    doc, _text = self.document(w)
-                alerts = [a for a in doc["alerts"] if a["kind"] == case]
-                self.assertIn(PRIVATE_NAME, {a["name"] for a in alerts})
-                self.assertIn(PRIVATE_NAME, json.dumps(doc))
-                self.assertGreater(doc["broken_unknown"] + doc["context_drift_unknown"], 0)
+        w = self.world(private=True)
+        with mock.patch.object(explorer_data, "health_fixtures", self.unfiltered):
+            doc, _text = self.document(w)
+        alerts = [a for a in doc["alerts"] if a["kind"] == "context-drift"]
+        self.assertIn(PRIVATE_NAME, {a["name"] for a in alerts})
+        self.assertIn(PRIVATE_NAME, json.dumps(doc))
+        self.assertGreater(doc["context_drift_unknown"], 0)
 
     def test_unknown_counts_do_not_move_with_a_private_fixture(self):
-        for case in ("broken", "context-drift"):
-            with self.subTest(case=case):
-                with_private = self.document(self.world(case, private=True))[0]
-                without = self.document(self.world(case, private=False))[0]
-                for key in ("broken_unknown", "context_drift_unknown"):
-                    self.assertEqual(with_private[key], without[key], key)
+        with_private = self.document(self.world(private=True))[0]
+        without = self.document(self.world(private=False))[0]
+        self.assertEqual(with_private["context_drift_unknown"], without["context_drift_unknown"])
 
     def test_finish_accepts_the_document(self):
-        doc, text = self.document(self.world("context-drift", private=True))
+        doc, text = self.document(self.world(private=True))
         self.assertNotRegex(text, r"[0-9a-f]{64}")
         self.assertNotIn("@", text.replace("https://", ""))
         kinds_seen = {a["kind"] for a in doc["alerts"]}
         self.assertIn("context-drift", kinds_seen)
         for alert in doc["alerts"]:
-            if alert["kind"] in ("broken", "context-drift"):
+            if alert["kind"] == "context-drift":
                 self.assertLessEqual(set(alert), {"kind", "subject", "name", "fixture", "model",
-                                                  "reasons", "repository", "drift_since"})
+                                                  "repository", "drift_since"})
 
 
 class FilterTests(unittest.TestCase):
@@ -483,14 +459,13 @@ class ReportTests(unittest.TestCase):
             code = explorer_data.main([
                 "context-drift-report", "--results-tree", str(w.root / "tree"),
                 "--as-of", AS_OF, "--evals-dir", str(w.evals),
-                "--registry", f"adam-agentskills={w.registries_root / 'adam-agentskills'}",
                 "--context-repo", f"{CONSUMER}={c.checkout()}"])
         self.assertEqual(code, 0)
         lines = out.getvalue().splitlines()
-        self.assertEqual(lines[0].split(), ["fixture", "broken", "drift", "adopted", "scope",
+        self.assertEqual(lines[0].split(), ["fixture", "drift", "adopted", "scope",
                                             "changed", "added", "removed", "drift_since"])
         self.assertEqual(lines[1].split(),
-                         ["evals/subj", "alert", "alert", "True", "b1", "1", "1", "0", day(5)])
+                         ["evals/subj", "alert", "True", "b1", "1", "1", "0", day(5)])
 
 
 class WorkflowAndPageTests(unittest.TestCase):

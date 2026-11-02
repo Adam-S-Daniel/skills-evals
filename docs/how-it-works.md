@@ -301,7 +301,12 @@ or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`, and
 `agent-check` items read from lesson proposals) are listed in the plan, not
-fired; each carries a `change_type`. The dispatch job fires one leg at a time, waits while three
+fired; each carries a `change_type`. A skill run tests main's copy of its
+subject and refuses, with nothing spent, when the registry checkout is not
+clean at its main (ADR 0012, addendum "main's copy"); the routine's fire
+still reads as a success. So a cell with two such empty fires within 14 days
+becomes a `fixture-broken` item instead of being fired again, and is retried
+once those fires are 14 days old. The dispatch job fires one leg at a time, waits while three
 fires are in flight, and spaces fires a minute apart; improve fires go last.
 
 ### The trigger lane

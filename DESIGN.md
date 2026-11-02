@@ -311,7 +311,10 @@ The model-call catalog and marker guard remain part 3 of
 
 A bare skill name must resolve uniquely; `--skill-registry OWNER/REPO` and
 `--skill-bundle BUNDLE` qualify its source and bundle. Keep-or-remove runs
-test the deployed bytes by default. `--subject-candidate PATH` explicitly
+of a skill test main's copy of it, the registry checkout's committed HEAD
+(`subject_source: main`, `subject_revision`), which must match the registry
+the context deploys it from and be clean (ADR 0012, addendum "main's copy",
+2026-11-02); a guidance subject tests the deployed section. `--subject-candidate PATH` explicitly
 supplies a skill directory or a guidance file; only that skill or the pinned
 section's exact extent replaces the subject in `with`. Summaries retain both
 deployed and tested digests. A fixture names its deployed context using `context:`:

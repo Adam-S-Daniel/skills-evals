@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+import dataclasses
 import fnmatch
 import functools
 import hashlib
@@ -5250,11 +5251,112 @@ def _check_with_budget(frozen, subject, budget: dict) -> None:
             sizes["skill_payload_bytes"] -= sum(len(raw) for raw in deployed.files.values())
     if isinstance(subject, delivery.SectionSubject):
         sizes["guidance_bytes"] = len(delivery.guidance_payload(frozen, subject, "with"))
+    copy = ""
+    if isinstance(subject, delivery.SkillSubject) and subject.source == "main":
+        # A skill edit on main can grow the with arm with no fixture change;
+        # say which copy did, so the refusal is traceable to a commit.
+        copy = f" with main's copy of {subject.skill} at {subject.revision}"
     for key, measured in sizes.items():
         if measured > budget[key]:
             raise context.ContextError(
                 "budget_exceeded", f"the with arm's {key} measured {measured} "
-                f"bytes exceeds limit {budget[key]}")
+                f"bytes{copy} exceeds limit {budget[key]}")
+
+
+def _registry_head(identity: str, checkout: Path, path: Path,
+                   files: dict, modes: dict) -> str:
+    """The registry checkout's HEAD commit, once the skill directory `path`
+    read as `files`/`modes` is proven to be exactly HEAD's tree there.
+
+    `subject_revision` names a commit, so the bytes tested must be that
+    commit's: an uncommitted edit, a plain directory or a directory nested
+    in some other repository would record a revision that never held them.
+    Only the audited object reader is used (never `git status`, whose
+    filters and config the checkout controls), and paths and modes are
+    compared before any blob is read."""
+    try:
+        git = context._Git(identity, {identity: checkout})
+        # Git prints the directory relative to the checkout at its top level
+        # and absolute elsewhere; either way it must be the checkout's own.
+        reported = (checkout / git.run("rev-parse", "--git-dir").strip().decode("utf-8")).resolve()
+        dotgit = checkout / ".git"
+        if dotgit.is_file():
+            # A linked worktree or submodule: `.git` names its gitdir.
+            line = dotgit.read_text(encoding="utf-8").strip()
+            own = (checkout / line.removeprefix("gitdir:").strip()).resolve() \
+                if line.startswith("gitdir:") else None
+        else:
+            own = dotgit.resolve()
+        if reported != own:
+            raise delivery.DeliveryError(
+                "registry_checkout_unversioned",
+                f"the registry checkout for {identity} is not the top level of its own "
+                "Git repository, so no commit names the skill's bytes")
+        rev = git.revision("HEAD")
+    except (context.ContextError, OSError, UnicodeError) as exc:
+        raise delivery.DeliveryError(
+            "registry_checkout_unversioned",
+            f"the registry checkout for {identity} has no readable Git HEAD") from exc
+    prefix = path.relative_to(checkout).as_posix() + "/"
+    head = {name[len(prefix):]: entry for name, entry in git.tree(rev).items()
+            if name.startswith(prefix)}
+    dirty = delivery.DeliveryError(
+        "registry_checkout_dirty",
+        f"the registry checkout's copy of {path.name} differs from its HEAD {rev}; "
+        "main's copy is tested only as committed")
+    if set(head) != set(files) or any(
+            entry[:2] not in (("100644", "blob"), ("100755", "blob"))
+            or entry[0] != modes[name] for name, entry in head.items()):
+        raise dirty
+    if any(git.read(head, name) != raw for name, raw in files.items()):
+        raise dirty
+    try:
+        main = git.revision("refs/remotes/origin/main")
+    except context.ContextError:
+        # No origin/main (a local clone with no remote): HEAD is all there is,
+        # and `subject_source: main` then means the checkout's HEAD.
+        main = None
+    if main is not None and main != rev:
+        raise delivery.DeliveryError(
+            "registry_checkout_not_main",
+            f"the registry checkout for {identity} is at {rev}, not its origin/main {main}")
+    return rev
+
+
+def _main_copy_subject(subject, url, registries: dict):
+    """`subject` with main's copy of its skill as the bytes the with arm
+    tests (ADR 0012, addendum "main's copy", 2026-11-02): the copy
+    compute_gates' `tested_digest` names, so a run pools exactly when the
+    gate's digest matches. The without arm is unchanged; an adopted subject
+    keeps its deployed digest."""
+    if subject.action == "removed":
+        # Main's copy must come from the registry the context deploys the
+        # skill from: a same-named skill elsewhere is a different skill.
+        if url is not None:
+            named = delivery._identity({"url": _normalize_registry_url(url)})
+            if named.lower() != subject.registry.lower():
+                raise delivery.DeliveryError(
+                    "registry_mismatch", f"the fixture's registry is not {subject.registry}, "
+                    f"which the context deploys {subject.skill} from")
+        else:
+            url = "https://github.com/" + subject.registry
+    identity, bundle, path = main_copy(registries, subject.skill, url)
+    if subject.action == "removed" and bundle != subject.bundle:
+        raise delivery.DeliveryError(
+            "main_bundle_mismatch", f"main's copy of {subject.skill} is in bundle {bundle}, "
+            f"not the deployed {subject.bundle}")
+    files, modes = delivery._tree_files(path)
+    if subject.action == "added" and (
+            identity.lower() != subject.registry.lower() or bundle != subject.bundle
+            or context._file_digest(files) != subject.tested_digest):
+        raise delivery.DeliveryError(
+            "main_copy_mismatch", f"main's copy of {subject.skill} is not the registry copy "
+            "the subject resolved to")
+    checkout = Path(registry_for_url(registries, "https://github.com/" + identity)["path"])
+    rev = _registry_head(identity, checkout, path, files, modes)
+    subject = delivery._skill_candidate(subject, None, files=files, modes=modes,
+                                        label="main's copy")
+    return dataclasses.replace(subject, source="main", revision=rev)
 
 
 def _in_place_plan(fixture: dict, args: argparse.Namespace,
@@ -5275,17 +5377,26 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
             "hook, and in-place guidance is delivered only through the real hook")
     candidate = getattr(args, "subject_candidate", None)
     if kind == "skill":
+        url = fixture.get("registry")
+        if url is not None and (not isinstance(url, str) or not url):
+            raise delivery.DeliveryError(
+                "invalid_registry_field", "a fixture's `registry:` is a registry URL string")
         bundle = getattr(args, "skill_bundle", None)
         registry = getattr(args, "skill_registry", None)
-        # A fixture registry qualifies absent subjects; adopted defaults remain
-        # the immutable deployed version unless the run explicitly qualifies it.
-        if registry is None and fixture.get("registry") and not any(
+        # A fixture registry qualifies absent subjects. An adopted subject is
+        # found in the context whatever registry the fixture names; that the
+        # two agree is checked against main's copy below.
+        if registry is None and url and not any(
                 tree.skill == fixture["skill"] and (bundle is None or tree.bundle == bundle)
                 for tree in frozen.skills):
-            registry = delivery._identity({"url": fixture["registry"]})
+            registry = delivery._identity({"url": url})
         subject = delivery.resolve_skill_subject(
             frozen, f"{bundle}:{fixture['skill']}" if bundle else fixture["skill"],
             registries, registry=registry, candidate=candidate)
+        if candidate is not None:
+            subject = dataclasses.replace(subject, source="candidate", revision=None)
+        else:
+            subject = _main_copy_subject(subject, url, registries)
     else:
         subject = delivery.resolve_section_subject(
             frozen, fixture["section"], repositories, candidate=candidate)
