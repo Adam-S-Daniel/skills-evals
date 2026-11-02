@@ -46,7 +46,23 @@ today's single-stratum rule on the same runs, so a stratified change is
 judged against the rule it replaces. The judge is not simulated: it can only add a requirement to a
 removal and a route to a keep that has its own sequence.
 
-    python3 scripts/simulate_stratified_pooling.py [--reps 20000] [--seed 546]
+THE CONFIRMATION'S PRIOR is measured on the main-rest stratum's own two arms
+(same guard): a prior pooled with lower-variance strata (old rests at the
+ceiling beside a mid-range main rest) made it anti-conservative (#546
+review round 1, now a scenario here).
+
+KNOWN LIMITS (#546 review round 2), for whoever wires this into a verdict:
+  * the keep side is not shown safe when the shared prior is pooled from
+    OTHER cells at the ceiling: a reviewer's probe with such a history gave
+    stratified false keeps of 34-46% against 22-25% for one pooled stratum;
+  * the main-rest half relies on the classifier's ceiling, floor and
+    cannot-discriminate rules, which this simulation does not apply: a
+    0/1 stratum with both arms constant meets the df guard and falls to the
+    1e-4 floor (1 check at 0.97/0.92 retired 30% of the time without them);
+  * a keep is the union of its routes, gated here per route, and the judge
+    route is not simulated; each pass is judged on the point estimate.
+
+    python3 scripts/simulate_stratified_pooling.py [--reps 20000] [--seed 546] [--jobs N]
 """
 
 from __future__ import annotations
@@ -214,6 +230,19 @@ def _init(cell_prior: bool, history_groups: int, min_df: int, fallback: float) -
                                                     fallback)
 
 
+class _Serial:
+    """A pool of one, in this process (`--jobs 1`)."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def map(self, fn, items, chunksize=1):  # noqa: ARG002 - the pool's signature
+        return map(fn, items)
+
+
 def wilson(k: int, n: int) -> tuple:
     z = 1.959963984540054
     p = k / n
@@ -239,8 +268,9 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     _init(args.cell_prior, args.history_groups, args.min_prior_df, args.fallback)
     ok = True
-    with ProcessPoolExecutor(args.jobs, initializer=_init,
-                             initargs=(CELL_PRIOR, HISTORY_GROUPS, MIN_DF, FALLBACK)) as pool:
+    with (_Serial() if args.jobs == 1 else ProcessPoolExecutor(
+            args.jobs, initializer=_init,
+            initargs=(CELL_PRIOR, HISTORY_GROUPS, MIN_DF, FALLBACK))) as pool:
         print(f"RETIRE: false removals, target <= 2.5% (+{TOLERANCE:.1%} tolerance), "
               f"{args.reps} reps, seed {args.seed}")
         for i, (name, checks, main_p, old, horizon) in enumerate(RETIRE):

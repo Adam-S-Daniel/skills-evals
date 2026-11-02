@@ -345,10 +345,13 @@ FALLBACK_PRIOR_VARIANCE = 0.0625
 #: The least prior variance, so a history of identical runs cannot make the
 #: prior claim certainty (a run-mean standard deviation of 0.01).
 MIN_PRIOR_VARIANCE = 1e-4
-#: A guidance prior's least degrees of freedom, and its fallback below them
-#: (#546): the largest variance of a figure from 0 to 1. The seeded
-#: simulation (scripts/simulate_stratified_pooling.py) broke both error
-#: targets with a prior measured on a few runs, and met them with these.
+#: The prior guard the stratified design (#546) proposes for guidance: the
+#: least degrees of freedom a measured prior needs, and the fallback below
+#: them, the largest variance of a figure from 0 to 1. Only
+#: scripts/simulate_stratified_pooling.py uses them so far; in its
+#: no-history scenarios a prior measured on a few runs broke both error
+#: targets and these met them. They are not shown safe against a prior
+#: pooled from lower-variance cells (#546 review round 2).
 GUIDANCE_PRIOR_MIN_DF = 20
 GUIDANCE_FALLBACK_PRIOR_VARIANCE = 0.25
 
@@ -358,10 +361,10 @@ def pooled_variance(groups: list, min_df: int = 1,
     """The pooled run-to-run variance over `groups` (each a list of run
     figures of one model, fixture, arm and content): the sum of squared
     deviations over the summed degrees of freedom, from every group with two
-    or more runs. `FALLBACK_PRIOR_VARIANCE` when none has, and never under
-    `MIN_PRIOR_VARIANCE`. Fewer than `min_df` degrees of freedom also give
-    the fallback (#546: a prior measured on a few runs can be far too
-    small)."""
+    or more runs. `fallback` (default `FALLBACK_PRIOR_VARIANCE`) when none
+    has or they hold fewer than `min_df` degrees of freedom (#546: a prior
+    measured on a few runs can be far too small), and never under
+    `MIN_PRIOR_VARIANCE`."""
     df = sum(len(g) - 1 for g in groups if len(g) >= 2)
     if not df or df < min_df:
         return fallback
