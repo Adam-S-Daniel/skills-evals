@@ -12,10 +12,14 @@ landed a run that does not pool is not empty.
 
 Outages (2026-11-01: six fixtures fired, none produced anything): each
 fire is classified once, young, delivered (a run stamped inside its
-window, gates' `run_stamps_on_model`) or empty; every classified fire is
-grouped into sweeps, and a sweep with no delivered or young fire whose
-empties cover three cells excuses each cell's earliest such fire, one per
-cell, so fixtures broken together still go fixture-broken.
+window, gates' `run_stamps_on_model`) or empty; each empty fire is judged
+on its own window of OUTAGE_GAP either side (#583), and one with no
+delivered or young fire there whose window's empties cover three cells is
+an outage fire, excusing each cell's earliest, one per cell, so fixtures
+broken together still go fixture-broken. While the routine is down (from
+an outage fire until a paired eval fire delivers), the planner sends one
+paired eval probe at a time, and probes never count (#583's circuit
+breaker).
 
 Deterministic: every `now` is injected; no network, clock or sleep.
 """
@@ -304,8 +308,8 @@ class PendingTests(unittest.TestCase):
         self.assertTrue(self.cell(self.doc(...), fires)["pending"])
 
 
-class OutageTests(unittest.TestCase):
-    """A routine outage empties a whole sweep; that says nothing about fixtures."""
+class OutageFixture:
+    """Fixtures, clock and verdict-document helpers the outage tests share."""
 
     FIXTURES = ["evals/github-actions-sha-pinning", "evals/writing-adrs/bootstrap",
                 "evals/disarm-inherited-reach", "evals/windows-elevation-from-wsl",
@@ -327,24 +331,36 @@ class OutageTests(unittest.TestCase):
         scheduled fixture has no cell: known, with no run."""
         doc = {"roster_models": [MODEL], "skills": {}, "guidance": {}}
         for fixture in set(landed or {}) | set(unknown):
-            skill = plan_week._fixture_subject(ROOT / "evals", fixture)[1]
+            subject, ident = plan_week._fixture_subject(ROOT / "evals", fixture)
             parts = fixture.split("/")
             times = sorted((landed or {}).get(fixture, []))
-            row = {"fixture": parts[2] if len(parts) == 3 else None, "model": MODEL,
+            name = parts[3] if subject == "guidance" else parts[2] if len(parts) == 3 else None
+            row = {"fixture": name, "model": MODEL,
                    "class": "missing", "runs": {"with": [], "without": []},
                    "newest_on_model": stamp(times[-1]) if times else None,
                    "run_stamps_on_model": [stamp(t) for t in times]}
             if fixture in unknown:
                 del row["run_stamps_on_model"]
-            doc["skills"].setdefault(skill, {"cells": []})["cells"].append(row)
+            half = "guidance" if subject == "guidance" else "skills"
+            doc[half].setdefault(ident, {"cells": []})["cells"].append(row)
         return doc
 
     def counts(self, fires, now=None, doc=None, fixtures=None):
-        """[(empty_fires, outage_fires)] per fixture, and the outage sweeps."""
-        cells, outages = plan_week.eval_cells_and_outages(
+        """[(empty_fires, outage_fires)] per fixture, and the outages."""
+        cells, outages, _ = plan_week.eval_cells_and_outages(
             ROOT / "evals", doc or self.doc(), fires, now or self.LATER)
         return ([(one(cells, f)["empty_fires"], one(cells, f)["outage_fires"])
                  for f in fixtures or self.FIXTURES], outages)
+
+    def downs(self, fires, now=None, doc=None, fixtures=None):
+        """[down_fires] per fixture."""
+        cells, _, _ = plan_week.eval_cells_and_outages(
+            ROOT / "evals", doc or self.doc(), fires, now or self.LATER)
+        return [one(cells, f)["down_fires"] for f in fixtures or self.FIXTURES]
+
+
+class OutageTests(OutageFixture, unittest.TestCase):
+    """A routine outage empties every fire at once; that says nothing about fixtures."""
 
     def test_the_november_first_burst_is_an_outage(self):
         fires = [fire(i, f, self.at(*clock))
@@ -360,9 +376,10 @@ class OutageTests(unittest.TestCase):
         got, outages = self.counts(fires[:2], fixtures=three)
         self.assertEqual((got, outages), ([(1, 0), (1, 0), (0, 0)], []))
 
-    def test_one_delivered_fire_makes_the_sweep_count(self):
-        # Review C: three empties plus one fire that landed its run is a
-        # sweep the routine could deliver in, so the empties are the fixtures'.
+    def test_one_delivered_fire_makes_the_window_count(self):
+        # Review C: three empties beside one fire that landed its run, inside
+        # each one's window: the routine could deliver, so the empties are
+        # the fixtures'.
         four = self.FIXTURES[:4]
         fires = [fire(i, f, self.at(5, 10 * i)) for i, f in enumerate(four)]
         doc = self.doc({four[3]: [self.at(5, 40)]})
@@ -383,15 +400,21 @@ class OutageTests(unittest.TestCase):
         self.assertEqual(len(outages), 1)
 
     def test_outage_after_outage_still_breaks_the_cells(self):
-        three = self.FIXTURES[:3]
+        # The backstop: three fixtures that break together, while a healthy
+        # cell delivers between their sweeps (so the routine is up again
+        # each time and none of their fires is a down fire).
+        three, healthy = self.FIXTURES[:3], self.FIXTURES[5]
+        delivered = [self.at(12, 0, day=day) for day in range(3)]
+        doc = self.doc({healthy: [t + 10 * self.MINUTE for t in delivered]})
 
         def sweep(day, base):
-            return [fire(base + i, f, self.at(5, 10 * i, day=day)) for i, f in enumerate(three)]
+            return [fire(base + i, f, self.at(5, 10 * i, day=day)) for i, f in enumerate(three)] \
+                + [fire(base + 9, healthy, delivered[day])]
         twice = sweep(0, 0) + sweep(1, 10)
-        self.assertEqual(self.counts(twice, fixtures=three)[0], [(1, 1)] * 3)
+        self.assertEqual(self.counts(twice, doc=doc, fixtures=three)[0], [(1, 1)] * 3)
         thrice = twice + sweep(2, 20)
-        cells, outages = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(), thrice,
-                                                          self.LATER)
+        cells, outages, _ = plan_week.eval_cells_and_outages(ROOT / "evals", doc,
+                                                             thrice, self.LATER)
         mine = [one(cells, f) for f in three]
         self.assertEqual([(c["empty_fires"], c["outage_fires"]) for c in mine], [(2, 1)] * 3)
         self.assertEqual(len(outages), 3)
@@ -399,16 +422,21 @@ class OutageTests(unittest.TestCase):
         self.assertEqual(sorted(w["fixture"] for w in work if w["kind"] == "fixture-broken"),
                          sorted(three))
 
-    def test_the_span_cap_splits_a_long_chain(self):
+    def test_a_long_chain_is_judged_fire_by_fire(self):
+        # Was test_the_span_cap_splits_a_long_chain: the 2-hour span cap is
+        # gone (#583). Four cells 50 minutes apart: the end fires' windows
+        # hold two cells each, the middle two three, so the second is an
+        # outage fire that opens a down span. The first counts (before the
+        # span); the third, an outage fire PROBE_WAIT into the span, and the
+        # fourth, a counted fire inside it, are down fires.
         four = self.FIXTURES[:4]
-        # 50 minutes apart: one chain by gap, but the fourth is 150 minutes
-        # after the first, past OUTAGE_SPAN.
         fires = [fire(i, f, self.at(5, 0) + 50 * i * self.MINUTE) for i, f in enumerate(four)]
         got, outages = self.counts(fires, fixtures=four)
-        self.assertEqual(got, [(0, 1), (0, 1), (0, 1), (1, 0)])
-        self.assertEqual(outages, [{"start": self.at(5, 0), "fires": 3}])
+        self.assertEqual(got, [(1, 0), (0, 1), (0, 0), (0, 0)])
+        self.assertEqual(self.downs(fires, fixtures=four), [0, 0, 1, 1])
+        self.assertEqual(outages, [{"start": self.at(5, 50), "fires": 2}])
 
-    def test_a_young_fire_leaves_the_sweep_undecided(self):
+    def test_a_young_fire_leaves_the_window_undecided(self):
         three, now = self.FIXTURES[:3], self.at(12, 0)
         empties = [fire(i, f, now - timedelta(minutes=150 - 10 * i))
                    for i, f in enumerate(three)]
@@ -423,12 +451,13 @@ class OutageTests(unittest.TestCase):
         got, outages = self.counts(fires, doc=self.doc(unknown=[three[2]]), fixtures=three)
         self.assertEqual((got, outages), ([(1, 0), (1, 0), (0, 0)], []))
 
-    def test_a_sweep_aging_out_of_retry_after_keeps_its_outage(self):
+    def test_a_window_aging_out_of_retry_after_keeps_its_outage(self):
         three = self.FIXTURES[:3]
         t0 = self.at(5, 0)
         fires = [fire(i, f, t0 + 30 * i * self.MINUTE) for i, f in enumerate(three)]
-        # The first fire is past RETRY_AFTER, the others are not: grouping
-        # still sees it, so the sweep still covers three cells.
+        # The first fire is past RETRY_AFTER, the others are not: the fires
+        # gathered reach OUTAGE_GAP further back, so their windows still
+        # cover three cells.
         now = t0 + plan_week.RETRY_AFTER + 10 * self.MINUTE
         got, outages = self.counts(fires, now, fixtures=three)
         self.assertEqual(got, [(0, 0), (0, 1), (0, 1)])
@@ -440,8 +469,8 @@ class OutageTests(unittest.TestCase):
         start = self.at(*self.BURST[0])
         for now, expected in ((start + timedelta(hours=3), 1),
                               (start + timedelta(hours=25), 0)):
-            cells, outages = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
-                                                              fires, now)
+            cells, outages, _ = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
+                                                                 fires, now)
             _, work = plan_week.eval_items({**ctx(cells), "outages": outages}, now)
             items = [w for w in work if w["kind"] == "routine-outage"]
             with self.subTest(now=now):
@@ -462,8 +491,360 @@ class OutageTests(unittest.TestCase):
         self.assertEqual(got, [(2, 0)])
 
 
+class WindowTests(OutageFixture, unittest.TestCase):
+    """#583's centered window: an outage's edges beside delivered fires,
+    and verdicts that depend only on fires near them."""
+
+    def burst(self, start, fixtures):
+        """One empty fire per fixture, a minute apart from `start`."""
+        return [fire(i, f, start + i * self.MINUTE) for i, f in enumerate(fixtures)]
+
+    def test_an_outages_first_round_beside_an_earlier_delivered_fire(self):
+        # Issue item 1. A delivered fire more than OUTAGE_GAP before the
+        # first round leaves it excused; one at most OUTAGE_GAP before (the
+        # window is inclusive) puts it in that round's window, so that one
+        # round counts: the window cannot tell a routine that went down
+        # minutes after delivering from fixtures that broke.
+        burst, other, start = self.FIXTURES[:5], self.FIXTURES[5], self.at(6, 0)
+        for gap, first in ((61, (0, 1)), (60, (1, 0))):
+            delivered = start - gap * self.MINUTE
+            fires = [fire(99, other, delivered)] + self.burst(start, burst)
+            doc = self.doc({other: [delivered + 10 * self.MINUTE]})
+            got, outages = self.counts(fires, doc=doc, fixtures=burst)
+            with self.subTest(gap=gap):
+                self.assertEqual(got, [first] + [(0, 1)] * 4)
+                self.assertEqual(outages[0]["fires"], 5 if first == (0, 1) else 4)
+
+    def test_an_outages_last_round_beside_a_later_delivered_fire(self):
+        burst, other, start = self.FIXTURES[:5], self.FIXTURES[5], self.at(6, 0)
+        last = start + 4 * self.MINUTE
+        # At 60 the last fire's window holds the delivered fire, so it is not
+        # an outage fire; it started while the routine was down (the
+        # outage's earlier fires opened the span), so it is a down fire.
+        for gap, final, down in ((61, (0, 1), 0), (60, (0, 0), 1)):
+            delivered = last + gap * self.MINUTE
+            fires = self.burst(start, burst) + [fire(99, other, delivered)]
+            doc = self.doc({other: [delivered + 10 * self.MINUTE]})
+            got, _ = self.counts(fires, doc=doc, fixtures=burst)
+            with self.subTest(gap=gap):
+                self.assertEqual(got, [(0, 1)] * 4 + [final])
+                self.assertEqual(self.downs(fires, doc=doc, fixtures=burst), [0] * 4 + [down])
+
+    def test_removing_an_early_fire_changes_no_later_verdict(self):
+        # Issue item 2: under the 2-hour span, dropping a chain's first fire
+        # moved every later sweep boundary. A 10-hour chain every 30
+        # minutes over four cells, one delivered fire in it.
+        t0, gap = self.at(5, 0), plan_week.OUTAGE_GAP
+        fires = [(t0 + 30 * i * self.MINUTE, "delivered" if i == 9 else "empty", i % 4)
+                 for i in range(21)]
+        since = t0 - timedelta(days=1)
+        full = plan_week.judge_empty_fires(fires, since)
+        self.assertEqual({"outage", "counted", None}, set(full))  # not vacuous
+        for drop in (fires[0], fires[1]):
+            cut = plan_week.judge_empty_fires([f for f in fires if f != drop], since)
+            kept = [(f, v) for f, v in zip(fires, full) if f != drop]
+            for (fire_, before), after in zip(kept, cut):
+                if fire_[0] - drop[0] > gap:
+                    with self.subTest(dropped=drop[0], fire=fire_[0]):
+                        self.assertEqual(before, after)
+
+    def test_an_issue_probe_beside_a_delivered_fire_still_counts(self):
+        # The issue's probe (one fire delivered at 05:00, empties at
+        # 05:30-05:34 on five cells) is inside each empty's window, so it
+        # still counts: the ambiguity the window cannot remove.
+        burst, other = self.FIXTURES[:5], self.FIXTURES[5]
+        fires = [fire(99, other, self.at(5, 0))] + self.burst(self.at(5, 30), burst)
+        doc = self.doc({other: [self.at(5, 10)]})
+        got, outages = self.counts(fires, doc=doc, fixtures=burst)
+        self.assertEqual((got, outages), ([(1, 0)] * 5, []))
+
+
+def skill_ctx():
+    """A skill improve_items makes an improve fire of."""
+    return {"fixtures": 4, "holdout": "aaa", "registry_ok": True, "verdict": "keep",
+            "pause": None, "evidence": {"headroom": 0.3, "pass_rate": None,
+                                        "with_trials": 6, "targets": ["one:b"]}}
+
+
+class BreakerTests(OutageFixture, unittest.TestCase):
+    """#583's circuit breaker: while the routine is down a plan sends one
+    paired eval probe at a time, none while a younger one may still land,
+    probes never count, and a delivery reopens the queue."""
+
+    BURST_AT = OutageFixture.DAY.replace(hour=5)
+    CADENCE = timedelta(minutes=50)
+
+    def plan(self, fires, now, doc=None, *, room=100.0, refresh=False, max_fires=10_000,
+             edit=None):
+        cells, outages, down = plan_week.eval_cells_and_outages(ROOT / "evals",
+                                                                doc or self.doc(), fires, now)
+        if edit:
+            edit(cells)
+        # Room for every cell, so the control shows each kind of fire.
+        plan_ctx = {**ctx(cells), "room": room, "refresh": refresh, "improve_charge": 0.10,
+                    "skills": {"writing-adrs": skill_ctx()}, "lessons": [],
+                    "outages": outages, "routine_down": down,
+                    "bare": [{"fixture": SKILL_FIXTURE, "model": MODEL, "skill": "writing-adrs"}]}
+        return plan_week.build_plan(plan_ctx, now, max_fires=max_fires), cells, down
+
+    def outage(self):
+        return [fire(i, f, self.BURST_AT + i * self.MINUTE) for i, f in enumerate(self.FIXTURES)]
+
+    def kinds(self, plan):
+        return {(f["mode"], f["arms"]) for f in plan["fires"]}
+
+    def only_six(self, cells):
+        """Hold every cell but FIXTURES', so probes must come back to a cell."""
+        for c in cells:
+            c["schedulable"] = c["schedulable"] and c["fixture"] in self.FIXTURES
+
+    def simulate(self, fires, start, hours, doc=None, max_fires=3):
+        """Plan every CADENCE from `start` for `hours` over the six FIXTURES
+        cells, every fire empty (no run lands): the fires sent, and the last
+        plan's cells and plan."""
+        now, end = start, start + timedelta(hours=hours)
+        while now <= end:
+            plan, cells, down = self.plan(fires, now, doc, max_fires=max_fires,
+                                          edit=self.only_six)
+            for f in plan["fires"]:
+                self.assertEqual(f["mode"], "eval")
+                if f["arms"] == "both":
+                    fires.append(fire(1000 + len(fires), f["fixture"], now))
+            now += self.CADENCE
+        return fires, cells, plan
+
+    def test_up_the_plan_sends_eval_improve_and_bare_fires(self):
+        # The control: the same context before any outage plans all kinds.
+        plan, _, down = self.plan([], self.BURST_AT)
+        self.assertIsNone(down)
+        self.assertFalse(plan["routine_down"])
+        self.assertEqual(self.kinds(plan), {("eval", "both"), ("eval", "bare"), ("improve", "")})
+        self.assertNotIn("Routine down", "\n".join(plan_week.summary_lines(plan)))
+        self.assertNotIn("routine-down", {w["kind"] for w in plan["work"]})
+
+    def test_a_burst_trips_the_breaker_by_the_next_plan(self):
+        # Item 4: provisional, long before FIRE_RESULT_WINDOW decides a fire.
+        fires = self.outage()
+        early, _, down = self.plan(fires, self.BURST_AT + 30 * self.MINUTE)
+        self.assertIsNone(down)  # younger than PROBE_WAIT: not yet
+        plan, cells, down = self.plan(fires, self.BURST_AT + self.CADENCE)
+        self.assertEqual(down, self.BURST_AT)
+        self.assertTrue(plan["routine_down"])
+        self.assertEqual(self.kinds(plan), {("eval", "both")})
+        self.assertEqual(len(plan["fires"]), 1)
+        # For the breaker only: nothing is counted yet.
+        self.assertEqual({(c["empty_fires"], c["outage_fires"], c["down_fires"])
+                          for c in cells}, {(0, 0, 0)})
+
+    def test_a_healthy_sweep_never_trips(self):
+        fires = self.outage()
+        doc = self.doc({f: [self.BURST_AT + (i + 6) * self.MINUTE]
+                        for i, f in enumerate(self.FIXTURES)})
+        for minutes in (10, 50, 100, 150, 300):
+            plan, _, down = self.plan(fires, self.BURST_AT + minutes * self.MINUTE, doc)
+            with self.subTest(minutes=minutes):
+                self.assertIsNone(down)
+                self.assertGreater(len(plan["fires"]), 1)
+
+    def test_a_few_slow_cells_beside_landed_runs_do_not_trip(self):
+        # Two of six land nothing: a window of two stale cells is not three.
+        fires = self.outage()
+        doc = self.doc({f: [self.BURST_AT + 8 * self.MINUTE] for f in self.FIXTURES[2:]})
+        _, _, down = self.plan(fires, self.BURST_AT + self.CADENCE, doc)
+        self.assertIsNone(down)
+
+    def test_probe_wait_cadence(self):
+        probe_at = self.BURST_AT + timedelta(hours=2, minutes=10)
+        fires = self.outage() + [fire(50, self.FIXTURES[0], probe_at)]
+        self.assertEqual(plan_week.PROBE_WAIT, timedelta(minutes=45))
+        for minutes, sent in ((30, 0), (44, 0), (45, 1), (50, 1)):
+            plan, _, down = self.plan(fires, probe_at + minutes * self.MINUTE)
+            with self.subTest(minutes=minutes):
+                self.assertTrue(down)
+                self.assertEqual(len(plan["fires"]), sent)
+                if sent:  # never the cell whose probe may still land
+                    self.assertNotEqual(plan["fires"][0]["fixture"], self.FIXTURES[0])
+                else:
+                    self.assertGreater(sum(plan["unplanned"].values()), 0)
+
+    def test_the_routine_down_item_is_listed_while_down_only(self):
+        fires = self.outage()
+        plan, _, _ = self.plan(fires, self.BURST_AT + timedelta(hours=3))
+        self.assertEqual(plan["work"][0], {"kind": "routine-down", "change_type": None,
+                                           "route": "issue", "since": "2026-11-05T05:00:00Z"})
+        self.assertIn("routine-outage", {w["kind"] for w in plan["work"]})
+        self.assertIn("Routine down: probe only (until a paired eval fire on a known "
+                      "cell delivers)", plan_week.summary_lines(plan))
+        # A day later, past OUTAGE_REPORT_WINDOW, still down: routine-down
+        # stays, routine-outage is gone.
+        later, _, _ = self.plan(fires, self.BURST_AT + timedelta(hours=26))
+        self.assertEqual([w["kind"] for w in later["work"]
+                          if w["kind"].startswith("routine-")], ["routine-down"])
+        up, _, _ = self.plan([], self.BURST_AT)
+        self.assertNotIn("routine-down", {w["kind"] for w in up["work"]})
+
+    def test_a_delivered_probe_reopens_the_queue(self):
+        probe_at = self.BURST_AT + timedelta(hours=2, minutes=10)
+        fires = self.outage() + [fire(50, self.FIXTURES[0], probe_at)]
+        doc = self.doc({self.FIXTURES[0]: [probe_at + 20 * self.MINUTE]})
+        # Still young, but its run is in; and once decided, delivered.
+        for now in (probe_at + 30 * self.MINUTE, probe_at + 3 * timedelta(hours=1)):
+            plan, _, down = self.plan(fires, now, doc=doc)
+            with self.subTest(now=now):
+                self.assertIsNone(down)
+                self.assertGreater(len(plan["fires"]), 1)
+                self.assertIn(("improve", ""), self.kinds(plan))
+                self.assertNotIn("routine-down", {w["kind"] for w in plan["work"]})
+
+    def test_an_empty_probe_keeps_it_down_and_never_counts(self):
+        probe_at = self.BURST_AT + timedelta(hours=2, minutes=10)
+        fires = self.outage() + [fire(50, self.FIXTURES[0], probe_at)]
+        plan, cells, down = self.plan(fires, probe_at + 3 * timedelta(hours=1))
+        self.assertTrue(down)
+        self.assertEqual(len(plan["fires"]), 1)
+        self.assertNotEqual(plan["fires"][0]["fixture"], self.FIXTURES[0])
+        got = one(cells, self.FIXTURES[0])
+        self.assertEqual((got["empty_fires"], got["outage_fires"], got["down_fires"]), (0, 1, 1))
+
+    def test_no_outage_no_breaker(self):
+        # Two cells empty together is not an outage, so nothing is held.
+        fires = self.outage()[:2]
+        plan, _, down = self.plan(fires, self.BURST_AT + timedelta(hours=3))
+        self.assertIsNone(down)
+        self.assertGreater(len(plan["fires"]), 1)
+
+    def test_the_probe_is_a_paired_eval_fire_when_no_eval_band_has_one(self):
+        # Every cell settled: the eval bands are empty, improve and bare are not.
+        def settle(cells):
+            for c in cells:
+                c["class"] = "no-benefit"
+        fires = self.outage()
+        up, _, _ = self.plan([], self.BURST_AT, edit=settle)
+        self.assertEqual(self.kinds(up), {("eval", "bare"), ("improve", "")})
+        plan, _, down = self.plan(fires, self.BURST_AT + timedelta(hours=3), edit=settle)
+        self.assertTrue(down)
+        self.assertEqual([(f["mode"], f["arms"], f["band"]) for f in plan["fires"]],
+                         [("eval", "both", "probe")])
+
+    def test_a_stall_still_probes_a_settled_cell_and_a_delivery_clears_it(self):
+        # Three empty cells, every other settled, one improve eligible.
+        trio = self.FIXTURES[:3]
+
+        def settle(cells):
+            for c in cells:
+                if c["fixture"] not in trio:
+                    c["class"] = "no-benefit"
+        fires = [fire(i, f, self.BURST_AT + i * self.MINUTE) for i, f in enumerate(trio)]
+        now = self.BURST_AT + timedelta(hours=3)
+        plan, _, down = self.plan(fires, now, edit=settle)
+        self.assertTrue(down)
+        self.assertEqual(len(plan["fires"]), 1)
+        probe = plan["fires"][0]
+        self.assertEqual((probe["mode"], probe["arms"], probe["band"]), ("eval", "both", "probe"))
+        self.assertNotIn(probe["fixture"], trio)
+        fires.append(fire(50, probe["fixture"], now))
+        doc = self.doc({probe["fixture"]: [now + 9 * self.MINUTE]})
+        after, _, down = self.plan(fires, now + 15 * self.MINUTE, doc, edit=settle)
+        self.assertIsNone(down)
+        self.assertIn(("improve", ""), self.kinds(after))
+        self.assertTrue(set(trio) <= {f["fixture"] for f in after["fires"]})
+
+    def test_room_below_the_head_candidates_cost_takes_the_next_that_fits(self):
+        fires = self.outage()
+        now = self.BURST_AT + timedelta(hours=3)
+        head = next(c["fixture"] for c in self.plan(fires, now)[1]
+                    if c["schedulable"] and c["fixture"] not in self.FIXTURES)
+
+        def price(cells):
+            # The head ranks first on its last fire (never), the dearest.
+            for c in cells:
+                c["usd_per_fire"] = 0.03 if c["fixture"] == head else 0.01
+                if c["fixture"] != head:
+                    c["last_fire"] = now - timedelta(days=1)
+
+        def priced(room, refresh=False):
+            cells, outages, down = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
+                                                                    fires, now)
+            price(cells)
+            plan_ctx = {**ctx(cells), "points_per_usd": 1.0, "room": room, "refresh": refresh,
+                        "improve_charge": 0.10, "skills": {}, "lessons": [],
+                        "outages": outages, "routine_down": down}
+            return plan_week.build_plan(plan_ctx, now)["fires"]
+        self.assertEqual([f["fixture"] for f in priced(1.0)], [head])
+        got = priced(0.02)
+        self.assertEqual(len(got), 1)
+        self.assertNotEqual(got[0]["fixture"], head)
+        self.assertLessEqual(got[0]["cost"], 0.02)
+        # Room for nothing: none, or with the guard's refresh at most one
+        # fire of at most one reservation.
+        self.assertEqual(priced(0.0), [])
+        refreshed = priced(0.0, refresh=True)
+        self.assertEqual(len(refreshed), 1)
+        self.assertLessEqual(refreshed[0]["cost"], 0.035)
+        self.assertEqual((refreshed[0]["mode"], refreshed[0]["arms"]), ("eval", "both"))
+
+    def test_with_no_schedulable_cell_the_queue_is_not_held(self):
+        def hold(cells):
+            for c in cells:
+                c["schedulable"] = False
+        plan, _, down = self.plan(self.outage(), self.BURST_AT + timedelta(hours=3), edit=hold)
+        self.assertTrue(down)
+        self.assertFalse(plan["probe_only"])
+        self.assertIn(("improve", ""), self.kinds(plan))
+        self.assertIn("Routine down: no schedulable eval cell to probe, planned normally",
+                      plan_week.summary_lines(plan))
+
+    def test_back_to_back_outages_with_empty_probes_bench_no_cell(self):
+        # The reviewer's replay: two outages a day apart, inside RETRY_AFTER,
+        # each with a burst from the head of the band and empty probes.
+        fires, _, _ = self.simulate([], self.BURST_AT, 6)
+        # The routine comes back: one probe delivers.
+        healthy = self.FIXTURES[5]
+        back = self.BURST_AT + timedelta(hours=7)
+        fires.append(fire(999, healthy, back))
+        doc = self.doc({healthy: [back + 8 * self.MINUTE]})
+        _, _, down = self.plan(fires, back + 20 * self.MINUTE, doc, edit=self.only_six)
+        self.assertIsNone(down)
+        fires, _, _ = self.simulate(fires, self.BURST_AT + timedelta(days=1), 6, doc)
+        now = self.BURST_AT + timedelta(days=1, hours=9)
+        plan, cells, _ = self.plan(fires, now, doc, max_fires=3, edit=self.only_six)
+        self.assertEqual([w for w in plan["work"] if w["kind"] == "fixture-broken"], [])
+        self.assertLessEqual(max(c["empty_fires"] for c in cells), 1)
+        self.assertGreater(sum(c["down_fires"] for c in cells), 4)  # the probes, excused
+        # Probes came back to cells: the rule, not a large pool, kept them unbenched.
+        self.assertGreater(len(fires), 2 * len(self.FIXTURES))
+
+    def test_an_outage_from_its_first_fire_benches_no_healthy_cell(self):
+        # From the outage's first fire, a plan every 50 minutes, at most
+        # three fires each, for ten hours, every fire empty.
+        fires, cells, plan = self.simulate([], self.BURST_AT, 10)
+        self.assertTrue(plan["routine_down"])
+        first = [f for f in fires if plan_week.outcomes_mod.parse_time(f["run_started_at"])
+                 == self.BURST_AT]
+        self.assertEqual(len(first), 3)  # the burst, before anything is known
+        self.assertGreaterEqual(len(fires) - 3, 10)  # then one probe a plan
+        self.assertGreater(len(fires), len(self.FIXTURES))  # probes came back to cells
+        self.assertLessEqual(max(c["empty_fires"] for c in cells), 1)
+        self.assertEqual(sum(c["empty_fires"] for c in cells), 0)
+
+
+class ConstantsTests(unittest.TestCase):
+    """The outage rule's numbers, pinned by value: a change is a decision."""
+
+    def test_the_constants(self):
+        self.assertEqual(plan_week.OUTAGE_GAP, timedelta(minutes=60))
+        self.assertEqual(plan_week.OUTAGE_CELLS, 3)
+        self.assertEqual(plan_week.OUTAGE_EXCUSES, 1)
+        self.assertEqual(plan_week.OUTAGE_REPORT_WINDOW, timedelta(hours=24))
+        self.assertEqual(plan_week.FIRE_RESULT_WINDOW, timedelta(hours=2))
+        self.assertEqual(plan_week.BROKEN_AFTER_FIRES, 2)
+        self.assertEqual(plan_week.RETRY_AFTER, timedelta(days=14))
+        self.assertEqual(plan_week.PROBE_WAIT, timedelta(minutes=45))
+
+
 class FireSweepsTests(unittest.TestCase):
-    """fire_sweeps' grouping, which #573's explorer reuses with span=None."""
+    """fire_sweeps' grouping, which chains the planner's outage fires and
+    #573's explorer reuses."""
 
     T0 = plan_week.EMPTY_FIRES_SINCE
     MINUTE = timedelta(minutes=1)
@@ -475,16 +856,12 @@ class FireSweepsTests(unittest.TestCase):
         self.assertEqual(plan_week.fire_sweeps([t0, t0 + 61 * minute]),
                          [[t0], [t0 + 61 * minute]])
 
-    def test_the_span_caps_a_sweep_from_its_first_start(self):
-        t0, minute = self.T0, self.MINUTE
-        chain = [t0 + 40 * i * minute for i in range(5)]  # 0, 40, 80, 120, 160
-        self.assertEqual(plan_week.fire_sweeps(chain, span=timedelta(hours=2)),
-                         [chain[:4], chain[4:]])
-
-    def test_without_a_span_a_chain_has_no_limit(self):
+    def test_a_chain_has_no_limit(self):
+        # The span cap (and its parameter) is gone with #583: nothing called
+        # it once outages stopped being judged by sweep.
         chain = [self.T0 + 50 * i * self.MINUTE for i in range(10)]  # 7.5 hours
         self.assertEqual(plan_week.fire_sweeps(chain), [chain])
-        self.assertEqual(plan_week.fire_sweeps(chain, span=None), [chain])
+        self.assertFalse(hasattr(plan_week, "OUTAGE_SPAN"))
 
 
 if __name__ == "__main__":

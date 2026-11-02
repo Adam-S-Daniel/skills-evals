@@ -763,8 +763,8 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
             rejected += 1
         else:
             without.append(start)
-    # The planner's grouping (plan_week.fire_sweeps), unbounded span: one
-    # chaining rule for both, so the two cannot drift apart.
+    # The chaining rule the planner reports outages with (plan_week.fire_sweeps):
+    # one rule for both, so the two cannot drift apart.
     sweeps = [[s[0], s[-1], len(s)] for s in plan_week.fire_sweeps(without, FIRE_SWEEP_GAP)]
     return {"window_days": FIRE_WINDOW_DAYS,
             "since": plan_week._iso(min(c[0] for c in counted)) if counted else None,

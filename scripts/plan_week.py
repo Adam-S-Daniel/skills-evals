@@ -98,24 +98,40 @@ THE BANDS (rule D), in order:
   anything). Each fire is classified once: young (under FIRE_RESULT_WINDOW
   old), delivered (a run of the cell is stamped within FIRE_RESULT_WINDOW
   of its start, gates' `run_stamps_on_model`) or empty, so a later retry
-  never changes an old fire's state. Every classified fire of every cell is
-  grouped into sweeps (`fire_sweeps`: starts at most OUTAGE_GAP, 60
-  minutes, apart, at most OUTAGE_SPAN, 2 hours, from the sweep's first). A
-  sweep with no delivered and no young fire whose empty fires cover at
-  least OUTAGE_CELLS (3) distinct cells is an outage: a cell's earliest
-  empty fire in one, at most OUTAGE_EXCUSES (1) within RETRY_AFTER, is
-  excused (`outage_fires`), and any further one counts, so fixtures broken
-  together still go fixture-broken, one fire later. A sweep with a young
-  fire is undecided and counts nothing yet. A sweep narrower than three
-  cells cannot be told from broken fixtures, so it counts. Each outage
-  sweep of the last 24 hours is a `routine-outage` work item (no fixture
-  names). A refused run counts: the fire workflow succeeds once the fire
-  API accepts, so fixture-broken means "no run after two fires", whatever
-  the cause. A cell whose verdict document lacks `newest_on_model` or
-  `run_stamps_on_model` counts none and joins no sweep (fail safe). Safety
-  cells are exempt. Every band, safety included, skips a cell with a
+  never changes an old fire's state. Each empty fire is judged on its own
+  window, OUTAGE_GAP (60 minutes) either side of its start, over every
+  classified fire of every cell (#583: a window centered on the fire, so
+  its verdict depends only on fires near it, not on where a chain began).
+  One with no delivered and no young fire in its window, and empty fires
+  there covering at least OUTAGE_CELLS (3) distinct cells, is an outage
+  fire: a cell's earliest, at most OUTAGE_EXCUSES (1) within RETRY_AFTER,
+  is excused (`outage_fires`), and any further one counts, so fixtures
+  broken together still go fixture-broken, one fire later. One with a
+  young fire in its window is undecided and counts nothing yet. A window
+  narrower than three cells cannot be told from broken fixtures, so it
+  counts: that is the ambiguity left. Each chain of outage fires (each at
+  most OUTAGE_GAP after the last) starting in the last 24 hours is a
+  `routine-outage` work item (no fixture names). A refused run counts: the
+  fire workflow succeeds once the fire API accepts, so fixture-broken means
+  "no run after two fires", whatever the cause. A cell whose verdict
+  document lacks `newest_on_model` or `run_stamps_on_model` counts none and
+  joins no window (fail safe). Safety cells are exempt. Every band, safety included, skips a cell with a
   PENDING fire: one younger than FIRE_RESULT_WINDOW, successful or still
-  running, with no run on the cell since it started.
+  running, with no run on the cell since it started. THE CIRCUIT BREAKER
+  (#583): the routine is down from the start of an outage fire until a
+  paired eval fire on a known cell delivers (or, for the breaker only,
+  once fires PROBE_WAIT, 45 minutes, old with no run, plus empty fires,
+  cover OUTAGE_CELLS cells in one window with no delivery in it or after
+  it). While down a plan holds improve and bare fires and sends at most
+  one fire, a probe: a paired eval fire on any schedulable cell (settled
+  and fixture-broken ones too), fewest empty fires first, then the oldest
+  last fire, then band order; none while a probe younger than PROBE_WAIT
+  has landed nothing. Probes never count: an empty fire that started
+  while the routine was down is a down fire (`down_fires`), not an empty
+  one, unless it is an outage fire in the outage's first PROBE_WAIT,
+  which keeps the outage rule. Every plan while down lists a
+  `routine-down` work item (no fixture names). With no schedulable eval
+  cell at all the plan is not held.
   5. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -236,8 +252,9 @@ improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
-`fixture-broken` (change type `fixture`), `routine-outage` (change type
-None: the routine failed, not a subject; see EMPTY FIRES),
+`fixture-broken` (change type `fixture`), `routine-outage` and
+`routine-down` (change type None: the routine failed, not a subject; see
+EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
 fire workflow refuses, see above), and `agent-check` items
 read from `--lessons` (lesson proposals
@@ -246,7 +263,7 @@ which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
 Every item carries `change_type`: `skill-edit` for an improve fire,
 `guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`,
-`trigger`, or None for `routine-outage`.
+`trigger`, or None for `routine-outage` and `routine-down`.
 
 THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
 weeks over about 72,000 model turns, so most skills almost never trigger).
@@ -361,28 +378,32 @@ RETRY_AFTER = timedelta(days=14)
 #: whether the cell can produce a run now; the first sweep after the change
 #: judges only fires made under it.
 EMPTY_FIRES_SINCE = datetime(2026, 11, 3, tzinfo=timezone.utc)
-#: Fires whose starts chain at most this far apart are one sweep.
+#: An empty fire is judged on the fires that started within this of its
+#: start, on either side (#583): a window centered on the fire itself, so
+#: its verdict depends only on fires near it, never on where a chain of
+#: fires began. Outage fires at most this far apart are one reported outage.
 #: explorer_data's FIRE_SWEEP_GAP is this constant and its sweeps come from
-#: fire_sweeps too, but it groups only fires without results and has no
-#: span cap, so its sweeps can differ from the planner's.
+#: fire_sweeps too, over the fires without results.
 OUTAGE_GAP = timedelta(minutes=60)
-#: The planner's sweeps end this long after their first start, so a planner
-#: firing every hour cannot chain a week of fires into one sweep that one
-#: delivered fire would clear of every outage.
-OUTAGE_SPAN = timedelta(hours=2)
-#: A sweep with no delivered fire whose empty fires span at least this many
-#: distinct (fixture, model) cells is a routine outage, not broken fixtures:
-#: one bad cell or two cannot explain it, and counting it would bench healthy
-#: cells for RETRY_AFTER. A narrower sweep cannot be told from broken
-#: fixtures, so it counts.
+#: An empty fire whose window holds no delivered or young fire, and whose
+#: window's empty fires span at least this many distinct (fixture, model)
+#: cells, is a routine outage's, not a broken fixture's: one bad cell or two
+#: cannot explain it, and counting it would bench healthy cells for
+#: RETRY_AFTER. A narrower window cannot be told from broken fixtures, so it
+#: counts.
 OUTAGE_CELLS = 3
 #: Outage fires excused per cell within RETRY_AFTER, its earliest. The
 #: backstop: a fixture empty in sweep after sweep still reaches
 #: BROKEN_AFTER_FIRES, one fire later, even when every sweep looks like an
 #: outage because several broken fixtures fail together.
 OUTAGE_EXCUSES = 1
-#: A `routine-outage` work item is listed for an outage sweep this recent.
+#: A `routine-outage` work item is listed for an outage whose first fire is this recent.
 OUTAGE_REPORT_WINDOW = timedelta(hours=24)
+#: While the routine is down (#583), a probe this young with no landed run
+#: holds the next probe, and a fire this old with none counts toward the
+#: provisional trip. An eval run lands in 4 to 12 minutes; FIRE_RESULT_WINDOW
+#: still decides whether a fire was empty.
+PROBE_WAIT = timedelta(minutes=45)
 SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
 #: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
@@ -661,6 +682,14 @@ def recheck_after(cell: dict) -> timedelta:
     return RECHECK_AFTER_HIGH if cell.get("stakes") == "high" else RECHECK_AFTER
 
 
+def eval_item(cell: dict, ctx: dict) -> dict:
+    """A paired eval fire (both arms) on `cell`, without its band: what
+    `eval_items` puts in a band and `probe_items` probes with."""
+    return {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
+            "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
+            "change_type": None, "weight": ctx["model_weights"].get(cell["model"], 0.0)}
+
+
 def _level(block, field: str) -> float:
     """A confidence block's `field`, 0 when the block or value is absent."""
     value = block.get(field) if isinstance(block, dict) else None
@@ -804,9 +833,12 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     sweep. A safety cell is exempt, since a removal pull request must keep
     its evidence slot. A `pending` cell, whose last fire may still land a
     run, plans no fire in any band, safety included. Each of ctx["outages"]
-    whose first start is within OUTAGE_REPORT_WINDOW is a `routine-outage`
-    work item, listed first."""
-    weights = ctx["model_weights"]
+    (a chain of outage fires) whose first start is within
+    OUTAGE_REPORT_WINDOW is a `routine-outage` work item; its `sweep_start`
+    is the chain's first start. While the routine is down
+    (ctx["routine_down"], the time it went down), a `routine-down` item,
+    `since` that time, is listed first on every plan, and `build_plan` sends
+    at most one probe (`probe_items`) instead of these fires."""
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
     _focus, focused = guidance_focus(ctx)
@@ -820,9 +852,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue  # a check enforces it; evals/stakes.yml names the check
         # High stakes go first in every band but safety.
         rank = 0 if stakes == "high" else 1
-        item = {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
-                "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
-                "change_type": None, "weight": weights.get(cell["model"], 0.0)}
+        item = eval_item(cell, ctx)
         price = costs.get(cell["model"], math.inf)
         least = min(cell["with_runs"], cell["without_runs"])
         newest = _stamp_time(cell["newest"])
@@ -860,9 +890,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     # No fixture names: an outage is the routine's, not any fixture's, and
     # the step summary counts work items by kind.
     outages = [{"kind": "routine-outage", "change_type": None, "route": "issue",
-                "sweep_start": _iso(sweep["start"]), "fires": sweep["fires"]}
-               for sweep in ctx.get("outages", [])
-               if now - sweep["start"] <= OUTAGE_REPORT_WINDOW]
+                "sweep_start": _iso(outage["start"]), "fires": outage["fires"]}
+               for outage in ctx.get("outages", [])
+               if now - outage["start"] <= OUTAGE_REPORT_WINDOW]
+    down = ctx.get("routine_down")
+    if down:
+        # Every plan while down, not only for OUTAGE_REPORT_WINDOW: an outage
+        # can outlast its routine-outage item.
+        outages.insert(0, {"kind": "routine-down", "change_type": None, "route": "issue",
+                           "since": _iso(down)})
     return bands, outages + work
 
 
@@ -1171,8 +1207,54 @@ def improve_capped(items: list, improve_state: dict | None) -> tuple:
     return kept, cut
 
 
+def probe_blocked(ctx: dict, now: datetime) -> bool:
+    """Whether a probe younger than PROBE_WAIT with no landed run yet holds
+    the next one (#583): a cell's `pending_since` is its newest such fire.
+    An older one no longer blocks: an eval run takes 4 to 12 minutes, so a
+    probe that has landed nothing by then is very likely empty, and waiting
+    out FIRE_RESULT_WINDOW would halve the probe rate for nothing."""
+    return any(c.get("pending_since") is not None and now - c["pending_since"] < PROBE_WAIT
+               for c in ctx.get("cells", []))
+
+
+def probe_items(bands: dict, ctx: dict) -> list | None:
+    """While the routine is down (#583), the candidate probes, best first,
+    or None when there is no schedulable eval cell at all. A probe is a
+    paired eval fire (`eval_item`), the only kind that can deliver and so
+    end the outage, on ANY schedulable cell, in a band or not (settled and
+    fixture-broken cells too; `stakes: none` never fires), minus cells with
+    a pending fire. Ranked by fewest `empty_fires`, then the oldest
+    `last_fire` (any fire on the cell, all history; never fired first), then
+    band order (allocate's order within a band; cells in no band last).
+    Probes never count (`down_fires`), so the ranking spreads the load and
+    keeps a broken fixture from holding the head of the queue."""
+    cells = [c for c in ctx.get("cells", [])
+             if c.get("schedulable", True) and c.get("stakes", "normal") != "none"]
+    if not cells:
+        return None
+    placed = {(i["fixture"], i["model"]): (index, i) for index, band in enumerate(BANDS)
+              for i in bands[band] if i["mode"] == "eval" and i["arms"] == "both"}
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    ranked = []
+    for cell in cells:
+        if cell.get("pending"):
+            continue
+        index, banded = placed.get((cell["fixture"], cell["model"]), (len(BANDS), None))
+        item = banded or {**eval_item(cell, ctx), "band": "probe", "order": ()}
+        ranked.append(((cell.get("empty_fires", 0), cell.get("last_fire") or floor, index,
+                        item["order"], item["cost"], item["fixture"], item["model"],
+                        item["skill"]), item))
+    ranked.sort(key=lambda pair: pair[0])
+    return [item for _, item in ranked]
+
+
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
-    """The plan for `ctx` (see `gather`), as of `now`. Pure."""
+    """The plan for `ctx` (see `gather`), as of `now`. Pure. While
+    ctx["routine_down"] (#583) it holds improve and bare fires and plans at
+    most one probe (`probe_items`): the first candidate that fits the room,
+    else, with the guard's refresh, one that fits a reservation; none while
+    `probe_blocked`. With no schedulable eval cell at all it plans normally
+    (`probe_only` False)."""
     bands, work = eval_items(ctx, now)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
@@ -1180,8 +1262,31 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     improve, capped = improve_capped(improve, improve_state)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
-    chosen = allocate(bands, ctx["room"], max_fires)
-    if not chosen and ctx.get("refresh"):
+    down = bool(ctx.get("routine_down"))
+    probes = probe_items(bands, ctx) if down else None
+    # With no schedulable eval cell at all there is nothing to probe with,
+    # and holding the queue would idle it until a delivery that cannot
+    # come: plan normally (`probe_only` False says so).
+    probe_only = probes is not None
+    if probe_only:
+        # The circuit breaker (#583): one probe, or nothing while a younger
+        # one may still land. Improve, guidance-improve and bare fires run
+        # through the same routine (routine-eval-fire.yml), so an outage
+        # empties them too; they wait in `unplanned` with everything else.
+        chosen = []
+        if not probe_blocked(ctx, now):
+            limit = ctx["room"]
+            fits = [i for i in probes if i["cost"] <= limit + guard.EPSILON]
+            if not fits and ctx.get("refresh"):
+                # The guard's refresh fire, below: at most one reservation.
+                fits = [i for i in probes if i["cost"] <= ctx["reservation"] + guard.EPSILON]
+            chosen = fits[:1]
+        for item in chosen:
+            if item in bands.get(item["band"], []):
+                bands[item["band"]].remove(item)
+    else:
+        chosen = allocate(bands, ctx["room"], max_fires)
+    if not probe_only and not chosen and ctx.get("refresh"):
         # The guard's one refresh fire (allowance_guard.refresh): only an
         # ingested eval run brings a newer account reading, and without one
         # the stale holds refuse every fire until the weekly reset (2026-11-01,
@@ -1204,6 +1309,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
              for slot, i in enumerate(chosen)]
     return {"schema_version": 1, "generated_at": _iso(now), "room": ctx["room"],
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
+            # The circuit breaker's state, for the step summary (#583):
+            # down, and whether the plan held everything but one probe.
+            "routine_down": down, "probe_only": probe_only,
             "points_per_usd": ctx.get("points_per_usd"), "fires": fires,
             "unplanned": {band: len(items) + (len(capped) if band == "improve" else 0)
                           for band, items in bands.items()},
@@ -1363,16 +1471,15 @@ def real_work_rows(evals_dir: Path) -> list:
             and fixture_hold_reason(evals_dir.parent / f) != HOLD_PRIVATE]
 
 
-def fire_sweeps(starts, gap: timedelta = OUTAGE_GAP, span: timedelta | None = None) -> list:
+def fire_sweeps(starts, gap: timedelta = OUTAGE_GAP) -> list:
     """Group fire start times into sweeps: sorted, and a start at most `gap`
     (inclusive) after the previous start joins its sweep, else opens a new
-    one. With `span`, a start more than `span` after the sweep's first start
-    opens a new one too; with None a chain of starts each within `gap` is one
-    sweep however long it runs, the grouping explorer_data (#573) uses."""
+    one, however long the chain runs. The planner chains its outage fires
+    into reported outages with it, explorer_data (#573) its fires without
+    results."""
     sweeps: list = []
     for start in sorted(starts):
-        if sweeps and start - sweeps[-1][-1] <= gap \
-                and (span is None or start - sweeps[-1][0] <= span):
+        if sweeps and start - sweeps[-1][-1] <= gap:
             sweeps[-1].append(start)
         else:
             sweeps.append([start])
@@ -1398,58 +1505,123 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
     return eval_cells_and_outages(evals_dir, gates_doc, fire_runs, now)[0]
 
 
+def judge_empty_fires(fires: list, since: datetime) -> list:
+    """The outage verdict of each of `fires`, (start, state, cell index)
+    tuples with state young, delivered or empty, in the same order: None for
+    a fire that is not empty or started before `since` (its window may reach
+    past the fires gathered), else one of
+      * "undecided": a young fire started inside its window, so the window
+        may yet hold a delivered one; it counts neither way until then;
+      * "outage": no delivered fire inside its window, and the window's
+        empty fires cover at least OUTAGE_CELLS distinct cells;
+      * "counted": anything else, a delivered fire beside it or a window
+        narrower than OUTAGE_CELLS cells.
+    The window is [start - OUTAGE_GAP, start + OUTAGE_GAP], inclusive, so a
+    verdict depends only on fires near the fire (#583): it cannot move when
+    a fire hours away ages out or its cell leaves the plan. Every empty fire
+    is at least FIRE_RESULT_WINDOW old, longer than OUTAGE_GAP, so every
+    fire that will ever start inside its window already has."""
+    verdicts = []
+    for start, state, _ in fires:
+        if state != "empty" or start < since:
+            verdicts.append(None)
+            continue
+        near = [(other, index) for t, other, index in fires if abs(t - start) <= OUTAGE_GAP]
+        states = {other for other, _ in near}
+        if "young" in states:
+            verdicts.append("undecided")
+        elif "delivered" not in states \
+                and len({index for other, index in near if other == "empty"}) >= OUTAGE_CELLS:
+            verdicts.append("outage")
+        else:
+            verdicts.append("counted")
+    return verdicts
+
+
 def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                            now: datetime) -> tuple:
-    """(cells, outage sweeps). One cell per scheduled fixture x roster model,
-    with its gates class, run counts, newest run, mean cost per run,
-    `empty_fires`, `outage_fires`, `pending`, and `schedulable` with its
-    `hold_reason` (fixture_hold_reason). A held cell stays in the list for
-    the cost statistics; `eval_items` plans none of it. A `subject: any` row
-    makes no cell (`real_work_rows` lists it). Each outage sweep is
-    {"start", "fires"}: its first start and how many fires it holds.
+    """(cells, outages, routine down). One cell per scheduled fixture x
+    roster model, with its gates class, run counts, newest run, mean cost
+    per run, `empty_fires`, `outage_fires`, `down_fires`, `pending`,
+    `pending_since`, `last_fire`, and
+    `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
+    stays in the list for the cost statistics; `eval_items` plans none of
+    it. A `subject: any` row makes no cell (`real_work_rows` lists it). Each
+    outage is {"start", "fires"}: a maximal chain of outage fires, each at
+    most OUTAGE_GAP after the one before, its first start and how many
+    outage fires it holds. Routine down is when the routine went down, or
+    None while it is up (ROUTINE DOWN below).
 
     A cell is UNKNOWN when its gates cell lacks `newest_on_model` or
     `run_stamps_on_model` (a verdict document from before them) or either
-    holds an unreadable stamp. It counts 0 for both fire counts, fails safe,
+    holds an unreadable stamp. It counts 0 for every fire count, fails safe,
     never fixture-broken on a guess, and its fires take no part in any
-    sweep. A cell the verdict document does not list has no run at all: it
+    window. A cell the verdict document does not list has no run at all: it
     is known, with no bound.
 
     FIRE STATES. Every successful non-bare eval fire on a known cell that
     started at or after EMPTY_FIRES_SINCE and within RETRY_AFTER +
-    OUTAGE_SPAN, and every successful or still running one younger than
+    OUTAGE_GAP, and every successful or still running one younger than
     FIRE_RESULT_WINDOW, is exactly one of: young (younger than
     FIRE_RESULT_WINDOW), delivered (the cell has a run stamped inside
     [start, start + FIRE_RESULT_WINDOW]) or empty. The state never changes
     once the fire is old enough: a later retry's run falls outside an
-    earlier fire's window. Grouping looks back OUTAGE_SPAN past RETRY_AFTER
-    so a candidate near that edge keeps the sweep it was judged in.
+    earlier fire's window. The fires gathered reach OUTAGE_GAP past
+    RETRY_AFTER so that every candidate's window is whole.
 
-    SWEEPS group every classified fire of every known cell (fire_sweeps,
-    OUTAGE_GAP, capped at OUTAGE_SPAN). A sweep with a young fire is
-    UNDECIDED. One with no delivered fire whose empty fires cover at least
-    OUTAGE_CELLS distinct cells is an OUTAGE: a routine outage empties every
-    fire at once and says nothing about any one fixture. A narrower sweep
-    cannot be told from broken fixtures, so it counts.
+    OUTAGES (#583). Each empty fire within RETRY_AFTER is judged on its own
+    window of OUTAGE_GAP either side of its start, over every classified
+    fire of every known cell (`judge_empty_fires`): undecided while a young
+    fire is in it, an OUTAGE fire when no delivered fire is in it and its
+    empty fires cover at least OUTAGE_CELLS distinct cells (a routine
+    outage empties every fire at once and says nothing about any one
+    fixture), else counted. A window narrower than OUTAGE_CELLS cells cannot
+    be told from broken fixtures, so it counts, unless the routine was down
+    (`down_fires`).
+
+    DOWN SPANS (#583, `down_intervals`): the routine was down from the start
+    of each outage fire, as judged now, until the start of the next
+    delivered paired eval fire on a known cell (a young fire that has landed
+    its run included). Probes sent while down never count: an empty fire
+    that started inside a down span is a DOWN fire (`is_down_fire`) when it
+    is not an outage fire, or is one at least PROBE_WAIT after the span
+    opened. Without this a lone probe, a one-cell window, always counted,
+    which benched healthy cells across back-to-back outages (the same two
+    head-of-band cells drew the empty probes on 2026-10-31 and 2026-11-01).
 
       * `empty_fires`: the cell's candidates, empty fires that started after
         gates' `newest_on_model` (no bound when it is None: no run on its
-        model) and within RETRY_AFTER, that are counted: outside any
-        outage, or inside one past the cell's OUTAGE_EXCUSES. The bound is
-        the newest run of ANY role or digest on that model, not the pooled
+        model) and within RETRY_AFTER, that are counted: not down fires,
+        and not outage fires, or outage fires past the cell's
+        OUTAGE_EXCUSES. The bound is the
+        newest run of ANY role or digest on that model, not the pooled
         newest: a fire that landed a run that does not pool still produced
         something.
-      * `outage_fires`: the candidates excused as an outage's, at most
+      * `outage_fires`: the candidates excused as outage fires, at most
         OUTAGE_EXCUSES per cell, its earliest. The backstop: a cell empty in
         outage after outage still reaches BROKEN_AFTER_FIRES, one fire
         later, so broken fixtures that fail together are not retried
-        forever. A candidate in an UNDECIDED sweep is in neither count
-        until the sweep is decided.
+        forever. An undecided candidate is in no count until it is decided.
+      * `down_fires`: the candidates that are down fires, in neither count
+        above.
       * `pending`: a successful or still running non-bare eval fire that
         started after the bound and less than FIRE_RESULT_WINDOW ago, so
         its run may still land. On an unknown cell any such fire is
         pending: holding a cell for at most FIRE_RESULT_WINDOW is cheaper
         than a second fire.
+      * `pending_since`: the start of the newest such fire, else None; one
+        younger than PROBE_WAIT holds the next probe (`probe_blocked`).
+      * `last_fire`: the start of the cell's newest successful or running
+        eval fire of any arms and age, else None, for the probe order.
+
+    ROUTINE DOWN (the circuit breaker, #583): the last down span is still
+    open, so routine down is its opening; or else, provisionally and for
+    the breaker only, `provisional_trip`'s window of fires PROBE_WAIT old
+    with nothing landed, so a burst into an outage trips the breaker in
+    under an hour instead of FIRE_RESULT_WINDOW. An empty probe does not
+    end it: only a delivery does, and `build_plan` fires one probe at a
+    time until one does.
+
     A refused run counts as empty: routine-eval-fire.yml concludes `success`
     once the fire API accepts, so fixture-broken means "no run after n
     fires", whatever the cause."""
@@ -1457,25 +1629,31 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
     finished: dict = {}
     young: dict = {}
+    latest: dict = {}  # each cell's newest successful or running fire, any arms, any age
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
         started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
-        # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
-        if not (title and title["mode"] == "eval" and not title["bare"] and title["model"]
-                and started):
+        if not (title and title["mode"] == "eval" and title["model"] and started):
             continue
         key = (title["target"], title["model"])
         running = run.get("status") not in (None, "completed")
+        if running or run.get("conclusion") == "success":
+            latest[key] = max(latest.get(key, started), started)
+        # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
+        if title["bare"]:
+            continue
         if now - started < FIRE_RESULT_WINDOW:
             if running or run.get("conclusion") == "success":
                 young.setdefault(key, []).append(started)
         elif run.get("conclusion") == "success" \
-                and now - started <= RETRY_AFTER + OUTAGE_SPAN \
+                and now - started <= RETRY_AFTER + OUTAGE_GAP \
                 and started >= EMPTY_FIRES_SINCE:
             finished.setdefault(key, []).append(started)
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
     fires: list = []  # (start, state, cell index) of every classified fire
+    early: list = []  # young fires that have already landed a run
+    stale: list = []  # (start, cell index): young fires PROBE_WAIT old with no run yet
     candidates: list = []  # per cell, its candidates' starts, earliest first
     for fixture in scheduled:
         subject, ident = _fixture_subject(evals_dir, fixture)
@@ -1514,6 +1692,10 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 index = len(cells)
                 for t in young.get((fixture, model), []):
                     fires.append((t, "young", index))
+                    if any(r >= t for r in landed):
+                        early.append(t)  # its run is in: the routine delivered
+                    elif now - t >= PROBE_WAIT:
+                        stale.append((t, index))
                 for t in finished.get((fixture, model), []):
                     if any(t <= r <= t + FIRE_RESULT_WINDOW for r in landed):
                         fires.append((t, "delivered", index))
@@ -1532,7 +1714,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
                 "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
                 else None,
-                "empty_fires": 0, "outage_fires": 0, "pending": bool(waiting)})
+                "empty_fires": 0, "outage_fires": 0, "down_fires": 0,
+                "pending": bool(waiting), "pending_since": max(waiting, default=None),
+                "last_fire": latest.get((fixture, model))})
             if section is not None:
                 # What the guidance focus reads (`guidance_focus`): the
                 # cell's confidence blocks, its reason and its COUNTED runs
@@ -1546,34 +1730,88 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                     "reason": (cell or {}).get("reason"),
                     **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
                        for role, arm in arms.items()}})
-    # Second pass, once every fire is classified: judge each sweep, then
-    # count each cell's candidates against its sweep's judgement.
-    sweeps = fire_sweeps({t for t, _, _ in fires}, OUTAGE_GAP, OUTAGE_SPAN)
-    sweep_of = {t: i for i, sweep in enumerate(sweeps) for t in sweep}
-    members: list = [[] for _ in sweeps]
-    for t, state, index in fires:
-        members[sweep_of[t]].append((state, index))
-    judged = []
-    for group in members:
-        states = {state for state, _ in group}
-        empty_cells = {index for state, index in group if state == "empty"}
-        if "young" in states:
-            judged.append("undecided")
-        elif "delivered" not in states and len(empty_cells) >= OUTAGE_CELLS:
-            judged.append("outage")
-        else:
-            judged.append("counted")
-    for out, times in zip(cells, candidates):
+    # Second pass, once every fire is classified: judge each empty fire on
+    # its own window, reconstruct when the routine was down, then count each
+    # cell's candidates by their verdicts.
+    verdicts = judge_empty_fires(fires, now - RETRY_AFTER)
+    verdict_of = {(t, index): v for (t, _, index), v in zip(fires, verdicts)}
+    outage_starts = sorted(t for (t, _, _), v in zip(fires, verdicts) if v == "outage")
+    delivered = sorted([t for t, state, _ in fires if state == "delivered"] + early)
+    spans = down_intervals(outage_starts, delivered)
+    for index, (out, times) in enumerate(zip(cells, candidates)):
         for t in times:  # earliest first, so the excuse goes to the earliest
-            if judged[sweep_of[t]] == "undecided":
+            verdict = verdict_of[(t, index)]
+            if verdict == "undecided":
                 continue
-            if judged[sweep_of[t]] == "outage" and out["outage_fires"] < OUTAGE_EXCUSES:
+            if is_down_fire(t, verdict, spans):
+                out["down_fires"] += 1
+            elif verdict == "outage" and out["outage_fires"] < OUTAGE_EXCUSES:
                 out["outage_fires"] += 1
             else:
                 out["empty_fires"] += 1
-    outages = [{"start": sweep[0], "fires": len(members[i])}
-               for i, sweep in enumerate(sweeps) if judged[i] == "outage"]
-    return cells, outages
+    outages = [{"start": chain[0], "fires": len(chain)}
+               for chain in fire_sweeps(outage_starts, OUTAGE_GAP)]
+    if spans and spans[-1][1] is None:
+        down = spans[-1][0]
+    else:
+        down = provisional_trip([(t, i) for t, state, i in fires if state == "empty"] + stale,
+                                delivered)
+    return cells, outages, down
+
+
+def down_intervals(outage_starts: list, delivered: list) -> list:
+    """When the routine was down (#583), as [opened, ended] pairs, earliest
+    first, from sorted outage-fire and delivered-fire starts: down from the
+    start of each outage fire (as judged now) until the start of the next
+    delivered paired eval fire on a known cell, None while none has; spans
+    that overlap merge, keeping the earliest opening."""
+    spans: list = []
+    for start in outage_starts:
+        end = next((d for d in delivered if d > start), None)
+        if spans and spans[-1][1] == end:
+            continue  # the same span: it opened at an earlier outage fire
+        spans.append([start, end])
+    return spans
+
+
+def is_down_fire(start: datetime, verdict: str, spans: list) -> bool:
+    """Whether an empty fire, judged `verdict`, was sent while the routine
+    was down (#583), so it says nothing about its cell and counts neither
+    toward `empty_fires` nor against OUTAGE_EXCUSES: it started inside a
+    down span and is not an outage fire, or is one that started at least
+    PROBE_WAIT after the span opened. The breaker cannot trip sooner than
+    PROBE_WAIT after the outage's first fire, so a fire that late is a
+    probe (or a fire the breaker held back from), and probes 45 to 60
+    minutes apart make outage windows of their own. An outage fire inside
+    the first PROBE_WAIT keeps the outage rule, excused once and then
+    counted: the backstop for fixtures that break together."""
+    for opened, ended in spans:
+        if opened <= start and (ended is None or start < ended):
+            return verdict != "outage" or start - opened >= PROBE_WAIT
+    return False
+
+
+def provisional_trip(stale: list, delivered: list) -> datetime | None:
+    """The breaker's early trip (#583), for the breaker only (it changes no
+    count): `stale` holds (start, cell index) of every empty fire and every
+    young fire at least PROBE_WAIT old with no landed run. The routine is
+    down when some such fire's window, OUTAGE_GAP either side of its start,
+    holds stale fires on at least OUTAGE_CELLS cells and no delivered or
+    landed fire (`delivered`, starts), and is newer than every delivered
+    fire: the earliest such window's first stale start, else None. Without
+    it a burst into an outage runs FIRE_RESULT_WINDOW before any of its
+    fires is judged; with it the breaker trips about PROBE_WAIT after the
+    burst. A healthy sweep's runs land within minutes, so its fires are
+    never stale."""
+    newest = max(delivered, default=None)
+    for start, _ in sorted(stale):
+        low, high = start - OUTAGE_GAP, start + OUTAGE_GAP
+        if newest is not None and newest >= low:
+            continue  # a delivered fire inside the window or after it
+        near = [(t, index) for t, index in stale if low <= t <= high]
+        if len({index for _, index in near}) >= OUTAGE_CELLS:
+            return min(t for t, _ in near)
+    return None
 
 
 def bare_cells(evals_dir: Path, gates_doc: dict, fire_runs: list) -> list:
@@ -1941,7 +2179,8 @@ def gather(args, now: datetime) -> dict:
                             compute_gates.parse_as_of(args.as_of), registries,
                             gates_doc, records, prs, evidence["on_hold"], now)
     triggers = trigger_contexts(evals_dir, registries)
-    cells, outages = eval_cells_and_outages(evals_dir, gates_doc, evidence["fire_runs"], now)
+    cells, outages, down = eval_cells_and_outages(evals_dir, gates_doc, evidence["fire_runs"],
+                                                  now)
     held = sum(1 for c in cells if c["hold_reason"] == HOLD_PRIVATE)
     if held:
         print(f"{held} private cells held")  # a count only: no name in the log
@@ -1961,7 +2200,8 @@ def gather(args, now: datetime) -> dict:
             # the sections whose removal pull request is open.
             "guidance_policy": gates_doc.get("guidance_policy"),
             "guidance_removal_prs": gremoval,
-            "cells": cells, "outages": outages, "real_work": real_work_rows(evals_dir),
+            "cells": cells, "outages": outages, "routine_down": down,
+            "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
             "guidance": guidance_contexts(evals_dir, args.results_tree,
@@ -2005,6 +2245,12 @@ def summary_lines(plan: dict) -> list:
                      + ", ".join(plan["real_work"]))
     lines.append("Work items: " + (", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
                                    or "none"))
+    if plan.get("routine_down") and plan.get("probe_only", True):
+        # Why a sweep with room fires one fire or none (#583).
+        lines.append("Routine down: probe only (until a paired eval fire on a known "
+                     "cell delivers)")
+    elif plan.get("routine_down"):
+        lines.append("Routine down: no schedulable eval cell to probe, planned normally")
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
     lines.append("Guidance focus: " + (", ".join(
