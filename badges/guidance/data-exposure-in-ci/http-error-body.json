@@ -1,0 +1,6 @@
+{
+  "color": "red",
+  "label": "guidance eval: data-exposure-in-ci/http-error-body",
+  "message": "with 3/3 vs without 3/3 \u00b7 2026-11-02",
+  "schemaVersion": 1
+}
