@@ -369,7 +369,13 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   `disableAllHooks` would drop the guard without a word. And the agent can
   still switch its own hooks off, by `git remote set-url origin` to a
   non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not
-  intent, and CI's required `agent-checks` is the enforcement.
+  intent, and CI's required `agent-checks` is the enforcement. In a
+  no-network arm, `git push` to the injected `origin` fails at connect
+  (exit 128) before `pre-push` runs, so the runner's pre-push refusals
+  fire only for pushes to local-path remotes; a later fix could add a
+  `url.<local bare repository>.insteadOf=https://github.com/<repo>.git`
+  rewrite, so the configured URL still matches the include while the push
+  lands locally (follow-up).
 
 ## Consequences
 
