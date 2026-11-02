@@ -4124,9 +4124,21 @@ class TestIssue97(unittest.TestCase):
         committed = sorted(str(p.parent.relative_to(REPO_ROOT))
                            for p in (REPO_ROOT / "evals").glob("**/fixture.yaml"))
         self.assertIn("evals/guidance/_delivery", committed)
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import plan_scheduled_evals as planner
+        finally:
+            sys.path.remove(str(REPO_ROOT / "scripts"))
         for fixture in committed:
             with self.subTest(fixture=fixture):
                 proc = self._run_validation({"inputs": {"fixture": fixture}})
+                if planner.declares_context(REPO_ROOT / fixture):
+                    # skills-evals#587: an in-place pair is refused before the
+                    # mint (the plan job already keeps it off the matrix).
+                    self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                    self.assertIn(planner.IN_PLACE_REFUSAL, proc.stdout)
+                    self.assertEqual(proc.output, "")
+                    continue
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, fixture)
                 # The selection output is exactly the validated key, one line;

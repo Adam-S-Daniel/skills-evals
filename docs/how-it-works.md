@@ -104,6 +104,11 @@ delivery guard runs on the fixture's own model.
 
 `.github/workflows/eval.yml` runs every Tuesday at 07:00 UTC and on manual
 dispatch (`gh workflow run eval.yml --ref main`, optional input `fixture=`).
+It runs isolation pairs only: its `plan` job refuses every in-place fixture
+(a top-level `context:` mapping) before any credential is minted and lists it
+in the step summary, because only the cloud routine hosts in-place delivery
+([#587](https://github.com/Adam-S-Daniel/skills-evals/issues/587)). When
+nothing is left to run, no later job runs and the run ends successfully.
 It bills the organisation's API workspace `skills-evals-ci` through workload
 identity federation, not the Claude Code subscription. A measured run on
 2026-09-22 (one fixture, one Sonnet 5 arm, Opus 4.8 judge) took 6 minutes 24
