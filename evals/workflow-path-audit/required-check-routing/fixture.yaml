@@ -23,8 +23,8 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # the skill, so the `without` arm removes the deployed copy.
 # Re-pinned 2026-11-02 to cms-platform main 6c8eca12 (its lock deploys
 # adam-agentskills main's copy of the subject), guidance proven at a13d5dab.
-# Budgets unchanged; today's figures are REMEASURED in
-# test/issues/test_issue_371_scheduled_fixtures.py.
+# Budgets unchanged; today's figures are REMEASURED in the issue-371
+# scheduled-fixtures test.
 context:
   repository: Adam-S-Daniel/cms-platform
   revision: 6c8eca124eccb7517f6cb28b844b5af9d735a238
