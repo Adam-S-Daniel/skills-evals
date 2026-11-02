@@ -76,6 +76,14 @@ RETIRE = [
      [(0.70, 0.70, 20), (0.60, 0.70, 20), (0.65, 0.70, 20), (0.70, 0.75, 20)], 40),
     ("3 checks, near ceiling", 3, (0.92, 0.87), [(0.87, 0.87, 10), (0.80, 0.87, 10)], 40),
     ("5 checks, no old rest", 5, (0.75, 0.70), [], 60),
+    # Round 1: old rests near the ceiling (low variance) beside a mid-range
+    # main rest, so a pooled prior is far too small for the main rest.
+    ("1 check, old rests at the ceiling", 1, (0.55, 0.50),
+     [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
+    ("3 checks, old rests at the ceiling", 3, (0.55, 0.50),
+     [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
+    ("3 checks, unequal old rests 4x40, main above margin", 3, (0.76, 0.70),
+     [(0.70, 0.70, 40), (0.60, 0.70, 40), (0.65, 0.70, 40), (0.70, 0.75, 40)], 60),
 ]
 
 #: Power, not error: the section truly does nothing beside main's rest
@@ -92,6 +100,8 @@ KEEP = [
     ("3 strata, one near ceiling", 3, [0.50, 0.75, 0.95], 40),
     ("4 strata, one near ceiling", 3, [0.40, 0.60, 0.80, 0.95], 40),
     ("3 strata, 1 check", 1, [0.50, 0.75, 0.95], 40),
+    ("2 strata, ceiling beside mid-range", 3, [0.97, 0.55], 60),
+    ("3 strata, 1 check, ceiling beside mid-range", 1, [0.97, 0.97, 0.55], 60),
 ]
 
 
@@ -146,7 +156,11 @@ def retire_rep(args) -> tuple:
         prior = _prior(history, groups)
         all_strata = strata + [(mw, mo)]
         combined = gates.stratified_sequence(all_strata, level, prior, strength)[1] < margin
-        own = gates.confidence_sequence(mw, mo, level, prior, strength)[1] < margin
+        # The confirmation's prior is its own stratum's (#546 round 1): a
+        # prior pooled with lower-variance strata made it anti-conservative.
+        own_prior = gates.pooled_variance([mw, mo], gates.GUIDANCE_PRIOR_MIN_DF,
+                                          gates.GUIDANCE_FALLBACK_PRIOR_VARIANCE)
+        own = gates.confidence_sequence(mw, mo, level, own_prior, strength)[1] < margin
         if combined and own and first is None:
             first = look
         hit[0] |= combined and own
