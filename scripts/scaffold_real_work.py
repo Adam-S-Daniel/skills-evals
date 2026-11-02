@@ -1662,7 +1662,8 @@ def clean_runs(tree: Path, fixture_dir: Path, evals: Path, as_of: str) -> int:
 def promotable(root: Path, tree: Path, as_of: str) -> list[tuple[str, int]]:
     """(fixture path, clean runs) for every committed `draft: true` fixture
     under `root`/evals with at least MIN_PROMOTION_RUNS clean runs, outside
-    NEVER_PROMOTE. Its red/green check passed when it was scaffolded, and
+    NEVER_PROMOTE, that declare a valid `context` with a non-null
+    `guidance_revision`. Its red/green check passed when it was scaffolded, and
     `test` scores it red and green again on every pull request."""
     import plan_scheduled_evals as planner  # noqa: PLC0415
 
@@ -1678,6 +1679,14 @@ def promotable(root: Path, tree: Path, as_of: str) -> list[tuple[str, int]]:
         except (OSError, UnicodeDecodeError, yaml.YAMLError):
             continue
         if not isinstance(doc, dict) or doc.get("draft") is not True:
+            continue
+        # A scheduled fixture needs a context whose guidance is proven (the
+        # `subject: any` orchestrator scenarios have none).
+        if not isinstance(doc.get("context"), dict) or doc["context"].get("guidance_revision") is None:
+            continue
+        try:
+            context.validate_context(doc, directory / FIXTURE_FILE)
+        except context.ContextError:
             continue
         count = clean_runs(tree, directory, evals, as_of)
         if count >= MIN_PROMOTION_RUNS:

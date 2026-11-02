@@ -63,6 +63,33 @@ ISOLATION_ONLY: dict[str, str] = {
     "evals/vendor-release-impact-issues/stamps-skip-quotes": _NO_CONTEXT_YET,
 }
 
+# The ratchet: ISOLATION_ONLY may only shrink. Each conversion PR removes its
+# own entry and adds its MEASURED row; nothing may be added except a _PRIVATE
+# fixture (no public context repository carries its skill).
+LEGACY_ISOLATION = frozenset({
+    "evals/rename-pdfs",
+    "evals/pdf-ocr-audit",
+    "evals/cms-stuck-pr-triage",
+    "evals/post-failure-comment",
+    "evals/admin-config-render",
+    "evals/code-quality",
+    "evals/ci-watcher-loops",
+    "evals/editorial-label-audit",
+    "evals/consumer-repo-provisioning",
+    "evals/adam-writing-style/proposal-bio",
+    "evals/adam-writing-style/recruiter-reply",
+    "evals/adam-writing-style/self-appraisal-opening",
+    "evals/ci-job-performance/browser-cache",
+    "evals/debug-github-workflows/git-identity",
+    "evals/debug-github-workflows/secret-name",
+    "evals/debug-github-workflows/swallowed-failure",
+    "evals/debug-github-workflows/wrong-branch",
+    "evals/vendor-release-impact-issues/closed-duplicate",
+    "evals/vendor-release-impact-issues/closing-keywords",
+    "evals/vendor-release-impact-issues/issue-hygiene",
+    "evals/vendor-release-impact-issues/stamps-skip-quotes",
+})
+
 # What each in-place arm measured on 2026-10-10, as (guidance, catalog,
 # payload) bytes: the context alone, then the `with` arm. The two differ only
 # where the context does not hold the skill and `with` adds the registry's
@@ -153,6 +180,26 @@ class ScheduledFixturesFollowTheRoster(unittest.TestCase):
                 self.assertIsNone(problem)
                 self.assertIn(agent, arms)
                 self.assertIsInstance(judge, str)
+
+
+class IsolationExemptionIsAOneWayRatchet(unittest.TestCase):
+    PRIVATE_REGISTRY = "https://github.com/Adam-S-Daniel/adam-agentskills-private"
+
+    def test_isolation_only_never_grows_past_the_legacy_set(self):
+        self.assertLessEqual(ISOLATION_ONLY.keys(), LEGACY_ISOLATION)
+
+    def test_only_private_fixtures_may_be_outside_the_legacy_set(self):
+        for path, reason in ISOLATION_ONLY.items():
+            if reason != _PRIVATE:
+                with self.subTest(fixture=path):
+                    self.assertIn(path, LEGACY_ISOLATION)
+
+    def test_each_private_entry_names_the_private_registry(self):
+        for path, reason in ISOLATION_ONLY.items():
+            if reason == _PRIVATE:
+                with self.subTest(fixture=path):
+                    doc = yaml.safe_load((ROOT / path / "fixture.yaml").read_text(encoding="utf-8"))
+                    self.assertEqual(doc.get("registry"), self.PRIVATE_REGISTRY)
 
 
 class ScheduledFixturesDeclareTheirContext(unittest.TestCase):

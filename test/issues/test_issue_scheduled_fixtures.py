@@ -21,6 +21,8 @@ from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "harness"))
+import context as harness_context  # noqa: E402
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
@@ -124,6 +126,22 @@ def promoted_entries():
     return paths
 
 
+def promoted_context_problem(fixture):
+    """Why a promoted fixture may not be scheduled, or None. A promoted row
+    needs a `context:` mapping that passes the resolver's schema check and
+    proves its guidance (non-null `guidance_revision`); `scaffold_real_work.py
+    promote` enforces the same rule before it promotes a draft."""
+    if not isinstance(fixture.get("context"), dict):
+        return "no context mapping"
+    try:
+        harness_context.validate_context(fixture, Path("fixture.yaml"))
+    except harness_context.ContextError as error:
+        return error.code
+    if fixture["context"]["guidance_revision"] is None:
+        return "null guidance_revision"
+    return None
+
+
 #: The schedule: the reviewed fixtures, then any promoted ones (Adam,
 #: 2026-10-26: fixtures are promoted with no human in the loop).
 EXPECTED = REVIEWED + promoted_entries()
@@ -148,6 +166,34 @@ def doc():
 
 def step(job, name):
     return next(s for s in doc()["jobs"][job]["steps"] if s["name"] == name)
+
+
+class TestPromotedRowsCarryProvableContext(unittest.TestCase):
+    SHA = "a" * 40
+    BUDGET = {"guidance_bytes": 1, "skill_catalog_bytes": 1, "skill_payload_bytes": 1}
+
+    def context(self, **overrides):
+        return {"repository": "example-org/example-site", "revision": self.SHA,
+                "guidance_revision": self.SHA, "budget": dict(self.BUDGET), **overrides}
+
+    def test_every_promoted_row_has_a_valid_context_with_a_guidance_revision(self):
+        for path in promoted_entries():
+            with self.subTest(fixture=path):
+                fixture = yaml.safe_load((ROOT / path / "fixture.yaml").read_text(encoding="utf-8"))
+                self.assertIsNone(promoted_context_problem(fixture))
+
+    def test_the_rule_rejects_a_missing_null_or_invalid_context(self):
+        for subject in ("any", "example-skill"):
+            base = {"subject": subject, "draft": False, "prompt": "Hi."}
+            self.assertEqual(promoted_context_problem(base), "no context mapping")
+            self.assertEqual(promoted_context_problem({**base, "context": None}),
+                             "no context mapping")
+            self.assertEqual(promoted_context_problem(
+                {**base, "context": self.context(guidance_revision=None)}),
+                "null guidance_revision")
+            self.assertEqual(promoted_context_problem(
+                {**base, "context": self.context(revision="short")}), "invalid_context")
+            self.assertIsNone(promoted_context_problem({**base, "context": self.context()}))
 
 
 class TestScheduledFixtures(unittest.TestCase):

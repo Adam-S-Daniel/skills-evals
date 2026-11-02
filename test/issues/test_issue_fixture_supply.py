@@ -244,6 +244,13 @@ class PromotionTests(unittest.TestCase):
     onboarding draft and a reviewed schedule, and a results tree beside it."""
 
     AS_OF = "20261020T000000Z"
+    SHA = "a" * 40
+
+    def context_block(self, guidance=SHA):
+        return ("context:\n  repository: example-org/example-site\n"
+                f"  revision: {self.SHA}\n  guidance_revision: {guidance}\n"
+                "  budget:\n    guidance_bytes: 1\n    skill_catalog_bytes: 1\n"
+                "    skill_payload_bytes: 1\n")
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="fixture-supply-promote-"))
@@ -253,7 +260,8 @@ class PromotionTests(unittest.TestCase):
         evals = self.root / "evals"
         self.write("evals/reviewed-skill/fixture.yaml", "subject: reviewed-skill\nprompt: Hi.\n")
         self.write("evals/toy-skill/fixture.yaml",
-                   "# A draft skill fixture.\nsubject: toy-skill\ndraft: true\nprompt: Hi.\n")
+                   "# A draft skill fixture.\nsubject: toy-skill\ndraft: true\nprompt: Hi.\n"
+                   + self.context_block())
         self.write("evals/real-work/toy-7/fixture.yaml",
                    "subject: any\ndraft: true\nprompt: Fix it.\n")
         self.write("evals/onboarding/first-run/fixture.yaml",
@@ -330,7 +338,8 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(found, [("evals/toy-skill", 2)])
         self.assertEqual(scaffold.promote(self.root, found, self.AS_OF), ["evals/toy-skill"])
         self.assertEqual((self.root / "evals/toy-skill/fixture.yaml").read_text(encoding="utf-8"),
-                         "# A draft skill fixture.\nsubject: toy-skill\ndraft: false\nprompt: Hi.\n")
+                         "# A draft skill fixture.\nsubject: toy-skill\ndraft: false\nprompt: Hi.\n"
+                         + self.context_block())
         committed = planner.committed_fixtures(self.root)
         self.assertEqual(planner.scheduled_fixtures(self.schedule, committed),
                          ["evals/reviewed-skill", "evals/toy-skill"])
@@ -340,6 +349,28 @@ class PromotionTests(unittest.TestCase):
             f"{scaffold.PROMOTED_NOTE} on 2026-10-20 by scaffold_real_work.py promote: 2 "))
         # Promoted, it is no longer a draft, so a second pass finds nothing.
         self.assertEqual(scaffold.promotable(self.root, self.tree, self.AS_OF), [])
+
+    def test_a_draft_without_a_provable_context_is_not_promoted(self):
+        # An orchestrator-scenario-like `subject: any` draft with no context,
+        # one with a null guidance_revision, one with an invalid context, and
+        # a draft with a valid context, all with two clean runs.
+        self.write("evals/orchestrator-scenarios/no-context/fixture.yaml",
+                   "subject: any\ndraft: true\nprompt: Review it.\n")
+        self.write("evals/orchestrator-scenarios/null-guidance/fixture.yaml",
+                   "subject: any\ndraft: true\nprompt: Review it.\n"
+                   + self.context_block(guidance="null"))
+        self.write("evals/orchestrator-scenarios/bad-context/fixture.yaml",
+                   "subject: any\ndraft: true\nprompt: Review it.\ncontext: {}\n")
+        self.write("evals/orchestrator-scenarios/valid/fixture.yaml",
+                   "subject: any\ndraft: true\nprompt: Review it.\n" + self.context_block())
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "scenarios")
+        for name in ("no-context", "null-guidance", "bad-context", "valid"):
+            digest = self.digest(f"evals/orchestrator-scenarios/{name}")
+            for day in ("02", "03"):
+                self.run_result(name, f"202610{day}T000000Z", digest=digest)
+        self.assertEqual(scaffold.promotable(self.root, self.tree, self.AS_OF),
+                         [("evals/orchestrator-scenarios/valid", 2)])
 
     def test_one_clean_run_is_not_enough(self):
         self.run_result("toy-skill", "20261002T000000Z", digest=self.digest("evals/toy-skill"))

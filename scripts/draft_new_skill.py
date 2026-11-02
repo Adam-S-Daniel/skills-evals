@@ -203,7 +203,9 @@ FIXTURE_MAX_FILES = 400
 SIZE_CAPS = {"summary.json": 256 * 1024, "report.md": 64 * 1024,
              "skill.patch": 384 * 1024}
 #: A drafted fixture is a Class A isolation pair: no context (drafts run in
-#: isolation pairing), no setup hook, env, follow-up or model pin.
+#: isolation pairing), no setup hook, env, follow-up or model pin. A drafted
+#: fixture needs `scaffold_real_work.py` context scaffolding before it is
+#: scheduled; `promote` skips a draft with no provable `context`.
 FIXTURE_KEYS = ("skill", "registry", "prompt", "arms", "objective_checks",
                 "judge", "judge_rubric", "timeout_s")
 FIXTURE_REQUIRED = ("skill", "registry", "prompt", "objective_checks",
