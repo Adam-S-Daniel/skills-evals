@@ -170,8 +170,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["roster"], {"arms": [{"model": "model-a", "reason": "invented reason a"}],
                                        "judge": {"model": "model-j",
                                                  "reason": "invented judge reason"}})
-        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.95,
-                                       "min_cli_versions": 2, "objective_margin": 0.05})
+        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.90,
+                                       "min_cli_versions": 2, "objective_margin": 0.15})
         self.assertIsInstance(d["skills"], list)
         self.assertIsInstance(d["guidance"]["sections"], list)
         self.assertIsInstance(d["alerts"], list)

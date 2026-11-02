@@ -875,11 +875,11 @@ class GuidancePolicyTests(unittest.TestCase):
                                "guidance:\n  objective_margin: 0.2")
         policy = gates.parse_gate_policy(changed)
         self.assertEqual(policy["guidance"]["objective_margin"], 0.2)
-        self.assertEqual(policy["skills"]["objective_margin"], 0.05)
+        self.assertEqual(policy["skills"]["objective_margin"], 0.15)
 
     def test_the_committed_guidance_removal_rule_is_adams(self):
         # Adam, 2026-11-02 (#557): remove at 90% confidence that a section does
-        # not improve results by 0.15 or more; skills keep 85% / 95% at 0.05.
+        # not improve results by 0.15 or more; keep at 85%.
         policy = gates.load_gate_policy()
         self.assertEqual((policy["guidance"]["objective_margin"],
                           policy["guidance"]["retire_confidence"],
@@ -888,9 +888,10 @@ class GuidancePolicyTests(unittest.TestCase):
         # The judge's margin is the objective's on its 0-to-10 scale.
         self.assertEqual(policy["guidance"]["judge_margin"],
                          policy["guidance"]["objective_margin"] * 10)
+        # Skills took the same rule the same day.
         self.assertEqual((policy["skills"]["objective_margin"],
                           policy["skills"]["retire_confidence"],
-                          policy["skills"]["judge_margin"]), (0.05, 0.95, 0.5))
+                          policy["skills"]["judge_margin"]), (0.15, 0.90, 1.5))
 
     def test_without_the_block_there_is_no_guidance_policy(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")

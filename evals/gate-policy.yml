@@ -1,5 +1,11 @@
 # Thresholds for the retirement verdict, read by harness/gates.py (#70).
 #
+# Adam set the skills' removal rule to the guidance one on 2026-11-02 (#557):
+# remove at 90% confidence (`retire_confidence` 0.90) that the skill does not
+# improve results by 0.15 or more (`objective_margin` 0.15; the judge's
+# `judge_margin` 1.5 on its 0-to-10 scale); keeping stays at 85%. Every
+# removal notifies him and can be reverted.
+#
 # Adam set the thresholds on 2026-10-10 (#70) and chose POOLED evidence on
 # 2026-10-25, replacing #70's four weekly sweeps: a cell (skill, fixture,
 # requested arm model) pools every validated run whose fixture, arm context
@@ -35,10 +41,10 @@
 # opens nothing while another loop pull request is open there, and acts only
 # from the scheduled workflow, never a dispatched or pull-request run.
 skills:
-  objective_margin: 0.05
-  judge_margin: 0.5
+  objective_margin: 0.15
+  judge_margin: 1.5
   benefit_confidence: 0.85
-  retire_confidence: 0.95
+  retire_confidence: 0.90
   check_confidence: 0.85
   min_cli_versions: 2
   prior_strength: 4
