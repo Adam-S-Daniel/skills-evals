@@ -345,17 +345,26 @@ FALLBACK_PRIOR_VARIANCE = 0.0625
 #: The least prior variance, so a history of identical runs cannot make the
 #: prior claim certainty (a run-mean standard deviation of 0.01).
 MIN_PRIOR_VARIANCE = 1e-4
+#: A guidance prior's least degrees of freedom, and its fallback below them
+#: (#546): the largest variance of a figure from 0 to 1. The seeded
+#: simulation (scripts/simulate_stratified_pooling.py) broke both error
+#: targets with a prior measured on a few runs, and met them with these.
+GUIDANCE_PRIOR_MIN_DF = 20
+GUIDANCE_FALLBACK_PRIOR_VARIANCE = 0.25
 
 
-def pooled_variance(groups: list) -> float:
+def pooled_variance(groups: list, min_df: int = 1,
+                    fallback: float = FALLBACK_PRIOR_VARIANCE) -> float:
     """The pooled run-to-run variance over `groups` (each a list of run
     figures of one model, fixture, arm and content): the sum of squared
     deviations over the summed degrees of freedom, from every group with two
     or more runs. `FALLBACK_PRIOR_VARIANCE` when none has, and never under
-    `MIN_PRIOR_VARIANCE`."""
+    `MIN_PRIOR_VARIANCE`. Fewer than `min_df` degrees of freedom also give
+    the fallback (#546: a prior measured on a few runs can be far too
+    small)."""
     df = sum(len(g) - 1 for g in groups if len(g) >= 2)
-    if not df:
-        return FALLBACK_PRIOR_VARIANCE
+    if not df or df < min_df:
+        return fallback
     ss = math.fsum(_variance(g) * (len(g) - 1) for g in groups if len(g) >= 2)
     return max(ss / df, MIN_PRIOR_VARIANCE)
 
@@ -409,6 +418,44 @@ def confidence_reached(a: list, b: list, prior: float, strength: float,
     return max(0.0, 1 - alpha)
 
 
+def _stratum(a: list, b: list, prior: float, strength: float) -> tuple[float, float]:
+    """(mean(a) - mean(b), its information 1/se^2) from each arm's
+    `moderated_variance`."""
+    se2 = (moderated_variance(a, prior, strength) / len(a)
+           + moderated_variance(b, prior, strength) / len(b))
+    return _mean(a) - _mean(b), 1 / se2
+
+
+def stratified_estimate(strata: list, prior: float, strength: float) -> tuple[float, float]:
+    """(d, I): the precision-weighted delta over `strata`, a list of (a, b)
+    run-figure lists sharing one rest-of-guidance digest each (#546), and its
+    information. Each stratum's weight P_s is its own 1/se^2, so Z = sum
+    P_s d_s, I = sum P_s and d = Z / I. Every stratum needs a run on each
+    arm. P_s is re-estimated at each look, so the boundary fed this (d, I)
+    is approximately anytime-valid, in the same sense as a single cell's."""
+    if not strata:
+        raise ValueError("a stratified estimate needs a stratum")
+    parts = [_stratum(a, b, prior, strength) for a, b in strata]
+    info = math.fsum(p for _, p in parts)
+    return math.fsum(p * d for d, p in parts) / info, info
+
+
+def _half_width(info: float, prior: float, alpha: float) -> float:
+    rho = 1 / prior
+    return math.sqrt((info + rho) * math.log((info + rho) / (rho * alpha * alpha))) / info
+
+
+def stratified_sequence(strata: list, level: float, prior: float,
+                        strength: float) -> tuple[float, float]:
+    """`confidence_sequence` over `stratified_estimate`'s (d, I). One stratum
+    is exactly `confidence_sequence` of its two arms."""
+    if len(strata) == 1:
+        return confidence_sequence(*strata[0], level, prior, strength)
+    delta, info = stratified_estimate(strata, prior, strength)
+    half = _half_width(info, prior, 1 - level)
+    return delta - half, delta + half
+
+
 def confident_checks(with_rates: dict, without_rates: dict, level: float,
                      priors: dict, strength: float) -> list:
     """Check keys whose with-minus-without delta of per-run pass rates has a
@@ -433,6 +480,38 @@ def confident_checks(with_rates: dict, without_rates: dict, level: float,
         prior = priors.get(key, FALLBACK_PRIOR_VARIANCE)
         if confidence_sequence(with_rates[key], without_rates[key],
                                1 - alpha / (m - k), prior, strength)[0] <= 0:
+            break
+        confident.append(key)
+    return confident
+
+
+def stratified_confident_checks(strata: list, level: float, priors: dict,
+                                strength: float) -> list:
+    """`confident_checks` over strata (#546): `strata` is a list of
+    (with_rates, without_rates) per rest-of-guidance stratum. A check's
+    figure is `stratified_estimate` over the strata where it has a run on
+    each arm; Holm's m counts every check in both arms of any stratum, as
+    `confident_checks` counts them. One stratum is exactly
+    `confident_checks`."""
+    if len(strata) == 1:
+        return confident_checks(*strata[0], level, priors, strength)
+    keys = sorted({k for w, o in strata for k in set(w) & set(o)})
+    alpha, m = 1 - level, len(keys)
+    per_key, ranked = {}, []
+    for key in keys:
+        parts = [(w[key], o[key]) for w, o in strata
+                 if key in w and key in o and w[key] and o[key]]
+        if not parts:
+            continue
+        per_key[key] = parts
+        prior = priors.get(key, FALLBACK_PRIOR_VARIANCE)
+        delta, info = stratified_estimate(parts, prior, strength)
+        ranked.append((-delta * math.sqrt(info), key))
+    confident = []
+    for k, (_, key) in enumerate(sorted(ranked)):
+        prior = priors.get(key, FALLBACK_PRIOR_VARIANCE)
+        if stratified_sequence(per_key[key], 1 - alpha / (m - k), prior,
+                               strength)[0] <= 0:
             break
         confident.append(key)
     return confident
