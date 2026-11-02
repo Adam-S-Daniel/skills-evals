@@ -13,10 +13,14 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Exact deployed bytes: two eligible guidance revisions match; the resolver
 # selected the newest eligible commit (then the lexical SHA tie-breaker).
+# Re-pinned 2026-11-02 to repo-settings main 56c9dac9 (it deploys
+# adam-agentskills main's copy of the subject), guidance proven at 5ca459fc.
+# Budgets unchanged; today's figures are REMEASURED in
+# test/issues/test_issue_371_scheduled_fixtures.py.
 context:
   repository: Adam-S-Daniel/repo-settings
-  revision: 19378e8ddd8fa291cd74b4a24cd6389734cba747
-  guidance_revision: 5d2ed452358dd2eb215d27c80760a0e6b09c13b7
+  revision: 56c9dac9d044a13aa376664eb5f95aec6fc73dd5
+  guidance_revision: 5ca459fc6aa270f204cab3d67603fc0e5699b3d7
   budget:
     guidance_bytes: 30598
     skill_catalog_bytes: 7634
