@@ -22,10 +22,13 @@
 # number above 0 and at most 1, and `per_run_cap` no larger than
 # `weekly_cap`. A change here is a spending decision: it is Adam's.
 
-# 30 points: all automated evals together, in each allowance week of the
-# account (Monday 17:00 UTC to the next; Adam, 2026-10-26), so a sanctioned
-# push in one week is not charged to the next.
-weekly_cap: 0.30
+# 100 points for the allowance week ending Mon 2026-11-09 17:00 UTC only
+# (Adam, 2026-11-02, finish-week push). Restore to 0.25 after that reset
+# (Adam's steady-state goal, 2026-11-02). Normally: all automated evals
+# together, in each allowance week of the account (Monday 17:00 UTC to the
+# next; Adam, 2026-10-26), so a sanctioned push in one week is not charged to
+# the next.
+weekly_cap: 1.00
 
 # 1 point: one run stops starting new work once the meter has moved this
 # much since the run's first reading. Adam, 2026-11-01, permanently: of the
@@ -51,5 +54,6 @@ per_run_overrun: 0.0018
 # starting new work, whatever it has spent, so evals never take the last of
 # the allowance from Adam's own work. Since 2026-11-01 it is also the fire
 # limit: scripts/allowance_guard.py starts no fire past it (Adam, "Unify the
-# limit").
-stop_when_account_above: 0.80
+# limit"). 95 points for the allowance week ending 2026-11-09 17:00 UTC only
+# (Adam, 2026-11-02); restore to 0.80 after that reset.
+stop_when_account_above: 0.95
