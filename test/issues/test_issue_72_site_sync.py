@@ -106,8 +106,9 @@ class SiteWorkflowTests(unittest.TestCase):
         self.assertEqual(self.preview["env"]["PREVIEW_BRANCH"],
                          f"tool-preview/{SLUG}-pr-${{{{ github.event.pull_request.number }}}}")
         text = (WORKFLOWS / "site-preview.yml").read_text(encoding="utf-8")
-        self.assertIn("/tools/skills-evals/", text)
-        self.assertIn("/tools/guidance-evals/", text)
+        # One site page, /tools/evals/, serves both views (Adam, 2026-11-02).
+        self.assertIn("/tools/evals/", text)
+        self.assertNotIn("/tools/guidance-evals/", text)
         merge = [s["run"] for _, s in steps(self.sync) if "gh pr merge" in s.get("run", "")]
         self.assertEqual(len(merge), 1)
         self.assertIn("--auto --squash", merge[0])

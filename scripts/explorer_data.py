@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write `explorer/latest.json`: the public data behind the Skill Evals Explorer (#72).
+"""Write `explorer/latest.json`: the public data behind the Evals Explorer (#72).
 
   explorer_data.py --results-tree DIR --roster evals/roster.yml
                    --policy evals/gate-policy.yml --as-of TIME

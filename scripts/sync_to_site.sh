@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copy the Skill Evals Explorer page (tool/index.html) into a checkout of the
+# Copy the Evals Explorer page (tool/index.html) into a checkout of the
 # adamdaniel.ai site repo, record provenance, and commit + force-push a
 # sync/preview branch there.
 #
