@@ -508,9 +508,33 @@ def tested_digest(registries: dict, skill, url) -> str | None:
     return context._file_digest(files)
 
 
+def unscheduled_paths(evals_dir: Path) -> set:
+    """Paths listed in `evals/unscheduled.yml` (fixtures deliberately left off
+    the schedule, each with a written reason: Adam, 2026-11-02). A missing
+    file lists nothing; a malformed one raises ValueError, never an empty
+    list, so a broken file cannot make every fixture expected again unseen."""
+    path = evals_dir / "unscheduled.yml"
+    if not path.is_file():
+        return set()
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise ValueError(f"{path.name} is unreadable") from exc
+    rows = doc.get("fixtures") if isinstance(doc, dict) else None
+    if not isinstance(rows, list) or not all(
+            isinstance(row, dict) and isinstance(row.get("path"), str) for row in rows):
+        raise ValueError(f"{path.name} must hold a `fixtures` list of {{path, reason}}")
+    return {row["path"] for row in rows}
+
+
 def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
     """{fixture name, "" for a flat one: {"fixture_digest", "tested_digest"}}
-    for every fixture of `skill` on main; {} when it has none."""
+    for every fixture of `skill` on main, except a fixture listed in
+    `evals/unscheduled.yml` (it has a written reason to stay off the schedule)
+    and a `draft: true` fixture (unready by definition; `promote` schedules it
+    later, and it joins this set then); {} when it has none. A malformed
+    unscheduled.yml raises ValueError."""
+    unscheduled = unscheduled_paths(evals_dir)
     eval_dir = evals_dir / skill
     try:
         directories = run_eval.resolve_fixture_dirs(eval_dir, None) if eval_dir.is_dir() else []
@@ -523,6 +547,9 @@ def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
         except (OSError, UnicodeDecodeError, yaml.YAMLError):
             doc = None
         doc = doc if isinstance(doc, dict) else {}
+        listed = "evals/" + directory.relative_to(evals_dir).as_posix()
+        if doc.get("draft") is True or listed in unscheduled:
+            continue
         out["" if directory == eval_dir else directory.name] = {
             "fixture_digest": run_eval.fixture_digest(directory),
             "tested_digest": tested_digest(registries, doc.get("skill"), doc.get("registry"))}

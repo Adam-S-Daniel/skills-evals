@@ -13,7 +13,9 @@ import argparse
 import math
 from pathlib import Path
 import re
+import shutil
 import sys
+import tempfile
 import unittest
 
 import yaml
@@ -120,6 +122,14 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # Not re-measured either (context repo-settings): the largest figures
     # its committed budget allows under HEADROOM, recorded for both arms.
     "evals/github-actions-repo-settings/drift-diagnosis": ((24478, 6107, 672169),) * 2,
+    # Measured 2026-11-02 through `run_eval._in_place_plan` against the local
+    # clones; both arms match because the context already carries the skill.
+    **{f"evals/review-bash-ci-reliability/{name}": (_CMS_PLATFORM, _CMS_PLATFORM)
+       for name in ("drift-report-capture", "empty-repo-discovery",
+                    "nightly-snapshot", "test-runner-assertions")},
+    **{f"evals/skills-doctor/{name}": ((25099, 6115, 644882),) * 2
+       for name in ("one-row-rejects-the-lock", "personal-copy-outranks-repo",
+                    "ssh-remote-is-durable")},
 }
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
@@ -147,11 +157,11 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_thirty_two_skill_and_thirty_two_guidance_fixtures(self):
+    def test_the_schedule_names_thirty_nine_skill_and_thirty_two_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 64)
-        self.assertEqual(len(set(paths)), 64)
-        self.assertEqual(len(fixtures()), 32)
+        self.assertEqual(len(paths), 71)
+        self.assertEqual(len(set(paths)), 71)
+        self.assertEqual(len(fixtures()), 39)
         self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
                          sorted(str(p.parent.relative_to(ROOT)) for p in
                                 (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))
@@ -278,6 +288,84 @@ class ScheduleReadinessNotes(unittest.TestCase):
                 # must not need this test edited.
                 self.assertRegex(note, r"(?i)\b(isolation|in-place) pair\b")
                 self.assertRegex(note, r"\bclaude-[a-z]+-[0-9]")
+
+
+UNSCHEDULED = ROOT / "evals/unscheduled.yml"
+
+
+def skill_fixture_paths(root: Path) -> dict[str, dict]:
+    """Every non-draft skill fixture under `root`/evals, by its
+    `evals/...` path: a fixture.yaml with a string `skill:` key and no
+    guidance `subject`. Parsed as YAML."""
+    out = {}
+    for file in sorted((root / "evals").glob("**/fixture.yaml")):
+        doc = yaml.safe_load(file.read_text(encoding="utf-8"))
+        if (isinstance(doc, dict) and isinstance(doc.get("skill"), str)
+                and doc.get("subject") != "guidance" and doc.get("draft") is not True):
+            out[file.parent.relative_to(root).as_posix()] = doc
+    return out
+
+
+def schedule_problems(root: Path) -> list[str]:
+    """Violations of Adam's 2026-11-02 rule (require a reason to leave a
+    fixture out) in `root`/evals/scheduled.yml and unscheduled.yml."""
+    scheduled_rows = yaml.safe_load((root / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+    scheduled_paths = [row["path"] for row in scheduled_rows]
+    listed = yaml.safe_load((root / "evals/unscheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+    listed_paths = [row["path"] for row in listed]
+    skill_fixtures = skill_fixture_paths(root)
+    problems = []
+    for path in sorted(set(listed_paths)):
+        if listed_paths.count(path) > 1:
+            problems.append(f"{path}: listed twice")
+    for row in listed:
+        path, reason = row["path"], row.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            problems.append(f"{path}: no reason")
+        if path not in skill_fixtures:
+            problems.append(f"{path}: not a non-draft skill fixture")
+        if path in scheduled_paths:
+            problems.append(f"{path}: both scheduled and unscheduled")
+    for path in skill_fixtures:
+        if path not in scheduled_paths and path not in listed_paths:
+            problems.append(f"{path}: neither scheduled nor listed in unscheduled.yml")
+    return problems
+
+
+class EveryFixtureIsScheduledOrExplained(unittest.TestCase):
+    def test_the_committed_tree_follows_the_rule(self):
+        self.assertEqual(schedule_problems(ROOT), [])
+
+    def _tree(self, scheduled, unscheduled, fixtures):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        for path, doc in fixtures.items():
+            (tmp / path).mkdir(parents=True)
+            (tmp / path / "fixture.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+        for name, rows in (("scheduled", scheduled), ("unscheduled", unscheduled)):
+            (tmp / f"evals/{name}.yml").write_text(yaml.safe_dump({"fixtures": rows}), encoding="utf-8")
+        return tmp
+
+    def test_a_synthetic_unlisted_unscheduled_fixture_is_a_problem(self):
+        skill = {"skill": "demo", "prompt": "x"}
+        tmp = self._tree([{"path": "evals/demo/a", "readiness": "n"}], [],
+                         {"evals/demo/a": skill, "evals/demo/b": skill,
+                          "evals/demo/c": dict(skill, draft=True)})
+        self.assertEqual(schedule_problems(tmp),
+                         ["evals/demo/b: neither scheduled nor listed in unscheduled.yml"])
+
+    def test_listed_rows_need_a_reason_a_real_unscheduled_skill_fixture_and_no_repeat(self):
+        skill = {"skill": "demo", "prompt": "x"}
+        tmp = self._tree([{"path": "evals/demo/a", "readiness": "n"}],
+                         [{"path": "evals/demo/a", "reason": "r"},
+                          {"path": "evals/demo/b", "reason": "  "},
+                          {"path": "evals/demo/b", "reason": "r"},
+                          {"path": "evals/demo/gone", "reason": "r"}],
+                         {"evals/demo/a": skill, "evals/demo/b": skill})
+        problems = schedule_problems(tmp)
+        for expected in ("evals/demo/b: listed twice", "evals/demo/a: both scheduled and unscheduled",
+                         "evals/demo/b: no reason", "evals/demo/gone: not a non-draft skill fixture"):
+            self.assertIn(expected, problems)
 
 
 if __name__ == "__main__":
