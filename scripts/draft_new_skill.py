@@ -119,8 +119,17 @@ from ingest_routine_results import Rejected  # noqa: E402
 #: A subject becomes a skill directory basename and `evals/<subject>/`.
 SUBJECT = r"[a-z0-9][a-z0-9-]{0,63}"
 SUBJECT_RE = re.compile(SUBJECT)
+#: The miner files every unattributed lesson under this subject.
+UNATTRIBUTED_SUBJECT = "none"
 PROPOSAL_ID = r"[A-Za-z0-9._:-]{1,128}"
-REPO_NAME = r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+"
+#: A repo is `owner/repo` (issue proposals), a bare directory name (the
+#: miner's `repos`: "the repos' directory names", lessons/README.md) or `~`
+#: (a session outside any repo). Matched with fullmatch; a name cannot start
+#: with `.`, so `.` and `..` fail, and one owner segment is the most a slash
+#: can add.
+REPO_NAME = r"(?:[A-Za-z0-9-]+/)?[A-Za-z0-9_][A-Za-z0-9._-]{0,99}|~"
+#: The most repos a proposal lists; the miner's first real one had 16.
+MAX_REPOS = 100
 DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 KINDS = ("skill-edit", "new-skill", "guidance-edit", "memory-note",
          "fixture-candidate")
@@ -143,7 +152,7 @@ PROPOSAL_SCHEMA = {
     "last_seen": {"type": "date"},
     "examples": {"type": "list", "min": 1, "max": 20,
                  "item": {"type": "text", "max": 2000}},
-    "repos": {"type": "list", "min": 0, "max": 20,
+    "repos": {"type": "list", "min": 0, "max": MAX_REPOS,
               "item": {"type": "str", "pattern": REPO_NAME}},
 }
 #: What the payload carries of a proposal (dates dropped).
@@ -296,6 +305,9 @@ def check_proposal(doc, path_date: str | None = None,
             raise Rejected("proposal: a field fails the schema")
     if doc["kind"] != "new-skill":
         raise Rejected("proposal: not a new-skill proposal")
+    if doc["subject"] == UNATTRIBUTED_SUBJECT:
+        raise Rejected("proposal: subject none is the miner's unattributed "
+                       "pool, not a skill")
     first, last = parse_date(doc["first_seen"]), parse_date(doc["last_seen"])
     if first > last:
         raise Rejected("proposal: first_seen is after last_seen")
