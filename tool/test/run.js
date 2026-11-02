@@ -22,6 +22,9 @@ function loadPage() {
 const P = loadPage();
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture.json'), 'utf8'));
 const committedIds = JSON.parse(fs.readFileSync(path.join(__dirname, 'guidance-ids.json'), 'utf8'));
+// Every alert kind scripts/explorer_data.py can emit; the pytest module
+// test_issue_544_545_health_alerts.py checks it against the script's AST.
+const emittedKinds = JSON.parse(fs.readFileSync(path.join(__dirname, 'alert-kinds.json'), 'utf8'));
 
 let passed = 0;
 const failures = [];
@@ -313,6 +316,31 @@ test('a not-schedulable alert gets its plain label, not the raw kind', () => {
   const t = P.textOf(P.buildPage(doc, 'skills', {}));
   ok(t.includes('Not being tested: example-skill-alpha'), 'label shown');
   ok(!t.includes('not-schedulable'), 'raw kind not shown');
+});
+
+test('every alert kind explorer_data can emit has a plain label', () => {
+  ok(Array.isArray(emittedKinds) && emittedKinds.length > 0, 'alert-kinds.json is a non-empty list');
+  const missing = emittedKinds.filter((k) => !Object.prototype.hasOwnProperty.call(P.STRINGS.alertKinds, k)
+    || typeof P.STRINGS.alertKinds[k] !== 'string' || !P.STRINGS.alertKinds[k].trim());
+  eq(missing.join(','), '', 'kinds with no label');
+});
+test('a broken alert is worded from its reason (#544)', () => {
+  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'broken', subject: 'skill',
+    name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
+    reasons: ['pin-deploys-older-copy'] }] });
+  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(t.includes('Runs cannot count: example-skill-alpha'), 'label shown');
+  ok(t.includes('The task evals/example-skill-alpha/x needs a new pin: its pinned repository still deploys an older copy'), 'reason worded');
+  ok(!t.includes('pin-deploys-older-copy') && !t.includes('broken:'), 'raw reason and kind not shown');
+});
+test('a context-drift alert names the repository and the day it drifted (#545)', () => {
+  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'context-drift', subject: 'skill',
+    name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
+    repository: 'Example-Owner/example-site', drift_since: '2026-10-12T17:00:22Z' }] });
+  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(t.includes('Context out of date: example-skill-alpha'), 'label shown');
+  ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
+  ok(!t.includes('context-drift'), 'raw kind not shown');
 });
 
 // --- glosses -----------------------------------------------------------------
