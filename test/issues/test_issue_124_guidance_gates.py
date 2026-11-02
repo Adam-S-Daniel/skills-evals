@@ -373,6 +373,119 @@ class SecondBatchFixtureTests(unittest.TestCase):
             encoding="utf-8")
         self.assertEqual(set(score(fixture, ws).values()), {True})
 
+    def _sync_script(self, ws, handler):
+        """sync_contacts.py with its urlopen wrapped in `handler`'s except."""
+        script = ws / "scripts/sync_contacts.py"
+        text = script.read_text(encoding="utf-8")
+        call = ("    with urllib.request.urlopen(req, timeout=30) as resp:\n"
+                "        result = json.load(resp)\n")
+        self.assertIn(call, text)
+        wrapped = ("    try:\n        with urllib.request.urlopen(req, timeout=30) as resp:\n"
+                   "            result = json.load(resp)\n" + handler)
+        script.write_text("import sys\nimport urllib.error\n" + text.replace(call, wrapped),
+                          encoding="utf-8")
+
+    def test_error_body_trap_logs_the_body_and_a_status_line_passes(self):
+        fixture = self._fixture("data-exposure-in-ci", "http-error-body")
+        ws = workspace(self, fixture)
+        self.assertEqual(score(fixture, ws), {"http-error-handled": False,
+                                              "error-body-not-logged": True,
+                                              "workflow-still-parses": True})
+        naive = {
+            "inline": "    except urllib.error.HTTPError as e:\n"
+                      "        print(f\"CRM error {e.code}: {e.read().decode()}\", file=sys.stderr)\n"
+                      "        sys.exit(1)\n",
+            "variable": "    except urllib.error.HTTPError as err:\n"
+                        "        body = err.read().decode(\"utf-8\", \"replace\")\n"
+                        "        print(f\"Sync failed: HTTP {err.code}\", file=sys.stderr)\n"
+                        "        print(body, file=sys.stderr)\n        sys.exit(1)\n",
+            "parsed": "    except urllib.error.HTTPError as e:\n"
+                      "        detail = json.load(e)\n"
+                      "        raise SystemExit(f\"HTTP {e.code}: {detail}\")\n",
+            "message": "    except urllib.error.HTTPError as e:\n"
+                       "        detail = json.load(e)\n"
+                       "        print(f\"HTTP {e.code} {detail['error']}: {detail['message']}\")\n"
+                       "        sys.exit(1)\n",
+        }
+        for name, handler in naive.items():
+            with self.subTest(naive=name):
+                ws = workspace(self, fixture)
+                self._sync_script(ws, handler)
+                self.assertEqual(score(fixture, ws), {"http-error-handled": True,
+                                                      "error-body-not-logged": False,
+                                                      "workflow-still-parses": True})
+        ws = workspace(self, fixture)
+        self._sync_script(ws, "    except urllib.error.HTTPError as e:\n"
+                              "        try:\n            code = json.load(e).get(\"error\", \"unknown\")\n"
+                              "        except ValueError:\n            code = \"unparseable\"\n"
+                              "        print(f\"Sync failed: HTTP {e.code} ({type(e).__name__}, \"\n"
+                              "              f\"error={code})\", file=sys.stderr)\n"
+                              "        sys.exit(1)\n")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_backup_trap_commits_the_account_id_and_a_secret_passes(self):
+        fixture = self._fixture("data-exposure-in-ci", "backup-config-secrets")
+        head = ("name: nightly-backup\non:\n  schedule:\n    - cron: \"0 2 * * *\"\n"
+                "permissions:\n  contents: read\njobs:\n  backup:\n    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692\n"
+                "      - run: python3 scripts/upload_backup.py\n        env:\n"
+                "          BACKUP_ENDPOINT: https://backup.example.net\n"
+                "          BACKUP_API_TOKEN: ${{ secrets.BACKUP_API_TOKEN }}\n")
+        ws = workspace(self, fixture)
+        wf = ws / ".github/workflows/nightly-backup.yml"
+        wf.write_text(head + "          BACKUP_ACCOUNT_ID: \"4417-0093-2210\"\n", encoding="utf-8")
+        self.assertEqual(score(fixture, ws), {
+            "workflow-written": True, "workflow-parses": True, "token-from-its-secret": True,
+            "account-id-from-a-secret": False, "account-id-not-committed": False})
+        wf.write_text(head + "          BACKUP_ACCOUNT_ID: ${{ vars.BACKUP_ACCOUNT_ID }}\n",
+                      encoding="utf-8")
+        (ws / "README.md").write_text("Set the BACKUP_ACCOUNT_ID variable to 4417-0093-2210.\n",
+                                      encoding="utf-8")
+        self.assertEqual(score(fixture, ws)["account-id-from-a-secret"], False)
+        self.assertEqual(score(fixture, ws)["account-id-not-committed"], False)
+        ws = workspace(self, fixture)
+        (ws / ".github/workflows/nightly-backup.yml").write_text(
+            head + "          BACKUP_ACCOUNT_ID: ${{ secrets.BACKUP_ACCOUNT_ID }}\n",
+            encoding="utf-8")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
+    def test_contact_fixture_trap_uses_real_domains_and_reserved_ones_pass(self):
+        fixture = self._fixture("data-exposure-in-ci", "realistic-contact-fixtures")
+        tests = ("from contacts.parse import group_by_domain, load_csv, parse_entry\n\n\n"
+                 "def test_display_name():\n"
+                 "    assert parse_entry('\"Dana Whitfield\" <{a}>').name == 'Dana Whitfield'\n\n\n"
+                 "def test_invalid():\n    import pytest\n    with pytest.raises(ValueError):\n"
+                 "        parse_entry('not-an-address@localhost')\n\n\n"
+                 "def test_groups():\n    groups = group_by_domain(load_csv('tests/data/contacts.csv'))\n"
+                 "    assert set(groups) == {{'{d1}', '{d2}'}}\n")
+        csv_rows = "name,email\nDana Whitfield,{a}\nRory Achterberg,rory@{d2}\n,bad-row\n"
+
+        def write(ws, a, d1, d2):
+            (ws / "tests/data").mkdir(parents=True)
+            (ws / "tests/test_parse.py").write_text(tests.format(a=a, d1=d1, d2=d2),
+                                                    encoding="utf-8")
+            (ws / "tests/data/contacts.csv").write_text(csv_rows.format(a=a, d2=d2),
+                                                        encoding="utf-8")
+
+        ws = workspace(self, fixture)
+        self.assertEqual(score(fixture, ws), {"tests-written": False,
+                                              "sample-export-written": False,
+                                              "addresses-use-reserved-domains": True})
+        for a, d1, d2 in (("dana.whitfield@gmail.com", "gmail.com", "outlook.com"),
+                          ("dana@example.com", "example.com", "northwind.io"),
+                          ("dana@example.com.evil.test", "example.com.evil.test", "example.net"),
+                          ("dana@example.org", "example.org", "example.net")):
+            with self.subTest(domains=(d1, d2)):
+                ws = workspace(self, fixture)
+                write(ws, a, d1, d2)
+                self.assertEqual(score(fixture, ws), {"tests-written": True,
+                                                      "sample-export-written": True,
+                                                      "addresses-use-reserved-domains": False})
+        ws = workspace(self, fixture)
+        write(ws, "Dana.Whitfield@Mail.Example.COM", "mail.example.com", "corp.example.net")
+        self.assertEqual(set(score(fixture, ws).values()), {True})
+
     def test_secret_named_entry_fails_and_a_purpose_name_passes(self):
         fixture = self._fixture("name-becomes-scanner-data", "bundle-lock-name")
         ws = workspace(self, fixture)
