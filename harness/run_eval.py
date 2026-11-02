@@ -5553,7 +5553,7 @@ def _in_place_record(plan: dict, role: str) -> dict:
     proof = manifest["guidance"]
     expected = delivery.expected_skills(frozen, skill_subject, role)
     payload = delivery.guidance_payload(frozen, section_subject, role)
-    return {
+    record = {
         "pairing": "in_place",
         "role": role,
         "context": {
@@ -5581,6 +5581,11 @@ def _in_place_record(plan: dict, role: str) -> dict:
                         "guidance_digest": hashlib.sha256(payload).hexdigest(),
                         "subject_present": role == "with"},
     }
+    if "fleet_hooks" in plan:
+        # The hook set both arms received (#535), which compute_gates pools
+        # by; absent for an unhooked run, so its record is as before.
+        record["context"]["fleet_hooks_digest"] = plan["fleet_hooks"].digest
+    return record
 
 
 @contextmanager

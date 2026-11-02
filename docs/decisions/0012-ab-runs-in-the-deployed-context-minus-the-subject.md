@@ -289,6 +289,69 @@ until the last:
 4. The pooling key.
 5. The seed audit and the first fixture opt-ins.
 
+Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
+(`run_eval._in_place_plan` and `_prepare_in_place`), and
+`test/issues/test_issue_535_fleet_hooks.py`:
+
+- **Frozen set and proof.** Every file of `templates/agent-checks/` is
+  read from _agent-guidance's Git objects at the guidance revision the
+  context loads (`context.guidance.revision`). For a skill fixture the
+  context repository's `.githooks/agent-checks` at `context.revision`
+  must equal the frozen runner, byte for byte; a guidance fixture takes
+  the template itself. The context repository must belong to a fleet
+  owner, or no fleet hook would fire in its clone. Any gap refuses the
+  plan with `fleet_hooks_unproven`, before any paid call. markdown-it is
+  installed once per plan with `npm ci --ignore-scripts` from the frozen
+  lockfile, outside the sandbox (`fleet_hooks_install_failed` when it
+  fails). Each arm gets a read-only copy in its scratch at `fleet-hooks/`,
+  beside `ws/` and `tmp/`, with the set under `.githooks/` as the runner
+  expects it. A hooked fixture's `env:` may not name `GIT_CONFIG*`
+  (`fleet_hooks_git_config_env`).
+- **Injection.** The agent's environment alone gets nine
+  `includeIf.hasconfig:remote.*.url:<prefix><owner>/**.path` keys (the
+  installer's three URL prefixes for `Adam-S-Daniel`, `adam-s-daniel` and
+  `jodidaniel`) through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, pointing at a
+  frozen include of `hook.agent-checks-<event>.event`/`.command` keys for
+  `pre-commit` and `pre-push`, plus `AGENT_CHECKS_LOG=off` and
+  `AGENT_CHECKS_DATED_PHRASING_MODULES`. The workspace gets the context
+  repository's GitHub URL as `origin`; a seed that already has an `origin`
+  is refused (`fleet_hooks_origin_exists`). The hook command reads the
+  harness's own network namespace id (`/proc/self/ns/net`) from
+  `fleet-hooks/harness-netns` and runs the frozen runner only when its
+  own differs, that is inside the sandbox; anything else exits 0, so a
+  Claude Code hook's commit runs no `.agent-checks/local.sh`. The command
+  runs the frozen runner even when the seed carries no `.githooks/`,
+  since the context repository's clone would. The directory is
+  write-denied (`Edit` deny rules and `sandbox.filesystem.denyWrite`), its
+  tree digest (paths, modes, bytes) is read before the first turn and
+  after each, and any change is `agent_wrote_agent_config`. The frozen
+  `agent-checks-guard.sh` is the arm's one PreToolUse hook, through
+  `--settings`, with the sync's matcher and timeout. Harness Git runs no
+  hook: workspace, harness-repository and context Git strip `GIT_*` and
+  read no global or system config.
+- **Pooling key.** `context.fleet_hooks_digest` (sha256 over each frozen
+  file's path, mode and bytes and the injected include, environment and
+  guard registration, with the arm's directory as a placeholder) is in a
+  hooked arm's summary and absent otherwise; ingest checks it when
+  present. compute_gates appends it to `pair_key` and
+  `arm_context_digest`, for skill and guidance rows, only when present,
+  so an unhooked run's keys are byte-for-byte what they were.
+- **Guidance alone pair (item 10 of #535).** The alone pair
+  (`section`/`none`) never runs the hooks, and no fixture key opts it in:
+  it reads guidance from a working-tree checkout with no pinned revision
+  to prove a hook set against, and hooks would make `none` something
+  other than no guidance. So where the addendum says "plus
+  `section`/`none` when the fixture opts in", the build has no such
+  opt-in. Instead `gates.guidance_verdict`'s `shorten-or-merge` reason
+  reads "the rest of the guidance or the fleet hooks cover it" when the
+  in-situ runs it pooled were hooked.
+- **Not yet done.** The live probe in the routine container and on the CI
+  runner, showing that a Bash command in the arm's sandbox sees a network
+  namespace other than the harness's, needs a real CLI call and is left
+  for the first opt-in. Until it is recorded, the receipt rests on the
+  sandbox's `--unshare-net`, which the tests stand in for with
+  `bwrap --unshare-net`.
+
 ## Consequences
 
 - **Deltas mean what the keep-or-remove decision needs:** the subject's

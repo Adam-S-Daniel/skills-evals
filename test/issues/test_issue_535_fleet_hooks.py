@@ -14,6 +14,7 @@ stubbed: no network, no model, no clock. Run inside a PID namespace.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -23,13 +24,18 @@ import tempfile
 import unittest
 from unittest import mock
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "test" / "issues"))
 
+import compute_gates  # noqa: E402
 import context  # noqa: E402
 import fleet_hooks  # noqa: E402
+import gates  # noqa: E402
+import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
 from test_issue_adr0012_delivery import Base, GUIDANCE_REPO, PRIMARY  # noqa: E402
 
@@ -491,8 +497,9 @@ mkdir -p node_modules/markdown-it && printf '{"name":"markdown-it"}' > node_modu
 """
 
 
-@unittest.skipUnless(sandbox_available(), "bubblewrap with a network namespace is not available")
-class EndToEndTests(HookBase):
+class MainRun(HookBase):
+    """run_eval's main() on a hooked in-place skill pair, with AGENT as the
+    CLI and FAKE_NPM as npm."""
     TS = "20261102T000000Z"
 
     def setUp(self):
@@ -514,7 +521,6 @@ class EndToEndTests(HookBase):
         directory = self.root / "evals" / "sample"
         (directory / "seed").mkdir(parents=True, exist_ok=True)
         (directory / "seed" / "README.md").write_text("x\n", encoding="utf-8")
-        import yaml
         (directory / "fixture.yaml").write_text(yaml.safe_dump({
             "skill": "sample", "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
             "prompt": "do it", "model": "claude-test-model", "fleet_hooks": hooks,
@@ -533,14 +539,16 @@ class EndToEndTests(HookBase):
             capture_output=True, text=True, env=env, cwd=str(ROOT), timeout=600)
 
     def calls(self):
-        import json
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
     def summary(self, arm):
-        import json
         return json.loads((self.root / "results" / "sample" / self.TS / arm / "summary.json")
                           .read_bytes())
 
+
+
+@unittest.skipUnless(sandbox_available(), "bubblewrap with a network namespace is not available")
+class EndToEndTests(MainRun):
     def test_the_agent_commits_through_the_frozen_runner_inside_its_sandbox(self):
         proc = self.run_main("commit")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -572,6 +580,98 @@ class EndToEndTests(HookBase):
         error = self.summary("with_skill")["error"]
         self.assertEqual(error["type"], "agent_wrote_agent_config")
         self.assertIn(fleet_hooks.DIRNAME, error["detail"])
+
+
+class PoolingTests(MainRun):
+    """The hook-set digest is recorded, ingested and pooled on (#535)."""
+
+    def runs(self, hooks_first=True):
+        stamps = {True: "20261102T000000Z", False: "20261102T010000Z"}
+        for hooks in (True, False):
+            self.TS = stamps[hooks]
+            proc = self.run_main("none", hooks=hooks)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.TS = stamps[True]
+        index = compute_gates.build_index(self.root, self.root / "evals", "99991231T235959Z")
+        self.assertEqual(index["skipped"], {})
+        by = {}
+        for run in index["runs"]:
+            by[(run["timestamp"] == stamps[True], run["role"])] = run
+        return by
+
+    def test_both_arms_record_the_plan_digest_and_ingest(self):
+        proc = self.run_main("none")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        digests = set()
+        for arm in ("with_skill", "without_skill"):
+            path = self.root / "results" / "sample" / self.TS / arm / "summary.json"
+            doc = json.loads(path.read_bytes())
+            ingest.check_summary(doc, path.name, ingest.parse_result_path(
+                path.relative_to(self.root / "results").as_posix()))
+            digests.add(doc["context"]["fleet_hooks_digest"])
+        self.assertEqual(digests, {self.freeze().digest})
+        bad = json.loads(path.read_bytes())
+        bad["context"]["fleet_hooks_digest"] = "sha256:" + "0" * 64
+        with self.assertRaises(ingest.Rejected):
+            ingest.check_summary(bad, path.name, ingest.parse_result_path(
+                path.relative_to(self.root / "results").as_posix()))
+
+    def test_an_unhooked_summary_has_no_digest(self):
+        proc = self.run_main("none", hooks=False)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("fleet_hooks_digest", self.summary("with_skill")["context"])
+
+    def test_runs_differing_only_in_hook_delivery_never_pool(self):
+        by = self.runs()
+        digest = self.freeze().digest
+        for role in ("with", "without"):
+            hooked, plain = by[(True, role)], by[(False, role)]
+            self.assertEqual(hooked["fleet_hooks_digest"], digest)
+            self.assertIsNone(plain["fleet_hooks_digest"])
+            # The unhooked keys are exactly what they were before the hooks.
+            summary = json.loads((self.root / plain["path"] / f"{role}_skill" / "summary.json")
+                                 .read_bytes())
+            self.assertEqual(plain["pair_key"], f"{summary['arm_context']['others_digest']}:"
+                                                f"{summary['context']['guidance']['digest']}")
+            self.assertEqual(plain["arm_context_digest"],
+                             f"{summary['arm_context']['skills_digest']}:"
+                             f"{summary['arm_context']['guidance_digest']}")
+            self.assertEqual((hooked["pair_key"], hooked["arm_context_digest"]),
+                             (f"{plain['pair_key']}:{digest}",
+                              f"{plain['arm_context_digest']}:{digest}"))
+        model = by[(True, "with")]["model"]
+        # Each kind alone is a cell; one arm of each is no pair at all.
+        self.assertEqual(gates._joint_context([by[(True, "with")]], [by[(False, "without")]],
+                                              [model]), (None, None, None))
+        self.assertEqual(gates._joint_context([by[(False, "with")]], [by[(True, "without")]],
+                                              [model]), (None, None, None))
+        with_ctx, without_ctx, pair = gates._joint_context(
+            [by[(True, "with")], by[(False, "with")]],
+            [by[(True, "without")], by[(False, "without")]], [model])
+        self.assertIn(pair, (by[(True, "with")]["pair_key"], by[(False, "with")]["pair_key"]))
+
+
+class GuidanceReasonTests(unittest.TestCase):
+    """Item 10: the alone pair never runs the hooks, so a hooked in-situ
+    retire that helps alone names them as a possible cover."""
+
+    def verdict(self, hooked):
+        from test_issue_124_guidance_gates import EXPECT, pair_runs
+        from test_issue_70_retirement import FLAT, FLAT_JUDGE, GAIN, TEST_POLICY
+        in_situ = pair_runs("in_situ", FLAT, FLAT)
+        for run in in_situ:
+            run["fleet_hooks_digest"] = "a" * 64 if hooked else None
+        runs = in_situ + pair_runs("alone", GAIN * 2, FLAT, ([8.0] * 20, FLAT_JUDGE))
+        return gates.guidance_verdict({"runs": runs}, ["model-a"], "sec", TEST_POLICY, EXPECT)
+
+    def test_the_reason_names_the_fleet_hooks_only_for_hooked_runs(self):
+        hooked, plain = self.verdict(True), self.verdict(False)
+        self.assertEqual((hooked["verdict"], plain["verdict"]),
+                         ("shorten-or-merge", "shorten-or-merge"))
+        self.assertTrue(hooked["reason"].endswith(
+            "the rest of the guidance or the fleet hooks cover it"), hooked["reason"])
+        self.assertTrue(plain["reason"].endswith("the rest of the guidance covers it"),
+                        plain["reason"])
 
 
 if __name__ == "__main__":

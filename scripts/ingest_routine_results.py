@@ -471,6 +471,11 @@ DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}")
 CONTEXT_KEYS = ("repository", "revision", "digest", "lock_digest", "sources",
                 "guidance", "measurements")
+#: Optional in `context` (#535, ADR 0012's fleet hooks addendum): the digest
+#: of the fleet hook set the arm ran with (run_eval's
+#: fleet_hooks.HookSet.digest). Absent for an unhooked run and in every
+#: summary from before the hooks.
+CONTEXT_OPTIONAL = ("fleet_hooks_digest",)
 SOURCE_KEYS = ("registry", "revision", "digest", "bundles")
 CONTEXT_GUIDANCE_KEYS = ("revision", "digest", "bytes", "sections", "hook_digest")
 MEASUREMENT_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
@@ -520,7 +525,10 @@ def check_in_place(doc, where: str, parts: dict) -> None:
         raise Rejected(f"{where}: role does not match its arm")
 
     context = doc["context"]
-    _object(context, f"{where}: context", CONTEXT_KEYS, CONTEXT_KEYS)
+    _object(context, f"{where}: context", CONTEXT_KEYS + CONTEXT_OPTIONAL, CONTEXT_KEYS)
+    if "fleet_hooks_digest" in context:
+        _pattern(context["fleet_hooks_digest"], f"{where}: context.fleet_hooks_digest",
+                 DIGEST_RE)
     _pattern(context["repository"], f"{where}: context.repository", REPOSITORY_RE)
     _pattern(context["revision"], f"{where}: context.revision", SHA_RE)
     _pattern(context["digest"], f"{where}: context.digest", DIGEST_RE)

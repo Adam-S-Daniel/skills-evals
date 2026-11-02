@@ -317,6 +317,14 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     others = context_block.get("others_digest") if isinstance(context_block, dict) else None
     pair_key = (f"{others}:{guidance_base}"
                 if _string(others) and _string(guidance_base) else None)
+    # #535: a hooked run pools only with runs of the same hook set, and never
+    # with an unhooked one; an unhooked run's keys are exactly as before.
+    hooks = frozen.get("fleet_hooks_digest") if isinstance(frozen, dict) else None
+    if hooks is not None:
+        if not (_string(hooks) and ingest.DIGEST_RE.fullmatch(hooks)):
+            return None, "malformed arm summary"
+        context_digest = f"{context_digest}:{hooks}" if context_digest else None
+        pair_key = f"{pair_key}:{hooks}" if pair_key else None
     carried, has_checks = _fixture_class(evals_dir, skill, fixture, records)
     clis = sorted({doc["harness"]["version"] for doc in (summary, *trials)
                    if isinstance(doc.get("harness"), dict)
@@ -328,6 +336,7 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
                               if isinstance(subject, dict) else None),
             "fixture_digest": summary.get("fixture_digest"),
             "arm_context_digest": context_digest, "pair_key": pair_key, "cli_versions": clis,
+            "fleet_hooks_digest": hooks,
             "run": summary["run"],
             # Judged unconditionally only when every trial says so (#70).
             "judge_conditional": not all(t.get("judge_conditional") is False
@@ -394,6 +403,14 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     # without the payload (recorded before it existed) keeps the rest key.
     alone = pair == "alone" and payload is not None
     context = (("none" if role == "without" else payload) if alone else digests["rest"])
+    pair_key = "alone" if alone else digests["rest"]
+    # #535, as for a skill run: a hooked run's keys carry its hook set.
+    frozen = summary.get("context")
+    hooks = frozen.get("fleet_hooks_digest") if isinstance(frozen, dict) else None
+    if hooks is not None:
+        if not (_string(hooks) and ingest.DIGEST_RE.fullmatch(hooks)):
+            return None, "no guidance pooling key"
+        context, pair_key = f"{context}:{hooks}", f"{pair_key}:{hooks}"
     carried, has_checks = _fixture_class(evals_dir, subject, name, records)
     harness = summary.get("harness")
     clis = ([harness["version"]] if isinstance(harness, dict)
@@ -402,8 +419,8 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
             "pair": pair, "timestamp": timestamp, "path": run_dir, "report": report,
             "tested_digest": digests["section"],
             "fixture_digest": summary["fixture_digest"],
-            "arm_context_digest": context, "pair_key": "alone" if alone else digests["rest"],
-            "cli_versions": clis, "run": summary["run"],
+            "arm_context_digest": context, "pair_key": pair_key,
+            "fleet_hooks_digest": hooks, "cli_versions": clis, "run": summary["run"],
             "judge_conditional": summary.get("judge_conditional") is not False,
             "judge_carried": carried, "fixture_checks": has_checks,
             "trials": records, "content": _content(raw, [])}, None
