@@ -9,6 +9,7 @@
   "automation-vs-branch-protection",
   "two-github-connectors",
   "agent-contribution-markers",
+  "pr-tldr",
   "github-404-means-not-authorized",
   "fleet-spans-two-owners",
   "watch-finished-is-not-ci-passed",
