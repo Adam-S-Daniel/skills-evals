@@ -368,7 +368,7 @@
   "skipped": 11,
   "total": 36
  },
- "generated_at": "2026-11-02T17:45:47Z",
+ "generated_at": "2026-11-02T17:46:45Z",
  "guidance": {
   "sections": [
    {
@@ -384,7 +384,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 26,
+     "position": 25,
      "scheduled": true
     },
     "runs": [],
@@ -409,7 +409,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -509,7 +509,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 8,
+     "position": 7,
      "scheduled": true
     },
     "runs": [],
@@ -534,7 +534,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 27,
+     "position": 26,
      "scheduled": true
     },
     "runs": [],
@@ -559,7 +559,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
@@ -624,7 +624,7 @@
     "next_test": {
      "band": "near",
      "due": null,
-     "position": 28,
+     "position": 27,
      "scheduled": true
     },
     "runs": [
@@ -726,7 +726,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 13,
+     "position": 12,
      "scheduled": true
     },
     "runs": [],
@@ -751,7 +751,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 6,
+     "position": 5,
      "scheduled": true
     },
     "runs": [],
@@ -776,7 +776,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 23,
+     "position": 22,
      "scheduled": true
     },
     "runs": [],
@@ -928,7 +928,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 12,
+     "position": 11,
      "scheduled": true
     },
     "runs": [],
@@ -953,7 +953,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 9,
+     "position": 8,
      "scheduled": true
     },
     "runs": [],
@@ -978,7 +978,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 25,
+     "position": 24,
      "scheduled": true
     },
     "runs": [],
@@ -1003,7 +1003,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 11,
+     "position": 10,
      "scheduled": true
     },
     "runs": [],
@@ -1028,7 +1028,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 7,
+     "position": 6,
      "scheduled": true
     },
     "runs": [],
@@ -1051,12 +1051,49 @@
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
-     "band": "missing",
+     "band": "near",
      "due": null,
-     "position": 1,
+     "position": 28,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-02T17:44:05Z",
+      "cli_version": "2.1.316",
+      "fixture": "bundle-lock-name",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.19868619999999998,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.2217778,
+        "judge_mean": 8.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.1204414,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.11193639999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T174252Z-76c552/guidance/name-becomes-scanner-data/20261102T174405Z/report.md"
+     },
      {
       "at": "2026-11-01T15:32:14Z",
       "cli_version": "2.1.316",
@@ -1118,7 +1155,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [
@@ -1183,7 +1220,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -1248,7 +1285,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 22,
+     "position": 21,
      "scheduled": true
     },
     "runs": [],
@@ -1273,7 +1310,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 21,
+     "position": 20,
      "scheduled": true
     },
     "runs": [],
@@ -1298,7 +1335,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 24,
+     "position": 23,
      "scheduled": true
     },
     "runs": [],
@@ -1323,7 +1360,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 10,
+     "position": 9,
      "scheduled": true
     },
     "runs": [],
@@ -1348,7 +1385,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 14,
+     "position": 13,
      "scheduled": true
     },
     "runs": [],
@@ -1373,7 +1410,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 15,
+     "position": 14,
      "scheduled": true
     },
     "runs": [],
@@ -1398,7 +1435,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 16,
+     "position": 15,
      "scheduled": true
     },
     "runs": [],
@@ -1423,7 +1460,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 17,
+     "position": 16,
      "scheduled": true
     },
     "runs": [],
@@ -1448,7 +1485,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 18,
+     "position": 17,
      "scheduled": true
     },
     "runs": [],
@@ -1473,7 +1510,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 19,
+     "position": 18,
      "scheduled": true
     },
     "runs": [],
@@ -1498,7 +1535,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 20,
+     "position": 19,
      "scheduled": true
     },
     "runs": [],
@@ -1512,7 +1549,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T17:42:29Z",
+ "newest_run": "2026-11-02T17:44:05Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -7420,7 +7457,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "1dbcb7e669fe7acd71565f86f003102c077c6606",
-  "results_commit": "322321b2b67df5d613e171661e1ba91e01872d3e"
+  "results_commit": "ab440f7c450519deb82fa77789aed36ac882e4ad"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
