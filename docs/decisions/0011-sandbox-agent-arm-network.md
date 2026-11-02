@@ -360,6 +360,24 @@ An independent review of the merged decision found four routes around it.
   writes elsewhere in the workspace worked, and `.claude/` held only
   `.cc-writes/` afterwards. No fixture's task writes under `.claude/`, so no
   opt-out exists.
+- **The CLI runs programs from PATH outside the sandbox** (#606). At every
+  launch CLI 2.1.316 ran a planted `git` (`ls-files`, `status`, `log`,
+  `config user.name`) and `sh -c uname -s ...` from the first PATH
+  directory, unconfined (measured with a dead `ANTHROPIC_BASE_URL`, no model
+  call). A follow-up turn is a new launch, and fixtures put
+  `$WORKSPACE/bin` first on PATH, so a `bin/git` an agent wrote in one turn
+  would run with network and the arm's credentials at the start of the
+  next. Every absolute PATH entry inside the workspace
+  (`run_eval._agent_path_dirs`, as given and resolved) is guarded like
+  `.claude/`: the same `Edit(...)` deny rules and `denyWrite`, and a trial
+  in which anything under one changed during a turn (content, mode, a
+  symlink, the directory appearing) fails after that turn with
+  `agent_wrote_agent_config`. Relative and empty PATH entries, which the
+  CLI searches from the workspace, are dropped from the arm's PATH, and an
+  entry that is the workspace itself refuses the arm (`read_rules_unsafe`),
+  since it cannot be write-protected without the whole workspace
+  (`run_eval.workspace_path_or_error`). No fixture's stand-ins write their
+  own directory, so no opt-out exists.
 - **Claude in Chrome is a browser outside the sandbox**, and
   `--strict-mcp-config` does not remove it (`CLAUDE_CODE_ENABLE_CFC` or the
   account default turns it on, CLI 2.1.292). Every turn passes `--no-chrome`,

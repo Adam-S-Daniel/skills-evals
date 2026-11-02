@@ -1879,6 +1879,89 @@ def _agent_config_dirs(workspace: Path, config_dir: Path | None = None) -> list[
     return out
 
 
+def _agent_path_dirs(workspace: Path, path_env: str) -> list[Path]:
+    """The arm's PATH directories that lie in its workspace (#606), each as
+    given and resolved, in PATH order.
+
+    The CLI itself starts programs from PATH OUTSIDE the sandbox: at every
+    launch it ran a planted `git` (`ls-files`, `status`, `log`, ...) and
+    `sh -c uname -s ...` from the first PATH directory (CLI 2.1.316,
+    measured with a dead API URL). A follow-up turn is a new launch
+    (`--resume`), and a fixture that puts `$WORKSPACE/bin` first on PATH
+    gives the agent that directory, so a `bin/git` written in one turn ran
+    unconfined, with network, at the start of the next. These directories
+    are guarded like `_agent_config_dirs`: `Edit(...)` deny rules and
+    `denyWrite` in the arm's settings, and the snapshot that fails the trial
+    after any turn in which one changed (`agent_wrote_agent_config`).
+
+    Only absolute entries: `workspace_path_or_error` has already dropped the
+    relative ones and refused the workspace itself, a `..` component and a
+    directory that does not exist. Entries outside the
+    workspace are not named: the sandbox does not let Bash write them, and
+    the stand-ins fixtures put on PATH all live in the workspace.
+    """
+    root = Path(workspace)
+    real_root = root.resolve()
+    out: list[Path] = []
+    for entry in (path_env or "").split(os.pathsep):
+        if not os.path.isabs(entry):
+            continue
+        given = Path(os.path.normpath(entry))
+        resolved = given.resolve()
+        if not (_within(given, root) or _within(given, real_root)
+                or _within(resolved, real_root)):
+            continue
+        for path in (given, resolved):
+            if path not in out:
+                out.append(path)
+    return out
+
+
+def workspace_path_or_error(path_env: str, workspace: Path) -> str:
+    """The arm's PATH without relative or empty entries, or
+    ArmReadIsolationError (`read_rules_unsafe`) when an entry is the
+    workspace itself (#606).
+
+    The CLI runs PATH programs outside the sandbox and searches a relative or
+    empty entry from its cwd, the workspace, which the agent writes freely; a
+    PATH entry that IS the workspace cannot be write-protected without
+    protecting the whole workspace. No fixture uses either: they put
+    `$WORKSPACE/<dir>` on PATH, which `_agent_path_dirs` guards. An entry in
+    the workspace with a `..` component, or that is not an existing
+    directory, is refused too: the kernel resolves `..` after any symlink
+    the agent plants before it, and a directory created later has no
+    baseline in the snapshot. A dropped
+    relative entry is the operator's (a trailing `:`, a `.`), never a
+    fixture's stand-in."""
+    root = Path(workspace)
+    real_root = root.resolve()
+    kept = []
+    for entry in (path_env or "").split(os.pathsep):
+        if not os.path.isabs(entry):
+            continue
+        given = Path(os.path.normpath(entry))
+        if real_root in (given, given.resolve()) or given == root:
+            raise ArmReadIsolationError(
+                "a PATH entry is the arm's workspace, which the CLI would run "
+                "programs from outside the sandbox; put stand-ins in a "
+                "directory under it", code="read_rules_unsafe")
+        inside = (_within(given, root) or _within(given, real_root)
+                  or _within(given.resolve(), real_root))
+        # `..` is normalized here lexically but resolved by the kernel after
+        # any symlink before it, which the agent could plant; and a
+        # directory that does not exist yet has no baseline to compare.
+        if inside and ".." in Path(entry).parts:
+            raise ArmReadIsolationError(
+                "a PATH entry in the arm's workspace has a `..` component",
+                code="read_rules_unsafe")
+        if inside and not given.is_dir():
+            raise ArmReadIsolationError(
+                "a PATH entry in the arm's workspace is not an existing "
+                "directory", code="read_rules_unsafe")
+        kept.append(entry)
+    return os.pathsep.join(kept)
+
+
 # The prefixes of every named temporary store the harness and scripts make
 # under TMPDIR (including explicit parents that may be TMPDIR): other
 # arms' workspaces and scratch profiles (transcripts), canary and
@@ -2013,6 +2096,11 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     keep = Path(session_dir).resolve() if session_dir else None
     config_dirs = (_agent_config_dirs(workspace, config_dir)
                    if workspace is not None else [])
+    # The workspace's PATH directories, which the CLI runs programs from
+    # outside the sandbox, are no more the agent's to write (#606).
+    if workspace is not None:
+        config_dirs += [path for path in _agent_path_dirs(workspace, path_env)
+                        if path not in config_dirs]
     protected = [*_SYSTEM_ROOTS,
                  *(Path(e).resolve() for e in path_env.split(os.pathsep)
                    if e and os.path.isabs(e))]
@@ -2484,13 +2572,67 @@ def _config_snapshot(root: Path, label: str, trees=(), markers=None,
     return out
 
 
+def _path_dir_snapshot(path: Path, label: str) -> dict[str, bytes]:
+    """Everything under one of the arm's PATH directories (#606), by
+    `label`-prefixed relative path: each entry's mode with a file's SHA-256 or
+    a symlink's target, so a new program, a changed one, a mode change (an
+    exec bit) or a swapped symlink all differ. The directory's own absence,
+    or a symlink or file in its place, is recorded too: a directory created
+    later is a change. Nothing is exempt."""
+    def entry(item: Path) -> bytes:
+        info = os.lstat(item)
+        mode = f"{stat.S_IMODE(info.st_mode):o}:".encode()
+        if stat.S_ISLNK(info.st_mode):
+            # And what it leads to: a link's target may lie outside the
+            # guarded directory, where a write is not denied.
+            target = Path(os.path.realpath(item))
+            try:
+                body = (hashlib.sha256(target.read_bytes()).digest()
+                        if target.is_file() else b"-")
+                body += f":{stat.S_IMODE(os.stat(target).st_mode):o}".encode()
+            except OSError:
+                body = b"<unresolved>"
+            return b"symlink:" + mode + os.readlink(item).encode() + b"->" + body
+        if stat.S_ISDIR(info.st_mode):
+            return b"dir:" + mode
+        if stat.S_ISREG(info.st_mode):
+            try:
+                return b"file:" + mode + hashlib.sha256(item.read_bytes()).digest()
+            except OSError:
+                return b"<unreadable>"
+        return b"other:" + mode + str(stat.S_IFMT(info.st_mode)).encode()
+
+    try:
+        out = {label: entry(path)}
+    except FileNotFoundError:
+        return {label: b"<absent>"}
+    if not out[label].startswith(b"dir:"):
+        return out
+    for current, dirs, files in os.walk(path):
+        rel_dir = Path(current).relative_to(path)
+        for name in sorted(dirs + files):
+            try:
+                out[f"{label}/{(rel_dir / name).as_posix()}"] = entry(Path(current) / name)
+            except FileNotFoundError:
+                out[f"{label}/{(rel_dir / name).as_posix()}"] = b"<vanished>"
+    return out
+
+
 def _agent_config_snapshot(workspace: Path, config_dir: Path | None = None,
-                           shared: bool = False) -> dict[str, bytes | None]:
+                           shared: bool = False,
+                           path_dirs=()) -> dict[str, bytes | None]:
     """The workspace's `.claude/` and the arm's profile, by relative path (see
     `_config_snapshot`): a scratch profile whole, a shared one (`shared`)
-    only where the CLI loads configuration from."""
+    only where the CLI loads configuration from. And every one of
+    `path_dirs` (`_agent_path_dirs`), named relative to the workspace when it
+    lies there lexically (`_path_dir_snapshot`)."""
     out = _config_snapshot(Path(workspace) / ".claude", ".claude",
                            trees=_CLI_WORKSPACE_TREES)
+    for path in path_dirs:
+        path = Path(path)
+        label = (f"PATH:{path.relative_to(workspace).as_posix()}"
+                 if _within(path, Path(workspace)) else f"PATH:{path}")
+        out.update(_path_dir_snapshot(path, label))
     if config_dir is not None:
         if shared:
             out.update(_config_snapshot(Path(config_dir), "$CLAUDE_CONFIG_DIR",
@@ -2506,10 +2648,10 @@ def _agent_config_snapshot(workspace: Path, config_dir: Path | None = None,
 
 def _agent_config_written(workspace: Path, before: dict,
                           config_dir: Path | None = None,
-                          shared: bool = False) -> str | None:
+                          shared: bool = False, path_dirs=()) -> str | None:
     """What the agent created, changed or removed in its configuration since
     `before`, named relative to the workspace or profile (at most five)."""
-    after = _agent_config_snapshot(workspace, config_dir, shared)
+    after = _agent_config_snapshot(workspace, config_dir, shared, path_dirs)
     changed = sorted(name for name in set(before) | set(after)
                      if name not in before or name not in after
                      or before[name] != after[name])
@@ -2906,7 +3048,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     aliases = [path for label, path in denied if label == MOUNT_ALIAS_LABEL]
     if "PATH" in env:
         try:
-            env["PATH"] = arm_path_or_error(env["PATH"], aliases)
+            env["PATH"] = workspace_path_or_error(
+                arm_path_or_error(env["PATH"], aliases), workspace)
         except ArmReadIsolationError as exc:
             return {"error": exc.code, "detail": str(exc)}
     # Where this arm's CLI saves its session, which the read rules leave open
@@ -3050,7 +3193,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         turns: list[dict] = []
         # What the harness installed (a with_skill arm's skill), before the
         # agent's first turn.
-        config_before = _agent_config_snapshot(workspace, config_dir, shared_profile)
+        path_dirs = _agent_path_dirs(workspace, env.get("PATH", ""))
+        config_before = _agent_config_snapshot(workspace, config_dir, shared_profile,
+                                               path_dirs)
         for index, text in enumerate(texts):
             label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
             turn_cmd = cmd
@@ -3137,7 +3282,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # (blocked by the settings above) is not the arm the fixture
             # describes, and project settings reload mid-session.
             written = _agent_config_written(workspace, config_before, config_dir,
-                                            shared_profile)
+                                            shared_profile, path_dirs)
             if written:
                 return traced({"error": "agent_wrote_agent_config",
                                "detail": f"{label}the agent wrote {written}",
