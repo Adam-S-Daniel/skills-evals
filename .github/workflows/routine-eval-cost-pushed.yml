@@ -1,0 +1,41 @@
+name: Routine eval cost pushed
+
+# The trigger half of the improve-cost ingest (#572 part 1, 2026-11-02). On
+# EVERY improve or guidance-improve exit the eval routine pushes
+# `claude/eval-cost-<run id>` adding exactly
+# `improve-cost/<run id>/cost.json` (scripts/improve_cost.py summarize);
+# this workflow does nothing but exist for that push, so that
+# `routine-eval-ingest.yml` (the ONE ingest, and so the one trust gate) can
+# run on its `workflow_run` event and dispatch on the branch regex to its
+# cost validator.
+#
+# Why its own workflow and not a second entry in
+# routine-eval-results-pushed.yml: a push filter's `branches` and `paths`
+# combine across the whole trigger, so one workflow cannot give cost
+# branches their own path. That workflow also excludes
+# `!claude/eval-cost-*`, so a cost branch can never start the eval trigger,
+# and `improve-cost/**` is disjoint from `eval-results/**`,
+# `eval-improve/**` and `eval-guidance-improve/**`, so no other gate sees a
+# cost push.
+#
+# Same split and the same reach as the other routine signals: a `push`
+# workflow runs the PUSHED commit's copy of itself, so this job holds no
+# permissions, checks nothing out and runs nothing from the branch. This is
+# not a pull_request workflow, so it publishes no required check.
+
+on:
+  push:
+    branches:
+      - claude/eval-cost-*
+    paths:
+      - improve-cost/**
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hand off to the ingest workflow
+        run: echo "Improve cost record pushed; routine-eval-ingest.yml validates and ingests it from the default branch."

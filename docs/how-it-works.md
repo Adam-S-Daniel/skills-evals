@@ -340,6 +340,69 @@ SKILL.md has at least half its non-blank body lines under a heading naming a
 checklist, rules or checks. That heuristic is cheap and misses rules written
 as prose.
 
+### Routine improve mode: what each run costs (#572)
+
+Every improve and guidance-improve run (2026-11-02) records what it
+measurably spent. On EVERY exit (accepted, rejected, refused, error or
+timeout) the routine runs `scripts/improve_cost.py summarize` over the
+loop's results directory and pushes the one file it writes on
+`claude/eval-cost-<run id>`; `routine-eval-cost-pushed.yml` signals
+`routine-eval-ingest.yml`, whose `validate` dispatches on the branch regex,
+accepts exactly `improve-cost/<run id>/cost.json` passing
+`improve_cost.check_record` (and refuses a private skill's name), and lands
+it at `improve-costs/<run id>.json` on `persistent/eval-results`. A rejected
+branch ends the ingest run red, as an eval rejection does; a second,
+differing record for one run id is logged and dropped (the first stands). A
+cost ingest, like an eval one, also wakes `explorer-data.yml` and
+`routine-eval-weekly.yml`'s top-up re-plan.
+
+The record holds numbers, enums and checked ids only: the trials' list-priced
+`agent_usd`, `judge_usd` and `guard_usd` (and `usd_unpriced_trials`), each
+side's trials and dollars, the proposal call's dollars and tokens (the
+proposer writes `$RESULTS/proposal-<ts>.json` from `Runner.last_usage`), the
+trigger loop's call count (its dollars are unknown), the arm and proposal
+models, busy and span seconds, and the weekly meter's first and last
+snapshot across all trials with their `delta` (null across a window reset or
+with fewer than two snapshots). The guard does not charge it yet: that, and
+recomputing the improve fire's reservation from these records, is a
+follow-up once at least six exist.
+
+The routine's saved prompt is not in this repository. Its improve sections,
+and the rule sentence that allows the cost branch, read as follows (a test
+holds the commands in them to the scripts' own flags):
+
+```text
+Never dispatch workflows, open PRs or issues, or edit any file in the repos except the branches your mode allows (improve and guidance-improve modes: their result branch and claude/eval-cost-<run_id>).
+
+IMPROVE MODE (payload "mode": "improve" only). You run the skill improvement loop for ONE skill and, only if it accepts a candidate, push ONE branch claude/eval-improve-<run_id>; on every exit you also push the one cost branch of step 5. You never open, edit or comment on a pull request, never push to main or persistent/*, and never edit adam-agentskills.
+1. In skills-evals, check out the default branch. Use the adam-agentskills checkout at its default branch as $REG and record REG_SHA=$(git -C "$REG" rev-parse HEAD). Install the harness pins: python3 -m pip install --user pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1. Fetch skill-creator read-only at exactly commit 2a40fd2e7c52207aa903bd33fc4c65716126966e of https://github.com/anthropics/claude-plugins-official (e.g. git clone --filter=blob:none --no-checkout, then git checkout 2a40fd2e7c52207aa903bd33fc4c65716126966e -- plugins/skill-creator) into a temp dir; SC=<that dir>/plugins/skill-creator/skills/skill-creator. Never use any other commit or plugin.
+2. Re-check the payload: evals/<skill>/ must hold at least three fixture directories and holdout (if not null) must be one of them; else REFUSED. Build the guard's unset list AT RUN TIME (never a fixed list), then run the loop under it with a results directory OUTSIDE the checkout:
+   mapfile -t refused < <(python3 -c 'import os, sys; sys.path.insert(0, "scripts"); import local_eval_guard as g; print("\n".join(g.refused_env_names(os.environ)))' | sed '/^$/d')
+   unset_args=(); for name in "${refused[@]}"; do unset_args+=(-u "$name"); done
+   env "${unset_args[@]}" python3 scripts/propose_skill_edit.py "$SKILL" --registry adam-agentskills="$REG" --ref "$REG_SHA" --skill-creator "$SC" --trials "$TRIALS" [--holdout "$HOLDOUT" only when not null] [--trigger-eval-set evals/$SKILL/trigger-eval-set.json only when that file exists] --results-dir "$RESULTS"
+   Run that propose_skill_edit.py command in the background with a Bash timeout of 5400000 ms (90 minutes), never less, and wait for its exit code before going on. Do not edit scripts/local_eval_guard.py or bypass it any other way. Exit 0 = accepted, 1 = rejected, 2 = refused. On exit 1 or 2 push no claude/eval-improve branch; go to step 5, then end with the status and the record's reasons (or the refusal line). If the payload re-check refused the run before the loop started, go to step 5 with exit code none.
+3. On exit 0 only: create branch claude/eval-improve-<run_id> from the default branch and add exactly three files from $RESULTS/improvements/<skill>/<ts>.*: <ts>.json as eval-improve/<run_id>/summary.json, <ts>.pr-body.md as eval-improve/<run_id>/report.md, <ts>.patch as eval-improve/<run_id>/skill.patch. Commit nothing else. Before pushing, self-check: python3 scripts/improve_gate.py validate --repo . --base origin/<default> --source HEAD --branch claude/eval-improve-<run_id> --out "$(mktemp -d)"; if it prints rejected:, push nothing and report that line.
+4. Push only that branch and verify with git merge-base --is-ancestor <sha> origin/claude/eval-improve-<run_id>. Never open a pull request: routine-improve-gate.yml validates the branch and opens the draft PR.
+5. COST RECORD, on EVERY exit (0, 1, 2, an error, the 90-minute timeout, or a refusal before the loop started), once per run id, after step 4 if it ran: with RUN_ID set to the payload's run_id and COST=$(mktemp -d) (outside the checkout), from the skills-evals checkout run
+   python3 scripts/improve_cost.py summarize --results-dir "$RESULTS" --run-id "$RUN_ID" --mode improve --target "$SKILL" --exit-code <the loop's exit code 0, 1 or 2, or none when it gave none> --out "$COST/improve-cost/$RUN_ID/cost.json"
+   (when the loop never started, pass a fresh empty directory as --results-dir). If it exits 0: W=$(mktemp -d)/w; git worktree add -b claude/eval-cost-$RUN_ID "$W" origin/<default>; mkdir -p "$W/improve-cost/$RUN_ID"; cp "$COST/improve-cost/$RUN_ID/cost.json" "$W/improve-cost/$RUN_ID/cost.json"; git -C "$W" add -- "improve-cost/$RUN_ID/cost.json". Verify that git -C "$W" diff --cached --name-only prints exactly improve-cost/$RUN_ID/cost.json and nothing else; otherwise push nothing in this step and report it. Never use git add -A or git add . here, and never edit that file or put anything else on that branch. Commit with the message "Improve cost <run_id>", push only claude/eval-cost-$RUN_ID, and verify with git -C "$W" merge-base --is-ancestor <sha> origin/claude/eval-cost-$RUN_ID. If summarize, the commit or the push fails, report it and go on: it never changes RESULT.
+6. Final message: skill, trials, holdout, loop exit code, wall time, the record's decision and reasons, token/cost figures if reported, branch pushed (or none), cost branch pushed (or why not), and RESULT: ok|error|refused.
+
+GUIDANCE-IMPROVE MODE (payload "mode": "guidance-improve" only). You run the guidance improvement loop for ONE _agent-guidance section and, only if it accepts a candidate, push ONE branch claude/eval-guidance-improve-<run_id>; on every exit you also push the one cost branch of step 5. You never open, edit or comment on a pull request, never push to main or persistent/*, and never edit or push to _agent-guidance.
+1. In skills-evals, check out the default branch. Use the _agent-guidance checkout at its default branch, with its full history, as $AG and record AG_SHA=$(git -C "$AG" rev-parse HEAD). Install the harness pins: python3 -m pip install --user pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1. The proposer validates its patch with _agent-guidance's own checks, which need `node` on PATH and that checkout's packages: run (cd "$AG" && npm ci); if node is missing or npm ci fails, end with RESULT: refused and that reason.
+2. Re-check the payload: `section` must match ^[a-z0-9][a-z0-9-]{0,63}$ and `python3 scripts/guidance_improve_gate.py fire-check "$SECTION" --holdout="$HOLDOUT" --guidance "$AG"` (pass --holdout= with an empty value when holdout is null) must exit 0; else REFUSED. Build the guard's unset list AT RUN TIME (never a fixed list), then run the loop under it with a results directory OUTSIDE the checkout:
+   mapfile -t refused < <(python3 -c 'import os, sys; sys.path.insert(0, "scripts"); import local_eval_guard as g; print("\n".join(g.refused_env_names(os.environ)))' | sed '/^$/d')
+   unset_args=(); for name in "${refused[@]}"; do unset_args+=(-u "$name"); done
+   env "${unset_args[@]}" python3 scripts/propose_guidance_edit.py "$SECTION" --guidance "$AG" --ref "$AG_SHA" --trials "$TRIALS" [--holdout "$HOLDOUT" only when not null] --results-dir "$RESULTS"
+   Run that propose_guidance_edit.py command in the background with a Bash timeout of 5400000 ms (90 minutes), never less, and wait for its exit code before going on. In this mode the nested-agent limit is 100 (not the default 60): the loop starts one agent session per fixture, side and trial, up to 6 fixtures x 2 sides x 3 trials x 2 (its one re-run) + 1 proposal call = 73, with margin. Stop at the 90-minute timeout regardless. Do not pass --dry-run, --no-judge or --rotation. Do not edit scripts/local_eval_guard.py or bypass it any other way. Exit 0 = accepted (and the patch passed _agent-guidance's checks), 1 = rejected, 2 = refused. On exit 1 or 2 push no claude/eval-guidance-improve branch; go to step 5, then end with the status and the record's reasons (or the refusal line). If the payload re-check refused the run before the loop started, go to step 5 with exit code none.
+3. On exit 0 only: create branch claude/eval-guidance-improve-<run_id> from the default branch and add exactly three files from $RESULTS/guidance-improvements/<section>/<ts>.*: <ts>.json as eval-guidance-improve/<run_id>/summary.json, <ts>.pr-body.md as eval-guidance-improve/<run_id>/report.md, <ts>.patch as eval-guidance-improve/<run_id>/guidance.patch. Commit nothing else. Before pushing, self-check: python3 scripts/guidance_improve_gate.py validate --repo . --base origin/<default> --source HEAD --branch claude/eval-guidance-improve-<run_id> --out "$(mktemp -d)"; if it prints rejected:, push nothing and report that line.
+4. Push only that branch and verify with git merge-base --is-ancestor <sha> origin/claude/eval-guidance-improve-<run_id>. Never open a pull request: routine-guidance-improve-gate.yml validates the branch and opens the pull request in _agent-guidance.
+5. COST RECORD, on EVERY exit (0, 1, 2, an error, the 90-minute timeout, or a refusal before the loop started), once per run id, after step 4 if it ran: with RUN_ID set to the payload's run_id and COST=$(mktemp -d) (outside the checkout), from the skills-evals checkout run
+   python3 scripts/improve_cost.py summarize --results-dir "$RESULTS" --run-id "$RUN_ID" --mode guidance-improve --target "$SECTION" --exit-code <the loop's exit code 0, 1 or 2, or none when it gave none> --out "$COST/improve-cost/$RUN_ID/cost.json"
+   (when the loop never started, pass a fresh empty directory as --results-dir). If it exits 0: W=$(mktemp -d)/w; git worktree add -b claude/eval-cost-$RUN_ID "$W" origin/<default>; mkdir -p "$W/improve-cost/$RUN_ID"; cp "$COST/improve-cost/$RUN_ID/cost.json" "$W/improve-cost/$RUN_ID/cost.json"; git -C "$W" add -- "improve-cost/$RUN_ID/cost.json". Verify that git -C "$W" diff --cached --name-only prints exactly improve-cost/$RUN_ID/cost.json and nothing else; otherwise push nothing in this step and report it. Never use git add -A or git add . here, and never edit that file or put anything else on that branch. Commit with the message "Improve cost <run_id>", push only claude/eval-cost-$RUN_ID, and verify with git -C "$W" merge-base --is-ancestor <sha> origin/claude/eval-cost-$RUN_ID. If summarize, the commit or the push fails, report it and go on: it never changes RESULT.
+6. Final message: section, trials, holdout, loop exit code, wall time, the record's decision and reasons, token/cost figures if reported, branch pushed (or none), cost branch pushed (or why not), and RESULT: ok|error|refused.
+```
+
 ### Skill retirement (#70)
 
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs

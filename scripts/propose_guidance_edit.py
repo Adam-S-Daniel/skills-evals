@@ -237,9 +237,16 @@ class Runner:
             except OSError as exc:
                 raise Refusal(f"run_eval could not run: {type(exc).__name__}") from exc
 
+    #: The last proposal call's numbers, as pse.Runner keeps them (#572).
+    last_usage: dict | None = None
+
     def propose(self, prompt: str, model: str) -> str:
         """propose_skill_edit's call: one headless call, no tools."""
-        return pse.Runner().propose(prompt, model)
+        inner = pse.Runner()
+        try:
+            return inner.propose(prompt, model)
+        finally:
+            self.last_usage = inner.last_usage
 
 
 # ---------------------------------------------------------------------------
@@ -1023,6 +1030,8 @@ def run_pipeline(args, runner, now, validator, p, ts, stem, scratch) -> int:
         reply = runner.propose(prompt, p["proposal_model"])
     except Refusal as exc:
         return record_refusal(stem, record, "proposal", exc)
+    finally:
+        pse.write_proposal_usage(results, ts, runner)
     try:
         proposal = parse_proposal(reply)
         record["proposal"] = {"model": p["proposal_model"],

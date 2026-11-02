@@ -33,11 +33,20 @@ checkout, refusing to overwrite a file that differs.
 Subcommands (all output is `key=value` lines of already-validated values,
 for $GITHUB_OUTPUT):
 
-  resolve  --event-name NAME --event-path PATH
+  resolve  --event-name NAME --event-path PATH         (adds kind=eval|cost)
   validate --repo DIR --base REF --source REF --branch NAME
-           [--expect-sha SHA] --out DIR
-  place    --staged DIR --tree DIR
+           [--expect-sha SHA] --out DIR                (adds kind=, dest=)
+  place    --staged DIR --tree DIR [--kind eval|cost]
   estimate --tree DIR --run-id ID
+
+A `claude/eval-cost-<run id>` branch (#572 part 1, 2026-11-02) is the other
+kind: `validate` dispatches on the branch regex to `validate_cost`, which
+accepts exactly one `improve-cost/<run id>/cost.json` passing
+scripts/improve_cost.py's `check_record` and stages it at
+`improve-costs/<run id>.json`. A rejection of either kind exits 1 (the run
+goes red: that is the alarm). `place --kind cost` keeps the first record
+ingested for a run id and reports `conflict=true`, exit 0, for a differing
+second one.
 
 `estimate` writes `routine-results/<run id>/cost_estimate.json` beside a run
 just placed (owner decision, 2026-11-01): each run_eval invocation's
@@ -64,6 +73,19 @@ from pathlib import Path
 
 RUN_ID = r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}"
 BRANCH_RE = re.compile(rf"claude/eval-(?P<run_id>{RUN_ID})")
+#: An improve run's cost record (#572 part 1, 2026-11-02): the routine
+#: pushes `claude/eval-cost-<run id>` on EVERY improve or guidance-improve
+#: exit, adding exactly COST_SOURCE. Used with fullmatch only, so it and
+#: BRANCH_RE never match one name (`cost-` is not a run id's digits).
+COST_BRANCH_RE = re.compile(rf"claude/eval-cost-(?P<run_id>{RUN_ID})")
+COST_SOURCE_ROOT = "improve-cost"
+COST_SOURCE_NAME = "cost.json"
+#: Where an accepted record lands on persistent/eval-results: its own root,
+#: never `routine-results/`, which the allowance guard and `calibrate` read
+#: as one directory per ingested EVAL run (a cost record there would free
+#: an eval fire's reservation).
+COST_DEST_ROOT = "improve-costs"
+COST_CAP = 4 * 1024
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 TIMESTAMP_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z")
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -1508,10 +1530,89 @@ def validate(repo: str, base: str, source: str, branch: str,
     return {"run_id": run_id, "sha": tip, "files": str(len(staged))}
 
 
-def place(staged: Path, tree: Path) -> dict:
+def validate_cost(repo: str, base: str, source: str, branch: str,
+                  expect_sha: str | None, out: Path,
+                  evals_dir: Path | None = None) -> dict:
+    """The cost-branch twin of `validate` (#572 part 1, 2026-11-02): the
+    same merge-base, additions-only and mode rules, then exactly ONE file at
+    exactly `improve-cost/<run id>/cost.json`, at most COST_CAP bytes, UTF-8
+    JSON with no duplicate key or non-finite constant, passing
+    improve_cost.check_record, for the branch's own run id. A record whose
+    target is a private skill (plan_week.private_skills over main's
+    evals/) or names no committed fixture set is refused: its name alone
+    must never reach the public results branch. The destination is built
+    from the validated run id, never the branch text; the commit message is
+    never read."""
+    import improve_cost  # noqa: PLC0415 - only a cost branch needs it
+    match = COST_BRANCH_RE.fullmatch(branch)
+    if not match:
+        raise Rejected("branch name is not claude/eval-cost-<run id>")
+    run_id = match.group("run_id")
+    tip = resolve_commit(repo, source)
+    if expect_sha is not None:
+        if not SHA_RE.fullmatch(expect_sha):
+            raise Rejected("expected sha is not a 40-hex commit id")
+        if tip != expect_sha:
+            raise Rejected("the branch moved since the push that triggered "
+                           "this run; that newer push triggers its own ingest")
+    base_sha = resolve_commit(repo, base)
+    merge_base = git(repo, "merge-base", base_sha, tip).decode().strip()
+    if not SHA_RE.fullmatch(merge_base):
+        raise Rejected("the branch shares no history with the default branch")
+    files = added_files(repo, merge_base, tip)
+    expected = f"{COST_SOURCE_ROOT}/{run_id}/{COST_SOURCE_NAME}"
+    if len(files) != 1:
+        raise Rejected("a cost branch adds exactly one file")
+    name, _, oid = files[0]
+    if name != expected:
+        raise Rejected(f"{name!r}: not {expected!r}")
+    size = int(git(repo, "cat-file", "-s", oid).decode().strip())
+    if size > COST_CAP:
+        raise Rejected(f"{name!r}: {size} bytes is over the {COST_CAP}-byte cap")
+    data = git(repo, "cat-file", "blob", oid)
+    if len(data) != size:
+        raise Rejected(f"{name!r}: size changed while reading")
+    doc = load_json(decode_text(data, repr(name)), repr(name))
+    try:
+        improve_cost.check_record(doc)
+    except improve_cost.Invalid as exc:
+        raise Rejected(f"{name!r}: {exc}") from None
+    if doc["run_id"] != run_id:
+        raise Rejected(f"{name!r}: run_id is not the branch's")
+    evals = evals_dir if evals_dir is not None else Path(repo) / "evals"
+    check_cost_target(doc["mode"], doc["target"], evals)
+    if out.exists() and any(out.iterdir()):
+        raise Rejected("the staging directory is not empty")
+    dest = f"{COST_DEST_ROOT}/{run_id}.json"
+    (out / COST_DEST_ROOT).mkdir(parents=True, exist_ok=True)
+    (out / dest).write_bytes(data)
+    return {"run_id": run_id, "sha": tip, "files": "1"}, dest
+
+
+def check_cost_target(mode: str, target: str, evals: Path) -> None:
+    """Refuse a target the public results branch must not name: a private
+    skill, or one with no committed fixture set here. A guidance section
+    must have fixtures under evals/guidance/<section>/ (the manifest is in
+    _agent-guidance, which this workflow does not check out; the fire
+    workflow's fire-check already required both)."""
+    folder = evals / target if mode == "improve" else evals / "guidance" / target
+    if folder.is_symlink() or not folder.is_dir() \
+            or not any(folder.rglob("fixture.yaml")):
+        raise Rejected("the record's target has no committed fixture set")
+    if mode == "improve":
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import plan_week  # noqa: PLC0415 - only a cost branch needs it
+        if target in plan_week.private_skills(evals):
+            raise Rejected("the record's target is a private skill")
+
+
+def place(staged: Path, tree: Path, *, first_wins: bool = False) -> dict:
     """Copy every staged file onto `tree`. A file already there with the
     same bytes is left alone; one with different bytes is a conflict and
-    nothing is written. No path component in `tree` may be a symlink."""
+    nothing is written. No path component in `tree` may be a symlink.
+    With `first_wins` (a cost record, #572), a conflict is not an error:
+    the record already ingested for that run id stands, nothing is written
+    and `conflict=true` says so."""
     plan = []
     tree_root = tree.resolve()
     for path in sorted(p for p in staged.rglob("*") if p.is_file()):
@@ -1529,6 +1630,8 @@ def place(staged: Path, tree: Path) -> dict:
         data = path.read_bytes()
         if target.exists():
             if not target.is_file() or target.read_bytes() != data:
+                if first_wins:
+                    return {"changed": "false", "added": "0", "conflict": "true"}
                 raise Rejected(f"{str(rel)!r}: already ingested with different content")
             continue
         plan.append((target, data))
@@ -1536,6 +1639,22 @@ def place(staged: Path, tree: Path) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     return {"changed": "true" if plan else "false", "added": str(len(plan))}
+
+
+def resolve_ingest(event_name: str, event_path: str) -> dict:
+    """`resolve` for this workflow's two branch kinds, dispatched by branch
+    regex alone: `kind=eval` for claude/eval-<run id>, `kind=cost` for
+    claude/eval-cost-<run id> (#572). Each kind's own validator then judges
+    the branch, so a cost branch never reaches the eval validator, and
+    back."""
+    try:
+        return {**resolve(event_name, event_path, COST_BRANCH_RE,
+                          "claude/eval-cost-<run id>"), "kind": "cost"}
+    except Rejected:
+        pass
+    return {**resolve(event_name, event_path,
+                      shape="claude/eval-<run id> or claude/eval-cost-<run id>"),
+            "kind": "eval"}
 
 
 def resolve(event_name: str, event_path: str, branch_re: re.Pattern = BRANCH_RE,
@@ -1587,20 +1706,28 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("place")
     p.add_argument("--staged", required=True, type=Path)
     p.add_argument("--tree", required=True, type=Path)
+    p.add_argument("--kind", choices=("eval", "cost"), default="eval")
     p = sub.add_parser("estimate")
     p.add_argument("--tree", required=True, type=Path)
     p.add_argument("--run-id", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "resolve":
-            result = resolve(args.event_name, args.event_path)
+            result = resolve_ingest(args.event_name, args.event_path)
+        elif args.command == "validate" and COST_BRANCH_RE.fullmatch(args.branch):
+            result, dest = validate_cost(args.repo, args.base, args.source,
+                                         args.branch, args.expect_sha or None,
+                                         args.out)
+            result.update(kind="cost", dest=dest)
         elif args.command == "validate":
             result = validate(args.repo, args.base, args.source, args.branch,
                               args.expect_sha or None, args.out)
+            result.update(kind="eval", dest=f"{DEST_ROOT}/{result['run_id']}")
         elif args.command == "estimate":
             result = estimate(args.tree, args.run_id)
         else:
-            result = place(args.staged, args.tree)
+            result = place(args.staged, args.tree,
+                           first_wins=args.kind == "cost")
     except Rejected as exc:
         # Paths are already repr()-escaped; this is the backstop, so no
         # message can start a new log line (a `::workflow-command::`).
