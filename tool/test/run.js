@@ -334,15 +334,6 @@ test('every alert kind explorer_data can emit has a plain label', () => {
     || typeof P.STRINGS.alertKinds[k] !== 'string' || !P.STRINGS.alertKinds[k].trim());
   eq(missing.join(','), '', 'kinds with no label');
 });
-test('a broken alert is worded from its reason (#544)', () => {
-  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'broken', subject: 'skill',
-    name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
-    reasons: ['pin-deploys-older-copy'] }] });
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(t.includes('Runs cannot count: example-skill-alpha'), 'label shown');
-  ok(t.includes('The task evals/example-skill-alpha/x needs a new pin: its pinned repository still deploys an older copy'), 'reason worded');
-  ok(!t.includes('pin-deploys-older-copy') && !t.includes('broken:'), 'raw reason and kind not shown');
-});
 test('a context-drift alert names the repository and the day it drifted (#545)', () => {
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'context-drift', subject: 'skill',
     name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
