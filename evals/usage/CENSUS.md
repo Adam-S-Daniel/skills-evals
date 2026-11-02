@@ -221,7 +221,43 @@ private repository: branch `persistent/usage-events` of
   unknown; earlier records lack them and are not rewritten (merge keeps
   existing lines byte for byte). `cli` is the Claude Code version, read from
   the `version` field of that transcript line (the value at use time), null
-  when the line has none; no skill digest is recorded.
+  when the line has none.
+- **Which copy was loaded** (skill records only):
+  `"digest","digest_null_reason","base_kind","registry"`. No path is ever
+  recorded, and none of the four reaches a public file.
+  - *Base directory.* Taken only from a later user entry with `isMeta` true
+    that links to the call (a Skill call by `sourceToolUseID`, a typed
+    command by `parentUuid` equal to the typed entry's `uuid`) and whose
+    FIRST line is `Base directory for this skill: <path>`. A
+    `C:\…` path reads as `/mnt/c/…`, a `\\wsl.localhost\<distro>\…` or
+    `\\wsl$\<distro>\…` path as the Linux path; then symbolic links are
+    resolved.
+  - *`base_kind`.* `plugin-cache` (`<.claude>/plugins/cache/<marketplace>/<plugin>/<version>/skills/<name>`),
+    `account-sync` (under `<.claude>/skills/synced/`), `account-plugin` (a
+    Cowork `local-agent-mode-sessions` path), `repo` (inside a git work
+    tree), `user-skills` (`<.claude>/skills/<name>` outside one), `builtin`
+    (`schedule`, `update-config`, `loop` or `simplify` with no base
+    directory, or a path under a `bundled-skills` directory), else `unknown`.
+  - *`digest`.* The lock digest a `skills.lock` names
+    (`harness/skill_digest.py`; a `repo` copy leaves out the files git
+    ignores), bare hex. The directory is hashed at most once per run.
+  - *`digest_null_reason`*, null when there is a digest: `bad-name` (the
+    name, less one `plugin:` prefix, is not a skill directory name),
+    `no-base-dir` (no linked message, or its directory has another name),
+    `builtin`, `outside-known-roots` (kind `unknown`; not hashed), `gone`
+    (the directory is missing or unreadable), `changed-since-load` (some
+    file or directory in the skill tree has an mtime or ctime later than the
+    record's `ts`; for `plugin-cache` the tree is `skills/<name>` only),
+    `refused-by-registry-rules` (a symbolic link or a special file) or
+    `too-large` (over 2000 files or 50 MiB).
+  - *`registry`.* `plugin-cache`: the `owner/repo` of a `github` source for
+    that marketplace in `<.claude>/plugins/known_marketplaces.json`.
+    `user-skills`: the skills-bootstrap install record's registry for that
+    name (`<.claude>/skills/.skills-bootstrap-installed.json`), only when
+    its digest equals this copy's and its URL is
+    `https://github.com/<owner>/<repo>`. `repo`: the checkout's github.com
+    `origin`. Null otherwise. Earlier records lack all four keys and are
+    not rewritten.
 - **Hook records:** `{"v":1,"id","ts","kind":"hook","event","repo","checks","failed","runner","surface":"local","root","machine"}`,
   `id` being the SHA-256 of the machine name and the raw log line. `runner`
   is the sanitized digest above, null when absent or malformed. Hook lines

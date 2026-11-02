@@ -142,6 +142,15 @@ test('chip: the guidance subject applies the shared rules too', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
+test('removed skills are listed with their date and revert link (#557)', () => {
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [], guidance: { sections: [] },
+    removed_skills: [{ name: 'example-skill', plugin: 'adam-coding-anywhere', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=is%3Apr+head%3Aretire-skill%2Fexample-skill' }] };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  eq(text.includes(P.STRINGS.removedSkillsHeading), true);
+  eq(text.includes('example-skill'), true);
+  const none = P.textOf(P.buildPage({ ...doc, removed_skills: [] }, 'skills', {}));
+  eq(none.includes(P.STRINGS.removedSkillsHeading), false, 'no list without removals');
+});
 test('removed sections are listed with their date and revert link (#557)', () => {
   const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [],
     guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };
@@ -334,15 +343,6 @@ test('every alert kind explorer_data can emit has a plain label', () => {
     || typeof P.STRINGS.alertKinds[k] !== 'string' || !P.STRINGS.alertKinds[k].trim());
   eq(missing.join(','), '', 'kinds with no label');
 });
-test('a broken alert is worded from its reason (#544)', () => {
-  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'broken', subject: 'skill',
-    name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
-    reasons: ['pin-deploys-older-copy'] }] });
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(t.includes('Runs cannot count: example-skill-alpha'), 'label shown');
-  ok(t.includes('The task evals/example-skill-alpha/x needs a new pin: its pinned repository still deploys an older copy'), 'reason worded');
-  ok(!t.includes('pin-deploys-older-copy') && !t.includes('broken:'), 'raw reason and kind not shown');
-});
 test('a context-drift alert names the repository and the day it drifted (#545)', () => {
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'context-drift', subject: 'skill',
     name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
@@ -351,6 +351,23 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
   ok(t.includes('Context out of date: example-skill-alpha'), 'label shown');
   ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
   ok(!t.includes('context-drift'), 'raw kind not shown');
+});
+test('the fires-without-results line is worded as past events since the oldest counted fire (#555)', () => {
+  const f = { window_days: 14, since: '2026-10-19T14:00:00Z', without_results: 10, rejected: 2,
+    sweeps: [{ start: '2026-10-31T13:03:00Z', end: '2026-10-31T13:20:00Z', fires: 3 },
+      { start: '2026-11-01T05:43:00Z', end: '2026-11-01T06:06:00Z', fires: 6 },
+      { start: '2026-11-01T15:55:00Z', end: '2026-11-01T15:55:00Z', fires: 1 }] };
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: f }), m, {}));
+    ok(t.includes('10 fires produced no results since Oct 19 (3 sweeps); 2 produced results that did not validate.'), m + ' line shown');
+  }
+  const one = Object.assign({}, f, { without_results: 1, rejected: 0, sweeps: [f.sweeps[2]] });
+  ok(P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: one }), 'skills', {}))
+    .includes('1 fire produced no results since Oct 19 (1 sweep); 0 produced results that did not validate.'), 'singular');
+  for (const quiet of [null, undefined, Object.assign({}, f, { without_results: 0, rejected: 0, sweeps: [] })]) {
+    const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: quiet }), 'skills', {}));
+    ok(!t.includes('produced no results'), 'no line for ' + JSON.stringify(quiet));
+  }
 });
 
 // --- glosses -----------------------------------------------------------------

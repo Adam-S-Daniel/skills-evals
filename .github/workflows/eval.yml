@@ -48,12 +48,14 @@
 #
 # * Schedule selection comes only from committed evals/scheduled.yml, a reviewed
 #   list with readiness evidence (ADR 0008). A contents: read planning job
-#   emits the matrix; dispatch still takes one `fixture` input (default
-#   evals/workflow-path-audit/required-check-routing), read from $GITHUB_EVENT_PATH as data, never
-#   interpolated into run:. Every eval leg revalidates its own selection
+#   emits the matrix; dispatch takes a whitespace-separated `fixture` list (max
+#   20, default evals/workflow-path-audit/required-check-routing, each entry
+#   validated against the committed set by the plan job, one matrix leg each)
+#   and a `trials` input (1 to 3), the latter read from $GITHUB_EVENT_PATH as
+#   data, never interpolated into run:. Every eval leg revalidates its own selection
 #   against Git's committed evals/**/fixture.yaml set before its own exchange.
 #   An untracked directory, traversal, malformed value or NUL cannot qualify.
-#   fail-fast: false isolates failures; at most two eval legs run together.
+#   fail-fast: false isolates failures; at most three eval legs run together.
 #   Success artifacts have unique numeric slots and run_attempt names; failed
 #   legs upload diagnostics separately. Publishers independently validate the
 #   fixture/key in fresh checkouts and download only the matching success
@@ -209,11 +211,17 @@ on:
     inputs:
       fixture:
         description: >-
-          Fixture directory to run, e.g. evals/workflow-path-audit/required-check-routing or
-          evals/guidance/_delivery. Validated against the committed
+          One or more whitespace-separated committed fixture paths (max 20,
+          one matrix leg each), e.g. evals/workflow-path-audit/required-check-routing
+          or evals/guidance/_delivery. Each is validated against the committed
           evals/**/fixture.yaml set before any credential is minted.
         required: false
         default: evals/workflow-path-audit/required-check-routing
+      trials:
+        description: Trials per arm, 1 to 3 (run_eval.py --trials)
+        type: string
+        required: false
+        default: "1"
       roster_only:
         description: >-
           Refresh the model roster and file its proposal, then stop: skip the
@@ -1366,17 +1374,17 @@ jobs:
       id-token: write
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    # 45 min covers the widest committed shape, not just the 2-arm skill
-    # A/B: a guidance fixture spends (agent budget + guard budget) per
-    # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
-    # five-arm fixture that inherited the defaults instead (600 + 300 s)
-    # would need 75 min and not fit. A fixture's `followups:` each run a
-    # whole agent budget more per arm.
+    # 135 min is 45 min per trial times the `trials` input's maximum of 3.
+    # 45 min covers one trial of the widest committed shape, not just the
+    # 2-arm skill A/B: a guidance fixture spends (agent + guard budget) per
+    # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A five-arm fixture that inherited the defaults instead
+    # (600 + 300 s) would need 75 min a trial and not fit. A fixture's
+    # `followups:` each run a whole agent budget more per arm.
     # test_every_fixture_fits_inside_the_workflow_job_timeout is what
-    # catches both, over every skill and guidance fixture under evals/.
-    timeout-minutes: 45
+    # catches both, at 3 trials, over every skill and guidance fixture.
+    timeout-minutes: 135
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@v7.0.1
@@ -1631,14 +1639,17 @@ jobs:
         # change what a `section` arm delivers.
         run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
-      # Runs BEFORE the token exchange, deliberately: a dispatch naming a
-      # fixture that does not exist must fail here, with no credential minted
-      # and nothing spent. The value is read from the event payload as DATA
-      # (jq, no `${{ }}` interpolation into this shell), checked for SHAPE,
-      # and only then matched against the set of directories that actually
-      # carry a committed fixture.yaml — so a traversal, an absolute path, a
-      # shell metacharacter, a newline or a stale name never gets past here.
-      # Git's index defines the committed set; untracked fixtures never qualify.
+      # Runs BEFORE the token exchange, deliberately: a leg whose fixture does
+      # not exist must fail here, with no credential minted and nothing spent.
+      # Every leg runs ITS OWN fixture, taken from the matrix (the plan job
+      # split the dispatch list, defaulted an empty one and validated each
+      # entry); this step revalidates it on the leg's own runner. The value is
+      # passed in the environment as DATA (no `${{ }}` interpolation into this
+      # shell), checked for SHAPE, and only then matched against the set of
+      # directories that actually carry a committed fixture.yaml - so a
+      # traversal, an absolute path, a shell metacharacter, a newline or a
+      # stale name never gets past here. Git's index defines the committed set;
+      # untracked fixtures never qualify.
       - name: Select and validate the fixture to run
         # Keep a local step output for offline validation probes. Publishing
         # uses the trusted planner's matching key, revalidated on its own
@@ -1646,7 +1657,7 @@ jobs:
         id: select-fixture
         working-directory: skills-evals
         env:
-          SCHEDULE_FIXTURE: ${{ github.event_name == 'schedule' && matrix.fixture || '' }}
+          MATRIX_FIXTURE: ${{ matrix.fixture }}
           MATRIX_KEY: ${{ matrix.eval_key }}
           MATRIX_SLOT: ${{ matrix.slot }}
         run: |
@@ -1654,55 +1665,22 @@ jobs:
           # Byte semantics for the character class below, so what this gate
           # accepts does not depend on the runner's locale.
           export LC_ALL=C
-          fixture="${SCHEDULE_FIXTURE:-}"
-          if [ -z "$fixture" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
-            # NUL FIRST, on the event file itself, before any command
-            # substitution. `jq -r` emits a NUL faithfully and bash's `$( )`
-            # then DROPS it ("warning: command substitution: ignored null
-            # byte in input"), so every check below would be judging a string
-            # the dispatcher did not send, and the step's own `fixture:` log
-            # line would name something else again. Measured: a value whose
-            # JSON spelling is the NUL escape followed by
-            # evals/workflow-path-audit was accepted AS that fixture, rc 0.
-            # It fails safe — no uncommitted fixture can be reached this way,
-            # because whatever survives the substitution still has to match a
-            # committed path — but the gate never sees the byte it would
-            # refuse, and this workflow's header promises that it does.
-            # `jq -e` exits non-zero for a non-string (a number, a list) too,
-            # which simply falls through to the shape gate that already
-            # refuses those. No value is echoed, same as every other
-            # rejection here.
-            if jq -e '(.inputs.fixture // "") | test("\u0000")' \
-                 "$GITHUB_EVENT_PATH" >/dev/null 2>&1; then
-              echo "eval.yml: dispatch input 'fixture' contains a NUL byte"
-              exit 1
-            fi
-            fixture="$(jq -r '.inputs.fixture // empty' "$GITHUB_EVENT_PATH")"
-          fi
-          # Dispatch with no input keeps the single-fixture default.
+          fixture="${MATRIX_FIXTURE:-}"
           if [ -z "$fixture" ]; then
-            fixture="evals/workflow-path-audit/required-check-routing"
+            echo "eval.yml: the matrix leg carries no fixture"
+            exit 1
           fi
           # SHAPE FIRST, before any matching. `grep -F` treats each LINE of
-          # its pattern as a separate pattern, so a MULTI-LINE dispatch value
-          # used to pass this gate whenever either line named a committed
-          # fixture — and the whole two-line string was then written to
-          # $RUNNER_TEMP/eval-fixture, so the OIDC exchange ran, a real bearer
-          # was minted and the WIF preflight spent a call before the run step
-          # finally failed on "no such fixture.yaml". Nothing was injectable
-          # (every use is quoted) and no uncommitted fixture could run, but
-          # the ordering guarantee this header makes twice was false for that
-          # value. NEITHER rejection branch echoes the value back: this log
-          # is public, so both messages name the rule, not the input. (The
-          # "names no committed fixture" branch below used to append
-          # `: $fixture` — charset-clean, but still up to 100 KB of dispatch
-          # input copied into a public log, and contradicting this very
-          # sentence. The dispatched value is already on the run's own inputs
-          # for anyone who can read the log at all, so naming it here buys
-          # nothing.)
+          # its pattern as a separate pattern, so a MULTI-LINE value would
+          # pass this gate whenever either line named a committed fixture, and
+          # the whole multi-line string would then be written to
+          # $RUNNER_TEMP/eval-fixture, so the OIDC exchange would run and a
+          # real bearer be minted before the run step failed. NEITHER
+          # rejection branch echoes the value back: this log is public, so
+          # both messages name the rule, not the input.
           case "$fixture" in
             *[!A-Za-z0-9/_.-]*)
-              echo "eval.yml: dispatch input 'fixture' has characters outside [A-Za-z0-9/_.-]"
+              echo "eval.yml: the matrix fixture has characters outside [A-Za-z0-9/_.-]"
               exit 1 ;;
           esac
           committed="$(python3 scripts/plan_scheduled_evals.py --committed)"
@@ -1713,7 +1691,7 @@ jobs:
           # Safe at today's ~250 bytes; measured to reject valid fixtures from
           # ~66 KB of committed list upward.
           if ! grep -Fxq -- "$fixture" <<<"$committed"; then
-            echo "eval.yml: dispatch input 'fixture' names no committed fixture"
+            echo "eval.yml: the matrix fixture names no committed fixture"
             echo "Committed fixtures:"
             sed 's/^/  /' <<<"$committed"
             exit 1
@@ -1722,12 +1700,33 @@ jobs:
           # The results/badge key is the fixture path without its evals/
           # prefix: `workflow-path-audit`, or `guidance/<section id>`.
           key="${fixture#evals/}"
-          if [ -n "${MATRIX_KEY:-}" ]; then
-            python3 scripts/plan_scheduled_evals.py --validate "$fixture" "$MATRIX_KEY" "$MATRIX_SLOT" >/dev/null
-          fi
+          # The planner always sets the matrix key and slot; check that they
+          # match this fixture.
+          python3 scripts/plan_scheduled_evals.py --validate "$fixture" "${MATRIX_KEY:-}" "${MATRIX_SLOT:-}" >/dev/null
           printf '%s' "$key" > "$RUNNER_TEMP/eval-key"
           echo "eval_key=$key" >> "$GITHUB_OUTPUT"
           echo "fixture: $fixture"
+
+      # The trials count is a dispatch input shared by every leg. Read from
+      # the event file as data (jq, never `${{ inputs.trials }}` in run:),
+      # shape-checked, and written for the run step, before any credential.
+      - name: Read and validate the trials count
+        run: |
+          set -euo pipefail
+          trials=""
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+            trials="$(jq -r '.inputs.trials // empty' "$GITHUB_EVENT_PATH")"
+          fi
+          if [ -z "$trials" ]; then
+            trials="1"
+          fi
+          case "$trials" in
+            [1-3]) ;;
+            *)
+              echo "eval.yml: dispatch input 'trials' must be 1, 2 or 3"
+              exit 1 ;;
+          esac
+          printf '%s' "$trials" > "$RUNNER_TEMP/eval-trials"
 
       - name: Mint OIDC token and exchange for Anthropic access token
         run: |
@@ -1833,6 +1832,7 @@ jobs:
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           fixture="$(cat "$RUNNER_TEMP/eval-fixture")"
+          trials="$(cat "$RUNNER_TEMP/eval-trials")"
           # `--permission-mode bypassPermissions` keeps this paid path launching
           # its arms and judge exactly as every run before the harness default
           # became `auto` (#71), so the badge window stays like-for-like. Moving
@@ -1842,6 +1842,7 @@ jobs:
           pairing="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import plan_scheduled_evals as p; print("in_place" if p.declares_context(sys.argv[1]) else "isolation")' "$fixture")"
           python3 harness/run_eval.py "$fixture" \
             --arm both \
+            --trials "$trials" \
             --pairing "$pairing" \
             --permission-mode bypassPermissions \
             --run-billing api --run-runner actions --run-location cloud \

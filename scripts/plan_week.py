@@ -43,8 +43,7 @@ THE BANDS (rule D), in order:
      default branches (ADR 0010 decision 1).
   2. missing evidence, at least 30%: cells with no run on their model,
      cheaper model first, then heaviest model usage (usage/latest.json on the results branch;
-     equal weights without it). A cell with two successful fires and still
-     no run becomes a `fixture-broken` work item and leaves the queue.
+     equal weights without it).
   3. near a decision, at least 20%: insufficient cells, fewest runs first,
      then the cheaper model (every run can decide a cell: harness/gates.py
      checks a confidence sequence after each one).
@@ -87,6 +86,20 @@ THE BANDS (rule D), in order:
      model. The plan records the sections as
      `guidance_focus`. There is no stall rule: a section that never gets
      closer holds its slot until its verdict or content changes.
+  EMPTY FIRES (#559). A cell bound for band 2, 3, 4, 6 or 8 with
+  BROKEN_AFTER_FIRES (2) empty fires becomes a `fixture-broken` work item
+  and enters no band. An empty fire is a successful non-bare eval fire for
+  the cell that started after the cell's newest run of any role or digest
+  on its model (gates' `newest_on_model`; any fire when it has none), at
+  least FIRE_RESULT_WINDOW (2 hours) ago, within RETRY_AFTER (14 days, so a
+  broken cell is retried once its fires age out) and not before
+  EMPTY_FIRES_SINCE (fires under the delivery before main's copy say
+  nothing). A refused run counts: the fire workflow succeeds once the fire
+  API accepts, so fixture-broken means "no run after two fires", whatever
+  the cause. A cell whose verdict document lacks `newest_on_model` counts
+  none (fail safe). Safety cells are exempt. Every band, safety included,
+  skips a cell with a PENDING fire: one younger than FIRE_RESULT_WINDOW,
+  successful or still running, with no run on the cell since it started.
   5. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -104,6 +117,13 @@ THE BANDS (rule D), in order:
          known cost. With none known, the median of the known estimates
          across candidates, else the improve charge (neutral, like use).
      Each ranking row records whether use and cost were known.
+     IMPROVE CAP (#572, 2026-11-02): before allocation the band is walked
+     in allocate's own order, and an item goes only when
+     `allowance_guard.improve_cap` allows it with the earlier kept items
+     counted, exactly the test the guard applies to each fire (Adam's 0.20
+     share of weekly_cap for the account week, at least one fire of each
+     kind). Cut items count as unplanned. The share above is of one sweep's
+     room; this one is of the whole week's cap, and binds every dispatcher.
   6. re-checks: decided cells whose newest run is over 8 weeks old (4
      weeks for a high-stakes subject).
   STAKES (evals/stakes.yml, scripts/stakes.py; Adam, 2026-11-01): within
@@ -315,6 +335,15 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
+#: Only empty fires this recent count, so a fixture-broken cell is retried
+#: once its fires age out instead of staying broken for good (#559).
+RETRY_AFTER = timedelta(days=14)
+#: Empty fires before this are not counted. Runs test main's copy of a skill
+#: from #559 on, which adds refusals (registry_checkout_dirty, ...) and
+#: clears others, so fires made under the old delivery say nothing about
+#: whether the cell can produce a run now; the first sweep after the change
+#: judges only fires made under it.
+EMPTY_FIRES_SINCE = datetime(2026, 11, 3, tzinfo=timezone.utc)
 SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
 #: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
@@ -643,11 +672,13 @@ def keep_progress(cell: dict, level: float) -> float:
 
 def _produces_item(cell: dict) -> bool:
     """Whether `eval_items` would plan a fire for this undecided cell: it
-    is schedulable, its subject is not stakes `none`, and it is not a
-    missing cell whose fires came back empty (a fixture-broken item)."""
+    is schedulable, its subject is not stakes `none`, and its fires have
+    not come back empty (a fixture-broken item). A `pending` cell still
+    counts: its fire may yet land a run, and dropping its section from the
+    focus for one sweep would hand the slot to another."""
     return cell.get("schedulable", True) and cell.get("stakes", "normal") != "none" \
         and cell["class"] in ("missing", "insufficient") \
-        and not (cell["class"] == "missing" and cell["empty_fires"] >= BROKEN_AFTER_FIRES)
+        and cell.get("empty_fires", 0) < BROKEN_AFTER_FIRES
 
 
 def _blocking(cell: dict) -> bool:
@@ -696,28 +727,25 @@ def guidance_focus(ctx: dict) -> tuple:
              for place, r in enumerate(chosen)})
 
 
-def _guidance_item(cell: dict, item: dict, focused: dict, keys: tuple, bands: dict) -> None:
-    """Band an undecided guidance cell's fire (in place): `focus` for a
+def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
+    """(band, order) for an undecided guidance cell's fire: `focus` for a
     focused section, the higher-scored section first, then by the cell's
     own progress on the side the section's score came from (the binding
     cell first: lowest retire progress, or highest keep progress), then the
     cheaper model. Sections go first because the two sides' progress do not
     compare: a keep-side cell's would sort before every retire-side cell.
-    `guidance-rest` for any other section, in the old near order (fewest
-    runs, then the cheaper model), so a missing cell leads. High stakes
-    first in both."""
-    rank, least, price = keys
+    `guidance-rest` for any other section, in the near band's order
+    (`near_order`: fewest runs, then the cheaper model), so a missing cell
+    leads. High stakes first in both."""
+    rank, _least, price = near_order[:3]
     focus = focused.get(cell["section"])
     if focus is None:
-        bands["guidance-rest"].append({**item, "band": "guidance-rest",
-                                       "order": (rank, least, price, -item["weight"])})
-        return
+        return "guidance-rest", near_order
     if focus["side"] == "keep":
         progress = -keep_progress(cell, focus["benefit_level"])
     else:
         progress = retire_progress(cell, focus["retire_level"])
-    bands["focus"].append({**item, "band": "focus",
-                           "order": (rank, focus["position"], progress, price)})
+    return "focus", (rank, focus["position"], progress, price)
 
 
 def eval_items(ctx: dict, now: datetime) -> tuple:
@@ -728,7 +756,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     2026-10-31: Sonnet first, Opus only while the cheaper runs have not
     settled it), then the heavier-used model. An undecided guidance cell
     enters neither missing nor near: `focus` for a section of
-    `guidance_focus`, `guidance-rest` otherwise (`_guidance_item`)."""
+    `guidance_focus`, `guidance-rest` otherwise (`_guidance_band`).
+
+    A cell bound for the missing, near, recheck, focus or guidance-rest
+    band with at least BROKEN_AFTER_FIRES `empty_fires` is a
+    `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
+    edit can cause one at any time) would otherwise re-fire it on every
+    sweep. A safety cell is exempt, since a removal pull request must keep
+    its evidence slot. A `pending` cell, whose last fire may still land a
+    run, plans no fire in any band, safety included."""
     weights = ctx["model_weights"]
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
@@ -750,36 +786,36 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         least = min(cell["with_runs"], cell["without_runs"])
         newest = _stamp_time(cell["newest"])
         kept = cell.get("verdict") == "keep"
+        due = newest is not None and now - newest >= recheck_after(cell)
         if not cell.get("section") and cell["skill"] in removal:
-            bands["safety"].append({**item, "band": "safety", "order": ()})
+            band, order = "safety", ()
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
             # tested again.
-            if newest is not None and now - newest >= recheck_after(cell):
-                bands["recheck"].append({**item, "band": "recheck",
-                                         "order": (rank, newest.timestamp())})
+            band, order = ("recheck", (rank, newest.timestamp())) if due else (None, None)
         elif cell["class"] == "missing":
-            if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
-                broken = {"kind": "fixture-broken", "change_type": "fixture",
-                          "skill": cell["skill"], "fixture": cell["fixture"],
-                          "model": cell["model"], "route": "issue"}
-                if cell.get("section"):
-                    broken["section"] = cell["section"]
-                work.append(broken)
-            elif cell.get("section"):
-                _guidance_item(cell, item, focused, (rank, least, price), bands)
-            else:
-                bands["missing"].append({**item, "band": "missing",
-                                         "order": (rank, price, -item["weight"])})
+            band, order = (_guidance_band(cell, focused, (rank, least, price, -item["weight"]))
+                           if cell.get("section") else ("missing", (rank, price, -item["weight"])))
         elif cell["class"] == "insufficient" and cell.get("section"):
-            _guidance_item(cell, item, focused, (rank, least, price), bands)
+            band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
         elif cell["class"] == "insufficient":
-            bands["near"].append({**item, "band": "near",
-                                  "order": (rank, least, price, -item["weight"])})
-        elif newest is not None and now - newest >= recheck_after(cell):
-            bands["recheck"].append({**item, "band": "recheck",
-                                     "order": (rank, newest.timestamp())})
+            band, order = "near", (rank, least, price, -item["weight"])
+        elif due:
+            band, order = "recheck", (rank, newest.timestamp())
+        else:
+            band, order = None, None
+        if band is None:
+            continue
+        if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
+            broken = {"kind": "fixture-broken", "change_type": "fixture",
+                      "skill": cell["skill"], "fixture": cell["fixture"],
+                      "model": cell["model"], "route": "issue"}
+            if cell.get("section"):
+                broken["section"] = cell["section"]
+            work.append(broken)
+        elif not cell.get("pending"):
+            bands[band].append({**item, "band": band, "order": order})
     return bands, work
 
 
@@ -1065,11 +1101,36 @@ def allocate(bands: dict, room: float, max_fires: int) -> list:
     return chosen
 
 
+def improve_capped(items: list, improve_state: dict | None) -> tuple:
+    """(kept, cut) of the improve band's `items` under the improve cap
+    (#572): walked in allocate's own order with a copy of the guard's counts,
+    each item kept only when `allowance_guard.improve_cap` allows it with the
+    earlier kept items counted, the test the guard applies to each fire in
+    turn. With no `improve_state` (a hand-built ctx, the explorer) there is
+    no cap."""
+    if improve_state is None:
+        return list(items), []
+    state = {**improve_state,
+             "improve_by_kind": dict(improve_state.get("improve_by_kind") or {})}
+    kept, cut = [], []
+    for item in sorted(items, key=lambda i: (*i["order"], i["cost"], i["fixture"],
+                                             i["model"], i["skill"])):
+        if guard.improve_cap(state, item["mode"]):
+            state["improve_by_kind"][item["mode"]] = \
+                state["improve_by_kind"].get(item["mode"], 0) + 1
+            kept.append(item)
+        else:
+            cut.append(item)
+    return kept, cut
+
+
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure."""
     bands, work = eval_items(ctx, now)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
+    improve_state = ctx.get("improve_state")
+    improve, capped = improve_capped(improve, improve_state)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
     chosen = allocate(bands, ctx["room"], max_fires)
@@ -1097,7 +1158,12 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     return {"schema_version": 1, "generated_at": _iso(now), "room": ctx["room"],
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
             "points_per_usd": ctx.get("points_per_usd"), "fires": fires,
-            "unplanned": {band: len(items) for band, items in bands.items()},
+            "unplanned": {band: len(items) + (len(capped) if band == "improve" else 0)
+                          for band, items in bands.items()},
+            # Whether one more fire of each kind passed the improve cap
+            # before this plan (#572); None without a cap.
+            "improve_allowed": None if improve_state is None else
+            {mode: guard.improve_cap(improve_state, mode) for mode in IMPROVE_MODES},
             "guidance_focus": guidance_focus(ctx)[0],
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
@@ -1241,22 +1307,47 @@ def real_work_rows(evals_dir: Path) -> list:
 
 def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
     """One cell per scheduled fixture x roster model, with its gates class,
-    run counts, newest run, mean cost per run and empty successful fires, and
+    run counts, newest run, mean cost per run, `empty_fires`, `pending`, and
     `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
     stays in the list for the cost statistics; `eval_items` plans none of it.
-    A `subject: any` row makes no cell (`real_work_rows` lists it)."""
+    A `subject: any` row makes no cell (`real_work_rows` lists it).
+
+    Both fire counts are against the gates cell's `newest_on_model`, the
+    newest run of ANY role or digest on that model, not the pooled newest: a
+    fire that landed a run that does not pool still produced something.
+      * `empty_fires`: successful non-bare eval fires that started after it
+        (no bound when it is None: the cell has no run on its model), at
+        least FIRE_RESULT_WINDOW ago, within RETRY_AFTER and at or after
+        EMPTY_FIRES_SINCE. A gates cell without the key (a verdict document
+        from before it) or with an unreadable one counts 0: it fails safe,
+        never fixture-broken on a guess. A cell the verdict document does not list has no run at all,
+        so it has no bound.
+      * `pending`: a successful or still running non-bare eval fire that
+        started after it and less than FIRE_RESULT_WINDOW ago, so its run
+        may still land. Without the key any such fire is pending: holding a
+        cell for at most FIRE_RESULT_WINDOW is cheaper than a second fire.
+    A refused run counts as empty: routine-eval-fire.yml concludes `success`
+    once the fire API accepts, so fixture-broken means "no run after n fires",
+    whatever the cause."""
     committed = schedule.committed_fixtures(evals_dir.parent)
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
-    fired: dict = {}
+    finished: dict = {}
+    young: dict = {}
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
         started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
-        # A bare fire runs one arm, never the cell's pair: not an empty fire.
-        if title and title["mode"] == "eval" and not title["bare"] and title["model"] \
-                and started and run.get("conclusion") == "success" \
-                and now - started >= FIRE_RESULT_WINDOW:
-            key = (title["target"], title["model"])
-            fired.setdefault(key, []).append(started)
+        # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
+        if not (title and title["mode"] == "eval" and not title["bare"] and title["model"]
+                and started):
+            continue
+        key = (title["target"], title["model"])
+        running = run.get("status") not in (None, "completed")
+        if now - started < FIRE_RESULT_WINDOW:
+            if running or run.get("conclusion") == "success":
+                young.setdefault(key, []).append(started)
+        elif run.get("conclusion") == "success" and now - started <= RETRY_AFTER \
+                and started >= EMPTY_FIRES_SINCE:
+            finished.setdefault(key, []).append(started)
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
     for fixture in scheduled:
@@ -1282,8 +1373,16 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cost = cell.get("cost_usd") if cell else None
             arm_trials = sum(r.get("scored_trials") or 0 for r in entries)
             newest = stamps[-1] if stamps else None
-            newest_time = _stamp_time(newest)
             cls = cell["class"] if cell else "missing"
+            raw = cell.get("newest_on_model") if cell else None
+            bound = _stamp_time(raw)
+            # An unreadable stamp is as unknown as an absent key.
+            known = cell is None or ("newest_on_model" in cell
+                                     and (raw is None or bound is not None))
+            after = [t for t in finished.get((fixture, model), [])
+                     if bound is None or t > bound]
+            waiting = [t for t in young.get((fixture, model), [])
+                       if not known or bound is None or t > bound]
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
@@ -1294,9 +1393,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
                 "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
                 else None,
-                "empty_fires": sum(1 for t in fired.get((fixture, model), [])
-                                   if newest_time is None or t > newest_time)
-                if cls == "missing" else 0})
+                "empty_fires": len(after) if known else 0, "pending": bool(waiting)})
             if section is not None:
                 # What the guidance focus reads (`guidance_focus`): the
                 # cell's confidence blocks, its reason and its COUNTED runs
@@ -1659,12 +1756,15 @@ def gather(args, now: datetime) -> dict:
                                      mode="guidance-improve")
     gprs, gremoval = guidance_prs(evidence.get("guidance_prs", []))
     since = guard.window_start(now)
+    # No own run: every not-completed improve fire counts (#572).
+    by_kind, in_flight = guard.improve_kind_counts(evidence["fire_runs"], now, since)
     state = guard.account(args.results_tree, limits, now,
                           _fire_pair(evidence["fire_runs"], now, since),
                           guard.improve_counts(evidence["fire_runs"], now, since),
                           since,
                           improve_started=guard.improve_starts(evidence["fire_runs"], now, since),
-                          eval_started=guard.eval_fire_starts(evidence["fire_runs"], now, since))
+                          eval_started=guard.eval_fire_starts(evidence["fire_runs"], now, since),
+                          improve_by_kind=by_kind, improve_in_flight=in_flight)
     print(guard.describe(state))
     skills = skill_contexts(evals_dir, args.results_tree,
                             compute_gates.parse_as_of(args.as_of), registries,
@@ -1677,6 +1777,9 @@ def gather(args, now: datetime) -> dict:
     return {"policy": gates_doc["policy"], "reservation": state["reservation"],
             "overrun": limits["per_run_overrun"], "improve_charge": state["improve_charge"],
             "room": guard.room(state),
+            # What allowance_guard.improve_cap reads, for build_plan's walk.
+            "improve_state": {key: state[key] for key in (
+                "cap", "improve_charge", "improve_by_kind", "improve_in_flight")},
             # One eval fire may go only to bring a newer reading.
             "refresh": guard.fits(state) < 1 and guard.refresh(state),
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),

@@ -31,11 +31,14 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import context  # noqa: E402
 import delivery  # noqa: E402
+import compute_gates  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
 
 GUIDANCE_REPO = "Adam-S-Daniel/_agent-guidance"
-PRIMARY = "example/registry"
+# The context deploys from the same repository the registry checkout is, as
+# every real fixture does, so main's copy (#559) comes from that checkout.
+PRIMARY = "Adam-S-Daniel/adam-agentskills"
 CONSUMER = "example/consumer"
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 BUDGET = {"guidance_bytes": 65536, "skill_catalog_bytes": 65536,
@@ -344,8 +347,12 @@ class SubjectTests(Base):
         subject = delivery.resolve_skill_subject(self.frozen(), "bundle:sample", self.registries,
                                                  registry=PRIMARY)
         self.assertEqual(subject.registry, PRIMARY)
-        self.refused("skill_not_found", lambda: delivery.resolve_skill_subject(
-            self.frozen(), "fresh", self.registries, registry=PRIMARY))
+        # PRIMARY is also the registry checkout's identity (#559), so the
+        # source that holds neither copy is another repository.
+        for name in ("sample", "fresh"):
+            with self.subTest(name=name):
+                self.refused("skill_not_found", lambda: delivery.resolve_skill_subject(
+                    self.frozen(), name, self.registries, registry="example/elsewhere"))
 
     def test_candidate_replaces_adopted_skill_with_only(self):
         candidate = self.root / "candidate"
@@ -362,9 +369,28 @@ class SubjectTests(Base):
                           "bundle/skills/sample/SKILL.md").read_bytes(), CANDIDATE["SKILL.md"])
         self.assertNotIn("bundle:sample", delivery.installed_skills(without_scratch / "config"))
 
-    def test_newer_registry_bytes_never_override_deployed_default(self):
-        (self.registry / "plugins/bundle/skills/sample/SKILL.md").write_bytes(FRESH["SKILL.md"])
-        self.assertEqual(self.plan()["subject"].tested_digest, digest(SAMPLE))
+    def test_an_uncommitted_registry_change_is_refused(self):
+        # #559: the with arm tests main's copy as committed; bytes no commit
+        # holds would be recorded under a revision that never had them.
+        (self.registry / "plugins/bundle/skills/sample/SKILL.md").write_bytes(
+            SAMPLE["SKILL.md"] + b"Uncommitted.\n")
+        self.refused("registry_checkout_dirty", self.plan)
+
+    def test_a_committed_registry_change_is_what_the_with_arm_tests(self):
+        main = dict(SAMPLE, **{"SKILL.md": SAMPLE["SKILL.md"] + b"Main body.\n"})
+        rev = self.commit(self.registry, {"plugins/bundle/skills/sample/SKILL.md": main["SKILL.md"]})
+        plan = self.plan()
+        subject = plan["subject"]
+        self.assertEqual((subject.action, subject.deployed_digest, subject.tested_digest),
+                         ("removed", digest(SAMPLE), digest(main)))
+        self.assertEqual(subject.record()["subject_source"], "main")
+        self.assertEqual(subject.record()["subject_revision"], rev)
+        with_scratch, *_ = self.prepare("with", plan)
+        without_scratch, *_ = self.prepare("without", plan)
+        root = delivery.plugins_root(with_scratch / "config") / "bundle/skills/sample"
+        self.assertEqual((root / "SKILL.md").read_bytes(), main["SKILL.md"])
+        self.assertTrue((root / "scripts/run.sh").stat().st_mode & 0o111)
+        self.assertNotIn("bundle:sample", delivery.installed_skills(without_scratch / "config"))
 
     def test_candidate_growth_obeys_the_with_arm_budget(self):
         frozen = self.frozen()
@@ -481,6 +507,221 @@ class SubjectTests(Base):
         self.assertEqual(delivery.guidance_payload(frozen, subject, "without"), frozen.guidance)
         self.assertEqual(delivery.guidance_payload(frozen, subject, "with"),
                          frozen.guidance + b"\n" + DOCKER)
+
+
+class MainCopyTests(Base):
+    """#559: a keep-or-remove skill run tests main's copy of its subject,
+    the registry checkout's HEAD, and refuses every way that copy could be
+    something else (ADR 0012, addendum "main's copy")."""
+
+    OTHER_URL = "https://github.com/example/other"
+
+    def fixture_plan(self, skill="sample", **fixture_keys):
+        fixture = {"context": self.metadata, "skill": skill, **fixture_keys}
+        args = {key: fixture.pop(key) for key in ("skill_registry", "skill_bundle",
+                                                  "subject_candidate") if key in fixture}
+        return run_eval._in_place_plan(fixture, self.args(**args), self.registries, "skill")
+
+    def other_registry(self, files=None):
+        other = self.repo("other")
+        self.commit(other, files or {})
+        self.registries["other"] = {"name": "other", "path": other,
+                                    "layout": "plugins/*/skills/*/SKILL.md", "url": self.OTHER_URL}
+        return other
+
+    def head(self, repo=None):
+        return self.git(repo or self.registry, "rev-parse", "HEAD")
+
+    def test_an_adopted_subject_records_main_and_the_checkout_head(self):
+        for keys in ({}, {"registry": REGISTRY_URL}, {"registry": REGISTRY_URL.upper() + ".git"}):
+            with self.subTest(keys=keys):
+                subject = self.fixture_plan(**keys)["subject"]
+                self.assertEqual((subject.source, subject.revision), ("main", self.head()))
+                self.assertEqual(subject.tested_digest, digest(SAMPLE))
+
+    def test_an_added_subject_records_main_and_the_checkout_head(self):
+        for keys in ({}, {"registry": REGISTRY_URL}):
+            with self.subTest(keys=keys):
+                subject = self.fixture_plan("fresh", **keys)["subject"]
+                self.assertEqual((subject.action, subject.source, subject.revision),
+                                 ("added", "main", self.head()))
+
+    def test_a_candidate_run_records_candidate_and_no_revision(self):
+        candidate = self.root / "candidate"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(CANDIDATE["SKILL.md"])
+        # The registry checkout is not consulted: a candidate replaces it.
+        (self.registry / "plugins/bundle/skills/sample/SKILL.md").write_bytes(b"dirty")
+        record = self.fixture_plan(subject_candidate=candidate)["subject"].record()
+        self.assertEqual((record["subject_source"], record["subject_revision"]), ("candidate", None))
+
+    def test_records_from_both_paths_pass_the_ingester(self):
+        candidate = self.root / "candidate"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_bytes(CANDIDATE["SKILL.md"])
+        for name, plan in (("main", self.fixture_plan()),
+                           ("candidate", self.fixture_plan(subject_candidate=candidate)),
+                           ("added", self.fixture_plan("fresh"))):
+            for role in ("with", "without"):
+                record = run_eval._in_place_record(plan, role)
+                record.update(skill=plan["subject"].skill, arm=f"{role}_skill")
+                parts = {"key": plan["subject"].skill}
+                with self.subTest(path=name, role=role):
+                    ingest.check_in_place(record, "summary.json", parts)
+                # What the ingester refuses, so a producer bug cannot pass.
+                for edit in (lambda d: d.pop("subject_revision"),
+                             lambda d: d.pop("subject_source"),
+                             lambda d: d.update(subject_source="deployed"),
+                             lambda d: d.update(subject_revision=None
+                                                if d["subject_source"] == "main" else "a" * 40)):
+                    bad = json.loads(json.dumps(record))
+                    edit(bad["context_subject"])
+                    with self.subTest(path=name, role=role, bad=bad["context_subject"]), \
+                            self.assertRaises(ingest.Rejected):
+                        ingest.check_in_place(bad, "summary.json", parts)
+
+    def test_a_non_string_registry_field_is_refused(self):
+        for value in (5, ["x"], ""):
+            with self.subTest(value=value):
+                self.refused("invalid_registry_field", lambda: self.fixture_plan(registry=value))
+
+    def test_an_adopted_subject_from_another_registry_is_refused(self):
+        self.other_registry({f"plugins/bundle/skills/sample/{k}": v for k, v in SAMPLE.items()})
+        self.refused("registry_mismatch", lambda: self.fixture_plan(registry=self.OTHER_URL))
+
+    def test_a_skill_moved_to_another_registry_is_refused_not_followed(self):
+        self.other_registry({f"plugins/bundle/skills/sample/{k}": v for k, v in SAMPLE.items()})
+        shutil.rmtree(self.registry / "plugins/bundle/skills/sample")
+        self.commit(self.registry, {})
+        self.refused("main_copy_missing", self.fixture_plan)
+
+    def test_an_unconfigured_deploying_registry_is_refused(self):
+        self.registries = {"other": dict(self.registries["adam-agentskills"], name="other",
+                                         url=self.OTHER_URL)}
+        self.refused("registry_unknown", self.fixture_plan)
+
+    def test_a_missing_registry_checkout_is_refused(self):
+        self.registries["adam-agentskills"]["path"] = self.root / "absent"
+        self.refused("registry_checkout_missing", self.fixture_plan)
+
+    def test_two_main_copies_are_refused(self):
+        self.commit(self.registry, {f"plugins/spare/skills/sample/{k}": v for k, v in SAMPLE.items()})
+        self.refused("main_copy_ambiguous", self.fixture_plan)
+
+    def test_main_copy_in_another_bundle_is_refused(self):
+        shutil.rmtree(self.registry / "plugins/bundle/skills/sample")
+        self.commit(self.registry, {f"plugins/spare/skills/sample/{k}": v for k, v in SAMPLE.items()})
+        self.refused("main_bundle_mismatch", self.fixture_plan)
+
+    def test_a_symlink_in_main_copy_is_refused(self):
+        (self.registry / "plugins/bundle/skills/sample/link").symlink_to(self.home / ".claude/settings.json")
+        self.refused("unsafe_path", self.fixture_plan)
+
+    def test_an_added_subject_from_another_registry_than_main_names_is_refused(self):
+        # --skill-registry picks one registry's copy; the fixture's registry:
+        # names the other, whose copy compute_gates would digest.
+        self.other_registry({f"plugins/spare/skills/fresh/{k}": v for k, v in FRESH.items()})
+        self.refused("main_copy_mismatch", lambda: self.fixture_plan(
+            "fresh", registry=REGISTRY_URL, skill_registry="example/other"))
+
+    def test_an_unversioned_registry_checkout_is_refused(self):
+        files = {f"plugins/bundle/skills/sample/{k}": v for k, v in SAMPLE.items()}
+        plain = self.root / "plain"
+        nested = self.registry / "nested"
+        unborn = self.repo("unborn")
+        for where in (plain, nested, unborn):
+            for name, raw in files.items():
+                (where / name).parent.mkdir(parents=True, exist_ok=True)
+                (where / name).write_bytes(raw)
+            (where / "plugins/bundle/skills/sample/scripts/run.sh").chmod(0o755)
+            with self.subTest(where=where.name):
+                self.registries["adam-agentskills"]["path"] = where
+                self.refused("registry_checkout_unversioned", self.fixture_plan)
+
+    def test_a_linked_worktree_is_versioned(self):
+        linked = self.root / "linked"
+        self.git(self.registry, "worktree", "add", "-q", "--detach", str(linked), "HEAD")
+        self.registries["adam-agentskills"]["path"] = linked
+        self.assertEqual(self.fixture_plan()["subject"].revision, self.head())
+
+    def test_any_difference_from_head_is_refused(self):
+        sample = self.registry / "plugins/bundle/skills/sample"
+        cases = {
+            "bytes": lambda: (sample / "data.bin").write_bytes(b"\x00"),
+            "mode": lambda: (sample / "scripts/run.sh").chmod(0o644),
+            "untracked file": lambda: (sample / "notes.md").write_bytes(b"new\n"),
+            "deleted file": lambda: (sample / "data.bin").unlink(),
+        }
+        for name, change in cases.items():
+            with self.subTest(change=name):
+                change()
+                self.refused("registry_checkout_dirty", self.fixture_plan)
+                self.git(self.registry, "checkout", "-q", "--", ".")
+                self.git(self.registry, "clean", "-qfd")
+                self.assertEqual(self.fixture_plan()["subject"].revision, self.head())
+
+    def test_a_head_entry_that_is_not_a_regular_blob_is_refused(self):
+        sample = self.registry / "plugins/bundle/skills/sample"
+        (sample / "link").symlink_to("SKILL.md")
+        self.commit(self.registry, {})
+        # The working tree holds a regular file there; HEAD holds a symlink.
+        (sample / "link").unlink()
+        (sample / "link").write_bytes(SAMPLE["SKILL.md"])
+        self.refused("registry_checkout_dirty", self.fixture_plan)
+
+    def test_head_must_be_origin_main_when_that_ref_exists(self):
+        head = self.head()
+        self.git(self.registry, "update-ref", "refs/remotes/origin/main", head)
+        self.assertEqual(self.fixture_plan()["subject"].revision, head)
+        ahead = self.commit(self.registry, {"README.md": b"later\n"})
+        self.git(self.registry, "update-ref", "refs/remotes/origin/main", ahead)
+        self.git(self.registry, "checkout", "-q", "--detach", head)
+        self.refused("registry_checkout_not_main", self.fixture_plan)
+
+    def test_main_copy_cannot_rename_its_catalog_identity(self):
+        self.commit(self.registry, {"plugins/bundle/skills/sample/SKILL.md": FRESH["SKILL.md"]})
+        with self.assertRaises(delivery.DeliveryError) as caught:
+            self.fixture_plan()
+        self.assertEqual(caught.exception.code, "candidate_identity_mismatch")
+        self.assertIn("main's copy", str(caught.exception))
+
+    def test_main_copy_growth_obeys_the_with_arm_budget_and_names_the_commit(self):
+        self.metadata["budget"]["skill_payload_bytes"] = \
+            self.frozen().manifest["measurements"]["skill_payload_bytes"]
+        rev = self.commit(self.registry, {"plugins/bundle/skills/sample/SKILL.md":
+                                          SAMPLE["SKILL.md"] + b"x" * 200})
+        with self.assertRaises(context.ContextError) as caught:
+            self.fixture_plan()
+        self.assertEqual(caught.exception.code, "budget_exceeded")
+        self.assertIn(f"main's copy of sample at {rev}", str(caught.exception))
+
+    def test_refusals_come_in_their_documented_order(self):
+        sample = self.registry / "plugins/bundle/skills/sample"
+        self.other_registry({f"plugins/bundle/skills/sample/{k}": v for k, v in SAMPLE.items()})
+        rev = self.head()
+        later = self.commit(self.registry, {"README.md": b"later\n"})
+        self.git(self.registry, "checkout", "-q", "--detach", rev)
+        self.git(self.registry, "update-ref", "refs/remotes/origin/main", later)
+        self.metadata["budget"]["skill_payload_bytes"] = \
+            self.frozen().manifest["measurements"]["skill_payload_bytes"]
+        # Two faults or more at once each time; the earlier check wins.
+        (sample / "SKILL.md").write_bytes(SAMPLE["SKILL.md"] + b"x" * 200)
+        with self.subTest(order="invalid_registry_field before registry_mismatch"):
+            self.refused("invalid_registry_field", lambda: self.fixture_plan(registry=7))
+        with self.subTest(order="resolve_skill_subject before registry_mismatch"):
+            self.refused("skill_not_found", lambda: self.fixture_plan("ghost", registry=self.OTHER_URL))
+        with self.subTest(order="registry_mismatch before registry_checkout_dirty"):
+            self.refused("registry_mismatch", lambda: self.fixture_plan(registry=self.OTHER_URL))
+        with self.subTest(order="registry_checkout_dirty before not_main and budget_exceeded"):
+            self.refused("registry_checkout_dirty", self.fixture_plan)
+        (sample / "SKILL.md").write_bytes(SAMPLE["SKILL.md"])
+        self.commit(self.registry, {"plugins/bundle/skills/sample/SKILL.md":
+                                    SAMPLE["SKILL.md"] + b"x" * 200})
+        with self.subTest(order="registry_checkout_not_main before budget_exceeded"):
+            self.refused("registry_checkout_not_main", self.fixture_plan)
+        self.git(self.registry, "update-ref", "-d", "refs/remotes/origin/main")
+        with self.subTest(order="budget_exceeded last"):
+            self.refused("budget_exceeded", self.fixture_plan)
 
 
 class DeliveryReviewTests(Base):
@@ -995,6 +1236,24 @@ class EndToEndTests(Base):
         self.assertEqual(without_ctx["others_digest"], without_ctx["skills_digest"])
         self.assertEqual(sorted(Path(tempfile.gettempdir()).glob(
             f"{run_eval.ARM_WORKSPACE_PREFIX}with*_skill-*")), [])
+
+    def test_main_copy_summaries_ingest_and_pool_on_the_gate_digest(self):
+        # #559: what the routine writes is what the trusted ingester and
+        # compute_gates accept, and its tested digest is the gate's.
+        proc = self.run_main(self.fixture_dir(), "--arm", "both", "--pairing", "in_place",
+                             "--timestamp", self.TS)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        head = self.git(self.registry, "rev-parse", "HEAD")
+        for arm in ("with_skill", "without_skill"):
+            doc = self.assert_ingests(self.results / "sample" / self.TS / arm / "summary.json")
+            self.assertEqual((doc["context_subject"]["subject_source"],
+                              doc["context_subject"]["subject_revision"]), ("main", head))
+        index = compute_gates.build_index(self.root, self.root / "evals", "99991231T235959Z")
+        self.assertEqual(index["skipped"], {})
+        gate = compute_gates.tested_digest(self.registries, "sample", REGISTRY_URL)
+        self.assertEqual(sorted((run["role"], run["in_place"], run["tested_digest"])
+                                for run in index["runs"]),
+                         [("with", True, gate), ("without", True, gate)])
 
     def test_the_agent_may_not_write_its_scratch_profile(self):
         directory = self.fixture_dir(followups=["again"], env={"REC_LOG": str(self.log), "REC_MODE": "write_profile"})

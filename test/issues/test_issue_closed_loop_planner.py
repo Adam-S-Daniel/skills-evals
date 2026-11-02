@@ -214,9 +214,10 @@ class GuardImproveChargeTests(unittest.TestCase):
         measured_summary(old, 0.01)
         new = self.tree / "routine-results" / "20261026T000000Z-bbbbbb"
         measured_summary(new, 0.0)
-        # (0.01 + 0.005 + 0.0 + 0.005) / 2 = 0.01 per eval run.
+        # (0.01 + 0.005 + 0.0 + 0.005) / 2 = 0.01 per eval run; eight units
+        # since #572 (2026-11-02), twelve before.
         self.assertAlmostEqual(guard.eval_fire_cost(self.tree, LIMITS), 0.01)
-        self.assertAlmostEqual(guard.improve_charge(self.tree, LIMITS), 0.12)
+        self.assertAlmostEqual(guard.improve_charge(self.tree, LIMITS), 0.08)
 
     def test_improve_fires_are_held_all_week_and_not_matched_to_runs(self):
         state = guard.account(self.tree, LIMITS, NOW, (3, 0), (2, 0))
@@ -229,15 +230,18 @@ class GuardImproveChargeTests(unittest.TestCase):
         self.assertAlmostEqual(guard.account(self.tree, LIMITS, NOW, (3, 0))["pending"], 0.015)
 
     def test_check_needs_room_for_the_improve_charge(self):
-        state = guard.account(self.tree, LIMITS, NOW, (0, 0))
-        self.assertTrue(guard.check(state, "eval"))
-        self.assertFalse(guard.check(state, "improve"))  # 0.42 > 0.30
+        # 2026-11-02 (#572): at eight units the charge is 0.28, so the old
+        # 0.30 cap's refusal is kept at Adam's 0.25 goal.
+        state = guard.account(self.tree, {**LIMITS, "weekly_cap": 0.25}, NOW, (0, 0))
+        self.assertIsNone(guard.check(state, "eval"))
+        # 0.28 > 0.25: the room refuses it; nothing is counted, so not the cap.
+        self.assertEqual(guard.check(state, "improve"), guard.REFUSAL)
         roomy = dict(state, cap=0.50)
-        self.assertTrue(guard.check(roomy, "improve"))
+        self.assertIsNone(guard.check(roomy, "improve"))
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             budget_path = self.tree / "budget.yml"
-            budget_path.write_text("weekly_cap: 0.30\nper_run_cap: 0.03\n"
+            budget_path.write_text("weekly_cap: 0.25\nper_run_cap: 0.03\n"
                                    "per_run_overrun: 0.005\nstop_when_account_above: 0.80\n")
             code = guard.main(["check", "--results-tree", str(self.tree), "--mode", "improve",
                                "--budget", str(budget_path)],
@@ -900,6 +904,10 @@ class PlanCommandTests(unittest.TestCase):
             self.assertIn("### Weekly plan:", summary.read_text())
             plan = json.loads(plan_file.read_text())
             self.assertEqual(plan["schema_version"], 1)
+            # gather hands build_plan the guard's improve counts (#572):
+            # none used, so each kind's floor is open.
+            self.assertEqual(plan["improve_allowed"],
+                             {"improve": True, "guidance-improve": True})
             # Every in-place cell is a bare candidate on an empty tree; the
             # missing band takes the room first, so none is planned yet.
             roster = yaml.safe_load((ROOT / "evals" / "roster.yml").read_text())
@@ -1475,12 +1483,14 @@ class BareBaselineTests(unittest.TestCase):
     def test_a_bare_fire_is_not_an_empty_fire_of_the_cells_pair(self):
         fixture = "evals/writing-adrs/bootstrap"
         gates_doc = {"roster_models": ["m1"], "skills": {}}
-        old = NOW - timedelta(days=1)
+        # NOW is before EMPTY_FIRES_SINCE (#559), which would count neither.
+        now = plan_week.EMPTY_FIRES_SINCE + timedelta(days=2)
+        old = now - timedelta(days=1)
         bare = [fire(i, f"Fire eval routine: eval bare {fixture} m1", old) for i in (1, 2)]
         pair = [fire(i, f"Fire eval routine: eval {fixture} m1", old) for i in (3, 4)]
 
         def empty(runs):
-            cells = plan_week.eval_cells(ROOT / "evals", gates_doc, runs, NOW)
+            cells = plan_week.eval_cells(ROOT / "evals", gates_doc, runs, now)
             return next(c for c in cells if c["fixture"] == fixture)["empty_fires"]
         self.assertEqual(empty(bare), 0)
         self.assertEqual(empty(pair), 2)
@@ -1501,7 +1511,7 @@ class BareBaselineTests(unittest.TestCase):
             self.assertEqual(state, guard.account(tree, LIMITS, NOW,
                                                   plan_week._fire_pair(pair, NOW),
                                                   guard.improve_counts(pair, NOW)))
-            self.assertTrue(guard.check(state, "eval"))
+            self.assertIsNone(guard.check(state, "eval"))
 
     def test_evidence_start_times_bound_a_covered_improve_fire(self):
         # The planner passes the same evidence rows' start times to `account`.
@@ -1691,6 +1701,63 @@ class WatchdogTests(unittest.TestCase):
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(plan_week.main(["watchdog", "--mode", "check"]), 0)
             self.assertEqual(out_file.read_text(), "dispatch=true\n")
+
+
+class ImproveCapPlanTests(unittest.TestCase):
+    """#572, 2026-11-02: the planner applies the guard's improve cap
+    (`allowance_guard.improve_cap`) to the improve band before allocation,
+    item by item in allocate's order, so it never plans a fire the guard
+    would refuse."""
+
+    @staticmethod
+    def cap_state(by_kind=None, in_flight=None):
+        # 0.20 x 0.30 / 0.06 = 1 fire of both kinds together.
+        return {"cap": 0.30, "improve_charge": 0.06, "improve_by_kind": by_kind or {},
+                "improve_in_flight": in_flight or {}}
+
+    @staticmethod
+    def item(mode, name, rank):
+        return {"mode": mode, "skill": name if mode == "improve" else "", "fixture": "",
+                "model": "", "cost": 0.06, "order": (False, -rank, name)}
+
+    def test_the_walk_counts_each_kept_item_as_the_guard_would(self):
+        # The share allows 1 at week start: the first skill goes, the second
+        # does not, and the guidance section takes its kind's floor.
+        items = [self.item("guidance-improve", "sec", 1.0), self.item("improve", "b", 2.0),
+                 self.item("improve", "a", 3.0)]
+        kept, cut = plan_week.improve_capped(items, self.cap_state())
+        self.assertEqual([(i["mode"], i["skill"]) for i in kept],
+                         [("improve", "a"), ("guidance-improve", "")])
+        self.assertEqual([i["skill"] for i in cut], ["b"])
+        # The ctx's counts are copied, not changed.
+        state = self.cap_state()
+        plan_week.improve_capped(items, state)
+        self.assertEqual(state["improve_by_kind"], {})
+
+    def test_a_used_skill_floor_plans_the_guidance_fire_only(self):
+        plan = plan_week.build_plan(ctx(
+            skills={"a": skill()}, guidance={"sec": gsection(headroom=0.4)},
+            guidance_use=100.0, improve_charge=0.06, room=1.0,
+            improve_state=self.cap_state({"improve": 1})), NOW)
+        self.assertEqual([f["mode"] for f in plan["fires"]], ["guidance-improve"])
+        self.assertEqual(plan["improve_allowed"],
+                         {"improve": False, "guidance-improve": True})
+        # The cut skill fire is unplanned, not lost.
+        self.assertEqual(plan["unplanned"]["improve"], 1)
+
+    def test_an_in_flight_fire_uses_its_kind_floor(self):
+        plan = plan_week.build_plan(ctx(
+            skills={"a": skill()}, guidance={"sec": gsection(headroom=0.4)},
+            guidance_use=100.0, improve_charge=0.06, room=1.0,
+            improve_state=self.cap_state(in_flight={"guidance-improve": 1})), NOW)
+        self.assertEqual([f["mode"] for f in plan["fires"]], ["improve"])
+
+    def test_no_improve_state_means_no_cap(self):
+        plan = plan_week.build_plan(ctx(skills={"a": skill(), "b": skill(), "c": skill()},
+                                        improve_charge=0.06, room=1.0), NOW)
+        self.assertEqual(len([f for f in plan["fires"] if f["mode"] == "improve"]), 3)
+        self.assertIsNone(plan["improve_allowed"])
+        self.assertEqual(plan["unplanned"]["improve"], 0)
 
 
 class DocsTests(unittest.TestCase):
