@@ -157,11 +157,14 @@ class ShapeAndMathTests(unittest.TestCase):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
         self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
-                                     "coverage", "generated_at", "guidance",
-                                     "newest_run", "policy", "removed_skills", "roster", "schema_version",
+                                     "coverage", "fires_without_results", "generated_at",
+                                     "guidance", "newest_run", "policy", "removed_skills",
+                                     "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
-        # No evals/scheduled.yml, so no fixture is in the #545 scope.
+        # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
+        # #555's: no fire file either, so the summary is unknown.
+        self.assertIsNone(d["fires_without_results"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
@@ -651,7 +654,9 @@ class WorkflowTests(unittest.TestCase):
     def test_permissions_are_minimal(self):
         self.assertEqual(self.doc["permissions"], {})
         build, publish = self.doc["jobs"]["build"], self.doc["jobs"]["publish"]
-        self.assertEqual(build["permissions"], {"contents": "read", "issues": "read"})
+        # #555: `actions: read` lists the fire runs for `fires_without_results`.
+        self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
+                                                "issues": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
         self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish"])
         self.assertEqual(publish["needs"], "build")

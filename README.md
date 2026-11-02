@@ -703,7 +703,10 @@ skill's `SKILL.md` front matter, census `status` and `skip_reason`, gate
 `report_url`); `guidance.sections[]` (manifest `id`, `heading`, `bytes`,
 `status`, verdicts, and `runs[]` whose `modes` hold any of `none`, `section`,
 `full`, `full_minus_section`, `stub`); `coverage` (census totals); and
-`alerts[]` (`kind`, `subject`, `name`, `text`, optional `url`). The file is
+`alerts[]` (`kind`, `subject`, `name`, `text`, optional `url`); and
+`fires_without_results` (#555: `window_days`, `since`, `without_results`,
+`rejected`, `sweeps[]` of `{start, end, fires}`, or null when the fire runs
+are unknown; times and counts only, never a fixture or skill name). The file is
 public: no session ids, digests, transcripts, private-registry skills, emails
 or local paths. The page also renders every data string as text only and
 links only `https://github.com/` URLs.

@@ -352,6 +352,23 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
   ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
   ok(!t.includes('context-drift'), 'raw kind not shown');
 });
+test('the fires-without-results line is worded as past events since the oldest counted fire (#555)', () => {
+  const f = { window_days: 14, since: '2026-10-19T14:00:00Z', without_results: 10, rejected: 2,
+    sweeps: [{ start: '2026-10-31T13:03:00Z', end: '2026-10-31T13:20:00Z', fires: 3 },
+      { start: '2026-11-01T05:43:00Z', end: '2026-11-01T06:06:00Z', fires: 6 },
+      { start: '2026-11-01T15:55:00Z', end: '2026-11-01T15:55:00Z', fires: 1 }] };
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: f }), m, {}));
+    ok(t.includes('10 fires produced no results since Oct 19 (3 sweeps); 2 produced results that did not validate.'), m + ' line shown');
+  }
+  const one = Object.assign({}, f, { without_results: 1, rejected: 0, sweeps: [f.sweeps[2]] });
+  ok(P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: one }), 'skills', {}))
+    .includes('1 fire produced no results since Oct 19 (1 sweep); 0 produced results that did not validate.'), 'singular');
+  for (const quiet of [null, undefined, Object.assign({}, f, { without_results: 0, rejected: 0, sweeps: [] })]) {
+    const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: quiet }), 'skills', {}));
+    ok(!t.includes('produced no results'), 'no line for ' + JSON.stringify(quiet));
+  }
+});
 
 // --- glosses -----------------------------------------------------------------
 function manifestIds() {
