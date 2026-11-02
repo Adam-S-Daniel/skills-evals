@@ -82,7 +82,9 @@ class EventTests(unittest.TestCase):
             "effort": None, "context_tokens": None, "surface": "local",
             "root": "wsl", "cli": None, "machine": census.machine_name(),
             "session_id": SESSION,
-            "session_title": None, "cwd_repo": None, "branch": "feature/example"}])
+            "session_title": None, "cwd_repo": None, "branch": "feature/example",
+            "digest": None, "digest_null_reason": "no-base-dir",
+            "base_kind": "unknown", "registry": None}])
 
     def test_a_skill_event_carries_the_transcript_lines_version(self):
         records = self.events([
