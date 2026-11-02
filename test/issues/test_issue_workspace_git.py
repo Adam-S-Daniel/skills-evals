@@ -555,7 +555,8 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
             if path == harness / 'skill_digest.py':
                 # The lock digest's ignored-file listing (#536): one sink that
                 # must match the registry generator's `ignored_paths`, so it
-                # keeps the user's global excludes. Never a workspace.
+                # keeps the user's global excludes. Never a workspace. #562
+                # (2026-11-02) hoisted its two EOL flags into GIT_VERBATIM.
                 method = next(node for node in tree.body
                               if isinstance(node, ast.FunctionDef) and node.name == 'git_ignored')
                 sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
@@ -563,14 +564,52 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                          and isinstance(node.func.value, ast.Name)
                          and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
                 self.assertEqual(len(sinks), 1)
-                expected = ast.parse('subprocess.run(["git", "-c", "core.autocrlf=false", '
-                                     '"-c", "core.eol=lf", "-c", "core.fsmonitor=false", '
+                expected = ast.parse('subprocess.run(["git", *GIT_VERBATIM, '
+                                     '"-c", "core.fsmonitor=false", '
                                      '"-c", "core.hooksPath=/dev/null", "-C", str(repo), '
                                      '"ls-files", "--others", "--ignored", "--exclude-standard", '
                                      '"-z"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, '
                                      'stdin=subprocess.DEVNULL, check=False)', mode='eval').body
                 self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
                 allowed_reads.add(id(sinks[0]))
+                verbatim = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                                and [t.id for t in node.targets if isinstance(t, ast.Name)]
+                                == ['GIT_VERBATIM'])
+                self.assertEqual(ast.literal_eval(verbatim),
+                                 ("-c", "core.autocrlf=false", "-c", "core.eol=lf"))
+                # #562: every registry mirror or checkout read (tree_digest,
+                # skill_relpath, content_digests, commit_on_branch, and the
+                # explorer's main history) goes through this one sink: no
+                # caller GIT_*, no global or system config, no credential
+                # helper, no hooks or fsmonitor, stderr captured.
+                method = next(node for node in tree.body
+                              if isinstance(node, ast.FunctionDef) and node.name == 'git_read')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run(["git", *GIT_VERBATIM, *_GIT_HARDENED, "-C", '
+                                     'str(repo), *args], env=_git_env(lazy), '
+                                     'stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, '
+                                     'stderr=subprocess.PIPE, check=False)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
+                hardened = next(node.value for node in tree.body if isinstance(node, ast.Assign)
+                                and [t.id for t in node.targets if isinstance(t, ast.Name)]
+                                == ['_GIT_HARDENED'])
+                self.assertEqual(ast.literal_eval(hardened),
+                                 ("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+                                  "-c", "credential.helper="))
+                env = next(node for node in tree.body
+                           if isinstance(node, ast.FunctionDef) and node.name == '_git_env')
+                assigned = {kw.arg: kw.value for node in ast.walk(env) if isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Attribute) and node.func.attr == 'update'
+                            for kw in node.keywords}
+                self.assertEqual(sorted(assigned), ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_NOSYSTEM',
+                                                    'GIT_NO_REPLACE_OBJECTS', 'GIT_TERMINAL_PROMPT'])
+                self.assertEqual(ast.dump(assigned['GIT_CONFIG_GLOBAL']),
+                                 ast.dump(ast.parse('os.devnull', mode='eval').body))
             if path == harness / 'run_eval.py':
                 # #535: the arm's `git --version`, the binary's own version
                 # with no caller `GIT_*` and no system or global config.

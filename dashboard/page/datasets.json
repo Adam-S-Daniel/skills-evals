@@ -282,6 +282,17 @@
   "staleAfterHours": 48,
   "title": "Project threads"
  },
+ "usage_digests": {
+  "description": "Weekly skill uses by which copy of the skill each session loaded: the first 12 characters of the copy's digest, or why it is unknown, per public registry. Concatenated by Claude from skills-evals persistent/eval-results usage/weekly-*.json (schema 1), skill-digest rows. Empty until the first file with them lands.",
+  "schedule": "Updated by Claude on every refresh",
+  "source": {
+   "kind": "file",
+   "name": "usage_digests.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 48,
+  "title": "Loaded skill copies, weekly"
+ },
  "usage_rows": {
   "description": "Weekly counts of skill uses and git hook check runs, blocks and bypasses, per repo and place, with PR outcomes where CI reports them. Concatenated by Claude from skills-evals persistent/eval-results usage/weekly-*.json (schema 1). Empty until the first file lands.",
   "schedule": "Updated by Claude on every refresh",

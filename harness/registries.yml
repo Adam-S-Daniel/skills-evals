@@ -15,6 +15,13 @@
 # in harness/run_eval.py, any earlier `*` (a bundle/plugin name) stays a
 # wildcard.
 #
+# `private:` (required, a YAML bool; #562, 2026-11-02) says whether the
+# registry's repository is private. Only a `private: false` registry's
+# `owner/repo` and loaded-copy digest prefixes may be published
+# (scripts/model_usage_census.py `public_registries`); a missing or non-bool
+# value fails the loader, so a census refuses rather than guessing. A test
+# keeps the `private: true` names equal to eval_coverage.PRIVATE_REGISTRIES.
+#
 # `plugins:` (optional) lists the registry's plugin names. Only the private
 # registry carries it: scripts/model_usage_census.py counts a Skill call or
 # typed command prefixed by one of them (`plugin:skill`) under `other`.
@@ -22,14 +29,18 @@ registries:
   - name: adam-agentskills
     url: https://github.com/Adam-S-Daniel/adam-agentskills
     layout: "plugins/*/skills/*/SKILL.md"
+    private: false
   - name: cms-platform
     url: https://github.com/Adam-S-Daniel/cms-platform
     layout: "skills/*/SKILL.md"
+    private: false
   - name: adamdaniel.ai
     url: https://github.com/Adam-S-Daniel/adamdaniel.ai
     layout: ".claude/skills/*/SKILL.md"
+    private: false
   - name: adam-agentskills-private
     url: https://github.com/Adam-S-Daniel/adam-agentskills-private
     layout: "plugins/*/skills/*/SKILL.md"
+    private: true
     plugins:
       - adam-private-anything-anywhere

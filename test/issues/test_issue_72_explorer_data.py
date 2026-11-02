@@ -182,8 +182,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["coverage"], {"as_of": "2026-10-31T14:00:00Z", "covered": 3,
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
-            self.assertEqual(sorted(s), ["bundle", "confidence", "current_text_runs", "description",
-                                         "name",
+            self.assertEqual(sorted(s), ["bundle", "confidence", "copies", "current_text_runs",
+                                         "description", "name",
                                          "next_test", "registry", "runs", "skip_reason",
                                          "stakes", "status", "usage", "verdict",
                                          "verdict_reason"])
@@ -191,6 +191,7 @@ class ShapeAndMathTests(unittest.TestCase):
             self.assertEqual(s["stakes"], {"level": "normal"})
             # No usage census in the tree: unknown, not zero. No schedule: no test.
             self.assertIsNone(s["usage"])
+            self.assertIsNone(s["copies"])
             self.assertEqual(s["next_test"], {"position": None, "band": None, "due": None,
                                               "scheduled": False})
 

@@ -11064,7 +11064,7 @@ class TestIssue63(unittest.TestCase):
             bad.write_text(
                 "registries:\n  - name: agentskills\n"
                 "    url: https://example.com/a\n"
-                "    layout: '**/*/SKILL.md'\n",
+                "    layout: '**/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11419,9 +11419,9 @@ class TestIssue63Review(unittest.TestCase):
             bad.write_text(
                 "registries:\n"
                 "  - name: agentskills\n    url: https://example.com/a\n"
-                "    layout: 'plugins/*/skills/*/SKILL.md'\n"
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n"
                 "  - name: agentskills\n    url: https://example.com/b\n"
-                "    layout: 'skills/*/SKILL.md'\n",
+                "    layout: 'skills/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11434,7 +11434,7 @@ class TestIssue63Review(unittest.TestCase):
             bad.write_text(
                 "registries:\n"
                 "  - name: agentskills\n    url: https://example.com/a\n"
-                "    layout: 'plugins/*/skills/*'\n",
+                "    layout: 'plugins/*/skills/*'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11446,7 +11446,7 @@ class TestIssue63Review(unittest.TestCase):
             bad.write_text(
                 "registries:\n"
                 "  - name: agentskills\n    url: https://example.com/a\n"
-                "    layout: '/plugins/*/SKILL.md'\n",
+                "    layout: '/plugins/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11470,7 +11470,7 @@ class TestIssue63Review(unittest.TestCase):
                 bad.write_text(
                     "registries:\n  - name: agentskills\n"
                     "    url: https://example.com/a\n"
-                    "    layout: 'plugins/*/skills/*/SKILL.md'\n"
+                    "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n"
                     f"    plugins: {value}\n", encoding="utf-8")
                 with self.assertRaises(ValueError) as ctx:
                     run_eval._load_registries_config(bad)
@@ -11489,12 +11489,12 @@ class TestIssue63Round2(unittest.TestCase):
     def test_registries_yml_field_wrong_type_has_a_clear_message(self):
         cases = {
             "url": ("registries:\n  - name: agentskills\n    url: 12345\n"
-                    "    layout: 'plugins/*/skills/*/SKILL.md'\n"),
+                    "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n"),
             "layout": ("registries:\n  - name: agentskills\n"
-                       "    url: https://example.com/a\n    layout: 99\n"),
+                       "    url: https://example.com/a\n    layout: 99\n    private: false\n"),
             "name": ("registries:\n  - name: [a]\n"
                      "    url: https://example.com/a\n"
-                     "    layout: 'plugins/*/skills/*/SKILL.md'\n"),
+                     "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n"),
         }
         for field, text in cases.items():
             with self.subTest(field=field):
@@ -11513,7 +11513,7 @@ class TestIssue63Round2(unittest.TestCase):
             bad = Path(tmp) / "registries.yml"
             bad.write_text(
                 "registries:\n  - name: no\n    url: https://example.com/a\n"
-                "    layout: 'plugins/*/skills/*/SKILL.md'\n",
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11528,7 +11528,7 @@ class TestIssue63Round2(unittest.TestCase):
             # a bare `yaml.safe_load(f)` call should let escape as-is.
             bad.write_text(
                 "registries:\n  - name: agentskills\n      url: https://example.com/a\n"
-                "    layout: 'plugins/*/skills/*/SKILL.md'\n",
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11545,7 +11545,7 @@ class TestIssue63Round2(unittest.TestCase):
             bad.write_text(
                 "registries:\n  - name: agentskills\n"
                 "    url: https://example.com/a\n"
-                "    layout: 'skills/bundle*/SKILL.md'\n",
+                "    layout: 'skills/bundle*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11557,7 +11557,7 @@ class TestIssue63Round2(unittest.TestCase):
             bad.write_text(
                 "registries:\n  - name: agentskills\n"
                 "    url: https://example.com/a\n"
-                "    layout: '../*/SKILL.md'\n",
+                "    layout: '../*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11572,9 +11572,9 @@ class TestIssue63Round2(unittest.TestCase):
             bad.write_text(
                 "registries:\n"
                 "  - name: a\n    url: https://github.com/Org/repo\n"
-                "    layout: 'plugins/*/skills/*/SKILL.md'\n"
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n    private: false\n"
                 "  - name: b\n    url: https://GITHUB.com/org/REPO.git/\n"
-                "    layout: 'skills/*/SKILL.md'\n",
+                "    layout: 'skills/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
@@ -11716,7 +11716,7 @@ class TestIssue63Round2(unittest.TestCase):
                 "registries:\n"
                 "  - name: scratch-registry\n"
                 "    url: https://example.com/scratch-registry\n"
-                "    layout: 'skills/*/SKILL.md'\n",
+                "    layout: 'skills/*/SKILL.md'\n    private: false\n",
                 encoding="utf-8")
 
             eval_dir = tmp_root / "evals" / "scratch-eval"

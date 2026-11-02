@@ -358,6 +358,29 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
   ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
   ok(!t.includes('context-drift'), 'raw kind not shown');
 });
+test('a loaded-copy alert gets its plain label and names both prefixes (#562)', () => {
+  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'loaded-copy', subject: 'skill',
+    name: 'example-skill-alpha', surface: 'local', loaded: 'aaaaaaaaaaaa', main: 'bbbbbbbbbbbb' }] });
+  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(t.includes('Sessions load an old copy: example-skill-alpha'), 'label shown');
+  ok(t.includes('Most local uses in the last 2 weeks loaded copy aaaaaaaaaaaa, which main did not have at any point in that time. Main is bbbbbbbbbbbb.'), 'worded');
+  ok(!t.includes('loaded-copy'), 'raw kind not shown');
+});
+test('the copies line counts uses by how they compare with main, and null copies show nothing (#562)', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.skills[0].copies = { main: 'bbbbbbbbbbbb', window: { from: '2026-10-19', to: '2026-10-31' }, alert: { local: false, cloud: null },
+    loaded: [{ digest: 'bbbbbbbbbbbb', surface: 'local', invocations: 4, vs_main: 'current' },
+      { digest: 'cccccccccccc', surface: 'local', invocations: 2, vs_main: 'in-window' },
+      { digest: 'aaaaaaaaaaaa', surface: 'local', invocations: 3, vs_main: 'older' },
+      { digest: 'unknown:gone', surface: 'local', invocations: 1, vs_main: 'unknown' }] };
+  doc.skills[1].copies = { main: null, window: { from: '2026-10-19', to: '2026-10-31' }, loaded: [], alert: { local: null, cloud: null } };
+  doc.skills[2].copies = null;
+  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(t.includes('Copies loaded in the last 2 weeks: 6 match main, 3 older, 1 unknown.'), 'counts');
+  ok(t.includes(P.STRINGS.copiesNone), 'no uses in the window');
+  eq(t.split('Copies loaded in the last 2 weeks').length - 1, 2, 'null copies render nothing');
+  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('Copies loaded'), 'no copies anywhere, no line');
+});
 test('the fires-without-results line is worded as past events since the oldest counted fire (#555)', () => {
   const f = { window_days: 14, since: '2026-10-19T14:00:00Z', without_results: 10, rejected: 2,
     sweeps: [{ start: '2026-10-31T13:03:00Z', end: '2026-10-31T13:20:00Z', fires: 3 },

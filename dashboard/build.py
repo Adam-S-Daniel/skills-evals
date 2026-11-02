@@ -262,8 +262,9 @@ OUTCOME_KEYS = ["prs_opened", "prs_merged", "prs_closed_unmerged", "prs_reverted
 # Each producer names what it read in its own field: the transcript census counts sessions,
 # the local hook log counts git hook runs, the CI report counts repos, the cloud guidance
 # records count cloud sessions.
+# #562 (2026-11-02): the loaded-copy records count skill uses.
 SCANNED_KEYS = [("sessions_scanned", "sessions"), ("runs_scanned", "git hook runs"), ("repos_scanned", "repos"),
-                ("records_scanned", "cloud sessions")]
+                ("records_scanned", "cloud sessions"), ("events_scanned", "skill uses")]
 
 
 def scanned(s):
@@ -274,8 +275,13 @@ def scanned(s):
 
 
 def usage(er):
-    """Concatenate every usage/weekly-*.json (schema 1); counts stay exact."""
-    rows, sources = [], []
+    """Concatenate every usage/weekly-*.json (schema 1); counts stay exact.
+
+    Returns (rows, sources, digests). A `skill-digest` row (#562) is a second
+    view of the same skill uses, by loaded copy, so it goes to `digests` and
+    never to `rows`, where a sum over skills would count every use twice.
+    This is the one place it is split off, so the page needs no filter."""
+    rows, sources, digests = [], [], []
     for path in sorted(glob.glob(os.path.join(er, "usage", "weekly-*.json"))):
         name = os.path.basename(path)
         d = load(path)
@@ -283,10 +289,16 @@ def usage(er):
             sys.exit(f"{name}: schema {d.get('schema')!r}, expected 1; update build.py and the Impact tab")
         for s in d.get("sources", []):
             count, unit = scanned(s)
-            sources.append({"key": f"{name}|{s.get('scope')}", "file": name, "surface": s.get("surface"),
+            # Scope alone repeats once a scope has a source per surface (#562).
+            sources.append({"key": f"{name}|{s.get('scope')}|{s.get('surface')}", "file": name, "surface": s.get("surface"),
                             "scope": s.get("scope"), "from": s.get("from"), "to": s.get("to"),
                             "scanned": count, "scanned_unit": unit, "generated_at": d.get("generated_at")})
         for r in d.get("rows", []):
+            if r["kind"] == "skill-digest":
+                digests.append({"week": r["week"], "name": r["name"], "repo": r.get("repo") or "(no public repo)",
+                                "surface": r.get("surface"), "digest": r.get("digest"),
+                                "invocations": r.get("invocations", 0), "sessions": r.get("sessions")})
+                continue
             o = r.get("outcome") or {}
             # A git hook row named "all" is that week's total across checks; its own kind keeps
             # per-check sums from counting it twice.
@@ -302,7 +314,10 @@ def usage(er):
         rows = [{"week": None, "kind": PLACEHOLDER_ID, "name": "No usage counts yet", "repo": None, "surface": None,
                  "invocations": 0, "sessions": None, "blocked": None, "overridden": None,
                  **{k: None for k in OUTCOME_KEYS}}]
-    return rows, sources
+    if not digests:
+        digests = [{"week": None, "name": "No loaded-copy counts yet", "repo": None, "surface": None,
+                    "digest": PLACEHOLDER_ID, "invocations": 0, "sessions": None}]
+    return rows, sources, digests
 
 
 # --- Overview tab: threads, routines, check-ins, waiting -------------------------
@@ -520,7 +535,7 @@ def build(results, inputs, config, now):
     out["eval_allowance"] = allowance(results, now)
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
-    out["usage_rows"], out["usage_sources"] = usage(results)
+    out["usage_rows"], out["usage_sources"], out["usage_digests"] = usage(results)
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))

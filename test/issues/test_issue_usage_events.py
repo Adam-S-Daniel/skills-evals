@@ -84,7 +84,7 @@ class EventTests(unittest.TestCase):
             "session_id": SESSION,
             "session_title": None, "cwd_repo": None, "branch": "feature/example",
             "digest": None, "digest_null_reason": "no-base-dir",
-            "base_kind": "unknown", "registry": None}])
+            "base_kind": "unknown", "registry": None, "ref": None}])
 
     def test_a_skill_event_carries_the_transcript_lines_version(self):
         records = self.events([
@@ -762,14 +762,16 @@ class PrivatePublishTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertEqual(proc.stderr.strip(),
                          "usage census: private events not published (reach)")
-        self.assertIn("cloud: carried forward; published; private events: not published",
-                      proc.stdout)
+        # #562: the previous run read the (then empty) store, so its local
+        # skill-records source is carried too.
+        self.assertIn("cloud: carried forward; skill copies: carried forward; published; "
+                      "private events: not published", proc.stdout)
         self.assertEqual(self.git("diff", "--name-only", first_head, self.head(),
                                   cwd=self.origin),
                          "usage/latest.json\nusage/weekly-local.json")
         second = self.public_weekly()
         self.assertEqual([r["invocations"] for r in second["rows"]
-                          if r["name"] == "workflow-path-audit"], [2])
+                          if r["name"] == "workflow-path-audit" and r["kind"] == "skill"], [2])
         self.assertEqual(json.dumps(self.cloud_part(second)),
                          json.dumps(self.cloud_part(first)))
         self.assertNotEqual(self.cloud_part(second), ([], []))
@@ -783,7 +785,7 @@ class PrivatePublishTests(unittest.TestCase):
         proc = self.run_script()
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertNotEqual(self.head(), before)
-        self.assertIn("cloud: not read; published", proc.stdout)
+        self.assertIn("cloud: not read; skill copies: not read; published", proc.stdout)
         self.assertEqual(self.cloud_part(self.public_weekly()), ([], []))
 
     def test_a_missing_branch_is_not_a_failed_fetch(self):

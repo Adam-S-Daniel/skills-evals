@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Which skill copy a local session loaded: the `digest`, `digest_null_reason`,
-`base_kind` and `registry` keys of the census's PRIVATE skill records (#536).
+`base_kind`, `registry` and (#562) `ref` keys of the census's PRIVATE skill
+records (#536).
 
 Every home, checkout and transcript here is synthetic, written under a
 mkdtemp; git remotes are only configured, never contacted; `now` is always
@@ -140,7 +141,27 @@ class ResolveTests(unittest.TestCase):
                                                "repo": "example-owner/registry"}}})
         self.assertEqual(self.resolve(skill), {
             "digest": skill_digest.lock_digest(skill), "digest_null_reason": None,
-            "base_kind": "plugin-cache", "registry": "example-owner/registry"})
+            "base_kind": "plugin-cache", "registry": "example-owner/registry", "ref": None})
+
+    def test_plugin_cache_ref_is_the_installs_git_commit_sha(self):
+        """#562: `ref` is installed_plugins.json's `gitCommitSha` for the
+        install whose `installPath` is this version root, 40 hex or None."""
+        skill = self.plugin_skill()
+        root = str(skill.parent.parent)
+        path = self.claude / "plugins" / "installed_plugins.json"
+        sha = "c" * 40
+        for label, installs, ref in (
+                ("matching", [{"installPath": root, "gitCommitSha": sha}], sha),
+                ("other install", [{"installPath": root + "-x", "gitCommitSha": sha}], None),
+                ("short sha", [{"installPath": root, "gitCommitSha": "c" * 12}], None),
+                ("uppercase", [{"installPath": root, "gitCommitSha": "C" * 40}], None),
+                ("not a list", {"installPath": root, "gitCommitSha": sha}, None)):
+            with self.subTest(label):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({"version": 2, "plugins": {
+                    "example-plugin@example-mkt": installs}}), encoding="utf-8")
+                self.assertEqual(census.LoadedCopies().resolve(SKILL, str(skill), FUTURE)["ref"],
+                                 ref)
 
     def test_plugin_cache_registry_is_null_unless_a_github_marketplace_names_it(self):
         skill = self.plugin_skill()
@@ -188,7 +209,7 @@ class ResolveTests(unittest.TestCase):
                 self.record([dict(entry, name=SKILL, bundle="b")])
                 self.assertEqual(census.LoadedCopies().resolve(SKILL, str(skill), FUTURE), {
                     "digest": digest, "digest_null_reason": None,
-                    "base_kind": "user-skills", "registry": registry})
+                    "base_kind": "user-skills", "registry": registry, "ref": None})
         self.record([{"name": "another", "digest": digest, "registry": url}])
         self.assertIsNone(census.LoadedCopies().resolve(SKILL, str(skill), FUTURE)["registry"])
 
@@ -196,7 +217,7 @@ class ResolveTests(unittest.TestCase):
         skill = make_skill(self.claude / "skills" / "synced" / "abc_def" / SKILL)
         self.assertEqual(self.resolve(skill), {
             "digest": skill_digest.lock_digest(skill), "digest_null_reason": None,
-            "base_kind": "account-sync", "registry": None})
+            "base_kind": "account-sync", "registry": None, "ref": None})
 
     def test_account_plugin_from_a_cowork_session(self):
         skill = make_skill(self.tmp / "Claude" / "local-agent-mode-sessions"
@@ -210,7 +231,7 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(copy, {
             "digest": skill_digest.lock_digest(skill, skill_digest.git_ignored(work)),
             "digest_null_reason": None, "base_kind": "repo",
-            "registry": "example-owner/widgets"})
+            "registry": "example-owner/widgets", "ref": None})
         self.assertNotEqual(copy["digest"], skill_digest.lock_digest(skill))
 
     def test_repo_registry_is_null_without_a_github_origin(self):
@@ -232,7 +253,7 @@ class ResolveTests(unittest.TestCase):
         for name in sorted(census.BUILTIN_SKILLS):
             self.assertEqual(self.resolve(None, name=name), {
                 "digest": None, "digest_null_reason": "builtin",
-                "base_kind": "builtin", "registry": None})
+                "base_kind": "builtin", "registry": None, "ref": None})
         bundled = self.tmp / "bundled-skills" / "2.1.287" / "abc" / "claude-api"
         self.assertEqual(self.resolve(bundled, name="claude-api")["base_kind"], "builtin")
         self.assertEqual(self.resolve(bundled, name="claude-api")["digest_null_reason"],
@@ -243,7 +264,7 @@ class ResolveTests(unittest.TestCase):
         with mock.patch.object(skill_digest, "lock_digest") as digest:
             self.assertEqual(self.resolve(skill), {
                 "digest": None, "digest_null_reason": "outside-known-roots",
-                "base_kind": "unknown", "registry": None})
+                "base_kind": "unknown", "registry": None, "ref": None})
             self.assertEqual(self.resolve(f"relative/{SKILL}")["digest_null_reason"],
                              "outside-known-roots")
         digest.assert_not_called()
@@ -253,7 +274,7 @@ class ResolveTests(unittest.TestCase):
     def test_no_base_dir(self):
         self.assertEqual(self.resolve(None), {
             "digest": None, "digest_null_reason": "no-base-dir",
-            "base_kind": "unknown", "registry": None})
+            "base_kind": "unknown", "registry": None, "ref": None})
 
     def test_a_base_dir_named_for_another_skill_is_no_base_dir(self):
         skill = make_skill(self.claude / "skills" / "another-skill")
@@ -281,7 +302,7 @@ class ResolveTests(unittest.TestCase):
         skill = make_skill(self.claude / "skills" / SKILL)
         self.assertEqual(self.resolve(skill, when=PAST), {
             "digest": None, "digest_null_reason": "changed-since-load",
-            "base_kind": "user-skills", "registry": None})
+            "base_kind": "user-skills", "registry": None, "ref": None})
         self.assertIsNotNone(self.resolve(skill, when=FUTURE)["digest"])
 
     def test_refused_by_registry_rules(self):
@@ -464,7 +485,7 @@ class PublicOutputTests(unittest.TestCase):
             unresolved = self.run_main("unresolved")
         self.assertEqual(resolved, unresolved)
         self.assertEqual(resolved, self.run_main("no-events", events=False))
-        for key in (b"digest", b"base_kind", b"registry", str(self.tmp).encode()):
+        for key in (b"digest", b"base_kind", b"registry", b"ref", str(self.tmp).encode()):
             self.assertNotIn(key, resolved[0] + resolved[1])
 
     def test_merge_accepts_the_new_keys_and_keeps_old_lines_byte_for_byte(self):
@@ -480,7 +501,7 @@ class PublicOutputTests(unittest.TestCase):
         lines = old.read_text(encoding="utf-8").splitlines()
         self.assertEqual(lines[0], legacy)
         added = [json.loads(line) for line in lines[1:]]
-        self.assertTrue(all({"digest", "digest_null_reason", "base_kind", "registry"}
+        self.assertTrue(all({"digest", "digest_null_reason", "base_kind", "registry", "ref"}
                             <= set(record) for record in added))
 
 

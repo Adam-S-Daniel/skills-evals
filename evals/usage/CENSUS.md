@@ -147,6 +147,71 @@ carried forward`, and the script exits 1 at the end. A carried source whose
 census older than 14 days as missing, and an old count must not look current),
 and the summary says `cloud: not read`.
 
+## Loaded skill copies (`skill-digest` rows)
+
+#562 (2026-11-02). Which copy of a skill each local use loaded, counted per
+week from the private records (below) and published as:
+
+```
+{"week", "kind": "skill-digest", "name", "repo", "surface": "local",
+ "invocations", "sessions", "digest", "blocked": null, "overridden": null,
+ "outcome": null, "runner": null}
+```
+
+- *Which uses.* This run's counted uses of allowlisted skills, the same ones
+  the `skill` rows count (typed commands included); a use counted under
+  `other` gets no row. For every published name and every week on or after
+  the source's `from`, the `skill-digest` invocations sum to the `skill`
+  row's. `sessions` is the distinct sessions for that row (never summed
+  across weeks).
+- *Which copy.* Each use's id is resolved once across the store's machine
+  files (`events/*/<machine>.jsonl`; `cloud-*` files are not read here): a
+  non-null `digest` beats null, two different non-null digests publish as
+  `unknown:conflict`, an id the store does not hold yet takes this run's
+  record, and a stored id is final. A stored line whose `digest` is not 64
+  lowercase hex, or whose `digest_null_reason` is not a known reason, is
+  skipped. An id whose stored lines all predate the copy keys (no `digest`
+  key) is excluded, and the source's `from` moves to the Monday after the
+  latest such use's week, so no week before `from` has rows.
+- *`digest`.* The first 12 hex of the lock digest, only when the copy's
+  `registry` is a `private: false` registry in `harness/registries.yml`
+  (case-insensitive; `repo` is then its canonical `owner/repo`) AND that
+  registry's mirror shows the digest was, at some commit on one of its
+  branches, the content of that skill's path (the registry's `layout`, one
+  match at the mirror's HEAD): `git rev-list --branches -- <path>`, each
+  commit's tree digested as the generator digests a ref. That covers every
+  base kind, bootstrap `user-skills` copies included. For a `plugin-cache`
+  record whose `ref` is 40 hex, the commit must also be in the mirror itself
+  (no lazy fetch) and on a branch there; a record without `ref` (every line
+  stored before #562) is decided by content history alone. Otherwise the
+  value is `unknown:<reason>`, one of a fixed list
+  (`harness/skill_usage.UNKNOWN_REASONS`): the eight `digest_null_reason`
+  values, `conflict`, `unlisted-registry` (no public registry, a fork among
+  them: `repo` is null and the fork's name stays private) and
+  `unverified-commit` (the mirror does not show it, or could not be read).
+  An unpublished local edit, for example a dirty skill in a checkout, shows
+  as unknown.
+- *Source.* `{surface: "local", scope: "skill-records", from, to,
+  events_scanned}`, where `events_scanned` is the uses counted on or after
+  `from`; present only when the store was read (an empty store when the
+  branch does not exist yet). No source means unknown, not zero.
+- *Mirrors.* After the census, the publisher clones, bare and blob-less
+  (`--filter=blob:none`), only the public registries the run's uses point
+  at, anonymously (no credential helper, no global or system config, no
+  prompt), into its temp directory. A clone that fails leaves those uses
+  `unknown:unverified-commit`, and the summary says `registry: not read`,
+  never which registry or why.
+- *The last gate.* Before anything is staged, `skill_usage.check_public`
+  refuses the weekly file (exit 1, `refusing to publish`) if it holds any
+  hex run longer than 12, a `digest` on another kind, a prefix without a
+  public `repo`, a `repo` outside the public registries, a reason outside
+  the list, or a name outside the allowlist.
+- *Carry.* When the store fetch fails, the previous file's local
+  `skill-digest` rows and their source are carried forward verbatim, aged
+  by that source's `to` like the cloud rows, and the summary says `skill
+  copies: carried forward` (or `not read`). The sum rule is not re-checked
+  on carried rows; the old `to` shows they are stale.
+
 ## Transcript roots
 
 `--projects` may be repeated or carry several roots separated by `:`. On WSL
@@ -223,8 +288,9 @@ private repository: branch `persistent/usage-events` of
   the `version` field of that transcript line (the value at use time), null
   when the line has none.
 - **Which copy was loaded** (skill records only):
-  `"digest","digest_null_reason","base_kind","registry"`. No path is ever
-  recorded, and none of the four reaches a public file.
+  `"digest","digest_null_reason","base_kind","registry","ref"`. No path is
+  ever recorded. None of the five reaches a public file except as the 12-hex
+  prefix of a verified `digest` in a `skill-digest` row (above).
   - *Base directory.* Taken only from a later user entry with `isMeta` true
     that links to the call (a Skill call by `sourceToolUseID`, a typed
     command by `parentUuid` equal to the typed entry's `uuid`) and whose
@@ -258,6 +324,13 @@ private repository: branch `persistent/usage-events` of
     `https://github.com/<owner>/<repo>`. `repo`: the checkout's github.com
     `origin`. Null otherwise. Earlier records lack all four keys and are
     not rewritten.
+  - *`ref`* (#562). `plugin-cache` only: the `gitCommitSha` that
+    `<.claude>/plugins/installed_plugins.json` (version 2) records for the
+    install whose `installPath` is this copy's version root, when it is 40
+    lowercase hex; null otherwise and for every other kind. It is the
+    marketplace clone's commit, shared by every plugin installed from it,
+    which is harmless: it only has to be a commit on a public branch.
+    Records stored before #562 lack it and are not rewritten.
 - **Hook records:** `{"v":1,"id","ts","kind":"hook","event","repo","checks","failed","runner","surface":"local","root","machine"}`,
   `id` being the SHA-256 of the machine name and the raw log line. `runner`
   is the sanitized digest above, null when absent or malformed. Hook lines

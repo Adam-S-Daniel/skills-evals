@@ -40,6 +40,11 @@ name: Publish explorer data
 #   and only explorer_data.py's scope filter may decide what is public. The
 #   window start and the fetch time come from the runner's clock, never from
 #   `${{ }}` context. `publish` keeps `contents: write` alone.
+# * #562 (2026-11-02): the three registry checkouts' full history also feeds
+#   each skill's `copies` and the report-only `loaded-copy` alert: main's
+#   digest at every first-parent commit in the last 2 weeks, read with
+#   `git archive` (adamdaniel.ai's few skill blobs are fetched lazily from the
+#   public origin). A shallow one makes the alert unknown (null), never clean.
 
 on:
   workflow_run:

@@ -295,6 +295,8 @@ const STRINGS = {
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
+  copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
+  copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',
   usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.',
   size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
 
@@ -366,7 +368,10 @@ const STRINGS = {
   removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
-    'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date' },
+    'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date',
+    'loaded-copy': 'Sessions load an old copy' },
+  // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
+  alertCopy: (surface, loaded, main) => 'Most ' + (surface === 'cloud' ? 'cloud' : 'local') + ' uses in the last 2 weeks loaded copy ' + loaded + ', which main did not have at any point in that time. Main is ' + main + '.',
   // #545: this alert carries fields, not text, so the page words it.
   alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
   alertDetails: 'Details',
@@ -1056,11 +1061,26 @@ function usageLine(u, window, refMs) {
   return h('p', { class: 'meta' }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs)));
 }
 
+// #562: uses by which copy they loaded, counted from `copies.loaded`; nothing
+// when `copies` is null (no census of copies: unknown, not zero).
+function copiesLine(c) {
+  if (!c || !Array.isArray(c.loaded)) return null;
+  const n = { match: 0, older: 0, unknown: 0 };
+  for (const e of c.loaded) {
+    if (!e || !Number.isInteger(e.invocations)) continue;
+    const k = e.vs_main === 'current' || e.vs_main === 'in-window' ? 'match' : e.vs_main === 'older' ? 'older' : 'unknown';
+    n[k] += e.invocations;
+  }
+  if (n.match + n.older + n.unknown === 0) return h('p', { class: 'meta' }, STRINGS.copiesNone);
+  return h('p', { class: 'meta' }, STRINGS.copies(n.match, n.older, n.unknown));
+}
+
 function skillCard(it, refMs, doc) {
   return h('article', { class: 'card' },
     h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
     h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
     usageLine(it.raw.usage, doc && doc.usage, refMs),
+    copiesLine(it.raw.copies),
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
@@ -1126,6 +1146,9 @@ function coverageView(doc, mode) {
 function alertText(a) {
   if (a.kind === 'context-drift' && typeof a.drift_since === 'string') {
     return STRINGS.alertDrift(clean(a.fixture), clean(a.repository), fmtDay(parseTime(a.drift_since)));
+  }
+  if (a.kind === 'loaded-copy' && typeof a.loaded === 'string' && typeof a.main === 'string') {
+    return STRINGS.alertCopy(a.surface, clean(a.loaded), clean(a.main));
   }
   return null;
 }

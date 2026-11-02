@@ -47,6 +47,20 @@ no promise of coverage before the first one: coverage is unknown, not zero.
 The registry commit a session installed is not recorded (`registry_sha` is
 always null); a per-source install record is a follow-up.
 
+LOADED SKILL COPIES (#562, 2026-11-02): a `skill-digest` row counts the
+local uses of one allowlisted skill, in one week, by which copy the session
+loaded: `digest` is the first 12 hex of the lock digest
+(`harness/skill_digest.py`) or `unknown:<reason>` (`UNKNOWN_REASONS`, a fixed
+list: a new reason is a schema change), `repo` the canonical `owner/repo` of
+a `private: false` registry or null, `invocations` the uses and `sessions` the
+distinct sessions; `digest` exists on this kind only. A prefix is published
+only when the content once existed on a public branch of that registry (see
+`scripts/model_usage_census.py`). For every published name and every week on
+or after its source's `from`, the `skill-digest` invocations sum to the
+`skill` row's. Their source is `scope: "skill-records"` with
+`events_scanned` (the uses counted); absent means unknown, not zero.
+`check_public` is the last gate before the file is published.
+
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
 name, repo. `sessions` is the number of distinct transcript files that invoked the
 name that week; `sessions_scanned` is how many transcript files were read
@@ -63,6 +77,7 @@ Stdlib only, no network; the caller supplies `now`.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -74,6 +89,20 @@ SURFACE_CLOUD = "cloud"
 #: Kinds that count sessions: their invocations are always null.
 SESSION_KINDS = ("guidance", "guidance-check")
 CLOUD_SCOPE = "guidance-records"
+#: #562: the source of the `skill-digest` rows, one per surface.
+DIGEST_SCOPE = "skill-records"
+DIGEST_KIND = "skill-digest"
+#: Why a `skill-digest` row names no prefix. The first eight are the private
+#: records' `DIGEST_NULL_REASONS` (scripts/model_usage_census.py; a test keeps
+#: them equal); the last three are decided when the rows are built. Fixed: a
+#: new reason is a schema change, never a free string from a record.
+UNKNOWN_REASONS = ("no-base-dir", "builtin", "outside-known-roots", "gone",
+                   "changed-since-load", "refused-by-registry-rules", "too-large",
+                   "bad-name", "conflict", "unlisted-registry", "unverified-commit")
+_PREFIX_RE = re.compile(r"[0-9a-f]{12}")
+#: Any hex run longer than a published prefix: a full digest, a commit, a
+#: session id's hex. Nothing in the file may carry one (#562).
+_LONG_HEX_RE = re.compile(r"[0-9a-fA-F]{13,}")
 ROW_FIELDS = ("week", "kind", "name", "repo", "surface", "invocations",
               "sessions", "blocked", "overridden", "outcome", "runner")
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
@@ -112,6 +141,31 @@ def guidance_check_row(iso_week_label: str, result: str, sessions: int) -> dict:
             "kind": "guidance-check"}
 
 
+def digest_row(week_monday_text: str, name: str, repo: str | None, digest: str,
+               invocations: int, sessions: int, surface: str = SURFACE_LOCAL) -> dict:
+    """One `skill-digest` row (#562): `invocations` uses of `name` in the week
+    starting `week_monday_text` whose session loaded the copy `digest` (12
+    hex, or `unknown:<reason>`), in `sessions` distinct sessions."""
+    return {"week": week_monday_text, "kind": DIGEST_KIND, "name": name, "repo": repo,
+            "surface": surface, "invocations": invocations, "sessions": sessions,
+            "digest": digest, "blocked": None, "overridden": None, "outcome": None,
+            "runner": None}
+
+
+def digest_source(floor: datetime, now: datetime, events_scanned: int,
+                  surface: str = SURFACE_LOCAL) -> dict:
+    """The source of the `skill-digest` rows: `from` is the floor (no week
+    before it has rows), `events_scanned` the uses counted on or after it."""
+    return {"surface": surface, "scope": DIGEST_SCOPE, "from": floor.strftime(STAMP),
+            "to": now.strftime(STAMP), "events_scanned": events_scanned}
+
+
+def add_rows(doc: dict, rows: list[dict], source: dict) -> None:
+    """Add `rows` and their `source` to a built document, keeping the order."""
+    doc["sources"].append(source)
+    doc["rows"] = sorted(doc["rows"] + rows, key=_sort_key)
+
+
 def cloud_source(window_from: datetime, now: datetime, records_scanned: int) -> dict:
     """The source of the cloud guidance rows. `to` is when they were read; the
     carry-forward below ages a source by it."""
@@ -145,36 +199,89 @@ def document(rows: list[dict], now: datetime, window_from: datetime,
 
 def _sort_key(entry: dict) -> tuple:
     return (entry["week"], entry["kind"], entry["name"], entry["repo"] or "",
-            entry["surface"], entry["runner"] or "")
+            entry["surface"], entry.get("digest") or "", entry["runner"] or "")
 
 
-def _is_cloud_row(entry) -> bool:
-    return (isinstance(entry, dict) and entry.get("surface") == SURFACE_CLOUD
-            and entry.get("kind") in SESSION_KINDS)
+#: What a publish whose private store could not be read carries forward from
+#: the document last published (#562 generalized #536's cloud-only carry):
+#: (summary label, source scope, row kinds, surface). Each entry is matched by
+#: scope AND surface and aged by its own source's `to`, so a local guidance
+#: row is never carried. PR B adds ("cloud skill copies", DIGEST_SCOPE,
+#: (DIGEST_KIND,), SURFACE_CLOUD).
+CARRIED = (("cloud", CLOUD_SCOPE, SESSION_KINDS, SURFACE_CLOUD),
+           ("skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_LOCAL))
 
 
-def carry_cloud(previous, new: dict, max_age_days: int = 14) -> int:
-    """Copy the cloud guidance rows and source of `previous` (the document
-    last published) into `new`, verbatim, and return how many rows were
-    carried. For when the private records could not be read this run: the
-    rows are already public, and a census older than 14 days counts as
-    missing, so a failed fetch must not drop them from a publish that goes
-    ahead. Nothing is carried when `previous` has no cloud source, or its
-    source was read more than `max_age_days` before `new` was generated: an
-    old count must not look current."""
+def carry(previous, new: dict, max_age_days: int = 14) -> dict:
+    """Copy each CARRIED part of `previous` (the document last published)
+    into `new`, verbatim, and return {label: rows carried, or None when that
+    part was not carried}. For when the private records could not be read
+    this run: the rows are already public, and a census older than 14 days
+    counts as missing, so a failed fetch must not drop them from a publish
+    that goes ahead. A part is not carried when `previous` has no such
+    source, `new` already has one, or the source was read more than
+    `max_age_days` before `new` was generated: an old count must not look
+    current. The carried source keeps its old `to`, so a reader sees it is
+    stale; the sum invariant is not re-checked on carried rows."""
     now = parse_ts(new.get("generated_at"))
-    if not isinstance(previous, dict) or now is None:
-        return 0
-    source = next((s for s in previous.get("sources", [])
-                   if isinstance(s, dict) and s.get("surface") == SURFACE_CLOUD
-                   and s.get("scope") == CLOUD_SCOPE), None)
-    read = parse_ts(source.get("to")) if source else None
-    if read is None or read > now or now - read > timedelta(days=max_age_days):
-        return 0
-    carried = [r for r in previous.get("rows", []) if _is_cloud_row(r)]
-    new["sources"].append(source)
-    new["rows"] = sorted(new["rows"] + carried, key=_sort_key)
-    return len(carried)
+    out = {}
+    for label, scope, kinds, surface in CARRIED:
+        out[label] = None
+        if not isinstance(previous, dict) or now is None:
+            continue
+        if any(s.get("scope") == scope and s.get("surface") == surface
+               for s in new["sources"]):
+            continue
+        source = next((s for s in previous.get("sources", [])
+                       if isinstance(s, dict) and s.get("surface") == surface
+                       and s.get("scope") == scope), None)
+        read = parse_ts(source.get("to")) if source else None
+        if read is None or read > now or now - read > timedelta(days=max_age_days):
+            continue
+        carried = [r for r in previous.get("rows", []) if isinstance(r, dict)
+                   and r.get("surface") == surface and r.get("kind") in kinds]
+        new["sources"].append(source)
+        new["rows"] = sorted(new["rows"] + carried, key=_sort_key)
+        out[label] = len(carried)
+    return out
+
+
+def check_public(doc, allowlist, public_repos) -> list[str]:
+    """Why `doc` must not be published, as fixed phrases (never a value from
+    the document); empty when it may. `public_repos` holds the canonical
+    `owner/repo` of every `private: false` registry, `allowlist` the skill
+    names that may be keys. The publisher calls it last, before `git add`
+    (#562): a full digest, a commit, a fork's name or a private skill's name
+    must fail here even if every builder above it has a bug."""
+    problems = []
+    if not isinstance(doc, dict) or not isinstance(doc.get("rows"), list):
+        return ["not a usage document"]
+    if _LONG_HEX_RE.search(json.dumps(doc, sort_keys=True)):
+        problems.append("a hex run longer than 12")
+    unknown = {f"unknown:{reason}" for reason in UNKNOWN_REASONS}
+    for row in doc["rows"]:
+        if not isinstance(row, dict):
+            problems.append("a row that is not an object")
+            continue
+        kind = row.get("kind")
+        if kind != DIGEST_KIND:
+            if "digest" in row:
+                problems.append("a digest on a row that is not skill-digest")
+            if kind == "skill" and not (row.get("name") == "other"
+                                        or row.get("name") in allowlist):
+                problems.append("a skill name outside the allowlist")
+            continue
+        name, repo, digest = row.get("name"), row.get("repo"), row.get("digest")
+        if name not in allowlist:
+            problems.append("a skill-digest name outside the allowlist")
+        if repo is not None and repo not in public_repos:
+            problems.append("a skill-digest repo outside the public registries")
+        if isinstance(digest, str) and _PREFIX_RE.fullmatch(digest):
+            if repo is None:
+                problems.append("a prefix with no public repo")
+        elif digest not in unknown:
+            problems.append("a digest that is neither a prefix nor a known reason")
+    return problems
 
 
 def _count(value) -> bool:

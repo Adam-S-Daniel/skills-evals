@@ -21,11 +21,15 @@ more than what it carries:
     `private: false`. A skill with runs but no such census row (a private
     registry's skill, or a retired one) is dropped, and so is every alert
     about it. The census is the one source of what is public.
-  * No session id, digest, harness commit, transcript or e-mail is ever
+  * No session id, digest (except a 12-hex prefix under `copies` and in a
+    `loaded-copy` alert), harness commit, transcript or e-mail is ever
     copied from a run. `finish` is the last gate: it refuses (exit 2) a
     document containing a session-id prefix, an `@` outside a URL or a
     64-hex digest, so a future field added by mistake fails loudly instead
-    of publishing.
+    of publishing; under `copies` and in `loaded-copy` alerts it also
+    refuses any value that is not a 12-hex prefix or a known
+    `unknown:<reason>`, and any hex run longer than 12 (the 40-hex commits in
+    `source` are outside that scope).
 
 Each skill and section also carries `confidence` (the levels its gate
 bounds reach, `subject_confidence`) and `next_test` (its place in the
@@ -34,6 +38,24 @@ planner's eval queue or its next re-check, `test_queue`) and `stakes`
 skill carries
 `usage`, its invocations in `usage/weekly-local.json`, whose window is the
 top-level `usage` (None without a census: unknown, not zero).
+
+Each skill also carries `copies` (#562, 2026-11-02): which copies of it
+sessions loaded in the last COPY_WEEKS ISO weeks, from the `skill-digest`
+rows of `usage/weekly-local.json` joined by (name, the registry's public
+`owner/repo` from harness/registries.yml). `main` is the 12-hex prefix of
+the skill's lock digest at the registry checkout's HEAD (`--registry`), and
+each `loaded` entry (digest or `unknown:<reason>`, surface, invocations) says
+`vs_main`: `current`, `in-window` (a digest main had at some first-parent
+commit in the window, or at its start), `older` or `unknown`. `alert` holds,
+per surface, whether the leading copy (most invocations; a tie counts every
+tied copy) is none of main's in-window digests: null without a fresh
+`skill-records` source for that surface (14 days), without a known loaded
+copy, or without main's history (a shallow checkout reads unknown, never
+clean). `copies` is null without a readable usage file or any
+`skill-records` source (unknown, not zero). A true one becomes a report-only
+`loaded-copy` alert naming the skill, the surface and the two prefixes. It
+lags a main change by up to the window, since a copy main had inside the
+window stays quiet.
 
 One report-only alert watches the scheduled in-place skill fixtures (#545).
 It sees a fixture only after the HEALTH FILTER (`health_fixtures`): an exact
@@ -96,9 +118,12 @@ import compute_gates  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import improve_outcomes  # noqa: E402
+import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
+import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
+import timeweeks  # noqa: E402  (harness/)
 
 SCHEMA_VERSION = 1
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -108,6 +133,14 @@ MODE_NAMES = {("in_situ", "with"): "full", ("in_situ", "without"): "full_minus_s
 REGRESSION_MARKER = "skills-evals:regression:"
 _URL_RE = re.compile(r"https?://\S+")
 _DIGEST_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
+#: #562: the loaded-copy window, in ISO weeks ending with the as-of week.
+COPY_WEEKS = 2
+#: A `skill-records` source read longer ago than this decides no alert.
+COPY_SOURCE_DAYS = 14
+_PREFIX_RE = re.compile(r"[0-9a-f]{12}")
+_COPY_VALUE_RE = re.compile(r"[0-9a-f]{12}|unknown:(?:%s)"
+                            % "|".join(map(re.escape, skill_usage.UNKNOWN_REASONS)))
+_LONG_HEX_RE = re.compile(r"[0-9a-fA-F]{13,}")
 
 
 class Refused(Exception):
@@ -926,6 +959,114 @@ def usage_counts(tree: Path) -> tuple:
     return counts, window
 
 
+def usage_digests(tree: Path) -> dict | None:
+    """{"rows": skill-digest rows, "sources": {surface: skill-records source}}
+    from `usage/weekly-local.json`; None without a readable file or without
+    any skill-records source (copies unknown, not zero)."""
+    doc = skill_usage.load(tree / "usage" / "weekly-local.json")
+    if doc is None:
+        return None
+    sources = {s.get("surface"): s for s in doc["sources"]
+               if s.get("scope") == skill_usage.DIGEST_SCOPE}
+    if not sources:
+        return None
+    return {"rows": [r for r in doc["rows"] if r["kind"] == skill_usage.DIGEST_KIND],
+            "sources": sources}
+
+
+def public_registry_repos() -> dict:
+    """{registry name: {"repo": canonical owner/repo, "layout": glob}} of
+    the `private: false` registries in harness/registries.yml."""
+    return {entry["name"]: {"repo": model_usage_census.github_repo(entry["url"]),
+                            "layout": entry["layout"]}
+            for entry in compute_gates.run_eval._load_registries_config()
+            if entry["private"] is False and model_usage_census.github_repo(entry["url"])}
+
+
+def main_history(checkout, layout: str, name: str, start: datetime) -> tuple | None:
+    """(main's 12-hex prefix, every prefix main had in the window) for skill
+    `name` in the registry checkout, or None when it cannot be told (no
+    single copy at HEAD, a shallow checkout, any git failure). The window's
+    prefixes are main's at the last first-parent commit before `start` plus
+    at every first-parent commit since that touched the skill's path; a path
+    that moved inside the window yields only its post-move digests, which can
+    only make the alert louder, never quieter."""
+    try:
+        shallow = skill_digest.git_read(checkout, "rev-parse", "--is-shallow-repository")
+        if shallow.returncode != 0 or shallow.stdout.strip() != b"false":
+            return None
+        relpath = skill_digest.skill_relpath(checkout, layout, name)
+        main = skill_digest.tree_digest(checkout, "HEAD", relpath)[:12]
+        before = skill_digest.git_read(
+            checkout, "rev-list", "-1", "--first-parent",
+            "--before=" + start.strftime("%Y-%m-%dT%H:%M:%SZ"), "HEAD")
+        if before.returncode != 0:
+            return None
+        base = before.stdout.decode("ascii", "replace").strip()
+        seen = {main}
+        if base:
+            try:
+                seen.add(skill_digest.tree_digest(checkout, base, relpath)[:12])
+            except OSError:
+                pass  # the skill did not exist at the window's start
+        since = skill_digest.git_read(checkout, "rev-list", "--first-parent",
+                                      f"{base}..HEAD" if base else "HEAD", "--", relpath)
+        if since.returncode != 0:
+            return None
+        for sha in since.stdout.decode("ascii", "replace").split():
+            try:
+                seen.add(skill_digest.tree_digest(checkout, sha, relpath)[:12])
+            except OSError:
+                continue  # the commit that deleted the path
+        return main, seen
+    except (OSError, ValueError, skill_digest.DigestRefused, skill_digest.DigestTooLarge):
+        return None
+
+
+def skill_copies(name: str, repo: str, digests: dict, history: tuple | None,
+                 now: datetime) -> tuple[dict, list]:
+    """(`copies` for one public skill, its `loaded-copy` alerts)."""
+    mondays = sorted(skill_usage.week_monday(label)
+                     for label in timeweeks.window_weeks(now, COPY_WEEKS))
+    main, in_window = history if history is not None else (None, set())
+    totals: dict = {}
+    for row in digests["rows"]:
+        if (row.get("name") == name and row.get("repo") == repo and row["week"] in mondays
+                and isinstance(row.get("digest"), str)
+                and _COPY_VALUE_RE.fullmatch(row["digest"])
+                and isinstance(row.get("invocations"), int)):
+            key = (row["digest"], row.get("surface"))
+            totals[key] = totals.get(key, 0) + row["invocations"]
+    loaded = []
+    for (digest, surface), invocations in sorted(totals.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        if not _PREFIX_RE.fullmatch(digest) or history is None:
+            vs_main = "unknown"
+        elif digest == main:
+            vs_main = "current"
+        else:
+            vs_main = "in-window" if digest in in_window else "older"
+        loaded.append({"digest": digest, "surface": surface, "invocations": invocations,
+                       "vs_main": vs_main})
+    alert, alerts = {}, []
+    for surface in (skill_usage.SURFACE_LOCAL, skill_usage.SURFACE_CLOUD):
+        alert[surface] = None
+        source = digests["sources"].get(surface)
+        read = skill_usage.parse_ts(source.get("to")) if source else None
+        known = [e for e in loaded if e["surface"] == surface and _PREFIX_RE.fullmatch(e["digest"])]
+        if (read is None or read > now or now - read > timedelta(days=COPY_SOURCE_DAYS)
+                or not known or history is None):
+            continue
+        top = max(e["invocations"] for e in known)
+        leading = sorted(e["digest"] for e in known if e["invocations"] == top)
+        # A tie that includes any of main's in-window copies stays quiet.
+        alert[surface] = not any(digest in in_window for digest in leading)
+        if alert[surface]:
+            alerts.append({"kind": "loaded-copy", "subject": "skill", "name": name,
+                           "surface": surface, "loaded": leading[0], "main": main})
+    return {"main": main, "window": {"from": mondays[0], "to": now.date().isoformat()},
+            "loaded": loaded, "alert": alert}, alerts
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -956,8 +1097,22 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         return {"level": entry["stakes"], "reason": entry["reason"],
                 "covered_by": entry["covered_by"]} if entry else {"level": "normal"}
 
+    digests = usage_digests(tree)
+    public_repos = public_registry_repos() if digests is not None else {}
+    copy_alerts = []
     skills = []
     for name, row in sorted(census_rows.items()):
+        copies = None
+        public = public_repos.get(row["registry"])
+        if digests is not None and public is not None:
+            checkout = (registries or {}).get(row["registry"], {}).get("path")
+            start = datetime.fromisoformat(min(
+                skill_usage.week_monday(label) for label in
+                timeweeks.window_weeks(now, COPY_WEEKS))).replace(tzinfo=timezone.utc)
+            history = (main_history(checkout, public["layout"], name, start)
+                       if checkout is not None else None)
+            copies, found = skill_copies(name, public["repo"], digests, history, now)
+            copy_alerts += found
         verdict = gates_doc["skills"].get(name) or {}
         skills.append({"name": name, "registry": row["registry"], "bundle": row.get("bundle"),
                        "description": skill_description(registries, row["registry"], name),
@@ -969,6 +1124,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "stakes": stakes_of("skill", name),
                        "usage": None if usage_window is None
                        else {"invocations": counts.get(name, 0)},
+                       "copies": copies,
                        "runs": by_skill.get(name, [])})
 
     renumber(skills)
@@ -998,6 +1154,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         regressions = None
     alerts = build_alerts(gates_doc, regressions if isinstance(regressions, dict) else None,
                           issues or {}, {s["name"] for s in skills}, {s["id"] for s in sections}, cells)
+    alerts += copy_alerts
     drift_unknown = 0
     if (evals_dir / "scheduled.yml").is_file():
         health, drift_unknown, _rows = health_alerts(
@@ -1040,6 +1197,21 @@ def finish(doc: dict) -> str:
         raise Refused("the document contains an '@' outside a URL")
     if _DIGEST_RE.search(text):
         raise Refused("the document contains a 64-hex digest")
+    # #562: the one place a digest prefix is allowed, held to its shape.
+    for skill in doc.get("skills") or []:
+        copies = skill.get("copies") if isinstance(skill, dict) else None
+        if copies is None:
+            continue
+        values = [copies.get("main")] + [e.get("digest") for e in copies.get("loaded") or []]
+        if any(v is not None and not (isinstance(v, str) and _COPY_VALUE_RE.fullmatch(v))
+               for v in values) or _LONG_HEX_RE.search(json.dumps(copies)):
+            raise Refused("a skill's copies carry a value that is not a prefix or a known reason")
+    for alert in doc.get("alerts") or []:
+        if isinstance(alert, dict) and alert.get("kind") == "loaded-copy":
+            if (not all(isinstance(alert.get(k), str) and _PREFIX_RE.fullmatch(alert[k])
+                        for k in ("loaded", "main"))
+                    or _LONG_HEX_RE.search(json.dumps(alert))):
+                raise Refused("a loaded-copy alert carries a value that is not a prefix")
     return text
 
 
