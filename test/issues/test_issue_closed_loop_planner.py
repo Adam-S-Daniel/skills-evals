@@ -1715,6 +1715,98 @@ class DocsTests(unittest.TestCase):
                    if line.startswith("  | `routine-eval-watchdog.yml`"))
         self.assertIn("plan_week.py watchdog", row)
 
+class SchedulabilityTests(unittest.TestCase):
+    """Adam, 2026-11-02: an isolation cell (no `context:`), a null-pin cell and
+    a private-registry cell are held: listed in eval_cells, in no band."""
+
+    PRIVATE = "https://github.com/Adam-S-Daniel/adam-agentskills-private"
+    IN_PLACE = {"revision": "a" * 40, "guidance_revision": "b" * 40}
+
+    def setUp(self):
+        import subprocess
+        tmp = tempfile.TemporaryDirectory(prefix="schedulable-")
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        rows = {
+            "iso": {"skill": "iso"},
+            "pin": {"skill": "pin", "context": {**self.IN_PLACE, "guidance_revision": None}},
+            "place": {"skill": "place", "context": self.IN_PLACE},
+            "priv": {"skill": "priv", "registry": self.PRIVATE, "context": self.IN_PLACE},
+            "rw": {"subject": "any", "draft": False, "prompt": "p"}}
+        for name, doc in rows.items():
+            path = self.root / "evals" / name / "a" / "fixture.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        (self.root / "evals" / "scheduled.yml").write_text(yaml.safe_dump({"fixtures": [
+            {"path": f"evals/{name}/a", "readiness": "invented"} for name in rows]}),
+            encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "evals"], cwd=self.root, check=True)
+        self.gates_doc = {"roster_models": ["m"], "skills": {}}
+
+    def cells(self):
+        return plan_week.eval_cells(self.root / "evals", self.gates_doc, [], NOW)
+
+    def bands(self, cells, **over):
+        return plan_week.eval_items(ctx(cells=cells, model_weights={"m": 1.0}, **over), NOW)[0]
+
+    def test_held_cells_stay_in_the_list_with_a_reason(self):
+        got = {c["skill"]: (c["schedulable"], c["hold_reason"]) for c in self.cells()}
+        self.assertEqual(got, {"iso": (False, "no context"), "pin": (False, "null pin"),
+                               "place": (True, None), "priv": (False, "private, paused")})
+
+    def test_held_cells_enter_no_band_but_an_in_place_cell_does(self):
+        bands = self.bands(self.cells())
+        queued = [i["skill"] for items in bands.values() for i in items]
+        self.assertEqual(queued, ["place"])
+
+    def test_an_isolation_cell_of_a_skill_with_a_removal_pr_enters_no_band(self):
+        bands = self.bands(self.cells(), removal_prs=["iso", "place"])
+        self.assertEqual([(b, i["skill"]) for b, items in bands.items() for i in items],
+                         [("safety", "place")])
+
+    def test_a_bare_fire_is_kept_for_a_held_cell(self):
+        cells = self.cells()
+        plan = plan_week.build_plan(ctx(cells=cells, model_weights={"m": 1.0}, room=1.0,
+                                        bare=[{"fixture": "evals/iso/a", "model": "m",
+                                               "skill": "iso"}]), NOW)
+        self.assertEqual([(f["band"], f["arms"], f["fixture"]) for f in plan["fires"]],
+                         [("missing", "both", "evals/place/a"),
+                          ("bare", "bare", "evals/iso/a")])
+
+    def test_a_subject_any_row_neither_crashes_nor_plans_and_is_listed(self):
+        self.assertFalse([c for c in self.cells() if c["fixture"] == "evals/rw/a"])
+        self.assertEqual(plan_week.real_work_rows(self.root / "evals"), ["evals/rw/a"])
+        plan = plan_week.build_plan(ctx(real_work=["evals/rw/a"]), NOW)
+        lines = [l for l in plan_week.summary_lines(plan) if "evals/rw/a" in l]
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Real-work row, not planned by the skill planner", lines[0])
+
+    def test_validate_fire_refuses_a_held_both_arms_leg_only(self):
+        def leg(name, arms="both"):
+            return {"MODE": "eval", "ARMS": arms, "FIXTURE": f"evals/{name}/a",
+                    "EVAL_KEY": f"{name}/a", "MODEL": "claude-opus-5-5", "SKILL": "",
+                    "HOLDOUT": ""}
+        roster = mock.patch.object(plan_week.roster_arm, "is_arm", return_value=True) \
+            if hasattr(plan_week, "roster_arm") else mock.patch("roster_arm.is_arm",
+                                                                 return_value=True)
+        with roster:
+            plan_week.validate_fire(leg("place"), self.root)
+            plan_week.validate_fire(leg("iso", "bare") | {"FIXTURE": "evals/place/a",
+                                                          "EVAL_KEY": "place/a"}, self.root)
+            for name in ("iso", "pin", "priv"):
+                with self.assertRaises(plan_week.PlanError, msg=name):
+                    plan_week.validate_fire(leg(name), self.root)
+
+    def test_a_private_cell_leaves_no_name_in_a_public_output(self):
+        cells = self.cells()
+        plan = plan_week.build_plan(ctx(cells=cells, model_weights={"m": 1.0}, room=1.0,
+                                        real_work=plan_week.real_work_rows(self.root / "evals")),
+                                    NOW)
+        text = json.dumps(plan) + "\n".join(plan_week.summary_lines(plan))
+        self.assertNotIn("priv", text)
+        self.assertNotIn("private", text)
+
 
 if __name__ == "__main__":
     unittest.main()
