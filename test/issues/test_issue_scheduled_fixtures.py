@@ -500,6 +500,7 @@ class TestScheduledFixtures(unittest.TestCase):
             scripts = workspace / "scripts"
             scripts.mkdir(parents=True)
             shutil.copyfile(ROOT / "scripts/make_badge.py", scripts / "make_badge.py")
+            shutil.copyfile(ROOT / "scripts/push_results_branch.sh", scripts / "push_results_branch.sh")
             history = base / "history"
             history.mkdir()
             runner = base / "runner"
@@ -550,7 +551,7 @@ if args == ["diff", "--cached", "--quiet"]:
             self.assertIn(["commit", "-m", "eval: " + key + " run + badge + roster [skip ci]"], calls)
             pushes = [args for args in calls if "push" in args]
             self.assertEqual(len(pushes), 1)
-            self.assertEqual(pushes[0][-3:], ["push", "origin", "persistent/eval-results"])
+            self.assertEqual(pushes[0][-3:], ["push", "origin", "HEAD:refs/heads/persistent/eval-results"])
             self.assertFalse((workspace / ".git").exists())
             self.assertFalse(claude_calls.exists() and claude_calls.read_text())
 
