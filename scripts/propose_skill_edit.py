@@ -324,8 +324,14 @@ def write_proposal_usage(results: Path, ts: str, runner) -> None:
     local_eval requires each runs/<label>/ destination to be empty."""
     usage = getattr(runner, "last_usage", None)
     if isinstance(usage, dict):
-        (results / f"proposal-{ts}.json").write_text(
-            json.dumps(usage) + "\n", encoding="utf-8")
+        # Called from a `finally`: a failed write must never replace the
+        # loop's own outcome or Refusal (#572 review, 2026-11-02). The cost
+        # record then reads the proposal as null, the safe direction.
+        try:
+            (results / f"proposal-{ts}.json").write_text(
+                json.dumps(usage) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
