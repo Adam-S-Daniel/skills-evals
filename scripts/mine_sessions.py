@@ -17,7 +17,10 @@ Subcommands:
               proposal per (subject, kind) and write each as its own file,
               `<lessons-dir>/proposals/<date>/<subject>__<kind>.json` (the
               primary sink: cloud readers hold only Contents: read on the
-              private repo). A lesson a commit- or push-time git hook can
+              private repo), plus `DIGEST.md` beside them: the same
+              proposals as plain-English cards, grouped by kind, the first
+              thing Adam reads (deterministic; machines read the JSON, and
+              `read_proposals` ignores the digest). A lesson a commit- or push-time git hook can
               enforce becomes `agent-check` first (Adam, 2026-10-26). A
               failure with no suspected subject becomes `new-skill` only
               through a deterministic cluster subject (`tool-<tool>[-<word>]`
@@ -798,12 +801,80 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
     return proposals
 
 
-def write_proposals(directory: Path, proposals: Sequence[dict]) -> None:
-    """One JSON object per file; the day's directory is rewritten whole, so a
-    proposal that no longer clusters disappears from that day's snapshot."""
+DIGEST_NAME = "DIGEST.md"
+DIGEST_KIND_ORDER = ("agent-check", "new-skill", "skill-edit", "guidance-edit", "memory-note", "fixture-candidate")
+DIGEST_EXAMPLES = 3
+DIGEST_EXAMPLE_CHARS = 160
+DIGEST_REPOS = 5
+KIND_EXPLANATIONS = {
+    "agent-check": "a git hook could enforce this; the Fleet worker's lesson-check pass turns it into a check.",
+    "new-skill": "a recurring failure no skill covers; the daily draft lane may draft a skill or hook for it.",
+    "skill-edit": "an existing skill's instructions seem to need a change; review the evidence, then edit that skill.",
+    "guidance-edit": "an account-wide rule may belong in fleet guidance; review the evidence, then propose the edit.",
+    "memory-note": "a personal preference or fact to remember, not a rule for every repo; save it to memory if you agree.",
+    "fixture-candidate": "a concrete failure an eval fixture could reproduce; a fixture writer can expand it.",
+}
+
+
+def md_escape(text: str) -> str:
+    """Text that renders literally: no tags, no code spans, no emphasis, one line."""
+    text = " ".join(text.split()).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"([\\`*_\[\]|~#])", r"\\\1", text)
+
+
+def card_title(subject: str) -> str:
+    """A readable heading for a proposal subject (md-safe)."""
+    m = re.fullmatch(r"tool-([a-z]+)(?:-(.+))?", subject)
+    if m:
+        tool = m.group(1).capitalize()
+        return f"{tool} `{m.group(2)}` commands kept failing" if m.group(2) else f"{tool} tool calls kept failing"
+    if subject.startswith("red-ci-") and len(subject) > 7:
+        return f"Red CI after pushes in {md_escape(subject[7:])}"
+    if subject.startswith("skill:"):
+        return f"Skill: {md_escape(subject[6:])}"
+    if subject.startswith("guidance:"):
+        return f"Guidance: {md_escape(subject[9:])}"
+    return {"memory": "Memory", "none": "Unattributed"}.get(subject, md_escape(subject))
+
+
+def render_digest(date: str, files: Sequence[tuple[str, dict]], redactor: Redactor) -> str:
+    """DIGEST.md text for (file name, proposal) pairs. Pure and deterministic."""
+    total = sum(p["evidence_count"] for _, p in files)
+    lines = [f"# Lessons {md_escape(date)}", "",
+             f"{len(files)} proposals from {total} records; read the cards below, "
+             "the JSON files are for machines.", ""]
+    for kind in DIGEST_KIND_ORDER:
+        group = sorted(((n, p) for n, p in files if p["kind"] == kind),
+                       key=lambda np: (-np[1]["evidence_count"], np[0]))
+        if not group:
+            continue
+        lines += [f"## {kind}", "", f"{kind}: {KIND_EXPLANATIONS[kind]}", ""]
+        for name, p in group:
+            span = p["first_seen"] if p["first_seen"] == p["last_seen"] else f"{p['first_seen']}\u2013{p['last_seen']}"
+            repos = [md_escape(redactor.scrub(r)) for r in p["repos"] if r]
+            shown = ", ".join(repos[:DIGEST_REPOS]) + (
+                f" and {len(repos) - DIGEST_REPOS} more" if len(repos) > DIGEST_REPOS else "")
+            lines += [f"### {card_title(p['subject'])}", "",
+                      f"- Seen in {p['evidence_count']} records, {md_escape(span)}"
+                      + (f"; repos: {shown}" if shown else ""),
+                      f"- File: `{name}`"]  # proposal_filename() allows only [A-Za-z0-9_.-]
+            if p.get("check_sketch"):
+                lines.append(f"- Check sketch: {md_escape(redactor.scrub(p['check_sketch']))}")
+            lines.append("")
+            for ex in p["examples"][-DIGEST_EXAMPLES:]:
+                shown_ex = " ".join(redactor.scrub(ex).split())[:DIGEST_EXAMPLE_CHARS]
+                lines.append(f"> - {md_escape(shown_ex)}")
+            lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def write_proposals(directory: Path, proposals: Sequence[dict], redactor: Redactor | None = None) -> None:
+    """One JSON object per file, plus DIGEST.md; the day's directory is
+    rewritten whole, so a proposal that no longer clusters disappears from that
+    day's snapshot and from its digest."""
     directory.mkdir(parents=True, exist_ok=True)
-    for old in directory.glob("*.json"):
-        old.unlink()
+    for old in (*directory.glob("*.json"), directory / DIGEST_NAME):
+        old.unlink(missing_ok=True)
     merged: "OrderedDict[str, dict]" = OrderedDict()
     for p in proposals:  # --classify can give two clusters one subject and kind
         name = proposal_filename(p)
@@ -819,6 +890,8 @@ def write_proposals(directory: Path, proposals: Sequence[dict]) -> None:
     for name, p in merged.items():
         (directory / name).write_text(
             json.dumps(p, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    (directory / DIGEST_NAME).write_text(
+        render_digest(directory.name, list(merged.items()), redactor or Redactor([])), encoding="utf-8")
 
 
 def read_proposals(directory: Path) -> list[dict]:
@@ -1035,7 +1108,7 @@ def main(argv: Sequence[str] | None = None, runner: Runner = run_command) -> int
         proposals = route(_read_all_records(args.lessons_dir), redactor)
         if args.classify:
             classify(proposals, runner)
-        write_proposals(args.lessons_dir / "proposals" / date, proposals)
+        write_proposals(args.lessons_dir / "proposals" / date, proposals, redactor)
         by_kind = {k: sum(p["kind"] == k for p in proposals) for k in KINDS}
         print("route: " + ", ".join(f"{v} {k}" for k, v in by_kind.items()))
         return 0
