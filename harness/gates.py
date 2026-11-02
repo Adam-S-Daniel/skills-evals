@@ -1202,6 +1202,9 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict,
     It is output only and decides nothing here: the planner counts a fire
     that landed a run, pooled or not, as a fire that produced something,
     so a stale-digest run is not mistaken for an empty fire.
+    `run_stamps_on_model` is every such timestamp, sorted, also output only:
+    the planner asks whether a run landed inside a given fire's window,
+    which the newest stamp alone cannot answer once a later run lands.
 
     `strata` (#557, in-situ guidance only): no `_joint_context`; each cell
     holds every current-content run on its model, grouped by `pair_key`
@@ -1224,10 +1227,11 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict,
         key = {"tested_digest": tested, "fixture_digest": fdig,
                "with_context": with_context, "without_context": without_context}
         for model in models:
-            stamps = [r["timestamp"] for r in mine if r["model"] == model]
+            stamps = sorted(r["timestamp"] for r in mine if r["model"] == model)
             cells[(fixture, model)] = {
                 "key": key, "on_model": len(stamps),
-                "newest_on_model": max(stamps) if stamps else None,
+                "newest_on_model": stamps[-1] if stamps else None,
+                "run_stamps_on_model": stamps,
                 "with": [r for r in current_with if r["model"] == model
                          and r["arm_context_digest"] == with_context
                          and r.get("pair_key") == pair],
@@ -1258,6 +1262,7 @@ def _pool_strata(runs: list, skill: str, models: list, expected: dict) -> dict:
                 "key": {"tested_digest": tested, "fixture_digest": fdig},
                 "on_model": len(stamps),
                 "newest_on_model": max(stamps) if stamps else None,
+                "run_stamps_on_model": sorted(stamps),
                 "strata": groups,
                 "with": [r for g in groups.values() for r in g["with"]],
                 "without": [r for g in groups.values() for r in g["without"]]}
@@ -1332,7 +1337,8 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         if strata:
             used.update(run_key(r) for r in runs)
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
-                      "newest_on_model": pool["newest_on_model"], **cell,
+                      "newest_on_model": pool["newest_on_model"],
+                      "run_stamps_on_model": pool["run_stamps_on_model"], **cell,
                       "cost_usd": _finite_sum([r["numbers"]["cost_usd"] for r in runs]),
                       "cost_unknown_trials": sum(r["numbers"]["cost_unknown_trials"]
                                                  for r in runs),

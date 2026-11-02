@@ -320,15 +320,24 @@ _agent-guidance alone: ready with auto-merge in `auto`, a draft otherwise, and
 nothing (with the reason in the job summary) while the App's secrets are unset
 or the mint fails.
 
-Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`, and
-`agent-check` items read from lesson proposals) are listed in the plan, not
-fired; each carries a `change_type`. A skill run tests main's copy of its
-subject and refuses, with nothing spent, when the registry checkout is not
-clean at its main (ADR 0012, addendum "main's copy"); the routine's fire
-still reads as a success. So a cell with two such empty fires within 14 days
-becomes a `fixture-broken` item instead of being fired again, and is retried
-once those fires are 14 days old. The dispatch job fires one leg at a time, waits while three
-fires are in flight, and spaces fires a minute apart; improve fires go last.
+Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
+`routine-outage`, and `agent-check` items read from lesson proposals) are
+listed in the plan, not fired; each carries a `change_type`. A skill run
+tests main's copy of its subject and refuses, with nothing spent, when the
+registry checkout is not clean at its main (ADR 0012, addendum "main's
+copy"); the routine's fire still reads as a success. So a cell with two such
+empty fires within 14 days becomes a `fixture-broken` item instead of being
+fired again, and is retried once those fires are 14 days old. A routine
+outage empties every fire of a sweep at once (2026-11-01: six fixtures, no
+run), which says nothing about any fixture: a sweep of fires at most 60
+minutes apart and 2 hours long, with no fire that landed a run or is still
+young, whose empty fires cover three or more cells excuses each cell's
+earliest such fire, one per cell in 14 days, and lists a `routine-outage`
+item (no fixture names) for a day. A further outage fire counts, so fixtures
+broken together still go `fixture-broken`, one fire later; a sweep of fewer
+than three cells cannot be told from broken fixtures and counts. The
+dispatch job fires one leg at a time, waits while three fires are in flight,
+and spaces fires a minute apart; improve fires go last.
 
 ### The trigger lane
 

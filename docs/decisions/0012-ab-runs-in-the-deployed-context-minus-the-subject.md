@@ -245,7 +245,19 @@ on the shared resolver `run_eval.main_copy` and the summary keys
   `BROKEN_AFTER_FIRES` (2) the cell becomes a `fixture-broken` work item and
   is not fired; once those fires are 14 days old they stop counting and the
   cell is tried again. A fire still waiting for its result holds the cell
-  back from a second fire.
+  back from a second fire. A routine outage is not a broken fixture: each
+  fire is classified once, as young, delivered (a run of the cell is stamped
+  within `FIRE_RESULT_WINDOW` of its start, gates' output-only
+  `run_stamps_on_model`) or empty, and every classified fire is grouped into
+  sweeps (`OUTAGE_GAP`, 60 minutes, between starts; `OUTAGE_SPAN`, 2 hours,
+  from the first). A sweep with no delivered or young fire whose empty fires
+  cover at least `OUTAGE_CELLS` (3) cells is an outage (2026-11-01: six
+  fixtures fired, none produced anything): each cell's earliest empty fire
+  in one, at most `OUTAGE_EXCUSES` (1) within `RETRY_AFTER`, is excused, and
+  any later one counts, so fixtures broken together still go
+  fixture-broken, one fire later. Each recent outage is a `routine-outage`
+  work item. A sweep narrower than three cells cannot be told from broken
+  fixtures, so it counts.
 - **The first regression rows after the switch compare copies, not an
   edit.** The previous window of with runs tested the deployed copy, the
   next one main's, so a first regression row on a fixture whose context

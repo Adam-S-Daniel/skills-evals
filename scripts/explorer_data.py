@@ -593,7 +593,7 @@ def health_alerts(evals_dir: Path, skill_names: set, repositories: dict | None,
 FIRE_WINDOW_DAYS = 14
 #: Fires without results whose starts are at most this far apart are one
 #: sweep (a routine-eval-weekly run dispatches its fires minutes apart).
-FIRE_SWEEP_GAP = timedelta(minutes=60)
+FIRE_SWEEP_GAP = plan_week.OUTAGE_GAP
 #: The fetch time is the workflow's own clock, so it is checked against the
 #: build's wall clock (no later than this past it) and against the results
 #: tip (no earlier than this before it): a stale or forged file is unknown.
@@ -763,12 +763,9 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
             rejected += 1
         else:
             without.append(start)
-    sweeps: list = []
-    for start in without:
-        if sweeps and start - sweeps[-1][1] <= FIRE_SWEEP_GAP:
-            sweeps[-1] = [sweeps[-1][0], start, sweeps[-1][2] + 1]
-        else:
-            sweeps.append([start, start, 1])
+    # The planner's grouping (plan_week.fire_sweeps), unbounded span: one
+    # chaining rule for both, so the two cannot drift apart.
+    sweeps = [[s[0], s[-1], len(s)] for s in plan_week.fire_sweeps(without, FIRE_SWEEP_GAP)]
     return {"window_days": FIRE_WINDOW_DAYS,
             "since": plan_week._iso(min(c[0] for c in counted)) if counted else None,
             "without_results": len(without), "rejected": rejected,
