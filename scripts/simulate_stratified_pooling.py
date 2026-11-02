@@ -69,11 +69,11 @@ from __future__ import annotations
 
 import argparse
 import math
+import random
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from harness import gates  # noqa: E402
@@ -123,7 +123,7 @@ KEEP = [
 
 def _run(rng, p: float, checks: int) -> list:
     """One arm of one run: one trial, `checks` Bernoulli check outcomes."""
-    return [bool(x) for x in rng.random(checks) < p]
+    return [rng.random() < p for _ in range(checks)]
 
 
 def _history(rng, ps: list, checks: int) -> tuple:
@@ -155,7 +155,7 @@ def retire_rep(args) -> tuple:
     main-rest runs per arm the intersection first retired at (None if
     never)."""
     seed, checks, main, old, horizon = args
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
     history = _history(rng, [p for q in old for p in q[:2]] + list(main), checks)[0]
     margin, level, strength = (POLICY["objective_margin"], POLICY["retire_confidence"],
                                POLICY["prior_strength"])
@@ -191,14 +191,14 @@ def keep_rep(args) -> tuple:
     """(objective route, check route, union, today's union on the same
     runs pooled as one stratum) false keep for one rep."""
     seed, checks, ps, total = args
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
     history, check_history = _history(rng, ps, checks)
     hit = [False, False, False, False]
     level, check_level, strength = (POLICY["benefit_confidence"],
                                     POLICY["check_confidence"], POLICY["prior_strength"])
     runs = [([], []) for _ in ps]  # per stratum: (with runs, without runs) of check lists
     for _ in range(total):
-        s = int(rng.integers(len(ps)))
+        s = rng.randrange(len(ps))
         runs[s][0].append(_run(rng, ps[s], checks))
         runs[s][1].append(_run(rng, ps[s], checks))
         used = [r for r in runs if r[0] and r[1]]
@@ -228,6 +228,12 @@ def _init(cell_prior: bool, history_groups: int, min_df: int, fallback: float) -
     global CELL_PRIOR, HISTORY_GROUPS, MIN_DF, FALLBACK
     CELL_PRIOR, HISTORY_GROUPS, MIN_DF, FALLBACK = (cell_prior, history_groups, min_df,
                                                     fallback)
+
+
+def _seeds(seed: int, kind: int, scenario: int, reps: int) -> list:
+    """One seed per rep, fixed by (seed, kind, scenario)."""
+    rng = random.Random(f"{seed}:{kind}:{scenario}")
+    return [rng.getrandbits(63) for _ in range(reps)]
 
 
 class _Serial:
@@ -274,7 +280,7 @@ def main(argv=None) -> int:
         print(f"RETIRE: false removals, target <= 2.5% (+{TOLERANCE:.1%} tolerance), "
               f"{args.reps} reps, seed {args.seed}")
         for i, (name, checks, main_p, old, horizon) in enumerate(RETIRE):
-            seeds = np.random.SeedSequence([args.seed, 1, i]).generate_state(args.reps)
+            seeds = _seeds(args.seed, 1, i, args.reps)
             hits = list(pool.map(retire_rep, [(int(s), checks, main_p, old, horizon)
                                               for s in seeds], chunksize=200))
             both, comb, own = (sum(h[j] for h in hits) for j in range(3))
@@ -286,7 +292,7 @@ def main(argv=None) -> int:
                   f"{comb / args.reps:.2%}; main rest alone {own / args.reps:.2%}")
         print("POWER: true no-benefit at main's rest (reported, not gated)")
         for i, (name, checks, main_p, old, horizon) in enumerate(POWER):
-            seeds = np.random.SeedSequence([args.seed, 3, i]).generate_state(args.reps)
+            seeds = _seeds(args.seed, 3, i, args.reps)
             hits = list(pool.map(retire_rep, [(int(s), checks, main_p, old, horizon)
                                               for s in seeds], chunksize=200))
             firsts = sorted(h[3] for h in hits if h[3] is not None)
@@ -297,7 +303,7 @@ def main(argv=None) -> int:
                   f"{sum(h[1] for h in hits) / args.reps:.1%}")
         print(f"KEEP: false keeps, target <= 7.5% (+{TOLERANCE:.1%} tolerance)")
         for i, (name, checks, ps, total) in enumerate(KEEP):
-            seeds = np.random.SeedSequence([args.seed, 2, i]).generate_state(args.reps)
+            seeds = _seeds(args.seed, 2, i, args.reps)
             hits = list(pool.map(keep_rep, [(int(s), checks, ps, total) for s in seeds],
                                  chunksize=200))
             obj, chk, union, today = (sum(h[j] for h in hits) for j in range(4))
