@@ -36,6 +36,7 @@ UNSAFE_PIDS = (1, 0, -1, True)
 def _module_for(rel: str):
     return importlib.import_module(
         {"harness/scorers/commands.py": "scorers.commands",
+         "harness/run_eval.py": "run_eval",
          "scripts/probe_model_defaults.py": "probe_model_defaults"}[rel])
 
 
@@ -95,6 +96,13 @@ def _drive_stop_process(proc):
         pass  # the refusal is the correct outcome
 
 
+def _drive_kill_process_group(proc):
+    # No wait and no wall clock: a group past the guard (a failure here) is
+    # signaled at once, where the recorders see it.
+    _module_for("harness/run_eval.py")._kill_process_group(
+        proc.pid, grace=0, clock=lambda: 0.0, pause=lambda _s: None)
+
+
 def _drive_signal_group(proc):
     _module_for("scripts/probe_model_defaults.py")._signal_group(proc, signal.SIGTERM)
 
@@ -107,6 +115,7 @@ class TestSignalGuard(unittest.TestCase):
     #: (path, function) -> a callable that takes a proc and reaches the site.
     SIGNAL_SITES = {
         ("harness/scorers/commands.py", "_stop_process"): _drive_stop_process,
+        ("harness/run_eval.py", "_kill_process_group"): _drive_kill_process_group,
         ("scripts/probe_model_defaults.py", "_signal_group"): _drive_signal_group,
         ("scripts/probe_model_defaults.py", "_stop"): _drive_stop,
     }

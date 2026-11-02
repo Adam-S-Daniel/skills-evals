@@ -66,7 +66,7 @@ print(json.dumps({{"type": "result", "is_error": False, "result": "done",
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import install_arm_test_environment  # noqa: E402
+from arm_test_env import install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -183,6 +183,7 @@ class GuidanceProfileTests(_StandIn):
 
     def setUp(self):
         super().setUp()
+        route_cli_through_subprocess_run(self, run_eval)
         self.scratch_home = self.root / "scratch" / "home"
         self.config = self.root / "scratch" / "config"
         for path in (self.scratch_home, self.config):

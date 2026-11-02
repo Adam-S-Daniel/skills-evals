@@ -72,7 +72,7 @@ def lockfile(uses=TAG, commit="sha1-" + SHA, workflow_path=WORKFLOW, listed=TAG,
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+from arm_test_env import arm_test_environment, install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -87,6 +87,7 @@ def tearDownModule() -> None:
 
 class GuidanceViolationTests(unittest.TestCase):
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name) / "ws"

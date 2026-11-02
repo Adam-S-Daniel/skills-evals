@@ -52,11 +52,13 @@ import math
 import os
 import re
 import shutil
+import signal
 import stat
 import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
@@ -2319,10 +2321,19 @@ _CLI_PROFILE_TREES = (".cc-writes", "backups", "bridge-spawn", "projects",
 # the given size in bytes; anything else at that path is a change. The lock
 # is a directory the CLI creates and removes, exempt only while empty.
 _BUILTIN_PLUGIN_STORE = "plugins/store/cc-plugin-*_builtin-" + "[0-9a-f]" * 12 + ".json"
+# The CLI's account plugin sync stamps each synced set's directory, possibly
+# after the arm's CLI returned (#594): seen locally recreating a cleaned pair
+# profile. Like the skills one below, it is a timestamp and loads nothing.
+_PLUGINS_SYNCED_MARKER = "plugins/synced/*/.last-complete-round"
+# Markers whose `*` must stay within one path segment (fnmatch's crosses `/`):
+# `plugins/` is where plugins load from, so a `.last-complete-round` deeper
+# down, beside a plugin's own files, is not the sync's stamp.
+_ONE_SEGMENT_MARKERS = frozenset({_PLUGINS_SYNCED_MARKER})
 _CLI_PROFILE_MARKERS = {
     ".claude.json": None, ".claude.json.tmp.*": None,
     "plugins/cache/*/.orphaned_at": 4096,
     "skills/synced/*/.last-complete-round": 4096,
+    _PLUGINS_SYNCED_MARKER: 4096,
     # The trusted fleet-memory hook appends this detached delivery receipt,
     # possibly after delivery returned. It loads no CLI configuration. The
     # writer checks 1 MiB before its last append of at most 4096 bytes.
@@ -2400,6 +2411,8 @@ def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
         return True
     st = os.lstat(path)
     for pattern, limit in markers.items():
+        if pattern in _ONE_SEGMENT_MARKERS and rel.count("/") != pattern.count("/"):
+            continue
         if fnmatch.fnmatchcase(rel, pattern):
             # The receipt writer also refuses foreign-owned or hard-linked
             # files; such a path is not its trusted bookkeeping.
@@ -2704,6 +2717,71 @@ def install_skill(workspace: Path, arm: dict) -> dict | None:
     return None
 
 
+# How long the agent CLI's leftover process group gets between SIGTERM and
+# SIGKILL, and how often it is checked meanwhile (#594).
+_GROUP_TERM_GRACE_S = 5.0
+_GROUP_POLL_S = 0.05
+
+
+def _kill_process_group(pgid, *, grace: float = _GROUP_TERM_GRACE_S,
+                        poll: float = _GROUP_POLL_S, clock=time.monotonic,
+                        pause=time.sleep) -> None:
+    """SIGTERM whatever is left of process group `pgid` (an agent CLI started
+    in its own session), then SIGKILL it if anything is still there after
+    `grace` seconds of `clock`, checking every `poll` seconds (`pause`).
+
+    Refuses, before any signal, a group that is not an int greater than 1 or
+    is the harness's own (its pid or its group): 0 would be the harness's
+    group, 1 init's, and -1 every process the harness may signal (a mocked
+    pid once became `kill(-1, SIGKILL)` and killed every session). A group
+    that is already gone, or not the harness's to signal, is left alone."""
+    if (type(pgid) is not int or pgid <= 1
+            or pgid in (os.getpid(), os.getpgrp())):
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        deadline = clock() + grace
+        while clock() < deadline:
+            pause(poll)
+            os.killpg(pgid, 0)
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        # Empty (the usual case) or emptied while waiting; a group the
+        # harness may not signal is not the one it started.
+        return
+
+
+def _run_in_own_session(cmd: list, *, cwd, capture_output: bool, text: bool,
+                        timeout, env) -> subprocess.CompletedProcess:
+    """`subprocess.run` with the same arguments, result and TimeoutExpired,
+    but the child is started in its own session, and its process group,
+    whatever the CLI left running in it, is ended (`_kill_process_group`)
+    however the call ends (#594): a detached child otherwise outlives its arm
+    and writes into the next one's profile."""
+    guidance.check_timeout(timeout, "run_eval._run_in_own_session(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
+    pipe = subprocess.PIPE if capture_output else None
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=pipe, stderr=pipe,
+                            text=text, start_new_session=True)
+    try:
+        with proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # As subprocess.run: the child is killed and reaped, and the
+                # output read so far stays on the exception.
+                proc.kill()
+                proc.wait()
+                raise
+            except BaseException:
+                proc.kill()
+                raise
+            return subprocess.CompletedProcess(proc.args, proc.poll(), stdout, stderr)
+    finally:
+        # With start_new_session the child's pid is its group's id.
+        _kill_process_group(proc.pid)
+
+
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     """Run the agent under test (the Claude Code CLI, headless) on the workspace.
 
@@ -2941,8 +3019,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             calls.append([])
             clocked.append({"started": _now()})
             try:
-                result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
-                                        text=True, timeout=timeout, env=env)
+                result = _run_in_own_session(turn_cmd, cwd=workspace,
+                                             capture_output=True, text=True,
+                                             timeout=timeout, env=env)
                 clocked[-1]["ended"] = _now()
             except OSError as exc:
                 # E2BIG and the like: the CLI never started.
@@ -5577,10 +5656,47 @@ def _in_place_pair(plan: dict | None):
         shutil.rmtree(parent, ignore_errors=True)
 
 
+# What a late CLI writer may leave in a cleaned pair profile (#594): the
+# profile markers that carry a size cap. `.claude.json` (uncapped) is the
+# previous arm's CLI state, not a late stamp, and still refuses.
+_LATE_MARKERS = {pattern: limit for pattern, limit in _CLI_PROFILE_MARKERS.items()
+                 if limit is not None}
+
+
+def _only_late_markers(config: Path) -> bool:
+    """Whether a leftover pair profile holds at least one `_LATE_MARKERS`
+    file, each exempt as `_exempt` judges it, and nothing else but the
+    directories leading to them. Anything unreadable is not."""
+    def refuse(error: OSError) -> None:
+        raise error
+
+    found = False
+    try:
+        if os.path.islink(config) or not os.path.isdir(config):
+            return False
+        for current, dirs, files in os.walk(config, onerror=refuse):
+            for name in dirs:
+                if os.path.islink(os.path.join(current, name)):
+                    return False
+            for name in files:
+                path = Path(current) / name
+                if not _exempt(path, path.relative_to(config).as_posix(), (),
+                               _LATE_MARKERS, ()):
+                    return False
+                found = True
+    except OSError:
+        return False
+    return found
+
+
 def _in_place_scratch(plan: dict) -> Path:
     # The reserved profile parent is write-denied; keep writable workspaces
     # and tool temporary files outside it.
-    if os.path.lexists(plan["_pair_config"]):
+    config = plan["_pair_config"]
+    if os.path.lexists(config) and _only_late_markers(Path(config)):
+        # A late writer's stamps only (#594): nothing of the previous arm.
+        shutil.rmtree(config, ignore_errors=True)
+    if os.path.lexists(config):
         raise delivery.DeliveryError("install_collision", "a previous arm's profile was not cleaned")
     return Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
 

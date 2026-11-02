@@ -26,6 +26,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import local_eval  # noqa: E402
 import run_eval  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from arm_test_env import route_cli_through_subprocess_run  # noqa: E402
 from cli_json import bounded_tool_trace  # noqa: E402
 
 RENAME_DIR = ROOT / "evals" / "rename-pdfs"
@@ -79,6 +81,7 @@ def failed(stderr: str) -> subprocess.CompletedProcess:
 
 class RunAgentFollowupTests(unittest.TestCase):
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         # A TMPDIR of its own: the read rules list the harness directories
         # under TMPDIR, and a concurrent test (a `--jobs` worker) making or
         # removing one between two turns would change the flags compared.

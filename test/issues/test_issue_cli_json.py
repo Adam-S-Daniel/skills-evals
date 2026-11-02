@@ -57,7 +57,7 @@ def cli_reply(payload: object) -> subprocess.CompletedProcess:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import install_arm_test_environment  # noqa: E402
+from arm_test_env import install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -194,6 +194,7 @@ class FailedRunDetailTests(unittest.TestCase):
 
 class CliJsonConsumersTests(unittest.TestCase):
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
