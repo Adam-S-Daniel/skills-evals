@@ -1,0 +1,318 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20261102T231409Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0754669,
+    "num_turns": 5,
+    "duration_ms": 15509,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 20318,
+      "cache_read_input_tokens": 107659,
+      "output_tokens": 1389,
+      "output_tokens_details": {
+        "thinking_tokens": 160
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 20318
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 597,
+          "cache_read_input_tokens": 32081,
+          "cache_creation_input_tokens": 683,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 683,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "lint-workflow-parses",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "every-remote-ref-is-a-full-sha",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "no-trailing-version-comment",
+      "passed": true,
+      "detail": "no trailing comment on any uses: pin"
+    },
+    {
+      "id": "annotated-tags-dereferenced",
+      "passed": true,
+      "detail": ".github/workflows/lint.yml matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Pins",
+        "score": 8,
+        "rationale": "Every `uses:` is a full 40-character SHA, including the reusable notify.yml workflow, and the agent says it peeled the annotated checkout and shared-workflows tags through `^{}`; the version notes sit on the line above each `uses:` rather than at the end of it, so they do not strictly break the no-trailing-comment rule, but they keep the version annotation the rule seems meant to remove, and the SHAs could not be checked against REFS.txt."
+      },
+      {
+        "name": "Workflow",
+        "score": 10,
+        "rationale": "lint.yml runs on pull_request, checks out the repo, sets up Node 20, runs `npm run lint`, and calls the reusable workflow through a separate job that has `needs: lint` and `if: failure()`, so it runs only when lint fails."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff adds only `.github/workflows/lint.yml`; the agent mentioned that ci.yml pins checkout to a different SHA but left ci.yml and the rest of the repository untouched and made no commit."
+      }
+    ],
+    "overall": 9.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 1389,
+      "cache_read_input_tokens": 107659,
+      "cache_creation_input_tokens": 20318,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "pinning-github-actions",
+  "mode": "full-minus-section",
+  "bytes": 24409,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (vc758c8c1, 24409 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "GHAQHJGT-4453"
+  },
+  "fixture_name": "new-workflow",
+  "guidance_digests": {
+    "section": "2d89ddd0f1d3624f02cdfd16b8037caf49a0063f3bb0133378eb23c6f239d316",
+    "rest": "676ee09e217352f18a9d02766a0dd0a5b7f8a3c137a5b8f389e7801ea085a0b8",
+    "section_payload": "1f2557e711f80371a281ec3dafa4c707ae00d702cce4444e6c1a89e3ab548cfe"
+  },
+  "fixture_digest": "26ab85fcd41a50c4c4c4a816dc7a06bd5f9a7bca0c6b2948341991f1e334916d",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 24274,
+        "sha256": "6658b9d55b52d1a8c119eb82f887263b3197a50d675bac6975aa7a521b1967a4"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41542886876",
+    "session_id": null,
+    "harness_commit": "9415eb3a9d232d75f2b56fbfc6a0292a9c6f55c2",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-02T23:14:09Z",
+    "ended_at": "2026-11-02T23:15:27Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.4085287,
+      "agent_usd": 0.24274210000000002,
+      "judge_usd": 0.0797166,
+      "guard_usd": 0.08607000000000001,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0754669,
+      "calls_with_cost": 10,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-02T23:14:56Z",
+      "ended_at": "2026-11-02T23:15:27Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-02T23:14:56Z",
+          "ended_at": "2026-11-02T23:14:58Z",
+          "duration_ms": 2363,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-02T23:14:58Z",
+          "ended_at": "2026-11-02T23:15:15Z",
+          "duration_ms": 16277,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-02T23:15:20Z",
+          "ended_at": "2026-11-02T23:15:27Z",
+          "duration_ms": 7250,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 16277,
+        "num_turns": 5,
+        "cost_usd": 0.0754669,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 1389,
+            "cache_read_input_tokens": 107659,
+            "cache_creation_input_tokens": 20318,
+            "cost_usd": 0.0754669
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 20318,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 7250,
+        "num_turns": 1,
+        "cost_usd": 0.0418308,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 629,
+            "cache_read_input_tokens": 12239,
+            "cache_creation_input_tokens": 5359,
+            "cost_usd": 0.0418308
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 5359,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 2363,
+        "num_turns": 1,
+        "cost_usd": 0.0327275,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8385,
+            "cache_creation_input_tokens": 12702,
+            "cost_usd": 0.0327275
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 12702,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
