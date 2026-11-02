@@ -368,12 +368,16 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   a Bash command in the arm's sandbox sees a network namespace other than
   the harness's, needs a real CLI call and waits for the first opt-in;
   until then the receipt rests on the sandbox's `--unshare-net`, which the
-  tests stand in for with `bwrap --unshare-net`. The probe must also show
-  that the agent's own Git sees the injected keys: the CLI was seen to
+  tests stand in for with `bwrap --unshare-net`. The CLI was seen to
   rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
-  pairs and setting `hook.<event>.enabled=false`), and whether it does the
-  same for sandboxed Bash tool commands is unverified. If it does, the
-  hooks never reach the agent's Git. A managed
+  pairs and setting `hook.<event>.enabled=false`). One live call on WSL
+  (Claude Code 2.1.316, Git 2.54.0, sandbox on; 2026-11-02, recorded on
+  [#605](https://github.com/Adam-S-Daniel/skills-evals/issues/605#issuecomment-6590008657))
+  showed it does not do so for sandboxed Bash tool commands: it appends
+  two `safe.directory` pairs and keeps the include at index 0, an
+  included pre-commit hook fired, and it fired in a network namespace
+  other than the launching process's. The routine container and the CI
+  runner still need the same probe. A managed
   `disableAllHooks` would drop the guard without a word. And the agent can
   still switch its own hooks off, by `git remote set-url origin` to a
   non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not
