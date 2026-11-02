@@ -190,7 +190,16 @@ def _suspects(subject: str, previous: list, current: list) -> list:
                    else "section content changed")
     if differs("cli_versions"):
         out.append("CLI version changed")
-    if differs("arm_context_digest"):
+    # An alone-pair run's arm context is the section payload; every other
+    # run's is the rest of the guidance (or the skill's arm context). The two
+    # are different quantities, so compare only runs of one kind: a window
+    # that spans the switch is not an arm-context change.
+    def contexts(runs, kind):
+        return {r["arm_context_digest"] for r in runs
+                if (r.get("pair_key") == "alone") == kind}
+    if any(contexts(previous, kind) and contexts(current, kind)
+           and contexts(previous, kind) != contexts(current, kind)
+           for kind in (False, True)):
         out.append("arm context changed")
     return out
 

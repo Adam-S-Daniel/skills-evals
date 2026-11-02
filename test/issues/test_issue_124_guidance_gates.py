@@ -767,6 +767,24 @@ class ContentDigestTests(unittest.TestCase):
         self.assertNotIn("## Charlie", section)
         self.assertEqual(digests["section"], hashlib.sha256(section.encode()).hexdigest())
 
+    def test_section_payload_is_the_tokenless_section_arm_payload(self):
+        import hashlib
+        root = make_guidance_checkout(tmpdir(self, "digest-"))
+        row = guidance.find_row(guidance.load_manifest(root), "bravo", root)
+        digests = guidance.content_digests(root, row)
+        payload = guidance.assemble(root, row, "section", token=None)
+        self.assertIn("Intro paragraph", payload)
+        self.assertEqual(digests["section_payload"],
+                         hashlib.sha256(payload.encode()).hexdigest())
+        base = root / "agents-md" / "base.md"
+        base.write_text(base.read_text().replace("Charlie body.", "Charlie body, edited."))
+        self.assertEqual(guidance.content_digests(root, row)["section_payload"],
+                         digests["section_payload"])
+        base.write_text(base.read_text().replace("Intro paragraph", "Intro, edited"))
+        after = guidance.content_digests(root, row)
+        self.assertEqual(after["section"], digests["section"])
+        self.assertNotEqual(after["section_payload"], digests["section_payload"])
+
     def test_editing_another_section_moves_rest_but_not_section(self):
         root = make_guidance_checkout(tmpdir(self, "digest-"))
         row = guidance.find_row(guidance.load_manifest(root), "bravo", root)
@@ -943,6 +961,56 @@ class ComputeGuidanceTests(unittest.TestCase):
     def test_helping_only_alone_is_shorten_or_merge(self):
         self.write_runs(alone_gain=True)
         self.assertEqual(self.compute()["guidance"]["bravo"]["verdict"], "shorten-or-merge")
+
+    def two_halves(self, first, second):
+        """Twelve runs of every arm with `first` digests, eight with `second`
+        (a tie between two groups would choose neither)."""
+        for r in range(20):
+            digests = first if r < 12 else second
+            for arm, mode in MODES.items():
+                self.arm(r, arm, mode, 80 - r % 2, 7.0 + (r % 2) / 5,
+                         guidance_digests=digests)
+
+    def cell_runs(self, pair=None):
+        doc = self.compute()["guidance"]["bravo"]
+        cell = (doc if pair is None else doc[pair])["cells"][0]
+        return cell["with"]["runs"], cell["without"]["runs"]
+
+    def test_alone_runs_pool_across_edits_to_the_rest_of_the_guidance(self):
+        edited = {**self.digests, "rest": "e" * 64}
+        self.two_halves(self.digests, edited)
+        self.assertEqual(self.cell_runs("alone"), (20, 20))
+        self.assertEqual(self.cell_runs(), (12, 12))  # in-situ keeps the rest key
+
+    def test_alone_runs_with_another_section_payload_do_not_pool(self):
+        # Same section extent, different file intro: the arm loaded other text.
+        self.two_halves(self.digests, {**self.digests, "section_payload": "d" * 64})
+        self.assertEqual(self.cell_runs("alone"), (12, 20))
+        self.assertEqual(self.cell_runs(), (20, 20))
+
+    def test_alone_runs_without_a_section_payload_keep_the_rest_key(self):
+        legacy = {k: v for k, v in self.digests.items() if k != "section_payload"}
+        self.two_halves(legacy, {**legacy, "rest": "e" * 64})
+        self.assertEqual(self.cell_runs("alone"), (12, 12))
+
+    def test_the_index_keys_alone_runs_by_payload_and_in_situ_runs_by_rest(self):
+        self.write_runs(n=1)
+        runs = compute_gates.build_index(self.tree, self.evals,
+                                         "20261231T000000Z")["guidance_runs"]
+        by_arm = {(r["pair"], r["role"]): r for r in runs}
+        self.assertEqual(by_arm[("alone", "with")]["arm_context_digest"],
+                         self.digests["section_payload"])
+        self.assertEqual(by_arm[("alone", "without")]["arm_context_digest"], "none")
+        for role in ("with", "without"):
+            self.assertEqual(by_arm[("alone", role)]["pair_key"], "alone")
+            self.assertEqual(by_arm[("in_situ", role)]["arm_context_digest"],
+                             self.digests["rest"])
+            self.assertEqual(by_arm[("in_situ", role)]["pair_key"], self.digests["rest"])
+
+    def test_a_malformed_section_payload_skips_the_run(self):
+        self.arm(0, "with_guidance_section", "section", 80, 7.0,
+                 guidance_digests={**self.digests, "section_payload": "x"})
+        self.assertEqual(self.compute()["skipped"].get("no guidance pooling key"), 1)
 
     def test_no_guidance_checkout_is_insufficient(self):
         self.write_runs()

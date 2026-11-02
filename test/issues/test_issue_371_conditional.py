@@ -783,7 +783,11 @@ class GuidancePairTests(unittest.TestCase):
                 self.assertIn("guidance_digests", doc)
                 ingest.check_summary(doc, rel, parts)
                 digests = doc["guidance_digests"]
+                self.assertIn("section_payload", digests)
+                legacy = {k: v for k, v in digests.items() if k != "section_payload"}
+                ingest.check_summary({**doc, "guidance_digests": legacy}, rel, parts)
                 for bad in ({**doc, "n": 1}, {**doc, "fixture_name": "../x"},
+                            {**doc, "guidance_digests": {**digests, "section_payload": "x"}},
                             {**doc, "guidance_digests": {**digests, "rest": "x"}},
                             {**doc, "guidance_digests": {"section": digests["section"]}},
                             {**doc, "guidance_digests": {**digests, "extra": digests["rest"]}}):

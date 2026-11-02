@@ -749,18 +749,23 @@ def assemble(guidance_dir: Path, row: dict, mode: str,
 
 
 def content_digests(guidance_dir: Path, row: dict) -> dict:
-    """{"section", "rest"}: sha256 of the section's extent in its corpus, and
-    of that corpus with the extent removed (the `full-minus-section` payload
-    without a token). Every guidance arm records both, whatever its mode, so
-    the retirement gate (harness/gates.py, `guidance_verdict`) can pool runs
-    of the section on main against the rest of the guidance they ran beside
-    (skills-evals#124). Pure: no token, no clock."""
+    """{"section", "rest", "section_payload"}: sha256 of the section's extent
+    in its corpus, of that corpus with the extent removed (the
+    `full-minus-section` payload without a token), and of the `section` arm's
+    payload without a token (the file intro plus the extent, exactly what the
+    alone pair's treatment arm loads). Every guidance arm records all three,
+    whatever its mode, so the retirement gate (harness/gates.py,
+    `guidance_verdict`) can pool runs of the section on main against the rest
+    of the guidance they ran beside (skills-evals#124), and the alone pair
+    against only what its arms load. Pure: no token, no clock."""
     text = corpus(guidance_dir, row)
     extent = _extent_of(text, row["heading"], f"the corpus for {row['id']}")
     section = text[extent["start"]:extent["end"]]
     rest = text[:extent["start"]] + text[extent["end"]:]
+    payload = assemble(guidance_dir, row, "section", token=None)
     return {"section": hashlib.sha256(section.encode("utf-8")).hexdigest(),
-            "rest": hashlib.sha256(rest.encode("utf-8")).hexdigest()}
+            "rest": hashlib.sha256(rest.encode("utf-8")).hexdigest(),
+            "section_payload": hashlib.sha256(payload.encode("utf-8")).hexdigest()}
 
 
 # ---------------------------------------------------------------------------

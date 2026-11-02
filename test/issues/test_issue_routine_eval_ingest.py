@@ -269,6 +269,26 @@ class AcceptTests(GitCase):
                              json.dumps(doc).encode()})
                 self.assertEqual(self.validate(out=self.tmp / name)["files"], "1")
 
+    def test_guidance_digests_section_payload_is_optional_but_checked(self):
+        digest = "a" * 64
+        rel = f"guidance/sec/{STAMP}/with_guidance_section/summary.json"
+        parts = ingest.parse_result_path(rel)
+        doc = {k: v for k, v in summary("with_guidance_section").items()
+               if k not in ("skill", "n", "fixture")}
+        doc.update(subject="guidance", section="sec", fixture_name="fx",
+                   guidance_digests={"section": digest, "rest": digest})
+        ingest.check_summary(doc, rel, parts)
+        ingest.check_summary({**doc, "guidance_digests": {
+            **doc["guidance_digests"], "section_payload": digest}}, rel, parts)
+        for bad in ({"section_payload": "x"}, {"section_payload": None},
+                    {"section_payload_x": digest}):
+            with self.subTest(bad=bad), self.assertRaises(ingest.Rejected):
+                ingest.check_summary({**doc, "guidance_digests": {
+                    **doc["guidance_digests"], **bad}}, rel, parts)
+        with self.assertRaises(ingest.Rejected):  # the required keys stay required
+            ingest.check_summary({**doc, "guidance_digests": {
+                "section": digest, "section_payload": digest}}, rel, parts)
+
     def test_rejects_contradictory_token_accounting(self):
         base = f"eval-results/{RUN_ID}/writing-adrs/{STAMP}/bootstrap"
         incomplete = {"complete": False, "dropped": 1, "other_share": None,
