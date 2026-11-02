@@ -87,6 +87,10 @@ DEFAULT_MIN_REPEAT = 3
 NEW_SKILL_MIN_SESSIONS = 3
 SUBJECT = r"[a-z0-9][a-z0-9-]{0,63}"  # draft_new_skill.py's SUBJECT; a test keeps them equal
 SUBJECT_RE = re.compile(SUBJECT)
+# Repo names that are not a repo: `~` is the home directory, and `repos` is the
+# parent folder that holds the checkouts (Workstation layout), so a session run
+# there names no repo and its red CI must not become a `red-ci-<repo>` cluster.
+NOT_A_REPO = frozenset({"~", "", "repos"})
 MAX_EXAMPLES = 5
 LABEL = "lesson-proposal"
 MARKER_LABEL = "agent-authored"
@@ -711,7 +715,7 @@ def cluster_subject(record: dict) -> str | None:
         subject = _slug("tool-" + "-".join(g for g in m.groups() if g)) if m else ""
     elif signal == "red-ci-after-push":
         repo = record.get("repo", "")
-        subject = _slug("red-ci-" + repo) if repo and repo != "~" and _slug(repo) else ""
+        subject = _slug("red-ci-" + repo) if repo not in NOT_A_REPO and _slug(repo) else ""
     else:
         return None
     return subject if SUBJECT_RE.fullmatch(subject) else None

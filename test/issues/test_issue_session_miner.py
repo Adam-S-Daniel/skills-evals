@@ -422,6 +422,7 @@ class TestRoute(Base):
         self.assertEqual(self.kinds([ci(i) for i in range(2)]), set())
         self.assertEqual(self.kinds([ci(i, "~") for i in range(5)]), set())
         self.assertEqual(self.kinds([ci(i, "") for i in range(5)]), set())
+        self.assertEqual(self.kinds([ci(i, "repos") for i in range(5)]), set())
         self.assertEqual(self.kinds([ci(i, "Example.Repo_X") for i in range(3)]),
                          {("red-ci-example-repo-x", "new-skill")})
 
