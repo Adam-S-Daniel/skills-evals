@@ -127,8 +127,23 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install the validator's one dependency
+      - name: Install the validator's Python dependency
         run: python3 -m pip install pyyaml==6.0.3
+
+      # skills-evals#595: an interface string that exempts a leaked run must
+      # be a callable the checker calls, which the validator learns by
+      # parsing the checker as data (Python's ast, Ruby's Ripper from the
+      # runner image, and Acorn). Acorn comes from the trusted default
+      # branch's exact-pinned lockfile in evals/browser-testing/seed, never
+      # from the scaffold, and no install script runs.
+      - name: Set up Node for the checker parse
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install the checker parser
+        working-directory: skills-evals/evals/browser-testing/seed
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Resolve the branch to gate
         id: resolve
