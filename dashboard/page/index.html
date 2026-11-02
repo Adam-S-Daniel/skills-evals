@@ -403,7 +403,7 @@
       <input class="pd-search" id="search-prs" type="search" placeholder="Filter PRs" aria-label="Filter PRs">
       <div class="pd-scroll">
         <table class="pd-table" id="tbl-prs" data-source="open_prs" data-row-key="repo,number">
-          <thead><tr><th data-field="repo">Repo</th><th class="num" data-field="number">#</th><th data-field="title">Title</th><th data-field="author">Opened by</th><th data-field="created_at">Opened</th><th data-field="labels">Labels</th></tr></thead>
+          <thead><tr><th data-field="repo">Repo</th><th class="num" data-field="number">#</th><th data-field="title">Title</th><th data-field="author">Opened by</th><th data-source="pr_origin" data-field="origin">Made by</th><th data-field="created_at">Opened</th><th data-field="checks">Checks</th><th data-field="labels">Labels</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -504,17 +504,46 @@
 })();
 // ---- Live data: answers from the GitHub connector, reshaped into rows ----
 dash.loader('open_prs', {
-  description: 'The GitHub search answer as one row per pull request, with the repo name taken from its address',
-  fn: ({ answer }) => {
+  description: 'The GitHub search answer as one row per pull request, with the repo name taken from its address; then, per pull request, its head branch, its check runs and commit statuses summed up as one checks result, and any Claude session or Actions run link in its description',
+  fn: async ({ answer, call }) => {
     let a = answer;
     if (a && Array.isArray(a.content)) { const t = a.content.find((c) => c.type === 'text' && /^[\[{]/.test(String(c.text).trim())); if (t) a = t.text; }
     if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { throw new Error('GitHub answered with text, not results: ' + a.slice(0, 160)); } }
     if (!a || !Array.isArray(a.items)) throw new Error('GitHub search returned no items');
-    return a.items.map((p) => ({
-      repo: String(p.repository_url || '').split('/').pop(), number: p.number, title: p.title,
-      author: (p.user && p.user.login) || '', draft: !!p.draft,
-      labels: (p.labels || []).map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean).join(', '),
-      created_at: p.created_at, updated_at: p.updated_at, url: p.html_url,
+    const unwrap = (x) => {
+      let b = x;
+      if (b && Array.isArray(b.content)) { const t = b.content.find((c) => c.type === 'text' && /^[\[{]/.test(String(c.text).trim())); if (t) b = t.text; }
+      if (typeof b === 'string') b = JSON.parse(b);
+      return b;
+    };
+    // A check run that ended badly fails the PR; a cancelled one is usually superseded, so it is ignored.
+    const BAD = new Set(['failure', 'timed_out', 'startup_failure', 'action_required']);
+    const checksOf = (runs, status) => {
+      const list = (runs && runs.check_runs) || [];
+      const statuses = status && status.total_count > 0 ? status.statuses || [] : [];
+      const failed = list.filter((r) => BAD.has(r.conclusion)).length + statuses.filter((x) => x.state === 'failure' || x.state === 'error').length;
+      const running = list.filter((r) => r.status !== 'completed').length + statuses.filter((x) => x.state === 'pending').length;
+      if (failed) return 'Failed: ' + failed;
+      if (running) return 'In progress: ' + running;
+      return list.length + statuses.length ? 'Passed' : 'No checks';
+    };
+    return Promise.all(a.items.map(async (p) => {
+      const parts = String(p.repository_url || '').split('/');
+      const owner = parts[parts.length - 2], repo = parts[parts.length - 1];
+      const body = String(p.body || '');
+      const session = (body.match(/claude\.ai\/code\/session_([A-Za-z0-9]+)/) || [])[1] || '';
+      const run_url = (body.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/actions\/runs\/\d+/) || [])[0] || '';
+      const q = { owner, repo, pullNumber: p.number };
+      const [pr, runs, status] = await Promise.all(['get', 'get_check_runs', 'get_status']
+        .map((method) => call('pull_request_read', { ...q, method }).then(unwrap, () => null)));
+      return {
+        repo, number: p.number, title: p.title,
+        author: (p.user && p.user.login) || '', draft: !!p.draft,
+        labels: (p.labels || []).map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean).join(', '),
+        created_at: p.created_at, updated_at: p.updated_at, url: p.html_url,
+        branch: (pr && pr.head && pr.head.ref) || '', session, run_url,
+        checks: runs || status ? checksOf(runs, status) : 'Unknown', checks_url: p.html_url + '/checks',
+      };
     }));
   },
 });
@@ -763,6 +792,32 @@ dash.calc('routine_health', {
     return [{ active: active.length - fresh, ok, attention: active.length - fresh - ok }];
   },
 });
+// Branch prefixes the loop's own workflows open pull requests from (skills-evals AGENTS.md).
+const ROUTINE_BRANCHES = [
+  ['eval-guidance-improve/', 'Guidance improve gate', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/routine-guidance-improve-gate.yml'],
+  ['eval-improve/', 'Skill improve gate', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/routine-improve-gate.yml'],
+  ['draft-skill/', 'New-skill draft gate', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/routine-draft-skill-gate.yml'],
+  ['retire-skill/', 'Keep-or-remove (skill coverage)', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/skill-coverage.yml'],
+  ['claude/scaffold-', 'Fixture scaffold gate', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/routine-scaffold-gate.yml'],
+  ['roster/', 'Roster refresh', 'https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/roster-refresh.yml'],
+  ['agents-md-sync/', 'Guidance sync', 'https://github.com/Adam-S-Daniel/_agent-guidance/actions/workflows/sync.yml'],
+  ['dependabot/', 'Dependabot', ''],
+];
+dash.calc('pr_origin', {
+  title: 'Who made each open PR',
+  description: 'The thread whose Claude session is linked in the PR description or whose own branch the PR comes from; else the loop workflow its branch belongs to, the Actions run it links, or the Claude session it links; else its branch name.',
+  inputs: ['open_prs', 'threads'],
+  fn: (open_prs, threads) => open_prs.map((p) => {
+    const t = threads.find((x) => (p.session && x.session === p.session) || (p.branch && x.branch === p.branch));
+    const r = ROUTINE_BRANCHES.find(([pre]) => p.branch.startsWith(pre));
+    const [origin, origin_url] = t ? [t.title, t.link]
+      : r ? [r[1], p.run_url || r[2]]
+      : p.run_url ? ['Workflow run', p.run_url]
+      : p.session ? ['Claude session', 'https://claude.ai/code/session_' + p.session]
+      : [p.branch ? 'Branch ' + p.branch : '', ''];
+    return { repo: p.repo, number: p.number, origin, origin_url };
+  }),
+});
 dash.calc('pr_counts', {
   title: 'Open PR counts',
   description: 'Open pull requests, and how many a bot opened.',
@@ -809,6 +864,16 @@ dash.calc('new_runs', {
   const two = d3.format('.2f');
   const usd = d3.format('$.2f');
   const dt = (s) => (s ? fmtTime(new Date(s)) : '');
+  // "3 hours ago" / "in 2 days", from the browser's built-in Intl.RelativeTimeFormat.
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const AGO_UNITS = [['year', 31536e6], ['month', 2592e6], ['week', 6048e5], ['day', 864e5], ['hour', 36e5], ['minute', 6e4]];
+  const ago = (s) => {
+    const t = s ? new Date(s).getTime() : NaN;
+    if (Number.isNaN(t)) return '';
+    const diff = t - Date.now();
+    const u = AGO_UNITS.find(([, ms]) => Math.abs(diff) >= ms);
+    return u ? rtf.format(Math.trunc(diff / u[1]), u[0]) : 'just now';
+  };
   const day = (s) => (s ? fmtDate(new Date(s)) : '');
   const safeUrl = (u) => (typeof u === 'string' && /^https:\/\/(github\.com|claude\.ai)\//.test(u) ? u : null);
   const status = (id) => dash.data(id).status;
@@ -853,7 +918,7 @@ dash.calc('new_runs', {
       const v = rows[0] ? rows[0][field] : null;
       el.classList.remove('dash-skeleton');
       if (v == null) { el.textContent = '—'; return; }
-      if (field.endsWith('_at')) el.textContent = dt(v);
+      if (field.endsWith('_at')) { el.textContent = ago(v); el.title = dt(v); }
       else if (typeof v === 'number') el.textContent = fills[field] ? fills[field](v) : d3.format(',')(v);
       else el.textContent = v;
     });
@@ -866,7 +931,7 @@ dash.calc('new_runs', {
     const s = document.createElement('span');
     s.className = 'pd-pill';
     const t = String(txt || '');
-    if (/^(Done|OK|Met|Succeeded|ok)$/i.test(t)) s.classList.add('pd-good');
+    if (/^(Done|OK|Met|Succeeded|Passed|ok)$/i.test(t)) s.classList.add('pd-good');
     else if (/stalled|stopped|not started|failed/i.test(t)) s.classList.add('pd-bad');
     else if (/waiting|partly|needs|not yet|in progress/i.test(t)) s.classList.add('pd-warn');
     s.textContent = t;
@@ -888,6 +953,7 @@ dash.calc('new_runs', {
       return;
     }
     let rows = Array.isArray(d.data) ? [...d.data] : [];
+    if (opts.join) { const m = new Map(rowsOf(opts.join).map((x) => [keyFn(x), x])); rows = rows.map((r) => ({ ...r, ...(m.get(keyFn(r)) || {}) })); }
     if (opts.filter) rows = rows.filter(opts.filter);
     const q = (searchState[id] || '').toLowerCase();
     if (q) rows = rows.filter((r) => cols.some((c) => String(r[c.field] ?? '').toLowerCase().includes(q)));
@@ -905,7 +971,10 @@ dash.calc('new_runs', {
         const td = document.createElement('td');
         if (c.num) td.className = 'num';
         const v = r[c.field];
-        if (c.pill) td.append(pill(v));
+        if (c.ago) { td.textContent = v ? ago(v) : '—'; if (v) td.title = dt(v); }
+        else if (c.pill && c.link && safeUrl(r[c.link])) {
+          const a = document.createElement('a'); a.href = safeUrl(r[c.link]); a.target = '_blank'; a.rel = 'noopener'; a.append(pill(v)); td.append(a);
+        } else if (c.pill) td.append(pill(v));
         else if (c.link) {
           const u = safeUrl(r[c.link]);
           const txt = c.fmt ? c.fmt(v, r) : (v ?? '');
@@ -1154,21 +1223,21 @@ dash.calc('new_runs', {
     drawDumbbell();
     drawTrend();
     renderTable('tbl-coverage', 'eval_coverage', [
-      { field: 'skill' }, { field: 'status', pill: true }, { field: 'runs', num: true }, { field: 'last_run', fmt: (v) => (v ? day(v) : '—') },
+      { field: 'skill' }, { field: 'status', pill: true }, { field: 'runs', num: true }, { field: 'last_run', ago: true },
       { field: 'with_share', num: true, fmt: (v) => (v == null ? '—' : pct(v)) }, { field: 'without_share', num: true, fmt: (v) => (v == null ? '—' : pct(v)) },
       { field: 'gain', num: true, fmt: (v) => (v == null ? '—' : (v >= 0 ? '+' : '') + d3.format('.0f')(v * 100) + ' pts') },
     ], (r) => r.skill, { sort: { field: 'runs', dir: 'asc' } });
-    renderTable('tbl-waiting', 'waiting', [{ field: 'item' }, { field: 'where', link: 'link' }, { field: 'since', fmt: day }], (r) => r.item);
-    renderTable('tbl-routines-mini', 'routines', [{ field: 'name', link: 'link' }, { field: 'health', pill: true }, { field: 'last_run', fmt: dt }], (r) => r.name);
-    renderTable('tbl-ingests', 'eval_ingests', [{ field: 'run_id', link: 'url', fmt: (v, r) => v || r.message }, { field: 'ingested_at', fmt: dt }], (r) => r.sha);
+    renderTable('tbl-waiting', 'waiting', [{ field: 'item' }, { field: 'where', link: 'link' }, { field: 'since', ago: true }], (r) => r.item);
+    renderTable('tbl-routines-mini', 'routines', [{ field: 'name', link: 'link' }, { field: 'health', pill: true }, { field: 'last_run', ago: true }], (r) => r.name);
+    renderTable('tbl-ingests', 'eval_ingests', [{ field: 'run_id', link: 'url', fmt: (v, r) => v || r.message }, { field: 'ingested_at', ago: true }], (r) => r.sha);
     renderTable('tbl-loop-stages', 'loop_stages', [{ field: 'kind' }, { field: 'stage', link: 'link' }, { field: 'status', pill: true }, { field: 'what' }, { field: 'gaps' }], (r) => r.order);
     renderTable('tbl-loop-grid', 'loop_grid', [{ field: 'stage' }, { field: 'skills' }, { field: 'guidance' }, { field: 'memories' }], (r) => r.stage);
-    renderTable('tbl-loop-lanes', 'loop_lanes_live', [{ field: 'lane' }, { field: 'thread', link: 'link' }, { field: 'does' }, { field: 'latest', link: 'latest_link' }, { field: 'state', pill: true }, { field: 'last_active', fmt: dt }], (r) => r.thread);
+    renderTable('tbl-loop-lanes', 'loop_lanes_live', [{ field: 'lane' }, { field: 'thread', link: 'link' }, { field: 'does' }, { field: 'latest', link: 'latest_link' }, { field: 'state', pill: true }, { field: 'last_active', ago: true }], (r) => r.thread);
     renderTable('tbl-loop-gaps', 'loop_gaps', [{ field: 'gap' }, { field: 'title', link: 'link' }, { field: 'status', pill: true }, { field: 'owner' }], (r) => r.gap);
     renderTable('tbl-roster', 'roster', [{ field: 'model', link: 'link' }, { field: 'role' }, { field: 'status', pill: true }, { field: 'why' }], (r) => r.id);
     renderTable('tbl-models', 'eval_summary', [{ field: 'model' }, { field: 'runs', num: true }, { field: 'helped', num: true }, { field: 'tied', num: true }, { field: 'hurt', num: true }, { field: 'with_avg', num: true, fmt: pct }, { field: 'without_avg', num: true, fmt: pct }, { field: 'lift', num: true, fmt: (v) => (v >= 0 ? '+' : '') + d3.format('.1f')(v * 100) + ' pts' }], (r) => r.model, { sort: { field: 'runs', dir: 'desc' } });
     renderTable('tbl-runs', 'eval_runs', [
-      { field: 'fired_at', fmt: dt }, { field: 'fixture' }, { field: 'model', fmt: (v) => String(v).replace('claude-', '') },
+      { field: 'fired_at', ago: true }, { field: 'fixture' }, { field: 'model', fmt: (v) => String(v).replace('claude-', '') },
       { field: 'with_skill', num: true, fmt: one }, { field: 'without_skill', num: true, fmt: one }, { field: 'checks', num: true },
       { field: 'judge', fmt: (v, r) => (v === 'ran' ? one(r.with_judge) + ' vs ' + one(r.without_judge) : 'not needed') },
       { field: 'cost_usd', num: true, fmt: usd }, { field: 'meter_points', num: true, fmt: one },
@@ -1181,24 +1250,25 @@ dash.calc('new_runs', {
       { field: 'bare_won', num: true },
     ], (r) => r.model, { sort: { field: 'pairs', dir: 'desc' } });
     renderTable('tbl-bare', 'bare_runs', [
-      { field: 'fired_at', fmt: dt }, { field: 'fixture' }, { field: 'model', fmt: (v) => (v ? String(v).replace('claude-', '') : '—') },
+      { field: 'fired_at', ago: true }, { field: 'fixture' }, { field: 'model', fmt: (v) => (v ? String(v).replace('claude-', '') : '—') },
       { field: 'bare_share', num: true, fmt: (v) => (v == null ? '—' : pct(v)) }, { field: 'without_share', num: true, fmt: (v) => (v == null ? '—' : pct(v)) }, { field: 'with_share', num: true, fmt: (v) => (v == null ? '—' : pct(v)) },
-      { field: 'paired_at', fmt: (v) => (v ? dt(v) : '—') },
+      { field: 'paired_at', ago: true },
       { field: 'trials', num: true }, { field: 'cost_usd', num: true, fmt: (v) => (v == null ? '—' : usd(v)) },
       { field: 'report_url', link: 'report_url', fmt: (v) => (v ? 'Report' : '—') },
     ], (r) => r.run_id, { sort: { field: 'fired_at', dir: 'desc' } });
     renderTable('tbl-cleanup', 'cleanup', [{ field: 'id', link: 'link' }, { field: 'item' }, { field: 'done_when' }, { field: 'status', pill: true }, { field: 'detail' }], (r) => r.id);
-    renderTable('tbl-prs', 'open_prs', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'author', fmt: (v) => String(v).replace('[bot]', ' (bot)') }, { field: 'created_at', fmt: day }, { field: 'labels' }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'created_at', dir: 'asc' } });
-    renderTable('tbl-merged', 'merged_prs', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'closed_at', fmt: day }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'closed_at', dir: 'desc' } });
-    renderTable('tbl-issues', 'open_issues', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'labels' }, { field: 'updated_at', fmt: day }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'updated_at', dir: 'desc' } });
-    renderTable('tbl-threads', 'threads', [{ field: 'title', link: 'link' }, { field: 'state', pill: true }, { field: 'last_active', fmt: dt }], (r) => r.title);
-    renderTable('tbl-routines', 'routines', [{ field: 'name', link: 'link' }, { field: 'what' }, { field: 'schedule' }, { field: 'last_run', fmt: dt }, { field: 'health', pill: true }, { field: 'note' }], (r) => r.name);
-    renderTable('tbl-checkins', 'checkins', [{ field: 'when', fmt: dt }, { field: 'what' }], (r) => r.id, { sort: { field: 'when', dir: 'asc' } });
+    renderTable('tbl-prs', 'open_prs', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'author', fmt: (v) => String(v).replace('[bot]', ' (bot)') }, { field: 'origin', link: 'origin_url' }, { field: 'created_at', ago: true }, { field: 'checks', pill: true, link: 'checks_url' }, { field: 'labels' }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'created_at', dir: 'asc' }, join: 'pr_origin' });
+    renderTable('tbl-merged', 'merged_prs', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'closed_at', ago: true }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'closed_at', dir: 'desc' } });
+    renderTable('tbl-issues', 'open_issues', [{ field: 'repo' }, { field: 'number', num: true, link: 'url' }, { field: 'title', link: 'url' }, { field: 'labels' }, { field: 'updated_at', ago: true }], (r) => enc(r.repo) + ',' + r.number, { sort: { field: 'updated_at', dir: 'desc' } });
+    renderTable('tbl-threads', 'threads', [{ field: 'title', link: 'link' }, { field: 'state', pill: true }, { field: 'last_active', ago: true }], (r) => r.title);
+    renderTable('tbl-routines', 'routines', [{ field: 'name', link: 'link' }, { field: 'what' }, { field: 'schedule' }, { field: 'last_run', ago: true }, { field: 'health', pill: true }, { field: 'note' }], (r) => r.name);
+    renderTable('tbl-checkins', 'checkins', [{ field: 'when', ago: true }, { field: 'what' }], (r) => r.id, { sort: { field: 'when', dir: 'asc' } });
     renderTable('tbl-gate', 'gate', [{ field: 'condition', link: 'link' }, { field: 'status', pill: true }, { field: 'detail' }], (r) => r.condition);
     renderTable('tbl-decisions', 'decisions', [{ field: 'date' }, { field: 'decision' }, { field: 'link', link: 'link', fmt: (v) => (/github\.com/.test(v) ? v.replace(/^https:\/\/github\.com\/[^/]+\//, '').replace(/\/(pull|issues)\//, '#') : 'Thread') }], (r) => enc(r.date) + ',' + enc(r.decision), { sort: { field: 'date', dir: 'desc' } });
   }
 
   dash.onData(draw);
+  setInterval(draw, 60000);
   show(location.hash.slice(1) || 'overview', false);
 })();
 </script>
