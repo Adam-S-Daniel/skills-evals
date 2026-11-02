@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-02T23:19:43Z",
+ "generated_at": "2026-11-02T23:25:32Z",
  "guidance": {
   "removed": [
    {
@@ -137,7 +137,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 6,
+    "current_text_runs": 8,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -147,6 +147,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-02T23:09:53Z",
+      "cli_version": "2.1.316",
+      "fixture": "handoff",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0730524,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.0721672,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.0425233,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.046479999999999994,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261102T230953Z/report.md"
+     },
      {
       "at": "2026-11-02T22:22:03Z",
       "cli_version": "2.1.316",
@@ -1394,7 +1431,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T23:17:17Z",
+ "newest_run": "2026-11-02T23:23:07Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -4655,7 +4692,29 @@
     "scheduled": false
    },
    "registry": "adam-agentskills",
-   "runs": [],
+   "runs": [
+    {
+     "at": "2026-11-02T23:23:07Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T232211Z-058dea/pdf-ocr-audit/20261102T232307Z/report.md",
+     "with": {
+      "checks_passed": 13,
+      "checks_total": 13,
+      "cost_usd": 0.12347749999999999,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 13,
+      "cost_usd": 0.0844919,
+      "judge_mean": null,
+      "trials": 1
+     }
+    }
+   ],
    "skip_reason": null,
    "stakes": {
     "level": "normal"
@@ -4664,8 +4723,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": null,
-   "verdict_reason": null
+   "verdict": "insufficient",
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": null,
@@ -4772,6 +4831,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-02T23:22:53Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T232136Z-d58e9f/rename-pdfs/20261102T232253Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.1495604,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 8,
+      "cost_usd": 0.09593600000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T21:52:30Z",
      "cli_version": "2.1.316",
@@ -7462,7 +7542,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "bd436bda2dce8788c2b8a02029f6245b9b6fb062",
-  "results_commit": "236609623292a809bfe54331443b8729f45e113e"
+  "results_commit": "228a4fc4bab09b6716fcef72a6fda5cf60843d22"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
