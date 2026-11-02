@@ -359,14 +359,26 @@ class AutoTests(Base):
         self.assertEqual(writes[2], ["pr", "merge", url, "-R", "Adam-S-Daniel/adam-agentskills",
                                      "--auto", "--merge", "--match-head-commit", head])
         self.assertEqual(writes[3][:3], ["pr", "view", url])
-        self.assertEqual(len(writes), 4)
+        # Then the removal notice to Adam here (#557), naming the pull request.
+        self.assertEqual(writes[4][:4], ["issue", "create", "-R", "Adam-S-Daniel/skills-evals"])
+        self.assertIn("agent-authored", writes[4])
+        notice = next(stdin for args, stdin in fake.calls if args[:2] == ["issue", "create"])
+        self.assertTrue(notice.startswith(
+            retire_skill.SKILL_NOTICE_MARKER.format(skill=SKILL)))
+        self.assertIn(f"@{retire_skill.NOTICE_OWNER}", notice)
+        self.assertIn(url, notice)
+        self.assertIn("**Revert**", notice)
+        self.assertTrue(notice.rstrip().endswith(retire_skill.AGENT_MARKER))
+        self.assertEqual(len(writes), 5)
         body = next(stdin for args, stdin in fake.calls if args[:2] == ["pr", "create"])
         self.assertIn("no human review", body)
         self.assertIn("0014-removal-pull-requests-merge-without-review.md", body)
         self.assertIn("0021-automated-skill-changes-merge-without-review.md", body)
         self.assertIn("1.2.7 -> 2.0.0", body)
         self.assertTrue(body.endswith(retire_skill.AGENT_MARKER + "\n"))
-        self.assertFalse(any(args[0] == "issue" for args in writes))
+        # No retirement issue: the one issue written is the removal notice.
+        self.assertEqual([args[:2] for args in writes if args[0] == "issue"],
+                         [["issue", "create"]])
         for message in git(self.registry, "log", "--format=%B%x00", "main..HEAD").split("\0"):
             if message.strip():
                 self.assertTrue(message.strip().endswith("Agent: claude-code"), message)
@@ -512,8 +524,11 @@ class AutoTests(Base):
         code = retire_skill.main(argv, env=AUTO_ENV, gh=reads.gh, push=reads.push,
                                  registry_gh=writes.gh, out=io.StringIO())
         self.assertEqual(code, 0)
-        self.assertEqual(reads.writes(), [])
-        self.assertTrue(all(args[:2] == ["api", "--paginate"] for args, _ in reads.calls))
+        # The one write on the job's own token is the removal notice here (#557).
+        self.assertEqual([args[:4] for args in reads.writes()],
+                         [["issue", "create", "-R", "Adam-S-Daniel/skills-evals"]])
+        self.assertTrue(all(args[:2] in (["api", "--paginate"], ["issue", "create"])
+                            for args, _ in reads.calls))
         self.assertEqual([args[:2] for args, _ in writes.calls],
                          [["pr", "create"], ["api", "-X"], ["pr", "merge"], ["pr", "view"]])
 

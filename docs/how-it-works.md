@@ -366,12 +366,16 @@ as prose.
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
 then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
-`retire` (no benefit on every fixture and roster model, at 95% confidence on an anytime-valid bound)
+`retire` (90% confidence on an anytime-valid bound, on every fixture and roster model, that the skill does not improve results by 0.15 or more: Adam, 2026-11-02)
 gets, in `retirement_mode: auto` (the committed value in
 `evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
 labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
-adam-agentskills ADR 0021), one loop pull request at a time: nothing is
+adam-agentskills ADR 0021). Each removal also files an `agent-authored`
+skills-evals issue that mentions Adam, links the removal pull request and
+says how to reverse it (close it, or press Revert once merged), and the
+explorer lists removed skills and sections (#557). One loop pull request
+is open at a time: nothing is
 opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
 request is open there, and a closed `retire-skill/<skill>` one means the
 skill is decided. That branch carries everything the registry's required
@@ -515,14 +519,19 @@ The same job also reads an `_agent-guidance` checkout. Five sections have
 fixtures under `evals/guidance/<section id>/<name>/`, and
 `anything-you-name-gets-its-link` has four. Each fixture runs the section
 inside the whole guidance against the guidance without it, and the section
-alone against no guidance. A section that adds nothing in situ is `retire`.
-If it helps only when alone, it is `shorten-or-merge` instead, because the
-rest of the guidance already covers it. Both verdicts become one
-skills-evals issue in `proposal` mode, which is the committed
-`guidance.retirement_mode`. In `auto` mode a `retire` would open an
-auto-merging removal pull request in `_agent-guidance` that passes that
-repository's own checks. A `shorten-or-merge` verdict never removes the
-section. Preview with
+alone against no guidance. The in-situ runs are pooled by the rest of the
+guidance each ran beside (#557): every version of the rest counts, as a
+stratum, so an edit elsewhere in the guidance no longer starts the evidence
+over. A section is `retire` when the gate is 90% confident that it does not
+improve results by 0.15 or more across those strata (Adam, 2026-11-02:
+the guidance block of `evals/gate-policy.yml`; skills use the same rule).
+There is no separate confirmation step. If a `retire` section helps only
+when alone, it is `shorten-or-merge` instead, because the rest of the
+guidance already covers it. In `auto` mode, the committed
+`guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
+request in `_agent-guidance` that passes that repository's own checks; in
+`proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`
+verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
 
 ## 4. Where to look for current results
