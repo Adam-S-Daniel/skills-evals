@@ -149,7 +149,6 @@ test('with a loop verdict, the chip follows the loop, not the page rule', () => 
   eq(ch([skillRun('a', 0, 5, 5, 9)], 'insufficient'), 'insufficient');
   eq(ch(many, 'retire'), 'none');
   eq(ch(many, 'retire-pending'), 'none');
-  eq(ch(many, 'retire-unconfirmed'), 'insufficient', 'an unconfirmed no-benefit is not final and never early');
   eq(ch(many, 'ceiling'), 'canttell');
   eq(ch(many, 'cannot-discriminate'), 'canttell');
   eq(ch(many, 'shorten-or-merge'), 'alone');

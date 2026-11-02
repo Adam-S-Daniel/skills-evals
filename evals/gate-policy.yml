@@ -49,18 +49,23 @@ skills:
 # Guidance sections (skills-evals#124): the same verdict over each section's
 # ablation pair (full vs full-minus-section), with the section-vs-none pair
 # read only for the `shorten-or-merge` outcome (harness/gates.py,
-# `guidance_verdict`). Same starting values as skills, kept apart so they can
-# diverge. Adam made section removal automatic on 2026-10-10 (#124) and
+# `guidance_verdict`). Kept apart from skills so the two can diverge, and
+# they did on 2026-11-02 (Adam, #557): a section is removed when the gate is
+# 90% confident (`retire_confidence` 0.90) that it does not improve results by
+# 0.15 or more (`objective_margin` 0.15), with no separate confirmation step;
+# keeping stays at 85%. The in-situ runs are pooled by the rest of the
+# guidance each ran beside (harness/gates.py `classify_strata`). Each
+# removal is tracked and can be reverted (#564). Adam made section removal automatic on 2026-10-10 (#124) and
 # removal pull requests auto-merging on 2026-10-25. The write path is the
 # eval-improve GitHub App's token for _agent-guidance alone; with no token
 # (the secrets are unset, the mint failed, or the App is not installed on
 # _agent-guidance), scripts/retire_skill.py --target guidance files the
 # issue instead. Set it to `proposal` to turn removal pull requests off.
 guidance:
-  objective_margin: 0.05
+  objective_margin: 0.15
   judge_margin: 0.5
   benefit_confidence: 0.85
-  retire_confidence: 0.95
+  retire_confidence: 0.90
   check_confidence: 0.85
   min_cli_versions: 2
   prior_strength: 4

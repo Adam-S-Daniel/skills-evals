@@ -325,7 +325,6 @@ const STRINGS = {
     'shorten-or-merge': 'Official decision: shorten it or merge it into another section.',
     retire: 'Official decision: remove it.',
     'retire-pending': 'Official decision: remove it, after another removal finishes.',
-    'retire-unconfirmed': 'No official decision yet: no benefit seen across guidance versions, and removal waits until runs beside today\'s guidance confirm it.',
     retired: 'It has been removed.',
     ceiling: 'Official decision: the test cannot tell, because Claude already passes without it.',
     insufficient: 'No official decision yet: it needs more runs.',
@@ -659,10 +658,7 @@ function hasRegression(alerts, subjectKind, name) {
 const VERDICT_CHIPS = {
   keep: 'helps', retain: 'helps', 'shorten-or-merge': 'alone', 'helps-only-alone': 'alone',
   retire: 'none', 'retire-pending': 'none', retired: 'none',
-  ceiling: 'canttell', 'cannot-discriminate': 'canttell',
-  // Not final, and never an early sign of help (#557): no benefit is seen,
-  // but it is not confirmed beside today's guidance.
-  'retire-unconfirmed': 'insufficient'
+  ceiling: 'canttell', 'cannot-discriminate': 'canttell'
 };
 
 function earlyOrInsufficient(pooled) {

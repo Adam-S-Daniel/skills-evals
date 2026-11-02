@@ -492,13 +492,12 @@ inside the whole guidance against the guidance without it, and the section
 alone against no guidance. The in-situ runs are pooled by the rest of the
 guidance each ran beside (#557): every version of the rest counts, as a
 stratum, so an edit elsewhere in the guidance no longer starts the evidence
-over. A section that adds nothing in situ across those strata is
-`retire-unconfirmed` until the stratum of the rest on main shows no benefit
-on its own too, and only then `retire`. `retire-unconfirmed` removes
-nothing and keeps the section protected from audits. Confirming needs many
-runs beside one version of the rest (the counts are on #557). If a `retire`
-section helps only when alone, it is `shorten-or-merge` instead, because the
-rest of the guidance already covers it. In `auto` mode, the committed
+over. A section is `retire` when the gate is 90% confident that it does not
+improve results by 0.15 or more across those strata (Adam, 2026-11-02:
+the guidance block of `evals/gate-policy.yml`; skills keep 0.05 and 95%).
+There is no separate confirmation step. If a `retire` section helps only
+when alone, it is `shorten-or-merge` instead, because the rest of the
+guidance already covers it. In `auto` mode, the committed
 `guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
 request in `_agent-guidance` that passes that repository's own checks; in
 `proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`

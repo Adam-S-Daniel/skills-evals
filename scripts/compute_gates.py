@@ -570,21 +570,18 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
     """{fixture name: {"fixture_digest", "tested_digest"}} for every fixture
     of guidance `section` on main (`evals/guidance/<section>/<name>/`); the
     tested digest is the section's extent in `guidance_dir` (None without
-    one, or when the manifest has no such row), and `main_rest` the digest
-    of the rest of the guidance there, the stratum a removal is confirmed
-    in (#557; None exactly when the tested digest is)."""
+    one, or when the manifest has no such row)."""
     root = evals_dir / "guidance" / section
     if section.startswith("_") or not root.is_dir() or root.is_symlink():
         return {}
-    tested = main_rest = None
+    tested = None
     if guidance_dir is not None:
         try:
             row = guidance.find_row(guidance.load_manifest(guidance_dir), section,
                                     guidance_dir)
-            digests = guidance.content_digests(guidance_dir, row)
-            tested, main_rest = digests["section"], digests["rest"]
+            tested = guidance.content_digests(guidance_dir, row)["section"]
         except (guidance.GuidanceError, OSError, UnicodeDecodeError):
-            tested = main_rest = None
+            tested = None
     out = {}
     for directory in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
         try:
@@ -594,7 +591,7 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
         if isinstance(doc, dict) and doc.get("subject") == "guidance" \
                 and doc.get("section") == section:
             out[directory.name] = {"fixture_digest": run_eval.fixture_digest(directory),
-                                   "tested_digest": tested, "main_rest": main_rest}
+                                   "tested_digest": tested}
     return out
 
 

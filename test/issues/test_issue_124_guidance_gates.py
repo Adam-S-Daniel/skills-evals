@@ -813,8 +813,7 @@ def pair_runs(pair, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JU
     return runs
 
 
-# `main_rest` (#557): the in-situ runs below ran beside the rest on main.
-EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1", "main_rest": "rest"}}
+EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1"}}
 
 
 class GuidanceVerdictTests(unittest.TestCase):
@@ -851,8 +850,8 @@ class GuidanceVerdictTests(unittest.TestCase):
         # own, and under 20 degrees of freedom it is the 0.25 fallback.
         v = self.verdict(pair_runs("in_situ", FLAT[:3], FLAT[:3]) + alone)
         self.assertEqual(v["in_situ_verdict"], "insufficient")
-        # Twenty, confirmed beside the rest on main, retire in situ, and the
-        # alone benefit makes it shorten-or-merge.
+        # Twenty retire in situ, and the alone benefit makes it
+        # shorten-or-merge.
         v = self.verdict(pair_runs("in_situ", FLAT, FLAT) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("retire", "shorten-or-merge"))
 
@@ -872,11 +871,21 @@ class GuidancePolicyTests(unittest.TestCase):
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
-        changed = text.replace("guidance:\n  objective_margin: 0.05",
+        changed = text.replace("guidance:\n  objective_margin: 0.15",
                                "guidance:\n  objective_margin: 0.2")
         policy = gates.parse_gate_policy(changed)
         self.assertEqual(policy["guidance"]["objective_margin"], 0.2)
         self.assertEqual(policy["skills"]["objective_margin"], 0.05)
+
+    def test_the_committed_guidance_removal_rule_is_adams(self):
+        # Adam, 2026-11-02 (#557): remove at 90% confidence that a section does
+        # not improve results by 0.15 or more; skills keep 85% / 95% at 0.05.
+        policy = gates.load_gate_policy()
+        self.assertEqual((policy["guidance"]["objective_margin"],
+                          policy["guidance"]["retire_confidence"],
+                          policy["guidance"]["benefit_confidence"]), (0.15, 0.90, 0.85))
+        self.assertEqual((policy["skills"]["objective_margin"],
+                          policy["skills"]["retire_confidence"]), (0.05, 0.95))
 
     def test_without_the_block_there_is_no_guidance_policy(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
@@ -884,7 +893,7 @@ class GuidancePolicyTests(unittest.TestCase):
 
     def test_a_bad_guidance_block_or_an_unknown_top_key_is_refused(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
-        for bad in (text.replace("guidance:\n  objective_margin: 0.05",
+        for bad in (text.replace("guidance:\n  objective_margin: 0.15",
                                  "guidance:\n  objective_margin: 2"),
                     text + "memories: {}\n"):
             with self.assertRaises(gates.GatePolicyError):
@@ -988,7 +997,6 @@ class ComputeGuidanceTests(unittest.TestCase):
         self.assertEqual(self.cell_runs(), (20, 20))
         key = self.compute()["guidance"]["bravo"]["cells"][0]["key"]
         self.assertEqual(sorted(key["strata"]), sorted([self.digests["rest"], "e" * 64]))
-        self.assertEqual(key["main_rest"], self.digests["rest"])
 
     def test_alone_runs_with_another_section_payload_do_not_pool(self):
         # Same section extent, different file intro: the arm loaded other text.
@@ -1058,9 +1066,7 @@ def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=N
     roster = ["model-a", "model-b"]
     cells = [{"fixture": "fx", "model": m, "class": (classes or {}).get(m, "no-benefit"),
               "with": {"runs": 10}, "without": {"runs": 10},
-              "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2},
-              # Confirmed beside the rest on main (#557).
-              "confirmed": True, "key": {"main_rest": "r" * 64}}
+              "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2}}
              for m in roster]
     return {"schema_version": 1, "as_of": "20261020T000000Z", "roster_models": roster,
             "skills": {}, "guidance_retirement_mode": mode,

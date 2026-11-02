@@ -1046,19 +1046,8 @@ def guidance_block(gates: dict) -> dict:
 
 def guidance_retiring(gates: dict) -> str | None:
     """The one section whose verdict is `retire`, re-checked exactly as a
-    skill's is (`retiring`, over the guidance block), and then, for a
-    section alone (#557), every cell confirmed beside the guidance on main:
-    `confirmed` exactly true and a `key.main_rest` that is a string."""
-    section = retiring({**gates, "skills": guidance_block(gates)})
-    if section is None:
-        return None
-    for cell in guidance_block(gates)[section]["cells"]:
-        key = cell.get("key")
-        if cell.get("confirmed") is not True or not isinstance(key, dict) \
-                or not isinstance(key.get("main_rest"), str):
-            raise RetireError(f"{section}: a retire verdict with a cell not confirmed "
-                              "beside the guidance on main")
-    return section
+    skill's is (`retiring`, over the guidance block)."""
+    return retiring({**gates, "skills": guidance_block(gates)})
 
 
 def guidance_shortening(gates: dict) -> list:

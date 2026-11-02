@@ -159,12 +159,11 @@ with `strata` groups a cell's current-content runs by `pair_key`;
 `_classify` over the rest with each delta a precision-weighted
 `stratified_estimate` and the counts pooled. The cell's priors are its own
 (`cell_priors`, 20 degrees of freedom before a measured value replaces the
-0.25 fallback; scripts/simulate_stratified_pooling.py). A `no-benefit` cell
-is `confirmed` only when the stratum of the rest on main is, by itself and
-on its own priors, `no-benefit` too (an intersection test, so the 2.5%
-one-sided removal error holds per version of the rest); otherwise the
-section's verdict is `retire-unconfirmed`, which removes nothing. Skills and
-the alone pair are pooled exactly as before.
+0.25 fallback; scripts/simulate_stratified_pooling.py). The pooled bounds
+decide, with no separate confirmation beside the rest on main (Adam,
+2026-11-02: remove at 90% confidence that the section does not improve
+results by 0.15 or more, the guidance block of evals/gate-policy.yml).
+Skills and the alone pair are pooled exactly as before.
 
 KNOWN LIMITS, left for a later part:
 
@@ -961,8 +960,7 @@ def cell_priors(runs: list) -> dict:
             "check": guarded([v for g in groups.values() for v in g["check"].values()])}
 
 
-def classify_strata(strata: dict, main_rest: str, policy: dict,
-                    judge_carried: bool) -> dict:
+def classify_strata(strata: dict, policy: dict, judge_carried: bool) -> dict:
     """An in-situ guidance cell's class over its rest-of-guidance strata
     (#557). `strata` maps a rest digest to {"with": runs, "without": runs}.
 
@@ -971,15 +969,8 @@ def classify_strata(strata: dict, main_rest: str, policy: dict,
     with `cell_priors` over the used strata's runs. An agent-errored trial
     or a run skipped as anomalous ANYWHERE in the cell's current-content
     runs, used or not, keeps it from `no-benefit`, as in `classify_cell`.
-
-    A `no-benefit` cell is CONFIRMED only when its main-rest stratum (the
-    rest of the guidance on main) is used and is itself `no-benefit` under
-    `_classify` alone, with priors measured on that stratum's runs
-    (`cell_priors`): so the main rest's own ceiling, floor and
-    cannot-discriminate rules, its judge rule, its CLI-version count and its
-    `retire_confidence` bounds all apply. The class stays `no-benefit`
-    either way; `confirmed` says which, and `main_rest` carries the
-    stratum's own figures."""
+    There is no separate confirmation beside the rest on main (Adam,
+    2026-11-02): the pooled bounds decide."""
     every = [r for s in strata.values() for role in ("with", "without") for r in s[role]]
     prime(every)
     counted, skipped = {}, {}
@@ -1002,8 +993,7 @@ def classify_strata(strata: dict, main_rest: str, policy: dict,
     pairs = [(counted[rest]["with"], counted[rest]["without"]) for rest in used]
     with_runs = sorted((r for w, _ in pairs for r in w), key=_order)
     without_runs = sorted((r for _, o in pairs for r in o), key=_order)
-    priors = cell_priors(used_runs)
-    full = _classify(with_runs, without_runs, policy, judge_carried, priors,
+    full = _classify(with_runs, without_runs, policy, judge_carried, cell_priors(used_runs),
                      strata=pairs or None)
     cls, reason = full["class"], full["reason"]
     errored = sum(r["numbers"]["errored_trials"] for r in every)
@@ -1011,25 +1001,8 @@ def classify_strata(strata: dict, main_rest: str, policy: dict,
         cls, reason = "insufficient", (f"{cls} on the numbers, but the cell has "
                                        f"{errored} agent-errored trial(s) or a run "
                                        "skipped as anomalous, so it cannot retire")
-    out = {**full, "class": cls, "reason": reason, "judge_carried": judge_carried,
-           "skipped": skipped, "strata": used, "used_runs": used_runs,
-           "confirmed": None, "main_rest": None}
-    if cls != "no-benefit":
-        return out
-    if main_rest not in used:
-        return {**out, "confirmed": False,
-                "confirm_reason": "no counted run on each arm beside the guidance on main"}
-    main_with, main_without = counted[main_rest]["with"], counted[main_rest]["without"]
-    main = _classify(main_with, main_without, policy, judge_carried,
-                     cell_priors(strata[main_rest]["with"] + strata[main_rest]["without"]))
-    confirmed = main["class"] == "no-benefit"
-    return {**out, "confirmed": confirmed,
-            "confirm_reason": ("the rest of the guidance on main confirms it" if confirmed
-                               else f"beside the guidance on main: {main['reason']}"),
-            "main_rest": {"class": main["class"], "reason": main["reason"],
-                          "runs": {"with": len(main_with), "without": len(main_without)},
-                          "objective": main["objective"], "judge": main["judge"],
-                          "priors": main["priors"]}}
+    return {**full, "class": cls, "reason": reason, "judge_carried": judge_carried,
+            "skipped": skipped, "strata": used, "used_runs": used_runs}
 
 
 # ---------------------------------------------------------------------------
@@ -1096,8 +1069,7 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict,
     `strata` (#557, in-situ guidance only): no `_joint_context`; each cell
     holds every current-content run on its model, grouped by `pair_key`
     (the rest of the guidance the run ran beside) under `strata`, and its
-    own key {tested_digest, fixture_digest, main_rest}, `main_rest` being
-    `expected[fixture]["main_rest"]`."""
+    own key {tested_digest, fixture_digest}."""
     if strata:
         return _pool_strata(runs, skill, models, expected)
     own = [r for r in runs if r["skill"] == skill]
@@ -1143,8 +1115,7 @@ def _pool_strata(runs: list, skill: str, models: list, expected: dict) -> dict:
                 groups.setdefault(run["pair_key"], {"with": [], "without": []})[
                     run["role"]].append(run)
             cells[(fixture, model)] = {
-                "key": {"tested_digest": tested, "fixture_digest": fdig,
-                        "main_rest": main.get("main_rest")},
+                "key": {"tested_digest": tested, "fixture_digest": fdig},
                 "on_model": sum(1 for r in mine if r["model"] == model),
                 "strata": groups,
                 "with": [r for g in groups.values() for r in g["with"]],
@@ -1174,9 +1145,7 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     `strata` (#557, in-situ guidance): cells are pooled by rest of guidance
     and classified by `classify_strata` (which measures its own per-cell
     priors; `priors` is not used); a cell's `runs` and `runs_used` are its
-    used strata's runs; and when every cell is `no-benefit` but some cell
-    is not `confirmed` beside the guidance on main, the verdict is
-    `retire-unconfirmed`, which removes nothing."""
+    used strata's runs."""
     if not strata:
         priors = priors if priors is not None else run_priors(index.get("runs", []))
     cells, used = [], set()
@@ -1195,7 +1164,7 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                     "reason": f"pooling key incomplete: {', '.join(missing)}"}
         elif strata:
             carried = any(r["judge_carried"] for r in runs)
-            cell = classify_strata(pool["strata"], pool["key"]["main_rest"], policy, carried)
+            cell = classify_strata(pool["strata"], policy, carried)
             mine = cell.pop("used_runs")
             arms = {role: [r for r in mine if r["role"] == role] for role in arms}
             runs = arms["with"] + arms["without"]
@@ -1223,11 +1192,6 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         verdict, reason = "cannot-discriminate", "a cell cannot discriminate"
     elif "ceiling" in classes:
         verdict, reason = "ceiling", "a cell is at the ceiling"
-    elif cells and classes == {"no-benefit"} \
-            and any(c.get("confirmed") is False for c in cells):
-        verdict, reason = ("retire-unconfirmed", "every cell shows no benefit across "
-                           "guidance versions, but not every cell is confirmed beside "
-                           "the guidance on main")
     elif cells and classes == {"no-benefit"}:
         verdict, reason = "retire", "every cell shows no benefit"
     else:
@@ -1261,14 +1225,10 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     THE TWIST: a section whose in-situ verdict is `retire` while some alone
     cell shows `benefit` teaches the behavior, but the rest of the guidance
     already covers it. Its verdict is `shorten-or-merge`, never a removal.
-    Every other in-situ verdict stands as it is, `retire-unconfirmed`
-    included: its no-benefit is not confirmed beside the guidance on main,
-    and `shorten-or-merge` lifts the section's audit protection
-    (_agent-guidance ADR 0033), so it waits for the confirmation too.
+    Every other in-situ verdict stands as it is.
 
     The in-situ cells are pooled by rest of guidance (#557, `retirement`
-    with `strata`): `expected` also carries each fixture's `main_rest`, the
-    rest-of-guidance digest on main. The alone cells pool as before."""
+    with `strata`). The alone cells pool as before."""
     runs = index.get("runs", [])
     priors = run_priors(runs)
     out = {pair: retirement({"runs": [r for r in runs if r.get("pair") == pair]},

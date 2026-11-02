@@ -295,24 +295,6 @@ def current_text_runs(verdict: dict) -> int:
     return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
 
 
-def _no_help(cell: dict) -> float:
-    """A cell's confidence of no help. For an in-situ guidance cell pooled by
-    rest of guidance (#557, it carries `confirmed`), the lowest of the pooled
-    figure and the main-rest stratum's objective and judge figures, since a
-    removal needs both; 0 for a no-benefit cell not confirmed there, so the
-    page never shows a removal confidence that did not decide."""
-    figure = (cell.get("objective") or {}).get("no_help_confidence", 0.0)
-    if "confirmed" not in cell:
-        return figure
-    if cell.get("class") == "no-benefit" and cell.get("confirmed") is not True:
-        return 0.0
-    main = cell.get("main_rest") or {}
-    figures = [figure] + [d["no_help_confidence"] for d in (main.get("objective"),
-                                                              main.get("judge"))
-                          if isinstance(d, dict) and "no_help_confidence" in d]
-    return min(figures)
-
-
 def subject_confidence(verdict: dict) -> dict:
     """How sure the gate is, as levels in [0, 1): `helps`, the highest
     confidence at which some cell's delta (objective or judge) is above 0, and
@@ -325,7 +307,7 @@ def subject_confidence(verdict: dict) -> dict:
         return {"helps": None, "no_help": None}
     helps = [d["helps_confidence"] for c in cells for d in (c.get("objective"), c.get("judge"))
              if isinstance(d, dict) and "helps_confidence" in d]
-    no_help = [_no_help(c) for c in cells]
+    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
     if not helps:
         return {"helps": None, "no_help": None}
     return {"helps": max(helps), "no_help": min(no_help)}
