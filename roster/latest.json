@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-11-02T21:51:05Z",
+  "generated_at": "2026-11-02T22:06:10Z",
   "source": {
-    "models_api_at": "2026-11-02T21:51:05Z",
+    "models_api_at": "2026-11-02T22:06:10Z",
     "census_at": "2026-11-02T16:37:13Z",
     "admin_report_at": null
   },
   "defaults": {
     "source": "claude-code-cli 2.1.316",
-    "probed_at": "2026-11-02T21:51:02Z",
+    "probed_at": "2026-11-02T22:06:08Z",
     "resolved": {
       "fable": "claude-fable-5-1",
       "haiku": "claude-haiku-5-5",
@@ -19,11 +19,11 @@
   "arms": [
     {
       "id": "claude-sonnet-5-5",
-      "reason": "vendor default for the sonnet tier per claude-code-cli 2.1.316 (probed 2026-11-02T21:51:02Z), seated with no cooling-off; the tier qualifies by usage: `claude-sonnet-5-5` carries 12.2% of rankable census usage over the last 2 weeks (at or above the 10% entry bar)"
+      "reason": "vendor default for the sonnet tier per claude-code-cli 2.1.316 (probed 2026-11-02T22:06:08Z), seated with no cooling-off; the tier qualifies by usage: `claude-sonnet-5-5` carries 12.2% of rankable census usage over the last 2 weeks (at or above the 10% entry bar)"
     },
     {
       "id": "claude-opus-5-5",
-      "reason": "vendor default for the opus tier per claude-code-cli 2.1.316 (probed 2026-11-02T21:51:02Z), seated with no cooling-off; the tier qualifies by usage: `claude-opus-5-5` carries 87.6% of rankable census usage over the last 2 weeks (at or above the 10% entry bar)"
+      "reason": "vendor default for the opus tier per claude-code-cli 2.1.316 (probed 2026-11-02T22:06:08Z), seated with no cooling-off; the tier qualifies by usage: `claude-opus-5-5` carries 87.6% of rankable census usage over the last 2 weeks (at or above the 10% entry bar)"
     }
   ],
   "judge": {
@@ -39,11 +39,11 @@
   "excluded": [
     {
       "id": "claude-haiku-5-5",
-      "reason": "excluded from the arm set: vendor default for the haiku tier per claude-code-cli 2.1.316 (probed 2026-11-02T21:51:02Z), but the tier is not on the roster \u2014 no model in it carries 10% of rankable census usage over the last 2 weeks and no other previous arm in it is still seated"
+      "reason": "excluded from the arm set: vendor default for the haiku tier per claude-code-cli 2.1.316 (probed 2026-11-02T22:06:08Z), but the tier is not on the roster \u2014 no model in it carries 10% of rankable census usage over the last 2 weeks and no other previous arm in it is still seated"
     },
     {
       "id": "claude-fable-5-1",
-      "reason": "excluded from the arm set: vendor default for the fable/mythos tier per claude-code-cli 2.1.316 (probed 2026-11-02T21:51:02Z), but the tier is not on the roster \u2014 no `fable` model in it carries 10% of rankable census usage over the last 2 weeks and no other previous `fable` arm in it is still seated"
+      "reason": "excluded from the arm set: vendor default for the fable/mythos tier per claude-code-cli 2.1.316 (probed 2026-11-02T22:06:08Z), but the tier is not on the roster \u2014 no `fable` model in it carries 10% of rankable census usage over the last 2 weeks and no other previous `fable` arm in it is still seated"
     }
   ],
   "compared_to_previous": true,
