@@ -699,6 +699,97 @@ class PrivatePublishTests(unittest.TestCase):
         before = self.events_head(), self.head()
         self.assert_refused(self.run_script(), "merge", *before)
 
+    CLOUD = [
+        {"v": 1, "ts": "2026-09-02T09:00:00Z", "kind": "guidance-load",
+         "session": "fake-session-a", "cli": "9.9.9-fake", "state": "full",
+         "repos": 2, "guidance_version": "fakevers", "check_expected": True,
+         "check_reported": "match", "registry_sha": None},
+        {"v": 1, "ts": "2026-09-02T10:00:00Z", "kind": "guidance-load",
+         "session": "fake-session-b", "cli": "9.9.9-fake", "state": "/fake/path",
+         "repos": 1, "guidance_version": "fakevers", "check_expected": False,
+         "check_reported": "fake prose", "registry_sha": None},
+    ]
+
+    def seed_cloud_branch(self):
+        seed = self.tmp / "cloud-seed"
+        self.git("init", "--quiet", "-b", self.EVENTS, str(seed))
+        path = seed / "events" / "2026-09" / "cloud-guidance.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text("".join(json.dumps(r) + "\n" for r in self.CLOUD), encoding="utf-8")
+        self.git("add", "-A", cwd=seed)
+        self.git("commit", "--quiet", "-m", "seed", cwd=seed)
+        self.git("push", "--quiet", self.events_url(), self.EVENTS, cwd=seed)
+        return path.read_bytes()
+
+    def public_weekly(self):
+        return json.loads(self.git("show", f"{self.BRANCH}:usage/weekly-local.json",
+                                   cwd=self.origin))
+
+    def cloud_part(self, doc):
+        return ([r for r in doc["rows"] if r["surface"] == "cloud"],
+                [s for s in doc["sources"] if s["surface"] == "cloud"])
+
+    def test_cloud_guidance_is_read_from_the_branch_before_the_census(self):
+        original = self.seed_cloud_branch()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        rows, sources = self.cloud_part(self.public_weekly())
+        self.assertEqual([(r["kind"], r["name"], r["sessions"]) for r in rows],
+                         [("guidance", "full", 1), ("guidance", "invalid", 1),
+                          ("guidance-check", "match", 1), ("guidance-check", "unknown", 1)])
+        self.assertEqual([(s["scope"], s["from"], s["records_scanned"]) for s in sources],
+                         [("guidance-records", "2026-08-31T00:00:00Z", 2)])
+        blob = json.dumps(self.public_weekly()) + proc.stdout + proc.stderr
+        for leaked in ("fake-session", "9.9.9-fake", "fakevers", "/fake/path", "fake prose"):
+            self.assertNotIn(leaked, blob)
+        self.assertNotIn("cloud:", proc.stdout)
+        # The publisher only reads the cloud file: it is on the branch as it was.
+        path = "events/2026-09/cloud-guidance.jsonl"
+        self.assertEqual(self.git("show", f"{self.EVENTS}:{path}",
+                                  cwd=self.events_origin()).encode() + b"\n", original)
+
+    def test_a_failed_fetch_still_publishes_and_carries_the_cloud_rows_forward(self):
+        self.seed_cloud_branch()
+        self.assertEqual(self.run_script().returncode, 0)
+        first_head, first = self.head(), self.public_weekly()
+        write_transcript(self.projects / "-home-example-proj" / "t.jsonl",
+                         [skill_call("workflow-path-audit", "toolu_09", model="claude-haiku-4-5",
+                                     message_id="m9")])
+        self.env["USAGE_EVENTS_URL"] = (self.tmp / "no-such-repo.git").as_uri()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stderr.strip(),
+                         "usage census: private events not published (reach)")
+        self.assertIn("cloud: carried forward; published; private events: not published",
+                      proc.stdout)
+        self.assertEqual(self.git("diff", "--name-only", first_head, self.head(),
+                                  cwd=self.origin),
+                         "usage/latest.json\nusage/weekly-local.json")
+        second = self.public_weekly()
+        self.assertEqual([r["invocations"] for r in second["rows"]
+                          if r["name"] == "workflow-path-audit"], [2])
+        self.assertEqual(json.dumps(self.cloud_part(second)),
+                         json.dumps(self.cloud_part(first)))
+        self.assertNotEqual(self.cloud_part(second), ([], []))
+
+    def test_a_carried_cloud_source_older_than_14_days_is_dropped(self):
+        self.seed_cloud_branch()
+        self.assertEqual(self.run_script().returncode, 0)
+        self.env["CENSUS_NOW"] = "2026-09-19T12:00:01Z"        # 14 days and a second on
+        self.env["USAGE_EVENTS_URL"] = (self.tmp / "no-such-repo.git").as_uri()
+        before = self.head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertNotEqual(self.head(), before)
+        self.assertIn("cloud: not read; published", proc.stdout)
+        self.assertEqual(self.cloud_part(self.public_weekly()), ([], []))
+
+    def test_a_missing_branch_is_not_a_failed_fetch(self):
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("cloud:", proc.stdout)
+        self.assertEqual(self.cloud_part(self.public_weekly()), ([], []))
+
     def test_a_staged_path_outside_events_is_refused(self):
         """The guard after the merge: a stand-in interpreter that, for the
         merge step only, also writes under lessons/."""

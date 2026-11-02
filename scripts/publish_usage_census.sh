@@ -8,6 +8,9 @@
 # privacy contract on its output, and how to schedule this script.
 #
 # Steps, all inside one temp dir that is removed on exit:
+#   0. shallow-clone the private `persistent/usage-events` branch (step 5
+#      reuses the clone) so the census can read the cloud guidance records in
+#      it, read-only (`--cloud-guidance`);
 #   1. shallow-clone skills-evals and run ITS copy of
 #      scripts/model_usage_census.py against the real transcripts;
 #   2. shallow-clone the persistent/eval-results branch, copy in usage/latest.json
@@ -25,6 +28,13 @@
 #      as an orphan with a README. A failure here never undoes or blocks the
 #      public publish: it prints one line without detail and the script exits
 #      1 at the end.
+# A failed fetch in step 0 (the repository does not answer, or the clone
+# fails; a branch that does not exist is not a failure) never blocks the
+# public publish either: once the results clone exists, the previous public
+# usage/weekly-local.json's cloud rows and cloud source are carried forward
+# verbatim (they are already public) unless that source was read more than 14
+# days ago, the summary says "cloud: carried forward", and the script exits 1
+# at the end like a private failure.
 #
 # Transcript roots: ~/.claude/projects, and under WSL also every existing
 # Windows-side root (/mnt/c/Users/*/.claude/projects) and every Cowork root
@@ -89,6 +99,26 @@ no_bg=(--config maintenance.auto=false --config gc.auto=0)
 git clone "${no_bg[@]}" --quiet --depth 1 "$URL" "$tmp/src" >/dev/null 2>&1 \
   || { echo "usage census: could not clone skills-evals" >&2; exit 1; }
 
+# --- 0. The private branch, fetched BEFORE the census so the census can read
+# the cloud guidance records in it. private_fetch is `cloned`, `missing` (the
+# repository answered and has no such branch) or `failed` (and then
+# private_fetch_step names the step for the one-line failure message).
+private_fetch=failed
+private_fetch_step=reach
+found=0
+git ls-remote --exit-code --heads "$EVENTS_URL" "refs/heads/$EVENTS_BRANCH" >/dev/null 2>&1 \
+  || found=$?
+if [ "$found" = 0 ]; then
+  if git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$EVENTS_BRANCH" \
+       "$EVENTS_URL" "$tmp/private" >/dev/null 2>&1; then
+    private_fetch=cloned
+  else
+    private_fetch_step=clone
+  fi
+elif [ "$found" = 2 ]; then
+  private_fetch=missing
+fi
+
 is_wsl=0
 if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
   is_wsl=1
@@ -128,12 +158,41 @@ else
 fi
 census_args+=(--hook-logs "$hook_logs")
 if [ -n "${CENSUS_NOW:-}" ]; then census_args+=(--now "$CENSUS_NOW"); fi
+if [ "$private_fetch" = cloned ]; then census_args+=(--cloud-guidance "$tmp/private"); fi
 # The census's own status line names its output path; this script prints its
 # own summary instead. stderr stays: its messages name no path.
 "$PY" "$tmp/src/scripts/model_usage_census.py" "${census_args[@]}" >/dev/null
 
 git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$BRANCH" "$URL" "$tmp/results" >/dev/null 2>&1 \
   || { echo "usage census: could not clone the $BRANCH branch" >&2; exit 1; }
+
+# A failed fetch of the private branch: carry the previous public file's cloud
+# rows and source into this run's file (skill_usage.carry_cloud), so the
+# publish below goes ahead with them instead of dropping what is already
+# public. Decided here because the previous file is in the results clone.
+cloud_note=""
+if [ "$private_fetch" = failed ]; then
+  carried="$("$PY" - "$tmp/src/harness" "$tmp/results/usage/weekly-local.json" \
+               "$tmp/usage/weekly-local.json" "$tmp/src/scripts" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+sys.path.insert(0, sys.argv[4])
+import skill_usage
+import model_usage_census
+from pathlib import Path
+new = json.load(open(sys.argv[3], encoding="utf-8"))
+count = skill_usage.carry_cloud(skill_usage.load(sys.argv[2]), new)
+if count:
+    model_usage_census._write_json(Path(sys.argv[3]), new)
+print(count)
+PY
+  )" || carried=0
+  if [ "$carried" -gt 0 ] 2>/dev/null; then
+    cloud_note="cloud: carried forward"
+  else
+    cloud_note="cloud: not read"
+  fi
+fi
 
 # Totals for the summary line, and the changed/unchanged decision. Both read
 # only the four JSON files; neither uses the clock. A missing old
@@ -175,6 +234,7 @@ PY
 read -r state models turns calls hooks weeks events <<<"$decision"
 
 summary="usage census: $models models, $turns assistant turns, $calls skill invocations, $hooks hook runs, $weeks weeks"
+if [ -n "$cloud_note" ]; then summary="$summary; $cloud_note"; fi
 
 # --- 1. The public census. A failure here exits at once: the private
 # publish below is never reached without a public result.
@@ -225,13 +285,10 @@ fi
 private_fail() { echo "usage census: private events not published ($1)" >&2; return 1; }
 
 publish_private() {
-  local dir="$tmp/private" created=0 found=0 added
-  git ls-remote --exit-code --heads "$EVENTS_URL" "refs/heads/$EVENTS_BRANCH" >/dev/null 2>&1 \
-    || found=$?
-  if [ "$found" = 0 ]; then
-    git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$EVENTS_BRANCH" \
-      "$EVENTS_URL" "$dir" >/dev/null 2>&1 || { private_fail "clone"; return 1; }
-  elif [ "$found" = 2 ]; then
+  local dir="$tmp/private" created=0 added
+  if [ "$private_fetch" = cloned ]; then
+    :  # fetched before the census, which has only read it
+  elif [ "$private_fetch" = missing ]; then
     # The repository answered and has no such branch: (re)create it.
     git init --quiet -b "$EVENTS_BRANCH" "$dir" >/dev/null 2>&1 \
       && git -C "$dir" config maintenance.auto false \
@@ -259,7 +316,7 @@ Field reference: skills-evals `evals/usage/CENSUS.md`, "Private usage events".
 README
     created=1
   else
-    private_fail "reach"
+    private_fail "$private_fetch_step"
     return 1
   fi
   added="$("$PY" - "$tmp/src/scripts" "$tmp/events.jsonl" "$dir" 2>/dev/null <<'PY'

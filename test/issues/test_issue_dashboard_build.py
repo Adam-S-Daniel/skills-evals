@@ -55,7 +55,8 @@ def make_results(tmp_path):
     write(er / "usage" / "weekly-local.json", {
         "schema": 1, "generated_at": "2026-01-05T00:00:00Z",
         "sources": [{"surface": "local", "scope": "transcripts", "from": "a", "to": "b", "sessions_scanned": 4},
-                    {"surface": "local", "scope": "hooks", "from": "a", "to": "b", "runs_scanned": 9}],
+                    {"surface": "local", "scope": "hooks", "from": "a", "to": "b", "runs_scanned": 9},
+                    {"surface": "cloud", "scope": "guidance-records", "from": "a", "to": "b", "records_scanned": 3}],
         "rows": [{"week": "2026-01-05", "kind": "hook", "name": "all", "invocations": 7},
                  {"week": "2026-01-05", "kind": "skill", "name": "writing-adrs", "invocations": 2}]})
     return er
@@ -98,8 +99,8 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_usage_sources_carry_each_producers_read_count_and_unit(self):
         _, sources = build.usage(str(self.results))
-        self.assertEqual([(s["scanned"], s["scanned_unit"]) for s in sources], [(4, "sessions"), (9, "git hook runs")])
-        self.assertEqual(len({s["key"] for s in sources}), 2)
+        self.assertEqual([(s["scanned"], s["scanned_unit"]) for s in sources], [(4, "sessions"), (9, "git hook runs"), (3, "cloud sessions")])
+        self.assertEqual(len({s["key"] for s in sources}), 3)
 
     def test_usage_refuses_an_unknown_schema(self):
         write(self.tmp / "u" / "usage" / "weekly-x.json", {"schema": 2})

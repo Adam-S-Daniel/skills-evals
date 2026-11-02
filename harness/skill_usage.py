@@ -32,6 +32,21 @@ counts sessions per loaded-guidance state (`name` is
 `full`, `stub-only`, `neither` or `unknown`; `invocations` is null). A second source, `scope: "hooks"` with `runs_scanned`, is present only
 when a hook log was read, so an absent one means unknown, not zero.
 
+CLOUD GUIDANCE rows come from the records cloud sessions write to the private
+`persistent/usage-events` branch, never from a transcript: a `guidance` row
+with `surface: "cloud"` (`name` is the state, or `invalid`) and a
+`guidance-check` row with `surface: "cloud"` (`name` is `match`, `mismatch`,
+`none`, `absent` or `unknown`), each counting sessions, `invocations` null. A
+`guidance-check` row is a second view of the SAME sessions, so a sum of
+sessions over week and surface leaves it out. Their source,
+`scope: "guidance-records"` with `surface: "cloud"`, `records_scanned` (the
+distinct sessions counted) and a `from` that is a week boundary, is present
+only when the branch was read; its `from` is the later of the census window's
+start and the Monday of the earliest record's week, because the records carry
+no promise of coverage before the first one: coverage is unknown, not zero.
+The registry commit a session installed is not recorded (`registry_sha` is
+always null); a per-source install record is a follow-up.
+
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
 name, repo. `sessions` is the number of distinct transcript files that invoked the
 name that week; `sessions_scanned` is how many transcript files were read
@@ -55,6 +70,10 @@ from timeweeks import parse_ts, week_monday, window_weeks
 
 SCHEMA = 1
 SURFACE_LOCAL = "local"
+SURFACE_CLOUD = "cloud"
+#: Kinds that count sessions: their invocations are always null.
+SESSION_KINDS = ("guidance", "guidance-check")
+CLOUD_SCOPE = "guidance-records"
 ROW_FIELDS = ("week", "kind", "name", "repo", "surface", "invocations",
               "sessions", "blocked", "overridden", "outcome", "runner")
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
@@ -77,27 +96,85 @@ def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
             "blocked": blocked, "runner": runner}
 
 
-def guidance_row(iso_week_label: str, state: str, sessions: int) -> dict:
-    """One local guidance row: `sessions` sessions that week whose loaded
-    memory was in `state` (full, stub-only, neither or unknown)."""
-    return row(iso_week_label, "guidance", state, None, sessions)
+def guidance_row(iso_week_label: str, state: str, sessions: int,
+                 surface: str = SURFACE_LOCAL) -> dict:
+    """One guidance row: `sessions` sessions that week whose loaded memory
+    was in `state` (full, stub-only, neither or unknown; a cloud row may also
+    be `invalid`), on `surface`."""
+    return {**row(iso_week_label, "guidance", state, None, sessions),
+            "surface": surface}
+
+
+def guidance_check_row(iso_week_label: str, result: str, sessions: int) -> dict:
+    """One cloud guidance-check row: `sessions` sessions that week whose
+    check value report was `result` (match, mismatch, none, absent or unknown)."""
+    return {**guidance_row(iso_week_label, result, sessions, SURFACE_CLOUD),
+            "kind": "guidance-check"}
+
+
+def cloud_source(window_from: datetime, now: datetime, records_scanned: int) -> dict:
+    """The source of the cloud guidance rows. `to` is when they were read; the
+    carry-forward below ages a source by it."""
+    return {"surface": SURFACE_CLOUD, "scope": CLOUD_SCOPE,
+            "from": window_from.strftime(STAMP), "to": now.strftime(STAMP),
+            "records_scanned": records_scanned}
 
 
 def document(rows: list[dict], now: datetime, window_from: datetime,
-             sessions_scanned: int, hook_runs_scanned: int | None = None) -> dict:
-    """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`."""
+             sessions_scanned: int, hook_runs_scanned: int | None = None,
+             cloud_guidance: dict | None = None) -> dict:
+    """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`.
+
+    `cloud_guidance` is {"from": datetime, "records_scanned": n}, passed only
+    when the private records were read."""
     window = {"surface": SURFACE_LOCAL, "from": window_from.strftime(STAMP),
               "to": now.strftime(STAMP)}
     sources = [{**window, "scope": "transcripts", "sessions_scanned": sessions_scanned}]
     if hook_runs_scanned is not None:
         sources.append({**window, "scope": "hooks", "runs_scanned": hook_runs_scanned})
+    if cloud_guidance is not None:
+        sources.append(cloud_source(cloud_guidance["from"], now,
+                                    cloud_guidance["records_scanned"]))
     return {
         "generated_at": now.strftime(STAMP),
         "schema": SCHEMA,
         "sources": sources,
-        "rows": sorted(rows, key=lambda r: (r["week"], r["kind"], r["name"],
-                                            r["repo"] or "", r["runner"] or "")),
+        "rows": sorted(rows, key=_sort_key),
     }
+
+
+def _sort_key(entry: dict) -> tuple:
+    return (entry["week"], entry["kind"], entry["name"], entry["repo"] or "",
+            entry["surface"], entry["runner"] or "")
+
+
+def _is_cloud_row(entry) -> bool:
+    return (isinstance(entry, dict) and entry.get("surface") == SURFACE_CLOUD
+            and entry.get("kind") in SESSION_KINDS)
+
+
+def carry_cloud(previous, new: dict, max_age_days: int = 14) -> int:
+    """Copy the cloud guidance rows and source of `previous` (the document
+    last published) into `new`, verbatim, and return how many rows were
+    carried. For when the private records could not be read this run: the
+    rows are already public, and a census older than 14 days counts as
+    missing, so a failed fetch must not drop them from a publish that goes
+    ahead. Nothing is carried when `previous` has no cloud source, or its
+    source was read more than `max_age_days` before `new` was generated: an
+    old count must not look current."""
+    now = parse_ts(new.get("generated_at"))
+    if not isinstance(previous, dict) or now is None:
+        return 0
+    source = next((s for s in previous.get("sources", [])
+                   if isinstance(s, dict) and s.get("surface") == SURFACE_CLOUD
+                   and s.get("scope") == CLOUD_SCOPE), None)
+    read = parse_ts(source.get("to")) if source else None
+    if read is None or read > now or now - read > timedelta(days=max_age_days):
+        return 0
+    carried = [r for r in previous.get("rows", []) if _is_cloud_row(r)]
+    new["sources"].append(source)
+    new["rows"] = sorted(new["rows"] + carried, key=_sort_key)
+    return len(carried)
 
 
 def _count(value) -> bool:
@@ -127,7 +204,7 @@ def load(path) -> dict | None:
         if not all(isinstance(entry.get(field), str) for field in ("week", "kind", "name")):
             return None
         # A guidance row counts sessions, so its invocations are null.
-        if entry["kind"] == "guidance":
+        if entry["kind"] in SESSION_KINDS:
             if entry.get("invocations") is not None:
                 return None
         elif not _count(entry.get("invocations")):
