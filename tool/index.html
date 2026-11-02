@@ -371,6 +371,8 @@ const STRINGS = {
   alertBroken: (task, why) => 'The task ' + task + ' needs a new pin: ' + why + '.',
   alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
   alertDetails: 'Details',
+  // #555: past events, worded from counts; `since` is the oldest counted fire.
+  firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
 
   engineersHeading: 'For engineers',
   engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
@@ -1136,7 +1138,10 @@ function alertText(a) {
 function alertsView(doc, mode) {
   const want = mode === 'guidance' ? 'guidance' : 'skill';
   const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
-  return h('section', null, h('h2', null, STRINGS.alertsHeading),
+  const f = doc.fires_without_results;
+  const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === 'string'
+    ? h('p', { class: 'note' }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
+  return h('section', null, h('h2', null, STRINGS.alertsHeading), fires,
     alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
       const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
       const l = link(a.url, STRINGS.alertDetails);
