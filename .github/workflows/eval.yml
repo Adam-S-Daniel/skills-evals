@@ -1597,6 +1597,28 @@ jobs:
           echo "harness: Claude Code ${version} (npm latest)"
           { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
+      # The arm runs with the CLI sandbox required (`sandbox.enabled` and
+      # `failIfUnavailable` in harness/run_eval.py's arm settings), which
+      # needs bubblewrap and socat. The runner image ships neither, so every
+      # arm ended in `sandbox_unavailable` within seconds (run 41493765048).
+      # Ubuntu's AppArmor denies unprivileged user namespaces, so grant that
+      # to /usr/bin/bwrap alone, as ci.yml does for the scorer sandbox. This
+      # runs before the token exchange, so no credential exists yet.
+      - name: Provide bubblewrap and socat for the arm sandbox
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends bubblewrap socat
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '}' \
+              | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          /usr/bin/bwrap --ro-bind / / --unshare-pid --unshare-net --unshare-ipc \
+            --unshare-uts --proc /proc --dev /dev --die-with-parent -- /usr/bin/true
+          command -v socat >/dev/null
+
       - name: Set up Python
         uses: actions/setup-python@v7.1.0
         with:

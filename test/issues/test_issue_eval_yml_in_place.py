@@ -10,7 +10,9 @@ every context repository cloned beside skills-evals with full history, and
     and `persist-credentials: false` (skills-evals itself is the first
     checkout);
   * the "Run the eval" step decides pairing with `declares_context` and
-    passes `--pairing "$pairing"`.
+    passes `--pairing "$pairing"`;
+  * bubblewrap and socat are provided for the arm sandbox before the token
+    exchange.
 """
 
 from __future__ import annotations
@@ -68,6 +70,24 @@ class EvalWorkflowInPlaceTests(unittest.TestCase):
         script = steps[0]["run"]
         self.assertIn("declares_context", script)
         self.assertIn('--pairing "$pairing"', script)
+
+
+class EvalWorkflowArmSandboxTests(unittest.TestCase):
+    """Arms require the CLI sandbox; without bwrap and socat every arm ends
+    in sandbox_unavailable (run 41493765048)."""
+
+    def test_sandbox_tools_are_provided_before_any_credential(self):
+        steps = eval_steps()
+        names = [step.get("name") for step in steps]
+        provision = names.index("Provide bubblewrap and socat for the arm sandbox")
+        mint = next(i for i, name in enumerate(names)
+                    if name and name.startswith("Mint OIDC token"))
+        self.assertLess(provision, mint)
+        self.assertLess(provision, names.index(RUN_STEP))
+        script = steps[provision]["run"].split()
+        for token in ("bubblewrap", "socat", "apparmor_parser", "--unshare-net", "--unshare-pid"):
+            self.assertIn(token, script)
+        self.assertNotIn("${{", steps[provision]["run"])
 
 
 if __name__ == "__main__":
