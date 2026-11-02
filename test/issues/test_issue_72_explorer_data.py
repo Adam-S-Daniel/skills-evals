@@ -157,7 +157,7 @@ class ShapeAndMathTests(unittest.TestCase):
         d = self.doc
         self.assertEqual(sorted(d), ["alerts", "broken_unknown", "context_drift_unknown",
                                      "coverage", "generated_at", "guidance",
-                                     "newest_run", "policy", "roster", "schema_version",
+                                     "newest_run", "policy", "removed_skills", "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
         # No evals/scheduled.yml, so no fixture is in the #544/#545 scope.
@@ -361,6 +361,21 @@ class RemovedSectionsTests(unittest.TestCase):
         self.assertEqual(removed[0]["reverse_url"],
                          "https://github.com/Adam-S-Daniel/_agent-guidance/pulls"
                          "?q=is%3Apr+head%3Aretire-guidance%2Fbravo")
+
+    def test_removed_skills_come_from_the_registrys_impact_file(self):
+        root = Path(tempfile.mkdtemp(prefix="removed-skills-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "docs").mkdir()
+        (root / "docs" / "skill-impact.md").write_text(
+            "# Skill impact\n\n## 2026-11-21 — adam-coding-anywhere/example-skill — remove\n\n"
+            "- Motivation: m\n\n## 2026-11-19 — adam-coding-anywhere/other — edit\n\n- m\n",
+            encoding="utf-8")
+        removed = explorer_data.removed_skills({"adam-agentskills": {"path": root}})
+        self.assertEqual([(r["name"], r["plugin"], r["date"]) for r in removed],
+                         [("example-skill", "adam-coding-anywhere", "2026-11-21")])
+        self.assertIn("head%3Aretire-skill%2Fexample-skill", removed[0]["reverse_url"])
+        self.assertEqual(explorer_data.removed_skills({}), [])
+        self.assertEqual(explorer_data.removed_skills({"other-registry": {"path": root}}), [])
 
     def test_no_checkout_or_file_lists_nothing(self):
         self.assertEqual(explorer_data.removed_sections(None), [])

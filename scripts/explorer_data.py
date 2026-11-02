@@ -183,6 +183,35 @@ def removed_sections(guidance_dir: Path | None) -> list:
     return sorted(out, key=lambda r: (r["date"], r["id"]), reverse=True)
 
 
+#: A skill removal's heading in adam-agentskills' docs/skill-impact.md, as
+#: scripts/retire_skill.py `impact_entry` writes it.
+REMOVED_SKILL_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — ([a-z0-9-]+)/([a-z0-9][a-z0-9-]*) — remove\s*$",
+                              re.MULTILINE)
+SKILL_REGISTRY = "adam-agentskills"
+
+
+def removed_skills(registries: dict | None) -> list:
+    """The skills removed so far from the public registry (#557: Adam,
+    2026-11-02, every removal tracked and reversible), newest first, from
+    the `remove` entries of its docs/skill-impact.md: {"name", "plugin",
+    "date", "reverse_url"}, the last the skill's removal pull requests,
+    whose Revert button restores it. [] without that checkout or file."""
+    entry = (registries or {}).get(SKILL_REGISTRY)
+    # compute_gates.flag_registries' entries carry the checkout as `path`.
+    root = entry.get("path") if isinstance(entry, dict) else entry
+    if root is None:
+        return []
+    try:
+        text = (Path(root) / "docs" / "skill-impact.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    out = [{"name": skill, "plugin": plugin, "date": date,
+            "reverse_url": (f"https://github.com/Adam-S-Daniel/{SKILL_REGISTRY}/pulls"
+                            f"?q=is%3Apr+head%3Aretire-skill%2F{skill}")}
+           for date, plugin, skill in REMOVED_SKILL_RE.findall(text)]
+    return sorted(out, key=lambda r: (r["date"], r["name"]), reverse=True)
+
+
 def guidance_runs(index: dict) -> dict:
     """{section: [run entries, newest first]}, each with the modes that ran."""
     groups: dict = {}
@@ -784,7 +813,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                              "reason": roster["judge"].get("reason")}},
         "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                           "min_cli_versions", "objective_margin")},
-        "skills": skills,
+        "skills": skills, "removed_skills": removed_skills(registries),
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts, "broken_unknown": broken_unknown,
         "context_drift_unknown": drift_unknown, "usage": usage_window}
