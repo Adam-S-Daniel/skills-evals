@@ -179,5 +179,57 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(jobs["publish"]["strategy"]["max-parallel"], 1)
 
 
+class ModelInputTests(unittest.TestCase):
+    """The `model` input picks one roster arm model per dispatch (#569 follow-up)."""
+
+    def _run_model(self, event):
+        script = step_named("Read and validate the arm model")["run"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "event.json")
+            path.write_text(json.dumps(event))
+            env = dict(os.environ, GITHUB_EVENT_PATH=str(path), RUNNER_TEMP=tmp)
+            result = subprocess.run(["bash", "-c", script], env=env, cwd=ROOT,
+                                    capture_output=True, text=True)
+            written = Path(tmp, "eval-model")
+            return result, written.read_text() if written.is_file() else None
+
+    def test_the_input_is_declared_and_optional(self):
+        inputs = doc()[True]["workflow_dispatch"]["inputs"] if True in doc() else \
+            doc()["on"]["workflow_dispatch"]["inputs"]
+        self.assertEqual(inputs["model"]["default"], "")
+        self.assertFalse(inputs["model"]["required"])
+
+    def test_empty_means_the_fixture_default(self):
+        for event in ({}, {"inputs": {}}, {"inputs": {"model": ""}}):
+            result, written = self._run_model(event)
+            self.assertEqual((result.returncode, written), (0, ""), result.stderr)
+
+    def test_only_roster_arm_ids_are_accepted(self):
+        roster = yaml.safe_load((ROOT / "evals/roster.yml").read_text(encoding="utf-8"))
+        arms = [a["id"] for a in roster["arms"]]
+        self.assertTrue(arms)
+        for model in arms:
+            result, written = self._run_model({"inputs": {"model": model}})
+            self.assertEqual((result.returncode, written), (0, model), result.stderr)
+        judge = roster["judge"]["id"]
+        for bad in (judge, "claude-sonnet-5", "opus", "$(id)", arms[0] + " ", "a b"):
+            result, written = self._run_model({"inputs": {"model": bad}})
+            self.assertEqual(result.returncode, 1, bad)
+            self.assertIsNone(written)
+            self.assertIn("'model' must be an arm id", result.stdout)
+
+    def test_validated_before_any_credential(self):
+        names = [s.get("name") or "" for s in eval_steps()]
+        model = names.index("Read and validate the arm model")
+        mint = next(i for i, n in enumerate(names) if n.startswith("Mint OIDC"))
+        self.assertLess(model, mint)
+
+    def test_run_step_passes_the_model_only_when_set(self):
+        run = step_named("Run the eval")["run"]
+        self.assertIn('model="$(cat "$RUNNER_TEMP/eval-model")"', run)
+        self.assertIn('model_args=(--model "$model")', run)
+        self.assertIn('"${model_args[@]}"', run)
+
+
 if __name__ == "__main__":
     unittest.main()

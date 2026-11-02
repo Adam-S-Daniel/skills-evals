@@ -4070,11 +4070,11 @@ class TestIssue97(unittest.TestCase):
         scripts = [s.get("run") or "" for s in self._eval_steps()]
         self.assertEqual([s for s in scripts if "inputs.fixture" in s], [],
                          "no eval step re-reads the fixture input from the event")
-        # The only event-file readers: the trials step and "Propose a roster
-        # change" (the boolean `roster_only`, #203 round 1).
+        # The only event-file readers: the trials and model steps and
+        # "Propose a roster change" (the boolean `roster_only`, #203 round 1).
         for reader in (s for s in scripts if "GITHUB_EVENT_PATH" in s):
-            self.assertTrue(".inputs.trials" in reader or ".inputs.roster_only" in reader,
-                            reader)
+            self.assertTrue(".inputs.trials" in reader or ".inputs.model" in reader
+                            or ".inputs.roster_only" in reader, reader)
 
     def test_the_fixture_is_validated_before_any_credential_step(self):
         names = [(s.get("name") or "") for s in self._eval_steps()]
