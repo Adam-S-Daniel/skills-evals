@@ -907,12 +907,41 @@ class AnytimeTests(unittest.TestCase):
                          (forward["class"], forward["objective"]))
 
 
+class PerCellPriorTests(unittest.TestCase):
+    """#557 follow-up: a skill cell's priors are its own runs', with
+    `SKILL_PRIOR_GUARD` (10 degrees of freedom before the measured value
+    replaces the fallback)."""
+
+    def test_few_runs_use_the_fallback_and_enough_runs_their_own_spread(self):
+        few = gates.cell_priors(flat_cell(5), gates.SKILL_PRIOR_GUARD)
+        self.assertEqual((few["objective"], few["judge"]), (0.01, 1.0))
+        runs = flat_cell(6)
+        own = gates.cell_priors(runs, gates.SKILL_PRIOR_GUARD)
+        means = [gates.run_numbers(r["trials"], True)["run_mean"] for r in runs]
+        self.assertAlmostEqual(own["objective"],
+                               gates.pooled_variance([means[:6], means[6:]]), places=12)
+
+    def test_retirement_gives_each_cell_its_own_priors(self):
+        runs = flat_cell(6)
+        cell = gates.retirement({"runs": runs}, ["model-a"], "demo", LEGACY_POLICY,
+                                EXPECT)["cells"][0]
+        self.assertEqual(cell["priors"], gates.cell_priors(runs, gates.SKILL_PRIOR_GUARD))
+        given = gates.run_priors(runs)
+        cell = gates.retirement({"runs": runs}, ["model-a"], "demo", LEGACY_POLICY,
+                                EXPECT, given)["cells"][0]
+        self.assertEqual(cell["priors"], given)
+
+
 class VerdictTests(unittest.TestCase):
     MODELS = ["model-a", "model-b", "model-c"]
 
     def verdict(self, runs, models=None, expected=None):
+        # These test pooling and the verdict's order, on priors measured over
+        # every run given (as before #557's follow-up gave each skill cell
+        # its own; `PerCellPriorTests` covers that default).
         return gates.retirement({"runs": runs}, models or self.MODELS, "demo", TEST_POLICY,
-                                expected if expected is not None else EXPECT)
+                                expected if expected is not None else EXPECT,
+                                gates.run_priors(runs))
 
     @staticmethod
     def expect(*fixtures, tested="t1", fdig="f1"):
@@ -1700,8 +1729,10 @@ class ComputeGatesTests(unittest.TestCase):
 
     def test_two_runs_are_insufficient_and_three_retire(self):
         # No fixed looks (2026-10-31): the verdict is retaken on every run.
-        # At two runs per arm the judge's 95% upper bound is still above the
-        # 0.5 margin of the rule before 2026-11-02; a third run brings it under.
+        # On the rule before 2026-11-02 and a skill cell's own priors (#557
+        # follow-up: under 10 degrees of freedom, the fallback), five runs
+        # per arm leave the judge's upper bound above its 0.5 margin; a
+        # sixth brings it under.
         legacy = self.tmp / "legacy-policy.yml"
         legacy.write_text(POLICY_FILE.read_text(encoding="utf-8").replace(
             "skills:\n  objective_margin: 0.15\n  judge_margin: 1.5",
@@ -1713,15 +1744,15 @@ class ComputeGatesTests(unittest.TestCase):
             "  prior_strength: 4\n  ceiling_fraction: 0.90\n  judge_ceiling: 9.0\n"
             "  floor_fraction: 0.10\n  retirement_mode: auto\n# Guidance"), encoding="utf-8")
         self.assertEqual(gates.load_gate_policy(legacy)["skills"]["retire_confidence"], 0.95)
-        self.write("flat", FLAT[:2], FLAT_JUDGE)
+        self.write("flat", FLAT[:5], FLAT_JUDGE)
         _, doc = self.run_gates("1.json", policy_file=legacy)
         self.assertEqual(doc["skills"]["flat"]["verdict"], "insufficient")
         cell_ = doc["skills"]["flat"]["cells"][0]
         self.assertGreaterEqual(cell_["judge"]["retire_upper"], LEGACY_POLICY["judge_margin"])
-        self.write("flat", FLAT[2:3], FLAT_JUDGE[2:3], start=2)
+        self.write("flat", FLAT[5:6], FLAT_JUDGE[5:6], start=5)
         _, doc = self.run_gates("2.json", policy_file=legacy)
         self.assertEqual(doc["skills"]["flat"]["verdict"], "retire")
-        self.assertEqual(doc["skills"]["flat"]["cells"][0]["with"]["runs"], 3)
+        self.assertEqual(doc["skills"]["flat"]["cells"][0]["with"]["runs"], 6)
 
     def test_as_of_is_required(self):
         with self.assertRaises(SystemExit):
