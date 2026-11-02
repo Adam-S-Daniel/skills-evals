@@ -378,6 +378,24 @@ An independent review of the merged decision found four routes around it.
   since it cannot be write-protected without the whole workspace
   (`run_eval.workspace_path_or_error`). No fixture's stand-ins write their
   own directory, so no opt-out exists.
+- **The CLI's own startup `git` reads the workspace's git configuration**
+  (#609). At every launch CLI 2.1.316 runs `git status --short`, `git log`
+  and `git config user.name` in its cwd, outside the sandbox, with hooks and
+  fsmonitor off but filter drivers on: a `filter.<driver>.clean` in the
+  workspace's `.git/config` ran unconfined at launch (measured against a
+  local stand-in API, no model call). The sandbox protects `.git/config` by
+  path, and a renamed and re-created `.git` is a new path. So a multi-turn
+  arm snapshots, before its first turn, `.git` itself (inode, type),
+  `config`, `config.worktree`, `commondir`, `info/attributes`, every
+  `include.path`/`includeIf.*.path` those name (followed to git's depth of
+  10, missing targets included) and the arm's global git config; a change
+  after any turn but the last fails the trial with
+  `agent_wrote_agent_config` before the next launch
+  (`run_eval._workspace_git_snapshot`). The last turn and one-turn arms are
+  not held to it: no launch follows, and the harness's own git reads the
+  workspace only through `workspace_git`'s private, hardened copy. An agent
+  whose task legitimately rewrites `.git/config` mid-arm (`git remote add`,
+  `git push -u`) would fail a follow-up; no multi-turn fixture's task does.
 - **Claude in Chrome is a browser outside the sandbox**, and
   `--strict-mcp-config` does not remove it (`CLAUDE_CODE_ENABLE_CFC` or the
   account default turns it on, CLI 2.1.292). Every turn passes `--no-chrome`,

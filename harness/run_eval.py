@@ -2636,6 +2636,104 @@ def _path_dir_snapshot(path: Path, label: str) -> dict[str, bytes]:
     return out
 
 
+# Git follows at most this many nested includes (config.c MAX_INCLUDE_DEPTH).
+_GIT_INCLUDE_DEPTH = 10
+
+
+def _git_include_targets(config: Path, home: str | None) -> list[Path]:
+    """The `include.path` and `includeIf.<cond>.path` values in one git
+    config file, resolved as git resolves them (relative to the file's own
+    directory, `~/` against the arm's HOME), whatever their condition and
+    whether or not the target exists yet: a target created later is how a
+    filter driver would arrive. Read with `git config --file`, which runs
+    nothing from the file, under no system or global configuration."""
+    if not config.is_file():
+        return []
+    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent",
+           "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+    try:
+        result = subprocess.run(
+            [workspace_git.GIT, "config", "--file", str(config), "--null", "--get-regexp",
+             r"^include(if\..*)?\.path$"],
+            capture_output=True, env=env, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return [config.parent / "<unreadable includes>"]
+    if result.returncode not in (0, 1):
+        return [config.parent / "<unreadable includes>"]
+    out = []
+    for record in result.stdout.split(b"\0"):
+        if b"\n" not in record:
+            continue
+        value = os.fsdecode(record.split(b"\n", 1)[1])
+        if value.startswith("~/") and home:
+            target = Path(home) / value[2:]
+        else:
+            target = config.parent / value
+        out.append(Path(os.path.normpath(target)))
+    return out
+
+
+def _workspace_git_snapshot(workspace: Path, env: dict) -> dict[str, bytes]:
+    """Every git configuration file the CLI's own startup `git` reads in the
+    workspace, outside the sandbox (#609), by label (see `_path_dir_snapshot`).
+
+    CLI 2.1.316 runs `git status --short`, `git log` and `git config
+    user.name` in its cwd at every launch, unsandboxed. It disables hooks
+    and fsmonitor but not `filter.<driver>.clean`, so a driver an agent adds
+    to the workspace's git configuration runs, with network, at the next
+    launch (measured: a local stand-in API, no model call). The sandbox
+    protects `.git/config` by path, which a renamed and re-created `.git`
+    gets around, so what is watched is `.git` itself (its inode and type,
+    which a rename changes), `config`, `config.worktree`, `commondir` and
+    `info/attributes`, every include those configs name (followed to git's
+    depth limit, missing targets included), and the arm's global config
+    (`GIT_CONFIG_GLOBAL`, else `~/.gitconfig` and the XDG one).
+    """
+    root = Path(workspace)
+    dot = root / ".git"
+    out: dict[str, bytes] = {}
+    try:
+        info = os.lstat(dot)
+        out["git:.git"] = f"{info.st_dev}:{info.st_ino}:{info.st_mode:o}".encode()
+    except FileNotFoundError:
+        out["git:.git"] = b"<absent>"
+    home = env.get("HOME")
+    configs = [dot / "config", dot / "config.worktree"]
+    if env.get("GIT_CONFIG_GLOBAL"):
+        configs.append(Path(env["GIT_CONFIG_GLOBAL"]))
+    elif home:
+        xdg = env.get("XDG_CONFIG_HOME") or str(Path(home) / ".config")
+        configs += [Path(home) / ".gitconfig", Path(xdg) / "git" / "config"]
+    watched = [*configs, dot / "commondir", dot / "info" / "attributes"]
+    pending = [(path, 0) for path in configs]
+    while pending:
+        config, depth = pending.pop(0)
+        if depth >= _GIT_INCLUDE_DEPTH:
+            continue
+        for target in _git_include_targets(config, home):
+            if target not in watched:
+                watched.append(target)
+                pending.append((target, depth + 1))
+    for path in watched:
+        label = (f"git:{path.relative_to(root).as_posix()}"
+                 if _within(path, root) else f"git:{path}")
+        if path.is_dir() and not path.is_symlink():
+            out[label] = b"<directory>"
+            continue
+        out.update(_path_dir_snapshot(path, label))
+    return out
+
+
+def _snapshot_changes(before: dict, after: dict) -> str | None:
+    """The labels that differ between two snapshots (at most five)."""
+    changed = sorted(name for name in set(before) | set(after)
+                     if before.get(name) != after.get(name))
+    if not changed:
+        return None
+    more = f" and {len(changed) - 5} more" if len(changed) > 5 else ""
+    return ", ".join(changed[:5]) + more
+
+
 def _agent_config_snapshot(workspace: Path, config_dir: Path | None = None,
                            shared: bool = False,
                            path_dirs=()) -> dict[str, bytes | None]:
@@ -3219,6 +3317,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                                path_dirs)
         # A hooked arm's frozen hook set (#535), write-denied above.
         hooks_before = fleet_hooks.tree_digest(hooks_dir) if hooks_dir is not None else None
+        # The git configuration the NEXT launch's own `git` will read (#609):
+        # only a multi-turn arm launches again in this workspace.
+        git_before = _workspace_git_snapshot(workspace, env) if len(texts) > 1 else None
         for index, text in enumerate(texts):
             label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
             turn_cmd = cmd
@@ -3309,6 +3410,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             if not written and hooks_dir is not None \
                     and fleet_hooks.tree_digest(hooks_dir) != hooks_before:
                 written = f"{fleet_hooks.DIRNAME}/ (the frozen fleet hooks)"
+            if not written and git_before is not None and index < len(texts) - 1:
+                written = _snapshot_changes(git_before,
+                                            _workspace_git_snapshot(workspace, env))
             if written:
                 return traced({"error": "agent_wrote_agent_config",
                                "detail": f"{label}the agent wrote {written}",
