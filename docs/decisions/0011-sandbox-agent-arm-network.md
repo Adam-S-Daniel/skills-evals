@@ -402,6 +402,25 @@ An independent review of the merged decision found four routes around it.
   `git remote add` or `git push -u` already fail there; an agent running
   `git config --global` would fail a follow-up, and no multi-turn fixture's
   task does.
+- **What is left of those launch-time reads** (#612). Every launch sets
+  `GIT_CEILING_DIRECTORIES` to the workspace's parent, so a `.git` git cannot
+  use there (a broken `HEAD`) never sends the CLI's `git` up to a parent
+  directory's configuration, which TMPDIR may let Bash write; the agent's
+  sandboxed git sees the same value. A fixture's `env:` may not set a
+  variable that moves where git finds a repository or its configuration
+  (`guidance.GIT_REDIRECT_ENV`: `GIT_DIR`, `GIT_CONFIG_*`, `XDG_CONFIG_HOME`
+  and the like). The file tools, which the sandbox does not confine, are
+  denied every absolute PATH directory outside the workspace and the real
+  HOME's `~/.gitconfig` and `~/.config/git`, each as given and resolved, and a PATH entry that holds the workspace refuses the
+  arm. Left as they are, with the reason: system git configuration
+  (`/etc/gitconfig`) is not writable by the agent; include values in the
+  `%(prefix)/` and `~user/` forms, and `..` after a symlink, matter only for
+  an include that already exists, since adding one changes a watched file;
+  and the moment between the post-turn check and the next launch holds only
+  the session-id check, while a sandboxed writer that outlived its turn is
+  still denied every guarded path; a workspace path holding the PATH
+  separator (`:`) would split the ceiling, but it would break PATH the same
+  way and no workspace the harness makes has one.
 - **Claude in Chrome is a browser outside the sandbox**, and
   `--strict-mcp-config` does not remove it (`CLAUDE_CODE_ENABLE_CFC` or the
   account default turns it on, CLI 2.1.292). Every turn passes `--no-chrome`,

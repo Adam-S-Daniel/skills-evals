@@ -1946,6 +1946,13 @@ def workspace_path_or_error(path_env: str, workspace: Path) -> str:
                 "a PATH entry is the arm's workspace, which the CLI would run "
                 "programs from outside the sandbox; put stand-ins in a "
                 "directory under it", code="read_rules_unsafe")
+        if any(_within(ws, entry_path) for ws in (root, real_root)
+               for entry_path in (given, given.resolve())):
+            # An ancestor holds the workspace: the agent writes inside it,
+            # and Bash may write it too (TMPDIR) - no guard covers it.
+            raise ArmReadIsolationError(
+                "a PATH entry is a directory that holds the arm's workspace",
+                code="read_rules_unsafe")
         inside = (_within(given, root) or _within(given, real_root)
                   or _within(given.resolve(), real_root))
         # `..` is normalized here lexically but resolved by the kernel after
@@ -2037,6 +2044,27 @@ def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
 # (E2BIG). Well under it, and a settings object this large means the rules
 # went wrong somewhere.
 MAX_SETTINGS_BYTES = 64 * 1024
+
+
+def _launch_read_paths(path_env: str, home: Path, workspace: Path | None) -> list[Path]:
+    """The absolute PATH directories outside the workspace and the HOME's
+    global git configuration (`~/.gitconfig`, `~/.config/git`), each as
+    given and resolved, without duplicates: what the CLI's own startup
+    programs run or read, unsandboxed (#606, #609, #612)."""
+    out: list[Path] = []
+    roots = ([Path(workspace), Path(workspace).resolve()] if workspace is not None else [])
+    for entry in (path_env or "").split(os.pathsep):
+        if not os.path.isabs(entry):
+            continue
+        given = Path(os.path.normpath(entry))
+        for path in (given, given.resolve()):
+            if path not in out and not any(_within(path, root) for root in roots):
+                out.append(path)
+    for given in (Path(home) / ".gitconfig", Path(home) / ".config" / "git"):
+        for path in (given, given.resolve()):
+            if path not in out:
+                out.append(path)
+    return out
 
 
 def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
@@ -2164,6 +2192,15 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
               for rule in (f"Edit(/{_glob_escape(str(path))})",
                            f"Edit(/{_glob_escape(str(path))}/**)")),
             *(rule for path in [*compact_profiles, *(Path(p).resolve() for p in checkouts)]
+              for rule in (f"Edit(/{_glob_escape(str(path))})",
+                           f"Edit(/{_glob_escape(str(path))}/**)")),
+            # What the CLI runs or reads outside the sandbox at launch, which
+            # the sandbox keeps Bash from writing but not the file tools
+            # (#612): every PATH directory outside the workspace, and the
+            # real HOME's global git configuration.
+            *(rule for path in (_launch_read_paths(path_env, home, workspace)
+                                if workspace is not None else [])
+              if path not in config_dirs
               for rule in (f"Edit(/{_glob_escape(str(path))})",
                            f"Edit(/{_glob_escape(str(path))}/**)"))]},
     }
@@ -3206,6 +3243,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                  or agent_env(workspace, arm.get("env")))
     for name in ARM_DROPPED_ENV:
         env.pop(name, None)
+    # The CLI's own startup `git` must find the workspace's `.git` or none:
+    # a `.git` it could not use there (a broken HEAD) would otherwise send
+    # it up to a parent directory's, which the snapshot does not watch and
+    # Bash may be able to write (#612).
+    env["GIT_CEILING_DIRECTORIES"] = os.pathsep.join(dict.fromkeys(
+        (str(Path(workspace).parent), str(Path(workspace).resolve().parent))))
     # Every host-filesystem alias is denied whole, so a PATH entry under one
     # (WSL appends the Windows PATH under /mnt/c) is dropped from the arm's
     # environment, a skill arm's and a guidance arm's `env_override` alike;
