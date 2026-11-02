@@ -328,14 +328,28 @@ registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such
 empty fires within 14 days becomes a `fixture-broken` item instead of being
 fired again, and is retried once those fires are 14 days old. A routine
-outage empties every fire of a sweep at once (2026-11-01: six fixtures, no
-run), which says nothing about any fixture: a sweep of fires at most 60
-minutes apart and 2 hours long, with no fire that landed a run or is still
-young, whose empty fires cover three or more cells excuses each cell's
-earliest such fire, one per cell in 14 days, and lists a `routine-outage`
+outage empties every fire at once (2026-11-01: six fixtures, no run), which
+says nothing about any fixture, so each empty fire is judged on its own
+window, 60 minutes either side of its start: with no fire in it that landed
+a run or is still young, and empty fires in it covering three or more cells,
+it is an outage fire. That excuses each cell's earliest such fire, one per
+cell in 14 days, and each chain of outage fires lists a `routine-outage`
 item (no fixture names) for a day. A further outage fire counts, so fixtures
-broken together still go `fixture-broken`, one fire later; a sweep of fewer
-than three cells cannot be told from broken fixtures and counts. The
+broken together still go `fixture-broken`, one fire later; a window of fewer
+than three cells cannot be told from broken fixtures and counts. From an
+outage fire until a paired eval fire on a known cell delivers, the routine
+counts as down; so it does, for this rule only, as soon as fires 45
+minutes old with no run landed cover three cells in one window with no
+delivery in or after it, so a burst into an outage trips it by the next
+plan. While down, a plan holds improve and bare fires and sends one probe:
+a paired eval fire on any schedulable cell, settled or fixture-broken ones
+too, fewest empty fires first, then the cell fired longest ago; none while
+a probe under 45 minutes old has landed nothing. Probes never count: an
+empty fire sent while the routine was down is a down fire, except an
+outage fire in the outage's first 45 minutes, which keeps the outage rule.
+Every plan while down lists a `routine-down` item (no fixture names), and
+the step summary says `Routine down: probe only`; with no schedulable
+cell at all the plan is not held. The
 dispatch job fires one leg at a time, waits while three fires are in flight,
 and spaces fires a minute apart; improve fires go last.
 
