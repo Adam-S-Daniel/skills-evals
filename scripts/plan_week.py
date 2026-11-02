@@ -59,12 +59,28 @@ THE BANDS (rule D), in order:
   least FIRE_RESULT_WINDOW (2 hours) ago, within RETRY_AFTER (14 days, so a
   broken cell is retried once its fires age out) and not before
   EMPTY_FIRES_SINCE (fires under the delivery before main's copy say
-  nothing). A refused run counts: the fire workflow succeeds once the fire
+  nothing). OUTAGES (2026-11-01: six fixtures fired, none produced
+  anything). Each fire is classified once: young (under FIRE_RESULT_WINDOW
+  old), delivered (a run of the cell is stamped within FIRE_RESULT_WINDOW
+  of its start, gates' `run_stamps_on_model`) or empty, so a later retry
+  never changes an old fire's state. Every classified fire of every cell is
+  grouped into sweeps (`fire_sweeps`: starts at most OUTAGE_GAP, 60
+  minutes, apart, at most OUTAGE_SPAN, 2 hours, from the sweep's first). A
+  sweep with no delivered and no young fire whose empty fires cover at
+  least OUTAGE_CELLS (3) distinct cells is an outage: a cell's earliest
+  empty fire in one, at most OUTAGE_EXCUSES (1) within RETRY_AFTER, is
+  excused (`outage_fires`), and any further one counts, so fixtures broken
+  together still go fixture-broken, one fire later. A sweep with a young
+  fire is undecided and counts nothing yet. A sweep narrower than three
+  cells cannot be told from broken fixtures, so it counts. Each outage
+  sweep of the last 24 hours is a `routine-outage` work item (no fixture
+  names). A refused run counts: the fire workflow succeeds once the fire
   API accepts, so fixture-broken means "no run after two fires", whatever
-  the cause. A cell whose verdict document lacks `newest_on_model` counts
-  none (fail safe). Safety cells are exempt. Every band, safety included,
-  skips a cell with a PENDING fire: one younger than FIRE_RESULT_WINDOW,
-  successful or still running, with no run on the cell since it started.
+  the cause. A cell whose verdict document lacks `newest_on_model` or
+  `run_stamps_on_model` counts none and joins no sweep (fail safe). Safety
+  cells are exempt. Every band, safety included, skips a cell with a
+  PENDING fire: one younger than FIRE_RESULT_WINDOW, successful or still
+  running, with no run on the cell since it started.
   4. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -174,16 +190,17 @@ improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
-`fixture-broken` (change type
-`fixture`), `guidance-improve` (change type `guidance-edit`; only for a
-section id the fire workflow refuses, see above), and `agent-check` items
+`fixture-broken` (change type `fixture`), `routine-outage` (change type
+None: the routine failed, not a subject; see EMPTY FIRES),
+`guidance-improve` (change type `guidance-edit`; only for a section id the
+fire workflow refuses, see above), and `agent-check` items
 read from `--lessons` (lesson proposals
 of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
 Every item carries `change_type`: `skill-edit` for an improve fire,
-`guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`, or
-`trigger`.
+`guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`,
+`trigger`, or None for `routine-outage`.
 
 THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
 weeks over about 72,000 model turns, so most skills almost never trigger).
@@ -297,6 +314,27 @@ RETRY_AFTER = timedelta(days=14)
 #: whether the cell can produce a run now; the first sweep after the change
 #: judges only fires made under it.
 EMPTY_FIRES_SINCE = datetime(2026, 11, 3, tzinfo=timezone.utc)
+#: Fires whose starts chain at most this far apart are one sweep. Matches the
+#: 60-minute grouping explorer_data's FIRE_SWEEP_GAP uses (open PR #573), so
+#: the explorer's sweeps and the planner's agree.
+OUTAGE_GAP = timedelta(minutes=60)
+#: The planner's sweeps end this long after their first start, so a planner
+#: firing every hour cannot chain a week of fires into one sweep that one
+#: delivered fire would clear of every outage.
+OUTAGE_SPAN = timedelta(hours=2)
+#: A sweep with no delivered fire whose empty fires span at least this many
+#: distinct (fixture, model) cells is a routine outage, not broken fixtures:
+#: one bad cell or two cannot explain it, and counting it would bench healthy
+#: cells for RETRY_AFTER. A narrower sweep cannot be told from broken
+#: fixtures, so it counts.
+OUTAGE_CELLS = 3
+#: Outage fires excused per cell within RETRY_AFTER, its earliest. The
+#: backstop: a fixture empty in sweep after sweep still reaches
+#: BROKEN_AFTER_FIRES, one fire later, even when every sweep looks like an
+#: outage because several broken fixtures fail together.
+OUTAGE_EXCUSES = 1
+#: A `routine-outage` work item is listed for an outage sweep this recent.
+OUTAGE_REPORT_WINDOW = timedelta(hours=24)
 SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
 IMPROVE_TRIALS = 3
@@ -564,7 +602,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     edit can cause one at any time) would otherwise re-fire it on every
     sweep. A safety cell is exempt, since a removal pull request must keep
     its evidence slot. A `pending` cell, whose last fire may still land a
-    run, plans no fire in any band, safety included."""
+    run, plans no fire in any band, safety included. Each of ctx["outages"]
+    whose first start is within OUTAGE_REPORT_WINDOW is a `routine-outage`
+    work item, listed first."""
     weights = ctx["model_weights"]
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
@@ -612,7 +652,13 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             work.append(broken)
         elif not cell.get("pending"):
             bands[band].append({**item, "band": band, "order": order})
-    return bands, work
+    # No fixture names: an outage is the routine's, not any fixture's, and
+    # the step summary counts work items by kind.
+    outages = [{"kind": "routine-outage", "change_type": None, "route": "issue",
+                "sweep_start": _iso(sweep["start"]), "fires": sweep["fires"]}
+               for sweep in ctx.get("outages", [])
+               if now - sweep["start"] <= OUTAGE_REPORT_WINDOW]
+    return bands, outages + work
 
 
 def neutral_weights(raw: dict) -> dict:
@@ -1070,30 +1116,96 @@ def real_work_rows(evals_dir: Path) -> list:
             and fixture_hold_reason(evals_dir.parent / f) != HOLD_PRIVATE]
 
 
-def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
-    """One cell per scheduled fixture x roster model, with its gates class,
-    run counts, newest run, mean cost per run, `empty_fires`, `pending`, and
-    `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
-    stays in the list for the cost statistics; `eval_items` plans none of it.
-    A `subject: any` row makes no cell (`real_work_rows` lists it).
+def fire_sweeps(starts, gap: timedelta = OUTAGE_GAP, span: timedelta | None = None) -> list:
+    """Group fire start times into sweeps: sorted, and a start at most `gap`
+    (inclusive) after the previous start joins its sweep, else opens a new
+    one. With `span`, a start more than `span` after the sweep's first start
+    opens a new one too; with None a chain of starts each within `gap` is one
+    sweep however long it runs, the grouping explorer_data (#573) uses."""
+    sweeps: list = []
+    for start in sorted(starts):
+        if sweeps and start - sweeps[-1][-1] <= gap \
+                and (span is None or start - sweeps[-1][0] <= span):
+            sweeps[-1].append(start)
+        else:
+            sweeps.append([start])
+    return sweeps
 
-    Both fire counts are against the gates cell's `newest_on_model`, the
-    newest run of ANY role or digest on that model, not the pooled newest: a
-    fire that landed a run that does not pool still produced something.
-      * `empty_fires`: successful non-bare eval fires that started after it
-        (no bound when it is None: the cell has no run on its model), at
-        least FIRE_RESULT_WINDOW ago, within RETRY_AFTER and at or after
-        EMPTY_FIRES_SINCE. A gates cell without the key (a verdict document
-        from before it) or with an unreadable one counts 0: it fails safe,
-        never fixture-broken on a guess. A cell the verdict document does not list has no run at all,
-        so it has no bound.
+
+def _landed_runs(cell: dict | None) -> list | None:
+    """The start-of-run times of every run of the cell on its model, any role
+    or digest (gates' `run_stamps_on_model`), or None when unknown: the key
+    is absent (a verdict document from before it), not a list, or holds an
+    unreadable stamp. A cell the verdict document does not list has none."""
+    if cell is None:
+        return []
+    raw = cell.get("run_stamps_on_model")
+    if not isinstance(raw, list):
+        return None
+    times = [_stamp_time(stamp) for stamp in raw]
+    return None if None in times else times
+
+
+def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
+    """The cells of `eval_cells_and_outages`."""
+    return eval_cells_and_outages(evals_dir, gates_doc, fire_runs, now)[0]
+
+
+def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
+                           now: datetime) -> tuple:
+    """(cells, outage sweeps). One cell per scheduled fixture x roster model,
+    with its gates class, run counts, newest run, mean cost per run,
+    `empty_fires`, `outage_fires`, `pending`, and `schedulable` with its
+    `hold_reason` (fixture_hold_reason). A held cell stays in the list for
+    the cost statistics; `eval_items` plans none of it. A `subject: any` row
+    makes no cell (`real_work_rows` lists it). Each outage sweep is
+    {"start", "fires"}: its first start and how many fires it holds.
+
+    A cell is UNKNOWN when its gates cell lacks `newest_on_model` or
+    `run_stamps_on_model` (a verdict document from before them) or either
+    holds an unreadable stamp. It counts 0 for both fire counts, fails safe,
+    never fixture-broken on a guess, and its fires take no part in any
+    sweep. A cell the verdict document does not list has no run at all: it
+    is known, with no bound.
+
+    FIRE STATES. Every successful non-bare eval fire on a known cell that
+    started at or after EMPTY_FIRES_SINCE and within RETRY_AFTER +
+    OUTAGE_SPAN, and every successful or still running one younger than
+    FIRE_RESULT_WINDOW, is exactly one of: young (younger than
+    FIRE_RESULT_WINDOW), delivered (the cell has a run stamped inside
+    [start, start + FIRE_RESULT_WINDOW]) or empty. The state never changes
+    once the fire is old enough: a later retry's run falls outside an
+    earlier fire's window. Grouping looks back OUTAGE_SPAN past RETRY_AFTER
+    so a candidate near that edge keeps the sweep it was judged in.
+
+    SWEEPS group every classified fire of every known cell (fire_sweeps,
+    OUTAGE_GAP, capped at OUTAGE_SPAN). A sweep with a young fire is
+    UNDECIDED. One with no delivered fire whose empty fires cover at least
+    OUTAGE_CELLS distinct cells is an OUTAGE: a routine outage empties every
+    fire at once and says nothing about any one fixture. A narrower sweep
+    cannot be told from broken fixtures, so it counts.
+
+      * `empty_fires`: the cell's candidates, empty fires that started after
+        gates' `newest_on_model` (no bound when it is None: no run on its
+        model) and within RETRY_AFTER, that are counted: outside any
+        outage, or inside one past the cell's OUTAGE_EXCUSES. The bound is
+        the newest run of ANY role or digest on that model, not the pooled
+        newest: a fire that landed a run that does not pool still produced
+        something.
+      * `outage_fires`: the candidates excused as an outage's, at most
+        OUTAGE_EXCUSES per cell, its earliest. The backstop: a cell empty in
+        outage after outage still reaches BROKEN_AFTER_FIRES, one fire
+        later, so broken fixtures that fail together are not retried
+        forever. A candidate in an UNDECIDED sweep is in neither count
+        until the sweep is decided.
       * `pending`: a successful or still running non-bare eval fire that
-        started after it and less than FIRE_RESULT_WINDOW ago, so its run
-        may still land. Without the key any such fire is pending: holding a
-        cell for at most FIRE_RESULT_WINDOW is cheaper than a second fire.
+        started after the bound and less than FIRE_RESULT_WINDOW ago, so
+        its run may still land. On an unknown cell any such fire is
+        pending: holding a cell for at most FIRE_RESULT_WINDOW is cheaper
+        than a second fire.
     A refused run counts as empty: routine-eval-fire.yml concludes `success`
-    once the fire API accepts, so fixture-broken means "no run after n fires",
-    whatever the cause."""
+    once the fire API accepts, so fixture-broken means "no run after n
+    fires", whatever the cause."""
     committed = schedule.committed_fixtures(evals_dir.parent)
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
     finished: dict = {}
@@ -1110,11 +1222,14 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
         if now - started < FIRE_RESULT_WINDOW:
             if running or run.get("conclusion") == "success":
                 young.setdefault(key, []).append(started)
-        elif run.get("conclusion") == "success" and now - started <= RETRY_AFTER \
+        elif run.get("conclusion") == "success" \
+                and now - started <= RETRY_AFTER + OUTAGE_SPAN \
                 and started >= EMPTY_FIRES_SINCE:
             finished.setdefault(key, []).append(started)
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
+    fires: list = []  # (start, state, cell index) of every classified fire
+    candidates: list = []  # per cell, its candidates' starts, earliest first
     for fixture in scheduled:
         subject, ident = _fixture_subject(evals_dir, fixture)
         if subject == "any":
@@ -1141,13 +1256,25 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cls = cell["class"] if cell else "missing"
             raw = cell.get("newest_on_model") if cell else None
             bound = _stamp_time(raw)
+            landed = _landed_runs(cell)
             # An unreadable stamp is as unknown as an absent key.
-            known = cell is None or ("newest_on_model" in cell
-                                     and (raw is None or bound is not None))
-            after = [t for t in finished.get((fixture, model), [])
-                     if bound is None or t > bound]
+            known = landed is not None and (cell is None or (
+                "newest_on_model" in cell and (raw is None or bound is not None)))
             waiting = [t for t in young.get((fixture, model), [])
                        if not known or bound is None or t > bound]
+            mine: list = []
+            if known:
+                index = len(cells)
+                for t in young.get((fixture, model), []):
+                    fires.append((t, "young", index))
+                for t in finished.get((fixture, model), []):
+                    if any(t <= r <= t + FIRE_RESULT_WINDOW for r in landed):
+                        fires.append((t, "delivered", index))
+                        continue
+                    fires.append((t, "empty", index))
+                    if (bound is None or t > bound) and now - t <= RETRY_AFTER:
+                        mine.append(t)
+            candidates.append(sorted(mine))
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
@@ -1158,8 +1285,35 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
                 "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
                 else None,
-                "empty_fires": len(after) if known else 0, "pending": bool(waiting)})
-    return cells
+                "empty_fires": 0, "outage_fires": 0, "pending": bool(waiting)})
+    # Second pass, once every fire is classified: judge each sweep, then
+    # count each cell's candidates against its sweep's judgement.
+    sweeps = fire_sweeps({t for t, _, _ in fires}, OUTAGE_GAP, OUTAGE_SPAN)
+    sweep_of = {t: i for i, sweep in enumerate(sweeps) for t in sweep}
+    members: list = [[] for _ in sweeps]
+    for t, state, index in fires:
+        members[sweep_of[t]].append((state, index))
+    judged = []
+    for group in members:
+        states = {state for state, _ in group}
+        empty_cells = {index for state, index in group if state == "empty"}
+        if "young" in states:
+            judged.append("undecided")
+        elif "delivered" not in states and len(empty_cells) >= OUTAGE_CELLS:
+            judged.append("outage")
+        else:
+            judged.append("counted")
+    for out, times in zip(cells, candidates):
+        for t in times:  # earliest first, so the excuse goes to the earliest
+            if judged[sweep_of[t]] == "undecided":
+                continue
+            if judged[sweep_of[t]] == "outage" and out["outage_fires"] < OUTAGE_EXCUSES:
+                out["outage_fires"] += 1
+            else:
+                out["empty_fires"] += 1
+    outages = [{"start": sweep[0], "fires": len(members[i])}
+               for i, sweep in enumerate(sweeps) if judged[i] == "outage"]
+    return cells, outages
 
 
 def bare_cells(evals_dir: Path, gates_doc: dict, fire_runs: list) -> list:
@@ -1519,7 +1673,7 @@ def gather(args, now: datetime) -> dict:
                             compute_gates.parse_as_of(args.as_of), registries,
                             gates_doc, records, prs, evidence["on_hold"], now)
     triggers = trigger_contexts(evals_dir, registries)
-    cells = eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now)
+    cells, outages = eval_cells_and_outages(evals_dir, gates_doc, evidence["fire_runs"], now)
     held = sum(1 for c in cells if c["hold_reason"] == HOLD_PRIVATE)
     if held:
         print(f"{held} private cells held")  # a count only: no name in the log
@@ -1531,7 +1685,7 @@ def gather(args, now: datetime) -> dict:
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
-            "cells": cells, "real_work": real_work_rows(evals_dir),
+            "cells": cells, "outages": outages, "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
             "guidance": guidance_contexts(evals_dir, args.results_tree,

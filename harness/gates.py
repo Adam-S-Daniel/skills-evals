@@ -922,7 +922,10 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
     fixture on its model, whatever its role or digests (None with no run).
     It is output only and decides nothing here: the planner counts a fire
     that landed a run, pooled or not, as a fire that produced something,
-    so a stale-digest run is not mistaken for an empty fire."""
+    so a stale-digest run is not mistaken for an empty fire.
+    `run_stamps_on_model` is every such timestamp, sorted, also output only:
+    the planner asks whether a run landed inside a given fire's window,
+    which the newest stamp alone cannot answer once a later run lands."""
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
@@ -938,10 +941,11 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict) -> dict:
         key = {"tested_digest": tested, "fixture_digest": fdig,
                "with_context": with_context, "without_context": without_context}
         for model in models:
-            stamps = [r["timestamp"] for r in mine if r["model"] == model]
+            stamps = sorted(r["timestamp"] for r in mine if r["model"] == model)
             cells[(fixture, model)] = {
                 "key": key, "on_model": len(stamps),
-                "newest_on_model": max(stamps) if stamps else None,
+                "newest_on_model": stamps[-1] if stamps else None,
+                "run_stamps_on_model": stamps,
                 "with": [r for r in current_with if r["model"] == model
                          and r["arm_context_digest"] == with_context
                          and r.get("pair_key") == pair],
@@ -987,7 +991,8 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             carried = any(r["judge_carried"] for r in runs)
             cell = classify_cell(arms["with"], arms["without"], policy, carried, priors)
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
-                      "newest_on_model": pool["newest_on_model"], **cell,
+                      "newest_on_model": pool["newest_on_model"],
+                      "run_stamps_on_model": pool["run_stamps_on_model"], **cell,
                       "cost_usd": _finite_sum([r["numbers"]["cost_usd"] for r in runs]),
                       "cost_unknown_trials": sum(r["numbers"]["cost_unknown_trials"]
                                                  for r in runs),

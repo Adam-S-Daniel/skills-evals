@@ -10,6 +10,13 @@ cell. Both are counted against gates' output-only `newest_on_model` (the
 newest run of ANY role or digest), never the pooled newest, so a fire that
 landed a run that does not pool is not empty.
 
+Outages (2026-11-01: six fixtures fired, none produced anything): each
+fire is classified once, young, delivered (a run stamped inside its
+window, gates' `run_stamps_on_model`) or empty; every classified fire is
+grouped into sweeps, and a sweep with no delivered or young fire whose
+empties cover three cells excuses each cell's earliest such fire, one per
+cell, so fixtures broken together still go fixture-broken.
+
 Deterministic: every `now` is injected; no network, clock or sleep.
 """
 
@@ -41,11 +48,12 @@ def stamp(moment: datetime) -> str:
     return moment.strftime(plan_week.STAMP)
 
 
-def fire(run_id, fixture, started, *, bare=False, conclusion="success", status="completed"):
+def fire(run_id, fixture, started, *, bare=False, conclusion="success", status="completed",
+         model=MODEL):
     """One routine-eval-fire.yml run row, as the runs API records it."""
     arms = " bare" if bare else ""
     at = started.strftime("%Y-%m-%dT%H:%M:%SZ")
-    return {"id": run_id, "display_title": f"Fire eval routine: eval{arms} {fixture} {MODEL}",
+    return {"id": run_id, "display_title": f"Fire eval routine: eval{arms} {fixture} {model}",
             "status": status, "conclusion": conclusion, "run_started_at": at, "created_at": at}
 
 
@@ -98,11 +106,23 @@ class GatesTests(unittest.TestCase):
         pools = gates.pool_cells(runs, "demo", [MODEL, "m2"], expected)
         self.assertEqual(pools[("", MODEL)]["newest_on_model"], stamp(newer))
         self.assertIsNone(pools[("", "m2")]["newest_on_model"])
+        self.assertEqual(pools[("", MODEL)]["run_stamps_on_model"],
+                         [stamp(older), stamp(newer)])
+        self.assertEqual(pools[("", "m2")]["run_stamps_on_model"], [])
         cells = gates.retirement({"runs": runs}, [MODEL, "m2"], "demo", POLICY,
                                  expected)["cells"]
         # The stale with run does not pool, but it is still the newest run.
         self.assertEqual([(c["model"], c["class"], c["newest_on_model"]) for c in cells],
                          [(MODEL, "insufficient", stamp(newer)), ("m2", "missing", None)])
+        self.assertEqual([c["run_stamps_on_model"] for c in cells],
+                         [[stamp(older), stamp(newer)], []])
+
+    def test_guidance_cells_carry_the_run_stamps(self):
+        moment = NOW - timedelta(days=2)
+        runs = [arm_run(SECTION, "handoff", "with", moment, pair="in_situ")]
+        expected = {"handoff": {"fixture_digest": "f-main", "tested_digest": "t-main"}}
+        got = gates.guidance_verdict({"runs": runs}, [MODEL], SECTION, POLICY, expected)
+        self.assertEqual(got["cells"][0]["run_stamps_on_model"], [stamp(moment)])
 
 
 class EndToEndTests(unittest.TestCase):
@@ -157,19 +177,24 @@ class EndToEndTests(unittest.TestCase):
                          [(GUIDANCE_FIXTURE, SECTION), (SKILL_FIXTURE, None)])
 
     def test_an_absent_field_counts_no_empty_fire(self):
-        doc = self.gates_doc()
-        for c in doc["skills"]["writing-adrs"]["cells"] + doc["guidance"][SECTION]["cells"]:
-            del c["newest_on_model"]
-        for got in self.cells(doc, self.fires(self.RUN + timedelta(days=1))):
-            with self.subTest(fixture=got["fixture"]):
-                self.assertEqual(got["empty_fires"], 0)
+        for field in ("newest_on_model", "run_stamps_on_model"):
+            doc = self.gates_doc()
+            for c in doc["skills"]["writing-adrs"]["cells"] + doc["guidance"][SECTION]["cells"]:
+                del c[field]
+            for got in self.cells(doc, self.fires(self.RUN + timedelta(days=1))):
+                with self.subTest(field=field, fixture=got["fixture"]):
+                    self.assertEqual((got["empty_fires"], got["outage_fires"]), (0, 0))
 
     def test_an_unreadable_field_counts_no_empty_fire(self):
-        doc = self.gates_doc()
-        for c in doc["skills"]["writing-adrs"]["cells"]:
-            c["newest_on_model"] = "not a stamp"
-        skill_cell, _ = self.cells(doc, self.fires(self.RUN + timedelta(days=1)))
-        self.assertEqual(skill_cell["empty_fires"], 0)
+        for field, value in (("newest_on_model", "not a stamp"),
+                             ("run_stamps_on_model", ["not a stamp"]),
+                             ("run_stamps_on_model", None)):
+            doc = self.gates_doc()
+            for c in doc["skills"]["writing-adrs"]["cells"]:
+                c[field] = value
+            skill_cell, _ = self.cells(doc, self.fires(self.RUN + timedelta(days=1)))
+            with self.subTest(field=field, value=value):
+                self.assertEqual(skill_cell["empty_fires"], 0)
 
 
 class CountingTests(unittest.TestCase):
@@ -177,7 +202,7 @@ class CountingTests(unittest.TestCase):
 
     MISSING = {"roster_models": [MODEL], "skills": {"writing-adrs": {"cells": [
         {"fixture": "bootstrap", "model": MODEL, "class": "missing", "newest_on_model": None,
-         "runs": {"with": [], "without": []}}]}}}
+         "run_stamps_on_model": [], "runs": {"with": [], "without": []}}]}}}
 
     def empty(self, fires, now=NOW):
         cells = plan_week.eval_cells(ROOT / "evals", self.MISSING, fires, now)
@@ -243,6 +268,7 @@ class PendingTests(unittest.TestCase):
                "runs": {"with": [], "without": []}}
         if newest_on_model is not ...:
             row["newest_on_model"] = newest_on_model
+            row["run_stamps_on_model"] = [newest_on_model] if newest_on_model else []
         return {"roster_models": [MODEL], "skills": {"writing-adrs": {"cells": [row]}}}
 
     def cell(self, doc, fires):
@@ -276,6 +302,189 @@ class PendingTests(unittest.TestCase):
         # Fail safe the cheap way: at most FIRE_RESULT_WINDOW of waiting.
         fires = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=30))]
         self.assertTrue(self.cell(self.doc(...), fires)["pending"])
+
+
+class OutageTests(unittest.TestCase):
+    """A routine outage empties a whole sweep; that says nothing about fixtures."""
+
+    FIXTURES = ["evals/github-actions-sha-pinning", "evals/writing-adrs/bootstrap",
+                "evals/disarm-inherited-reach", "evals/windows-elevation-from-wsl",
+                "evals/embeddable-tool-pages", "evals/workflow-path-audit/required-check-routing"]
+    DAY = plan_week.EMPTY_FIRES_SINCE + timedelta(days=2)  # 2026-11-05
+    LATER = DAY + timedelta(days=3)  # inside RETRY_AFTER, past FIRE_RESULT_WINDOW
+    # The 2026-11-01 burst's clock times, shifted past EMPTY_FIRES_SINCE.
+    BURST = [(5, 43, 29), (5, 44, 42), (5, 45, 55), (6, 4, 12), (6, 5, 23), (6, 6, 37)]
+    MINUTE = timedelta(minutes=1)
+
+    def at(self, hour, minute, second=0, day=0):
+        return (self.DAY + timedelta(days=day)).replace(hour=hour, minute=minute,
+                                                        second=second)
+
+    def doc(self, landed=None, unknown=()):
+        """A verdict document with a cell for each fixture in `landed`
+        ({fixture: [run times]}, as gates writes them) and one without
+        `run_stamps_on_model` for each fixture in `unknown`. Any other
+        scheduled fixture has no cell: known, with no run."""
+        doc = {"roster_models": [MODEL], "skills": {}, "guidance": {}}
+        for fixture in set(landed or {}) | set(unknown):
+            skill = plan_week._fixture_subject(ROOT / "evals", fixture)[1]
+            parts = fixture.split("/")
+            times = sorted((landed or {}).get(fixture, []))
+            row = {"fixture": parts[2] if len(parts) == 3 else None, "model": MODEL,
+                   "class": "missing", "runs": {"with": [], "without": []},
+                   "newest_on_model": stamp(times[-1]) if times else None,
+                   "run_stamps_on_model": [stamp(t) for t in times]}
+            if fixture in unknown:
+                del row["run_stamps_on_model"]
+            doc["skills"].setdefault(skill, {"cells": []})["cells"].append(row)
+        return doc
+
+    def counts(self, fires, now=None, doc=None, fixtures=None):
+        """[(empty_fires, outage_fires)] per fixture, and the outage sweeps."""
+        cells, outages = plan_week.eval_cells_and_outages(
+            ROOT / "evals", doc or self.doc(), fires, now or self.LATER)
+        return ([(one(cells, f)["empty_fires"], one(cells, f)["outage_fires"])
+                 for f in fixtures or self.FIXTURES], outages)
+
+    def test_the_november_first_burst_is_an_outage(self):
+        fires = [fire(i, f, self.at(*clock))
+                 for i, (f, clock) in enumerate(zip(self.FIXTURES, self.BURST))]
+        got, outages = self.counts(fires)
+        self.assertEqual(got, [(0, 1)] * 6)
+        self.assertEqual(outages, [{"start": self.at(*self.BURST[0]), "fires": 6}])
+
+    def test_three_cells_make_an_outage_and_two_do_not(self):
+        three = self.FIXTURES[:3]
+        fires = [fire(i, f, self.at(5, 10 * i)) for i, f in enumerate(three)]
+        self.assertEqual(self.counts(fires, fixtures=three)[0], [(0, 1)] * 3)
+        got, outages = self.counts(fires[:2], fixtures=three)
+        self.assertEqual((got, outages), ([(1, 0), (1, 0), (0, 0)], []))
+
+    def test_one_delivered_fire_makes_the_sweep_count(self):
+        # Review C: three empties plus one fire that landed its run is a
+        # sweep the routine could deliver in, so the empties are the fixtures'.
+        four = self.FIXTURES[:4]
+        fires = [fire(i, f, self.at(5, 10 * i)) for i, f in enumerate(four)]
+        doc = self.doc({four[3]: [self.at(5, 40)]})
+        got, outages = self.counts(fires, doc=doc, fixtures=four)
+        self.assertEqual((got, outages), ([(1, 0), (1, 0), (1, 0), (0, 0)], []))
+
+    def test_recovered_cells_leave_the_others_excused(self):
+        # Review A1/A3: four of the six deliver in a later sweep. The burst's
+        # fires stay empty (their runs fall outside its window), so the
+        # burst stays an outage and the two leftovers stay excused.
+        fires = [fire(i, f, self.at(*clock))
+                 for i, (f, clock) in enumerate(zip(self.FIXTURES, self.BURST))]
+        retried = self.FIXTURES[:4]
+        fires += [fire(10 + i, f, self.at(5, 10 * i, day=1)) for i, f in enumerate(retried)]
+        doc = self.doc({f: [self.at(5, 10 * i + 8, day=1)] for i, f in enumerate(retried)})
+        got, outages = self.counts(fires, doc=doc)
+        self.assertEqual(got, [(0, 0)] * 4 + [(0, 1)] * 2)
+        self.assertEqual(len(outages), 1)
+
+    def test_outage_after_outage_still_breaks_the_cells(self):
+        three = self.FIXTURES[:3]
+
+        def sweep(day, base):
+            return [fire(base + i, f, self.at(5, 10 * i, day=day)) for i, f in enumerate(three)]
+        twice = sweep(0, 0) + sweep(1, 10)
+        self.assertEqual(self.counts(twice, fixtures=three)[0], [(1, 1)] * 3)
+        thrice = twice + sweep(2, 20)
+        cells, outages = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(), thrice,
+                                                          self.LATER)
+        mine = [one(cells, f) for f in three]
+        self.assertEqual([(c["empty_fires"], c["outage_fires"]) for c in mine], [(2, 1)] * 3)
+        self.assertEqual(len(outages), 3)
+        _, work = plan_week.eval_items(ctx(mine), self.LATER)
+        self.assertEqual(sorted(w["fixture"] for w in work if w["kind"] == "fixture-broken"),
+                         sorted(three))
+
+    def test_the_span_cap_splits_a_long_chain(self):
+        four = self.FIXTURES[:4]
+        # 50 minutes apart: one chain by gap, but the fourth is 150 minutes
+        # after the first, past OUTAGE_SPAN.
+        fires = [fire(i, f, self.at(5, 0) + 50 * i * self.MINUTE) for i, f in enumerate(four)]
+        got, outages = self.counts(fires, fixtures=four)
+        self.assertEqual(got, [(0, 1), (0, 1), (0, 1), (1, 0)])
+        self.assertEqual(outages, [{"start": self.at(5, 0), "fires": 3}])
+
+    def test_a_young_fire_leaves_the_sweep_undecided(self):
+        three, now = self.FIXTURES[:3], self.at(12, 0)
+        empties = [fire(i, f, now - timedelta(minutes=150 - 10 * i))
+                   for i, f in enumerate(three)]
+        self.assertEqual(self.counts(empties, now, fixtures=three)[0], [(0, 1)] * 3)
+        young = fire(9, self.FIXTURES[3], now - timedelta(minutes=90))
+        got, outages = self.counts(empties + [young], now, fixtures=self.FIXTURES[:4])
+        self.assertEqual((got, outages), ([(0, 0)] * 4, []))
+
+    def test_an_unknown_cells_fire_takes_no_part(self):
+        three = self.FIXTURES[:3]
+        fires = [fire(i, f, self.at(5, 10 * i)) for i, f in enumerate(three)]
+        got, outages = self.counts(fires, doc=self.doc(unknown=[three[2]]), fixtures=three)
+        self.assertEqual((got, outages), ([(1, 0), (1, 0), (0, 0)], []))
+
+    def test_a_sweep_aging_out_of_retry_after_keeps_its_outage(self):
+        three = self.FIXTURES[:3]
+        t0 = self.at(5, 0)
+        fires = [fire(i, f, t0 + 30 * i * self.MINUTE) for i, f in enumerate(three)]
+        # The first fire is past RETRY_AFTER, the others are not: grouping
+        # still sees it, so the sweep still covers three cells.
+        now = t0 + plan_week.RETRY_AFTER + 10 * self.MINUTE
+        got, outages = self.counts(fires, now, fixtures=three)
+        self.assertEqual(got, [(0, 0), (0, 1), (0, 1)])
+        self.assertEqual(len(outages), 1)
+
+    def test_a_recent_outage_is_a_work_item_and_an_old_one_is_not(self):
+        fires = [fire(i, f, self.at(*clock))
+                 for i, (f, clock) in enumerate(zip(self.FIXTURES, self.BURST))]
+        start = self.at(*self.BURST[0])
+        for now, expected in ((start + timedelta(hours=3), 1),
+                              (start + timedelta(hours=25), 0)):
+            cells, outages = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
+                                                              fires, now)
+            _, work = plan_week.eval_items({**ctx(cells), "outages": outages}, now)
+            items = [w for w in work if w["kind"] == "routine-outage"]
+            with self.subTest(now=now):
+                self.assertEqual(len(items), expected)
+                if expected:
+                    self.assertEqual(items[0], {"kind": "routine-outage", "change_type": None,
+                                                "route": "issue",
+                                                "sweep_start": "2026-11-05T05:43:29Z",
+                                                "fires": 6})
+                    lines = plan_week.summary_lines({"fires": [], "room": 0.5, "work": work,
+                                                     "skills": {}})
+                    self.assertIn("Work items: routine-outage 1", lines)
+
+    def test_two_isolated_fires_on_one_fixture_still_break_it(self):
+        fixture = self.FIXTURES[0]
+        fires = [fire(1, fixture, self.at(5, 0)), fire(2, fixture, self.at(9, 0))]
+        got, _ = self.counts(fires, fixtures=[fixture])
+        self.assertEqual(got, [(2, 0)])
+
+
+class FireSweepsTests(unittest.TestCase):
+    """fire_sweeps' grouping, which #573's explorer reuses with span=None."""
+
+    T0 = plan_week.EMPTY_FIRES_SINCE
+    MINUTE = timedelta(minutes=1)
+
+    def test_the_gap_is_inclusive(self):
+        t0, minute = self.T0, self.MINUTE
+        self.assertEqual(plan_week.fire_sweeps([t0 + 60 * minute, t0]),
+                         [[t0, t0 + 60 * minute]])
+        self.assertEqual(plan_week.fire_sweeps([t0, t0 + 61 * minute]),
+                         [[t0], [t0 + 61 * minute]])
+
+    def test_the_span_caps_a_sweep_from_its_first_start(self):
+        t0, minute = self.T0, self.MINUTE
+        chain = [t0 + 40 * i * minute for i in range(5)]  # 0, 40, 80, 120, 160
+        self.assertEqual(plan_week.fire_sweeps(chain, span=timedelta(hours=2)),
+                         [chain[:4], chain[4:]])
+
+    def test_without_a_span_a_chain_has_no_limit(self):
+        chain = [self.T0 + 50 * i * self.MINUTE for i in range(10)]  # 7.5 hours
+        self.assertEqual(plan_week.fire_sweeps(chain), [chain])
+        self.assertEqual(plan_week.fire_sweeps(chain, span=None), [chain])
 
 
 if __name__ == "__main__":
