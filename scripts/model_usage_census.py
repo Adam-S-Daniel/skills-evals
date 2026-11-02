@@ -99,12 +99,33 @@ bare hex, or null), `digest_null_reason` (null, or one of
 (`owner/repo` or null). They come from the `isMeta` entry that links to the
 call (`sourceToolUseID` for a Skill call, `parentUuid` for a typed command)
 and whose first line is `Base directory for this skill: <path>`; the path
-itself is never recorded. None of the four reaches a public file.
+itself is never recorded. None of the four reaches a public file. A
+plugin-cache record also carries `ref` (#562, 2026-11-02): the
+`gitCommitSha` that `<.claude>/plugins/installed_plugins.json` records for
+that install (the marketplace clone's commit, shared by every plugin it
+installed, which is harmless here), 40 hex or null; every other kind has
+`ref: null`, and lines stored before #562 have no `ref` at all.
+
+LOADED SKILL COPIES (#562) become public `skill-digest` rows only through
+`skill_digest_plan` and `digest_rows`, with `--event-store DIR` (a checkout
+of the private branch, read-only): one row per (week, skill, registry,
+copy) over this run's counted uses of allowlisted skills, never `other`.
+Each use's copy is resolved once across the store (a non-null digest beats
+null; two different non-null digests are `unknown:conflict`), and a 12-hex
+prefix is published only for a `private: false` registry whose mirror
+(`--registry-mirror OWNER/REPO=PATH`) shows that the digest was the
+content of that skill's path at some commit on one of its branches (and, for
+a plugin-cache record with a 40-hex `ref`, that the commit is on a branch
+there). An unpublished local edit, such as a dirty skill in a checkout,
+reads `unknown:unverified-commit`. A full digest, a path, a ref, a session
+id and a fork's name never leave the private side.
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
         [--weekly-out usage/weekly-local.json] [--events-out events.jsonl] \
-        [--hook-logs PATH[:PATH...]] [--cloud-guidance DIR]
+        [--hook-logs PATH[:PATH...]] [--cloud-guidance DIR] \
+        [--event-store DIR [--registry-mirror OWNER/REPO=PATH ...]
+         | --event-store DIR --digest-plan-out FILE]
 """
 
 from __future__ import annotations
@@ -117,7 +138,7 @@ import re
 import socket
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -490,7 +511,9 @@ _DRIVE_PATH_RE = re.compile(r"([A-Za-z]):\\(.*)", re.DOTALL)
 _WSL_UNC_RE = re.compile(r"\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)?",
                          re.DOTALL | re.IGNORECASE)
 _NOT_LOADED = {"digest": None, "digest_null_reason": "no-base-dir",
-               "base_kind": "unknown", "registry": None}
+               "base_kind": "unknown", "registry": None, "ref": None}
+#: A commit sha as `installed_plugins.json` and git write it.
+_COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _owner_repo(value) -> str | None:
@@ -582,7 +605,7 @@ class LoadedCopies:
         self._json: dict = {}
 
     def resolve(self, name: str, base: str | None, when: datetime) -> dict:
-        """The four loaded-copy keys of a record invoking `name` at `when`
+        """The five loaded-copy keys (`ref` only for plugin-cache) of a record invoking `name` at `when`
         whose base-directory message named `base` (None: no such message)."""
         out = dict(_NOT_LOADED, digest_null_reason=None)
         bare = name.split(":", 1)[1] if ":" in name else name
@@ -614,6 +637,7 @@ class LoadedCopies:
         out["base_kind"] = kind
         if kind == "plugin-cache":
             out["registry"] = self._marketplace_repo(claude, marketplace)
+            out["ref"] = self._install_ref(claude, os.path.dirname(os.path.dirname(real)))
         elif kind == "repo":
             out["registry"] = self._origin_repo(checkout)
         tree = self._tree(real, checkout)
@@ -711,6 +735,22 @@ class LoadedCopies:
         source = entry.get("source") if isinstance(entry, dict) else None
         if isinstance(source, dict) and source.get("source") == "github":
             return _owner_repo(source.get("repo"))
+        return None
+
+    def _install_ref(self, claude: str, version_root: str) -> str | None:
+        """The `gitCommitSha` that `<claude>/plugins/installed_plugins.json`
+        (version 2: {"plugins": {key: [{"installPath", "gitCommitSha"}]}})
+        records for the install whose `installPath` resolves to
+        `version_root`, when it is 40 lowercase hex; else None (#562)."""
+        record = self._load(os.path.join(claude, "plugins", "installed_plugins.json"))
+        plugins = record.get("plugins") if isinstance(record, dict) else None
+        for installs in plugins.values() if isinstance(plugins, dict) else ():
+            for entry in installs if isinstance(installs, list) else ():
+                path = entry.get("installPath") if isinstance(entry, dict) else None
+                if not isinstance(path, str) or os.path.realpath(path) != version_root:
+                    continue
+                sha = entry.get("gitCommitSha")
+                return sha if isinstance(sha, str) and _COMMIT_RE.fullmatch(sha) else None
         return None
 
     def _bootstrap_repo(self, claude: str, name: str, digest: str) -> str | None:
@@ -895,6 +935,28 @@ def public_repos() -> frozenset[str]:
     return frozenset(repos)
 
 
+def public_registry_entries() -> list[dict]:
+    """The `private: false` entries of harness/registries.yml as
+    {"repo": canonical owner/repo, "layout": glob}, in file order (#562).
+    Not ALWAYS_PUBLIC_REPOS: those hold no skills, so no loaded copy can
+    come from them. Needs PyYAML, so the import is lazy."""
+    import run_eval
+    out = []
+    for entry in run_eval._load_registries_config():
+        repo = github_repo(entry["url"])
+        if entry["private"] is False and repo:
+            out.append({"repo": repo, "layout": entry["layout"]})
+    return out
+
+
+def public_registries() -> dict[str, str]:
+    """{lowercase owner/repo: canonical owner/repo} of the `private: false`
+    registries: a record's `registry` is compared case-insensitively and
+    published only in the canonical form, so a fork or any other repository
+    never matches (#562)."""
+    return {entry["repo"].lower(): entry["repo"] for entry in public_registry_entries()}
+
+
 def _id_list(value) -> list | None:
     if not isinstance(value, list) or len(value) > _HOOK_LIST_CAP:
         return None
@@ -1059,6 +1121,11 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
     counted. See census_all."""
     skills, sessions = tally["invocations"], tally["sessions"]
     record = events is not None
+    # #562: (key, ISO week, record) of every counted use that has a record,
+    # in memory only. The key is the one this run counted the use under, so
+    # the skill-digest rows group exactly as the skill rows do; the record's
+    # own `name` is the raw, capped string and can differ.
+    counted = tally.setdefault("counted", []) if record else None
     kind_of_root = root_kind(root)
     this_root: set[tuple[str, str]] = set()
 
@@ -1165,6 +1232,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                         raw[1:] if raw.startswith("/") else raw,
                                         repos, machine, kind_of_root)
                                     file_events.append(event)
+                                    counted.append((typed, week, event))
                                     pending_model.append(event)
                                     load = {"event": event, "when": when,
                                             "base": None}
@@ -1193,6 +1261,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                     kind_of_root,
                                     **_turn_facts(entry, message))
                                 file_events.append(event)
+                                counted.append((name, week, event))
                                 load = {"event": event, "when": when, "base": None}
                                 loads.append(load)
                                 if isinstance(call, str) and call:
@@ -1243,13 +1312,21 @@ def _document(counts: dict, now: datetime, weeks: int) -> dict:
     }
 
 
+def window_from(now: datetime, weeks: int) -> datetime:
+    """The Monday (UTC) of the oldest week of the census window."""
+    return datetime.fromisoformat(skill_usage.week_monday(window_weeks(now, weeks)[-1])
+                                  ).replace(tzinfo=timezone.utc)
+
+
 def build_weekly_document(tally: dict, now: datetime,
                           weeks: int = DEFAULT_WEEKS, hooks: dict | None = None,
-                          cloud: dict | None = None) -> dict:
+                          cloud: dict | None = None, digests: tuple | None = None) -> dict:
     """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
     owns its schema. The window starts at the Monday of its oldest week.
     `hooks` is `hook_tally()`'s result; None adds no hook rows or source.
-    `cloud` is `cloud_guidance_tally()`'s; None adds no cloud rows or source."""
+    `cloud` is `cloud_guidance_tally()`'s; None adds no cloud rows or source.
+    `digests` is (plan, rows) from `skill_digest_plan` and `digest_rows`;
+    None adds no skill-digest rows or source (#562)."""
     rows = [skill_usage.row(week, "skill", name, n,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
@@ -1260,8 +1337,7 @@ def build_weekly_document(tally: dict, now: datetime,
     if hooks is not None:
         rows += [skill_usage.hook_row(week, name, repo, runs, blocked, runner)
                  for (week, name, repo, runner), (runs, blocked) in hooks["rows"].items()]
-    oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
-    window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
+    start = window_from(now, weeks)
     cloud_source = None
     if cloud is not None:
         rows += [skill_usage.guidance_row(week, state, n, skill_usage.SURFACE_CLOUD)
@@ -1275,11 +1351,16 @@ def build_weekly_document(tally: dict, now: datetime,
         earliest = cloud["earliest"]
         record_week = (None if earliest is None else datetime.fromisoformat(
             skill_usage.week_monday(iso_week(earliest))).replace(tzinfo=timezone.utc))
-        cloud_source = {"from": max(window_from, record_week or window_from),
+        cloud_source = {"from": max(start, record_week or start),
                         "records_scanned": cloud["records_scanned"]}
-    return skill_usage.document(rows, now, window_from, tally["sessions_scanned"],
-                                None if hooks is None else hooks["runs_scanned"],
-                                cloud_source)
+    doc = skill_usage.document(rows, now, start, tally["sessions_scanned"],
+                               None if hooks is None else hooks["runs_scanned"],
+                               cloud_source)
+    if digests is not None:
+        plan, digest_rows_ = digests
+        skill_usage.add_rows(doc, digest_rows_, skill_usage.digest_source(
+            parse_ts(plan["from"]), now, len(plan["uses"])))
+    return doc
 
 
 #: Where the private store keeps records: events/<YYYY-MM>/<machine>.jsonl.
@@ -1346,6 +1427,222 @@ def merge_events(events_path, store) -> int:
     return added
 
 
+# --- Loaded skill copies, public rows (#562, 2026-11-02) ---------------------
+# The private store says which copy each use loaded; the public file may say
+# only a 12-hex prefix of it, and only when that content was once on a public
+# branch of a `private: false` registry. Everything here runs on the owner's
+# machine; the plan file is private scratch, removed with the publisher's
+# temp directory.
+
+_DIGEST_HEX_RE = re.compile(r"[0-9a-f]{64}")
+#: The marker for an id whose stored lines predate #563 (no `digest` key).
+PRE_RECORD = "pre-record"
+
+
+def _stored_copy(record: dict):
+    """(has a `digest` key, the copy or None). A line whose digest is not 64
+    lowercase hex, or whose null reason is not a known one, is malformed and
+    yields (True, None): it is skipped, so it can neither block the census
+    nor publish a reason it made up."""
+    if "digest" not in record:
+        return False, None
+    digest, reason = record.get("digest"), record.get("digest_null_reason")
+    if digest is None:
+        if reason not in DIGEST_NULL_REASONS:
+            return True, None
+    elif isinstance(digest, str) and _DIGEST_HEX_RE.fullmatch(digest):
+        reason = None
+    else:
+        return True, None
+    ref = record.get("ref")
+    return True, {"digest": digest, "reason": reason,
+                  "registry": _owner_repo(record.get("registry")),
+                  "ref": ref if isinstance(ref, str) and _COMMIT_RE.fullmatch(ref) else None,
+                  "ts": parse_ts(record.get("ts")) if isinstance(record.get("ts"), str) else None}
+
+
+def _resolve_copies(copies: list) -> dict:
+    """One id's copy from its well-formed lines, in file and line order: a
+    non-null digest beats null; two different non-null digests are a
+    `conflict`; the registry and refs come from the lines carrying the
+    winning digest (registries that disagree leave it None, which publishes
+    as unlisted); with only nulls, the earliest `ts` decides (ties: order)."""
+    known = [c for c in copies if c["digest"] is not None]
+    if len({c["digest"] for c in known}) > 1:
+        return {"digest": None, "reason": "conflict", "registry": None, "refs": []}
+    if known:
+        registries = {c["registry"] for c in known}
+        return {"digest": known[0]["digest"], "reason": None,
+                "registry": registries.pop() if len(registries) == 1 else None,
+                "refs": sorted({c["ref"] for c in known if c["ref"]})}
+    far = datetime.max.replace(tzinfo=timezone.utc)
+    first = min(range(len(copies)), key=lambda i: (copies[i]["ts"] or far, i))
+    return {"digest": None, "reason": copies[first]["reason"],
+            "registry": copies[first]["registry"], "refs": []}
+
+
+def store_digests(store) -> dict:
+    """{id: resolved copy, or PRE_RECORD} over every skill line of the
+    machine files `store`/events/*/<machine>.jsonl, READ-ONLY. Files in
+    sorted order, lines in file order; links, unreadable files, malformed
+    lines and `cloud-*` files (MACHINE_RE on the stem) are skipped. An id
+    none of whose lines has a `digest` key is PRE_RECORD. PR B adds the cloud
+    shards' glob here, and only here."""
+    lines: dict = {}
+    for path in sorted(Path(store).glob(f"{EVENTS_DIR}/*/*.jsonl")):
+        if path.is_symlink() or not path.is_file() or not MACHINE_RE.fullmatch(path.stem):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for raw in text.splitlines():
+            try:
+                record = json.loads(raw)
+            except ValueError:
+                continue
+            if not (isinstance(record, dict) and record.get("kind") == "skill"
+                    and isinstance(record.get("id"), str) and record["id"]):
+                continue
+            has_key, copy = _stored_copy(record)
+            entry = lines.setdefault(record["id"], {"keyless": False, "copies": []})
+            if not has_key:
+                entry["keyless"] = True
+            elif copy is not None:
+                entry["copies"].append(copy)
+    return {key: (_resolve_copies(entry["copies"]) if entry["copies"] else PRE_RECORD)
+            for key, entry in lines.items() if entry["copies"] or entry["keyless"]}
+
+
+def skill_digest_plan(counted: list, stored: dict, start: datetime,
+                      public: dict) -> dict:
+    """The private plan for the `skill-digest` rows: {"from", "uses",
+    "registries"}. `counted` is census_all's tally["counted"] (this run's
+    uses, a multiset: a resumed transcript can repeat an id and both count, as
+    in the skill rows); `stored` is store_digests'. A use under `other` gets
+    no row. A stored id is final; an id the store lacks takes this run's
+    record. `from` is the later of the window start and the Monday after the
+    week of the latest PRE_RECORD use, so for every week on or after it the
+    rows' invocations equal the skill rows'. `registries` names the public
+    registries (canonical) a use with a digest points at: the mirrors the
+    publisher must clone."""
+    floor, uses = start, []
+    for key, week, event in counted:
+        if key == OTHER_KEY:
+            continue
+        copy = stored.get(event.get("id"))
+        monday = datetime.fromisoformat(skill_usage.week_monday(week)).replace(tzinfo=timezone.utc)
+        if copy == PRE_RECORD:
+            floor = max(floor, monday + timedelta(days=7))
+            continue
+        if copy is None:
+            _, own = _stored_copy(event)
+            copy = (_resolve_copies([own]) if own is not None else
+                    {"digest": None, "reason": "no-base-dir", "registry": None, "refs": []})
+        session = event.get("session_id")
+        uses.append({"week": monday, "name": key,
+                     "session": session if isinstance(session, str) else None, **copy})
+    uses = [dict(use, week=use["week"].date().isoformat())
+            for use in uses if use["week"] >= floor]
+    registries = sorted({public[use["registry"].lower()] for use in uses
+                         if use["digest"] is not None and use["registry"]
+                         and use["registry"].lower() in public})
+    return {"from": floor.strftime(skill_usage.STAMP), "uses": uses,
+            "registries": registries}
+
+
+class MirrorCheck:
+    """Whether a digest was ever on a public branch of a registry, read from
+    local mirrors ({canonical owner/repo: path}); cached per run: the skill's
+    path per (registry, name), its content history per (registry, path), and
+    each ref. `unread` turns True when a mirror a use needed was missing or
+    git failed, for the publisher's fixed `registry: not read` note."""
+
+    def __init__(self, entries: list[dict], mirrors: dict):
+        self.entries = {entry["repo"]: entry for entry in entries}
+        self.mirrors = dict(mirrors)
+        self.unread = False
+        self._paths: dict = {}
+        self._history: dict = {}
+        self._refs: dict = {}
+
+    def verified(self, repo: str, name: str, digest: str, refs: list) -> bool:
+        mirror = self.mirrors.get(repo)
+        if mirror is None:
+            self.unread = True
+            return False
+        try:
+            if (repo, name) not in self._paths:
+                try:
+                    self._paths[(repo, name)] = skill_digest.skill_relpath(
+                        mirror, self.entries[repo]["layout"], name)
+                except ValueError:
+                    self._paths[(repo, name)] = None
+            relpath = self._paths[(repo, name)]
+            if relpath is None:
+                return False
+            if (repo, relpath) not in self._history:
+                self._history[(repo, relpath)] = skill_digest.content_digests(mirror, relpath)
+        except OSError:
+            self.unread = True
+            self._paths[(repo, name)] = None
+            return False
+        if digest not in self._history[(repo, relpath)]:
+            return False
+        # The issue's plugin-cache check, where the store has a 40-hex ref:
+        # the installed commit must be in the mirror itself, on a branch.
+        for ref in refs:
+            if (repo, ref) not in self._refs:
+                self._refs[(repo, ref)] = skill_digest.commit_on_branch(mirror, ref)
+            if not self._refs[(repo, ref)]:
+                return False
+        return True
+
+
+def digest_rows(plan: dict, entries: list[dict], mirrors: dict) -> tuple[list, bool]:
+    """(the `skill-digest` rows of `plan`, whether a mirror was not read).
+    A use's public digest is, in order: `unknown:<reason>` with no digest;
+    `unknown:unlisted-registry` (repo null) for a registry that is not
+    `private: false`, a fork among them; `unknown:unverified-commit` when the
+    mirror does not show the content on a public branch; else the prefix."""
+    check = MirrorCheck(entries, mirrors)
+    public = {entry["repo"].lower(): entry["repo"] for entry in entries}
+    groups: dict = {}
+    for use in plan["uses"]:
+        repo = public.get((use["registry"] or "").lower())
+        if use["digest"] is None:
+            shown = f"unknown:{use['reason']}"
+        elif repo is None:
+            shown = "unknown:unlisted-registry"
+        elif check.verified(repo, use["name"], use["digest"], use["refs"]):
+            shown = use["digest"][:12]
+        else:
+            shown = "unknown:unverified-commit"
+        group = groups.setdefault((use["week"], use["name"], repo, shown), [0, set()])
+        group[0] += 1
+        group[1].add(use["session"])
+    rows = [skill_usage.digest_row(week, name, repo, shown, n, len(sessions))
+            for (week, name, repo, shown), (n, sessions) in groups.items()]
+    return rows, check.unread
+
+
+def apply_digest_plan(plan_path, weekly_path, mirrors: dict) -> bool:
+    """Add the plan's `skill-digest` rows and their `skill-records` source to
+    the weekly file at `weekly_path`, in place; return whether a mirror was
+    not read. The publisher's second step, after it cloned the mirrors the
+    plan names."""
+    with open(plan_path, encoding="utf-8") as f:
+        plan = json.load(f)
+    with open(weekly_path, encoding="utf-8") as f:
+        doc = json.load(f)
+    rows, unread = digest_rows(plan, public_registry_entries(), mirrors)
+    now = parse_ts(doc["generated_at"])
+    skill_usage.add_rows(doc, rows, skill_usage.digest_source(
+        parse_ts(plan["from"]), now, len(plan["uses"])))
+    _write_json(Path(weekly_path), doc)
+    return unread
+
+
 def write_events(path: Path, events: list) -> None:
     """JSON lines, sorted by timestamp (then id). PRIVATE: see the docstring."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1383,6 +1680,19 @@ def main() -> int:
                         help="checkout of the private persistent/usage-events "
                              "branch; its events/*/cloud-guidance.jsonl are read "
                              "(never written) into cloud guidance rows")
+    parser.add_argument("--event-store", type=Path, default=None,
+                        help="checkout of the private persistent/usage-events "
+                             "branch (an empty directory when it does not exist); "
+                             "its machine files are read (never written) into "
+                             "the skill-digest rows (#562); needs --weekly-out")
+    parser.add_argument("--registry-mirror", action="append", default=[],
+                        metavar="OWNER/REPO=PATH",
+                        help="a bare clone of a private: false registry, for "
+                             "verifying loaded-copy digests; repeatable")
+    parser.add_argument("--digest-plan-out", type=Path, default=None,
+                        help="with --event-store: write the PRIVATE plan here "
+                             "and leave the skill-digest rows out, for the "
+                             "publisher to add after cloning the mirrors it names")
     parser.add_argument("--skill-allowlist-root", type=Path, default=REPO_ROOT,
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
@@ -1420,21 +1730,36 @@ def main() -> int:
     if now is None:
         print("--now is not an ISO-8601 instant", file=sys.stderr)
         return 2
+    if args.event_store is not None and args.weekly_out is None:
+        print("--event-store needs --weekly-out", file=sys.stderr)
+        return 2
     allowlist = None
     repos = private = frozenset()
+    entries: list = []
     if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
             allowlist = skill_allowlist(args.skill_allowlist_root)
             repos = public_repos()
             private = private_plugins()
+            entries = public_registry_entries()
         except (eval_coverage.CensusRefusal, ValueError, OSError):
             # No detail: a refusal message can carry a path, and this line
             # reaches a scheduled task's status report. Nothing is written.
             print("skill allowlist could not be read from the evals "
                   "directory; nothing published", file=sys.stderr)
             return 2
-    events = [] if args.events_out is not None else None
+    public = {entry["repo"].lower(): entry["repo"] for entry in entries}
+    mirrors = {}
+    for value in args.registry_mirror:
+        repo, sep, path = value.partition("=")
+        if not sep or not path or repo.lower() not in public:
+            # No value echoed: this line reaches the publisher's output.
+            print("a --registry-mirror does not name a public registry", file=sys.stderr)
+            return 2
+        mirrors[public[repo.lower()]] = path
+    # The digest rows need this run's records even when none is written out.
+    events = [] if args.events_out is not None or args.event_store is not None else None
     counts, tally = census_all(roots, now, args.weeks, allowlist, events, private)
     hooks = None
     if allowlist is not None:
@@ -1453,8 +1778,21 @@ def main() -> int:
         cloud = (cloud_guidance_tally(args.cloud_guidance, now, args.weeks)
                  if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
                  else None)
+        digests = None
+        if args.event_store is not None:
+            plan = skill_digest_plan(tally.get("counted", []), store_digests(args.event_store),
+                                     window_from(now, args.weeks), public)
+            if args.digest_plan_out is not None:
+                # PRIVATE: session ids and full digests. Owner-only, in the
+                # publisher's temp directory, never published.
+                args.digest_plan_out.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(args.digest_plan_out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(plan, f, sort_keys=True)
+            else:
+                digests = (plan, digest_rows(plan, entries, mirrors)[0])
         _write_json(args.weekly_out,
-                    build_weekly_document(tally, now, args.weeks, hooks, cloud))
+                    build_weekly_document(tally, now, args.weeks, hooks, cloud, digests))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
     if args.events_out is not None:

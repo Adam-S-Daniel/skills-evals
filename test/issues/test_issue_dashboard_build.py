@@ -90,17 +90,36 @@ class DashboardBuildTests(unittest.TestCase):
         empty.mkdir()
         rows, bare = build.eval_rows(str(empty), "x/")
         self.assertEqual(([r["run_id"] for r in rows], [r["run_id"] for r in bare]), (["none"], ["none"]))
-        rows, sources = build.usage(str(empty))
-        self.assertEqual((rows[0]["kind"], sources[0]["file"]), ("none", "none"))
+        rows, sources, digests = build.usage(str(empty))
+        self.assertEqual((rows[0]["kind"], sources[0]["file"], digests[0]["digest"]),
+                         ("none", "none", "none"))
 
     def test_usage_keeps_the_weekly_total_apart(self):
-        rows, sources = build.usage(str(self.results))
+        rows, sources, _digests = build.usage(str(self.results))
         self.assertEqual({r["kind"] for r in rows}, {"hook_all", "skill"})
 
     def test_usage_sources_carry_each_producers_read_count_and_unit(self):
-        _, sources = build.usage(str(self.results))
+        _, sources, _ = build.usage(str(self.results))
         self.assertEqual([(s["scanned"], s["scanned_unit"]) for s in sources], [(4, "sessions"), (9, "git hook runs"), (3, "cloud sessions")])
         self.assertEqual(len({s["key"] for s in sources}), 3)
+
+    def test_skill_digest_rows_go_to_their_own_dataset_and_leave_the_totals_alone(self):
+        """#562: a skill-digest row is a second view of the same uses."""
+        before, _, _ = build.usage(str(self.results))
+        path = self.results / "usage" / "weekly-local.json"
+        doc = json.loads(path.read_text())
+        doc["rows"].append({"week": "2026-01-05", "kind": "skill-digest", "name": "writing-adrs",
+                            "repo": "example-owner/r", "surface": "local", "invocations": 2,
+                            "sessions": 1, "digest": "abcdef012345"})
+        doc["sources"].append({"surface": "local", "scope": "skill-records", "from": "a", "to": "b",
+                               "events_scanned": 2})
+        write(path, doc)
+        rows, sources, digests = build.usage(str(self.results))
+        self.assertEqual(rows, before)
+        self.assertEqual([(d["name"], d["digest"], d["invocations"]) for d in digests],
+                         [("writing-adrs", "abcdef012345", 2)])
+        self.assertEqual((sources[-1]["scanned"], sources[-1]["scanned_unit"]), (2, "skill uses"))
+        self.assertEqual(len({s["key"] for s in sources}), len(sources))
 
     def test_usage_refuses_an_unknown_schema(self):
         write(self.tmp / "u" / "usage" / "weekly-x.json", {"schema": 2})

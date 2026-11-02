@@ -808,7 +808,8 @@ class CloudGuidanceTests(unittest.TestCase):
         new = skill_usage.document(
             [skill_usage.row("2026-W36", "skill", "y", 1, 1)], NOW, NOW - timedelta(weeks=8), 7)
         before = json.dumps(new["rows"])
-        self.assertEqual(skill_usage.carry_cloud(previous, new), 2)
+        self.assertEqual(skill_usage.carry(previous, new),
+                         {"cloud": 2, "skill copies": None})
         self.assertEqual([r for r in new["rows"] if r["surface"] == "cloud"],
                          [r for r in previous["rows"] if r["surface"] == "cloud"])
         self.assertEqual([s for s in new["sources"] if s["surface"] == "cloud"],
@@ -817,9 +818,9 @@ class CloudGuidanceTests(unittest.TestCase):
         self.assertNotEqual(json.dumps(new["rows"]), before)
 
     def test_a_carried_source_older_than_14_days_is_dropped(self):
-        for to, carried in (("2026-08-21T12:00:00Z", 2), ("2026-08-20T11:59:59Z", 0)):
+        for to, carried in (("2026-08-21T12:00:00Z", 2), ("2026-08-20T11:59:59Z", None)):
             new = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
-            self.assertEqual(skill_usage.carry_cloud(self.previous(to), new), carried, to)
+            self.assertEqual(skill_usage.carry(self.previous(to), new)["cloud"], carried, to)
             self.assertEqual(any(s["surface"] == "cloud" for s in new["sources"]),
                              bool(carried))
             self.assertEqual(any(r["surface"] == "cloud" for r in new["rows"]),
@@ -829,7 +830,8 @@ class CloudGuidanceTests(unittest.TestCase):
         local = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
         for previous in (None, {}, local):
             new = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
-            self.assertEqual(skill_usage.carry_cloud(previous, new), 0)
+            self.assertEqual(skill_usage.carry(previous, new),
+                             {"cloud": None, "skill copies": None})
             self.assertEqual(new["sources"], local["sources"])
 
 

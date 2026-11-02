@@ -495,7 +495,7 @@ def _layout_parts(layout: str) -> list[str]:
 
 
 def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
-    """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
+    """harness/registries.yml: [{name, url, layout, private}, ...] — this harness's own
     record of registry name/URL/layout, kept in step by hand with adam-agentskills'
     scripts/skills_registries.yml (see test/run_tests.py::TestIssue63) rather
     than importing that file at run time: this harness must resolve using
@@ -566,6 +566,13 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
             raise ValueError(
                 f"{path} entry {name!r} has layout {layout!r} containing "
                 "'..' — layouts must stay within the registry checkout")
+        # #562: `private` is a bool, never a string, and is never defaulted:
+        # a census publishes a registry's name and digest prefixes only when
+        # it is `private: false`, so an absent or mistyped value must stop the
+        # load rather than read as either answer.
+        if type(entry.get("private")) is not bool:
+            raise ValueError(
+                f"{path} entry {name!r} needs 'private: true' or 'private: false'")
     return entries
 
 
