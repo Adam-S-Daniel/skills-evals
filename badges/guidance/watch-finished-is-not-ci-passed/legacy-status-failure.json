@@ -1,0 +1,6 @@
+{
+  "color": "green",
+  "label": "guidance eval: watch-finished-is-not-ci-passed/legacy-status-failure",
+  "message": "with 2/2 vs without 0/2 \u00b7 2026-11-02",
+  "schemaVersion": 1
+}
