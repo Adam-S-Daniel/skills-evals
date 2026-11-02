@@ -6577,7 +6577,8 @@ class TestIssue67(unittest.TestCase):
 
             # A hook log's `runner` is as untrusted: only 12 lowercase hex
             # survive into the public weekly rows, anything else is null.
-            hostile_runners = [secret_path, secret_text, "a" * 64, 7,
+            hostile_runners = ["/home/example/repos/runner", "a runner that wrote prose",
+                               "a" * 64, 7,
                                ["abcdef012345"], {"r": "abcdef012345"}, "ABCDEF012345"]
             log = Path(tmp) / "runs.jsonl"
             log.write_text("\n".join(json.dumps(
@@ -6594,8 +6595,8 @@ class TestIssue67(unittest.TestCase):
             self.assertEqual(sum(r["invocations"] for r in hook_rows if r["name"] == "all"),
                              len(hostile_runners))
             blob = json.dumps(weekly)
-            for leaked in (secret_path, secret_text, "a" * 64, "abcdef012345",
-                           "ABCDEF012345"):
+            for leaked in ("/home/example/repos/runner", "a runner that wrote prose",
+                           "a" * 64, "abcdef012345", "ABCDEF012345"):
                 self.assertNotIn(leaked, blob)
 
     def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
