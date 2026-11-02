@@ -157,10 +157,28 @@ Three layers enforce it:
    minutes, so a fire with no results two hours later failed or never
    started). An improve fire (or a guidance-improve fire) never lands
    results, so it is charged its own
-   cost for the whole week: twelve eval fires at their measured mean
-   (twelve full reservations until anything is measured). The fire goes
+   cost for the whole week: eight eval fires at their measured mean
+   (eight full reservations until anything is measured; twelve until
+   2026-11-02, when the account meter around improve fires measured 2.3 to
+   5.3 eval fires each, #572; eight is a ceiling until each improve run's
+   cost is recorded). The fire goes
    only if one more reservation (an improve fire's charge, in improve mode)
-   still fits under `weekly_cap`. When a recent account meter reading is
+   still fits under `weekly_cap`. An improve or guidance-improve fire must
+   also pass the **improve cap** (#572, 2026-11-02): the week's improve
+   fires of both kinds, successful or still running (a running one only
+   when its run id is lower than this fire's, so of two dispatched together
+   the earlier goes), stay under 20% of `weekly_cap` divided by the improve
+   charge, except that each kind gets one fire per account week however
+   small the share. The cap follows `weekly_cap` as configured, so a
+   temporary raise loosens it too. With both floors used at eight units,
+   about 2 × 0.04 = 0.08 of the allowance is held, 27% of a 0.30 cap: above
+   the 20% share, by the approved floor rule. In the week of 2026-10-26 eight
+   improve fires, all dispatched by hand or by an agent, held more than the
+   whole cap; the guard runs for every dispatcher, so the cap is there, and
+   the weekly plan applies the same test. A capped fire prints
+   `improve cap: share allows N, used M (this kind K)` and exits 3. Until
+   each improve run's cost is measured (#572 part 1), a fire that passed the
+   guard and then failed uses no slot. When a recent account meter reading is
    usable, that sum is never taken above the reading plus the full charge
    of everything not inside it (since 2026-11-01), so eval runs the reading
    already holds are not counted twice. The same reading plus everything
@@ -188,7 +206,8 @@ Known gaps:
   eval spend. That overcounts, which is the safe direction.
 - **Fires racing each other**: a fire counts only fires that have finished
   successfully, so two dispatched at the same moment do not see each other.
-  The weekly plan accounts for its own fires up front.
+  The weekly plan accounts for its own fires up front. The improve cap
+  alone also counts running improve fires with a lower run id (#572).
 
 **The cost estimate** (Adam, 2026-11-01). The meter reads whole points, and
 only as each call starts, so a run's last agent call and any judge call after
@@ -236,7 +255,9 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    are ranked in the same list (every session loads the guidance, so its use
    is the census's session count scaled to four weeks). The highest-value
    eligible section is a `guidance-improve` fire, one per plan, at three
-   trials and the improve charge
+   trials and the improve charge. Before allocation the band is walked in
+   value order through the guard's improve cap, counting each kept fire, and
+   fires it would refuse stay unplanned
    ([ADR 0005 addendum](decisions/0005-improvement-loop-reuses-skill-creator.md#routine-guidance-improve-mode-addendum-2026-10-27));
    only a section id the fire workflow refuses stays a work item for a
    local `scripts/propose_guidance_edit.py` run.
