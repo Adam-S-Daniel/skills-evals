@@ -818,7 +818,8 @@ def current_text_runs(verdict: dict) -> int:
 
 def subject_confidence(verdict: dict) -> dict:
     """How sure the gate is, as levels in [0, 1): `helps`, the highest
-    confidence at which some cell's delta (objective or judge) is above 0, and
+    confidence at which some cell's delta (objective or judge) is above 0
+    (with a per-subject keep family, `keep_family`, the family's level), and
     `no_help`, the highest at which every cell's objective delta is under the
     margin (a cell with no objective figure gives 0). Both None while no
     cell has a figure. The keep and remove rules compare these with the policy levels;
@@ -831,6 +832,15 @@ def subject_confidence(verdict: dict) -> dict:
     no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
     if not helps:
         return {"helps": None, "no_help": None}
+    family = verdict.get("keep_family")
+    if isinstance(family, int) and family >= 1:
+        # The keep is per subject (#557 follow-up): its level is 1 - m x the
+        # smallest keep-test p, which crosses the keep level exactly when the
+        # subject keeps.
+        ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
+              if isinstance(t, dict) and isinstance(t.get("p"), (int, float))]
+        if ps:
+            return {"helps": max(0.0, 1 - family * min(ps)), "no_help": min(no_help)}
     return {"helps": max(helps), "no_help": min(no_help)}
 
 
