@@ -1292,12 +1292,32 @@ def read_lessons(directory: Path | None) -> list:
     return lessons
 
 
-def skill_weights(tree: Path, skills: list, now: datetime) -> dict:
+def private_skills(evals_dir: Path) -> frozenset:
+    """The skills with a fixture in the private registry (`registry:` is
+    PRIVATE_REGISTRY_URL). The public census never counts them, so their
+    usage weight is unknown, not 0."""
+    import yaml  # noqa: PLC0415
+    out = set()
+    for path in sorted(evals_dir.rglob("fixture.yaml")):
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        if (isinstance(doc, dict) and isinstance(doc.get("skill"), str)
+                and doc.get("registry") == PRIVATE_REGISTRY_URL):
+            out.add(doc["skill"])
+    return frozenset(out)
+
+
+def skill_weights(tree: Path, skills: list, now: datetime,
+                  private: frozenset = frozenset()) -> dict:
     """{skill: weight or None} from harness/skill_usage.py (skills-evals#420)
     over usage/weekly-local.json on the results branch: invocations over the
     last four weeks, 0 for a fresh census that never saw the skill, None
-    when unknown (stale or absent). Until that module is on main every
-    weight is unknown, which `neutral_weights` makes neutral."""
+    when unknown (stale or absent). A skill in `private` is always None: the
+    public census counts it under `other`, so a 0 would be false. Until that
+    module is on main every weight is unknown, which `neutral_weights` makes
+    neutral."""
     try:
         import skill_usage  # noqa: PLC0415 - optional until #420 merges
     except ImportError:
@@ -1308,6 +1328,9 @@ def skill_weights(tree: Path, skills: list, now: datetime) -> dict:
         doc = None
     out = {}
     for skill in skills:
+        if skill in private:
+            out[skill] = None
+            continue
         try:
             value = skill_usage.weight(doc, skill, now) if doc is not None else None
         except (TypeError, ValueError, KeyError):
@@ -1404,7 +1427,7 @@ def gather(args, now: datetime) -> dict:
             "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
-                                           now),
+                                           now, private_skills(evals_dir)),
             "lessons": read_lessons(args.lessons)}
 
 

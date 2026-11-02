@@ -34,6 +34,7 @@ NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)   # ISO week 2026-W36
 NOW_TEXT = "2026-09-04T12:00:00Z"
 ALLOW = frozenset({"workflow-path-audit", "finding-unknowns"})
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
+PRIVATE_REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills-private"
 SECRET_PATH = "/home/example/repos/private-client-work"
 ARN = "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abcd1234"
 
@@ -237,6 +238,9 @@ def make_allowlist_root(root: Path) -> Path:
         (evals / name).mkdir(parents=True)
         (evals / name / "fixture.yaml").write_text(
             f"skill: {name}\nregistry: {REGISTRY_URL}\n{extra}", encoding="utf-8")
+    (evals / "zz-private-skill").mkdir()
+    (evals / "zz-private-skill" / "fixture.yaml").write_text(
+        f"skill: zz-private-skill\nregistry: {PRIVATE_REGISTRY_URL}\n", encoding="utf-8")
     (evals / "guidance").mkdir()
     (evals / "guidance" / "fixture.yaml").write_text("subject: guidance\n",
                                                      encoding="utf-8")
@@ -260,9 +264,34 @@ class AllowlistTests(unittest.TestCase):
         self.assertEqual(census.skill_allowlist(root),
                          {"workflow-path-audit", "zz-skipped-skill"})
 
+    def test_a_private_registry_fixture_is_not_allowlisted(self):
+        allow = census.skill_allowlist(make_allowlist_root(self.tmp / "repo"))
+        self.assertNotIn("zz-private-skill", allow)
+        self.assertIn("workflow-path-audit", allow)
+
+    def test_a_private_skill_call_counts_under_other_not_by_name(self):
+        root = make_allowlist_root(self.tmp / "repo")
+        projects = self.tmp / "projects"
+        write_transcript(projects / "p" / "s.jsonl", [
+            skill_call("zz-private-skill", call_id="toolu_01"),
+            skill_call("workflow-path-audit", call_id="toolu_02")])
+        out, weekly_out = self.tmp / "latest.json", self.tmp / "weekly-local.json"
+        argv = ["model_usage_census.py", "--projects", str(projects), "--out", str(out),
+                "--weekly-out", str(weekly_out), "--now", NOW_TEXT, "--hook-logs", "",
+                "--skill-allowlist-root", str(root)]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+            self.assertEqual(census.main(), 0)
+        text = weekly_out.read_text(encoding="utf-8")
+        self.assertNotIn("zz-private-skill", text)
+        rows = [(r["name"], r["invocations"]) for r in json.loads(text)["rows"]
+                if r["kind"] == "skill"]
+        self.assertEqual(sorted(rows), [("other", 1), ("workflow-path-audit", 1)])
+
     def test_the_committed_evals_tree_loads(self):
         allow = census.skill_allowlist()
         self.assertIn("workflow-path-audit", allow)
+        # The committed private-registry fixtures never become public keys.
+        self.assertNotIn("adam-writing-style", allow)
         self.assertTrue(all(census.SKILL_KEY_RE.fullmatch(name) for name in allow))
 
     def test_an_unreadable_allowlist_fails_closed(self):

@@ -62,7 +62,7 @@ is defined). The same contract holds, and the keys are just as
 untrusted: a `Skill` tool call's `input.skill` and a typed
 `<command-name>` are free strings, so a name becomes a key ONLY when it is
 in `skill_allowlist()` — skills that already appear by name in this public
-repo, as a fixture or a non-coverage row for a non-private registry — and
+repo, as a fixture or a non-coverage row whose registry is not private — and
 matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
@@ -256,7 +256,9 @@ def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
 
     A name qualifies when this public repo already carries it: a skill
     fixture `scripts/eval_coverage.py` counts under `root/evals`, or a row
-    of `root/evals/non-coverage.yml` for a registry that is not private.
+    of `root/evals/non-coverage.yml`, in either case only when its registry
+    is not private (a private skill's name must not become a public key; its
+    calls count under `other`).
     Both are read by eval_coverage's own `count_fixtures`/`load_skips`, so
     "is a fixture" means the same here as in the coverage census. Raises
     `eval_coverage.CensusRefusal` or ValueError when either cannot be read;
@@ -270,7 +272,8 @@ def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
     skips: dict = {}
     eval_coverage.load_skips(Path(root) / "evals" / "non-coverage.yml",
                              registries, private=False, into=skips)
-    names = {skill for _registry, skill in fixtures}
+    names = {skill for registry, skill in fixtures
+             if registry not in eval_coverage.PRIVATE_REGISTRIES}
     names |= {skill for registry, skill in skips
               if registry not in eval_coverage.PRIVATE_REGISTRIES}
     return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))

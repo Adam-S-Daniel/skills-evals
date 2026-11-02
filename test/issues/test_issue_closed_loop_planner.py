@@ -609,6 +609,25 @@ class BandTests(unittest.TestCase):
                                  {"a": 7, "b": 0, "c": None})
             self.assertEqual(seen, [tree / "usage" / "weekly-local.json"])
 
+    def test_a_private_skill_weight_is_unknown_never_zero(self):
+        import skill_usage
+        doc = skill_usage.document([], NOW, NOW - timedelta(days=14), 50)
+        with tempfile.TemporaryDirectory() as tmp:
+            tree, evals = Path(tmp) / "tree", Path(tmp) / "evals"
+            (tree / "usage").mkdir(parents=True)
+            (tree / "usage" / "weekly-local.json").write_text(json.dumps(doc), encoding="utf-8")
+            for name, url in (("zz-private-skill", plan_week.PRIVATE_REGISTRY_URL),
+                              ("zz-public-skill", plan_week.REGISTRY_URL)):
+                (evals / name).mkdir(parents=True)
+                (evals / name / "fixture.yaml").write_text(
+                    f"skill: {name}\nregistry: {url}\n", encoding="utf-8")
+            private = plan_week.private_skills(evals)
+            self.assertEqual(private, {"zz-private-skill"})
+            self.assertEqual(
+                plan_week.skill_weights(tree, ["zz-private-skill", "zz-public-skill"], NOW,
+                                        private),
+                {"zz-private-skill": None, "zz-public-skill": 0})
+
     def test_agent_check_lessons_lead_the_work_list(self):
         lessons = [{"schema_version": 1, "id": "L-2", "subject": "s2", "kind": "agent-check",
                     "evidence_count": 2, "examples": [], "check_sketch": "x"},
