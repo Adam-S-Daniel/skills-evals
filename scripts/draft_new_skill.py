@@ -120,7 +120,14 @@ from ingest_routine_results import Rejected  # noqa: E402
 SUBJECT = r"[a-z0-9][a-z0-9-]{0,63}"
 SUBJECT_RE = re.compile(SUBJECT)
 PROPOSAL_ID = r"[A-Za-z0-9._:-]{1,128}"
-REPO_NAME = r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+"
+#: A repo is `owner/repo` (issue proposals), a bare directory name (the
+#: miner's `repos`: "the repos' directory names", lessons/README.md) or `~`
+#: (a session outside any repo). Matched with fullmatch; a name cannot start
+#: with `.`, so `.` and `..` fail, and one owner segment is the most a slash
+#: can add.
+REPO_NAME = r"(?:[A-Za-z0-9-]+/)?[A-Za-z0-9_][A-Za-z0-9._-]{0,99}|~"
+#: The most repos a proposal lists; the miner's first real one had 16.
+MAX_REPOS = 100
 DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
 KINDS = ("skill-edit", "new-skill", "guidance-edit", "memory-note",
          "fixture-candidate")
@@ -143,7 +150,7 @@ PROPOSAL_SCHEMA = {
     "last_seen": {"type": "date"},
     "examples": {"type": "list", "min": 1, "max": 20,
                  "item": {"type": "text", "max": 2000}},
-    "repos": {"type": "list", "min": 0, "max": 20,
+    "repos": {"type": "list", "min": 0, "max": MAX_REPOS,
               "item": {"type": "str", "pattern": REPO_NAME}},
 }
 #: What the payload carries of a proposal (dates dropped).
