@@ -1956,7 +1956,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                          profiles=None, outputs=(), additional_profiles=(),
                          tmp_root: Path | None = None,
                          mountinfo: str | None = None,
-                         readable_plugins=(), fleet_hooks_dir: Path | None = None) -> dict:
+                         readable_plugins=(), fleet_hooks_dir: Path | None = None,
+                         fleet_hooks_modules: Path | None = None) -> dict:
     """The settings every agent arm runs under, as one JSON object.
 
     `checkouts` are the run's registry and guidance checkouts; `session_dir`
@@ -1969,7 +1970,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     before any carve-out is considered.
     `fleet_hooks_dir` is a hooked arm's frozen hook set (#535): write-denied
     like the configuration directories, and its guard is the arm's one
-    PreToolUse hook.
+    PreToolUse hook. `fleet_hooks_modules`, the plan's markdown-it install
+    the set's copy came from, is write-denied too.
     Raises ArmReadIsolationError when the read rules cannot be built safely.
     """
     home = Path(home if home is not None else Path.home()).resolve()
@@ -2009,9 +2011,10 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     keep = Path(session_dir).resolve() if session_dir else None
     config_dirs = (_agent_config_dirs(workspace, config_dir)
                    if workspace is not None else [])
-    if fleet_hooks_dir is not None:
-        config_dirs += [path for path in dict.fromkeys(
-            (Path(fleet_hooks_dir), Path(fleet_hooks_dir).resolve())) if path not in config_dirs]
+    for frozen_dir in (fleet_hooks_dir, fleet_hooks_modules):
+        if frozen_dir is not None:
+            config_dirs += [path for path in dict.fromkeys(
+                (Path(frozen_dir), Path(frozen_dir).resolve())) if path not in config_dirs]
     protected = [*_SYSTEM_ROOTS,
                  *(Path(e).resolve() for e in path_env.split(os.pathsep)
                    if e and os.path.isabs(e))]
@@ -2078,7 +2081,8 @@ def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
                         path_env: str | None = None,
                         mountinfo: str | None = None,
                         additional_profiles=(), readable_plugins=(),
-                        fleet_hooks_dir: Path | None = None) -> list[str]:
+                        fleet_hooks_dir: Path | None = None,
+                        fleet_hooks_modules: Path | None = None) -> list[str]:
     """The CLI flags that put an agent arm behind `arm_sandbox_settings`
     (`path_env`, the arm's own PATH, and `mountinfo` default as there).
     Raises ArmReadIsolationError (`settings_too_large`) past
@@ -2087,7 +2091,8 @@ def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
         checkouts, session_dir=session_dir, workspace=workspace,
         config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles,
         readable_plugins=readable_plugins, path_env=path_env,
-        mountinfo=mountinfo, fleet_hooks_dir=fleet_hooks_dir),
+        mountinfo=mountinfo, fleet_hooks_dir=fleet_hooks_dir,
+        fleet_hooks_modules=fleet_hooks_modules),
         sort_keys=True, separators=(",", ":"))
     if len(settings.encode()) > MAX_SETTINGS_BYTES:
         raise ArmReadIsolationError(
@@ -2860,7 +2865,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                                         outputs, additional_profiles=scratch_profiles,
                                         readable_plugins=readable_plugins,
                                         path_env=env.get("PATH", ""), mountinfo=mountinfo,
-                                        fleet_hooks_dir=hooks_dir)
+                                        fleet_hooks_dir=hooks_dir,
+                                        fleet_hooks_modules=arm.get("fleet_hooks_modules"))
     except (ArmReadIsolationError, delivery.DeliveryError, OSError, ValueError) as exc:
         if not isinstance(exc, ArmReadIsolationError):
             return {"error": "read_rules_unsafe", "detail": "plugin read boundary could not be verified"}
@@ -5620,7 +5626,8 @@ def _in_place_scratch(plan: dict) -> Path:
 
 def _fleet_hooks_arm(plan: dict, scratch: Path) -> dict:
     """The arm key `run_agent` protects and guards a hooked arm by."""
-    return ({"fleet_hooks_dir": str(scratch / fleet_hooks.DIRNAME)}
+    return ({"fleet_hooks_dir": str(scratch / fleet_hooks.DIRNAME),
+             "fleet_hooks_modules": str(plan["fleet_hooks_modules"])}
             if "fleet_hooks" in plan else {})
 
 

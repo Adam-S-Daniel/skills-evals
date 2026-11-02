@@ -1046,16 +1046,9 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     in_situ, alone = out["in_situ"], out["alone"]
     verdict, reason = in_situ["verdict"], in_situ["reason"]
     if verdict == "retire" and any(c["class"] == "benefit" for c in alone["cells"]):
-        # The in-situ arms of a `fleet_hooks: true` fixture also ran the fleet
-        # hooks, which the alone pair never runs (#535), so what covers the
-        # section may be a hook rather than other guidance.
-        used = set(in_situ["runs_used"])
-        hooked = any(r.get("fleet_hooks_digest") for r in runs
-                     if r.get("pair") == "in_situ" and run_key(r) in used)
         verdict, reason = ("shorten-or-merge", "no marginal benefit inside the whole "
                            "guidance, but a cell shows benefit alone (section vs "
-                           "none): the rest of the guidance "
-                           + ("or the fleet hooks cover it" if hooked else "covers it"))
+                           "none): the rest of the guidance covers it")
     return {"verdict": verdict, "reason": reason, "in_situ_verdict": in_situ["verdict"],
             "cells": in_situ["cells"],
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],

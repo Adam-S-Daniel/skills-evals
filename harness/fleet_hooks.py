@@ -5,12 +5,12 @@ An in-place arm of a `fleet_hooks: true` fixture gets the hooks its context
 deployed, installed the way adam-agentskills ADR 0020's installer installs
 them, and nothing else:
 
-- `freeze` reads every file of _agent-guidance's `templates/agent-checks/`
-  at the guidance revision the context loads, from Git objects only, and
-  proves it: for a skill fixture, the context repository's own
-  `.githooks/agent-checks` at `context.revision` must be the frozen runner,
-  byte for byte (a guidance fixture's source is the template itself). Any
-  gap is `fleet_hooks_unproven`, before any paid call.
+- `freeze` reads the delivered set from Git objects only: for a skill
+  fixture, what the context repository shipped at `context.revision` (the
+  sync's `.githooks/` files and `.claude/hooks/agent-checks-guard.sh`); for
+  a guidance fixture, _agent-guidance's `templates/agent-checks/` at the
+  guidance revision the run loads. A missing file is `fleet_hooks_unproven`,
+  before any paid call.
 - `install_modules` installs markdown-it, the dated-phrasing pass's one
   dependency, from the frozen lockfile with `npm ci --ignore-scripts`,
   outside the sandbox (arms have no network), once per plan.
@@ -55,12 +55,21 @@ import context
 import guidance
 
 TEMPLATE_DIR = "templates/agent-checks"
-#: Where the sync delivers the runner in a consumer repository.
-CONSUMER_RUNNER = ".githooks/agent-checks"
 RUNNER = "agent-checks"
 GUARD = "agent-checks-guard.sh"
 PACKAGE = "dated-phrasing/package.json"
 LOCKFILE = "dated-phrasing/package-lock.json"
+#: The set, by its name in the template directory, and where the sync
+#: delivers each file in a consumer repository (_agent-guidance
+#: scripts/sync.sh; checked against cms-platform and repo-settings).
+CONSUMER_PATHS = {
+    RUNNER: ".githooks/agent-checks",
+    "dated-phrasing.js": ".githooks/dated-phrasing.js",
+    "dated-phrasing-allowlist.txt": ".githooks/dated-phrasing-allowlist.txt",
+    PACKAGE: ".githooks/dated-phrasing/package.json",
+    LOCKFILE: ".githooks/dated-phrasing/package-lock.json",
+    GUARD: ".claude/hooks/agent-checks-guard.sh",
+}
 #: The installer's events, owners and URL prefixes (adam-agentskills
 #: scripts/install-agent-hooks.sh).
 EVENTS = ("pre-commit", "pre-push")
@@ -134,8 +143,15 @@ def agent_env(directory) -> dict[str, str]:
 
 
 def guard_hooks(directory) -> dict:
-    """The `hooks` value of the arm's `--settings`."""
-    command = "bash " + shlex.quote(f"{directory}/{HOOKS_SUBDIR}/{GUARD}")
+    """The `hooks` value of the arm's `--settings`. A Claude Code hook runs
+    outside the sandbox with the CLI's environment and the workspace as its
+    cwd, both the agent's to shape; so the guard runs from the frozen
+    directory with a fixed environment (no `PATH` stand-in, no cwd module,
+    no user site-packages), and only stdin passes through."""
+    root = shlex.quote(str(directory))
+    command = (f"cd {root} && exec /usr/bin/env -i PATH=/usr/bin:/bin HOME={root} "
+               "PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1 LC_ALL=C /usr/bin/bash "
+               + shlex.quote(f"{directory}/{HOOKS_SUBDIR}/{GUARD}"))
     return {"PreToolUse": [{"matcher": GUARD_MATCHER, "hooks": [
         {"type": "command", "command": command, "timeout": GUARD_TIMEOUT_S}]}]}
 
@@ -157,26 +173,20 @@ def freeze(frozen: context.FrozenContext, repositories: Mapping[str, Path], *,
     if repository.split("/", 1)[0] not in OWNERS:
         raise _unproven(f"{repository} is not a fleet repository, so no fleet hook "
                         "would fire in its clone")
-    revision = frozen.manifest["guidance"]["revision"]
+    if guidance_subject:
+        source_name, revision = context.GUIDANCE_REPOSITORY, frozen.manifest["guidance"]["revision"]
+        paths = {name: f"{TEMPLATE_DIR}/{name}" for name in CONSUMER_PATHS}
+    else:
+        source_name, revision = repository, frozen.manifest["revision"]
+        paths = CONSUMER_PATHS
     try:
-        source = context._Git(context.GUIDANCE_REPOSITORY, repositories)
+        source = context._Git(source_name, repositories)
         tree = source.tree(source.revision(revision))
-        prefix = TEMPLATE_DIR + "/"
-        names = sorted(name for name in tree if name.startswith(prefix))
-        files = {name[len(prefix):]: source.read(tree, name) for name in names}
-        modes = {name[len(prefix):]: tree[name][0] for name in names}
-        missing = [name for name in (RUNNER, GUARD, PACKAGE, LOCKFILE) if name not in files]
+        missing = [path for path in paths.values() if path not in tree]
         if missing:
-            raise _unproven(f"{context.GUIDANCE_REPOSITORY} at {revision} has no "
-                            f"{TEMPLATE_DIR}/{missing[0]}")
-        if not guidance_subject:
-            consumer = context._Git(repository, repositories)
-            shipped = consumer.read(consumer.tree(consumer.revision(frozen.manifest["revision"])),
-                                    CONSUMER_RUNNER, optional=True)
-            if shipped != files[RUNNER]:
-                raise _unproven(f"{repository}'s {CONSUMER_RUNNER} at the context revision is "
-                                f"{'absent' if shipped is None else 'not'} the runner "
-                                f"{context.GUIDANCE_REPOSITORY} shipped at {revision}")
+            raise _unproven(f"{source_name} at {revision} has no {missing[0]}")
+        files = {name: source.read(tree, path) for name, path in paths.items()}
+        modes = {name: tree[path][0] for name, path in paths.items()}
     except context.ContextError as exc:
         if exc.code == "fleet_hooks_unproven":
             raise
@@ -205,14 +215,20 @@ def install_modules(hooks: HookSet) -> Path:
     """A directory holding `node_modules` with markdown-it, removed at exit."""
     # A prefix run_eval.HARNESS_TEMP_PREFIXES lists, so no arm reads it.
     target = Path(tempfile.mkdtemp(prefix="fleet-hooks-modules-"))
-    atexit.register(shutil.rmtree, target, True)
+    atexit.register(_remove, target)
     for name in (PACKAGE, LOCKFILE):
         (target / Path(name).name).write_bytes(hooks.files[name])
     _npm_ci(target)
     if not (target / "node_modules" / "markdown-it" / "package.json").is_file():
         raise context.ContextError("fleet_hooks_install_failed",
                                    "npm ci left no node_modules/markdown-it")
+    _set_writable(target, False)
     return target
+
+
+def _remove(directory: Path) -> None:
+    unlock(directory)
+    shutil.rmtree(directory, ignore_errors=True)
 
 
 def _set_writable(directory: Path, writable: bool) -> None:

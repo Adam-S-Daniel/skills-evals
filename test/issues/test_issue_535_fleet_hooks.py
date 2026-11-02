@@ -55,16 +55,32 @@ if [ "$1" = pre-commit ] && git diff --cached --name-only | grep -qx .env; then
 fi
 exit 0
 """
+# A stand-in guard shaped like the real one: `python3 -c` on the event,
+# exit 2 on `--no-verify`.
+GUARD = b"""#!/usr/bin/env bash
+command -v python3 >/dev/null 2>&1 || exit 0
+python3 -c '
+import json, sys
+event = json.load(sys.stdin)
+if "--no-verify" in str((event.get("tool_input") or {}).get("command") or ""):
+    sys.stderr.write("agent-checks-guard: refused\\n")
+    sys.exit(2)
+'
+rc=$?
+[ "$rc" -eq 2 ] && exit 2
+exit 0
+"""
 TEMPLATES = {
     "agent-checks": RUNNER,
-    "agent-checks-guard.sh": b"#!/usr/bin/env bash\nexit 0\n",
-    "agent-checks.yml": b"name: agent-checks\n",
+    "agent-checks-guard.sh": GUARD,
     "dated-phrasing.js": b"// stand-in\n",
     "dated-phrasing-allowlist.txt": b"# fleet allowlist\n",
     "dated-phrasing/package.json": b'{"name": "x", "dependencies": {"markdown-it": "15.0.3"}}\n',
     "dated-phrasing/package-lock.json": b'{"lockfileVersion": 3}\n',
 }
 EXECUTABLE = {"agent-checks", "agent-checks-guard.sh"}
+# What the sync delivers into a consumer, by template name.
+SHIPPED = {fleet_hooks.CONSUMER_PATHS[name]: raw for name, raw in TEMPLATES.items()}
 REAL_NPM_CI = fleet_hooks._npm_ci
 
 
@@ -77,17 +93,18 @@ def fake_npm_ci(directory):
 
 class HookBase(Base):
     """`Base` with a fleet-owned consumer whose context revision ships the
-    runner the pinned guidance revision's template holds."""
+    set the pinned guidance revision's template holds."""
 
     def setUp(self):
         super().setUp()
         templates = {f"templates/agent-checks/{name}": raw for name, raw in TEMPLATES.items()}
+        templates["templates/agent-checks/agent-checks.yml"] = b"name: agent-checks\n"
         self.guidance_sha = self.commit(self.guidance, templates)
         for name in EXECUTABLE:
             os.chmod(self.guidance / "templates/agent-checks" / name, 0o755)
         self.guidance_sha = self.commit(self.guidance, {})
         self.git(self.guidance, "update-ref", "refs/remotes/origin/main", self.guidance_sha)
-        self.revision = self.commit(self.consumer, {".githooks/agent-checks": RUNNER})
+        self.revision = self.ship(SHIPPED)
         self.repositories = {FLEET_CONSUMER: self.consumer, PRIMARY: self.registry,
                              GUIDANCE_REPO: self.guidance}
         self.metadata = {**self.metadata, "repository": FLEET_CONSUMER,
@@ -104,9 +121,24 @@ class HookBase(Base):
         fixture["section"] = section
         return run_eval._in_place_plan(fixture, self.args(**extra), {}, "guidance")
 
+    def ship(self, files):
+        """A consumer commit with `files`, the set's two scripts executable."""
+        revision = self.commit(self.consumer, files)
+        for name in EXECUTABLE:
+            path = self.consumer / fleet_hooks.CONSUMER_PATHS[name]
+            if path.exists():
+                path.chmod(0o755)
+        return self.commit(self.consumer, {})
+
     def prepare(self, role, plan, seed=None, fixture=None):
-        scratch, workspace, env, delivered = super().prepare(role, plan, seed, fixture)
+        # Base.prepare's own, with the unlock registered before anything can
+        # raise, so a read-only set never outlives a failed prepare.
+        scratch = Path(tempfile.mkdtemp(prefix=f"{run_eval.ARM_WORKSPACE_PREFIX}test-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
         self.addCleanup(fleet_hooks.unlock, scratch / fleet_hooks.DIRNAME)
+        self.addCleanup(run_eval.workspace_git.release, scratch / "ws")
+        workspace, env, delivered = run_eval._prepare_in_place(
+            role, fixture or {}, seed or self.seed(), plan, scratch)
         return scratch, workspace, env, delivered
 
     def freeze(self, guidance_subject=False):
@@ -115,27 +147,66 @@ class HookBase(Base):
 
 
 class FreezeTests(HookBase):
-    def test_the_set_is_every_template_file_at_the_loaded_guidance_revision(self):
+    def test_a_skill_fixtures_set_is_what_the_context_shipped(self):
         hooks = self.freeze()
         self.assertEqual(dict(hooks.files), TEMPLATES)
         self.assertEqual({name for name, mode in hooks.modes.items() if mode == "100755"},
                          EXECUTABLE)
+        self.assertEqual(hooks.revision, self.revision)
+
+    def test_a_guidance_fixtures_set_is_the_template_at_the_loaded_revision(self):
+        hooks = self.freeze(guidance_subject=True)
+        self.assertEqual(dict(hooks.files), TEMPLATES)
         self.assertEqual(hooks.revision, self.guidance_sha)
+        self.assertEqual(hooks.digest, self.freeze().digest)
+
+    def test_only_dated_phrasing_or_only_the_guard_differing_is_the_contexts(self):
+        # The runner is the same blob in both; the rest of the set is not.
+        template = self.freeze(guidance_subject=True)
+        for name, raw in (("dated-phrasing.js", b"// older pass\n"),
+                          ("agent-checks-guard.sh", GUARD + b"# older guard\n")):
+            with self.subTest(name=name):
+                self.metadata["revision"] = self.ship({fleet_hooks.CONSUMER_PATHS[name]: raw})
+                hooks = self.freeze()
+                self.assertEqual(hooks.files[name], raw)
+                self.assertEqual(hooks.files["agent-checks"], template.files["agent-checks"])
+                self.assertNotEqual(hooks.digest, template.digest)
+                self.metadata["revision"] = self.ship(SHIPPED)
+
+    def test_a_context_lagging_a_runner_only_template_commit_is_accepted(self):
+        self.guidance_sha = self.commit(self.guidance, {
+            "templates/agent-checks/agent-checks": RUNNER + b"# newer runner\n"})
+        self.git(self.guidance, "update-ref", "refs/remotes/origin/main", self.guidance_sha)
+        self.metadata["revision"] = self.ship({"touch": b"x\n"})
+        self.metadata["guidance_revision"] = self.guidance_sha
+        self.assertEqual(self.freeze().files["agent-checks"], RUNNER)
+
+    def test_a_context_without_the_guard_is_unproven(self):
+        self.git(self.consumer, "rm", "-q", ".claude/hooks/agent-checks-guard.sh")
+        self.metadata["revision"] = self.commit(self.consumer, {})
+        self.refused("fleet_hooks_unproven", self.freeze)
 
     def test_the_digest_is_stable_and_covers_bytes_modes_and_paths(self):
         hooks = self.freeze()
         self.assertRegex(hooks.digest, r"\A[0-9a-f]{64}\Z")
         self.assertEqual(hooks.digest, self.freeze().digest)
+        name = "dated-phrasing.js"
         variants = [
-            ({**hooks.files, "dated-phrasing.js": b"// changed\n"}, hooks.modes),
-            (hooks.files, {**hooks.modes, "agent-checks.yml": "100755"}),
-            ({**{k: v for k, v in hooks.files.items() if k != "agent-checks.yml"},
-              "agent-checks.yaml": hooks.files["agent-checks.yml"]},
-             {**{k: v for k, v in hooks.modes.items() if k != "agent-checks.yml"},
-              "agent-checks.yaml": "100644"}),
+            ({**hooks.files, name: b"// changed\n"}, hooks.modes),
+            (hooks.files, {**hooks.modes, name: "100755"}),
+            ({**{k: v for k, v in hooks.files.items() if k != name}, "dated.js": hooks.files[name]},
+             {**{k: v for k, v in hooks.modes.items() if k != name}, "dated.js": "100644"}),
         ]
         for files, modes in variants:
             self.assertNotEqual(fleet_hooks._digest(files, modes), hooks.digest)
+        # The injected configuration is part of it too.
+        for function, changed in (
+                ("include_text", lambda real: lambda d: real(d) + "# more\n"),
+                ("agent_env", lambda real: lambda d: {**real(d), "AGENT_CHECKS_LOG": "on"}),
+                ("guard_hooks", lambda real: lambda d: {**real(d), "Stop": []})):
+            with self.subTest(function=function), mock.patch.object(
+                    fleet_hooks, function, changed(getattr(fleet_hooks, function))):
+                self.assertNotEqual(fleet_hooks._digest(hooks.files, hooks.modes), hooks.digest)
 
     def test_a_working_tree_edit_is_not_an_input(self):
         (self.guidance / "templates/agent-checks/agent-checks").write_bytes(b"#!/bin/sh\nexit 1\n")
@@ -145,11 +216,6 @@ class FreezeTests(HookBase):
     def test_a_context_without_the_runner_is_unproven(self):
         self.git(self.consumer, "rm", "-q", ".githooks/agent-checks")
         self.metadata["revision"] = self.commit(self.consumer, {})
-        self.refused("fleet_hooks_unproven", self.freeze)
-
-    def test_a_context_whose_runner_differs_is_unproven(self):
-        self.metadata["revision"] = self.commit(self.consumer, {
-            ".githooks/agent-checks": RUNNER + b"# local edit\n"})
         self.refused("fleet_hooks_unproven", self.freeze)
 
     def test_a_guidance_fixture_takes_the_template_itself(self):
@@ -441,6 +507,10 @@ class InjectionTests(HookBase):
 
 
 class SandboxSettingsTests(HookBase):
+    def plan(self, *args, **kwargs):
+        self.last_plan = super().plan(*args, **kwargs)
+        return self.last_plan
+
     def test_the_dir_is_write_denied_and_the_guard_is_the_arms_pre_tool_use_hook(self):
         scratch, workspace, _, _ = self.prepare("with", self.plan())
         directory = scratch / fleet_hooks.DIRNAME
@@ -451,10 +521,46 @@ class SandboxSettingsTests(HookBase):
         self.assertEqual(settings["hooks"], {"PreToolUse": [{
             "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit", "hooks": [{
                 "type": "command", "timeout": 10,
-                "command": f"bash {directory}/.githooks/agent-checks-guard.sh"}]}]})
+                "command": f"cd {directory} && exec /usr/bin/env -i PATH=/usr/bin:/bin "
+                           f"HOME={directory} PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1 LC_ALL=C "
+                           f"/usr/bin/bash {directory}/.githooks/agent-checks-guard.sh"}]}]})
         self.assertNotIn("hooks", run_eval.arm_sandbox_settings(workspace=workspace))
         self.assertTrue(os.access(directory / ".githooks/agent-checks", os.R_OK))
         self.assertFalse(os.access(directory / ".githooks/agent-checks", os.W_OK))
+        modules = Path(plan_modules := self.last_plan["fleet_hooks_modules"])
+        hooked = run_eval.arm_sandbox_settings(workspace=workspace, fleet_hooks_dir=directory,
+                                               fleet_hooks_modules=modules)
+        self.assertIn(str(modules), hooked["sandbox"]["filesystem"]["denyWrite"])
+        self.assertIn(f"Edit(/{plan_modules}/**)", hooked["permissions"]["deny"])
+        self.assertFalse(os.access(modules / "node_modules", os.W_OK))
+
+    def test_the_guard_runs_nothing_the_agent_planted(self):
+        # A Claude Code hook runs outside the sandbox, in the workspace, with
+        # the CLI's environment: a module in the cwd, an interpreter first on
+        # PATH and a .pth in HOME's user site-packages are all the agent's.
+        scratch, workspace, env, _ = self.prepare("with", self.plan())
+        command = fleet_hooks.guard_hooks(scratch / fleet_hooks.DIRNAME)["PreToolUse"][0][
+            "hooks"][0]["command"]
+        marks = self.root / "marks"
+        marks.mkdir()
+        (workspace / "json.py").write_text(f"open({str(marks / 'json')!r}, 'w')\n")
+        stand_ins = workspace / "bin"
+        stand_ins.mkdir()
+        for name, real in (("python3", "/usr/bin/python3"), ("bash", "/usr/bin/bash")):
+            (stand_ins / name).write_text(f"#!/bin/sh\ntouch {marks / name}\nexec {real} \"$@\"\n")
+            (stand_ins / name).chmod(0o755)
+        site = subprocess.run(["/usr/bin/python3", "-c", "import site; print(site.getusersitepackages())"],
+                              env={"HOME": env["HOME"]}, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        Path(site).mkdir(parents=True)
+        (Path(site) / "planted.pth").write_text(f"import os; open({str(marks / 'pth')!r}, 'w')\n")
+        attack = dict(env, PATH=f"{stand_ins}:{env['PATH']}", PYTHONPATH=str(workspace))
+        for text, expected in (("git status", 0), ("git commit --no-verify -m x", 2)):
+            event = json.dumps({"tool_name": "Bash", "tool_input": {"command": text}})
+            result = subprocess.run(["/bin/sh", "-c", command], cwd=workspace, env=attack,
+                                    input=event, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, expected, result.stderr)
+        self.assertEqual(sorted(p.name for p in marks.iterdir()), [])
 
 
 # A `claude` that records what a hooked arm receives and acts in its cwd:
@@ -480,10 +586,20 @@ if mode == "commit":
     outside = subprocess.run(git + ["commit", "-q", "-m", "x"], capture_output=True, text=True)
     rec["inside"] = [inside.returncode, inside.stderr]
     rec["outside"] = [outside.returncode, outside.stderr]
-elif mode == "tamper":
+elif mode == "tamper" or (mode == "tamper_later" and "--resume" in argv):
     directory = Path(os.environ["AGENT_CHECKS_DATED_PHRASING_MODULES"]).parents[2]
     os.chmod(directory, 0o755)
     (directory / "planted").write_text("x")
+cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+if cfg and "--no-session-persistence" not in argv and (Path(cfg) / "CLAUDE.md").is_file():
+    # A guidance arm's receipt (#139), as test_issue_adr0012_delivery's recorder writes it.
+    import re
+    project = Path(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(os.getcwd())))
+    project.mkdir(parents=True, exist_ok=True)
+    with open(project / "s1.jsonl", "a") as fh:
+        fh.write(json.dumps({{"type": "attachment", "attachment": {{"type": "instructions",
+            "files": [{{"path": str(Path(cfg) / "CLAUDE.md"), "type": "User",
+                        "content": (Path(cfg) / "CLAUDE.md").read_text()}}]}}}}) + "\\n")
 with open(os.environ["REC_LOG"], "a") as fh:
     fh.write(json.dumps(rec) + "\\n")
 print(json.dumps({{"type": "result", "is_error": False, "result": "done", "total_cost_usd": 0,
@@ -516,33 +632,49 @@ class MainRun(HookBase):
             "cms-platform", "adamdaniel.ai", "adam-agentskills-private"))
         for name in ("cms-platform", "adamdaniel.ai", "adam-agentskills-private"):
             (registries / name).mkdir(parents=True)
+        # The run's own TMPDIR, so what it leaves behind is its own.
+        self.tmp = self.root / "tmp"
+        self.tmp.mkdir()
 
-    def run_main(self, mode, arm="both", hooks=True):
-        directory = self.root / "evals" / "sample"
+    def run_main(self, mode, arm="both", hooks=True, subject="skill", followups=None,
+                 pairing="in_place"):
+        name = "sample" if subject == "skill" else "guidance-fixture"
+        directory = self.root / "evals" / name
         (directory / "seed").mkdir(parents=True, exist_ok=True)
         (directory / "seed" / "README.md").write_text("x\n", encoding="utf-8")
-        (directory / "fixture.yaml").write_text(yaml.safe_dump({
-            "skill": "sample", "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
-            "prompt": "do it", "model": "claude-test-model", "fleet_hooks": hooks,
-            "env": {"REC_LOG": str(self.log), "HOOK_MODE": mode},
-            "objective_checks": [{"id": "seed-kept", "description": "d",
-                                  "type": "files_unchanged", "paths": ["README.md"]}],
-            "context": self.metadata}), encoding="utf-8")
+        body = {"prompt": "do it", "model": "claude-test-model", "fleet_hooks": hooks,
+                "env": {"REC_LOG": str(self.log), "HOOK_MODE": mode},
+                "objective_checks": [{"id": "seed-kept", "description": "d",
+                                      "type": "files_unchanged", "paths": ["README.md"]}],
+                "context": self.metadata, **({"followups": followups} if followups else {})}
+        flags = ["--registry", f"adam-agentskills={self.registry}"]
+        if subject == "skill":
+            body.update(skill="sample",
+                        registry="https://github.com/Adam-S-Daniel/adam-agentskills")
+        else:
+            body.update(subject="guidance", section="bravo", objective_checks=[])
+            flags = ["--guidance", str(self.root / "missing-live-guidance")]
+        (directory / "fixture.yaml").write_text(yaml.safe_dump(body), encoding="utf-8")
         env = dict(self.env, SKILLS_EVALS_REGISTRIES=self.registry_env,
-                   CLAUDE_CODE_REMOTE_SESSION_ID="session_test")
+                   CLAUDE_CODE_REMOTE_SESSION_ID="session_test", TMPDIR=str(self.tmp))
         repos = [f"--context-repo={k}={v}" for k, v in self.repositories.items()]
-        return subprocess.run(
-            [sys.executable, "harness/run_eval.py", str(directory), "--registry",
-             f"adam-agentskills={self.registry}", "--results-dir", str(self.root / "results"),
-             "--timeout", "60", "--no-judge", "--arm", arm, "--pairing", "in_place",
+        proc = subprocess.run(
+            [sys.executable, "harness/run_eval.py", str(directory), *flags,
+             "--results-dir", str(self.root / "results"),
+             "--timeout", "60", "--no-judge", "--arm", arm, "--pairing", pairing,
              "--timestamp", self.TS, *repos],
             capture_output=True, text=True, env=env, cwd=str(ROOT), timeout=600)
+        # Every arm's scratch, its read-only set included, and the plan's
+        # read-only markdown-it install are gone once the run ends.
+        self.assertEqual(sorted(p.relative_to(self.tmp).as_posix()
+                                for p in self.tmp.rglob("*fleet-hooks*")), [])
+        return proc
 
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
-    def summary(self, arm):
-        return json.loads((self.root / "results" / "sample" / self.TS / arm / "summary.json")
+    def summary(self, arm, key="sample"):
+        return json.loads((self.root / "results" / key / self.TS / arm / "summary.json")
                           .read_bytes())
 
 
@@ -578,6 +710,52 @@ class EndToEndTests(MainRun):
         proc = self.run_main("tamper", arm="with_skill")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         error = self.summary("with_skill")["error"]
+        self.assertEqual(error["type"], "agent_wrote_agent_config")
+        self.assertIn(fleet_hooks.DIRNAME, error["detail"])
+
+    def test_a_write_in_a_later_turn_fails_the_arm_after_that_turn(self):
+        proc = self.run_main("tamper_later", arm="with_skill", followups=["again", "more"])
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        error = self.summary("with_skill")["error"]
+        self.assertEqual(error["type"], "agent_wrote_agent_config")
+        self.assertIn("follow-up 1 of 2", error["detail"])
+        self.assertEqual(len(self.calls()), 2, "no turn runs after the write")
+
+    def test_isolation_and_bare_arms_of_a_hooked_fixture_get_no_hooks(self):
+        proc = self.run_main("commit", pairing="isolation")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertEqual(call["env"], {})
+            self.assertIsNone(call["hooks"])
+            self.assertEqual(call["inside"][0], 0, call)
+
+
+@unittest.skipUnless(sandbox_available(), "bubblewrap with a network namespace is not available")
+class GuidanceEndToEndTests(MainRun):
+    """The in-place guidance pair (`full`/`full-minus-section`) is hooked."""
+
+    def test_the_agent_commits_through_the_frozen_runner_inside_its_sandbox(self):
+        proc = self.run_main("commit", subject="guidance")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        for call in calls:
+            self.assertIn("agent-checks: .env", call["inside"][1])
+            self.assertNotEqual(call["inside"][0], 0, call)
+            self.assertEqual(call["outside"][0], 0, call)
+            directory = call["env"]["GIT_CONFIG_VALUE_0"].rsplit("/", 1)[0]
+            self.assertIn(directory, call["deny_write"])
+            self.assertEqual(call["hooks"], fleet_hooks.guard_hooks(directory))
+        for arm in ("with_guidance", "without_guidance"):
+            self.assertEqual(self.summary(arm, "guidance/bravo")["context"]["fleet_hooks_digest"],
+                             self.freeze(guidance_subject=True).digest)
+
+    def test_a_write_into_the_frozen_set_fails_the_arm(self):
+        proc = self.run_main("tamper", subject="guidance", arm="with_guidance")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        error = self.summary("with_guidance", "guidance/bravo")["error"]
         self.assertEqual(error["type"], "agent_wrote_agent_config")
         self.assertIn(fleet_hooks.DIRNAME, error["detail"])
 
@@ -651,27 +829,46 @@ class PoolingTests(MainRun):
         self.assertIn(pair, (by[(True, "with")]["pair_key"], by[(False, "with")]["pair_key"]))
 
 
-class GuidanceReasonTests(unittest.TestCase):
-    """Item 10: the alone pair never runs the hooks, so a hooked in-situ
-    retire that helps alone names them as a possible cover."""
+class GuidanceRowPoolingTests(unittest.TestCase):
+    """compute_gates' guidance rows take the hook digest too (defensive:
+    only isolation guidance runs pool today, and they are never hooked).
+    Synthetic summaries from test_issue_124's ComputeGuidanceTests."""
 
-    def verdict(self, hooked):
-        from test_issue_124_guidance_gates import EXPECT, pair_runs
-        from test_issue_70_retirement import FLAT, FLAT_JUDGE, GAIN, TEST_POLICY
-        in_situ = pair_runs("in_situ", FLAT, FLAT)
-        for run in in_situ:
-            run["fleet_hooks_digest"] = "a" * 64 if hooked else None
-        runs = in_situ + pair_runs("alone", GAIN * 2, FLAT, ([8.0] * 20, FLAT_JUDGE))
-        return gates.guidance_verdict({"runs": runs}, ["model-a"], "sec", TEST_POLICY, EXPECT)
+    def setUp(self):
+        from test_issue_124_guidance_gates import ComputeGuidanceTests
+        self.helper = ComputeGuidanceTests("test_flat_runs_of_both_pairs_retire_the_section")
+        self.helper.setUp()
+        self.addCleanup(self.helper.doCleanups)
 
-    def test_the_reason_names_the_fleet_hooks_only_for_hooked_runs(self):
-        hooked, plain = self.verdict(True), self.verdict(False)
-        self.assertEqual((hooked["verdict"], plain["verdict"]),
-                         ("shorten-or-merge", "shorten-or-merge"))
-        self.assertTrue(hooked["reason"].endswith(
-            "the rest of the guidance or the fleet hooks cover it"), hooked["reason"])
-        self.assertTrue(plain["reason"].endswith("the rest of the guidance covers it"),
-                        plain["reason"])
+    def index(self):
+        return compute_gates.build_index(self.helper.tree, self.helper.evals, "20261231T000000Z")
+
+    def test_hooked_and_unhooked_guidance_rows_never_pool(self):
+        digest = "c" * 64
+        for r, hooks in ((0, True), (1, False)):
+            over = {"context": {"fleet_hooks_digest": digest}} if hooks else {}
+            for arm in ("with_guidance_full", "with_guidance_full_minus_section"):
+                self.helper.arm(r, arm, {"with_guidance_full": "full"}.get(arm, "full-minus-section"),
+                                80, 7.0, **over)
+        index = self.index()
+        self.assertEqual(index["skipped"], {})
+        runs = {(run["fleet_hooks_digest"] is not None, run["role"]): run
+                for run in index["guidance_runs"]}
+        rest = self.helper.digests["rest"]
+        for role in ("with", "without"):
+            plain, hooked = runs[(False, role)], runs[(True, role)]
+            self.assertEqual((plain["pair_key"], plain["arm_context_digest"]), (rest, rest))
+            self.assertEqual((hooked["pair_key"], hooked["arm_context_digest"]),
+                             (f"{rest}:{digest}", f"{rest}:{digest}"))
+        self.assertEqual(gates._joint_context([runs[(True, "with")]], [runs[(False, "without")]],
+                                              ["model-a"]), (None, None, None))
+        self.assertEqual(gates._joint_context([runs[(True, "with")]], [runs[(True, "without")]],
+                                              ["model-a"])[2], f"{rest}:{digest}")
+
+    def test_a_present_but_null_digest_is_malformed(self):
+        self.helper.arm(0, "with_guidance_full", "full", 80, 7.0,
+                        context={"fleet_hooks_digest": None})
+        self.assertEqual(self.index()["skipped"], {"no guidance pooling key": 1})
 
 
 if __name__ == "__main__":

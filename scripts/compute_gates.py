@@ -319,8 +319,11 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
                 if _string(others) and _string(guidance_base) else None)
     # #535: a hooked run pools only with runs of the same hook set, and never
     # with an unhooked one; an unhooked run's keys are exactly as before.
-    hooks = frozen.get("fleet_hooks_digest") if isinstance(frozen, dict) else None
-    if hooks is not None:
+    hooked = isinstance(frozen, dict) and "fleet_hooks_digest" in frozen
+    hooks = frozen["fleet_hooks_digest"] if hooked else None
+    if hooked:
+        # Present means hooked: null or any other non-digest is malformed, as
+        # ingest has it.
         if not (_string(hooks) and ingest.DIGEST_RE.fullmatch(hooks)):
             return None, "malformed arm summary"
         context_digest = f"{context_digest}:{hooks}" if context_digest else None
@@ -405,9 +408,12 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     context = (("none" if role == "without" else payload) if alone else digests["rest"])
     pair_key = "alone" if alone else digests["rest"]
     # #535, as for a skill run: a hooked run's keys carry its hook set.
+    # Defensive: only isolation runs reach here today, and they are never
+    # hooked; in-place guidance runs are not pooled yet.
     frozen = summary.get("context")
-    hooks = frozen.get("fleet_hooks_digest") if isinstance(frozen, dict) else None
-    if hooks is not None:
+    hooked = isinstance(frozen, dict) and "fleet_hooks_digest" in frozen
+    hooks = frozen["fleet_hooks_digest"] if hooked else None
+    if hooked:
         if not (_string(hooks) and ingest.DIGEST_RE.fullmatch(hooks)):
             return None, "no guidance pooling key"
         context, pair_key = f"{context}:{hooks}", f"{pair_key}:{hooks}"
