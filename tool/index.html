@@ -360,6 +360,9 @@ const STRINGS = {
   noneListed: 'None.',
 
   alertsHeading: 'Alerts',
+  removedHeading: 'Removed sections',
+  removedNote: 'Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
+  removedLink: 'removal and revert',
   alertsNone: 'No open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', broken: 'Runs cannot count', 'context-drift': 'Context out of date' },
@@ -1176,6 +1179,17 @@ function engineersView(doc, mode, url) {
       h('thead', null, h('tr', null, h('th', null, STRINGS.colName), h('th', null, STRINGS.colVerdict))), h('tbody', null, verdicts))) : null));
 }
 
+/* Sections the evals removed (#557), with the date and a link to the
+   removal pull request, whose Revert button restores the section. */
+function removedView(doc) {
+  const removed = (doc.guidance && Array.isArray(doc.guidance.removed) ? doc.guidance.removed : [])
+    .filter((r) => r && typeof r.id === 'string' && typeof r.date === 'string');
+  if (!removed.length) return null;
+  return h('section', null, h('h2', null, STRINGS.removedHeading), h('p', { class: 'note' }, STRINGS.removedNote),
+    h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.id)), ' ', clean(r.date), ' ',
+      link(r.reverse_url, STRINGS.removedLink)))));
+}
+
 function toolbar(mode, sortBy, handlers) {
   const hd = handlers || {};
   const seg = (label, opts) => h('div', { class: 'toolbar' }, h('span', { class: 'note' }, label),
@@ -1218,7 +1232,8 @@ function buildPage(doc, mode, opts) {
             h('button', { type: 'button', 'aria-pressed': o.sortBy !== 'size' && o.sortBy !== 'value' ? 'true' : 'false', onclick: hd.sortNext || null }, STRINGS.sortNext),
             h('button', { type: 'button', 'aria-pressed': o.sortBy === 'value' ? 'true' : 'false', onclick: hd.sortValue || null }, STRINGS.sortValue),
             h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
-        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards))
+        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      removedView(doc)
     ];
   } else {
     const items = skillItems(doc);

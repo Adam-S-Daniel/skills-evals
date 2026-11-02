@@ -1261,6 +1261,31 @@ class GuidanceRemovalTests(unittest.TestCase):
         self.assertEqual((root / "AGENTS.md").read_text(),
                          "<!-- BEGIN -->\nmanaged\n## Repo-specific additions\n\nmine\n")
 
+    def test_auto_mode_notifies_adam_with_the_removal_and_its_reversal(self):
+        # #557 (Adam, 2026-11-02): every removal notifies him and says how to
+        # reverse it, through this repository's own token.
+        root = guidance_repo(self)
+        rc, gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("removal notice", out)
+        notices = [c for c in gh.calls if c[0][:2] == ["issue", "create"]]
+        self.assertEqual(len(notices), 1)
+        args, body = notices[0]
+        self.assertEqual(args[:4], ["issue", "create", "-R", rs.EVALS_REPO])
+        self.assertIn(rs.AGENT_LABEL, args)
+        pr_url = f"https://github.com/{rs.GUIDANCE_REPO}/pull/9"
+        self.assertTrue(body.startswith(rs.GUIDANCE_NOTICE_MARKER.format(section="bravo")))
+        self.assertIn(f"@{rs.GUIDANCE_NOTICE_OWNER}", body)
+        self.assertIn(pr_url, body)
+        self.assertNotIn("{removal_pr}", body)
+        self.assertIn("**Revert**", body)
+        self.assertTrue(body.rstrip().endswith(rs.AGENT_MARKER))
+        # The dry run names the notice too.
+        dry = rs.guidance_commands(rs.guidance_plan(guidance_gates(mode="auto"),
+                                                    guidance_repo(self), FakeGh(),
+                                                    allowed=("auto",)))
+        self.assertEqual(dry[-1][:3], ["gh", "issue", "create"])
+
     def test_proposal_mode_files_an_issue_here_and_touches_no_checkout(self):
         for verdict in ("retire", "shorten-or-merge"):
             root = guidance_repo(self)

@@ -153,7 +153,12 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     specific additions` heading LINE (never the first occurrence of the
     substring, which the managed header quotes); pushed, opened, labeled
     `agent-authored` and armed to auto-merge (merge commit, matched to the
-    removal head, read back), one at a time (`retire-guidance/` heads).
+    removal head, read back), one at a time (`retire-guidance/` heads),
+    and then a removal notice filed here (#557: an `agent-authored` issue,
+    `GUIDANCE_NOTICE_MARKER`, that mentions Adam, links the removal pull
+    request and says how to reverse it: close it, or press Revert once it
+    has merged). The explorer lists every removed section from the impact
+    file's `remove` entries (scripts/explorer_data.py `removed_sections`).
     These writes to _agent-guidance go through `registry_gh` and the push
     with `REGISTRY_TOKEN`, as the skill path's do; the issues stay on `gh`.
     With `--fallback-to-proposal`, `auto` mode without `auto` allowed (no
@@ -1020,6 +1025,13 @@ GUIDANCE_REPO = "Adam-S-Daniel/_agent-guidance"
 GUIDANCE_BRANCH_PREFIX = "retire-guidance/"
 GUIDANCE_ISSUE_MARKER = "<!-- skills-evals:retire-guidance:{section} -->"
 SHORTEN_ISSUE_MARKER = "<!-- skills-evals:shorten-guidance:{section} -->"
+#: The issue that tells Adam a section is being removed and how to reverse
+#: it (#557; Adam, 2026-11-02: "notify and track removals so I can always
+#: decide to reverse something"). `{removal_pr}` is filled once the pull
+#: request exists.
+GUIDANCE_NOTICE_MARKER = "<!-- skills-evals:removed-guidance:{section} -->"
+#: Who the removal notice mentions, so GitHub notifies him.
+GUIDANCE_NOTICE_OWNER = "Adam-S-Daniel"
 GUIDANCE_MANIFEST = "agents-md/eval-coverage.yml"
 GUIDANCE_IMPACT = "docs/guidance-impact.md"
 GUIDANCE_AGENTS = "AGENTS.md"
@@ -1301,6 +1313,7 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     row = guidance_row(checkout, section)
     verdict = guidance_block(gates)[section]
     return {"action": "guidance-removal", "mode": mode, "section": section,
+            "notice": guidance_notice(gates, section, row, run_url),
             "file": row["file"], "heading": row["heading"],
             "branch": f"{GUIDANCE_BRANCH_PREFIX}{section}",
             "impact_entry": guidance_impact_entry(gates, section, run_url),
@@ -1317,6 +1330,33 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
                      + (f"\n\nWorkflow run: {run_url}" if run_url else "")
                      + "\n\nOpened by skills-evals' scripts/retire_skill.py --target "
                        "guidance on its scheduled workflow.\n\n" + AGENT_MARKER + "\n")}
+
+
+def guidance_notice(gates: dict, section: str, row: dict, run_url: str | None) -> dict:
+    """The removal notice (#557): an issue in skills-evals that mentions the
+    owner, links the removal pull request (`{removal_pr}`) and says how to
+    reverse it in one click."""
+    verdict = guidance_block(gates)[section]
+    marker = GUIDANCE_NOTICE_MARKER.format(section=section)
+    return {"marker": marker,
+            "title": f"Guidance section {section} is being removed automatically (#557)",
+            "body": (f"{marker}\n@{GUIDANCE_NOTICE_OWNER}: the guidance section `{section}` "
+                     f"(`## {row['heading']}` in `{row['file']}`) is being removed: its "
+                     f"verdict is **retire** as of {gates['as_of']} ({verdict.get('reason')}). "
+                     "The rule is 90% confidence that it does not improve results by 0.15 "
+                     "or more, pooled over every version of the rest of the guidance "
+                     "(`evals/gate-policy.yml` `guidance:`; Adam, 2026-11-02).\n\n"
+                     "Removal pull request: {removal_pr} (auto-merges once its checks "
+                     "pass).\n\n**To reverse it:** before it merges, close that pull "
+                     "request. After it merges, open it and press **Revert**: GitHub opens "
+                     "a pull request that restores the section, its coverage row and the "
+                     "regenerated files; merge that. The removal is recorded as a `remove` "
+                     f"entry in `{GUIDANCE_IMPACT}` and on the explorer's list of removed "
+                     "sections.\n\n"
+                     + guidance_evidence(verdict)
+                     + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+                     + "\n\nFiled by scripts/retire_skill.py --target guidance on the "
+                       "scheduled workflow.\n\n" + AGENT_MARKER + "\n")}
 
 
 def guidance_prepare_branch(checkout: Path, action: dict) -> None:
@@ -1382,7 +1422,9 @@ def guidance_commands(action: dict) -> list:
                 ["gh", "pr", "merge", "<new pull request url>", "-R", GUIDANCE_REPO,
                  "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
                 ["gh", "pr", "view", "<new pull request url>", "-R", GUIDANCE_REPO,
-                 "--json", "autoMergeRequest"]]
+                 "--json", "autoMergeRequest"],
+                ["gh", "issue", "create", "-R", EVALS_REPO, "--title",
+                 action["notice"]["title"], "--label", AGENT_LABEL, "--body-file", "-"]]
     return []
 
 
@@ -1422,7 +1464,13 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
                           '.autoMergeRequest.mergeMethod // ""']).strip()
     if method != "MERGE":
         raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
-    return f"opened {url} with auto-merge"
+    # The notice goes out once the removal is armed, through the job's own
+    # token (skills-evals issues), never the _agent-guidance one.
+    notice = action["notice"]
+    gh(["issue", "create", "-R", EVALS_REPO, "--title", notice["title"],
+        "--label", AGENT_LABEL, "--body-file", "-"],
+       notice["body"].replace("{removal_pr}", url))
+    return f"opened {url} with auto-merge, and filed the removal notice"
 
 
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
