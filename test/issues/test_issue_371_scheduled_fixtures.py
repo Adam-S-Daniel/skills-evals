@@ -36,60 +36,36 @@ PINNED_WITH_REASON: dict[str, str] = {}
 
 # A scheduled fixture with no provable `guidance_revision`, or no `context`
 # at all, stays an isolation pair and is named here with the reason.
-_NO_CONTEXT_YET = ("Merged hermetic before in-place pairs existed and declares no `context`; scheduled as an isolation pair until a context is scaffolded and measured.")
+_NO_LOCK_CONTEXT = ("A machine-local skill (adam-non-coding-local) that no fleet "
+                    "skills.lock adopts and that works on folders, not repositories; "
+                    "no representative context exists, so it runs as an isolation pair.")
 _PRIVATE = ("A private-registry skill (adam-agentskills-private): no public "
             "context repository carries it, so it runs as an isolation pair.")
 ISOLATION_ONLY: dict[str, str] = {
-    "evals/rename-pdfs": _NO_CONTEXT_YET,
-    "evals/pdf-ocr-audit": _NO_CONTEXT_YET,
-    "evals/cms-stuck-pr-triage": _NO_CONTEXT_YET,
-    "evals/post-failure-comment": _NO_CONTEXT_YET,
-    "evals/admin-config-render": _NO_CONTEXT_YET,
-    "evals/code-quality": _NO_CONTEXT_YET,
-    "evals/ci-watcher-loops": _NO_CONTEXT_YET,
-    "evals/editorial-label-audit": _NO_CONTEXT_YET,
-    "evals/consumer-repo-provisioning": _NO_CONTEXT_YET,
+    # The registry that holds them is not a context (ADR 0012), and an
+    # added-subject pair would leave out sibling skills such as ocr-pdfs
+    # (skills-evals#574 review).
+    "evals/rename-pdfs": _NO_LOCK_CONTEXT,
+    "evals/pdf-ocr-audit": _NO_LOCK_CONTEXT,
     # In place would mean a context repository holding the private skill;
     # its results stay in the private repository (#81).
     "evals/adam-writing-style/proposal-bio": _PRIVATE,
     "evals/adam-writing-style/recruiter-reply": _PRIVATE,
     "evals/adam-writing-style/self-appraisal-opening": _PRIVATE,
-    "evals/ci-job-performance/browser-cache": _NO_CONTEXT_YET,
-    "evals/debug-github-workflows/git-identity": _NO_CONTEXT_YET,
-    "evals/debug-github-workflows/secret-name": _NO_CONTEXT_YET,
-    "evals/debug-github-workflows/swallowed-failure": _NO_CONTEXT_YET,
-    "evals/debug-github-workflows/wrong-branch": _NO_CONTEXT_YET,
-    "evals/vendor-release-impact-issues/closed-duplicate": _NO_CONTEXT_YET,
-    "evals/vendor-release-impact-issues/closing-keywords": _NO_CONTEXT_YET,
-    "evals/vendor-release-impact-issues/issue-hygiene": _NO_CONTEXT_YET,
-    "evals/vendor-release-impact-issues/stamps-skip-quotes": _NO_CONTEXT_YET,
 }
 
 # The ratchet: ISOLATION_ONLY may only shrink. Each conversion PR removes its
-# own entry and adds its MEASURED row; nothing may be added except a _PRIVATE
-# fixture (no public context repository carries its skill).
+# own entry here and in ISOLATION_ONLY and adds its MEASURED row, so a
+# converted fixture cannot go back; nothing may be added except a _PRIVATE
+# fixture (no public context repository carries its skill). skills-evals#574
+# converted sixteen of the last eighteen hermetic fixtures; the two PDF
+# skills stayed, with a reason of their own.
 LEGACY_ISOLATION = frozenset({
     "evals/rename-pdfs",
     "evals/pdf-ocr-audit",
-    "evals/cms-stuck-pr-triage",
-    "evals/post-failure-comment",
-    "evals/admin-config-render",
-    "evals/code-quality",
-    "evals/ci-watcher-loops",
-    "evals/editorial-label-audit",
-    "evals/consumer-repo-provisioning",
     "evals/adam-writing-style/proposal-bio",
     "evals/adam-writing-style/recruiter-reply",
     "evals/adam-writing-style/self-appraisal-opening",
-    "evals/ci-job-performance/browser-cache",
-    "evals/debug-github-workflows/git-identity",
-    "evals/debug-github-workflows/secret-name",
-    "evals/debug-github-workflows/swallowed-failure",
-    "evals/debug-github-workflows/wrong-branch",
-    "evals/vendor-release-impact-issues/closed-duplicate",
-    "evals/vendor-release-impact-issues/closing-keywords",
-    "evals/vendor-release-impact-issues/issue-hygiene",
-    "evals/vendor-release-impact-issues/stamps-skip-quotes",
 })
 
 # What each in-place arm measured on 2026-10-10, as (guidance, catalog,
@@ -101,6 +77,11 @@ LEGACY_ISOLATION = frozenset({
 # so these are recorded figures: re-measure and update them with the budget.
 _CMS_PLATFORM = (25099, 6082, 685637)
 _ADAMDANIEL_AI = (25099, 14017, 885455)
+# skills-evals#574: adamdaniel.ai 2a994ee0 (guidance 6a1ca565), and
+# cms-platform dfb0fddf and _agent-guidance 0295fa86 (both guidance
+# 0295fa86), which deploy the same two adam-agentskills bundles.
+_ADAMDANIEL_AI_574 = (25528, 14803, 875774)
+_FLEET_574 = (25528, 7447, 688780)
 MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     "evals/workflow-path-audit/required-check-routing": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
@@ -133,6 +114,24 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     **{f"evals/skills-doctor/{name}": ((25099, 6115, 644882),) * 2
        for name in ("one-row-rejects-the-lock", "personal-copy-outranks-repo",
                     "ssh-remote-is-durable")},
+    # skills-evals#574, measured 2026-11-02 through `run_eval._in_place_plan`
+    # against the local clones, with main's copy from registry checkouts at
+    # adam-agentskills 6e6373cc and cms-platform cd59b51f. Every one is
+    # adopted and matches in both arms: each context deploys main's digest
+    # of its subject.
+    **{path: (_ADAMDANIEL_AI_574, _ADAMDANIEL_AI_574)
+       for path in ("evals/cms-stuck-pr-triage", "evals/post-failure-comment",
+                    "evals/admin-config-render", "evals/code-quality",
+                    "evals/ci-watcher-loops", "evals/editorial-label-audit",
+                    "evals/consumer-repo-provisioning")},
+    **{path: (_FLEET_574, _FLEET_574)
+       for path in ("evals/ci-job-performance/browser-cache",
+                    *(f"evals/debug-github-workflows/{name}"
+                      for name in ("git-identity", "secret-name",
+                                   "swallowed-failure", "wrong-branch")),
+                    *(f"evals/vendor-release-impact-issues/{name}"
+                      for name in ("closed-duplicate", "closing-keywords",
+                                   "issue-hygiene", "stamps-skip-quotes")))},
 }
 # Re-measured 2026-11-02 after the cms-platform fixtures were re-pinned from
 # 28f2b6ed to its `main` at 6c8eca12 (the lock there deploys adam-agentskills
@@ -196,6 +195,20 @@ ADOPTED = frozenset({
                    "personal-copy-outranks-repo", "ssh-remote-is-durable")),
     "evals/workflow-path-audit/required-check-routing",
     "evals/writing-adrs/bootstrap",
+    # skills-evals#574.
+    "evals/admin-config-render",
+    "evals/ci-job-performance/browser-cache",
+    "evals/ci-watcher-loops",
+    "evals/cms-stuck-pr-triage",
+    "evals/code-quality",
+    "evals/consumer-repo-provisioning",
+    *(f"evals/debug-github-workflows/{name}"
+      for name in ("git-identity", "secret-name", "swallowed-failure", "wrong-branch")),
+    "evals/editorial-label-audit",
+    "evals/post-failure-comment",
+    *(f"evals/vendor-release-impact-issues/{name}"
+      for name in ("closed-duplicate", "closing-keywords", "issue-hygiene",
+                   "stamps-skip-quotes")),
 })
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
@@ -263,6 +276,13 @@ class IsolationExemptionIsAOneWayRatchet(unittest.TestCase):
 
     def test_isolation_only_never_grows_past_the_legacy_set(self):
         self.assertLessEqual(ISOLATION_ONLY.keys(), LEGACY_ISOLATION)
+
+    def test_the_legacy_set_shrinks_with_each_conversion(self):
+        # A conversion removes its path from both, so no converted fixture
+        # can silently go back to isolation-only.
+        self.assertEqual(LEGACY_ISOLATION, set(ISOLATION_ONLY) - {
+            path for path, reason in ISOLATION_ONLY.items()
+            if reason == _PRIVATE and path not in LEGACY_ISOLATION})
 
     def test_only_private_fixtures_may_be_outside_the_legacy_set(self):
         for path, reason in ISOLATION_ONLY.items():
