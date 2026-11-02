@@ -320,6 +320,106 @@ until the last:
 4. The pooling key.
 5. The seed audit and the first fixture opt-ins.
 
+Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
+(`run_eval._in_place_plan` and `_prepare_in_place`), and
+`test/issues/test_issue_535_fleet_hooks.py`:
+
+- **Frozen set and proof.** For a skill fixture the set is what the
+  context repository shipped at `context.revision`, read from its Git
+  objects where the sync delivers it: `.githooks/agent-checks`,
+  `.githooks/dated-phrasing.js`, `.githooks/dated-phrasing-allowlist.txt`,
+  `.githooks/dated-phrasing/package.json` and `package-lock.json`, and
+  `.claude/hooks/agent-checks-guard.sh` (the layout of cms-platform and
+  repo-settings on main). A guidance fixture takes the same files from
+  _agent-guidance's `templates/agent-checks/` at the guidance revision the
+  run loads. The context repository must belong to a fleet owner, or no
+  fleet hook would fire in its clone. A missing file refuses the plan with
+  `fleet_hooks_unproven`, before any paid call. markdown-it is installed
+  once per plan with `npm ci --ignore-scripts` from the frozen lockfile,
+  outside the sandbox (`fleet_hooks_install_failed` when it fails), and
+  that directory is then read-only and write-denied to the arm. Each arm
+  gets a read-only copy in its scratch at `fleet-hooks/`, beside `ws/` and
+  `tmp/`, with the set under `.githooks/` as the runner expects it. A
+  hooked fixture's `env:` may not name `GIT_CONFIG*`
+  (`fleet_hooks_git_config_env`). Both in-place pairs are hooked: the skill
+  pair and the guidance pair (`full`/`full-minus-section`).
+- **Injection.** The agent's environment alone gets nine
+  `includeIf.hasconfig:remote.*.url:<prefix><owner>/**.path` keys (the
+  installer's three URL prefixes for `Adam-S-Daniel`, `adam-s-daniel` and
+  `jodidaniel`) through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, pointing at a
+  frozen include of `hook.agent-checks-<event>.event`/`.command` keys for
+  `pre-commit` and `pre-push`, plus `AGENT_CHECKS_LOG=off` and
+  `AGENT_CHECKS_DATED_PHRASING_MODULES`. The workspace gets the context
+  repository's GitHub URL as `origin`; a seed that already has an `origin`
+  is refused (`fleet_hooks_origin_exists`). The hook command reads the
+  harness's own network namespace id (`/proc/self/ns/net`) from
+  `fleet-hooks/harness-netns` and runs the frozen runner only when its
+  own differs, that is inside the sandbox, and looks nothing up on `PATH`
+  before that check (`read`, `/usr/bin/readlink`, `/usr/bin/bash`), since
+  outside the sandbox `PATH` is the agent's; anything else exits 0, so a
+  Claude Code hook's commit runs no `.agent-checks/local.sh`. The command
+  runs the frozen runner even when the seed carries no `.githooks/`,
+  since the context repository's clone would. The directory is
+  write-denied (`Edit` deny rules and `sandbox.filesystem.denyWrite`), its
+  tree digest (the root's mode, and every entry's path and mode with a
+  file's bytes or a link's target, directories included) is read before the first turn and
+  after each, and any change is `agent_wrote_agent_config`. The frozen
+  `agent-checks-guard.sh` is the arm's one PreToolUse hook, through
+  `--settings`, with the sync's matcher and timeout. A Claude Code hook
+  runs outside the sandbox with the CLI's environment and the workspace as
+  its cwd, so the command `cd`s into the frozen directory and runs
+  `/usr/bin/bash` under `/usr/bin/env -i` with a fixed `PATH`, `HOME` set
+  to that directory, `PYTHONSAFEPATH=1` and `PYTHONNOUSERSITE=1`: a module,
+  interpreter or `.pth` the agent plants is never loaded. Harness Git runs no
+  hook: workspace, harness-repository and context Git strip `GIT_*` and
+  read no global or system config.
+- **Pooling key.** `context.fleet_hooks_digest` (sha256 over each frozen
+  file's path, mode and bytes and the injected include, environment and
+  guard registration, with the arm's directory as a placeholder) is in a
+  hooked arm's summary and absent otherwise; ingest checks it when
+  present. compute_gates appends it to `pair_key` and
+  `arm_context_digest` only when the key is present (an explicit null is
+  malformed, as at ingest), so an unhooked run's keys are byte-for-byte
+  what they were. For skill rows this is what separates hooked runs. For
+  guidance rows it is defensive: in-place guidance runs are not pooled by
+  the gates today (they record no `guidance_digests`, a gap that predates
+  this addendum), and the isolation runs that are pooled are never hooked.
+- **Not built here: the guidance alone pair.** The addendum's "plus
+  `section`/`none` when the fixture opts in" has no opt-in yet; the alone
+  pair never runs the hooks. Follow-up: [skills-evals#605](https://github.com/Adam-S-Daniel/skills-evals/issues/605). Until then a hooked section
+  whose in-situ verdict is `retire` while it helps alone reads, as
+  before, "the rest of the guidance covers it", though the fleet hooks
+  may be what covers it; no hooked in-place guidance run reaches the
+  gates yet.
+- **Known, for the stage 5 audit.** `fleet_hooks_origin_exists` and
+  `fleet_hooks_no_receipt` refuse at arm time, not at plan time, so the
+  first arm of a pair can be paid for before its sibling refuses.
+  `run_priors` groups by `fixture_digest`, not by the hook digest. The
+  live probe in the routine container and on the CI runner, showing that
+  a Bash command in the arm's sandbox sees a network namespace other than
+  the harness's, needs a real CLI call and waits for the first opt-in;
+  until then the receipt rests on the sandbox's `--unshare-net`, which the
+  tests stand in for with `bwrap --unshare-net`. The CLI was seen to
+  rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
+  pairs and setting `hook.<event>.enabled=false`). One live call on WSL
+  (Claude Code 2.1.316, Git 2.54.0, sandbox on; 2026-11-02, recorded on
+  [#605](https://github.com/Adam-S-Daniel/skills-evals/issues/605#issuecomment-6590008657))
+  showed it does not do so for sandboxed Bash tool commands: it appends
+  two `safe.directory` pairs and keeps the include at index 0, an
+  included pre-commit hook fired, and it fired in a network namespace
+  other than the launching process's. The routine container and the CI
+  runner still need the same probe. A managed
+  `disableAllHooks` would drop the guard without a word. And the agent can
+  still switch its own hooks off, by `git remote set-url origin` to a
+  non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not
+  intent, and CI's required `agent-checks` is the enforcement. In a
+  no-network arm, `git push` to the injected `origin` fails at connect
+  (exit 128) before `pre-push` runs, so the runner's pre-push refusals
+  fire only for pushes to local-path remotes; a later fix could add a
+  `url.<local bare repository>.insteadOf=https://github.com/<repo>.git`
+  rewrite, so the configured URL still matches the include while the push
+  lands locally (follow-up).
+
 ## Consequences
 
 - **Deltas mean what the keep-or-remove decision needs:** the subject's

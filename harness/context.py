@@ -153,6 +153,15 @@ def load_fixture_yaml(raw: str | bytes, path) -> dict:
                            + (" (the file is empty)" if fixture is None else f": {fixture!r}"))
     validate_context(fixture, path)
     _check_fleet_hooks(loader.fleet_hooks_node, path)
+    if fixture.get(FLEET_HOOKS_KEY) is True and isinstance(fixture.get("env"), dict):
+        # The harness injects the fleet hooks through GIT_CONFIG_* (#535); a
+        # fixture's own would replace or reach past the injected include.
+        named = sorted(str(key) for key in fixture["env"] if str(key).startswith("GIT_CONFIG"))
+        if named:
+            raise ContextError("fleet_hooks_git_config_env",
+                               f"{path}: a `{FLEET_HOOKS_KEY}: true` fixture's `env:` names "
+                               f"{named[0]}, and only the harness sets Git config for the "
+                               "fleet hooks")
     return fixture
 
 
