@@ -2778,7 +2778,9 @@ def _kill_process_group(pgid, *, grace: float = _GROUP_TERM_GRACE_S,
             pause(poll)
             os.killpg(pgid, 0)
             members = states(pgid)
-            if members is not None and all(state == "Z" for state in members):
+            # Non-empty: a /proc from another PID namespace lists no member,
+            # and all([]) would end the wait before a living writer's SIGKILL.
+            if members and all(state == "Z" for state in members):
                 return
         os.killpg(pgid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
@@ -7562,7 +7564,16 @@ def _exit_on_signal(signum, _frame):
     and ends its group. Started in its own session (#594), the CLI no longer
     gets a signal aimed at the harness's group (a runner's cancel, GNU
     timeout, a hangup), and without this it would outlive the harness and
-    keep spending until its own timeout."""
+    keep spending until its own timeout.
+
+    Both signals are ignored from here on, so a repeated SIGTERM cannot cut
+    short the cleanup this one started (the group's SIGKILL, the usage
+    record's write)."""
+    for each in (signal.SIGTERM, signal.SIGHUP):
+        try:
+            signal.signal(each, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
     raise SystemExit(128 + signum)
 
 

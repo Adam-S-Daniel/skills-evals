@@ -192,6 +192,12 @@ class KillProcessGroupTests(unittest.TestCase):
                          mock.call(FAKE_PGID, signal.SIGKILL))
         self.assertEqual(self.pauses, [0.25, 0.25])
 
+    def test_no_member_found_in_proc_still_ends_with_sigkill(self):
+        # A /proc from another PID namespace lists none of the group.
+        self.reap(FAKE_PGID, grace=0.5, states=lambda _pgid: [])
+        self.assertEqual(self.killpg.call_args_list[-1],
+                         mock.call(FAKE_PGID, signal.SIGKILL))
+
     def test_an_already_empty_or_foreign_group_is_left_alone(self):
         for error in (ProcessLookupError(), PermissionError()):
             with self.subTest(error=type(error).__name__):
@@ -410,12 +416,16 @@ class SignalExitTests(unittest.TestCase):
         self.killpg = self.enterContext(mock.patch("os.killpg"))
         self.kill = self.enterContext(mock.patch("os.kill"))
 
-    def test_the_handler_exits_128_plus_the_signal(self):
+    def test_the_handler_ignores_both_signals_then_exits_128_plus_the_signal(self):
         for signum in (signal.SIGTERM, signal.SIGHUP):
-            with self.subTest(signum=signum):
+            with self.subTest(signum=signum), \
+                    mock.patch("signal.signal") as installed:
                 with self.assertRaises(SystemExit) as caught:
                     run_eval._exit_on_signal(signum, None)
                 self.assertEqual(caught.exception.code, 128 + signum)
+                self.assertEqual(installed.call_args_list,
+                                 [mock.call(signal.SIGTERM, signal.SIG_IGN),
+                                  mock.call(signal.SIGHUP, signal.SIG_IGN)])
         self.killpg.assert_not_called()
         self.kill.assert_not_called()
 
