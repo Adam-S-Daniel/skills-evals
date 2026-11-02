@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-02T23:26:56Z",
+ "generated_at": "2026-11-02T23:28:30Z",
  "guidance": {
   "removed": [
    {
@@ -106,29 +106,67 @@
   ],
   "sections": [
    {
-    "alone_verdict": null,
+    "alone_verdict": "keep",
     "bytes": 1422,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 27,
+     "position": 29,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-02T23:17:02Z",
+      "cli_version": "2.1.316",
+      "fixture": "on-hold-pull-request",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07101,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.07136209999999998,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0317732,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0353279,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261102T231702Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "level": "normal"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": "keep",
@@ -391,7 +429,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 11,
+     "position": 10,
      "scheduled": true
     },
     "runs": [],
@@ -416,7 +454,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 28,
+     "position": 24,
      "scheduled": true
     },
     "runs": [],
@@ -645,7 +683,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 15,
+     "position": 13,
      "scheduled": true
     },
     "runs": [],
@@ -664,16 +702,54 @@
      "helps": null,
      "no_help": null
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 9,
+     "position": 25,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-02T23:16:21Z",
+      "cli_version": "2.1.316",
+      "fixture": "required-check-concurrency",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0707566,
+        "judge_mean": 7.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0657471,
+        "judge_mean": 6.5,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.037391999999999995,
+        "judge_mean": 7.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.042540800000000004,
+        "judge_mean": 7.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261102T231621Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "level": "normal"
@@ -695,7 +771,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 25,
+     "position": 22,
      "scheduled": true
     },
     "runs": [],
@@ -847,7 +923,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 14,
+     "position": 12,
      "scheduled": true
     },
     "runs": [],
@@ -872,7 +948,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 12,
+     "position": 11,
      "scheduled": true
     },
     "runs": [],
@@ -960,7 +1036,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 29,
+     "position": 27,
      "scheduled": true
     },
     "runs": [
@@ -1023,7 +1099,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 10,
+     "position": 9,
      "scheduled": true
     },
     "runs": [],
@@ -1144,7 +1220,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 3,
+    "current_text_runs": 4,
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
@@ -1154,6 +1230,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-02T23:14:09Z",
+      "cli_version": "2.1.316",
+      "fixture": "new-workflow",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0744592,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0754669,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0458907,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.046925299999999996,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261102T231409Z/report.md"
+     },
      {
       "at": "2026-11-02T17:45:25Z",
       "cli_version": "2.1.316",
@@ -1305,29 +1418,67 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": null,
+    "alone_verdict": "insufficient",
     "bytes": 2515,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 24,
+     "position": 28,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-02T23:15:23Z",
+      "cli_version": "2.1.316",
+      "fixture": "verifier-that-cannot-fail",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0798186,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.075106,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.048654699999999995,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0602942,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261102T231523Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "level": "normal"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": null,
@@ -1342,7 +1493,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 23,
+     "position": 21,
      "scheduled": true
     },
     "runs": [],
@@ -1367,7 +1518,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 26,
+     "position": 23,
      "scheduled": true
     },
     "runs": [],
@@ -1380,29 +1531,67 @@
     "verdict_reason": null
    },
    {
-    "alone_verdict": null,
+    "alone_verdict": "insufficient",
     "bytes": 1396,
     "confidence": {
-     "helps": null,
-     "no_help": null
+     "helps": 0.0,
+     "no_help": 0.0
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 13,
+     "position": 26,
      "scheduled": true
     },
-    "runs": [],
+    "runs": [
+     {
+      "at": "2026-11-02T23:14:21Z",
+      "cli_version": "2.1.316",
+      "fixture": "merge-method-and-closing-keyword",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07610410000000001,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07134170000000001,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0368675,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.037003,
+        "judge_mean": 8.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261102T231421Z/report.md"
+     }
+    ],
     "skip_reason": null,
     "stakes": {
      "level": "normal"
     },
     "status": "covered",
-    "verdict": null,
-    "verdict_reason": null
+    "verdict": "insufficient",
+    "verdict_reason": "a cell is insufficient or missing"
    },
    {
     "alone_verdict": null,
@@ -1417,7 +1606,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 16,
+     "position": 14,
      "scheduled": true
     },
     "runs": [],
@@ -1442,7 +1631,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 17,
+     "position": 15,
      "scheduled": true
     },
     "runs": [],
@@ -1467,7 +1656,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 18,
+     "position": 16,
      "scheduled": true
     },
     "runs": [],
@@ -1492,7 +1681,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 19,
+     "position": 17,
      "scheduled": true
     },
     "runs": [],
@@ -1517,7 +1706,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 20,
+     "position": 18,
      "scheduled": true
     },
     "runs": [],
@@ -1542,7 +1731,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 21,
+     "position": 19,
      "scheduled": true
     },
     "runs": [],
@@ -1567,7 +1756,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 22,
+     "position": 20,
      "scheduled": true
     },
     "runs": [],
@@ -1581,7 +1770,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T23:24:53Z",
+ "newest_run": "2026-11-02T23:26:02Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -3903,7 +4092,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -4179,17 +4368,38 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Configure and enforce GitHub repository security settings as code: require actions to be pinned to full-length commit SHAs, require approval for all outside collaborators' fork pull-request workflow runs, and protect the default branch via a repository ruleset. The settings-as-code engine, its schema, and the fleet fan-out live in the repo-settings repo, which this skill points to; it also carries manual `gh api` recipes. Trigger when: setting up a new repo, running a security audit, onboarding a repo to org standards, enforcing settings across a fleet, or when asked to configure or harden Actions security settings. Trigger on mentions of \"actions settings\", \"repo security settings\", \"repo settings as code\", \"settings drift\", \"fork approval\", \"outside collaborators\", \"actions policy\", \"branch protection\", \"ruleset\", \"harden repo\", \"actions event policy\", or \"pull_request_target policy\".",
    "name": "github-actions-repo-settings",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 20,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-02T23:25:56Z",
+     "cli_version": "2.1.316",
+     "fixture": "drift-diagnosis",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T232454Z-ee22cd/github-actions-repo-settings/20261102T232556Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.1421652,
+      "judge_mean": 7.699999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.093498,
+      "judge_mean": 7.299999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-10-26T14:55:20Z",
      "cli_version": "2.1.310",
@@ -6036,7 +6246,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6329,11 +6539,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
@@ -6344,6 +6554,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-02T23:26:02Z",
+     "cli_version": "2.1.316",
+     "fixture": "required-check-routing",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T232423Z-4b06bc/workflow-path-audit/20261102T232602Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.18458059999999998,
+      "judge_mean": 8.9,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.1221981,
+      "judge_mean": 8.700000000000001,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-10-31T18:59:48Z",
      "cli_version": "2.1.316",
@@ -7734,7 +7965,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "bd436bda2dce8788c2b8a02029f6245b9b6fb062",
-  "results_commit": "60f2c8d6fa7ddd591fb085aa38f2bed556db9e80"
+  "results_commit": "a17d4368090455fd9a8ac64e44a7941d2fbaa932"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
