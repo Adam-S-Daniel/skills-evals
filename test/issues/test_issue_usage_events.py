@@ -80,8 +80,17 @@ class EventTests(unittest.TestCase):
             "v": 1, "id": "toolu_01", "ts": "2026-09-03T10:00:00.000Z", "kind": "skill",
             "name": "adam-coding-anywhere:workflow-path-audit", "model": None,
             "effort": None, "context_tokens": None, "surface": "local",
-            "root": "wsl", "machine": census.machine_name(), "session_id": SESSION,
+            "root": "wsl", "cli": None, "machine": census.machine_name(),
+            "session_id": SESSION,
             "session_title": None, "cwd_repo": None, "branch": "feature/example"}])
+
+    def test_a_skill_event_carries_the_transcript_lines_version(self):
+        records = self.events([
+            with_session(skill_call("workflow-path-audit", "toolu_01", version="2.1.300")),
+            with_session(skill_call("workflow-path-audit", "toolu_02")),
+            with_session(skill_call("workflow-path-audit", "toolu_03", version=7))])
+        self.assertEqual({r["id"]: r["cli"] for r in records},
+                         {"toolu_01": "2.1.300", "toolu_02": None, "toolu_03": None})
 
     def test_a_skill_call_records_the_assistant_entrys_model(self):
         records = self.events([with_session(skill_call(
@@ -452,8 +461,24 @@ class HookTests(unittest.TestCase):
             "v": 1, "id": hashlib.sha256(f"example-host\n{line}".encode()).hexdigest(),
             "ts": "2026-09-03T10:00:00.000Z", "kind": "hook", "event": "pre-commit",
             "repo": "example-owner/public-widgets", "checks": ["lint-a", "lint-b"],
-            "failed": ["lint-a"], "surface": "local", "root": "wsl",
+            "failed": ["lint-a"], "runner": None, "surface": "local", "root": "wsl",
             "machine": "example-host"}])
+
+    def test_runs_differing_only_in_runner_give_rows_that_sum_to_the_old_row(self):
+        one, two = "0123456789ab", "ba9876543210"
+        events: list = []
+        self.rows(self.log(hook_line(runner=one),
+                           hook_line(runner=one, ts="2026-09-03T11:00:00Z"),
+                           hook_line(runner=two, failed=["lint-a"])), events=events)
+        rows = [r for r in self.doc["rows"] if r["name"] == "all"]
+        self.assertEqual([(r["runner"], r["invocations"], r["blocked"]) for r in rows],
+                         [(one, 2, 0), (two, 1, 1)])
+        old = self.rows(self.log(hook_line(), hook_line(ts="2026-09-03T11:00:00Z"),
+                                 hook_line(failed=["lint-a"], ts="2026-09-03T12:00:00Z"),
+                                 name="old.jsonl"))
+        self.assertEqual(sum(r["invocations"] for r in rows), old[0][3])
+        self.assertEqual(sum(r["blocked"] for r in rows), old[0][4])
+        self.assertEqual(sorted(e["runner"] for e in events), [one, one, two])
 
     def test_public_repos_are_the_non_private_registries_plus_two(self):
         repos = census.public_repos()
@@ -526,6 +551,17 @@ class MergeTests(unittest.TestCase):
         before = target.read_bytes()
         self.assertEqual(census.merge_events(events, self.store), 0)
         self.assertEqual(target.read_bytes(), before)
+
+    def test_the_cloud_machine_prefix_is_reserved(self):
+        for machine in ("cloud-guidance", "cloud-x"):
+            with self.subTest(machine=machine), self.assertRaises(ValueError):
+                census.merge_events(
+                    self.write(self.record("a", "2026-09-01T00:00:00Z", machine)),
+                    self.store)
+        self.assertFalse((self.store / "events").exists())
+        self.assertEqual(census.merge_events(
+            self.write(self.record("a", "2026-09-01T00:00:00Z", "cloudy-host")),
+            self.store), 1)
 
     def test_malformed_records_and_escaping_paths_are_refused(self):
         for bad in (self.record("a", "2026-09-01T00:00:00Z", "../x"),
@@ -678,6 +714,30 @@ class PrivatePublishTests(unittest.TestCase):
         self.env["PYTHON"] = str(wrapper)
         before = self.events_head(), self.head()
         self.assert_refused(self.run_script(), "unexpected staged paths", *before)
+
+    def test_a_staged_cloud_file_is_refused(self):
+        """A stand-in interpreter that, for the merge step only, also writes
+        a cloud-* event file: the publisher must refuse to commit it."""
+        self.seed_events_branch()
+        wrapper = self.tmp / "python-wrapper"
+        wrapper.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "${1:-}" = "-" ] && [ -d "${4:-}/.git" ]; then\n'
+            '  mkdir -p "$4/events/2026-09"\n'
+            '  echo invented > "$4/events/2026-09/cloud-guidance.jsonl"\n'
+            "fi\n"
+            f'exec {sys.executable} "$@"\n', encoding="utf-8")
+        wrapper.chmod(0o755)
+        self.env["PYTHON"] = str(wrapper)
+        before = self.events_head(), self.head()
+        self.assert_refused(self.run_script(), "unexpected staged paths", *before)
+        self.assertNotIn("cloud-guidance", " ".join(self.tree()))
+
+    def test_the_created_branch_readme_warns_about_cloud_files(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        readme = self.git("show", f"{self.EVENTS}:README.md", cwd=self.events_origin())
+        self.assertIn("cloud-* files are written by cloud hooks and cannot be "
+                      "regenerated; a re-created branch loses them.", readme)
 
     def test_wsl_adds_windows_and_cowork_roots_and_windows_hook_logs(self):
         users = self.tmp / "users"

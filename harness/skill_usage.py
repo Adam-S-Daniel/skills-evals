@@ -19,13 +19,16 @@ asked about.
      "rows": [{"week": "2026-08-31", "kind": "skill", "name": "<name|other>",
                "repo": null, "surface": "local", "invocations": n,
                "sessions": n, "blocked": null, "overridden": null,
-               "outcome": null}]}
+               "outcome": null, "runner": null}]}
 
 A `hook` row counts local git-hook runs from the agent-checks log: `name`
 is a check id (or `other`, or `all` for every run that week), `repo` an
 allowlisted public `owner/name`, `other` or null, `invocations` the runs in
 which the check ran and `blocked` the runs in which it failed; `sessions` is
-null. A `guidance` row counts sessions per loaded-guidance state (`name` is
+null; `runner` is the first 12 hex of the runner's digest, or null when the
+log line had none (an absent `runner` reads as unknown, since rows written
+elsewhere omit it). Non-hook rows carry `runner: null`. A `guidance` row
+counts sessions per loaded-guidance state (`name` is
 `full`, `stub-only`, `neither` or `unknown`; `invocations` is null). A second source, `scope: "hooks"` with `runs_scanned`, is present only
 when a hook log was read, so an absent one means unknown, not zero.
 
@@ -53,7 +56,7 @@ from timeweeks import parse_ts, week_monday, window_weeks
 SCHEMA = 1
 SURFACE_LOCAL = "local"
 ROW_FIELDS = ("week", "kind", "name", "repo", "surface", "invocations",
-              "sessions", "blocked", "overridden", "outcome")
+              "sessions", "blocked", "overridden", "outcome", "runner")
 STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -63,14 +66,15 @@ def row(iso_week_label: str, kind: str, name: str, invocations: int,
     return {"week": week_monday(iso_week_label), "kind": kind, "name": name,
             "repo": None, "surface": SURFACE_LOCAL, "invocations": invocations,
             "sessions": sessions, "blocked": None, "overridden": None,
-            "outcome": None}
+            "outcome": None, "runner": None}
 
 
 def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
-             blocked: int) -> dict:
-    """One local hook row: runs in which check `name` ran, and failed."""
+             blocked: int, runner: str | None = None) -> dict:
+    """One local hook row: runs in which check `name` ran, and failed, by
+    the runner build `runner` (12 hex of its digest, None when unknown)."""
     return {**row(iso_week_label, "hook", name, runs, None), "repo": repo,
-            "blocked": blocked}
+            "blocked": blocked, "runner": runner}
 
 
 def guidance_row(iso_week_label: str, state: str, sessions: int) -> dict:
@@ -92,7 +96,7 @@ def document(rows: list[dict], now: datetime, window_from: datetime,
         "schema": SCHEMA,
         "sources": sources,
         "rows": sorted(rows, key=lambda r: (r["week"], r["kind"], r["name"],
-                                            r["repo"] or "")),
+                                            r["repo"] or "", r["runner"] or "")),
     }
 
 

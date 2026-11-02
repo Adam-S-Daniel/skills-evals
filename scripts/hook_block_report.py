@@ -53,6 +53,9 @@ MAX_HOUR_LINES = 48
 TOP_CHECKS = 5
 NO_REPO = "(none)"
 NO_MACHINE = "(unknown)"
+#: Machine-name prefix reserved for cloud hooks' event files, which this
+#: report does not read (the same prefix model_usage_census refuses).
+CLOUD_PREFIX = "cloud-"
 
 
 def parse_ts(text) -> datetime | None:
@@ -107,6 +110,8 @@ def load_events(root) -> tuple[list[dict], list[dict]]:
     seen: set[str] = set()
     for path in sorted(root.glob("events/*/*.jsonl")):
         machine = path.stem
+        if machine.startswith(CLOUD_PREFIX):
+            continue  # written by cloud hooks, not by this report's machines
         label = f"usage-events/{path.parent.name}/{path.name}"
         group = groups.setdefault(machine, {
             "machine": machine, "paths": [], "newest": None,

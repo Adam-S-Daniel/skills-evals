@@ -89,6 +89,17 @@ class Fixture(unittest.TestCase):
         return [f for f in report["findings"] if f["type"] == kind]
 
 
+class CloudFileTests(Fixture):
+
+    def test_a_cloud_file_is_skipped_by_load_events(self):
+        now = NOW - timedelta(hours=2)
+        self.write_events([self.hook(now, rid="local-1")])
+        self.write_events([self.hook(now, rid="cloud-1")], machine="cloud-guidance")
+        records, sources = hbr.load_events(self.events)
+        self.assertEqual([r["id"] for r in records], ["local-1"])
+        self.assertEqual([s["machine"] for s in sources], [MACHINE])
+
+
 class LocalAnalysisTests(Fixture):
     def test_hammering_repo_is_concentrated_and_steady(self):
         start = datetime(2026, 10, 28, 4, 0, tzinfo=timezone.utc)

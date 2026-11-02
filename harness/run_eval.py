@@ -539,6 +539,12 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
                 f"{path} registries[{i}] field(s) must be strings: " +
                 ", ".join(f"{f!r} is {type(entry[f]).__name__}" for f in bad_type))
         name, url, layout = entry["name"], entry["url"], entry["layout"]
+        plugins = entry.get("plugins", [])
+        if not (isinstance(plugins, list)
+                and all(isinstance(p, str) and p for p in plugins)):
+            raise ValueError(
+                f"{path} entry {name!r} has 'plugins' that is not a list of "
+                "non-empty strings")
         if name in seen_names:
             raise ValueError(f"{path} has a duplicate registry name {name!r}")
         seen_names.add(name)

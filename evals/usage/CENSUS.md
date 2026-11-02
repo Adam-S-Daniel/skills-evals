@@ -28,8 +28,15 @@ file through it:
               "sessions_scanned": 42}],
  "rows": [{"week": "2026-08-31", "kind": "skill", "name": "workflow-path-audit",
            "repo": null, "surface": "local", "invocations": 3, "sessions": 2,
-           "blocked": null, "overridden": null, "outcome": null}]}
+           "blocked": null, "overridden": null, "outcome": null,
+           "runner": null}]}
 ```
+
+Every row carries the same fields (`ROW_FIELDS`): `week`, `kind`, `name`,
+`repo`, `surface`, `invocations`, `sessions`, `blocked`, `overridden`,
+`outcome` and `runner`. `runner` is null except on a hook row. A reader treats
+it as optional (`.get`; absent is unknown), because `_agent-guidance`'s
+`impact-report.js` writes `weekly-ci.json` rows in the same shape without it.
 
 `week` is the Monday (UTC) of the ISO week; rows are sorted by week, kind and
 name. `sessions` is the number of distinct transcript files that invoked the
@@ -50,6 +57,12 @@ trigger a commit.
   skills included, and the planner reads their weight as unknown, never 0; a
   typed command that is not an allowlisted skill (`/clear`) is not counted at
   all.
+- **Private plugin prefixes.** A Skill call or typed command whose plugin
+  prefix (the text before the last `:`) is a plugin of a private registry
+  (the `plugins:` list on that entry of `harness/registries.yml`, today
+  `adam-private-anything-anywhere`) counts under `other`, even when the bare
+  name is allowlisted. This protects prefixed invocations only: an unprefixed
+  name resolves by the public allowlist alone.
 - **Blind spots.** Cloud sessions are not in local transcripts. A skill loaded
   without the Skill tool (read straight from its `SKILL.md`) is not counted.
   Local eval sessions do not inflate the counts: `local_eval.py` runs a
@@ -124,6 +137,13 @@ and `USAGE_HOOK_LOGS` replaces the list) and adds `kind: "hook"` rows:
   with no repository is null.
 - `invocations` is the runs in which the check ran, `blocked` the runs in
   which it failed; `sessions` and `overridden` are null.
+- `runner` is the first 12 hex of the runner file's sha256 that the log line
+  carries (`"runner"`, or null). It is published only when it is a string
+  matching `^[0-9a-f]{12}$`, else null. It is part of a row's key, including
+  the `all` row, so two runner builds in one week give two rows whose
+  `invocations` sum to the old single row; readers that sum hook rows
+  (`hook_block_report.py`, the dashboard, the publisher's summary) sum across
+  it, and the dashboard drops the field.
 - Malformed lines are skipped, and a line found in two logs counts once.
   A `scope: "hooks"` source with `runs_scanned` is added only when a log was
   read, so no hook source means unknown, not zero.
@@ -136,7 +156,7 @@ private repository: branch `persistent/usage-events` of
 `events/<YYYY-MM>/<machine>.jsonl`. The census writes them with
 `--events-out`; the publish script merges them in after the public publish.
 
-- **Skill records:** `{"v":1,"id","ts","kind":"skill","name","model","effort","context_tokens","surface":"local","root","machine","session_id","session_title","cwd_repo","branch"}`.
+- **Skill records:** `{"v":1,"id","ts","kind":"skill","name","model","effort","context_tokens","surface":"local","root","cli","machine","session_id","session_title","cwd_repo","branch"}`.
   `id` is the tool-use id, or the user entry's uuid for a typed command;
   `name` is the skill id as invoked (`plugin:skill`), raw but capped;
   `root` is `wsl`, `windows` or `cowork`; `session_title` is the
@@ -149,9 +169,18 @@ private repository: branch `persistent/usage-events` of
   `context_tokens` (input plus cached input tokens on that turn, i.e. how
   full the context was) come from the same assistant turn, null when
   unknown; earlier records lack them and are not rewritten (merge keeps
-  existing lines byte for byte).
-- **Hook records:** `{"v":1,"id","ts","kind":"hook","event","repo","checks","failed","surface":"local","root","machine"}`,
-  `id` being the SHA-256 of the machine name and the raw log line.
+  existing lines byte for byte). `cli` is the Claude Code version, read from
+  the `version` field of that transcript line (the value at use time), null
+  when the line has none; no skill digest is recorded.
+- **Hook records:** `{"v":1,"id","ts","kind":"hook","event","repo","checks","failed","runner","surface":"local","root","machine"}`,
+  `id` being the SHA-256 of the machine name and the raw log line. `runner`
+  is the sanitized digest above, null when absent or malformed. Hook lines
+  already merged keep their bytes; nothing is back-filled.
+- **Reserved `cloud-` machine prefix.** Files `events/*/cloud-*.jsonl` are
+  written by cloud hooks, never by this census: `merge_events` refuses a
+  machine name starting with `cloud-` (ValueError), the publish script refuses
+  to stage any such file, and `hook_block_report.py` skips them when loading.
+  They cannot be regenerated; a re-created branch loses them.
 - **Merge.** By `id`: existing lines are kept as they are, new ids are added,
   each file stays sorted by `ts`. A commit (`usage events [skip ci]`) is made
   only when something was added; the push gets one `pull --rebase` retry and

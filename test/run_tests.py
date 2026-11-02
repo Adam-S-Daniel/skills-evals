@@ -6575,6 +6575,29 @@ class TestIssue67(unittest.TestCase):
             # Keys are exactly the published contract — nothing else rides along.
             self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
 
+            # A hook log's `runner` is as untrusted: only 12 lowercase hex
+            # survive into the public weekly rows, anything else is null.
+            hostile_runners = [secret_path, secret_text, "a" * 64, 7,
+                               ["abcdef012345"], {"r": "abcdef012345"}, "ABCDEF012345"]
+            log = Path(tmp) / "runs.jsonl"
+            log.write_text("\n".join(json.dumps(
+                {"v": 1, "ts": "2026-09-03T10:00:00Z", "event": "pre-commit",
+                 "repo": None, "checks": ["lint-a"], "failed": [], "runner": value})
+                for value in hostile_runners) + "\n", encoding="utf-8")
+            hooks = model_usage_census.hook_tally(
+                [str(log)], self.NOW, 8, frozenset(), None, "example-host")
+            weekly = model_usage_census.build_weekly_document(
+                {"invocations": {}, "sessions": {}, "sessions_scanned": 0},
+                self.NOW, 8, hooks)
+            hook_rows = [r for r in weekly["rows"] if r["kind"] == "hook"]
+            self.assertEqual([r["runner"] for r in hook_rows], [None] * len(hook_rows))
+            self.assertEqual(sum(r["invocations"] for r in hook_rows if r["name"] == "all"),
+                             len(hostile_runners))
+            blob = json.dumps(weekly)
+            for leaked in (secret_path, secret_text, "a" * 64, "abcdef012345",
+                           "ABCDEF012345"):
+                self.assertNotIn(leaked, blob)
+
     def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
         with tempfile.TemporaryDirectory() as tmp:
             projects = Path(tmp) / "projects" / "-tmp-x"
@@ -11388,6 +11411,24 @@ class TestIssue63Review(unittest.TestCase):
         names = {e["name"] for e in entries}
         self.assertEqual(names, {"adam-agentskills", "cms-platform", "adamdaniel.ai",
                                  "adam-agentskills-private"})
+
+    def test_registries_yml_plugins_only_on_the_private_registry_and_validated(self):
+        entries = {e["name"]: e for e in run_eval._load_registries_config()}
+        self.assertEqual(entries["adam-agentskills-private"]["plugins"],
+                         ["adam-private-anything-anywhere"])
+        self.assertEqual([n for n, e in entries.items() if "plugins" in e],
+                         ["adam-agentskills-private"])
+        for value in ("adam-x", "[a, 7]", "[a, '']", "{a: b}"):
+            with self.subTest(plugins=value), tempfile.TemporaryDirectory() as tmp:
+                bad = Path(tmp) / "registries.yml"
+                bad.write_text(
+                    "registries:\n  - name: agentskills\n"
+                    "    url: https://example.com/a\n"
+                    "    layout: 'plugins/*/skills/*/SKILL.md'\n"
+                    f"    plugins: {value}\n", encoding="utf-8")
+                with self.assertRaises(ValueError) as ctx:
+                    run_eval._load_registries_config(bad)
+                self.assertIn("plugins", str(ctx.exception))
 
 
 class TestIssue63Round2(unittest.TestCase):
