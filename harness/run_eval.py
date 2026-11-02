@@ -2665,6 +2665,13 @@ def _git_include_targets(config: Path, home: str | None) -> list[Path]:
     try:
         if not config.is_file():
             return []
+        # Every include lives in an `[include]` or `[includeIf ...]` section,
+        # and a section name has no escapes, so a file without the word (in
+        # any case) names none, and git is not started for it.
+        if config.stat().st_size > _SNAPSHOT_MAX_FILE_BYTES:
+            return [config.parent / "<unreadable includes>"]
+        if b"include" not in config.read_bytes().lower():
+            return []
     except OSError:
         return [config.parent / "<unreadable includes>"]
     env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent",
@@ -2674,16 +2681,17 @@ def _git_include_targets(config: Path, home: str | None) -> list[Path]:
             [workspace_git.GIT, "config", "--file", str(config), "--null", "--get-regexp",
              r"^include(if\..*)?\.path$"],
             capture_output=True, env=env, stdin=subprocess.DEVNULL,
+            text=True, encoding="utf-8", errors="surrogateescape",
             timeout=GIT_INCLUDE_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired):
         return [config.parent / "<unreadable includes>"]
     if result.returncode not in (0, 1):
         return [config.parent / "<unreadable includes>"]
     out = []
-    for record in result.stdout.split(b"\0"):
-        if b"\n" not in record:
+    for record in (result.stdout or "").split("\0"):
+        if "\n" not in record:
             continue
-        value = os.fsdecode(record.split(b"\n", 1)[1])
+        value = record.split("\n", 1)[1]
         if value.startswith("~/") and home:
             target = Path(home) / value[2:]
         else:
