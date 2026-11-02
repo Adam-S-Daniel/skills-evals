@@ -223,6 +223,8 @@ NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
 IMPACT_FILE = "docs/skill-impact.md"
+#: Who a removal notice mentions, so GitHub notifies him (#557).
+NOTICE_OWNER = "Adam-S-Daniel"
 LAYOUT_FILE = "scripts/plugin_layout.json"
 README_FILE = "README.md"
 LOCK_FILE = "skills.lock"
@@ -883,8 +885,40 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     return {"action": "removal", "mode": mode, "skill": skill, **location,
             "branch": f"{BRANCH_PREFIX}{skill}", "versions": versions,
             "impact_entry": entry, "repin": repin,
+            "notice": skill_notice(gates, skill, location, run_url),
             "title": f"Remove {location['plugin']}/{skill}: no benefit (skills-evals#70)",
             "body": _pr_body(gates, skill, location, versions, run_url, repin)}
+
+
+#: The issue that tells Adam a skill is being removed and how to reverse it
+#: (#557; Adam, 2026-11-02, as for guidance sections). `{removal_pr}` is
+#: filled once the pull request exists.
+SKILL_NOTICE_MARKER = "<!-- skills-evals:removed-skill:{skill} -->"
+
+
+def skill_notice(gates: dict, skill: str, location: dict, run_url: str | None) -> dict:
+    """The removal notice (#557): an issue here that mentions the owner,
+    links the removal pull request and says how to reverse it."""
+    verdict = gates["skills"][skill]
+    marker = SKILL_NOTICE_MARKER.format(skill=skill)
+    return {"marker": marker,
+            "title": f"Skill {location['plugin']}/{skill} is being removed automatically (#557)",
+            "body": (f"{marker}\n@{NOTICE_OWNER}: the skill `{location['plugin']}/{skill}` "
+                     f"is being removed from adam-agentskills: its verdict is **retire** as of "
+                     f"{gates['as_of']} ({verdict.get('reason')}). The rule is 90% confidence "
+                     "that it does not improve results by 0.15 or more "
+                     "(`evals/gate-policy.yml` `skills:`; Adam, 2026-11-02).\n\n"
+                     "Removal pull request: {removal_pr} (auto-merges once its checks "
+                     "pass).\n\n**To reverse it:** before it merges, close that pull "
+                     "request. After it merges, open it and press **Revert**: GitHub opens "
+                     "a pull request that restores the skill, its layout and README rows "
+                     "and the bundle version; merge that. The removal is recorded as a "
+                     f"`remove` entry in adam-agentskills' `{IMPACT_FILE}` and on the "
+                     "explorer's list of removed skills.\n\n"
+                     + evidence(gates, skill)
+                     + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+                     + "\n\nFiled by scripts/retire_skill.py on the scheduled workflow."
+                       "\n\n" + AGENT_MARKER + "\n")}
 
 
 def prepare_branch(checkout: Path, action: dict) -> None:
@@ -974,7 +1008,9 @@ def commands(action: dict) -> list:
                 ["gh", "pr", "merge", "<new pull request url>", "-R", REGISTRY_REPO,
                  "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
                 ["gh", "pr", "view", "<new pull request url>", "-R", REGISTRY_REPO,
-                 "--json", "autoMergeRequest"]]
+                 "--json", "autoMergeRequest"],
+                ["gh", "issue", "create", "-R", EVALS_REPO, "--title",
+                 action["notice"]["title"], "--label", AGENT_LABEL, "--body-file", "-"]]
     return []
 
 
@@ -1013,7 +1049,13 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
                           '.autoMergeRequest.mergeMethod // ""']).strip()
     if method != "MERGE":
         raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
-    return f"opened {url} with auto-merge"
+    # The notice goes out once the removal is armed, through the job's own
+    # token (skills-evals issues), never the registry one (#557).
+    notice = action["notice"]
+    gh(["issue", "create", "-R", EVALS_REPO, "--title", notice["title"],
+        "--label", AGENT_LABEL, "--body-file", "-"],
+       notice["body"].replace("{removal_pr}", url))
+    return f"opened {url} with auto-merge, and filed the removal notice"
 
 
 # ---------------------------------------------------------------------------
@@ -1030,8 +1072,7 @@ SHORTEN_ISSUE_MARKER = "<!-- skills-evals:shorten-guidance:{section} -->"
 #: decide to reverse something"). `{removal_pr}` is filled once the pull
 #: request exists.
 GUIDANCE_NOTICE_MARKER = "<!-- skills-evals:removed-guidance:{section} -->"
-#: Who the removal notice mentions, so GitHub notifies him.
-GUIDANCE_NOTICE_OWNER = "Adam-S-Daniel"
+GUIDANCE_NOTICE_OWNER = NOTICE_OWNER
 GUIDANCE_MANIFEST = "agents-md/eval-coverage.yml"
 GUIDANCE_IMPACT = "docs/guidance-impact.md"
 GUIDANCE_AGENTS = "AGENTS.md"

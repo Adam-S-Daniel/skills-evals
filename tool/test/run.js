@@ -142,6 +142,15 @@ test('chip: the guidance subject applies the shared rules too', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
+test('removed skills are listed with their date and revert link (#557)', () => {
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [], guidance: { sections: [] },
+    removed_skills: [{ name: 'example-skill', plugin: 'adam-coding-anywhere', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=is%3Apr+head%3Aretire-skill%2Fexample-skill' }] };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  eq(text.includes(P.STRINGS.removedSkillsHeading), true);
+  eq(text.includes('example-skill'), true);
+  const none = P.textOf(P.buildPage({ ...doc, removed_skills: [] }, 'skills', {}));
+  eq(none.includes(P.STRINGS.removedSkillsHeading), false, 'no list without removals');
+});
 test('removed sections are listed with their date and revert link (#557)', () => {
   const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [],
     guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };

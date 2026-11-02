@@ -239,6 +239,19 @@ class ProposalSchema(unittest.TestCase):
             with self.subTest(label), self.assertRaises(dns.Rejected):
                 dns.check_proposal(doc)
 
+    def test_miner_shaped_repos_pass_and_path_shapes_are_refused(self):
+        miner = ["~", "adamdaniel.ai", "_agent-guidance", "GHA-bench",
+                 "scratch-2026-10-05-abc123", "example-owner/example-repo"]
+        miner += [f"example-repo-{i}" for i in range(30)]
+        dns.check_proposal(proposal(repos=miner), "2026-10-26", SUBJECT)
+        dns.check_proposal(proposal(repos=[f"r{i}" for i in range(100)]))
+        for bad in ("../x", "a/b/c", ".", "..", "/abs", ".hidden", "a/", "",
+                    "x" * 101):
+            with self.subTest(bad), self.assertRaises(dns.Rejected):
+                dns.check_proposal(proposal(repos=[bad]))
+        with self.assertRaises(dns.Rejected):
+            dns.check_proposal(proposal(repos=[f"r{i}" for i in range(101)]))
+
     def test_the_path_must_agree_with_the_content(self):
         with self.assertRaises(dns.Rejected):
             dns.check_proposal(proposal(), "2026-10-23", SUBJECT)
@@ -293,6 +306,20 @@ class Select(Case):
         self.write(self.lessons / "proposals/2026-10-26/odd__new-skill.json",
                    MARKER + "{not json")
         self.assertEqual(self.select()["count"], "0")
+
+    def test_a_miner_shaped_proposal_is_picked(self):
+        repos = ["~", "adamdaniel.ai", "_agent-guidance"]
+        repos += [f"example-repo-{i}" for i in range(27)]
+        rel = self.put("2026-10-26", proposal(repos=repos))
+        self.assertEqual(self.select()["proposal"], rel)
+
+    def test_the_unattributed_pool_is_skipped_and_a_real_subject_picked(self):
+        self.put("2026-10-26", proposal(subject="none", evidence_count=403))
+        real = self.put("2026-10-26", proposal(subject="aaa", evidence_count=2))
+        self.assertEqual(self.select(), {"proposal": real, "count": "1",
+                                         "hook_declined": "0"})
+        with self.assertRaisesRegex(dns.Rejected, "unattributed pool"):
+            dns.check_proposal(proposal(subject="none"))
 
     def test_a_proposal_too_big_to_fire_is_never_picked(self):
         self.put("2026-10-26", proposal(examples=["é" * 2000] * 20))

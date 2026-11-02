@@ -363,6 +363,8 @@ const STRINGS = {
   removedHeading: 'Removed sections',
   removedNote: 'Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
   removedLink: 'removal and revert',
+  removedSkillsHeading: 'Removed skills',
+  removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date' },
@@ -1189,6 +1191,17 @@ function removedView(doc) {
       link(r.reverse_url, STRINGS.removedLink)))));
 }
 
+/* Skills the evals removed (#557), with the date and a link to the removal
+   pull request, whose Revert button restores the skill. */
+function removedSkillsView(doc) {
+  const removed = (Array.isArray(doc.removed_skills) ? doc.removed_skills : [])
+    .filter((r) => r && typeof r.name === 'string' && typeof r.date === 'string');
+  if (!removed.length) return null;
+  return h('section', null, h('h2', null, STRINGS.removedSkillsHeading), h('p', { class: 'note' }, STRINGS.removedSkillsNote),
+    h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.name)), ' ', clean(r.date), ' ',
+      link(r.reverse_url, STRINGS.removedLink)))));
+}
+
 function toolbar(mode, sortBy, handlers) {
   const hd = handlers || {};
   const seg = (label, opts) => h('div', { class: 'toolbar' }, h('span', { class: 'note' }, label),
@@ -1240,7 +1253,8 @@ function buildPage(doc, mode, opts) {
     body = [h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
-      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards))];
+      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      removedSkillsView(doc)];
   }
   return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
 }

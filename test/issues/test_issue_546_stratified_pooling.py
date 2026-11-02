@@ -123,7 +123,7 @@ class SimulationTests(unittest.TestCase):
         keep = (546, 2, [0.6, 0.9], 6)
         self.assertEqual(sim.retire_rep(retire), sim.retire_rep(retire))
         self.assertEqual(sim.keep_rep(keep), sim.keep_rep(keep))
-        self.assertEqual(len(sim.retire_rep(retire)), 4)
+        self.assertEqual(len(sim.retire_rep(retire)), 3)
         self.assertEqual(len(sim.keep_rep(keep)), 4)
 
     def test_wilson_interval_brackets_the_estimate(self):

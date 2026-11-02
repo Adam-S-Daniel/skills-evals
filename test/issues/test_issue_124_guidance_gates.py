@@ -846,10 +846,13 @@ class GuidanceVerdictTests(unittest.TestCase):
         v = self.verdict(pair_runs("in_situ", FLAT[:1], FLAT[:1]) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("insufficient", "insufficient"))
         self.assertEqual(v["alone"]["verdict"], "keep")
-        # Three runs, on priors measured over both pairs' runs, retire in
-        # situ (no fixed looks, 2026-10-31), and the alone benefit makes it
-        # shorten-or-merge.
+        # Three runs no longer retire in situ (#557): a cell's prior is its
+        # own, and under 20 degrees of freedom it is the 0.25 fallback.
         v = self.verdict(pair_runs("in_situ", FLAT[:3], FLAT[:3]) + alone)
+        self.assertEqual(v["in_situ_verdict"], "insufficient")
+        # Twenty retire in situ, and the alone benefit makes it
+        # shorten-or-merge.
+        v = self.verdict(pair_runs("in_situ", FLAT, FLAT) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("retire", "shorten-or-merge"))
 
     def test_runs_of_the_other_pair_never_enter_a_cell(self):
@@ -868,11 +871,27 @@ class GuidancePolicyTests(unittest.TestCase):
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
-        changed = text.replace("guidance:\n  objective_margin: 0.05",
+        changed = text.replace("guidance:\n  objective_margin: 0.15",
                                "guidance:\n  objective_margin: 0.2")
         policy = gates.parse_gate_policy(changed)
         self.assertEqual(policy["guidance"]["objective_margin"], 0.2)
-        self.assertEqual(policy["skills"]["objective_margin"], 0.05)
+        self.assertEqual(policy["skills"]["objective_margin"], 0.15)
+
+    def test_the_committed_guidance_removal_rule_is_adams(self):
+        # Adam, 2026-11-02 (#557): remove at 90% confidence that a section does
+        # not improve results by 0.15 or more; keep at 85%.
+        policy = gates.load_gate_policy()
+        self.assertEqual((policy["guidance"]["objective_margin"],
+                          policy["guidance"]["retire_confidence"],
+                          policy["guidance"]["benefit_confidence"],
+                          policy["guidance"]["judge_margin"]), (0.15, 0.90, 0.85, 1.5))
+        # The judge's margin is the objective's on its 0-to-10 scale.
+        self.assertEqual(policy["guidance"]["judge_margin"],
+                         policy["guidance"]["objective_margin"] * 10)
+        # Skills took the same rule the same day.
+        self.assertEqual((policy["skills"]["objective_margin"],
+                          policy["skills"]["retire_confidence"],
+                          policy["skills"]["judge_margin"]), (0.15, 0.90, 1.5))
 
     def test_without_the_block_there_is_no_guidance_policy(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
@@ -880,7 +899,7 @@ class GuidancePolicyTests(unittest.TestCase):
 
     def test_a_bad_guidance_block_or_an_unknown_top_key_is_refused(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
-        for bad in (text.replace("guidance:\n  objective_margin: 0.05",
+        for bad in (text.replace("guidance:\n  objective_margin: 0.15",
                                  "guidance:\n  objective_margin: 2"),
                     text + "memories: {}\n"):
             with self.assertRaises(gates.GatePolicyError):
@@ -980,7 +999,10 @@ class ComputeGuidanceTests(unittest.TestCase):
         edited = {**self.digests, "rest": "e" * 64}
         self.two_halves(self.digests, edited)
         self.assertEqual(self.cell_runs("alone"), (20, 20))
-        self.assertEqual(self.cell_runs(), (12, 12))  # in-situ keeps the rest key
+        # In situ pools both rests as two strata (#557), and the key names them.
+        self.assertEqual(self.cell_runs(), (20, 20))
+        key = self.compute()["guidance"]["bravo"]["cells"][0]["key"]
+        self.assertEqual(sorted(key["strata"]), sorted([self.digests["rest"], "e" * 64]))
 
     def test_alone_runs_with_another_section_payload_do_not_pool(self):
         # Same section extent, different file intro: the arm loaded other text.

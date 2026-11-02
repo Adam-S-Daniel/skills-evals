@@ -571,6 +571,22 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
                                      'stdin=subprocess.DEVNULL, check=False)', mode='eval').body
                 self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
                 allowed_reads.add(id(sinks[0]))
+            if path == harness / 'run_eval.py':
+                # #535: the arm's `git --version`, the binary's own version
+                # with no caller `GIT_*` and no system or global config.
+                # Never a workspace and never a repository.
+                method = next(node for node in tree.body
+                              if isinstance(node, ast.FunctionDef) and node.name == 'git_version')
+                sinks = [node for node in ast.walk(method) if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and (node.func.value.id, node.func.attr) == ('subprocess', 'run')]
+                self.assertEqual(len(sinks), 1)
+                expected = ast.parse('subprocess.run(["git", "--version"], env=env, '
+                                     'stdin=subprocess.DEVNULL, capture_output=True, text=True, '
+                                     'timeout=VERSION_TIMEOUT_S)', mode='eval').body
+                self.assertEqual(ast.dump(sinks[0]), ast.dump(expected))
+                allowed_reads.add(id(sinks[0]))
             bindings = {}
             imported_sinks = set()
             for node in ast.walk(tree):

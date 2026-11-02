@@ -4,15 +4,18 @@
 Two error rates, each checked after EVERY run (no fixed looks), using the
 real bounds in harness/gates.py:
 
-RETIRE (false removals). The section helps by exactly the margin beside
-main's rest-of-guidance (delta = objective_margin, the hardest true "keep"),
-while older rests show delta <= 0 and already hold many runs. A removal is
-wrongly confirmed when BOTH the main-rest stratum's own confidence sequence
-and the precision-weighted combined one have their `retire_confidence`
-upper end under the margin (the intersection test the issue requires). The
-target is 2.5% one-sided (`retire_confidence` 0.95 is two-sided). The two
-halves are also reported alone: the combined bound alone is what #546's
-review found unsafe.
+RETIRE (false removals). harness/gates.py's rule for an in-situ guidance
+cell (Adam, 2026-11-02; #557): pooled over every version of the rest of
+the guidance, remove when the stratified `retire_confidence` (0.90) upper
+end is under `objective_margin` (0.15), after the pooled ceiling, floor and
+cannot-discriminate rules; no separate confirmation step. In a GATED
+scenario the section helps by exactly the margin beside every version of
+the rest, so a removal is false; the target is 5% one-sided (0.90 is
+two-sided). DRIFT scenarios (helps beside main's rest, not beside older
+ones) are reported: the pooled rule decides on the average over versions,
+by that decision. (#546 and the first #557 design gated an intersection
+with a main-rest confirmation at 0.05 / 95%; the run counts on #557 showed
+it could not be reached.)
 
 KEEP (false keeps). No stratum has any effect (delta = 0 everywhere), 2 to 4
 strata, one near the ceiling, per-check Bernoulli outcomes at one trial per
@@ -46,19 +49,14 @@ today's single-stratum rule on the same runs, so a stratified change is
 judged against the rule it replaces. The judge is not simulated: it can only add a requirement to a
 removal and a route to a keep that has its own sequence.
 
-THE CONFIRMATION'S PRIOR is measured on the main-rest stratum's own two arms
-(same guard): a prior pooled with lower-variance strata (old rests at the
-ceiling beside a mid-range main rest) made it anti-conservative (#546
-review round 1, now a scenario here).
-
-KNOWN LIMITS (#546 review round 2), for whoever wires this into a verdict:
-  * the keep side is not shown safe when the shared prior is pooled from
-    OTHER cells at the ceiling: a reviewer's probe with such a history gave
-    stratified false keeps of 34-46% against 22-25% for one pooled stratum;
-  * the main-rest half relies on the classifier's ceiling, floor and
-    cannot-discriminate rules, which this simulation does not apply: a
-    0/1 stratum with both arms constant meets the df guard and falls to the
-    1e-4 floor (1 check at 0.97/0.92 retired 30% of the time without them);
+KNOWN LIMITS:
+  * the keep side needs a PER-CELL prior (harness/gates.py `cell_priors`,
+    which is this simulation's default, no history): with a prior pooled
+    from other cells at the ceiling a reviewer's probe gave stratified false
+    keeps of 34-46%;
+  * a 0/1 stratum with both arms constant meets the df guard and falls to
+    the 1e-4 floor, so the ceiling and floor rules are what keep the edge
+    scenarios safe;
   * a keep is the union of its routes, gated here per route, and the judge
     route is not simulated; each pass is judged on the point estimate.
 
@@ -83,31 +81,36 @@ TOLERANCE = 0.005
 HISTORY_GROUPS = 40
 HISTORY_RUNS = 3
 
+M = POLICY["objective_margin"]
 #: name, checks per trial, main-rest (p_with, p_without), old strata
-#: [(p_with, p_without, runs per arm)], new main-rest runs per arm.
+#: [(p_with, p_without, runs per arm)], new main-rest runs per arm, gated.
+#: GATED scenarios: the section helps by exactly the margin beside EVERY
+#: version of the rest, so a removal is a false removal. The others are
+#: DRIFT: it helps by the margin beside main's rest but not beside older
+#: rests; the pooled rule (Adam, 2026-11-02, no confirmation step) removes
+#: on the average over versions, so these are reported, not gated.
 RETIRE = [
-    ("3 checks, two old rests", 3, (0.75, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 40),
-    ("1 check, two old rests", 1, (0.75, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 40),
-    ("3 checks, four old rests x20", 3, (0.75, 0.70),
-     [(0.70, 0.70, 20), (0.60, 0.70, 20), (0.65, 0.70, 20), (0.70, 0.75, 20)], 40),
-    ("3 checks, near ceiling", 3, (0.92, 0.87), [(0.87, 0.87, 10), (0.80, 0.87, 10)], 40),
-    ("5 checks, no old rest", 5, (0.75, 0.70), [], 60),
-    # Round 1: old rests near the ceiling (low variance) beside a mid-range
-    # main rest, so a pooled prior is far too small for the main rest.
-    ("1 check, old rests at the ceiling", 1, (0.55, 0.50),
-     [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
-    ("3 checks, old rests at the ceiling", 3, (0.55, 0.50),
-     [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
-    ("3 checks, unequal old rests 4x40, main above margin", 3, (0.76, 0.70),
-     [(0.70, 0.70, 40), (0.60, 0.70, 40), (0.65, 0.70, 40), (0.70, 0.75, 40)], 60),
+    ("3 checks, one rest", 3, (0.70 + M, 0.70), [], 60, True),
+    ("1 check, one rest", 1, (0.50 + M, 0.50), [], 60, True),
+    ("3 checks, three rests", 3, (0.70 + M, 0.70),
+     [(0.60 + M, 0.60, 10), (0.75 + M, 0.75, 10)], 40, True),
+    ("1 check, rests near the ceiling", 1, (0.75 + M, 0.75),
+     [(0.97, 0.97 - M, 30), (0.95, 0.95 - M, 30)], 60, True),
+    ("1 check, just under the ceiling", 1, (0.89, 0.89 - M), [], 60, True),
+    ("1 check, just over the floor", 1, (0.12 + M, 0.12), [], 60, True),
+    ("DRIFT 3 checks, two old rests at delta <= 0", 3, (0.70 + M, 0.70),
+     [(0.70, 0.70, 10), (0.60, 0.70, 10)], 40, False),
+    ("DRIFT 3 checks, four old rests x20", 3, (0.70 + M, 0.70),
+     [(0.70, 0.70, 20), (0.60, 0.70, 20), (0.65, 0.70, 20), (0.70, 0.75, 20)], 40, False),
 ]
 
-#: Power, not error: the section truly does nothing beside main's rest
-#: (delta 0), as RETIRE otherwise. Reported, never failed: the price of
-#: confirming at main's rest is runs.
+#: Power, not error: the section truly does nothing (delta 0 in every
+#: rest). Reported, never failed: how many runs a removal costs.
 POWER = [
-    ("3 checks, two old rests", 3, (0.70, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 60),
-    ("1 check, two old rests", 1, (0.70, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 60),
+    ("3 checks x 1 trial, two old rests", 3, (0.70, 0.70),
+     [(0.70, 0.70, 10), (0.60, 0.60, 10)], 60),
+    ("1 check x 1 trial, one rest", 1, (0.70, 0.70), [], 100),
+    ("3 checks x 3 trials, one rest", 9, (0.70, 0.70), [], 40),
 ]
 
 #: name, checks per trial, strata [p] (with == without), total runs.
@@ -151,37 +154,43 @@ def _mean(values):
 
 
 def retire_rep(args) -> tuple:
-    """(intersection, combined only, main only) retire for one rep, and the
-    main-rest runs per arm the intersection first retired at (None if
-    never)."""
-    seed, checks, main, old, horizon = args
+    """(pooled rule, main rest alone) retire for one rep, and the main-rest
+    runs per arm the pooled rule first retired at (None if never). The
+    pooled rule is harness/gates.py's for an in-situ guidance cell: the
+    stratified `retire_confidence` upper end under the margin, with the
+    pooled ceiling, floor and cannot-discriminate rules first."""
+    seed, checks, main, old, horizon = args[:5]
     rng = random.Random(seed)
     history = _history(rng, [p for q in old for p in q[:2]] + list(main), checks)[0]
     margin, level, strength = (POLICY["objective_margin"], POLICY["retire_confidence"],
                                POLICY["prior_strength"])
-    strata = []
-    for pw, po, n in old:
-        strata.append(([_mean(_run(rng, pw, checks)) for _ in range(n)],
-                       [_mean(_run(rng, po, checks)) for _ in range(n)]))
-    mw, mo = [], []
-    hit, first = [False, False, False], None
+    old_runs = [([_run(rng, pw, checks) for _ in range(n)],
+                 [_run(rng, po, checks) for _ in range(n)]) for pw, po, n in old]
+    strata = [([_mean(t) for t in w], [_mean(t) for t in o]) for w, o in old_runs]
+    mw, mo, cw, co = [], [], [], []
+    hit, first = [False, False], None
     for look in range(1, horizon + 1):
-        mw.append(_mean(_run(rng, main[0], checks)))
-        mo.append(_mean(_run(rng, main[1], checks)))
+        cw.append(_run(rng, main[0], checks))
+        co.append(_run(rng, main[1], checks))
+        mw.append(_mean(cw[-1]))
+        mo.append(_mean(co[-1]))
         groups = [g for s in strata for g in s] + [mw, mo]
         prior = _prior(history, groups)
-        all_strata = strata + [(mw, mo)]
-        combined = gates.stratified_sequence(all_strata, level, prior, strength)[1] < margin
-        # The confirmation's prior is its own stratum's (#546 round 1): a
-        # prior pooled with lower-variance strata made it anti-conservative.
+        pooled = gates.stratified_sequence(strata + [(mw, mo)], level, prior,
+                                           strength)[1] < margin
+        every_w = cw + [t for w, _ in old_runs for t in w]
+        every_o = co + [t for _, o in old_runs for t in o]
+        rates = (_mean([_mean(t) for t in every_w]), _mean([_mean(t) for t in every_o]))
+        blocked = (all(r >= POLICY["ceiling_fraction"] for r in rates)
+                   or all(r <= POLICY["floor_fraction"] for r in rates)
+                   or any(not any(t[c] for t in every_w + every_o) for c in range(checks)))
         own_prior = gates.pooled_variance([mw, mo], gates.GUIDANCE_PRIOR_MIN_DF,
                                           gates.GUIDANCE_FALLBACK_PRIOR_VARIANCE)
         own = gates.confidence_sequence(mw, mo, level, own_prior, strength)[1] < margin
-        if combined and own and first is None:
+        if pooled and not blocked and first is None:
             first = look
-        hit[0] |= combined and own
-        hit[1] |= combined
-        hit[2] |= own
+        hit[0] |= pooled and not blocked
+        hit[1] |= own
         if all(hit):
             break
     return tuple(hit) + (first,)
@@ -277,30 +286,31 @@ def main(argv=None) -> int:
     with (_Serial() if args.jobs == 1 else ProcessPoolExecutor(
             args.jobs, initializer=_init,
             initargs=(CELL_PRIOR, HISTORY_GROUPS, MIN_DF, FALLBACK))) as pool:
-        print(f"RETIRE: false removals, target <= 2.5% (+{TOLERANCE:.1%} tolerance), "
+        target = (1 - POLICY["retire_confidence"]) / 2
+        print(f"RETIRE: false removals at margin {M}, {POLICY['retire_confidence']:.0%}, "
+              f"target <= {target:.1%} (+{TOLERANCE:.1%} tolerance), "
               f"{args.reps} reps, seed {args.seed}")
-        for i, (name, checks, main_p, old, horizon) in enumerate(RETIRE):
+        for i, (name, checks, main_p, old, horizon, gated) in enumerate(RETIRE):
             seeds = _seeds(args.seed, 1, i, args.reps)
             hits = list(pool.map(retire_rep, [(int(s), checks, main_p, old, horizon)
                                               for s in seeds], chunksize=200))
-            both, comb, own = (sum(h[j] for h in hits) for j in range(3))
-            lo, hi = wilson(both, args.reps)
-            passed = both / args.reps <= 0.025 + TOLERANCE
-            ok &= passed
-            print(f"  {'PASS' if passed else 'FAIL'} {name}: intersection "
-                  f"{both / args.reps:.2%} [{lo:.2%}, {hi:.2%}]; combined alone "
-                  f"{comb / args.reps:.2%}; main rest alone {own / args.reps:.2%}")
+            pooled, own = (sum(h[j] for h in hits) for j in range(2))
+            lo, hi = wilson(pooled, args.reps)
+            passed = pooled / args.reps <= target + TOLERANCE
+            if gated:
+                ok &= passed
+            mark = ("PASS" if passed else "FAIL") if gated else "INFO"
+            print(f"  {mark} {name}: pooled rule {pooled / args.reps:.2%} "
+                  f"[{lo:.2%}, {hi:.2%}]; main rest alone {own / args.reps:.2%}")
         print("POWER: true no-benefit at main's rest (reported, not gated)")
         for i, (name, checks, main_p, old, horizon) in enumerate(POWER):
             seeds = _seeds(args.seed, 3, i, args.reps)
             hits = list(pool.map(retire_rep, [(int(s), checks, main_p, old, horizon)
                                               for s in seeds], chunksize=200))
-            firsts = sorted(h[3] for h in hits if h[3] is not None)
+            firsts = sorted(h[2] for h in hits if h[2] is not None)
             median = firsts[len(firsts) // 2] if firsts else None
             print(f"  {name}: retired within {horizon} main-rest runs per arm in "
-                  f"{len(firsts) / args.reps:.1%} (median runs {median}); main rest "
-                  f"alone {sum(h[2] for h in hits) / args.reps:.1%}, combined alone "
-                  f"{sum(h[1] for h in hits) / args.reps:.1%}")
+                  f"{len(firsts) / args.reps:.1%} (median runs {median})")
         print(f"KEEP: false keeps, target <= 7.5% (+{TOLERANCE:.1%} tolerance)")
         for i, (name, checks, ps, total) in enumerate(KEEP):
             seeds = _seeds(args.seed, 2, i, args.reps)
