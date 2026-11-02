@@ -131,6 +131,26 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
        for name in ("one-row-rejects-the-lock", "personal-copy-outranks-repo",
                     "ssh-remote-is-durable")},
 }
+# Re-measured 2026-11-02 after the cms-platform fixtures were re-pinned from
+# 28f2b6ed to its `main` at 6c8eca12 (the lock there deploys adam-agentskills
+# main's digest of each subject; at 28f2b6ed it deployed an older copy, so
+# those runs never tested the shipped skill), guidance proven at a13d5dab.
+# Through `run_eval._in_place_plan`, both arms equal because the context
+# adopts the skill. MEASURED above stays what each budget was sized on
+# (`sized_on`); this is what the pinned context measures today (`measured`).
+# The larger arm fits the committed budget, so no budget moved.
+_CMS_PLATFORM_NOW = (25188, 7447, 688780)
+REMEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    path: (_CMS_PLATFORM_NOW, _CMS_PLATFORM_NOW)
+    for path in (
+        "evals/disarm-inherited-reach",
+        "evals/review-bash-ci-reliability/drift-report-capture",
+        "evals/review-bash-ci-reliability/empty-repo-discovery",
+        "evals/review-bash-ci-reliability/nightly-snapshot",
+        "evals/review-bash-ci-reliability/release-pipeline",
+        "evals/review-bash-ci-reliability/test-runner-assertions",
+        "evals/workflow-path-audit/required-check-routing",
+        "evals/writing-adrs/bootstrap")}
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
 
@@ -256,15 +276,20 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
         # added skill short: 7603 against 7180 catalog bytes was 5.9%.
         self.assertEqual(set(MEASURED), set(fixtures()) - set(ISOLATION_ONLY))
         self.assertEqual(set(MEASURED_KEYS), set(context.BUDGET_KEYS))
+        self.assertLessEqual(set(REMEASURED), set(MEASURED))
         for path, fixture in fixtures().items():
             if path in ISOLATION_ONLY:
                 continue
-            context_only, with_arm = MEASURED[path]
+            sized_on_context, sized_on = MEASURED[path]
+            measured_context, measured = REMEASURED.get(path, MEASURED[path])
             for index, key in enumerate(MEASURED_KEYS):
                 with self.subTest(fixture=path, key=key):
-                    self.assertGreaterEqual(with_arm[index], context_only[index])
-                    self.assertEqual(fixture["context"]["budget"][key],
-                                     math.ceil(with_arm[index] * HEADROOM))
+                    budget = fixture["context"]["budget"][key]
+                    self.assertGreaterEqual(sized_on[index], sized_on_context[index])
+                    self.assertGreaterEqual(measured[index], measured_context[index])
+                    self.assertEqual(budget, math.ceil(sized_on[index] * HEADROOM))
+                    # What the pinned context measures today must fit.
+                    self.assertLessEqual(measured[index], budget)
 
     def test_each_fixture_still_declares_its_isolation_pair(self):
         # --pairing isolation stays runnable: the skill alone against nothing.
