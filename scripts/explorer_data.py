@@ -214,8 +214,10 @@ def regression_url(issues: dict, subject: str, name: str):
 
 
 def build_alerts(gates_doc: dict, regressions: dict | None, issues: dict,
-                 skill_names: set, section_ids: set) -> list:
-    """Retire verdicts and regression rows, about listed subjects only."""
+                 skill_names: set, section_ids: set, cells: list = ()) -> list:
+    """Retire verdicts, regression rows and held scheduled cells, about listed
+    subjects only. A held cell (plan_week.eval_cells) of a listed skill is a
+    `not-schedulable` alert with its reason; a private cell is never one."""
     alerts = []
     for name, verdict in sorted(gates_doc["skills"].items()):
         if verdict["verdict"] == "retire" and name in skill_names:
@@ -241,6 +243,15 @@ def build_alerts(gates_doc: dict, regressions: dict | None, issues: dict,
                          + (f": {row['reason']}" if row.get("reason") else "") + ".",
                  "url": regression_url(issues, subject, name)}
         alerts.append(alert)
+    for cell in cells:
+        if cell.get("schedulable", True) or cell.get("hold_reason") not in ("no context", "null pin") \
+                or cell["skill"] not in skill_names:
+            continue
+        alerts.append({"kind": "not-schedulable", "subject": "skill", "name": cell["skill"],
+                       "model": cell["model"], "fixture": cell["fixture"],
+                       "reason": cell["hold_reason"],
+                       "text": f"The task {cell['fixture']} is not scheduled: "
+                               f"{cell['hold_reason']}.", "url": None})
     return alerts
 
 
@@ -316,6 +327,7 @@ def test_queue(cells: list, model_weights: dict, now) -> dict:
     for a subject with no fixture on `evals/scheduled.yml`. The
     budget decides how far down the queue a sweep gets, so this is an order,
     not a date."""
+    cells = [c for c in cells if c.get("schedulable", True)]
     ctx = {"cells": cells, "model_weights": model_weights, "removal_prs": [],
            "reservation": 1.0, "overrun": 1.0, "points_per_usd": None}
     bands, _work = plan_week.eval_items(ctx, now)
@@ -391,10 +403,10 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     roster = yaml.safe_load(roster_path.read_text(encoding="utf-8"))
     by_skill, by_section = skill_runs(index), guidance_runs(index)
     now = plan_week._stamp_time(compact)
-    queue = {}
+    queue, cells = {}, []
     if (evals_dir / "scheduled.yml").is_file():
-        queue = test_queue(plan_week.eval_cells(evals_dir, gates_doc, [], now),
-                           plan_week.model_weights(tree, gates_doc["roster_models"]), now)
+        cells = plan_week.eval_cells(evals_dir, gates_doc, [], now)
+        queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now)
     counts, usage_window = usage_counts(tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
@@ -445,7 +457,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     except (OSError, ValueError):
         regressions = None
     alerts = build_alerts(gates_doc, regressions if isinstance(regressions, dict) else None,
-                          issues or {}, {s["name"] for s in skills}, {s["id"] for s in sections})
+                          issues or {}, {s["name"] for s in skills}, {s["id"] for s in sections}, cells)
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {

@@ -541,6 +541,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
+        if not cell.get("schedulable", True):
+            continue  # an isolation, null-pin or private cell enters no band, safety included
         stakes = cell.get("stakes", "normal")
         if stakes == "none":
             continue  # a check enforces it; evals/stakes.yml names the check
@@ -900,7 +902,7 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
-            "hook_candidates": hooks,
+            "hook_candidates": hooks, "real_work": ctx.get("real_work", []),
             # An eval leg sends no skill and no section, and only a
             # guidance-improve leg a section: the fire workflow refuses them
             # in any other mode.
@@ -992,15 +994,57 @@ def _fixture_subject(evals_dir: Path, fixture: str) -> tuple:
                 or parts[2] != section or section.startswith("_"):
             raise PlanError("a scheduled guidance fixture is not under its section")
         return "guidance", section
+    if doc.get("subject") == "any":
+        return "any", None  # a real-work row: no skill cell, the skill planner skips it
     skill = doc.get("skill")
     if not isinstance(skill, str):
         raise PlanError("a scheduled fixture names no skill")
     return "skill", skill
 
 
+HOLD_PRIVATE = "private, paused"
+
+
+def fixture_hold_reason(directory: Path) -> str | None:
+    """Why the planner refuses to schedule the fixture in `directory`, or
+    None when it may be. Adam, 2026-11-02: an isolation pair never pools
+    (harness/gates.py pool_cells needs a tested digest and an arm context), so
+    a skill fixture with no `context:` mapping ("no context") or a null
+    `guidance_revision` pin ("null pin") is held, and a private-registry
+    fixture ("private, paused") waits for a private context. A guidance or
+    real-work fixture runs in situ and needs no context."""
+    import yaml  # noqa: PLC0415
+    try:
+        doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        doc = None
+    doc = doc if isinstance(doc, dict) else {}
+    if doc.get("registry") == PRIVATE_REGISTRY_URL:
+        return HOLD_PRIVATE
+    if doc.get("subject") in ("guidance", "any"):
+        return None
+    if not isinstance(doc.get("context"), dict):
+        return "no context"
+    if doc["context"].get("guidance_revision") is None:
+        return "null pin"
+    return None
+
+
+def real_work_rows(evals_dir: Path) -> list:
+    """The scheduled `subject: any` fixtures: real-work rows the skill planner
+    does not plan."""
+    committed = schedule.committed_fixtures(evals_dir.parent)
+    scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
+    return [f for f in scheduled if _fixture_subject(evals_dir, f)[0] == "any"
+            and fixture_hold_reason(evals_dir.parent / f) != HOLD_PRIVATE]
+
+
 def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
     """One cell per scheduled fixture x roster model, with its gates class,
-    run counts, newest run, mean cost per run and empty successful fires."""
+    run counts, newest run, mean cost per run and empty successful fires, and
+    `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
+    stays in the list for the cost statistics; `eval_items` plans none of it.
+    A `subject: any` row makes no cell (`real_work_rows` lists it)."""
     committed = schedule.committed_fixtures(evals_dir.parent)
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
     fired: dict = {}
@@ -1017,6 +1061,9 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
     cells = []
     for fixture in scheduled:
         subject, ident = _fixture_subject(evals_dir, fixture)
+        if subject == "any":
+            continue  # a real-work row is not a skill cell
+        hold = fixture_hold_reason(evals_dir.parent / fixture)
         parts = fixture.split("/")
         if subject == "guidance":
             # Pooled by section (results/guidance/<id>/...), in-situ cells.
@@ -1040,6 +1087,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
+                "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),
                 "without_runs": len(runs.get("without", [])), "newest": newest,
@@ -1409,6 +1457,10 @@ def gather(args, now: datetime) -> dict:
                             compute_gates.parse_as_of(args.as_of), registries,
                             gates_doc, records, prs, evidence["on_hold"], now)
     triggers = trigger_contexts(evals_dir, registries)
+    cells = eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now)
+    held = sum(1 for c in cells if c["hold_reason"] == HOLD_PRIVATE)
+    if held:
+        print(f"{held} private cells held")  # a count only: no name in the log
     return {"policy": gates_doc["policy"], "reservation": state["reservation"],
             "overrun": limits["per_run_overrun"], "improve_charge": state["improve_charge"],
             "room": guard.room(state),
@@ -1417,7 +1469,7 @@ def gather(args, now: datetime) -> dict:
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
-            "cells": eval_cells(evals_dir, gates_doc, evidence["fire_runs"], now),
+            "cells": cells, "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
             "guidance": guidance_contexts(evals_dir, args.results_tree,
@@ -1456,6 +1508,9 @@ def summary_lines(plan: dict) -> list:
     for item in plan["work"]:
         kinds[item["kind"]] = kinds.get(item["kind"], 0) + 1
     lines.append("")
+    if plan.get("real_work"):
+        lines.append("Real-work row, not planned by the skill planner: "
+                     + ", ".join(plan["real_work"]))
     lines.append("Work items: " + (", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
                                    or "none"))
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
@@ -1506,6 +1561,8 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
             raise PlanError("the eval leg is not a scheduled fixture on a roster arm")
         if arms == "bare" and not schedule.declares_context(root / fixture):
             raise PlanError("the bare leg's fixture does not run in place")
+        if arms == "both" and fixture_hold_reason(root / fixture) is not None:
+            raise PlanError("the eval leg's fixture is held, not schedulable")
     elif mode == "improve":
         if fixture or key or model or arms or not outcomes_mod.SKILL_RE.fullmatch(skill) \
                 or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", holdout):

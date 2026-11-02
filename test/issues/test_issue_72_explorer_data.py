@@ -488,6 +488,34 @@ def qcell(skill, fixture, cls, newest=None, verdict=None, section=None, runs=1):
             "usd_per_arm_trial": None, "empty_fires": 0}
 
 
+class NotSchedulableTests(unittest.TestCase):
+    """A held scheduled cell is no queue entry; a public one is an alert, a
+    private one is never named."""
+    NOW = explorer_data.plan_week._stamp_time("20261101T000000Z")
+
+    def held(self, skill, reason):
+        return {**qcell(skill, f"evals/{skill}/x", "missing"), "schedulable": False,
+                "hold_reason": reason}
+
+    def test_the_queue_skips_held_cells(self):
+        cells = [self.held("iso", "no context"), qcell("ok", "evals/ok/x", "missing")]
+        q = explorer_data.test_queue(cells, {"model-a": 1.0}, self.NOW)
+        self.assertEqual(set(q), {("skill", "ok")})
+
+    def test_a_public_held_cell_is_an_alert_and_a_private_one_is_not(self):
+        gates_doc = {"skills": {}}
+        cells = [self.held("iso", "no context"), self.held("pin", "null pin"),
+                 self.held("hidden", "private, paused"), qcell("ok", "evals/ok/x", "missing")]
+        alerts = explorer_data.build_alerts(gates_doc, None, {}, {"iso", "pin", "ok"}, set(),
+                                            cells)
+        got = {(a["kind"], a["name"], a["model"], a["fixture"], a["reason"]) for a in alerts}
+        self.assertEqual(got, {("not-schedulable", "iso", "model-a", "evals/iso/x", "no context"),
+                               ("not-schedulable", "pin", "model-a", "evals/pin/x", "null pin")})
+        # Even when the private skill is listed, its cell raises nothing.
+        alerts = explorer_data.build_alerts(gates_doc, None, {}, {"hidden"}, set(), cells)
+        self.assertEqual(alerts, [])
+
+
 class QueueConfidenceUsageTests(unittest.TestCase):
     """The page's order (next test first), its confidence line and its
     real-use count (Adam, 2026-11-01)."""

@@ -305,6 +305,16 @@ test('each mode renders its own views', () => {
   ok(g.includes(P.GLOSSES['security']), 'gloss on the card');
 });
 
+test('a not-schedulable alert gets its plain label, not the raw kind', () => {
+  eq(P.STRINGS.alertKinds['not-schedulable'], 'Not being tested');
+  const doc = Object.assign({}, fixture, { alerts: [{ kind: 'not-schedulable', subject: 'skill',
+    name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'evals/example-skill-alpha/x',
+    reason: 'no context', text: 'The task evals/example-skill-alpha/x is not scheduled: no context.', url: null }] });
+  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(t.includes('Not being tested: example-skill-alpha'), 'label shown');
+  ok(!t.includes('not-schedulable'), 'raw kind not shown');
+});
+
 // --- glosses -----------------------------------------------------------------
 function manifestIds() {
   const file = process.env.AGENT_GUIDANCE_MANIFEST

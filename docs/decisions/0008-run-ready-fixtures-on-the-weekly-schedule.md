@@ -38,6 +38,13 @@ publishing, or API workspace spending ceiling. Routine results are not badge
 input, as [ADR 0010](0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
 records.
 
+## Amendment (2026-11-02): held fixtures
+
+Adam, 2026-11-02: a listed fixture that the planner's schedulability
+predicate refuses (no `context:`, or a null guidance pin) is held, not
+planned, because its isolation runs can never pool. Private-registry fixtures
+pause until a private context exists.
+
 ## Decision
 
 1. Commit `evals/scheduled.yml` as a nonempty `fixtures` list. Each entry has
