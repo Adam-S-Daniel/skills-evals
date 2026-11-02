@@ -19,11 +19,19 @@ name: Routine eval results pushed
 # one branch pushed before the root was pinned (LEGACY_ROOTS) is already on
 # the remote and can only be ingested by dispatch. This is not a
 # pull_request workflow, so it publishes no required check.
+#
+# `!claude/eval-cost-*` (#572 part 1, 2026-11-02): an improve run's cost
+# record branch has its own signal, routine-eval-cost-pushed.yml. Its one
+# path, `improve-cost/**`, already misses `eval-results/**`; the exclusion
+# is the guard that keeps a cost branch off this trigger even if it pushed
+# there. Both signals feed the one ingest, which dispatches on the branch
+# regex, so a cost branch is never judged as eval results either way.
 
 on:
   push:
     branches:
       - claude/eval-*
+      - "!claude/eval-cost-*"
     paths:
       - eval-results/**
 

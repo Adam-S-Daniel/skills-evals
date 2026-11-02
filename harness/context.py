@@ -31,6 +31,9 @@ BUDGET_MAX = MappingProxyType({"guidance_bytes": 1024 * 1024,
                                "skill_catalog_bytes": 1024 * 1024,
                                "skill_payload_bytes": 64 * 1024 * 1024})
 DEFAULT_LAYOUT = "plugins/{bundle}/skills"
+#: The fixture key that opts into the fleet hooks (ADR 0012, fleet hooks
+#: addendum, #535); `_check_fleet_hooks` holds it to a literal boolean.
+FLEET_HOOKS_KEY = "fleet_hooks"
 _SHA = re.compile(r"[0-9a-fA-F]{40}\Z")
 _DIGEST = re.compile(r"(?:sha256:)?([0-9a-fA-F]{64})\Z")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
@@ -95,6 +98,7 @@ class _FixtureLoader(yaml.SafeLoader):
     def __init__(self, stream):
         super().__init__(stream)
         self.context_nodes = set()
+        self.fleet_hooks_node = None
 
     def construct_mapping(self, node, deep=False):
         strict = id(node) in self.context_nodes
@@ -112,8 +116,10 @@ class _FixtureLoader(yaml.SafeLoader):
                     elif isinstance(child, yaml.SequenceNode):
                         pending.extend(child.value)
         seen = set()
-        for key, _ in node.value:
+        for key, value in node.value:
             name = self.construct_object(key, deep=True)
+            if top and name == FLEET_HOOKS_KEY:
+                self.fleet_hooks_node = value
             try:
                 duplicate = name in seen
                 seen.add(name)
@@ -130,17 +136,35 @@ class _FixtureLoader(yaml.SafeLoader):
 
 def load_fixture_yaml(raw: str | bytes, path) -> dict:
     """The fixture's existing YAML contract, with strict context parsing."""
+    loader = None
     try:
-        fixture = yaml.load(raw, Loader=_FixtureLoader)
+        # yaml.load's own steps, keeping the loader for `fleet_hooks:`'s node.
+        loader = _FixtureLoader(raw)
+        fixture = loader.get_single_data()
     except ContextError:
         raise
     except (yaml.YAMLError, UnicodeError, ValueError) as exc:
         raise ContextError("invalid_fixture", f"{path}: fixture YAML is malformed") from exc
+    finally:
+        if loader is not None:
+            loader.dispose()
     if not isinstance(fixture, dict):
         raise ContextError("invalid_fixture", f"{path} must be a YAML mapping of fixture keys, got {type(fixture).__name__}"
                            + (" (the file is empty)" if fixture is None else f": {fixture!r}"))
     validate_context(fixture, path)
+    _check_fleet_hooks(loader.fleet_hooks_node, path)
     return fixture
+
+
+def _check_fleet_hooks(node, path) -> None:
+    """`fleet_hooks:` (ADR 0012, fleet hooks addendum, #535), when present, is
+    the plain literal `true` or `false`: not YAML 1.1's `yes`/`on`/`True`, a
+    quoted string, a number or a null."""
+    if node is None:
+        return
+    if not (isinstance(node, yaml.ScalarNode) and node.style is None
+            and node.value in ("true", "false")):
+        raise ContextError("invalid_fixture", f"{path}: `{FLEET_HOOKS_KEY}:` must be the literal true or false")
 
 
 def parse_context_repos(values: list[str] | None) -> dict[str, Path]:

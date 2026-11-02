@@ -17,8 +17,16 @@ Subcommands:
               proposal per (subject, kind) and write each as its own file,
               `<lessons-dir>/proposals/<date>/<subject>__<kind>.json` (the
               primary sink: cloud readers hold only Contents: read on the
-              private repo). A lesson a commit- or push-time git hook can
-              enforce becomes `agent-check` first (Adam, 2026-10-26).
+              private repo), plus `DIGEST.md` beside them: the same
+              proposals as plain-English cards, grouped by kind, the first
+              thing Adam reads (deterministic; machines read the JSON, and
+              `read_proposals` ignores the digest). A lesson a commit- or push-time git hook can
+              enforce becomes `agent-check` first (Adam, 2026-10-26). A
+              failure with no suspected subject becomes `new-skill` only
+              through a deterministic cluster subject (`tool-<tool>[-<word>]`
+              for repeated tool failures, `red-ci-<repo>` for red CI) seen in
+              at least `NEW_SKILL_MIN_SESSIONS` sessions; every other
+              unattributed failure stays a record, with no proposal.
               `--classify` asks the local `claude -p` to refine each kind
               (off by default).
   file-issues optional: turn one day's proposal files that pass the redaction
@@ -80,6 +88,12 @@ EXCERPT_CHARS = 160
 DEFAULT_SETTLE_HOURS = 24
 DEFAULT_MIN_REPEAT = 3
 NEW_SKILL_MIN_SESSIONS = 3
+SUBJECT = r"[a-z0-9][a-z0-9-]{0,63}"  # draft_new_skill.py's SUBJECT; a test keeps them equal
+SUBJECT_RE = re.compile(SUBJECT)
+# Repo names that are not a repo: `~` is the home directory, and `repos` is the
+# parent folder that holds the checkouts (Workstation layout), so a session run
+# there names no repo and its red CI must not become a `red-ci-<repo>` cluster.
+NOT_A_REPO = frozenset({"~", "", "repos"})
 MAX_EXAMPLES = 5
 LABEL = "lesson-proposal"
 MARKER_LABEL = "agent-authored"
@@ -173,8 +187,13 @@ CI_RED_RE = re.compile(
 SKILL_BASE_RE = re.compile(r"Base directory for this skill:\s*\S*?/skills/([A-Za-z0-9_.-]+)")
 COMMAND_RE = re.compile(r"<command-name>/?([A-Za-z0-9_.:-]+)</command-name>")
 REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+# Harness-injected user-role messages: on the real data 97 of 571 records quoted
+# one as if Adam had typed it (74 of 107 redirections, 17 of 36 rules).
 NON_HUMAN_PREFIXES = ("<command-", "<local-command-", "Caveat:", "<bash-",
-                      "This session is being continued from a previous conversation")
+                      "This session is being continued from a previous conversation",
+                      "<task-notification>", "<wake ", "<wake>", "<relay ",
+                      "<coordinator-relay", "<project_claude_message", "<agent-message",
+                      "[Artifact comment", "<system-reminder>", "RESTART BRIEFING")
 
 # ------------------------------------------------------------ redaction ---
 # Each pattern skips its own placeholder, so scrub() is idempotent and
@@ -333,7 +352,9 @@ def _block_text(block) -> str:
 
 
 def human_text(entry: dict) -> str | None:
-    """The text a person typed, or None for tool results, meta and command output."""
+    """The text a person typed, or None for tool results, meta, command output
+    and harness-injected messages (NON_HUMAN_PREFIXES). A None never resets a
+    pending interrupt, so an interrupt is paired with the next real human text."""
     if entry.get("type") != "user" or entry.get("isMeta") or entry.get("isCompactSummary"):
         return None
     blocks = _blocks(entry.get("message"))
@@ -673,14 +694,41 @@ def append_records(path: Path, records: Sequence[dict]) -> int:
 
 
 # ---------------------------------------------------------------- route ---
-def _kind(signal: str, subject_kind: str, sessions: int) -> str | None:
+def _kind(signal: str, subject_kind: str) -> str | None:
+    """The proposal kind for a record's signal and subject kind. An
+    unattributed failure has no kind here: it becomes `new-skill` only through
+    `cluster_subject` (a pool called `none` is not a skill candidate, #581)."""
     if signal == "rule":
         return {"skill": "skill-edit", "guidance": "guidance-edit"}.get(subject_kind, "memory-note")
     if subject_kind in ("skill", "guidance"):
         return "fixture-candidate"
     if subject_kind == "memory":
         return "memory-note"
-    return "new-skill" if sessions >= NEW_SKILL_MIN_SESSIONS else None
+    return None
+
+
+_TOOL_KEY_RE = re.compile(r"^([A-Za-z]+)(?::([A-Za-z0-9_.-]+))? failed \d+x:")
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]", "-", text.lower())).strip("-")[:64].strip("-")
+
+
+def cluster_subject(record: dict) -> str | None:
+    """A stable candidate-skill subject for an unattributed failure record, or
+    None (the record stays a record). Only two signals carry a stable key:
+    the leading `<tool>[:<command word>] failed Nx:` of a repeated tool
+    failure, and the repo of red CI after a push."""
+    signal = record.get("signal")
+    if signal == "repeated-tool-failure":
+        m = _TOOL_KEY_RE.match(record.get("excerpt", ""))
+        subject = _slug("tool-" + "-".join(g for g in m.groups() if g)) if m else ""
+    elif signal == "red-ci-after-push":
+        repo = record.get("repo", "")
+        subject = _slug("red-ci-" + repo) if repo not in NOT_A_REPO and _slug(repo) else ""
+    else:
+        return None
+    return subject if SUBJECT_RE.fullmatch(subject) else None
 
 
 def subject_label(subject: dict) -> str:
@@ -709,6 +757,7 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
         by_signal.setdefault((subj.get("kind", "none"), subj.get("name", ""), r["signal"]), []).append(r)
     clusters: dict[tuple[str, str], list[dict]] = {}
     sketches: dict[str, list[str]] = {}
+    candidates: dict[str, list[dict]] = {}  # cluster subject -> unattributed failures
     for (skind, sname, signal), rs in sorted(by_signal.items()):
         subject = subject_label({"kind": skind, "name": sname})
         rest = []
@@ -720,9 +769,18 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
                     sketches[subject].append(sketch)
             else:
                 rest.append(r)
-        kind = _kind(signal, skind, len({r["session"] for r in rest})) if rest else None
+        kind = _kind(signal, skind) if rest else None
         if kind is not None:
             clusters.setdefault((subject, kind), []).extend(rest)
+        elif skind == "none":
+            for r in rest:
+                cs = cluster_subject(r)
+                if cs:
+                    candidates.setdefault(cs, []).append(r)
+    for cs, rs in sorted(candidates.items()):
+        if len({r["session"] for r in rs}) >= NEW_SKILL_MIN_SESSIONS:
+            assert SUBJECT_RE.fullmatch(cs) and cs != "none", cs
+            clusters.setdefault((cs, "new-skill"), []).extend(rs)
     proposals = []
     for (subject, kind), rs in sorted(clusters.items()):
         rs = sorted(rs, key=lambda r: (r.get("date", ""), r["record_id"]))
@@ -743,12 +801,80 @@ def route(records: Iterable[dict], redactor: Redactor) -> list[dict]:
     return proposals
 
 
-def write_proposals(directory: Path, proposals: Sequence[dict]) -> None:
-    """One JSON object per file; the day's directory is rewritten whole, so a
-    proposal that no longer clusters disappears from that day's snapshot."""
+DIGEST_NAME = "DIGEST.md"
+DIGEST_KIND_ORDER = ("agent-check", "new-skill", "skill-edit", "guidance-edit", "memory-note", "fixture-candidate")
+DIGEST_EXAMPLES = 3
+DIGEST_EXAMPLE_CHARS = 160
+DIGEST_REPOS = 5
+KIND_EXPLANATIONS = {
+    "agent-check": "a git hook could enforce this; the Fleet worker's lesson-check pass turns it into a check.",
+    "new-skill": "a recurring failure no skill covers; the daily draft lane may draft a skill or hook for it.",
+    "skill-edit": "an existing skill's instructions seem to need a change; review the evidence, then edit that skill.",
+    "guidance-edit": "an account-wide rule may belong in fleet guidance; review the evidence, then propose the edit.",
+    "memory-note": "a personal preference or fact to remember, not a rule for every repo; save it to memory if you agree.",
+    "fixture-candidate": "a concrete failure an eval fixture could reproduce; a fixture writer can expand it.",
+}
+
+
+def md_escape(text: str) -> str:
+    """Text that renders literally: no tags, no code spans, no emphasis, one line."""
+    text = " ".join(text.split()).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return re.sub(r"([\\`*_\[\]|~#])", r"\\\1", text)
+
+
+def card_title(subject: str) -> str:
+    """A readable heading for a proposal subject (md-safe)."""
+    m = re.fullmatch(r"tool-([a-z]+)(?:-(.+))?", subject)
+    if m:
+        tool = m.group(1).capitalize()
+        return f"{tool} `{m.group(2)}` commands kept failing" if m.group(2) else f"{tool} tool calls kept failing"
+    if subject.startswith("red-ci-") and len(subject) > 7:
+        return f"Red CI after pushes in {md_escape(subject[7:])}"
+    if subject.startswith("skill:"):
+        return f"Skill: {md_escape(subject[6:])}"
+    if subject.startswith("guidance:"):
+        return f"Guidance: {md_escape(subject[9:])}"
+    return {"memory": "Memory", "none": "Unattributed"}.get(subject, md_escape(subject))
+
+
+def render_digest(date: str, files: Sequence[tuple[str, dict]], redactor: Redactor) -> str:
+    """DIGEST.md text for (file name, proposal) pairs. Pure and deterministic."""
+    total = sum(p["evidence_count"] for _, p in files)
+    lines = [f"# Lessons {md_escape(date)}", "",
+             f"{len(files)} proposals from {total} records; read the cards below, "
+             "the JSON files are for machines.", ""]
+    for kind in DIGEST_KIND_ORDER:
+        group = sorted(((n, p) for n, p in files if p["kind"] == kind),
+                       key=lambda np: (-np[1]["evidence_count"], np[0]))
+        if not group:
+            continue
+        lines += [f"## {kind}", "", f"{kind}: {KIND_EXPLANATIONS[kind]}", ""]
+        for name, p in group:
+            span = p["first_seen"] if p["first_seen"] == p["last_seen"] else f"{p['first_seen']}\u2013{p['last_seen']}"
+            repos = [md_escape(redactor.scrub(r)) for r in p["repos"] if r]
+            shown = ", ".join(repos[:DIGEST_REPOS]) + (
+                f" and {len(repos) - DIGEST_REPOS} more" if len(repos) > DIGEST_REPOS else "")
+            lines += [f"### {card_title(p['subject'])}", "",
+                      f"- Seen in {p['evidence_count']} record{'' if p['evidence_count'] == 1 else 's'}, {md_escape(span)}"
+                      + (f"; repos: {shown}" if shown else ""),
+                      f"- File: `{name}`"]  # proposal_filename() allows only [A-Za-z0-9_.-]
+            if p.get("check_sketch"):
+                lines.append(f"- Check sketch: {md_escape(redactor.scrub(p['check_sketch']))}")
+            lines.append("")
+            for ex in p["examples"][-DIGEST_EXAMPLES:]:
+                shown_ex = " ".join(redactor.scrub(ex).split())[:DIGEST_EXAMPLE_CHARS]
+                lines.append(f"> - {md_escape(shown_ex)}")
+            lines.append("")
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def write_proposals(directory: Path, proposals: Sequence[dict], redactor: Redactor | None = None) -> None:
+    """One JSON object per file, plus DIGEST.md; the day's directory is
+    rewritten whole, so a proposal that no longer clusters disappears from that
+    day's snapshot and from its digest."""
     directory.mkdir(parents=True, exist_ok=True)
-    for old in directory.glob("*.json"):
-        old.unlink()
+    for old in (*directory.glob("*.json"), directory / DIGEST_NAME):
+        old.unlink(missing_ok=True)
     merged: "OrderedDict[str, dict]" = OrderedDict()
     for p in proposals:  # --classify can give two clusters one subject and kind
         name = proposal_filename(p)
@@ -764,6 +890,8 @@ def write_proposals(directory: Path, proposals: Sequence[dict]) -> None:
     for name, p in merged.items():
         (directory / name).write_text(
             json.dumps(p, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    (directory / DIGEST_NAME).write_text(
+        render_digest(directory.name, list(merged.items()), redactor or Redactor([])), encoding="utf-8")
 
 
 def read_proposals(directory: Path) -> list[dict]:
@@ -980,7 +1108,7 @@ def main(argv: Sequence[str] | None = None, runner: Runner = run_command) -> int
         proposals = route(_read_all_records(args.lessons_dir), redactor)
         if args.classify:
             classify(proposals, runner)
-        write_proposals(args.lessons_dir / "proposals" / date, proposals)
+        write_proposals(args.lessons_dir / "proposals" / date, proposals, redactor)
         by_kind = {k: sum(p["kind"] == k for p in proposals) for k in KINDS}
         print("route: " + ", ".join(f"{v} {k}" for k, v in by_kind.items()))
         return 0

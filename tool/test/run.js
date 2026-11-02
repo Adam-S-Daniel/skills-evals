@@ -221,6 +221,12 @@ test('cards sort by next test first, then by how well they are faring', () => {
   ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
   ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
 });
+test('the start-up code names the one page title, not a property of its state', () => {
+  // Regression: a title rename once left `state.STRINGS.title` in boot(), which
+  // only runs in a browser, so every page load showed "could not be shown".
+  ok(!/\bstate\.STRINGS\b/.test(html), 'no state.STRINGS reference');
+  eq(P.STRINGS.title, 'Evals Explorer');
+});
 test('stakes show on the card for high and no-eval subjects only', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   doc.skills[0].stakes = { level: 'high', reason: 'a wrong pin runs third-party code' };

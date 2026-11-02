@@ -358,6 +358,17 @@ jobs:
           fi
           /usr/bin/bwrap --ro-bind / / --unshare-pid --unshare-net --unshare-ipc \
             --unshare-uts --proc /proc --dev /dev --die-with-parent -- /usr/bin/true
+      # Config-based Git hooks (adam-agentskills ADR 0020) need Git 2.54 or
+      # later, and eval arms will run the fleet hooks that way (ADR 0012's
+      # fleet hooks addendum, #535). The runner image already ships a newer
+      # Git (2.56.0 on ubuntu-24.04 20261025.353, read from this job's
+      # checkout log on 2026-11-02), so this asserts rather than installs;
+      # the minimum is scripts/dev_setup.sh's, which
+      # test/issues/test_issue_dev_setup.py holds this step to.
+      - name: Require Git 2.54 or later
+        if: steps.salient.outputs.run == 'true'
+        working-directory: skills-evals
+        run: bash scripts/dev_setup.sh --check-git
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals

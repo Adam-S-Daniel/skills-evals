@@ -116,6 +116,14 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(rows[1]["state"], "Waiting on you")
         self.assertEqual(rows[1]["link"], SITE["thread_url"] + "t1")
 
+    def test_threads_carry_their_session_and_branch_so_prs_can_name_them(self):
+        rows = build.threads([
+            {"thread_id": "t1", "title": "A", "state": "working", "session_id": "cse_01Abc"},
+            {"thread_id": "t2", "title": "B", "state": "done"}], SITE, {"01Abc": "claude/project-thread-abc123"})
+        by = {r["title"]: r for r in rows}
+        self.assertEqual((by["A"]["session"], by["A"]["branch"]), ("01Abc", "claude/project-thread-abc123"))
+        self.assertEqual((by["B"]["session"], by["B"]["branch"]), ("", ""))
+
     def test_routine_health_comes_from_the_last_run(self):
         trig = {"kind": "trigger", "id": "t"}
         cases = [

@@ -42,6 +42,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
         - 'actions/setup-python@v7.1.0'
+    '.github/workflows/routine-eval-cost-pushed.yml': []
     '.github/workflows/routine-eval-fire.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'

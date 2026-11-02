@@ -268,8 +268,16 @@ class Runner:
         except json.JSONDecodeError as exc:
             raise Refusal(f"skill-creator run_loop printed no JSON ({exc})") from exc
 
+    #: The last proposal call's numbers (#572 part 1, 2026-11-02): calls,
+    #: usd, input_tokens and output_tokens, copied by name from the CLI's
+    #: JSON and type-checked, so no reply text or session id is ever kept.
+    #: None until a call printed all four. The caller writes it to
+    #: `$RESULTS/proposal-<ts>.json` for scripts/improve_cost.py.
+    last_usage: dict | None = None
+
     def propose(self, prompt: str, model: str) -> str:
         """One headless call, no tools, prompt on stdin; the reply text."""
+        self.last_usage = None
         try:
             with guarded_environment() as env:
                 cmd = [env["CLAUDE_BIN"], "-p", "--output-format", "json",
@@ -284,9 +292,46 @@ class Runner:
         if proc.returncode != 0:
             raise Refusal(f"proposal call exited {proc.returncode}")
         try:
-            return normalize_cli_result(json.loads(proc.stdout)).get("result", "")
+            result = normalize_cli_result(json.loads(proc.stdout))
+            self.last_usage = proposal_usage(result)
+            return result.get("result", "")
         except (ValueError, AttributeError) as exc:
             raise Refusal("proposal call printed no JSON result") from exc
+
+
+def proposal_usage(result: dict) -> dict | None:
+    """{calls, usd, input_tokens, output_tokens} of one `claude -p` result,
+    numbers only, or None when any is missing or not a bounded number
+    (scripts/improve_cost.py's bounds). Built field by field: the CLI object
+    also carries the reply and a session id, which must never be written."""
+    usage = result.get("usage") if isinstance(result, dict) else None
+    usd = result.get("total_cost_usd") if isinstance(result, dict) else None
+    tokens = [usage.get(name) if isinstance(usage, dict) else None
+              for name in ("input_tokens", "output_tokens")]
+    if isinstance(usd, bool) or not isinstance(usd, (int, float)) \
+            or not math.isfinite(usd) or not 0 <= usd <= 1000:
+        return None
+    if any(isinstance(t, bool) or not isinstance(t, int) or not 0 <= t <= 10 ** 9
+           for t in tokens):
+        return None
+    return {"calls": 1, "usd": usd, "input_tokens": tokens[0],
+            "output_tokens": tokens[1]}
+
+
+def write_proposal_usage(results: Path, ts: str, runner) -> None:
+    """`<results>/proposal-<ts>.json` from `runner.last_usage`, when the
+    runner kept one (test fakes need not). Beside runs/, never under it:
+    local_eval requires each runs/<label>/ destination to be empty."""
+    usage = getattr(runner, "last_usage", None)
+    if isinstance(usage, dict):
+        # Called from a `finally`: a failed write must never replace the
+        # loop's own outcome or Refusal (#572 review, 2026-11-02). The cost
+        # record then reads the proposal as null, the safe direction.
+        try:
+            (results / f"proposal-{ts}.json").write_text(
+                json.dumps(usage) + "\n", encoding="utf-8")
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1510,9 +1555,13 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
                 purpose_path = base_skill / "PURPOSE.md"
                 purpose = (purpose_path.read_text(encoding="utf-8")
                            if purpose_path.is_file() else None)
-                proposal = parse_proposal(runner.propose(
-                    proposal_prompt(skill, original, purpose, evidence, p["fixtures"]),
-                    p["proposal_model"]))
+                try:
+                    reply = runner.propose(
+                        proposal_prompt(skill, original, purpose, evidence, p["fixtures"]),
+                        p["proposal_model"])
+                finally:
+                    write_proposal_usage(results, ts, runner)
+                proposal = parse_proposal(reply)
                 record["body_half"].update(rationale=proposal["rationale"],
                                            unified_diff=proposal["unified_diff"])
                 candidate_text = apply_body_diff(original, proposal["unified_diff"], scratch)

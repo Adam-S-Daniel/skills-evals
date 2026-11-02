@@ -244,7 +244,8 @@ class TestScheduledFixtures(unittest.TestCase):
         plan_step = step("plan", "Plan reviewed fixtures")
         self.assertEqual(plan_step["run"], "python3 scripts/plan_scheduled_evals.py")
         self.assertEqual(doc()["jobs"]["plan"]["outputs"],
-                         {"matrix": "${{ steps.plan.outputs.matrix }}"})
+                         {"matrix": "${{ steps.plan.outputs.matrix }}",
+                          "count": "${{ steps.plan.outputs.count }}"})
 
     def test_dispatch_defaults_and_explicit_fixture_are_unchanged(self):
         trigger = doc().get("on", doc().get(True))
@@ -349,6 +350,12 @@ class TestScheduledFixtures(unittest.TestCase):
                 event.write_text(json.dumps({"inputs": {"fixture": "evals/nope"}}))
                 env = dict(os.environ, MATRIX_FIXTURE=path, MATRIX_KEY=path[6:], MATRIX_SLOT="0", GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(base / "out"), RUNNER_TEMP=tmp)
                 result = subprocess.run(["bash", "-c", selection["run"]], cwd=ROOT, env=env, capture_output=True, text=True)
+                if planner.declares_context(ROOT / path):
+                    # skills-evals#587: the plan job never passes an in-place
+                    # fixture on, and a leg that got one refuses it here.
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn(planner.IN_PLACE_REFUSAL, result.stdout)
+                    continue
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual((base / "eval-fixture").read_text(), path)
                 env["MATRIX_KEY"] = "wrong-fixture"

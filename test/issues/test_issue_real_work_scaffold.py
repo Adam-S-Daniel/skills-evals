@@ -852,11 +852,30 @@ class RedGreenTests(_BuildCase):
         self.assertRefused("plain package==version", deps=[{"manager": "pip", "requirements": ["pytest>=9"]}])
         self.assertFalse(self.dest.exists(), "invalid pins are refused before writing the destination")
 
+    def test_static_problems_applies_the_answer_rules(self):
+        target = self.build()
+        self.assertEqual(scaffold.static_problems(target), ([], []))
+        path = target / "fixture.yaml"
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        doc["prompt"] += " Evidence at /tmp/example/shots."
+        path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        problems, _ = scaffold.static_problems(target)
+        self.assertEqual(problems, ["the prompt contains a local filesystem path"])
+
     def test_gate_refuses_preinstalled_python_environment(self):
         target = self.build()
         (target / "seed" / ".fixture-python").mkdir()
         problems, _ = scaffold.static_problems(target)
         self.assertTrue(any("does not load" in problem for problem in problems), problems)
+
+
+# Historical drafts written before the lexical admission rules; their evidence
+# stays, none is scheduled, and they no longer pass admission.
+HISTORICAL_ADMISSION_FAILURES = {
+    "_agent-guidance-196": {"substantive code tokens"},
+    "cms-platform-221": {"local filesystem", "substantive code tokens"},
+    "cms-platform-761": {"substantive code tokens"},
+}
 
 
 class CommittedFixturesTests(unittest.TestCase):
@@ -872,13 +891,79 @@ class CommittedFixturesTests(unittest.TestCase):
                 # one shape the scaffold never writes: `draft: false`.
                 promoted = yaml.safe_load((REAL_WORK / name / "fixture.yaml").read_text(
                     encoding="utf-8")).get("draft") is False
-                wanted = [scaffold.NOT_DRAFT_PROBLEM] if promoted else []
-                self.assertEqual(scaffold.static_problems(REAL_WORK / name, detail=True),
-                                 (wanted, []))
+                reasons = HISTORICAL_ADMISSION_FAILURES.get(name, set())
+                allowed = reasons | ({scaffold.NOT_DRAFT_PROBLEM} if promoted else set())
+                problems, warnings = scaffold.static_problems(REAL_WORK / name, detail=True)
+                self.assertEqual(warnings, [])
+                self.assertTrue(all(any(reason in problem for reason in allowed)
+                                    for problem in problems), problems)
+                self.assertEqual({reason for reason in reasons
+                                  if any(reason in problem for problem in problems)}, reasons)
+                if promoted:
+                    self.assertIn(scaffold.NOT_DRAFT_PROBLEM, problems)
 
     def test_the_miner_never_mines_a_scaffold_branch(self):
         self.assertTrue(mine_real_work.is_bot({"head": {"ref": "claude/scaffold-toy-7"}}))
         self.assertFalse(mine_real_work.is_bot({"head": {"ref": "claude/fix-toy"}}))
+
+
+class ScaffoldAnswerRulesTests(_Case):
+    """Offline inputs from scaffold branches 759/764 and controls 761/760.
+
+    Retain the actual prompt, snapshot, patch, checker and relevant seed files;
+    do not run the checkers or fetch their dependencies. CI's test job discovers
+    this module through test/run_tests.py.
+    """
+
+    def real(self, number):
+        records = json.loads((TEST_DIR / "fixtures" / "scaffold-answer-leaks.json").read_text())
+        record = records[str(number)]
+        root = self.tmp / str(number)
+        self.write(root, {"fixture.yaml": yaml.safe_dump(record["fixture"]),
+                          "solution.patch": record["patch"],
+                          "issue-before-fix.txt": record["snapshot"]})
+        self.write(root / "seed", record["seed"])
+        self.write(root / "checker", record["checker"])
+        return root, record["fixture"]
+
+    def rules(self, root, fixture):
+        return scaffold.answer_rules(fixture, root)
+
+    def test_real_759_local_evidence_path_is_rejected(self):
+        root, fixture = self.real(759)
+        self.assertTrue(any("local filesystem" in p for p in self.rules(root, fixture)))
+
+    def test_real_764_followup_snapshot_discloses_the_fix(self):
+        root, fixture = self.real(764)
+        self.assertTrue(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_real_api_signature_controls_pass(self):
+        for number in (761, 760):
+            with self.subTest(number=number):
+                root, fixture = self.real(number)
+                self.assertEqual(self.rules(root, fixture), [])
+
+    def test_removed_solution_details_in_the_snapshot_do_not_reject(self):
+        root, fixture = self.real(764)
+        fixture["prompt"] = "Keep the trailing space while later listeners receive input."
+        self.assertFalse(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+
+    def test_each_local_path_prefix_is_rejected(self):
+        root, fixture = self.real(761)
+        for prefix in ("~/", "/home/", "/tmp/", "file:///tmp/"):
+            with self.subTest(prefix=prefix):
+                fixture["prompt"] = "Evidence at " + prefix + "example/shots."
+                self.assertTrue(any("local filesystem" in p for p in self.rules(root, fixture)))
+
+    def test_substantive_overlap_boundary_is_two_distinct_tokens(self):
+        root, fixture = self.real(761)
+        (root / "solution.patch").write_text(
+            "+++ b/tool.js\n+ firstCall(); secondCall(); thirdCall();\n")
+        (root / "issue-before-fix.txt").write_text("firstCall secondCall thirdCall")
+        fixture["prompt"] = "firstCall secondCall"
+        self.assertFalse(any("substantive code tokens" in p for p in self.rules(root, fixture)))
+        fixture["prompt"] += " thirdCall"
+        self.assertTrue(any("substantive code tokens" in p for p in self.rules(root, fixture)))
 
 
 class _GateCase(_BuildCase):

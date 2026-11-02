@@ -18,6 +18,12 @@ runs it from the default branch on the `workflow_run` of
   * `resolve` takes the branch only from a same-repository push or a
     dispatch input, through a strict pattern;
   * `place` is idempotent and never overwrites a differing file;
+  * a `claude/eval-cost-<run id>` branch (#572 part 1, 2026-11-02) is
+    judged by `validate_cost` alone: exactly one
+    `improve-cost/<run id>/cost.json` passing improve_cost.check_record, for
+    the branch's run id, under 4 KiB, never a private skill or a target with
+    no committed fixtures; staged at `improve-costs/<run id>.json`; a
+    rejection exits 1 (red); `place --kind cost` keeps the first record;
   * both workflows, parsed with PyYAML (never line-scanned), hold the
     trust boundary: workflow_run for the writing job, `permissions: {}` at
     the top and `contents: write` only on `ingest`, bare-SHA pins with no
@@ -40,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from fnmatch import fnmatch
 from pathlib import Path
 from unittest import mock
 
@@ -50,14 +57,17 @@ REPO_ROOT = TEST_DIR.parent
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 INGEST = WORKFLOWS / "routine-eval-ingest.yml"
 SIGNAL = WORKFLOWS / "routine-eval-results-pushed.yml"
+COST_SIGNAL = WORKFLOWS / "routine-eval-cost-pushed.yml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
 
 import cli_json  # noqa: E402
+import improve_cost  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
+from scorers.bash_ast import parse_bash  # noqa: E402
 
 RUN_ID = "20261006T194256Z-f944ea"
 BRANCH = f"claude/eval-{RUN_ID}"
@@ -1008,6 +1018,247 @@ class PlaceTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# The improve cost branch (#572 part 1, 2026-11-02).
+
+COST_BRANCH = f"claude/eval-cost-{RUN_ID}"
+COST_PATH = f"improve-cost/{RUN_ID}/cost.json"
+PUBLIC_SKILL = "public-skill"
+PRIVATE_SKILL = "private-skill"
+SECTION = "some-section"
+
+
+def cost_record(**changes) -> dict:
+    """A valid record, built by the summarizer itself over an empty tree."""
+    with tempfile.TemporaryDirectory() as empty:
+        doc = improve_cost.summarize(
+            Path(empty), RUN_ID, changes.pop("mode", "improve"),
+            changes.pop("target", PUBLIC_SKILL), 1,
+            improve_cost.stamp_of(RUN_ID) + improve_cost.timedelta(minutes=30))
+    doc.update(changes)
+    return doc
+
+
+def cost_bytes(doc: dict) -> bytes:
+    return improve_cost.encode(doc)
+
+
+class CostBranchTests(GitCase):
+
+    def setUp(self):
+        super().setUp()
+        self.evals = self.tmp / "evals"
+        for skill, url in ((PUBLIC_SKILL, "https://github.com/Adam-S-Daniel/adam-agentskills"),
+                           (PRIVATE_SKILL, ingest_private_url())):
+            path = self.evals / skill / "one" / "fixture.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(f"skill: {skill}\nregistry: {url}\n", encoding="utf-8")
+        path = self.evals / "guidance" / SECTION / "one" / "fixture.yaml"
+        path.parent.mkdir(parents=True)
+        path.write_text("guidance_section: x\n", encoding="utf-8")
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-q", "-b", COST_BRANCH)
+
+    def validate_cost(self, branch=COST_BRANCH, out=None):
+        return ingest.validate_cost(str(self.repo), "main", branch, branch, None,
+                                    out or self.tmp / "staged", self.evals)
+
+    def assertCostRejected(self, pattern):
+        with self.assertRaisesRegex(ingest.Rejected, pattern):
+            self.validate_cost()
+        staged = self.tmp / "staged"
+        self.assertFalse(staged.exists() and any(staged.rglob("*.json")))
+
+    def test_accepts_one_record_and_stages_its_exact_bytes(self):
+        data = cost_bytes(cost_record())
+        sha = self.commit({COST_PATH: data})
+        result, dest = self.validate_cost()
+        self.assertEqual(result, {"run_id": RUN_ID, "sha": sha, "files": "1"})
+        self.assertEqual(dest, f"improve-costs/{RUN_ID}.json")
+        staged = {str(p.relative_to(self.tmp / "staged")): p.read_bytes()
+                  for p in (self.tmp / "staged").rglob("*") if p.is_file()}
+        self.assertEqual(staged, {dest: data})
+
+    def test_accepts_a_guidance_section_with_fixtures(self):
+        self.commit({COST_PATH: cost_bytes(cost_record(mode="guidance-improve",
+                                                       target=SECTION))})
+        self.assertEqual(self.validate_cost()[1], f"improve-costs/{RUN_ID}.json")
+
+    def test_rejects_a_private_skill(self):
+        # Negative control: the same record, public target, is accepted
+        # (test_accepts_one_record_and_stages_its_exact_bytes).
+        self.commit({COST_PATH: cost_bytes(cost_record(target=PRIVATE_SKILL))})
+        self.assertCostRejected("private skill")
+
+    def test_rejects_a_target_with_no_committed_fixtures(self):
+        for mode, target in (("improve", "no-such-skill"),
+                             ("guidance-improve", "no-such-section")):
+            with self.subTest(mode=mode):
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({COST_PATH: cost_bytes(cost_record(mode=mode, target=target))})
+                self.assertCostRejected("no committed fixture set")
+
+    def test_rejects_a_second_file(self):
+        self.commit({COST_PATH: cost_bytes(cost_record()),
+                     f"improve-cost/{RUN_ID}/extra.json": b"{}\n"})
+        self.assertCostRejected("exactly one file")
+
+    def test_rejects_a_wrong_path(self):
+        for path in (f"improve-cost/{RUN_ID}/other.json", f"improve-cost/{RUN_ID}.json",
+                     f"eval-results/{RUN_ID}/cost.json",
+                     "improve-cost/20261006T194256Z-aaaaaa/cost.json"):
+            with self.subTest(path=path):
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({path: cost_bytes(cost_record())})
+                self.assertCostRejected("not 'improve-cost/")
+
+    def test_rejects_a_run_id_mismatch_inside_the_record(self):
+        other = "20261006T194300Z-abcdef"
+        doc = cost_record()
+        doc["run_id"] = other
+        doc["ended_at"] = cost_record()["ended_at"]
+        self.commit({COST_PATH: cost_bytes(doc)})
+        self.assertCostRejected("run_id is not the branch's")
+
+    def test_rejects_an_oversized_file(self):
+        data = cost_bytes(cost_record()) + b" " * ingest.COST_CAP
+        self.commit({COST_PATH: data})
+        self.assertCostRejected("over the 4096-byte cap")
+
+    def test_rejects_an_executable_bit(self):
+        self.write({COST_PATH: cost_bytes(cost_record())})
+        os.chmod(self.repo / COST_PATH, 0o755)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "x")
+        self.assertCostRejected("mode 100755")
+
+    def test_rejects_a_schema_breach_without_quoting_it(self):
+        for change in ({"extra": 1}, {"agent_usd": MARKER}, {"exit_code": True},
+                       {"target": "../" + MARKER}):
+            with self.subTest(change=str(change)[:40]):
+                self.git("reset", "-q", "--hard", "main")
+                doc = {**cost_record(), **change}
+                self.commit({COST_PATH: cost_bytes(doc)})
+                with self.assertRaises(ingest.Rejected) as caught:
+                    self.validate_cost()
+                self.assertNotIn(MARKER, str(caught.exception))
+
+    def test_rejects_duplicate_keys_and_non_finite_numbers(self):
+        good = cost_bytes(cost_record()).decode()
+        for text in (good.replace('"agent_usd": 0', '"agent_usd": 0, "agent_usd": 0', 1),
+                     good.replace('"agent_usd": 0', '"agent_usd": NaN', 1)):
+            with self.subTest(text=text[:20]):
+                self.assertNotEqual(text, good)
+                self.git("reset", "-q", "--hard", "main")
+                self.commit({COST_PATH: text.encode()})
+                self.assertCostRejected("duplicate|non-finite")
+
+    def test_an_eval_branch_name_is_never_a_cost_branch_and_back(self):
+        self.assertIsNone(ingest.COST_BRANCH_RE.fullmatch(BRANCH))
+        self.assertIsNone(ingest.BRANCH_RE.fullmatch(COST_BRANCH))
+        for bad in (COST_BRANCH + "-x", COST_BRANCH + "x", "claude/eval-cost-",
+                    "claude/eval-cost-" + RUN_ID.upper()):
+            self.assertIsNone(ingest.COST_BRANCH_RE.fullmatch(bad))
+        with self.assertRaisesRegex(ingest.Rejected, "claude/eval-cost-"):
+            ingest.validate_cost(str(self.repo), "main", "HEAD", COST_BRANCH + "-x",
+                                 None, self.tmp / "staged", self.evals)
+
+    def test_main_validate_prints_kind_and_dest_and_a_rejection_is_red(self):
+        self.commit({COST_PATH: cost_bytes(cost_record())})
+        out = io.StringIO()
+        with mock.patch.object(ingest, "check_cost_target"), \
+                contextlib.redirect_stdout(out):
+            code = ingest.main(["validate", "--repo", str(self.repo), "--base", "main",
+                                "--source", COST_BRANCH, "--branch", COST_BRANCH,
+                                "--out", str(self.tmp / "staged")])
+        self.assertEqual(code, 0)
+        lines = dict(line.split("=", 1) for line in out.getvalue().splitlines())
+        self.assertEqual((lines["kind"], lines["dest"]),
+                         ("cost", f"improve-costs/{RUN_ID}.json"))
+        self.commit({f"improve-cost/{RUN_ID}/extra.json": b"{}\n"})
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = ingest.main(["validate", "--repo", str(self.repo), "--base", "main",
+                                "--source", COST_BRANCH, "--branch", COST_BRANCH,
+                                "--out", str(self.tmp / "staged2")])
+        self.assertEqual(code, 1)
+        self.assertTrue(err.getvalue().startswith("rejected: "))
+
+
+def ingest_private_url() -> str:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import plan_week  # noqa: PLC0415
+    return plan_week.PRIVATE_REGISTRY_URL
+
+
+class CostResolveAndPlaceTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def event(self, branch) -> str:
+        path = self.tmp / "event.json"
+        path.write_text(json.dumps({"inputs": {"branch": branch}}), encoding="utf-8")
+        return str(path)
+
+    def test_resolve_names_the_kind(self):
+        self.assertEqual(ingest.resolve_ingest("workflow_dispatch", self.event(COST_BRANCH)),
+                         {"branch": COST_BRANCH, "sha": "", "run_id": RUN_ID, "kind": "cost"})
+        self.assertEqual(ingest.resolve_ingest("workflow_dispatch", self.event(BRANCH)),
+                         {"branch": BRANCH, "sha": "", "run_id": RUN_ID, "kind": "eval"})
+        for bad in (COST_BRANCH + "-x", "claude/eval-improve-" + RUN_ID):
+            with self.assertRaises(ingest.Rejected):
+                ingest.resolve_ingest("workflow_dispatch", self.event(bad))
+
+    def stage(self, data: bytes) -> Path:
+        staged = self.tmp / "staged"
+        (staged / "improve-costs").mkdir(parents=True, exist_ok=True)
+        (staged / "improve-costs" / f"{RUN_ID}.json").write_bytes(data)
+        return staged
+
+    def test_first_cost_record_wins_and_exits_zero(self):
+        tree = self.tmp / "tree"
+        target = tree / "improve-costs" / f"{RUN_ID}.json"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"first\n")
+        staged = self.stage(b"second\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = ingest.main(["place", "--staged", str(staged), "--tree", str(tree),
+                                "--kind", "cost"])
+        self.assertEqual(code, 0)
+        self.assertIn("conflict=true", out.getvalue().splitlines())
+        self.assertIn("changed=false", out.getvalue().splitlines())
+        self.assertEqual(target.read_bytes(), b"first\n")
+        # Without --kind cost the same conflict is the eval rule: rejected.
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(ingest.main(["place", "--staged", str(staged),
+                                          "--tree", str(tree)]), 1)
+
+
+def commands(script: str) -> list[tuple[list[str], list[str]]]:
+    """Every simple command in `script`, as (argv texts, the condition texts
+    of every enclosing `if`), from the tree-sitter-bash AST."""
+    root = parse_bash(script)
+    out = []
+
+    def walk(node, conditions):
+        if node.type == "if_statement":
+            cond = node.child_by_field_name("condition")
+            texts = [c.text.decode() for c in node.children_by_field_name("condition")]
+            conditions = conditions + (texts or ([cond.text.decode()] if cond else []))
+        if node.type == "command":
+            argv = [child.text.decode() for child in node.named_children
+                    if child.type not in ("variable_assignment", "file_redirect")]
+            out.append((argv, conditions))
+        for child in node.named_children:
+            walk(child, conditions)
+
+    walk(root, [])
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Workflow shape, from the parsed YAML.
 
 PUSH_TARGET = re.compile(r"\bpush\s+origin\s+([^\s;]+)")
@@ -1172,7 +1423,8 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_the_writing_job_runs_on_workflow_run_of_the_signal(self):
         on = triggers(self.ingest)
         self.assertEqual(set(on), {"workflow_run", "workflow_dispatch"})
-        self.assertEqual(on["workflow_run"]["workflows"], [self.signal["name"]])
+        self.assertEqual(on["workflow_run"]["workflows"],
+                         [self.signal["name"], load(COST_SIGNAL)["name"]])
         self.assertEqual(on["workflow_run"]["types"], ["completed"])
         self.assertEqual(on["workflow_run"]["branches"], ["claude/eval-*"])
         self.assertEqual(set(on["workflow_dispatch"]["inputs"]), {"branch"})
@@ -1180,14 +1432,50 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_signal_is_a_filtered_push_with_no_reach(self):
         on = triggers(self.signal)
         self.assertEqual(set(on), {"push"})
-        self.assertEqual(on["push"]["branches"], ["claude/eval-*"])
+        self.assertEqual(on["push"]["branches"],
+                         ["claude/eval-*", "!claude/eval-cost-*"])
         self.assertEqual(on["push"]["paths"],
                          [f"{ingest.SOURCE_ROOT}/**"])
-        self.assertEqual(self.signal["permissions"], {})
-        for job in self.signal["jobs"].values():
-            self.assertNotIn("permissions", job)
-            for step in job["steps"]:
-                self.assertNotIn("uses", step, "the signal checks nothing out")
+        cost = triggers(load(COST_SIGNAL))
+        self.assertEqual(set(cost), {"push"})
+        self.assertEqual(cost["push"]["branches"], ["claude/eval-cost-*"])
+        self.assertEqual(cost["push"]["paths"], [f"{ingest.COST_SOURCE_ROOT}/**"])
+        for doc in (self.signal, load(COST_SIGNAL)):
+            self.assertEqual(doc["permissions"], {})
+            for job in doc["jobs"].values():
+                self.assertNotIn("permissions", job)
+                for step in job["steps"]:
+                    self.assertNotIn("uses", step, "the signal checks nothing out")
+
+    def test_cost_and_eval_signals_never_share_a_push(self):
+        """GitHub's filter: a branch triggers when it matches a positive
+        pattern and the LAST matching pattern is not a `!` one."""
+        def fires(branches, branch):
+            hit = False
+            for pattern in branches:
+                negated = pattern.startswith("!")
+                if fnmatch(branch, pattern.lstrip("!")):
+                    hit = not negated
+            return hit
+        eval_on = triggers(self.signal)["push"]
+        cost_on = triggers(load(COST_SIGNAL))["push"]
+        cost_branch, eval_branch = f"claude/eval-cost-{RUN_ID}", BRANCH
+        self.assertFalse(fires(eval_on["branches"], cost_branch))
+        self.assertTrue(fires(eval_on["branches"], eval_branch))
+        self.assertTrue(fires(cost_on["branches"], cost_branch))
+        self.assertFalse(fires(cost_on["branches"], eval_branch))
+        cost_file = f"{ingest.COST_SOURCE_ROOT}/{RUN_ID}/{ingest.COST_SOURCE_NAME}"
+        self.assertFalse(any(fnmatch(cost_file, p) for p in eval_on["paths"]))
+        for other in WORKFLOWS.glob("routine-*-pushed.yml"):
+            if other in (SIGNAL, COST_SIGNAL):
+                continue
+            push = triggers(load(other))["push"]
+            with self.subTest(other=other.name):
+                self.assertFalse(fires(push["branches"], cost_branch)
+                                 and ("paths" not in push or any(
+                                     fnmatch(cost_file, p) for p in push["paths"])))
+        # Negative control on the matcher itself.
+        self.assertTrue(fires(["claude/eval-*"], cost_branch))
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.ingest["permissions"], {})
@@ -1200,7 +1488,7 @@ class WorkflowShapeTests(unittest.TestCase):
                       self.job["if"])
 
     def test_no_concurrency_group(self):
-        for doc in (self.ingest, self.signal):
+        for doc in (self.ingest, self.signal, load(COST_SIGNAL)):
             self.assertNotIn("concurrency", doc)
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
@@ -1208,10 +1496,10 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
-            if other not in (INGEST, SIGNAL):
+            if other not in (INGEST, SIGNAL, COST_SIGNAL):
                 pinned |= {n.value for n in uses_nodes(
                     yaml.compose(other.read_text(encoding="utf-8")))}
-        for path in (INGEST, SIGNAL):
+        for path in (INGEST, SIGNAL, COST_SIGNAL):
             text = path.read_text(encoding="utf-8")
             lines = text.splitlines()
             for node in uses_nodes(yaml.compose(text)):
@@ -1223,7 +1511,7 @@ class WorkflowShapeTests(unittest.TestCase):
                     self.assertIn(node.value, pinned)
 
     def test_no_expressions_in_run_blocks(self):
-        for doc in (self.ingest, self.signal):
+        for doc in (self.ingest, self.signal, load(COST_SIGNAL)):
             blocks = run_blocks(doc)
             self.assertTrue(blocks)
             for job, body in blocks:
@@ -1249,6 +1537,39 @@ class WorkflowShapeTests(unittest.TestCase):
         targets = [t for _, body in run_blocks(self.ingest)
                    for t in PUSH_TARGET.findall(body)]
         self.assertEqual(targets, ["HEAD:refs/heads/persistent/eval-results"])
+
+    def _commit_step(self) -> dict:
+        steps = [s for s in self.job["steps"]
+                 if s.get("name") == "Commit to persistent/eval-results and push"]
+        self.assertEqual(len(steps), 1)
+        return steps[0]
+
+    def test_kind_and_dest_come_from_validate_through_env(self):
+        step = self._commit_step()
+        self.assertEqual(step["env"]["KIND"], "${{ steps.validate.outputs.kind }}")
+        self.assertEqual(step["env"]["DEST"], "${{ steps.validate.outputs.dest }}")
+        install = [s for s in self.job["steps"] if "pip install" in s.get("run", "")]
+        self.assertEqual(len(install), 1)
+        self.assertEqual(install[0]["if"], "steps.resolve.outputs.kind == 'cost'")
+        names = [s.get("name") for s in self.job["steps"]]
+        self.assertLess(names.index(install[0]["name"]),
+                        names.index("Validate and stage the results"))
+
+    def test_commit_step_adds_dest_and_estimates_eval_only(self):
+        """Parsed with tree-sitter-bash, never line-scanned: `git add` takes
+        exactly `-- "$DEST"`, `place` gets `--kind "$KIND"`, and the one
+        `estimate` call sits inside an `if` testing KIND against eval."""
+        found = commands(self._commit_step()["run"])
+        adds = [argv[4:] for argv, _ in found
+                if argv[:4] == ["git", "-C", '"$tree"', "add"]]
+        self.assertEqual(adds, [["--", '"$DEST"']])
+        places = [argv for argv, _ in found if "place" in argv]
+        self.assertEqual(len(places), 1)
+        self.assertEqual(places[0][places[0].index("--kind") + 1], '"$KIND"')
+        estimates = [(argv, ifs) for argv, ifs in found if "estimate" in argv]
+        self.assertEqual(len(estimates), 1)
+        self.assertTrue(any('"$KIND"' in cond and "eval" in cond
+                            for cond in estimates[0][1]))
 
     def test_the_guards_can_fail(self):
         # Negative controls on the helpers the shape tests lean on.

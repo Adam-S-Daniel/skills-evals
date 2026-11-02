@@ -449,6 +449,17 @@ def confidence_reached_info(info: float, prior: float, distance: float) -> float
     return max(0.0, 1 - alpha)
 
 
+def keep_p(delta: float, info: float, prior: float) -> float:
+    """The two-sided alpha at which a sequence with estimate `delta` and
+    information `info` has its lower end at 0 (`confidence_reached_info`
+    inverted): 1 when `delta` <= 0. A keep test's p-value (#557 follow-up)."""
+    if delta <= 0:
+        return 1.0
+    rho = 1 / prior
+    return min(1.0, math.sqrt((info + rho) / rho) * math.exp(
+        -delta * delta * info * info / (2 * (info + rho))))
+
+
 def _stratum(a: list, b: list, prior: float, strength: float) -> tuple[float, float]:
     """(mean(a) - mean(b), its information 1/se^2) from each arm's
     `moderated_variance`."""
@@ -760,7 +771,7 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     arms = {"with": _arm_summary(with_runs), "without": _arm_summary(without_runs)}
     cli = sorted({v for r in with_runs + without_runs for v in r["cli_versions"]})
     out = {**arms, "cli_versions": cli, "objective": None, "judge": None,
-           "confident_checks": [], "priors": priors}
+           "confident_checks": [], "priors": priors, "keep_tests": []}
 
     def done(cls, reason):
         return {**out, "class": cls, "reason": reason}
@@ -873,6 +884,56 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                 return False
         return True
 
+    def route(a_lists, prior):
+        """(d, I) of one route: stratified over the strata that have a figure
+        on each arm, else the two pooled arms."""
+        parts = [(x, y) for x, y in a_lists if x and y]
+        if len(parts) > 1:
+            return stratified_estimate(parts, prior, strength)
+        return _stratum(*parts[0], prior, strength)
+
+    def lists(field):
+        if strata is None:
+            return [(figures(with_runs, field), figures(without_runs, field))]
+        return [(figures(w, field), figures(o, field)) for w, o in strata]
+
+    def check_lists():
+        def by_check(runs):
+            return {k: [r["numbers"]["check_rates"][k] for r in runs
+                        if k in r["numbers"]["check_rates"]]
+                    for k in {k for r in runs for k in r["numbers"]["check_rates"]}}
+        pairs = ([(with_runs, without_runs)] if strata is None else strata)
+        return [(by_check(w), by_check(o)) for w, o in pairs]
+
+    # The keep tests (#557 follow-up): one p-value per route that can return
+    # `benefit` here, for `retirement`'s per-subject family. Computed for
+    # every such route whatever the cell's class, and never setting
+    # out["judge"], so a route the class did not need is still tested.
+    tests = []
+    if objective_ok:
+        tests.append({"route": "objective",
+                      "p": keep_p(*route(lists("run_mean"), priors["objective"]),
+                                  priors["objective"])})
+    per_check = check_lists()
+    keys = sorted({k for w, o in per_check for k in set(w) & set(o)})
+    ranked = []
+    for key in keys:
+        parts = [(w[key], o[key]) for w, o in per_check if key in w and key in o]
+        if any(x and y for x, y in parts):
+            d, info = route(parts, priors["check"])
+            ranked.append((-d * math.sqrt(info), key, d, info))
+    if ranked:
+        _, _, d, info = min(ranked)
+        tests.append({"route": "checks",
+                      "p": min(1.0, len(keys) * keep_p(d, info, priors["check"]))})
+    judge_route = (judge_ok or (not judge_carried and strata is not None
+                                and with_ahead_skips_only())) and bool(wj and oj)
+    if judge_route:
+        tests.append({"route": "judge",
+                      "p": keep_p(*route(lists("judge_mean"), priors["judge"]),
+                                  priors["judge"])})
+    out["keep_tests"] = tests
+
     judge_words = ("the judge figure needs a judged run on each arm, and every "
                    "counted run judged when any judge call was conditional")
     if judge_carried:
@@ -972,7 +1033,22 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
             "skipped": skipped}
 
 
-def cell_priors(runs: list) -> dict:
+#: A skill cell's prior guard (#557 follow-up), softer than guidance's:
+#: 10 degrees of freedom before a measured value replaces the fallback, and
+#: fallbacks just above the measured mid-range spread (objective 0.0063,
+#: judge 0.76; checks keep guidance's 0.25, they only keep). Chosen by
+#: simulation against the integrator's two bars: false removals at a true
+#: judge gain of 1.5 at or under 4% (3.4%, against 4.8% on the pooled
+#: prior) and the high cohort (4 skills + 3 sections) within the 50-point
+#: budget (0.96x); the full guidance guard cost 1.18x.
+SKILL_PRIOR_GUARD = {"min_df": 10, "objective": 0.01, "judge": 1.0, "check": 0.25}
+GUIDANCE_PRIOR_GUARD = {"min_df": GUIDANCE_PRIOR_MIN_DF,
+                        "objective": GUIDANCE_FALLBACK_PRIOR_VARIANCE,
+                        "judge": GUIDANCE_FALLBACK_PRIOR_VARIANCE * 100,
+                        "check": GUIDANCE_FALLBACK_PRIOR_VARIANCE}
+
+
+def cell_priors(runs: list, guard: dict | None = None) -> dict:
     """The prior variances of ONE in-situ guidance cell (#557), measured over
     its own runs only: a prior pooled across cells is anti-conservative when
     other cells sit near the ceiling. Groups are (role, rest of guidance,
@@ -980,7 +1056,9 @@ def cell_priors(runs: list) -> dict:
     runs as `run_priors` counts them, each figure pooled with
     `GUIDANCE_PRIOR_MIN_DF` degrees of freedom needed before the measured
     value replaces `GUIDANCE_FALLBACK_PRIOR_VARIANCE` (x100 for the judge's
-    0-to-10 scale, applied exactly when the fallback is)."""
+    0-to-10 scale, applied exactly when the fallback is). `guard` replaces
+    those (`SKILL_PRIOR_GUARD` for a skill cell)."""
+    guard = guard or GUIDANCE_PRIOR_GUARD
     groups: dict = {}
     for run in runs:
         numbers = run_numbers(run["trials"], run.get("judge_conditional") is False)
@@ -996,15 +1074,16 @@ def cell_priors(runs: list) -> dict:
         for check, rate in numbers["check_rates"].items():
             group["check"].setdefault(check, []).append(rate)
 
-    def guarded(lists, scale=1.0):
+    def guarded(lists, figure):
         df = sum(len(v) - 1 for v in lists if len(v) >= 2)
-        if df < GUIDANCE_PRIOR_MIN_DF:
-            return GUIDANCE_FALLBACK_PRIOR_VARIANCE * scale
+        if df < guard["min_df"]:
+            return guard[figure]
         return pooled_variance(lists)
 
-    return {"objective": guarded([g["objective"] for g in groups.values()]),
-            "judge": guarded([g["judge"] for g in groups.values()], 100.0),
-            "check": guarded([v for g in groups.values() for v in g["check"].values()])}
+    return {"objective": guarded([g["objective"] for g in groups.values()], "objective"),
+            "judge": guarded([g["judge"] for g in groups.values()], "judge"),
+            "check": guarded([v for g in groups.values() for v in g["check"].values()],
+                             "check")}
 
 
 def classify_strata(strata: dict, policy: dict, judge_carried: bool) -> dict:
@@ -1204,17 +1283,28 @@ def _run_entry(run: dict) -> dict:
 
 
 def retirement(index: dict, models: list, skill: str, policy: dict,
-               expected: dict, priors: dict | None = None, strata: bool = False) -> dict:
+               expected: dict, priors: dict | None = None, strata: bool = False,
+               family: bool = True) -> dict:
     """The verdict for `skill` over every fixture on main (`expected`, see
-    `pool_cells`) x roster model cell. `priors` (`run_priors`) defaults to
-    those measured over every run of `index`.
+    `pool_cells`) x roster model cell. `priors`, when given, applies to every
+    cell; by default each cell measures its own (`cell_priors` with
+    `SKILL_PRIOR_GUARD`; #557 follow-up).
 
     `strata` (#557, in-situ guidance): cells are pooled by rest of guidance
     and classified by `classify_strata` (which measures its own per-cell
     priors; `priors` is not used); a cell's `runs` and `runs_used` are its
-    used strata's runs."""
-    if not strata:
-        priors = priors if priors is not None else run_priors(index.get("runs", []))
+    used strata's runs.
+
+    `family` (#557 follow-up; default on): the 85% keep is applied per
+    SUBJECT, not per cell. Every cell's keep tests (`_classify`) form one
+    family of FIXED size m = fixtures on main x roster models x 3 routes
+    (objective, checks, judge), known before any run; a subject keeps only
+    when some `benefit` cell has a test with p <= (1 - benefit_confidence)
+    / m (Holm's first step, which is all "any keep" needs). Otherwise every
+    `benefit` cell is `insufficient`, so the planner keeps measuring it. A
+    union over anytime-valid sequences with plug-in variances: as
+    approximate as one cell's bound. The verdict records `keep_family` (m)
+    and `keep_alpha`. The alone pair passes `family=False`."""
     cells, used = [], set()
     for (fixture, model), pool in sorted(pool_cells(index.get("runs", []), skill,
                                                     models, expected, strata).items()):
@@ -1238,7 +1328,12 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             pool = {**pool, "key": {**pool["key"], "strata": cell.pop("strata")}}
         else:
             carried = any(r["judge_carried"] for r in runs)
-            cell = classify_cell(arms["with"], arms["without"], policy, carried, priors)
+            # A skill cell's priors are its own (#557 follow-up): the pooled
+            # cross-skill prior sat below the measured spread. `priors`, when
+            # given (the alone pair's, a test's), applies to every cell.
+            cell = classify_cell(arms["with"], arms["without"], policy, carried,
+                                 priors if priors is not None
+                                 else cell_priors(runs, SKILL_PRIOR_GUARD))
         if strata:
             used.update(run_key(r) for r in runs)
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
@@ -1249,6 +1344,20 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                                                  for r in runs),
                       "runs": {role: [_run_entry(r) for r in sorted(arms[role], key=_order)]
                                for role in arms}})
+    if family and expected:
+        m = len(expected) * max(1, len(models)) * 3
+        alpha = 1 - policy["benefit_confidence"]
+        passing = any(c["class"] == "benefit" and any(t["p"] <= alpha / m
+                                                       for t in c.get("keep_tests", []))
+                      for c in cells)
+        if not passing:
+            for c in cells:
+                if c["class"] == "benefit":
+                    c["cell_reason"] = c["reason"]
+                    c["class"], c["reason"] = "insufficient", (
+                        f"benefit in this cell alone ({c['reason']}), not across the "
+                        f"subject's {m} keep tests at {policy['benefit_confidence']:.0%} "
+                        "each (Holm)")
     classes = {c["class"] for c in cells}
     if not expected:
         verdict, reason = "insufficient", "no fixture on main"
@@ -1266,8 +1375,12 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.
         verdict, reason = "insufficient", "no cell shows no benefit"
-    return {"verdict": verdict, "reason": reason, "cells": cells,
-            "runs_used": sorted(used)}
+    out = {"verdict": verdict, "reason": reason, "cells": cells,
+           "runs_used": sorted(used)}
+    if family and expected:
+        out.update(keep_family=len(expected) * max(1, len(models)) * 3,
+                   keep_alpha=1 - policy["benefit_confidence"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1301,7 +1414,7 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     priors = run_priors(runs)
     out = {pair: retirement({"runs": [r for r in runs if r.get("pair") == pair]},
                             models, section, policy, expected, priors,
-                            strata=pair == "in_situ")
+                            strata=pair == "in_situ", family=pair == "in_situ")
            for pair in GUIDANCE_PAIRS}
     in_situ, alone = out["in_situ"], out["alone"]
     verdict, reason = in_situ["verdict"], in_situ["reason"]
@@ -1313,4 +1426,5 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
             "cells": in_situ["cells"],
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],
                       "cells": alone["cells"]},
-            "runs_used": sorted(set(in_situ["runs_used"]) | set(alone["runs_used"]))}
+            "runs_used": sorted(set(in_situ["runs_used"]) | set(alone["runs_used"])),
+            **{k: in_situ[k] for k in ("keep_family", "keep_alpha") if k in in_situ}}

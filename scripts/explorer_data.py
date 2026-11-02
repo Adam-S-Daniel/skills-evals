@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write `explorer/latest.json`: the public data behind the Skill Evals Explorer (#72).
+"""Write `explorer/latest.json`: the public data behind the Evals Explorer (#72).
 
   explorer_data.py --results-tree DIR --roster evals/roster.yml
                    --policy evals/gate-policy.yml --as-of TIME
@@ -815,7 +815,8 @@ def current_text_runs(verdict: dict) -> int:
 
 def subject_confidence(verdict: dict) -> dict:
     """How sure the gate is, as levels in [0, 1): `helps`, the highest
-    confidence at which some cell's delta (objective or judge) is above 0, and
+    confidence at which some cell's delta (objective or judge) is above 0
+    (with a per-subject keep family, `keep_family`, the family's level), and
     `no_help`, the highest at which every cell's objective delta is under the
     margin (a cell with no objective figure gives 0). Both None while no
     cell has a figure. The keep and remove rules compare these with the policy levels;
@@ -828,14 +829,25 @@ def subject_confidence(verdict: dict) -> dict:
     no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
     if not helps:
         return {"helps": None, "no_help": None}
+    family = verdict.get("keep_family")
+    if isinstance(family, int) and family >= 1:
+        # The keep is per subject (#557 follow-up): its level is 1 - m x the
+        # smallest keep-test p, which crosses the keep level exactly when the
+        # subject keeps.
+        ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
+              if isinstance(t, dict) and isinstance(t.get("p"), (int, float))]
+        if ps:
+            return {"helps": max(0.0, 1 - family * min(ps)), "no_help": min(no_help)}
     return {"helps": max(helps), "no_help": min(no_help)}
 
 
-#: The eval bands the page lists as the test queue, in the planner's order.
-QUEUE_BANDS = ("safety", "missing", "near", "recheck")
+#: The eval bands the page lists as the test queue, in the planner's order
+#: (plan_week.BANDS without its improve and bare bands).
+QUEUE_BANDS = ("safety", "missing", "near", "focus", "recheck", "guidance-rest")
 
 
-def test_queue(cells: list, model_weights: dict, now) -> dict:
+def test_queue(cells: list, model_weights: dict, now,
+               guidance_policy: dict | None = None) -> dict:
     """{(kind, name): {"position", "band", "due"}} for every subject with a
     scheduled cell: `position` (1 = next) is the subject's first cell in the
     planner's eval bands, in `plan_week.allocate`'s order before the budget
@@ -844,10 +856,15 @@ def test_queue(cells: list, model_weights: dict, now) -> dict:
     neither when no test is planned. `scheduled` is False (from the caller)
     for a subject with no fixture on `evals/scheduled.yml`. The
     budget decides how far down the queue a sweep gets, so this is an order,
-    not a date."""
-    cells = [c for c in cells if c.get("schedulable", True)]
+    not a date. `guidance_policy` (the verdict document's) sets the levels
+    the planner's guidance focus is normalized by; open removal pull
+    requests are not read here, so a section whose removal is open can
+    still show a focus place the planner would not give it."""
+    # The focus's blocking rule reads every cell of a section, held ones too.
     ctx = {"cells": cells, "model_weights": model_weights, "removal_prs": [],
+           "guidance_policy": guidance_policy,
            "reservation": 1.0, "overrun": 1.0, "points_per_usd": None}
+    cells = [c for c in cells if c.get("schedulable", True)]
     bands, _work = plan_week.eval_items(ctx, now)
 
     def key(cell_or_item):
@@ -928,7 +945,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     queue, cells = {}, []
     if (evals_dir / "scheduled.yml").is_file():
         cells = plan_week.eval_cells(evals_dir, gates_doc, [], now)
-        queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now)
+        queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now,
+                           gates_doc.get("guidance_policy"))
     counts, usage_window = usage_counts(tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)

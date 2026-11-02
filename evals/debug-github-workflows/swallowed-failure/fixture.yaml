@@ -26,6 +26,29 @@
 skill: debug-github-workflows
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
+# In-place context (ADR 0012, skills-evals#574): cms-platform, the
+# CI-heaviest fleet repository (the same repository as the
+# review-bash-ci-reliability and workflow-path-audit fixtures, pinned at a
+# newer main). Its `skills.lock` adopts adam-coding-anywhere, which carries
+# this skill. It delivers the same two adam-agentskills bundles (identical
+# skill digests) and the same guidance bytes as the other repositories that
+# adopt only those bundles (repo-settings at its main matches byte for
+# byte), so among them the choice only sets the pin. Measured 2026-11-02 at
+# its `main` (dfb0fddf) through `run_eval._in_place_plan` against local
+# clones: guidance, catalog and payload were 25528, 7447 and 688780 bytes in
+# both arms (the context deploys main's digest of the subject); each limit
+# is ceil(measured * 1.25). 8 eligible guidance revisions matched the
+# shipped bytes; the pin is the newest (then the smallest SHA). The context
+# adopts the skill, so the `without` arm removes the deployed copy.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: dfb0fddf1f0884caa69c4b81cdbb03c473b40799
+  guidance_revision: 0295fa86e5c7a7bb6e3e9ea86478c32d3b89956f
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 9309
+    skill_payload_bytes: 860975
+
 judge:
   weights:
     correctness: 0.6

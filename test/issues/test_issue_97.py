@@ -2503,12 +2503,18 @@ class TestIssue97(unittest.TestCase):
         # arm's summary.json — the same shape as run_canary's.
         ("harness/run_eval.py", "claude_version", "subprocess.run",
          "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
+        # #535: the `git` an arm runs, read once per run and recorded as
+        # `harness.git_version`, bounded like claude_version's probe.
+        ("harness/run_eval.py", "git_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
-        # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
-        # is the whole of S1-a: round 2 validated the second and not the first.
-        ("harness/run_eval.py", "run_agent", "subprocess.run", "timeout"):
-            (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
+        # The agent CLI's spawn (#594: in its own session, its group ended
+        # after). run_agent hands it `args.timeout or fixture.get("timeout_s",
+        # 600)`, BOTH halves checked in run_agent too (S1-a: round 2 validated
+        # the second and not the first); the sink checks whatever it is given.
+        ("harness/run_eval.py", "_run_in_own_session", "<popen>.communicate",
+         "timeout"): (1, (("sink", "timeout"),)),
         # The sink moved out of `score()` when main's #81 work extracted the
         # CLI call into `_run_judge_cli` — one function now hands a timeout
         # to subprocess for BOTH judge modes, absolute and pairwise, and it
@@ -3045,8 +3051,9 @@ class TestIssue97(unittest.TestCase):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
         ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
+        ("harness/run_eval.py", "git_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
-        ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
+        ("harness/run_eval.py", "_run_in_own_session"): ("param", "timeout"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
         ("harness/workspace_git.py", "_invoke"): ("param", "timeout"),
         ("harness/workspace_git.py", "_wait"): ("param", "timeout"),
@@ -3110,8 +3117,6 @@ class TestIssue97(unittest.TestCase):
                 kwargs["ctx"] = types.SimpleNamespace(**{knob: value})
             elif kind == "fixture":
                 kwargs["fixture"] = {knob: value, "setup": "true"}
-            elif kind == "arm":
-                kwargs["arm"] = {"name": "without_skill", knob: value}
         if name == "_sandbox_prefix":
             return fn(tmp, tmp, {})
         if name == "_ruby_prefix":
@@ -3133,14 +3138,18 @@ class TestIssue97(unittest.TestCase):
             return fn(**kwargs)
         if name == "probe":
             return fn(cwd=tmp, home=tmp, tmpdir=tmp)
-        if name == "claude_version":
+        if name in ("claude_version", "git_version"):
             return fn()
         if name == "run_leg":
             return fn(tmp, "p", "", model=None, **kwargs)
         if name == "run_setup":
             return fn(tmp, kwargs["fixture"])
-        if name == "run_agent":
-            return fn(tmp, "p", kwargs["arm"])
+        if name == "_run_in_own_session":
+            # Popen is the spawn counter or a MagicMock here, whose pid the
+            # group helper refuses; never signal a real process anyway.
+            with mock.patch("os.killpg"), mock.patch("os.kill"):
+                return fn(["true"], cwd=tmp, capture_output=True, text=True,
+                          env={}, **kwargs)
         if rel == "harness/workspace_git.py" and name == "_invoke":
             return fn(["version"], cwd=tmp, home=tmp, **kwargs)
         if rel == "harness/workspace_git.py" and name == "_wait":
@@ -4119,9 +4128,21 @@ class TestIssue97(unittest.TestCase):
         committed = sorted(str(p.parent.relative_to(REPO_ROOT))
                            for p in (REPO_ROOT / "evals").glob("**/fixture.yaml"))
         self.assertIn("evals/guidance/_delivery", committed)
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import plan_scheduled_evals as planner
+        finally:
+            sys.path.remove(str(REPO_ROOT / "scripts"))
         for fixture in committed:
             with self.subTest(fixture=fixture):
                 proc = self._run_validation({"inputs": {"fixture": fixture}})
+                if planner.declares_context(REPO_ROOT / fixture):
+                    # skills-evals#587: an in-place pair is refused before the
+                    # mint (the plan job already keeps it off the matrix).
+                    self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                    self.assertIn(planner.IN_PLACE_REFUSAL, proc.stdout)
+                    self.assertEqual(proc.output, "")
+                    continue
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, fixture)
                 # The selection output is exactly the validated key, one line;

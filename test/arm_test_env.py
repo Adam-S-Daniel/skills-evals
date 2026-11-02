@@ -1,4 +1,5 @@
-"""Host-independent PATH and mount metadata for arm-running tests."""
+"""Host-independent PATH and mount metadata for arm-running tests, and the
+agent CLI spawn routed through a faked `subprocess.run`."""
 
 from __future__ import annotations
 
@@ -56,3 +57,21 @@ def install_arm_test_environment(setup: Callable[[], None]) -> Callable[[], None
             raise
 
     return wrapped_setup
+
+
+def route_cli_through_subprocess_run(case: unittest.TestCase, run_eval) -> None:
+    """For `case`'s tests, which fake `subprocess.run` as the agent CLI.
+
+    `run_eval.run_agent` starts the CLI through `_run_in_own_session` (its own
+    session, its process group ended afterwards, #594), which takes the same
+    arguments as `subprocess.run`. Each call is handed to whatever
+    `subprocess.run` is when it is made, so no process is started in a
+    session and no group is signaled. The session and group handling has
+    its own tests in test/issues/test_issue_594_late_writer.py.
+    """
+    def forward(cmd, **kwargs):
+        return run_eval.subprocess.run(cmd, **kwargs)
+
+    patcher = mock.patch.object(run_eval, "_run_in_own_session", forward)
+    patcher.start()
+    case.addCleanup(patcher.stop)

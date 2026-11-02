@@ -583,9 +583,10 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         q = explorer_data.test_queue(cells, {"model-a": 1.0}, self.NOW)
         self.assertEqual(q[("skill", "miss")]["position"], 1)
         self.assertEqual(q[("skill", "miss")]["band"], "missing")
-        # The fewer-runs near cell (the section's) goes before the other.
-        self.assertEqual(q[("guidance", "sec")]["position"], 2)
-        self.assertEqual(q[("skill", "near")]["position"], 3)
+        # A guidance cell is never near: its section is focused, after near.
+        self.assertEqual(q[("skill", "near")]["position"], 2)
+        self.assertEqual(q[("guidance", "sec")], {"position": 3, "band": "focus",
+                                                  "due": None, "scheduled": True})
         # Kept: no fire now, a re-check eight weeks after the newest run.
         self.assertEqual(q[("skill", "kept")], {"position": None, "band": None,
                                                 "due": "2026-12-20T00:00:00Z",

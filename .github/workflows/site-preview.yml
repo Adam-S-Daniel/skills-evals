@@ -1,7 +1,8 @@
 # Preview a PR of this repo inside the adamdaniel.ai site: mirrors the PR's
 # tool/index.html to a draft PR in the site repo, whose existing deploy-preview
-# pipeline then publishes https://preview-pr<N>.adamdaniel.ai/tools/skills-evals/
-# (and /tools/guidance-evals/) rendering this PR's page. The preview URLs are
+# pipeline then publishes https://preview-pr<N>.adamdaniel.ai/tools/evals/
+# rendering this PR's page (one page; it switches between skills and guidance
+# itself). The preview URL is
 # commented back here. Closing this PR closes the mirror (the site tears the
 # preview down on the mirror PR's close event). Merging it makes site-sync
 # supersede the mirror. Derived from claude-memory-map's site-preview.yml, the
@@ -120,7 +121,7 @@ jobs:
           SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
           SOURCE_REF: pr-${{ github.event.pull_request.number }}
           SOURCE_PR: ${{ github.event.pull_request.number }}
-          COMMIT_MSG: "tools: preview Skill Evals Explorer PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
+          COMMIT_MSG: "tools: preview Evals Explorer PR #${{ github.event.pull_request.number }} @ ${{ github.event.pull_request.head.sha }}"
         run: bash scripts/sync_to_site.sh
 
       - name: Ensure the draft mirror PR
@@ -131,7 +132,7 @@ jobs:
           SRC_TITLE: ${{ github.event.pull_request.title }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          title="Preview: Skill Evals Explorer PR #${PR_NUMBER} — ${SRC_TITLE}"
+          title="Preview: Evals Explorer PR #${PR_NUMBER} — ${SRC_TITLE}"
           body="Draft mirror of ${GITHUB_REPOSITORY}#${PR_NUMBER} (head \`${HEAD_SHA::7}\`) for the site preview pipeline. Do not merge: it closes automatically when the source PR closes, and a merged source PR lands via the \`tool-sync/skills-evals\` PR instead."
           pr=$(gh pr list -R "$SITE_REPO" --head "$PREVIEW_BRANCH" --state open --json number -q '.[0].number')
           if [ -z "$pr" ]; then
@@ -150,13 +151,10 @@ jobs:
           SITE_PR: ${{ steps.mirror.outputs.site_pr }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          skills_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/skills-evals/"
-          guidance_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/guidance-evals/"
+          page_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/evals/"
           comment=$(cat <<EOF
           ${COMMENT_MARKER}
-          **Site preview:**
-          - Skills view: ${skills_url}
-          - Guidance view: ${guidance_url}
+          **Site preview:** ${page_url} (the Skills and Guidance switch is on the page)
 
           Mirrored to ${SITE_REPO}#${SITE_PR} at \`${HEAD_SHA::7}\`. The links go live once the site's *Deploy Preview* run for that PR finishes (a minute or two), and they update on every push here.
           EOF

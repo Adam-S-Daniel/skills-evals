@@ -214,11 +214,14 @@ def _stable_bytes(path: Path) -> bytes:
     `judge_selection` (#371), the key before those two, which names the judge
     chosen and is tested in test_issue_371_judge_tier.py, and without
     `fixture_digest` and `judge_conditional` (#70), which follow it and are
-    tested in test_issue_70_retirement.py."""
+    tested in test_issue_70_retirement.py. And without `harness.git_version`
+    (#535), the host's own `git --version`, tested in
+    test_issue_535_git_provisioning.py."""
     if path.name == "summary.json":
         summary = json.loads(path.read_text(encoding="utf-8"))
         for block in ("run", "usage", "judge_selection"):
             summary.pop(block)
+        summary["harness"].pop("git_version", None)
         for block in ("fixture_digest", "judge_conditional"):
             summary.pop(block, None)
         return json.dumps(summary, indent=2).encode("utf-8")
@@ -1139,6 +1142,10 @@ class TestIssue66Timeouts(_HarnessCase):
                         self.args = cmd
                         self.workspace = kwargs["cwd"]
                         self.index = len(children)
+                        # Never a real process: the group helper is a
+                        # recorder below, and os.kill/os.killpg are patched.
+                        self.pid = 424240 + self.index
+                        self.new_session = kwargs.get("start_new_session")
                         self.returncode = None
                         self.killed = self.reaped = False
                         self.timeouts = []
@@ -1191,6 +1198,9 @@ class TestIssue66Timeouts(_HarnessCase):
                       mock.patch.dict(os.environ,
                                       {"CLAUDE_BIN": str(FAKE_CLAUDE)}),
                       mock.patch.object(subprocess, "Popen", InstantChild),
+                      mock.patch.object(run_eval, "_kill_process_group") as reap,
+                      mock.patch("os.killpg") as killpg,
+                      mock.patch("os.kill") as kill,
                       mock.patch.object(run_eval.objective, "run_checks",
                                         return_value=[{"id": "only",
                                                        "passed": True,
@@ -1206,6 +1216,13 @@ class TestIssue66Timeouts(_HarnessCase):
                          "name": None}, {}, args, TS, (None, None, None))
 
                 self.assertEqual(len(children), 3)
+                # #594: each child in its own session, its group ended after,
+                # the timed-out one included; no real signal sent.
+                self.assertEqual([c.new_session for c in children], [True] * 3)
+                self.assertEqual([call.args for call in reap.call_args_list],
+                                 [(c.pid,) for c in children])
+                killpg.assert_not_called()
+                kill.assert_not_called()
                 self.assertEqual([c.timeouts for c in children],
                                  [[expected], [expected], [expected]])
                 self.assertTrue(children[1].killed)

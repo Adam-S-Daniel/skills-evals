@@ -231,7 +231,8 @@ class TestTheJobGraph(_Scripts):
 
     def test_each_jobs_needs(self):
         self.assertEqual(_needs(self.jobs["plan"]), [])
-        self.assertEqual(_needs(self.jobs["roster"]), [])
+        # skills-evals#587: `roster` needs `plan` for its `count` gate only.
+        self.assertEqual(_needs(self.jobs["roster"]), ["plan"])
         self.assertEqual(_needs(self.jobs["disarm"]), ["roster"])
         # ADR 0004: `roster-pr` arms BEFORE the eval, so it no longer needs
         # `eval` or `publish`; `disarm` must finish first, or it would turn
@@ -271,11 +272,15 @@ class TestTheJobGraph(_Scripts):
         self.assertFalse({"eval", "publish", "roster-wait"} & _ancestors(self.jobs, "roster-pr"))
 
     def test_the_gates(self):
+        # skills-evals#587: neither runs when `roster` was skipped (the plan
+        # left nothing to evaluate); test_issue_eval_yml_in_place evaluates it.
         self.assertEqual(self.jobs["roster-pr"].get("if"),
-                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+                         "${{ !cancelled() && needs.roster.result != 'skipped' "
+                         "&& github.ref == 'refs/heads/main' }}")
         # Invariants 7 and 8: no wait on a `roster_only` dispatch or off `main`.
         self.assertEqual(self.jobs["roster-wait"].get("if"),
-                         "${{ !cancelled() && github.ref == 'refs/heads/main' "
+                         "${{ !cancelled() && needs.roster.result != 'skipped' "
+                         "&& github.ref == 'refs/heads/main' "
                          "&& !inputs.roster_only }}")
         # The eval/publish gates are exercised by TestTheGates below.
 
@@ -512,10 +517,11 @@ class TestTheGates(_Scripts):
     when it failed, timed out, was cancelled or never started."""
 
     def _ctx(self, wait_result, cleared, *, roster_only=False, eval_result="success",
-             plan_result="success", cancelled=False):
+             plan_result="success", cancelled=False, count="1"):
         return {"functions": {"cancelled": lambda: cancelled},
                 "inputs.roster_only": roster_only,
                 "needs.plan.result": plan_result,
+                "needs.plan.outputs.count": count,
                 "needs.roster-wait.result": wait_result,
                 "needs.roster-wait.outputs.cleared": cleared,
                 "needs.eval.result": eval_result}

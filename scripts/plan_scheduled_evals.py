@@ -7,6 +7,15 @@ which reads the reviewed list through `scheduled_fixtures` here.
 `--in-place FIXTURE` exits 0 only for a committed fixture whose fixture.yaml
 declares a top-level `context` mapping, the fixtures that run in place (ADR
 0012); routine-eval-fire.yml runs it before it accepts `arms: bare`.
+
+With no flag (eval.yml's plan job) it plans the matrix and REFUSES every
+in-place fixture in it before any credential is minted (skills-evals#587):
+eval.yml's runner is not the hosted container `delivery.require_hosted`
+asks for, so an in-place pair could only fail there after the mint, and
+running it as an isolation pair instead would mix isolation and in-place
+results in one subject's verdict data. Refused fixtures leave the matrix
+and are listed, with the reason, in the step summary; `count` (the
+fixtures left) is what eval.yml's jobs gate on, `0` meaning none run.
 """
 import argparse
 import json
@@ -17,6 +26,8 @@ import subprocess
 
 DEFAULT_FIXTURE = "evals/workflow-path-audit/required-check-routing"
 MAX_DISPATCH_FIXTURES = 20
+IN_PLACE_REFUSAL = ("in-place pair: runs only in the cloud routine, which hosts in-place "
+                    "delivery; eval.yml cannot (skills-evals#587)")
 
 
 def committed_fixtures(root):
@@ -121,6 +132,36 @@ def plan(root, event_name, event):
                          "slot": slot} for slot, fixture in enumerate(fixtures)]}
 
 
+def refuse_in_place(root, matrix):
+    """Split a planned matrix into the legs eval.yml can run and the in-place
+    fixtures it refuses (`declares_context`, the routine's rule). Kept legs
+    keep their planned slot; there is no fallback to isolation."""
+    kept, refused = [], []
+    for leg in matrix["include"]:
+        if declares_context(Path(root) / leg["fixture"]):
+            refused.append(leg["fixture"])
+        else:
+            kept.append(leg)
+    return {"include": kept}, refused
+
+
+def refusal_summary(refused, count):
+    """The step-summary markdown for refused fixtures; empty when none was.
+    Each path already passed validate_fixture, so it is [A-Za-z0-9/_.-]."""
+    if not refused:
+        return ""
+    lines = ["### Fixtures refused before any credential", ""]
+    lines += [f"- `{fixture}`: {IN_PLACE_REFUSAL}" for fixture in refused]
+    lines.append("")
+    if count:
+        lines.append(f"{count} fixture(s) left to run.")
+    else:
+        lines.append("No fixture is left to run, so no eval leg runs and, unless this "
+                     "is a `roster_only` dispatch, no job mints a credential. The run "
+                     "ends here, successfully.")
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--committed", action="store_true")
@@ -146,9 +187,19 @@ def main():
             event = json.loads(Path(event_path).read_text()) if event_path else {}
             if not isinstance(event, dict):
                 raise ValueError("event must be an object")
-            matrix = plan(root, os.environ["GITHUB_EVENT_NAME"], event)
+            matrix, refused = refuse_in_place(
+                root, plan(root, os.environ["GITHUB_EVENT_NAME"], event))
+            count = len(matrix["include"])
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write("matrix=" + json.dumps(matrix, separators=(",", ":")) + "\n")
+                output.write(f"count={count}\n")
+            if refused:
+                print(f"::notice::{len(refused)} in-place fixture(s) refused, {count} left "
+                      "to run; see the step summary (skills-evals#587)")
+                summary = os.environ.get("GITHUB_STEP_SUMMARY")
+                if summary:
+                    with open(summary, "a", encoding="utf-8") as output:
+                        output.write(refusal_summary(refused, count))
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError):
         # Never echo event content or exception bodies into the public log.
         print("::error::Invalid eval plan or committed fixture selection")

@@ -48,7 +48,8 @@ name: Fire eval routine
 #   rebuilds the same proposal files the caller selected from. Either way
 #   `scripts/draft_new_skill.py payload` re-validates the
 #   proposal and prints the payload, run_id, mode and proposal (subject,
-#   id, evidence_count, examples, repos), which `fire-check` checks again;
+#   id, evidence_count, examples, repos: at most 100, each owner/repo, a
+#   bare directory name or `~`), which `fire-check` checks again;
 #   the fire step sends that object as it is. A second draft-only input,
 #   `hook_declined` (a choice, false by default), says the agent-checks lane
 #   closed this subject's hook proposal as not planned; the payload then
