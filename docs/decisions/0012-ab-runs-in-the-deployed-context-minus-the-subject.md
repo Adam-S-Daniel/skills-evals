@@ -254,7 +254,10 @@ on the shared resolver `run_eval.main_copy` and the summary keys
   when a fire hours away ages out). One with no delivered or young fire in
   its window whose window's empty fires cover at least `OUTAGE_CELLS` (3)
   cells is an outage fire (2026-11-01: six fixtures fired, none produced
-  anything): each cell's earliest, at most `OUTAGE_EXCUSES` (1) within
+  anything); a delivered fire 45 minutes or more after the window's first
+  empty fire may be the breaker's own probe and does not count, and an
+  empty fire at most 60 minutes before an outage fire with no delivery
+  between is one too, so a slow onset's first fire is excused: each cell's earliest, at most `OUTAGE_EXCUSES` (1) within
   `RETRY_AFTER`, is excused, and any later one counts, so fixtures broken
   together still go fixture-broken, one fire later. One with a young fire in
   its window waits. Each recent chain of outage fires is a `routine-outage`

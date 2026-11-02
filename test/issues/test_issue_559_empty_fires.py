@@ -425,16 +425,17 @@ class OutageTests(OutageFixture, unittest.TestCase):
     def test_a_long_chain_is_judged_fire_by_fire(self):
         # Was test_the_span_cap_splits_a_long_chain: the 2-hour span cap is
         # gone (#583). Four cells 50 minutes apart: the end fires' windows
-        # hold two cells each, the middle two three, so the second is an
-        # outage fire that opens a down span. The first counts (before the
-        # span); the third, an outage fire PROBE_WAIT into the span, and the
-        # fourth, a counted fire inside it, are down fires.
+        # hold two cells each, the middle two three, so the middle two are
+        # outage fires; the chain absorbs the first (slow onset), which
+        # opens the down span. The second and third,
+        # outage fires PROBE_WAIT into the span, and the fourth, a counted
+        # fire inside it, are down fires.
         four = self.FIXTURES[:4]
         fires = [fire(i, f, self.at(5, 0) + 50 * i * self.MINUTE) for i, f in enumerate(four)]
         got, outages = self.counts(fires, fixtures=four)
-        self.assertEqual(got, [(1, 0), (0, 1), (0, 0), (0, 0)])
-        self.assertEqual(self.downs(fires, fixtures=four), [0, 0, 1, 1])
-        self.assertEqual(outages, [{"start": self.at(5, 50), "fires": 2}])
+        self.assertEqual(got, [(0, 1), (0, 0), (0, 0), (0, 0)])
+        self.assertEqual(self.downs(fires, fixtures=four), [0, 1, 1, 1])
+        self.assertEqual(outages, [{"start": self.at(5, 0), "fires": 3}])
 
     def test_a_young_fire_leaves_the_window_undecided(self):
         three, now = self.FIXTURES[:3], self.at(12, 0)
@@ -502,40 +503,39 @@ class WindowTests(OutageFixture, unittest.TestCase):
     def test_an_outages_first_round_beside_an_earlier_delivered_fire(self):
         # Issue item 1. A delivered fire more than OUTAGE_GAP before the
         # first round leaves it excused; one at most OUTAGE_GAP before (the
-        # window is inclusive) puts it in that round's window, so that one
-        # round counts: the window cannot tell a routine that went down
-        # minutes after delivering from fixtures that broke.
+        # window is inclusive) puts it in that round's window, so that round
+        # is counted on the first pass; then the outage fire a minute later,
+        # no delivery between, absorbs it (slow onset).
         burst, other, start = self.FIXTURES[:5], self.FIXTURES[5], self.at(6, 0)
-        for gap, first in ((61, (0, 1)), (60, (1, 0))):
+        for gap, first in ((61, (0, 1)), (60, (0, 1))):
             delivered = start - gap * self.MINUTE
             fires = [fire(99, other, delivered)] + self.burst(start, burst)
             doc = self.doc({other: [delivered + 10 * self.MINUTE]})
             got, outages = self.counts(fires, doc=doc, fixtures=burst)
             with self.subTest(gap=gap):
                 self.assertEqual(got, [first] + [(0, 1)] * 4)
-                self.assertEqual(outages[0]["fires"], 5 if first == (0, 1) else 4)
+                self.assertEqual(outages[0]["fires"], 5)
 
     def test_an_outages_last_round_beside_a_later_delivered_fire(self):
         burst, other, start = self.FIXTURES[:5], self.FIXTURES[5], self.at(6, 0)
-        last = start + 4 * self.MINUTE
-        # At 60 the last fire's window holds the delivered fire, so it is not
-        # an outage fire; it started while the routine was down (the
-        # outage's earlier fires opened the span), so it is a down fire.
-        for gap, final, down in ((61, (0, 1), 0), (60, (0, 0), 1)):
-            delivered = last + gap * self.MINUTE
+        # A delivered fire inside the windows vetoes the outage only when it
+        # started before the burst's first fire + PROBE_WAIT: a later one
+        # may be the breaker's own probe and says nothing about the burst.
+        for after, each in ((45, (0, 1)), (44, (1, 0))):
+            delivered = start + after * self.MINUTE
             fires = self.burst(start, burst) + [fire(99, other, delivered)]
             doc = self.doc({other: [delivered + 10 * self.MINUTE]})
             got, _ = self.counts(fires, doc=doc, fixtures=burst)
-            with self.subTest(gap=gap):
-                self.assertEqual(got, [(0, 1)] * 4 + [final])
-                self.assertEqual(self.downs(fires, doc=doc, fixtures=burst), [0] * 4 + [down])
+            with self.subTest(after=after):
+                self.assertEqual(got, [each] * 5)
+                self.assertEqual(self.downs(fires, doc=doc, fixtures=burst), [0] * 5)
 
     def test_removing_an_early_fire_changes_no_later_verdict(self):
         # Issue item 2: under the 2-hour span, dropping a chain's first fire
         # moved every later sweep boundary. A 10-hour chain every 30
-        # minutes over four cells, one delivered fire in it.
+        # minutes over four cells, two delivered fires in it.
         t0, gap = self.at(5, 0), plan_week.OUTAGE_GAP
-        fires = [(t0 + 30 * i * self.MINUTE, "delivered" if i == 9 else "empty", i % 4)
+        fires = [(t0 + 30 * i * self.MINUTE, "delivered" if i in (9, 11) else "empty", i % 4)
                  for i in range(21)]
         since = t0 - timedelta(days=1)
         full = plan_week.judge_empty_fires(fires, since)
@@ -827,6 +827,46 @@ class BreakerTests(OutageFixture, unittest.TestCase):
         self.assertLessEqual(max(c["empty_fires"] for c in cells), 1)
         self.assertEqual(sum(c["empty_fires"] for c in cells), 0)
 
+
+    def test_a_probe_delivering_after_probe_wait_does_not_veto_its_burst(self):
+        # Flapping: six healthy cells empty at 05:00-05:05, the breaker's
+        # probe at 05:50 delivers, the six are fired again into a second
+        # short outage at 07:10 whose probe delivers at 08:00. Each probe
+        # sits in its own burst's window, after PROBE_WAIT: it says nothing
+        # about the burst, so both bursts stay outages.
+        fires = self.outage()
+        plan, _, _ = self.plan(fires, self.BURST_AT + 50 * self.MINUTE)
+        first = plan["fires"][0]["fixture"]
+        fires.append(fire(77, first, self.BURST_AT + 50 * self.MINUTE))
+        again = self.BURST_AT + timedelta(hours=2, minutes=10)
+        fires += [fire(200 + i, f, again + i * self.MINUTE) for i, f in enumerate(self.FIXTURES)]
+        landed = {first: [self.BURST_AT + 58 * self.MINUTE]}
+        plan, _, _ = self.plan(fires, again + 50 * self.MINUTE, self.doc(landed))
+        second = plan["fires"][0]["fixture"]
+        fires.append(fire(300, second, again + 50 * self.MINUTE))
+        landed.setdefault(second, []).append(again + 58 * self.MINUTE)
+        plan, cells, _ = self.plan(fires, again + timedelta(hours=4), self.doc(landed))
+        self.assertEqual([w for w in plan["work"] if w["kind"] == "fixture-broken"], [])
+        six = [c for c in cells if c["fixture"] in self.FIXTURES]
+        self.assertEqual([c["outage_fires"] for c in six], [1] * 6)
+
+    def test_a_slow_onset_excuses_the_outages_leading_fire(self):
+        # One fire per plan, 50 minutes apart, all empty: the first fire's
+        # window holds two cells, so only the chain makes it an outage
+        # fire. Then the routine flaps: one probe delivers and the next
+        # outage starts slowly the same way, from the same head cell.
+        fires, _, _ = self.simulate([], self.BURST_AT, 8, max_fires=1)
+        head = fires[0]["display_title"].split()[-2]  # the slow onset's first cell
+        healthy = self.FIXTURES[5]
+        back = self.BURST_AT + timedelta(hours=8, minutes=20)
+        fires.append(fire(999, healthy, back))
+        doc = self.doc({healthy: [back + 8 * self.MINUTE]})
+        fires, _, _ = self.simulate(fires, back + 50 * self.MINUTE, 6, doc, max_fires=1)
+        plan, cells, _ = self.plan(fires, back + timedelta(hours=10), doc, max_fires=1,
+                                   edit=self.only_six)
+        self.assertEqual([w for w in plan["work"] if w["kind"] == "fixture-broken"], [])
+        self.assertEqual(next(c for c in cells if c["fixture"] == head)["outage_fires"], 1)
+        self.assertLessEqual(max(c["empty_fires"] for c in cells), 1)
 
 class ConstantsTests(unittest.TestCase):
     """The outage rule's numbers, pinned by value: a change is a decision."""

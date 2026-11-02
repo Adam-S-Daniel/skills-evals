@@ -104,10 +104,13 @@ THE BANDS (rule D), in order:
   its verdict depends only on fires near it, not on where a chain began).
   One with no delivered and no young fire in its window, and empty fires
   there covering at least OUTAGE_CELLS (3) distinct cells, is an outage
-  fire: a cell's earliest, at most OUTAGE_EXCUSES (1) within RETRY_AFTER,
-  is excused (`outage_fires`), and any further one counts, so fixtures
-  broken together still go fixture-broken, one fire later. One with a
-  young fire in its window is undecided and counts nothing yet. A window
+  fire (a delivered fire PROBE_WAIT or more after the window's first empty
+  one may be the breaker's own probe and does not count; an empty fire at
+  most OUTAGE_GAP before an outage fire, no delivery between, is one too,
+  for a slow onset): a cell's earliest, at most OUTAGE_EXCUSES (1) within
+  RETRY_AFTER, is excused (`outage_fires`), and any further one counts, so
+  fixtures broken together still go fixture-broken, one fire later. One
+  with a young fire in its window is undecided and counts nothing yet. A window
   narrower than three cells cannot be told from broken fixtures, so it
   counts: that is the ambiguity left. Each chain of outage fires (each at
   most OUTAGE_GAP after the last) starting in the last 24 hours is a
@@ -1512,8 +1515,12 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
     past the fires gathered), else one of
       * "undecided": a young fire started inside its window, so the window
         may yet hold a delivered one; it counts neither way until then;
-      * "outage": no delivered fire inside its window, and the window's
-        empty fires cover at least OUTAGE_CELLS distinct cells;
+      * "outage": no delivered fire inside its window that started before
+        the window's first empty fire start + PROBE_WAIT (a later one may be
+        the breaker's own probe), and the window's empty fires cover at
+        least OUTAGE_CELLS distinct cells; or a counted fire at most
+        OUTAGE_GAP before an outage fire with no delivered fire started
+        between the two (a chain absorbs its leading empties, slow onset);
       * "counted": anything else, a delivered fire beside it or a window
         narrower than OUTAGE_CELLS cells.
     The window is [start - OUTAGE_GAP, start + OUTAGE_GAP], inclusive, so a
@@ -1526,15 +1533,23 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
         if state != "empty" or start < since:
             verdicts.append(None)
             continue
-        near = [(other, index) for t, other, index in fires if abs(t - start) <= OUTAGE_GAP]
-        states = {other for other, _ in near}
+        near = [(t, other, index) for t, other, index in fires if abs(t - start) <= OUTAGE_GAP]
+        states = {other for _, other, _ in near}
+        first = min(t for t, other, _ in near if other == "empty")
         if "young" in states:
             verdicts.append("undecided")
-        elif "delivered" not in states \
-                and len({index for other, index in near if other == "empty"}) >= OUTAGE_CELLS:
+        elif not any(other == "delivered" and t < first + PROBE_WAIT for t, other, _ in near) \
+                and len({index for _, other, index in near if other == "empty"}) >= OUTAGE_CELLS:
             verdicts.append("outage")
         else:
             verdicts.append("counted")
+    first_pass = list(verdicts)
+    for i, (start, _, _) in enumerate(fires):
+        if verdicts[i] == "counted" and any(
+                v == "outage" and start < t <= start + OUTAGE_GAP
+                and not any(s == "delivered" and start <= d <= t for d, s, _ in fires)
+                for (t, _, _), v in zip(fires, first_pass)):
+            verdicts[i] = "outage"
     return verdicts
 
 

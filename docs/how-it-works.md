@@ -401,7 +401,10 @@ outage empties every fire at once (2026-11-01: six fixtures, no run), which
 says nothing about any fixture, so each empty fire is judged on its own
 window, 60 minutes either side of its start: with no fire in it that landed
 a run or is still young, and empty fires in it covering three or more cells,
-it is an outage fire. That excuses each cell's earliest such fire, one per
+it is an outage fire. A fire that landed a run 45 minutes or more after the
+window's first empty fire may be the breaker's own probe and does not
+count, and an empty fire at most 60 minutes before an outage fire, with no
+delivery between, is one too (a slow onset). That excuses each cell's earliest such fire, one per
 cell in 14 days, and each chain of outage fires lists a `routine-outage`
 item (no fixture names) for a day. A further outage fire counts, so fixtures
 broken together still go `fixture-broken`, one fire later; a window of fewer
