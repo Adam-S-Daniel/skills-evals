@@ -341,14 +341,35 @@ def check_env_entry(name, value, where: str) -> None:
             "which no environment value may carry.")
 
 
+# Variables that move where git finds a repository or its configuration. The
+# CLI runs `git status`, `git log` and `git config` in the arm's workspace
+# outside the sandbox at every launch, and the harness watches only the
+# configuration git finds there by default (run_eval._workspace_git_snapshot,
+# #609, #612), so a fixture may not redirect it. `GIT_CEILING_DIRECTORIES`
+# is the harness's own, set on every launch.
+GIT_REDIRECT_ENV = frozenset({
+    "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_CONFIG", "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR",
+})
+GIT_REDIRECT_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+
+
 def check_env_block(env_spec, where: str) -> None:
     """Every entry of a fixture's `env:` block. An absent or null block is
     fine and means "no entries"; a non-mapping is the caller's own check
-    (run_eval.validate_mapping_keys)."""
+    (run_eval.validate_mapping_keys). A name in GIT_REDIRECT_ENV (or with a
+    GIT_REDIRECT_PREFIXES prefix) is refused: no fixture needs one."""
     if not isinstance(env_spec, dict):
         return
     for name, value in env_spec.items():
         check_env_entry(name, value, where)
+        if str(name) in GIT_REDIRECT_ENV or str(name).startswith(GIT_REDIRECT_PREFIXES):
+            raise GuidanceError(
+                f"{where}: `env:` name {str(name)!r} moves where git finds a "
+                "repository or its configuration, which the CLI reads outside "
+                "the sandbox at every launch; a fixture may not set it (#612).")
 
 
 # ---------------------------------------------------------------------------
