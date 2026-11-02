@@ -673,16 +673,16 @@ HISTORY.
 
 ## Explorer
 
-[`tool/index.html`](tool/index.html) is the Skill Evals Explorer: one
+[`tool/index.html`](tool/index.html) is the Evals Explorer: one
 self-contained public page that explains the published results in plain
 language for someone who has never opened a terminal (issues
 [#72](https://github.com/Adam-S-Daniel/skills-evals/issues/72) and
 [#123](https://github.com/Adam-S-Daniel/skills-evals/issues/123)). It has no
 build step and no dependencies: vanilla JavaScript, inline CSS, and inline SVG
-charts it draws itself, light and dark. adamdaniel.ai iframes the same file
-twice: `/tools/skills-evals/` (the default skills view) and
-`/tools/guidance-evals/?subject=guidance` (the guidance view); an on-page
-toggle switches between them and updates the URL.
+charts it draws itself, light and dark. adamdaniel.ai iframes it once, at
+`/tools/evals/` (Adam, 2026-11-02: one Evals Explorer, not two pages). The
+skills view is the default; an on-page toggle switches to the guidance view
+and updates the URL (`?subject=guidance` opens it directly).
 
 It reads ONE file at load time, cache-busted with a query string:
 [`explorer/latest.json` on `persistent/eval-results`](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json)
@@ -742,13 +742,11 @@ the site side is documented in adamdaniel.ai's `docs/CMS-ADMIN.md`
   that changes `tool/index.html`, force-pushes the file and a provenance record
   (`_data/tool_sources/skills-evals.yml`) to the site branch
   `tool-sync/skills-evals`, opens or reuses a PR, and enables auto-merge. The
-  site's own CI and deploy take it live. Both `/tools/skills-evals/` and
-  `/tools/guidance-evals/` serve this one file.
+  site's own CI and deploy take it live. `/tools/evals/` serves this file.
 - [`site-preview.yml`](.github/workflows/site-preview.yml): on every PR here
   that changes `tool/index.html`, mirrors the file to a draft site PR from
-  `tool-preview/skills-evals-pr-<n>` and comments the two preview URLs
-  (`https://preview-pr<N>.adamdaniel.ai/tools/skills-evals/` and
-  `.../tools/guidance-evals/`) on the PR. Closing the PR closes the mirror.
+  `tool-preview/skills-evals-pr-<n>` and comments the preview URL
+  (`https://preview-pr<N>.adamdaniel.ai/tools/evals/`) on the PR. Closing the PR closes the mirror.
   Never merge the draft mirror.
 
 Both authenticate as the eval-improve GitHub App, not a personal access token:

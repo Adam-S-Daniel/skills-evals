@@ -1,5 +1,5 @@
 # Auto-publish to adamdaniel.ai: every merge to main that changes
-# tool/index.html (the Skill Evals Explorer page) opens (or updates) a
+# tool/index.html (the Evals Explorer page) opens (or updates) a
 # vendor-bump PR in the site repo and enables auto-merge, so the site's own CI
 # + deploy pipeline takes it live with no manual step. Derived from
 # claude-memory-map's site-sync.yml, the reference implementation. See README
@@ -96,7 +96,7 @@ jobs:
           BRANCH: ${{ env.SYNC_BRANCH }}
           SOURCE_COMMIT: ${{ github.sha }}
           SOURCE_REF: main
-          COMMIT_MSG: "tools: sync Skill Evals Explorer to ${{ github.sha }}"
+          COMMIT_MSG: "tools: sync Evals Explorer to ${{ github.sha }}"
         run: bash scripts/sync_to_site.sh
 
       - name: Open (or reuse) the site PR and enable auto-merge
@@ -106,7 +106,7 @@ jobs:
           PREVIOUS: ${{ steps.sync.outputs.previous_commit }}
         run: |
           short="${GITHUB_SHA::7}"
-          title="tools: sync Skill Evals Explorer to ${short}"
+          title="tools: sync Evals Explorer to ${short}"
           if [ -n "$PREVIOUS" ]; then
             changes="Upstream changes: https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...${GITHUB_SHA}"
           else
