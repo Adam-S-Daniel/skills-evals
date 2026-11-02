@@ -1286,7 +1286,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
     function mount(node) {
       while (app.firstChild) app.removeChild(app.firstChild);
       app.appendChild(toDom(node, document));
-      document.title = state.STRINGS.title;
+      document.title = STRINGS.title;
     }
     function setMode(m) {
       state.mode = m;
