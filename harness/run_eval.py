@@ -71,6 +71,7 @@ import run_canary  # noqa: E402
 from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
+import fleet_hooks  # noqa: E402
 import guidance_violations  # noqa: E402
 import judge_policy  # noqa: E402
 from scorers import judge, objective  # noqa: E402
@@ -1886,7 +1887,8 @@ HARNESS_TEMP_PREFIXES = (
     "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
     "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
     ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-",
-    "session-miner-", "lesson-classify-")
+    "session-miner-", "lesson-classify-",
+    "fleet-hooks-modules-")
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
@@ -5474,12 +5476,20 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
     plan = {"frozen": frozen, "subject": subject, "repositories": repositories,
             "candidate_paths": ([Path(candidate).resolve() if kind == "skill" else
                                  Path(candidate).resolve().parent] if candidate else [])}
+    if fixture.get(FLEET_HOOKS_KEY) is True:
+        # The hooks the context deployed, proven against it (#535); both arms
+        # of every trial get this one set.
+        plan["fleet_hooks"] = fleet_hooks.freeze(frozen, repositories,
+                                                 guidance_subject=kind == "guidance")
     _check_context_summary(plan)
     # Prove every context metadata fence before any CLI/version call.
     try:
         repositories.used_paths()
     except ArmReadIsolationError as exc:
         raise delivery.DeliveryError("context_git_metadata_unknown", str(exc)) from exc
+    if "fleet_hooks" in plan:
+        # Last, as the one step that needs the network, and once per plan.
+        plan["fleet_hooks_modules"] = fleet_hooks.install_modules(plan["fleet_hooks"])
     return plan
 
 
@@ -5634,6 +5644,10 @@ def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
     env = guidance.agent_env(workspace=workspace, home=home, tmpdir=tmpdir,
                              config_dir=config, env_spec=fixture.get("env"))
     assert_stand_ins_on_path(workspace, env, fixture.get("env"))
+    if "fleet_hooks" in plan:
+        # The arm's own read-only copy, outside `ws/` and `tmp/` (#535).
+        fleet_hooks.materialize(plan["fleet_hooks"], scratch / fleet_hooks.DIRNAME,
+                                plan["fleet_hooks_modules"])
     return workspace, env, delivered
 
 
@@ -5913,6 +5927,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         else:
             if scratch is not None:
                 workspace_git.release(scratch / "ws")
+                fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
                 shutil.rmtree(scratch, ignore_errors=True)
                 _clean_in_place_config(plan)
             raise
@@ -5923,6 +5938,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        effort=effort, agent_model=agent_model)
         if scratch is not None:
             workspace_git.release(scratch / "ws")
+            fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
             shutil.rmtree(scratch, ignore_errors=True)
         elif isinstance(exc, SetupFailedError):
             shutil.rmtree(exc.workspace, ignore_errors=True)
@@ -6123,6 +6139,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "models_used": agent_models, **extra}
     finally:
         workspace_git.release(workspace)
+        if scratch is not None:
+            fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
         shutil.rmtree(scratch if scratch is not None else workspace, ignore_errors=True)
         _clean_in_place_config(plan)
 
@@ -6910,6 +6928,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "guidance_violations": counts}
     finally:
         workspace_git.release(scratch / "ws")
+        fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
         shutil.rmtree(scratch, ignore_errors=True)
         _clean_in_place_config(plan)
 
