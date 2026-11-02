@@ -2569,17 +2569,33 @@ its path without `evals/`; `make_badge.py` reads only run dirs whose summary
 names that fixture, on the in-situ pair.
 
 **The verdict.** `harness/gates.py` `guidance_verdict` reuses the skill
-machinery (run-level pooling, looks at 5, 10 and 20 runs, the same
-classes) twice per section: the in-situ pair (`full` vs
+machinery (run-level pooling, a confidence sequence checked after every
+run, the same classes) twice per section: the in-situ pair (`full` vs
 `full-minus-section`) and the alone pair (`section` vs `none`), classified by
 each arm's `mode`, never its name. A run pools when its `section` digest is
-the section's extent on main and its fixture digest matches; the `rest`
-digest is the pair key, so runs beside different neighbours never share a
-cell. The in-situ verdict decides. The one change: a section whose in-situ
-verdict is `retire` but which shows `benefit` alone in any cell gets
-**`shorten-or-merge`**, since the rest of the guidance covers what it teaches.
-That verdict never removes anything. The thresholds are `gate-policy.yml`'s
-`guidance:` block, which is separate from `skills:`.
+the section's extent on main and its fixture digest matches. In situ, runs
+beside different versions of the rest of the guidance (the `rest` digest)
+are separate strata of one cell, combined by precision weight
+(`classify_strata`, #546 and #557), so an edit elsewhere in the guidance
+does not start a section's evidence over; each in-situ cell measures its
+own priors (`cell_priors`). The in-situ verdict decides. The one change: a
+section whose in-situ verdict is `retire` but which shows `benefit` alone in
+any cell gets **`shorten-or-merge`**, since the rest of the guidance covers
+what it teaches. That verdict never removes anything.
+
+**The rule** (Adam, 2026-11-02, #557), the same for skills and sections in
+`gate-policy.yml`'s two blocks: remove when the gate is 90% confident
+(`retire_confidence` 0.90) that the subject does not improve results by
+0.15 or more (`objective_margin` 0.15; `judge_margin` 1.5 on the judge's
+0-to-10 scale), with no separate confirmation step. Keep at 85%
+(`benefit_confidence`), applied per SUBJECT (#578): the cells' keep tests,
+one per route, form a family of fixed size m = fixtures on main x roster
+models x 3, and a subject keeps only when a `benefit` cell's test clears
+0.15 / m. The alone pair keeps its per-cell keep for the twist above. An
+agent-errored trial counts 0 and does not block a removal; when every
+missing judge figure in a cell is a with-ahead conditional skip, the
+objective alone can remove. Simulations: `scripts/simulate_stratified_pooling.py`
+and the PR bodies of #565 and #578.
 
 **Removal.** `scripts/retire_skill.py --target guidance --guidance PATH`
 acts on at most one section per evaluation. `shorten-or-merge` always
@@ -2597,7 +2613,11 @@ Retirement is automatic, with no human approval (Adam, 2026-10-10, #124):
 `evals/gate-policy.yml` commits `guidance.retirement_mode: auto`, and the
 removal pull request in `_agent-guidance` is written with the eval-improve
 GitHub App's token minted for that repository alone (`skill-coverage.yml`'s
-`retirement` job). With no token it files the issue instead. The refusals match
+`retirement` job). With no token it files the issue instead. Every removal
+pull request is followed by a notice issue in skills-evals that mentions
+Adam, links the pull request and says how to reverse it (close it, or press
+Revert once merged), and the explorer lists removed sections and skills
+with the date and that link (#565, #567). The refusals match
 the skill path ([ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md),
 which covers both subjects). The decision as a fleet record is
 [_agent-guidance ADR 0030](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0030-a-sections-worth-is-measured-by-ablation-and-weighed-against-its-bytes.md).
