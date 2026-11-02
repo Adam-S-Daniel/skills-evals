@@ -549,9 +549,10 @@ class SandboxSettingsTests(HookBase):
         for name, real in (("python3", "/usr/bin/python3"), ("bash", "/usr/bin/bash")):
             (stand_ins / name).write_text(f"#!/bin/sh\ntouch {marks / name}\nexec {real} \"$@\"\n")
             (stand_ins / name).chmod(0o755)
-        site = subprocess.run(["/usr/bin/python3", "-c", "import site; print(site.getusersitepackages())"],
-                              env={"HOME": env["HOME"]}, capture_output=True, text=True,
-                              check=True).stdout.strip()
+        # The user site-packages /usr/bin/python3 reads under the arm's HOME
+        # (this interpreter's version; the suite runs on the system Python).
+        site = (Path(env["HOME"]) / ".local" / "lib"
+                / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages")
         Path(site).mkdir(parents=True)
         (Path(site) / "planted.pth").write_text(f"import os; open({str(marks / 'pth')!r}, 'w')\n")
         attack = dict(env, PATH=f"{stand_ins}:{env['PATH']}", PYTHONPATH=str(workspace))
