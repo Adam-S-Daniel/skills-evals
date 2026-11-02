@@ -2723,18 +2723,51 @@ _GROUP_TERM_GRACE_S = 5.0
 _GROUP_POLL_S = 0.05
 
 
+def _group_states(pgid: int, proc_root: str = "/proc") -> list[str] | None:
+    """The state letter (`R`, `S`, `Z`, ...) of every process in group
+    `pgid`, read from `<proc_root>/<pid>/stat`; None when `proc_root` cannot
+    be listed (no /proc), so the caller cannot tell and keeps waiting."""
+    try:
+        pids = [name for name in os.listdir(proc_root) if name.isdigit()]
+    except OSError:
+        return None
+    states = []
+    for pid in pids:
+        try:
+            with open(os.path.join(proc_root, pid, "stat"), "rb") as stream:
+                stat_line = stream.read().decode("ascii", "replace")
+            # `pid (comm) state ppid pgrp ...`: comm may hold spaces and
+            # parentheses, so the fields start after the LAST ')'.
+            fields = stat_line[stat_line.rindex(")") + 1:].split()
+            if int(fields[2]) == pgid:
+                states.append(fields[0])
+        except (OSError, ValueError, IndexError):
+            continue  # gone since the listing, or not a stat line
+    return states
+
+
 def _kill_process_group(pgid, *, grace: float = _GROUP_TERM_GRACE_S,
                         poll: float = _GROUP_POLL_S, clock=time.monotonic,
-                        pause=time.sleep) -> None:
+                        pause=time.sleep, states=_group_states) -> None:
     """SIGTERM whatever is left of process group `pgid` (an agent CLI started
     in its own session), then SIGKILL it if anything is still there after
-    `grace` seconds of `clock`, checking every `poll` seconds (`pause`).
+    `grace` seconds of `clock`, checking every `poll` seconds (`pause`). The
+    wait ends early once every member is a zombie (`states`): a zombie
+    still answers `killpg(pgid, 0)`, and in a PID namespace nobody may reap
+    it.
 
     Refuses, before any signal, a group that is not an int greater than 1 or
     is the harness's own (its pid or its group): 0 would be the harness's
     group, 1 init's, and -1 every process the harness may signal (a mocked
     pid once became `kill(-1, SIGKILL)` and killed every session). A group
-    that is already gone, or not the harness's to signal, is left alone."""
+    that is already gone, or not the harness's to signal, is left alone.
+
+    What it ends is everything the arm's CLI left in its group, including
+    the fleet-memory hook's detached delivery receipt writer when the CLI
+    ran that hook in an arm's profile: intended, since that scratch profile
+    is discarded with the arm. A writer that calls setsid() itself has left
+    the group and is not reached; the profile markers' exemption and
+    `_in_place_scratch`'s removal of a markers-only leftover cover it."""
     if (type(pgid) is not int or pgid <= 1
             or pgid in (os.getpid(), os.getpgrp())):
         return
@@ -2744,6 +2777,9 @@ def _kill_process_group(pgid, *, grace: float = _GROUP_TERM_GRACE_S,
         while clock() < deadline:
             pause(poll)
             os.killpg(pgid, 0)
+            members = states(pgid)
+            if members is not None and all(state == "Z" for state in members):
+                return
         os.killpg(pgid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         # Empty (the usual case) or emptied while waiting; a group the
@@ -7520,6 +7556,42 @@ def _valid_timestamp(value: str) -> bool:
     return True
 
 
+def _exit_on_signal(signum, _frame):
+    """Turn SIGTERM or SIGHUP into SystemExit(128 + signum), so the `finally`
+    blocks run: above all `_run_in_own_session`'s, which kills the agent CLI
+    and ends its group. Started in its own session (#594), the CLI no longer
+    gets a signal aimed at the harness's group (a runner's cancel, GNU
+    timeout, a hangup), and without this it would outlive the harness and
+    keep spending until its own timeout."""
+    raise SystemExit(128 + signum)
+
+
+def _exiting_on_signals(run):
+    """Decorate main(): install `_exit_on_signal` for SIGTERM and SIGHUP for
+    the call, and put the previous handlers back after it, so a test that
+    calls main() in-process keeps its own. Only main() installs them, never
+    an import; off the main thread (where signal.signal refuses) they are
+    left as they are."""
+    @functools.wraps(run)
+    def wrapped(*args, **kwargs):
+        previous = {}
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            try:
+                previous[signum] = signal.signal(signum, _exit_on_signal)
+            except ValueError:
+                break
+        try:
+            return run(*args, **kwargs)
+        finally:
+            for signum, handler in previous.items():
+                # None: a handler set outside Python, which cannot be put back.
+                if handler is not None:
+                    signal.signal(signum, handler)
+    return wrapped
+
+
+# Outermost, so the usage record is finished on a signal too.
+@_exiting_on_signals
 @_ending_the_run
 def main() -> int:
     parser = argparse.ArgumentParser()

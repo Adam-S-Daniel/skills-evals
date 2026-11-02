@@ -131,9 +131,10 @@ class KillProcessGroupTests(unittest.TestCase):
         self.pauses.append(seconds)
         self.now += seconds
 
-    def reap(self, pgid, grace=1.0):
+    def reap(self, pgid, grace=1.0, states=lambda _pgid: ["S"]):
         run_eval._kill_process_group(pgid, grace=grace, poll=0.25,
-                                     clock=self.clock, pause=self.pause)
+                                     clock=self.clock, pause=self.pause,
+                                     states=states)
 
     def test_an_unsafe_group_is_never_signaled(self):
         for pgid in (0, 1, -1, -42, True, False, None, "4242", 4242.0,
@@ -170,6 +171,27 @@ class KillProcessGroupTests(unittest.TestCase):
         self.assertEqual(self.now, 1.0)
         self.kill.assert_not_called()
 
+    def test_a_group_of_zombies_ends_the_wait_without_sigkill(self):
+        seen = []
+        answers = iter((["S", "Z"], ["Z", "Z"]))
+
+        def states(pgid):
+            seen.append(pgid)
+            return next(answers)
+        self.reap(FAKE_PGID, grace=5.0, states=states)
+        self.assertEqual(seen, [FAKE_PGID, FAKE_PGID])
+        self.assertEqual(self.killpg.call_args_list,
+                         [mock.call(FAKE_PGID, signal.SIGTERM)]
+                         + [mock.call(FAKE_PGID, 0)] * 2)
+        self.assertEqual(self.pauses, [0.25, 0.25])
+        self.kill.assert_not_called()
+
+    def test_without_proc_the_wait_runs_its_course(self):
+        self.reap(FAKE_PGID, grace=0.5, states=lambda _pgid: None)
+        self.assertEqual(self.killpg.call_args_list[-1],
+                         mock.call(FAKE_PGID, signal.SIGKILL))
+        self.assertEqual(self.pauses, [0.25, 0.25])
+
     def test_an_already_empty_or_foreign_group_is_left_alone(self):
         for error in (ProcessLookupError(), PermissionError()):
             with self.subTest(error=type(error).__name__):
@@ -179,6 +201,27 @@ class KillProcessGroupTests(unittest.TestCase):
                 self.assertEqual(self.killpg.call_args_list,
                                  [mock.call(FAKE_PGID, signal.SIGTERM)])
                 self.assertEqual(self.pauses, [])
+
+
+class GroupStatesTests(_Scratch):
+    """`_group_states` reads a /proc-shaped tree; no real /proc is used."""
+
+    def stat(self, pid, comm, state, pgrp):
+        self.write(self.root, f"{pid}/stat",
+                   f"{pid} ({comm}) {state} 1 {pgrp} {pgrp} 0 -1 4194304\n")
+
+    def test_members_are_matched_by_pgrp_past_the_last_paren(self):
+        self.stat(10, "claude", "S", 10)
+        self.stat(11, "odd) name (x", "Z", 10)
+        self.stat(12, "bash", "R", 99)
+        self.write(self.root, "13/stat", "garbage")
+        self.write(self.root, "self/stat", "1 (x) R 1 10 10")
+        (self.root / "14").mkdir()  # vanished: no stat
+        self.assertEqual(sorted(run_eval._group_states(10, str(self.root))), ["S", "Z"])
+        self.assertEqual(run_eval._group_states(77, str(self.root)), [])
+
+    def test_no_proc_is_unknown(self):
+        self.assertIsNone(run_eval._group_states(10, str(self.root / "missing")))
 
 
 class _FakeChild:
@@ -276,6 +319,14 @@ class OwnSessionLaunchTests(_Scratch):
                 self.assertTrue(self.children[0].killed)
                 self.assert_reaped_once()
 
+    def test_a_signal_turned_exit_kills_the_cli_and_ends_its_group(self):
+        with self.spawn(SystemExit(128 + signal.SIGTERM)), \
+                self.assertRaises(SystemExit) as caught:
+            self.launch()
+        self.assertEqual(caught.exception.code, 128 + signal.SIGTERM)
+        self.assertTrue(self.children[0].killed)
+        self.assert_reaped_once()
+
     def test_a_cli_that_never_started_has_no_group_to_end(self):
         def popen(cmd, **kwargs):
             raise FileNotFoundError(2, "No such file")
@@ -348,6 +399,48 @@ class RunAgentLaunchTests(OwnSessionLaunchTests):
         self.assertEqual(answer["error"], "spawn_failed")
         self.reap.assert_not_called()
         self.killpg.assert_not_called()
+
+
+class SignalExitTests(unittest.TestCase):
+    """main() turns SIGTERM and SIGHUP into SystemExit for its call only. No
+    signal is delivered: the handler is called directly, and main's body is
+    a stand-in."""
+
+    def setUp(self):
+        self.killpg = self.enterContext(mock.patch("os.killpg"))
+        self.kill = self.enterContext(mock.patch("os.kill"))
+
+    def test_the_handler_exits_128_plus_the_signal(self):
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signum=signum):
+                with self.assertRaises(SystemExit) as caught:
+                    run_eval._exit_on_signal(signum, None)
+                self.assertEqual(caught.exception.code, 128 + signum)
+        self.killpg.assert_not_called()
+        self.kill.assert_not_called()
+
+    def test_main_installs_the_handlers_and_restores_the_previous_ones(self):
+        before = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+        during = {}
+
+        def body():
+            during.update({s: signal.getsignal(s) for s in before})
+            return 7
+        self.assertEqual(run_eval._exiting_on_signals(body)(), 7)
+        self.assertEqual(during, {s: run_eval._exit_on_signal for s in before})
+        self.assertEqual({s: signal.getsignal(s) for s in before}, before)
+
+        def failing():
+            raise SystemExit(143)
+        with self.assertRaises(SystemExit):
+            run_eval._exiting_on_signals(failing)()
+        self.assertEqual({s: signal.getsignal(s) for s in before}, before)
+
+    def test_main_is_the_decorated_one_and_import_installs_nothing(self):
+        self.assertEqual(run_eval.main.__name__, "main")
+        self.assertIs(run_eval.main.__wrapped__.__wrapped__.__name__, "main")
+        self.assertIsNot(signal.getsignal(signal.SIGTERM), run_eval._exit_on_signal)
+        self.assertIsNot(signal.getsignal(signal.SIGHUP), run_eval._exit_on_signal)
 
 
 class LeftoverPairProfileTests(_Scratch):
