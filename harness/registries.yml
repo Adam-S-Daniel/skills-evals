@@ -14,6 +14,10 @@
 # path segment) is the skill-name placeholder substituted by `_skill_md_glob`
 # in harness/run_eval.py, any earlier `*` (a bundle/plugin name) stays a
 # wildcard.
+#
+# `plugins:` (optional) lists the registry's plugin names. Only the private
+# registry carries it: scripts/model_usage_census.py counts a Skill call or
+# typed command prefixed by one of them (`plugin:skill`) under `other`.
 registries:
   - name: adam-agentskills
     url: https://github.com/Adam-S-Daniel/adam-agentskills
@@ -27,3 +31,5 @@ registries:
   - name: adam-agentskills-private
     url: https://github.com/Adam-S-Daniel/adam-agentskills-private
     layout: "plugins/*/skills/*/SKILL.md"
+    plugins:
+      - adam-private-anything-anywhere

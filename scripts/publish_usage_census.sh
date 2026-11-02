@@ -255,6 +255,7 @@ Field reference: skills-evals `evals/usage/CENSUS.md`, "Private usage events".
 - **No ruleset.** This repository is private, and rulesets cannot protect a
   branch of it on this plan, so nothing guards it against deletion or a force
   push. Do not delete it.
+- cloud-* files are written by cloud hooks and cannot be regenerated; a re-created branch loses them.
 README
     created=1
   else
@@ -275,6 +276,11 @@ PY
   # anything else (and so never anything under lessons/).
   while IFS= read -r path; do
     [ -n "$path" ] || continue
+    # cloud-* files belong to cloud hooks; this machine never writes one.
+    if [[ "$path" =~ ^events/[0-9]{4}-[0-9]{2}/cloud-[^/]*\.jsonl$ ]]; then
+      private_fail "unexpected staged paths"
+      return 1
+    fi
     if [[ "$path" =~ ^events/[0-9]{4}-[0-9]{2}/[A-Za-z0-9][A-Za-z0-9._-]*\.jsonl$ ]]; then
       continue
     fi

@@ -279,6 +279,25 @@ def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
     return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))
 
 
+def private_plugins() -> frozenset[str]:
+    """The plugin names harness/registries.yml lists for a private registry.
+    Needs PyYAML, so the import is lazy."""
+    import eval_coverage
+    import run_eval
+    return frozenset(plugin for entry in run_eval._load_registries_config()
+                     if entry["name"] in eval_coverage.PRIVATE_REGISTRIES
+                     for plugin in entry.get("plugins", ()))
+
+
+def _private_prefix(raw, private: frozenset[str]) -> bool:
+    """True when `raw` is prefixed (`plugin:skill`) by a private plugin. This
+    guards prefixed invocations only: a bare name resolves by the allowlist."""
+    if not isinstance(raw, str) or ":" not in raw:
+        return False
+    plugin = raw[1:] if raw.startswith("/") else raw
+    return plugin.rsplit(":", 1)[0] in private
+
+
 def _skill_name(raw) -> str | None:
     """`/adam-coding-anywhere:workflow-path-audit` -> `workflow-path-audit`."""
     if not isinstance(raw, str):
@@ -287,9 +306,13 @@ def _skill_name(raw) -> str | None:
     return name.rsplit(":", 1)[-1]
 
 
-def skill_key(raw, allowlist: frozenset[str]) -> str:
-    """The key a Skill tool call's `input.skill` is counted under."""
+def skill_key(raw, allowlist: frozenset[str],
+              private: frozenset[str] = frozenset()) -> str:
+    """The key a Skill tool call's `input.skill` is counted under. A name
+    prefixed by a `private` registry's plugin counts under `other`."""
     name = _skill_name(raw)
+    if _private_prefix(raw, private):
+        return OTHER_KEY
     if name in allowlist and SKILL_KEY_RE.fullmatch(name):
         return name
     return OTHER_KEY
@@ -318,9 +341,14 @@ def _typed_command(message: dict) -> str | None:
     return None
 
 
-def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
-    """The allowlisted skill a user entry's slash command names, or None."""
-    name = _skill_name(_typed_command(message))
+def _typed_skill(message: dict, allowlist: frozenset[str],
+                 private: frozenset[str] = frozenset()) -> str | None:
+    """The allowlisted skill a user entry's slash command names, or None
+    (also None for a command prefixed by a `private` plugin)."""
+    command = _typed_command(message)
+    name = _skill_name(command)
+    if _private_prefix(command, private):
+        return None
     if name in allowlist and SKILL_KEY_RE.fullmatch(name):
         return name
     return None
@@ -334,7 +362,7 @@ def _typed_skill(message: dict, allowlist: frozenset[str]) -> str | None:
 #: Longest kept value of a free string in a private record.
 EVENT_TEXT_CAP = 200
 #: A host name that may name a file in the private store.
-MACHINE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+MACHINE_RE = re.compile(r"(?!cloud-)[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _GITHUB_REMOTE_RE = re.compile(
     r"(?:https://(?:[^@/\s]+@)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
     r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?")
@@ -395,7 +423,8 @@ def _skill_event(entry: dict, when: datetime, event_id, name: str,
     in when the whole transcript has been read. `model` is the sanitized
     key of the model running at the call, or None when unknown; `effort`
     and `context_tokens` come from the same assistant turn, None when
-    unknown."""
+    unknown. `cli` is the Claude Code version the transcript line recorded
+    (its use-time value), None when the line has none."""
     ts = _event_ts(when)
     session = _text(entry.get("sessionId"))
     if not _text(event_id):
@@ -404,6 +433,7 @@ def _skill_event(entry: dict, when: datetime, event_id, name: str,
     return {"v": 1, "id": _text(event_id), "ts": ts, "kind": "skill",
             "name": name[:EVENT_TEXT_CAP], "model": model,
             "effort": effort, "context_tokens": context_tokens, "surface": "local", "root": root,
+            "cli": _text(entry.get("version")),
             "machine": machine,
             "session_id": session, "session_title": None,
             "cwd_repo": cwd_repo(entry.get("cwd"), cache),
@@ -470,6 +500,8 @@ def census_counts(projects_dir: Path, now: datetime,
 #: The shape of a check id that may be a published key.
 HOOK_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,40}")
 HOOK_EVENTS = ("pre-commit", "pre-push")
+#: The runner digest a log line may carry: 12 lowercase hex, nothing else.
+RUNNER_RE = re.compile(r"[0-9a-f]{12}")
 #: The per-week row that counts every run, whatever its checks.
 HOOK_ALL = "all"
 #: Public repositories that are not skill registries but run the hooks.
@@ -525,8 +557,11 @@ def _hook_run(line: str) -> dict | None:
             or failed is None
             or not (repo is None or (isinstance(repo, str) and 0 < len(repo) <= 200))):
         return None
+    runner = entry.get("runner")
+    if not (isinstance(runner, str) and RUNNER_RE.fullmatch(runner)):
+        runner = None
     return {"when": when, "event": entry["event"], "repo": repo,
-            "checks": checks, "failed": failed}
+            "checks": checks, "failed": failed, "runner": runner}
 
 
 def _hook_key(check: str) -> str:
@@ -535,7 +570,8 @@ def _hook_key(check: str) -> str:
 
 def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
                events: list | None = None, machine: str = "") -> dict | None:
-    """{"rows": {(iso_week, name, repo): [runs, blocked]}, "runs_scanned": n}
+    """{"rows": {(iso_week, name, repo, runner): [runs, blocked]},
+    "runs_scanned": n}
     over the census window, or None when no file in `paths` could be read.
 
     A malformed line is skipped. A line seen twice (the same bytes in two
@@ -571,14 +607,15 @@ def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
                 ran = {_hook_key(check) for check in run["checks"]} | failed
                 for name, hit in [((HOOK_ALL, None), bool(failed))] + \
                         [((key, repo), key in failed) for key in ran]:
-                    counts = rows.setdefault((week, *name), [0, 0])
+                    counts = rows.setdefault((week, *name, run["runner"]), [0, 0])
                     counts[0] += 1
                     counts[1] += int(hit)
                 if events is not None:
                     events.append({"v": 1, "id": digest, "ts": _event_ts(run["when"]),
                                    "kind": "hook", "event": run["event"],
                                    "repo": run["repo"], "checks": run["checks"],
-                                   "failed": run["failed"], "surface": "local",
+                                   "failed": run["failed"], "runner": run["runner"],
+                                   "surface": "local",
                                    "root": root_kind(path), "machine": machine})
     return {"rows": rows, "runs_scanned": len(seen)} if read else None
 
@@ -597,7 +634,8 @@ def root_kind(path) -> str:
 
 def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
                allowlist: frozenset[str] | None = None,
-               events: list | None = None) -> tuple[dict, dict]:
+               events: list | None = None,
+               private: frozenset[str] = frozenset()) -> tuple[dict, dict]:
     """(model counts, skill tally) from ONE walk of the transcripts.
 
     `projects_dir` is one transcript root or a list of them (WSL, Windows,
@@ -646,13 +684,14 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
         if root.is_dir():
             claimed |= _census_root(root, wanted, oldest, counts, tally, seen_files,
                                     claimed, allowlist, events if record else None,
-                                    repos, machine)
+                                    repos, machine, private)
     return counts, tally
 
 
 def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                  tally: dict, seen_files: set, claimed: set, allowlist,
-                 events: list | None, repos: dict, machine: str) -> set:
+                 events: list | None, repos: dict, machine: str,
+                 private: frozenset[str] = frozenset()) -> set:
     """Walk one transcript root into `counts` and `tally`; return the ids it
     counted. See census_all."""
     skills, sessions = tally["invocations"], tally["sessions"]
@@ -737,7 +776,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                         continue
                     if kind == "user":
                         if allowlist is not None:
-                            typed = _typed_skill(message, allowlist)
+                            typed = _typed_skill(message, allowlist, private)
                             uuid = entry.get("uuid")
                             if typed is not None and isinstance(uuid, str) and uuid \
                                     and not fresh(("u", uuid)):
@@ -766,7 +805,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                 continue
                             given = item.get("input")
                             raw = given.get("skill") if isinstance(given, dict) else None
-                            name = skill_key(raw, allowlist)
+                            name = skill_key(raw, allowlist, private)
                             _bump(skills, name, week)
                             invoked.add((name, week))
                             if record and _text(raw):
@@ -830,8 +869,8 @@ def build_weekly_document(tally: dict, now: datetime,
              for state, by_week in tally.get("guidance", {}).items()
              for week, n in by_week.items()]
     if hooks is not None:
-        rows += [skill_usage.hook_row(week, name, repo, runs, blocked)
-                 for (week, name, repo), (runs, blocked) in hooks["rows"].items()]
+        rows += [skill_usage.hook_row(week, name, repo, runs, blocked, runner)
+                 for (week, name, repo, runner), (runs, blocked) in hooks["rows"].items()]
     oldest = skill_usage.week_monday(window_weeks(now, weeks)[-1])
     window_from = datetime.fromisoformat(oldest).replace(tzinfo=timezone.utc)
     return skill_usage.document(rows, now, window_from, tally["sessions_scanned"],
@@ -973,12 +1012,13 @@ def main() -> int:
         print("--now is not an ISO-8601 instant", file=sys.stderr)
         return 2
     allowlist = None
-    repos = frozenset()
+    repos = private = frozenset()
     if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
             allowlist = skill_allowlist(args.skill_allowlist_root)
             repos = public_repos()
+            private = private_plugins()
         except (eval_coverage.CensusRefusal, ValueError, OSError):
             # No detail: a refusal message can carry a path, and this line
             # reaches a scheduled task's status report. Nothing is written.
@@ -986,7 +1026,7 @@ def main() -> int:
                   "directory; nothing published", file=sys.stderr)
             return 2
     events = [] if args.events_out is not None else None
-    counts, tally = census_all(roots, now, args.weeks, allowlist, events)
+    counts, tally = census_all(roots, now, args.weeks, allowlist, events, private)
     hooks = None
     if allowlist is not None:
         paths = ([default_hook_log()] if args.hook_logs is None

@@ -152,6 +152,21 @@ class CountingTests(unittest.TestCase):
         self.assertEqual(self.skills([skill_call("zz-unlisted-skill")]),
                          {"other": {"2026-W36": 1}})
 
+    def test_a_private_plugin_prefix_counts_under_other_even_for_an_allowlisted_name(self):
+        private = frozenset({"example-private-plugin"})
+        entries = [skill_call("example-private-plugin:workflow-path-audit", "toolu_p"),
+                   typed("<command-name>/example-private-plugin:workflow-path-audit"
+                         "</command-name>"),
+                   skill_call("adam-coding-anywhere:workflow-path-audit", "toolu_pub"),
+                   skill_call("workflow-path-audit", "toolu_bare")]
+        write_transcript(self.projects / "-home-example-proj" / "s0.jsonl", entries)
+        tally = census.census_all(self.projects, NOW, 8, ALLOW, None, private)[1]
+        self.assertEqual(tally["invocations"], {"other": {"2026-W36": 1},
+                                                "workflow-path-audit": {"2026-W36": 2}})
+        self.assertEqual(census.skill_key("example-private-plugin:x", frozenset({"x"}),
+                                          private), "other")
+        self.assertEqual(census.skill_key("example-private-plugin:x", frozenset({"x"})), "x")
+
     def test_hostile_names_never_become_keys(self):
         entries = [skill_call(value, f"toolu_{i}") for i, value in enumerate(HOSTILE)]
         entries += [skill_call({"skill": "workflow-path-audit"}, "toolu_dict"),
@@ -218,7 +233,8 @@ class CountingTests(unittest.TestCase):
             "from": "2026-07-13T00:00:00Z",          # Monday of 2026-W29
             "to": NOW_TEXT, "sessions_scanned": 5}])
         empty = {"repo": None, "surface": "local", "blocked": None,
-                 "overridden": None, "outcome": None, "kind": "skill"}
+                 "overridden": None, "outcome": None, "runner": None,
+                 "kind": "skill"}
         self.assertEqual(doc["rows"], [
             {**empty, "week": "2026-07-20", "name": "workflow-path-audit",
              "invocations": 1, "sessions": 1},
@@ -603,7 +619,7 @@ class GuidanceRowTests(unittest.TestCase):
         self.assertEqual(doc["rows"][0], {
             "week": "2026-08-31", "kind": "guidance", "name": "full", "repo": None,
             "surface": "local", "invocations": None, "sessions": 3, "blocked": None,
-            "overridden": None, "outcome": None})
+            "overridden": None, "outcome": None, "runner": None})
         base = {**doc, "rows": [skill_usage.row("2026-W36", "skill", "finding-unknowns", 2, 1)]}
         both = {**doc, "rows": base["rows"] + doc["rows"]}
         self.assertEqual(skill_usage.weight(both, "finding-unknowns", NOW),
