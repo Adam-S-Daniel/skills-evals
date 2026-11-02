@@ -165,6 +165,8 @@ REMEASURED.update({
                     "personal-copy-outranks-repo", "ssh-remote-is-durable")},
     "evals/github-actions-repo-settings/drift-diagnosis": (_REPO_SETTINGS_NOW,) * 2,
     "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI_NOW,) * 2,
+    # adamdaniel.ai ddf1c992 -> da05fc6b (after its #4569 lock re-pin).
+    "evals/platform-release-and-bump": ((25512, 14803, 875774),) * 2,
 })
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
