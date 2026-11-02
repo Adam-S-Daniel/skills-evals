@@ -104,11 +104,14 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # 30 points a week and an 80% account stop (the temporary raises
-        # ended at the 2026-11-02 reset). 2026-11-01 (permanent): the
-        # per-run cap is 1 point, the overrun the p95 of a run's largest call.
+        # 100 points a week and a 95% account stop for the allowance week
+        # ending 2026-11-09 17:00 UTC only (Adam, 2026-11-02, finish-week
+        # push); after that reset, 25 points and 80%. 2026-11-01 (permanent):
+        # the per-run cap is 1 point, the overrun the p95 of a run's largest
+        # call.
         self.assertEqual(budget.load_budget(),
-                         {**LIMITS,
+                         {**LIMITS, "weekly_cap": 1.00,
+                          "stop_when_account_above": 0.95,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0018})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
