@@ -384,15 +384,24 @@ _agent-guidance alone: ready with auto-merge in `auto`, a draft otherwise, and
 nothing (with the reason in the job summary) while the App's secrets are unset
 or the mint fails.
 
-Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`, and
-`agent-check` items read from lesson proposals) are listed in the plan, not
-fired; each carries a `change_type`. A skill run tests main's copy of its
-subject and refuses, with nothing spent, when the registry checkout is not
-clean at its main (ADR 0012, addendum "main's copy"); the routine's fire
-still reads as a success. So a cell with two such empty fires within 14 days
-becomes a `fixture-broken` item instead of being fired again, and is retried
-once those fires are 14 days old. The dispatch job fires one leg at a time, waits while three
-fires are in flight, and spaces fires a minute apart; improve fires go last.
+Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
+`routine-outage`, and `agent-check` items read from lesson proposals) are
+listed in the plan, not fired; each carries a `change_type`. A skill run
+tests main's copy of its subject and refuses, with nothing spent, when the
+registry checkout is not clean at its main (ADR 0012, addendum "main's
+copy"); the routine's fire still reads as a success. So a cell with two such
+empty fires within 14 days becomes a `fixture-broken` item instead of being
+fired again, and is retried once those fires are 14 days old. A routine
+outage empties every fire of a sweep at once (2026-11-01: six fixtures, no
+run), which says nothing about any fixture: a sweep of fires at most 60
+minutes apart and 2 hours long, with no fire that landed a run or is still
+young, whose empty fires cover three or more cells excuses each cell's
+earliest such fire, one per cell in 14 days, and lists a `routine-outage`
+item (no fixture names) for a day. A further outage fire counts, so fixtures
+broken together still go `fixture-broken`, one fire later; a sweep of fewer
+than three cells cannot be told from broken fixtures and counts. The
+dispatch job fires one leg at a time, waits while three fires are in flight,
+and spaces fires a minute apart; improve fires go last.
 
 ### The trigger lane
 
@@ -466,7 +475,12 @@ fixtures nested on 2026-10-26 (#422, #427).
 
 The session miner writes redacted lesson proposals to
 adam-agentskills-private's `lessons/proposals/<date>/<subject>__<kind>.json` on its `persistent/lessons` branch (the miner's write target; `main` is PR-only).
-Draft mode is what consumes the `new-skill` kind:
+Draft mode is what consumes the `new-skill` kind. The miner gives that kind
+only to a cluster of failures with no suspected subject that spans at least
+three sessions: repeated tool failures grouped as `tool-<tool>[-<command word>]`
+(for example `tool-bash-gh`) and red CI after a push grouped as `red-ci-<repo>`.
+Other unattributed failures stay records with no proposal, and the subject
+`none` is never a `new-skill` ([#581](https://github.com/Adam-S-Daniel/skills-evals/issues/581)):
 
 1. **Pick** (`routine-draft-skill.yml`, daily at 06:30 UTC). Proposals come
    from two sources: the miner's lessons, and skill proposals filed as

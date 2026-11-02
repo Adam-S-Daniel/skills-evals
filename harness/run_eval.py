@@ -3494,6 +3494,72 @@ def claude_version() -> str | None:
     return None
 
 
+#: The fixture key that opts a fixture into the fleet hook runner (ADR 0012,
+#: fleet hooks addendum, #535). Literal `true` or `false` only
+#: (context._check_fleet_hooks); part of `fixture_digest`, which hashes every
+#: tracked file of the fixture directory, fixture.yaml included.
+FLEET_HOOKS_KEY = context.FLEET_HOOKS_KEY
+#: Config-based `hook.<name>.event` and `hook.<name>.command` keys, the way
+#: the fleet installs its hooks (adam-agentskills ADR 0020), need Git 2.54 or
+#: later. scripts/dev_setup.sh carries the same minimum, and
+#: test/issues/test_issue_dev_setup.py pins the two equal.
+FLEET_HOOKS_MIN_GIT = (2, 54)
+_GIT_VERSION = re.compile(r"git version ([0-9]+)\.([0-9]+)(?![0-9])")
+
+
+def git_version() -> str | None:
+    """The first line of `git --version` for the `git` an arm runs (the first
+    on PATH, which agent_env passes through), reduced and capped like
+    claude_version's, or None with a one-line warning naming only an exit
+    status or an exception class. Recorded as `harness.git_version`."""
+    guidance.check_timeout(VERSION_TIMEOUT_S, "run_eval.git_version(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
+    why = None
+    try:
+        # No `GIT_*` from the caller and no system or global config: only the
+        # binary's own version is read.
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("GIT_")}
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+        result = subprocess.run(["git", "--version"], env=env, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=VERSION_TIMEOUT_S)
+        if result.returncode != 0:
+            why = f"exit {result.returncode}"
+        else:
+            lines = (result.stdout or "").splitlines()
+            first = _VERSION_JUNK.sub("", lines[0]) if lines else ""
+            version = first.strip()[:VERSION_MAX_CHARS].strip()
+            if version:
+                return version
+            why = "no version in its output"
+    except Exception as exc:  # noqa: BLE001 — record null, never crash the run
+        why = type(exc).__name__
+    print(f"warning: harness: could not read the Git version ({why}); "
+          "recording null", file=sys.stderr)
+    return None
+
+
+def git_supports_fleet_hooks(version: str | None) -> bool:
+    """Whether `version` (git_version's string) is FLEET_HOOKS_MIN_GIT or
+    later. An unreadable or unparsable version does not."""
+    match = _GIT_VERSION.match(version or "")
+    return match is not None and (int(match[1]), int(match[2])) >= FLEET_HOOKS_MIN_GIT
+
+
+def fleet_hooks_refusal(fixture: dict, version: str | None) -> str | None:
+    """Why a fixture that opts into the fleet hooks cannot run on this host's
+    Git (`git_too_old_for_fleet_hooks`), or None when it can or does not opt
+    in."""
+    if fixture.get(FLEET_HOOKS_KEY) is not True or git_supports_fleet_hooks(version):
+        return None
+    minimum = ".".join(map(str, FLEET_HOOKS_MIN_GIT))
+    return (f"the fixture sets `{FLEET_HOOKS_KEY}: true`, and the fleet hooks are "
+            f"config-based Git hooks, which need Git {minimum} or later "
+            "(adam-agentskills ADR 0020); this host's `git --version` is "
+            f"{version or 'unreadable'}. Provision Git with "
+            "`bash scripts/dev_setup.sh --build-git PREFIX`")
+
+
 def models_used(*results) -> list[str]:
     """The sorted model ids that served one or more CLI results.
 
@@ -4129,6 +4195,9 @@ class _RunTelemetry:
         self.call_costs: list[tuple] = []
         self.unreadable = 0
         self.written: list[Path] = []
+        # `git --version` (git_version), read once by main(); None for a
+        # caller that never reads it, and recorded as null.
+        self.git_version: str | None = None
 
     def begin_trial(self) -> None:
         """A trial starts. Calls still queued belong to a trial that wrote
@@ -4486,7 +4555,8 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         "objective_checks": objective_checks,
         "judge": judge_result,
         "harness": {"name": HARNESS_NAME, "version": harness_version,
-                    "permission_mode": permission_mode, "effort": effort},
+                    "permission_mode": permission_mode, "effort": effort,
+                    "git_version": _TELEMETRY.git_version},
         "models_used": list(models or []),
         "judge_models_used": list(judge_models or []),
         "model_tokens": dict(usage["tokens"]),
@@ -7575,6 +7645,11 @@ def main() -> int:
     # than named by it.
     discovered = eval_dirs != [args.eval_dir]
 
+    # Read once per run (#535): recorded in every summary as
+    # `harness.git_version`, and what a `fleet_hooks: true` fixture is
+    # refused on below.
+    _TELEMETRY.git_version = git_version()
+
     # EVERY selected fixture is loaded and checked before ANY arm of any of
     # them starts: the first refusal ends the invocation with nothing spent.
     prepared = []
@@ -7593,6 +7668,12 @@ def main() -> int:
             validate_followups(fixture, eval_dir / FIXTURE_FILE)
             validate_effort(fixture, eval_dir / FIXTURE_FILE)
             seed_prep.validate_fixture(fixture, eval_dir)
+            refusal = fleet_hooks_refusal(fixture, _TELEMETRY.git_version)
+            if refusal is not None and args.arm != "objective-only":
+                # Before any paid call: an arm that stands for the real setup
+                # would run without the hooks it is meant to carry.
+                print(f"git_too_old_for_fleet_hooks: {eval_dir / FIXTURE_FILE}: {refusal}")
+                return 2
         except MappingFixtureKeyError as exc:
             # A malformed `judge:` is #81's `invalid_judge_block` — named in
             # stdout AND recorded as report.md plus one summary.json per arm, so

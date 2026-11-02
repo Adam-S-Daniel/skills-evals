@@ -214,11 +214,14 @@ def _stable_bytes(path: Path) -> bytes:
     `judge_selection` (#371), the key before those two, which names the judge
     chosen and is tested in test_issue_371_judge_tier.py, and without
     `fixture_digest` and `judge_conditional` (#70), which follow it and are
-    tested in test_issue_70_retirement.py."""
+    tested in test_issue_70_retirement.py. And without `harness.git_version`
+    (#535), the host's own `git --version`, tested in
+    test_issue_535_git_provisioning.py."""
     if path.name == "summary.json":
         summary = json.loads(path.read_text(encoding="utf-8"))
         for block in ("run", "usage", "judge_selection"):
             summary.pop(block)
+        summary["harness"].pop("git_version", None)
         for block in ("fixture_digest", "judge_conditional"):
             summary.pop(block, None)
         return json.dumps(summary, indent=2).encode("utf-8")

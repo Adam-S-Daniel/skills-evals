@@ -1593,7 +1593,12 @@ redirections, stated rules, interruptions, repeated tool failures, red CI
 after a push and unfinished endings into short redacted **lesson records**,
 and routes them into **proposal files**: `agent-check` first when a git hook
 could enforce the lesson, else `skill-edit`, `new-skill`, `guidance-edit`,
-`memory-note` or `fixture-candidate`. A fixture candidate is a concrete
+`memory-note` or `fixture-candidate`. `new-skill` comes only from a cluster
+of failures with no suspected subject: repeated tool failures grouped by tool
+and command word (`tool-bash-gh`) and red CI grouped by repo (`red-ci-<repo>`),
+each seen in at least three sessions; every other unattributed failure stays
+a record with no proposal, and no proposal is ever subject `none`
+([#581](https://github.com/Adam-S-Daniel/skills-evals/issues/581)). A fixture candidate is a concrete
 failure tied to a skill or guidance section, and the input a fixture writer
 on that machine expands (`mine_sessions.py locate <session hash>` finds the
 transcript). Records and proposals land on adam-agentskills-private's

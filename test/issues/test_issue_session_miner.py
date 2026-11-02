@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import draft_new_skill as dns  # noqa: E402
 import mine_sessions as ms  # noqa: E402
 
 NOW = "2026-10-20T12:00:00Z"
@@ -384,11 +385,66 @@ class TestRoute(Base):
                                ("guidance:security", "guidance-edit"), ("guidance:security", "fixture-candidate"),
                                ("memory", "memory-note"), ("none", "memory-note")})
 
-    def test_new_skill_needs_three_sessions(self):
-        two = [rec("correction", session=f"s{i}", excerpt=f"No, wrong {i}.") for i in range(2)]
-        self.assertEqual(self.kinds(two), set())
-        three = two + [rec("correction", session="s9", excerpt="No, wrong again.")]
-        self.assertEqual(self.kinds(three), {("none", "new-skill")})
+    def test_unattributed_failures_never_pool_into_none(self):
+        # #581: the old behavior pooled every unattributed failure into none/new-skill.
+        for signal in ("correction", "redirection", "abandoned", "interrupted"):
+            recs = [rec(signal, session=f"s{i}", excerpt=f"Free text {i}.") for i in range(5)]
+            self.assertEqual(self.kinds(recs), set(), signal)
+
+    def tool_fail(self, key, i, session=None):
+        return rec("repeated-tool-failure", session=session or f"s{i}",
+                   excerpt=f"{key} failed 3x: error {i}")
+
+    def test_tool_failures_cluster_by_tool_and_command_word(self):
+        three = [self.tool_fail("Bash:gh", i) for i in range(3)]
+        props = ms.route(three, self.redactor)
+        self.assertEqual([(p["subject"], p["kind"], p["evidence_count"]) for p in props],
+                         [("tool-bash-gh", "new-skill", 3)])
+        self.assertEqual(ms.proposal_filename(props[0]), "tool-bash-gh__new-skill.json")
+        self.assertEqual(self.kinds(three[:2]), set())
+        # three records but only two sessions: not enough
+        self.assertEqual(self.kinds([self.tool_fail("Bash:gh", i, session=f"s{i % 2}") for i in range(3)]), set())
+        mixed = three + [self.tool_fail("Edit", i) for i in range(3)] + [self.tool_fail("Bash:git", 0)]
+        self.assertEqual(self.kinds(mixed), {("tool-bash-gh", "new-skill"), ("tool-edit", "new-skill")})
+        self.assertEqual(ms.route(list(reversed(mixed)), self.redactor), ms.route(mixed, self.redactor))
+
+    def test_tool_failure_without_a_parsable_key_gets_no_cluster(self):
+        recs = [rec("repeated-tool-failure", session=f"s{i}", excerpt=f"it broke {i}") for i in range(4)]
+        self.assertEqual(self.kinds(recs), set())
+        self.assertIsNone(ms.cluster_subject(recs[0]))
+
+    def test_red_ci_clusters_by_repo(self):
+        def ci(i, repo="example-repo"):
+            r = rec("red-ci-after-push", session=f"s{i}", excerpt=f"checks failed {i}")
+            r["repo"] = repo
+            return r
+        self.assertEqual(self.kinds([ci(i) for i in range(3)]), {("red-ci-example-repo", "new-skill")})
+        self.assertEqual(self.kinds([ci(i) for i in range(2)]), set())
+        self.assertEqual(self.kinds([ci(i, "~") for i in range(5)]), set())
+        self.assertEqual(self.kinds([ci(i, "") for i in range(5)]), set())
+        self.assertEqual(self.kinds([ci(i, "repos") for i in range(5)]), set())
+        self.assertEqual(self.kinds([ci(i, "Example.Repo_X") for i in range(3)]),
+                         {("red-ci-example-repo-x", "new-skill")})
+
+    def test_cluster_subjects_are_valid_and_drafter_accepts_every_proposal(self):
+        long_repo = "R" * 90 + "_tail"
+        recs = [self.tool_fail("PowerShell", i) for i in range(3)]
+        recs += [self.tool_fail("Bash:cd", i) for i in range(3)]
+        for i in range(3):
+            r = rec("red-ci-after-push", session=f"c{i}", excerpt=f"failed {i}")
+            r["repo"] = long_repo
+            recs.append(r)
+        recs += [rec("correction", session=f"s{i}", excerpt=f"No {i}.") for i in range(5)]
+        props = ms.route(recs, self.redactor)
+        new = [p for p in props if p["kind"] == "new-skill"]
+        self.assertEqual(len(new), 3)
+        self.assertEqual(ms.SUBJECT, dns.SUBJECT)
+        for p in props:
+            self.assertFalse(p["subject"] == "none" and p["kind"] == "new-skill")
+        for p in new:
+            self.assertRegex(p["subject"], f"^(?:{dns.SUBJECT})$")
+            self.assertLessEqual(len(p["subject"]), 64)
+            self.assertIs(dns.check_proposal(p, path_date="2026-10-20", path_subject=p["subject"]), p)
 
     def test_checkable_lessons_become_agent_checks_first(self):
         cases = {

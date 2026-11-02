@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Skill Evals Explorer</title>
+<title>Evals Explorer</title>
 <style>
 :root {
   color-scheme: light;
@@ -163,7 +163,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </head>
 <body>
 <main id="app">
-  <h1>Skill Evals Explorer</h1>
+  <h1>Evals Explorer</h1>
   <p id="loading">Loading the latest results.</p>
 </main>
 <noscript>
@@ -203,8 +203,7 @@ const pctOf = (x) => x >= 0.995 ? 'over 99%' : Math.floor(x * 100) + '%';
 /* Every sentence the page shows, in one place.                       */
 /* ------------------------------------------------------------------ */
 const STRINGS = {
-  title: 'Skill Evals Explorer',
-  titleGuidance: 'Guidance Evals Explorer',
+  title: 'Evals Explorer',
   loading: 'Loading the latest results…',
   dataAsOf: (when) => 'Data as of ' + when + '.',
   newestRun: (when) => 'Newest test run: ' + when + '.',
@@ -1217,7 +1216,7 @@ function buildPage(doc, mode, opts) {
   const refMs = parseTime(doc.generated_at);
   const newest = parseTime(doc.newest_run);
   const top = [
-    h('h1', null, mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title),
+    h('h1', null, STRINGS.title),
     h('p', { class: 'asof' }, STRINGS.dataAsOf(fmtDateTime(refMs)), ' ', isFinite(newest) ? STRINGS.newestRun(fmtDateTime(newest)) : STRINGS.noRunsYet),
     toolbar(mode, o.sortBy, o.handlers),
     o.notice ? h('p', { class: 'panel failure' }, o.notice) : null,
@@ -1266,7 +1265,7 @@ function buildFailure(result, mode) {
   else if (result.kind === 'badurl') msg = STRINGS.failBadUrl;
   else msg = STRINGS.failFetch;
   return h('div', null,
-    h('h1', null, mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title),
+    h('h1', null, STRINGS.title),
     h('div', { class: 'panel failure', role: 'alert' },
       h('h2', { style: 'margin-top:0' }, STRINGS.failHeading),
       h('p', null, msg),
@@ -1287,7 +1286,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
     function mount(node) {
       while (app.firstChild) app.removeChild(app.firstChild);
       app.appendChild(toDom(node, document));
-      document.title = state.mode === 'guidance' ? STRINGS.titleGuidance : STRINGS.title;
+      document.title = STRINGS.title;
     }
     function setMode(m) {
       state.mode = m;
