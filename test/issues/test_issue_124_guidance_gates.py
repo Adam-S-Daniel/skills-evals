@@ -883,9 +883,14 @@ class GuidancePolicyTests(unittest.TestCase):
         policy = gates.load_gate_policy()
         self.assertEqual((policy["guidance"]["objective_margin"],
                           policy["guidance"]["retire_confidence"],
-                          policy["guidance"]["benefit_confidence"]), (0.15, 0.90, 0.85))
+                          policy["guidance"]["benefit_confidence"],
+                          policy["guidance"]["judge_margin"]), (0.15, 0.90, 0.85, 1.5))
+        # The judge's margin is the objective's on its 0-to-10 scale.
+        self.assertEqual(policy["guidance"]["judge_margin"],
+                         policy["guidance"]["objective_margin"] * 10)
         self.assertEqual((policy["skills"]["objective_margin"],
-                          policy["skills"]["retire_confidence"]), (0.05, 0.95))
+                          policy["skills"]["retire_confidence"],
+                          policy["skills"]["judge_margin"]), (0.05, 0.95, 0.5))
 
     def test_without_the_block_there_is_no_guidance_policy(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")

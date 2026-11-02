@@ -53,6 +53,9 @@ skills:
 # they did on 2026-11-02 (Adam, #557): a section is removed when the gate is
 # 90% confident (`retire_confidence` 0.90) that it does not improve results by
 # 0.15 or more (`objective_margin` 0.15), with no separate confirmation step;
+# the judge's margin scales with it on its 0-to-10 scale (`judge_margin` 1.5,
+# the integrator, 2026-11-02), so the judge never holds a removal to a
+# stricter bar than Adam set;
 # keeping stays at 85%. The in-situ runs are pooled by the rest of the
 # guidance each ran beside (harness/gates.py `classify_strata`). Each
 # removal is tracked and can be reverted (#564). Adam made section removal automatic on 2026-10-10 (#124) and
@@ -63,7 +66,7 @@ skills:
 # issue instead. Set it to `proposal` to turn removal pull requests off.
 guidance:
   objective_margin: 0.15
-  judge_margin: 0.5
+  judge_margin: 1.5
   benefit_confidence: 0.85
   retire_confidence: 0.90
   check_confidence: 0.85
