@@ -224,7 +224,7 @@
   "title": "Open issues"
  },
  "open_prs": {
-  "description": "Open pull requests in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map. Reads GitHub pull request search.",
+  "description": "Open pull requests in skills-evals, _agent-guidance, adam-agentskills and claude-memory-map. Reads GitHub pull request search, then each PR's head branch, check runs and commit statuses.",
   "source": {
    "args": {
     "fields": [
@@ -233,6 +233,7 @@
      "state",
      "draft",
      "html_url",
+     "body",
      "labels",
      "created_at",
      "updated_at",

@@ -23,6 +23,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -310,12 +311,20 @@ THREAD_STATES = {"done": "Done", "working": "Working", "review_ready": "Ready fo
                  "blocked": "Waiting on you", "failed": "Failed", "stopped": "Stopped"}
 
 
-def threads(dump, site):
-    """Rows from a list_threads dump (its `sessions` list, all pages joined)."""
+def threads(dump, site, branches=None):
+    """Rows from a list_threads dump (its `sessions` list, all pages joined).
+
+    `session` (the id after `cse_`/`session_`) and `branch` (the thread's own git
+    branch, from `thread_branches.json`) let the page tell which thread opened a PR.
+    """
     titles = site.get("thread_titles", {})
+    branches = branches or {}
+    sess = lambda s: re.sub(r"^(cse|session)_", "", s.get("session_id") or "")
     rows = [{"title": titles.get(s["thread_id"], s["title"]),
              "state": THREAD_STATES.get(s.get("state"), s.get("state")),
              "last_active": s.get("last_activity_at"),
+             "session": sess(s),
+             "branch": branches.get(sess(s), ""),
              "link": site["thread_url"] + s["thread_id"]} for s in dump]
     rows.sort(key=lambda r: r["last_active"] or "", reverse=True)
     return rows
@@ -512,7 +521,7 @@ def build(results, inputs, config, now):
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
     out["usage_rows"], out["usage_sources"] = usage(results)
-    out["threads"] = threads(thread_dump, site)
+    out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
