@@ -24,7 +24,7 @@ sys.path.insert(0, str(ISSUES))
 
 import gates  # noqa: E402
 from test_issue_70_retirement import (FLAT, FLAT_JUDGE, GAIN, TEST_POLICY,  # noqa: E402
-                                      series)
+                                      series, trial)
 
 MAIN, OLD, OLDER = "rest-main", "rest-old", "rest-older"
 EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1"}}
@@ -152,6 +152,49 @@ class ClassifyTests(unittest.TestCase):
                     + stratum(MAIN, FLAT[10:], FLAT[10:], start=10) + alone)
         self.assertEqual((v["in_situ_verdict"], v["alone"]["verdict"], v["verdict"]),
                          ("retire", "keep", "shorten-or-merge"))
+
+
+class WithAheadSkipTests(unittest.TestCase):
+    """T3's review (#557): guidance runs judge conditionally and skip the
+    judge when the with arm is strictly ahead, so requiring every run's
+    judge figure meant a cell could never retire. When every missing figure
+    is such a skip, the objective alone decides a removal."""
+
+    def skipped(self, runs, which):
+        for run in runs:
+            if run["timestamp"] in which:
+                run["trials"] = [gates.trial_record(trial(80, skipped=True))
+                                 for _ in run["trials"]]
+        return runs
+
+    def runs(self):
+        return stratum(MAIN, FLAT, FLAT, conditional=True)
+
+    def test_with_ahead_skips_let_the_objective_retire(self):
+        runs = self.runs()
+        stamps = sorted({r["timestamp"] for r in runs})[:5]
+        v = verdict(self.skipped(runs, stamps))
+        cell = v["cells"][0]
+        self.assertEqual((v["verdict"], cell["class"]), ("retire", "no-benefit"), cell["reason"])
+        self.assertIn("skipped because the with arm was ahead", cell["reason"])
+
+    def test_a_judge_missing_for_another_reason_still_blocks(self):
+        runs = self.runs()
+        stamps = sorted({r["timestamp"] for r in runs})[:5]
+        runs = self.skipped(runs, stamps)
+        other = next(r for r in runs if r["timestamp"] == sorted({r["timestamp"] for r in runs})[6])
+        other["trials"] = [gates.trial_record(trial(80)) for _ in other["trials"]]  # no judge
+        cell = verdict(runs)["cells"][0]
+        self.assertEqual(cell["class"], "insufficient")
+        self.assertIn("judge", cell["reason"])
+
+    def test_skills_still_need_every_judge_figure(self):
+        runs = self.skipped(self.runs(), sorted({r["timestamp"] for r in self.runs()})[:5])
+        with_runs = [r for r in runs if r["role"] == "with"]
+        without_runs = [r for r in runs if r["role"] == "without"]
+        cell = gates.classify_cell(with_runs, without_runs, TEST_POLICY, False,
+                                   gates.run_priors(runs))
+        self.assertEqual(cell["class"], "insufficient")
 
 
 class CellPriorTests(unittest.TestCase):

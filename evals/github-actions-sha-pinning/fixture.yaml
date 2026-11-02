@@ -60,10 +60,14 @@ registry: https://github.com/Adam-S-Daniel/cms-platform
 # ceil(measured * 1.25). 14 eligible guidance revisions matched the shipped
 # bytes; the pin is the newest (then the smallest SHA). The context adopts
 # the skill, so the `without` arm removes the deployed copy.
+# Re-pinned 2026-11-02 to adamdaniel.ai main 67b5e002 (it deploys
+# adam-agentskills main's copy of the subject), guidance proven at 5ca459fc.
+# Budgets unchanged; today's figures are REMEASURED in
+# test/issues/test_issue_371_scheduled_fixtures.py.
 context:
   repository: Adam-S-Daniel/adamdaniel.ai
-  revision: 8074d5a38862594ae056651994ad110900d484ec
-  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  revision: 67b5e002f7b61b937dd0da2ffe6eb551d74379ba
+  guidance_revision: 5ca459fc6aa270f204cab3d67603fc0e5699b3d7
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 17522

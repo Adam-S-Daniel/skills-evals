@@ -727,6 +727,36 @@ def registry_for_url(registries: dict[str, dict], url: str) -> dict:
         f"(known registries: {known})")
 
 
+def main_copy(registries: dict[str, dict], skill: str, url: str | None) -> tuple[str, str, Path]:
+    """The one copy of `skill` on the registry checkouts' main, as the
+    `(identity, bundle, path)` tuple `delivery._registry_matches` yields.
+
+    The selection rule compute_gates' `tested_digest` uses for a skill's main
+    copy (skills-evals#548). With `url` the search is that registry only; with
+    None, every registry. No copy and several copies are distinct
+    DeliveryErrors, never a sorted pick. Messages never include file contents.
+    """
+    if url is not None:
+        try:
+            entry = registry_for_url(registries, url)
+        except ValueError as exc:
+            raise delivery.DeliveryError("registry_unknown", str(exc)) from exc
+        if not Path(entry["path"]).is_dir():
+            raise delivery.DeliveryError(
+                "registry_checkout_missing",
+                f"registry {entry['name']!r} has no checkout at its configured path")
+        registries = {entry["name"]: entry}
+    matches = delivery._registry_matches(registries, None, skill)
+    if not matches:
+        raise delivery.DeliveryError(
+            "main_copy_missing", f"{skill} is not present in a registry checkout")
+    if len(matches) > 1:
+        raise delivery.DeliveryError(
+            "main_copy_ambiguous", f"{skill} matches {len(matches)} registry copies "
+            f"({', '.join(f'{r}:{b}' for r, b, _ in matches)})")
+    return matches[0]
+
+
 def _skill_md_glob(layout: str, skill: str) -> str:
     """Substitute `skill` for the skill-name placeholder in a registries.yml
     `layout` glob (the segment immediately before `SKILL.md`), leaving any

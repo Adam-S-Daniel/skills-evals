@@ -4566,7 +4566,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         repo_keys = {(step.get("with") or {}).get("repository") or "self"
                     for step in checkout_steps}
         count = len(repo_keys)
-        number_words = {2: "two", 3: "three", 4: "four", 5: "five"}
+        number_words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
+                        7: "seven"}
         self.assertIn(count, number_words,
                       f"unexpected number of distinct checked-out repositories: {count}")
         self.assertIn(
