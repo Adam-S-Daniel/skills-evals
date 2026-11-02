@@ -92,6 +92,15 @@ repository and branch. That file is NEVER published publicly:
 `evals/usage/CENSUS.md`, "Private usage events"). Nothing from it reaches
 the two public files.
 
+Each private skill record also says which copy of the skill the session
+loaded (`LoadedCopies`): `digest` (the lock digest of `harness/skill_digest.py`,
+bare hex, or null), `digest_null_reason` (null, or one of
+`DIGEST_NULL_REASONS`), `base_kind` (one of `BASE_KINDS`) and `registry`
+(`owner/repo` or null). They come from the `isMeta` entry that links to the
+call (`sourceToolUseID` for a Skill call, `parentUuid` for a typed command)
+and whose first line is `Base directory for this skill: <path>`; the path
+itself is never recorded. None of the four reaches a public file.
+
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
         [--weekly-out usage/weekly-local.json] [--events-out events.jsonl] \
@@ -109,7 +118,7 @@ import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
@@ -117,6 +126,7 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 # module wanted from scripts/, and nothing there may shadow anything else.
 sys.path.append(str(REPO_ROOT / "scripts"))
 from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: E402
+import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
 
 DEFAULT_PROJECTS = Path.home() / ".claude" / "projects"
@@ -447,7 +457,279 @@ def _skill_event(entry: dict, when: datetime, event_id, name: str,
             "machine": machine,
             "session_id": session, "session_title": None,
             "cwd_repo": cwd_repo(entry.get("cwd"), cache),
-            "branch": _text(entry.get("gitBranch"))}
+            "branch": _text(entry.get("gitBranch")),
+            **_NOT_LOADED}
+
+
+# --- Which skill copy a local session loaded (private records only) --------
+# Claude Code answers a Skill call, or a typed skill command, with a user entry
+# marked `isMeta` whose text starts `Base directory for this skill: <path>`.
+# That path names the copy the session loaded; the census hashes it with the
+# lock digest (harness/skill_digest.py) and says where it lives. Only the
+# digest, a reason, a kind and an `owner/repo` are recorded, never the path,
+# and only in the private events: nothing here reaches a public file.
+
+#: Why a skill record's `digest` is null (null when it has one).
+DIGEST_NULL_REASONS = ("no-base-dir", "builtin", "outside-known-roots", "gone",
+                       "changed-since-load", "refused-by-registry-rules",
+                       "too-large", "bad-name")
+#: Where the loaded copy lives.
+BASE_KINDS = ("plugin-cache", "user-skills", "repo", "builtin", "account-plugin",
+              "account-sync", "unknown")
+#: Claude Code's built-in prompt skills, measured to write no base-directory
+#: message.
+BUILTIN_SKILLS = frozenset({"schedule", "update-config", "loop", "simplify",
+                            "artifact-design", "workflow-authoring"})
+#: A skill directory name; also what the base directory's basename must be.
+SKILL_DIR_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_BASE_DIR_LINE = "Base directory for this skill: "
+_OWNER_REPO_RE = re.compile(r"([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})")
+_HTTPS_GITHUB_RE = re.compile(
+    r"https://github\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}?)(?:\.git)?")
+_DRIVE_PATH_RE = re.compile(r"([A-Za-z]):\\(.*)", re.DOTALL)
+_WSL_UNC_RE = re.compile(r"\\\\wsl(?:\.localhost|\$)\\[^\\]+(\\.*)?",
+                         re.DOTALL | re.IGNORECASE)
+_NOT_LOADED = {"digest": None, "digest_null_reason": "no-base-dir",
+               "base_kind": "unknown", "registry": None}
+
+
+def _owner_repo(value) -> str | None:
+    """`value` when it is an `owner/repo` string, else None."""
+    match = _OWNER_REPO_RE.fullmatch(value) if isinstance(value, str) else None
+    return value if match and match.group(2) not in (".", "..") else None
+
+
+def base_dir_line(message: dict) -> str | None:
+    """The path after `Base directory for this skill: ` when that is the
+    FIRST line of the entry's text (a string, or a first `text` item), else
+    None. A line quoted further down in prose does not count."""
+    content = message.get("content")
+    if isinstance(content, list):
+        first = content[0] if content else None
+        content = (first.get("text") if isinstance(first, dict)
+                   and first.get("type") == "text" else None)
+    if not isinstance(content, str):
+        return None
+    line = content.split("\n", 1)[0]
+    if not line.startswith(_BASE_DIR_LINE):
+        return None
+    return line[len(_BASE_DIR_LINE):] or None
+
+
+def native_path(raw: str) -> str:
+    """`C:\\x\\y` -> `/mnt/c/x/y`, `\\\\wsl.localhost\\<distro>\\x` (or
+    `\\\\wsl$\\...`) -> `/x`; anything else unchanged."""
+    match = _DRIVE_PATH_RE.fullmatch(raw)
+    if match:
+        return f"/mnt/{match.group(1).lower()}/" + match.group(2).replace("\\", "/")
+    match = _WSL_UNC_RE.fullmatch(raw)
+    if match:
+        return (match.group(1) or "\\").replace("\\", "/")
+    return raw
+
+
+def _path_shape(real: str) -> tuple[str, str | None, str | None]:
+    """(kind by path alone, the `.claude` directory, the marketplace)."""
+    parts = PurePosixPath(real).parts
+    if "local-agent-mode-sessions" in parts:
+        return "account-plugin", None, None
+    for index, part in enumerate(parts):
+        if part != ".claude":
+            continue
+        claude, rest = str(PurePosixPath(*parts[:index + 1])), parts[index + 1:]
+        if len(rest) == 7 and rest[:2] == ("plugins", "cache") and rest[5] == "skills":
+            return "plugin-cache", claude, rest[2]
+        if len(rest) > 2 and rest[:2] == ("skills", "synced"):
+            return "account-sync", claude, None
+        if len(rest) == 2 and rest[0] == "skills":
+            return "user-skills", claude, None
+    return "unknown", None, None
+
+
+def _latest_change(root: str, skip: frozenset) -> float:
+    """The latest max(st_mtime, st_ctime) of `root` and every entry under it
+    (links not followed, `skip` left out). DigestTooLarge past the digest's
+    file cap; OSError when the tree cannot be read."""
+    def fail(error):
+        raise error
+    info = os.lstat(root)
+    latest, count = max(info.st_mtime, info.st_ctime), 0
+    for directory, subdirs, names in os.walk(root, followlinks=False, onerror=fail):
+        for name in subdirs + names:
+            path = os.path.join(directory, name)
+            if path in skip:
+                continue
+            count += 1
+            if count > 2 * skill_digest.MAX_FILES:
+                raise skill_digest.DigestTooLarge("too many entries")
+            info = os.lstat(path)
+            latest = max(latest, info.st_mtime, info.st_ctime)
+    return latest
+
+
+class LoadedCopies:
+    """Resolves which skill copy each private record's session loaded.
+
+    One instance per census run: each base directory is walked and hashed
+    at most once, each checkout asked for its ignored files and remote once;
+    the change guard is then compared per record. Every lookup root (the
+    `.claude` directory, the checkout) comes from the base directory itself.
+    """
+
+    def __init__(self):
+        self._trees: dict = {}
+        self._toplevels: dict = {}
+        self._json: dict = {}
+
+    def resolve(self, name: str, base: str | None, when: datetime) -> dict:
+        """The four loaded-copy keys of a record invoking `name` at `when`
+        whose base-directory message named `base` (None: no such message)."""
+        out = dict(_NOT_LOADED, digest_null_reason=None)
+        bare = name.split(":", 1)[1] if ":" in name else name
+        if not SKILL_DIR_NAME_RE.fullmatch(bare):
+            return dict(out, digest_null_reason="bad-name")
+        if base is None:
+            if bare in BUILTIN_SKILLS:
+                return dict(out, base_kind="builtin", digest_null_reason="builtin")
+            return dict(out, digest_null_reason="no-base-dir")
+        path = native_path(base)
+        if not os.path.isabs(path):
+            return dict(out, digest_null_reason="outside-known-roots")
+        if "bundled-skills" in PurePosixPath(path).parts:
+            return dict(out, base_kind="builtin", digest_null_reason="builtin")
+        real = os.path.realpath(path)
+        if os.path.basename(os.path.normpath(path)) != bare \
+                or os.path.basename(real) != bare:
+            return dict(out, digest_null_reason="no-base-dir")
+        kind, claude, marketplace = _path_shape(real)
+        if not os.path.isdir(real):
+            return dict(out, base_kind=kind, digest_null_reason="gone")
+        checkout = None
+        if kind in ("user-skills", "unknown"):
+            checkout = self._toplevel(real)
+            if checkout is not None:
+                kind = "repo"
+        if kind == "unknown":
+            return dict(out, digest_null_reason="outside-known-roots")
+        out["base_kind"] = kind
+        if kind == "plugin-cache":
+            out["registry"] = self._marketplace_repo(claude, marketplace)
+        elif kind == "repo":
+            out["registry"] = self._origin_repo(checkout)
+        tree = self._tree(real, checkout)
+        reason = tree.get("reason")
+        if reason is None and tree["latest"] > when.timestamp():
+            reason = "changed-since-load"
+        if reason is None:
+            reason = self._digest(tree)
+        if reason is not None:
+            return dict(out, digest_null_reason=reason)
+        out["digest"] = tree["digest"]
+        if kind == "user-skills":
+            out["registry"] = self._bootstrap_repo(claude, bare, tree["digest"])
+        return out
+
+    def _tree(self, real: str, checkout: str | None) -> dict:
+        """{"latest", "skip"} or {"reason"} for one base directory, cached."""
+        if real not in self._trees:
+            try:
+                skip = (skill_digest.git_ignored(checkout) if checkout is not None
+                        else frozenset())
+                self._trees[real] = {"path": real, "skip": skip,
+                                     "latest": _latest_change(real, skip)}
+            except skill_digest.DigestTooLarge:
+                self._trees[real] = {"reason": "too-large"}
+            except OSError:
+                self._trees[real] = {"reason": "gone"}
+        return self._trees[real]
+
+    @staticmethod
+    def _digest(tree: dict) -> str | None:
+        """Hash the tree once; None, or the null reason."""
+        if "digest" not in tree:
+            try:
+                tree["digest"] = skill_digest.lock_digest(tree["path"], tree["skip"])
+            except skill_digest.DigestRefused:
+                tree["reason"] = "refused-by-registry-rules"
+            except skill_digest.DigestTooLarge:
+                tree["reason"] = "too-large"
+            except (OSError, UnicodeError):
+                tree["reason"] = "gone"
+            if "reason" in tree:
+                tree["digest"] = None
+        return tree.get("reason")
+
+    def _toplevel(self, real: str) -> str | None:
+        """The work tree `real` is inside, or None."""
+        if real not in self._toplevels:
+            top = None
+            try:
+                proc = subprocess.run(
+                    ["git", "-C", real, "-c", "core.fsmonitor=false",
+                     "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True, timeout=10,
+                    stdin=subprocess.DEVNULL)
+                if proc.returncode == 0 and proc.stdout.strip():
+                    top = os.path.realpath(proc.stdout.strip())
+            except (OSError, subprocess.SubprocessError):
+                top = None
+            self._toplevels[real] = top
+        return self._toplevels[real]
+
+    def _origin_repo(self, checkout: str) -> str | None:
+        """`owner/repo` of the checkout's github.com `origin`, else None."""
+        key = ("origin", checkout)
+        if key not in self._json:
+            url = None
+            try:
+                proc = subprocess.run(
+                    ["git", "-C", checkout, "config", "--get", "remote.origin.url"],
+                    capture_output=True, text=True, timeout=10,
+                    stdin=subprocess.DEVNULL)
+                if proc.returncode == 0:
+                    url = proc.stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                url = None
+            self._json[key] = github_repo(url)
+        return self._json[key]
+
+    def _load(self, path: str):
+        """A JSON file's content, or None when it cannot be read."""
+        if path not in self._json:
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    self._json[path] = json.load(handle)
+            except (OSError, ValueError):
+                self._json[path] = None
+        return self._json[path]
+
+    def _marketplace_repo(self, claude: str, marketplace: str) -> str | None:
+        """The github `owner/repo` that `<claude>/plugins/known_marketplaces.json`
+        names for `marketplace`, else None."""
+        known = self._load(os.path.join(claude, "plugins", "known_marketplaces.json"))
+        entry = known.get(marketplace) if isinstance(known, dict) else None
+        source = entry.get("source") if isinstance(entry, dict) else None
+        if isinstance(source, dict) and source.get("source") == "github":
+            return _owner_repo(source.get("repo"))
+        return None
+
+    def _bootstrap_repo(self, claude: str, name: str, digest: str) -> str | None:
+        """The registry the skills-bootstrap hook's install record names for
+        `name`, only when its digest is this copy's and its URL is a plain
+        `https://github.com/<owner>/<repo>`; else None."""
+        record = self._load(os.path.join(claude, "skills",
+                                         ".skills-bootstrap-installed.json"))
+        installed = record.get("installed") if isinstance(record, dict) else None
+        for entry in installed if isinstance(installed, list) else ():
+            if not (isinstance(entry, dict) and entry.get("name") == name):
+                continue
+            recorded, url = entry.get("digest"), entry.get("registry")
+            if not (isinstance(recorded, str) and isinstance(url, str)
+                    and skill_digest.normalize(recorded) == digest):
+                return None
+            match = _HTTPS_GITHUB_RE.fullmatch(url)
+            return _owner_repo(match.group(1)) if match else None
+        return None
 
 
 #: Signature strings that tell a session's loaded memory files apart. They
@@ -756,6 +1038,7 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     record = events is not None and allowlist is not None
     machine = machine_name() if record else ""
     repos: dict = {}
+    copies = LoadedCopies() if record else None
     #: ("t"|"c"|"u", id) of every turn, Skill call and typed entry counted
     #: under an earlier root.
     claimed: set[tuple[str, str]] = set()
@@ -763,14 +1046,15 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
         if root.is_dir():
             claimed |= _census_root(root, wanted, oldest, counts, tally, seen_files,
                                     claimed, allowlist, events if record else None,
-                                    repos, machine, private)
+                                    repos, machine, private, copies)
     return counts, tally
 
 
 def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                  tally: dict, seen_files: set, claimed: set, allowlist,
                  events: list | None, repos: dict, machine: str,
-                 private: frozenset[str] = frozenset()) -> set:
+                 private: frozenset[str] = frozenset(),
+                 copies: LoadedCopies | None = None) -> set:
     """Walk one transcript root into `counts` and `tally`; return the ids it
     counted. See census_all."""
     skills, sessions = tally["invocations"], tally["sessions"]
@@ -804,6 +1088,11 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
         invoked: set[tuple[str, str]] = set()   # (skill, week) in this file
         file_events: list[dict] = []
         pending_model: list[dict] = []  # typed-command events awaiting a model
+        # Each record's base-directory message: a Skill call links only by
+        # `sourceToolUseID`, a typed command only by `parentUuid`.
+        loads: list[dict] = []
+        by_call: dict[str, dict] = {}
+        by_parent: dict[str, dict] = {}
         title = None
         first_when = first_uuid = None
         texts: list[str] | None = None
@@ -838,6 +1127,12 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                     message = entry.get("message")
                     if not isinstance(message, dict):
                         continue
+                    if record and kind == "user" and entry.get("isMeta") is True:
+                        for table, key in ((by_call, entry.get("sourceToolUseID")),
+                                           (by_parent, entry.get("parentUuid"))):
+                            load = table.get(key) if isinstance(key, str) else None
+                            if load is not None and load["base"] is None:
+                                load["base"] = base_dir_line(message)
                     # "<synthetic>" marks a message Claude Code wrote itself
                     # (an interrupt or an API error), not a model's turn.
                     if kind == "assistant" and pending_model \
@@ -871,6 +1166,11 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                                         repos, machine, kind_of_root)
                                     file_events.append(event)
                                     pending_model.append(event)
+                                    load = {"event": event, "when": when,
+                                            "base": None}
+                                    loads.append(load)
+                                    if isinstance(uuid, str) and uuid:
+                                        by_parent.setdefault(uuid, load)
                         continue
                     if allowlist is not None and isinstance(message.get("content"), list):
                         for item in message["content"]:
@@ -888,10 +1188,15 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                             _bump(skills, name, week)
                             invoked.add((name, week))
                             if record and _text(raw):
-                                file_events.append(_skill_event(
+                                event = _skill_event(
                                     entry, when, call, raw, repos, machine,
                                     kind_of_root,
-                                    **_turn_facts(entry, message)))
+                                    **_turn_facts(entry, message))
+                                file_events.append(event)
+                                load = {"event": event, "when": when, "base": None}
+                                loads.append(load)
+                                if isinstance(call, str) and call:
+                                    by_call.setdefault(call, load)
                     key = published_key(message.get("model"))
                     if key is None:
                         continue
@@ -914,6 +1219,9 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
             _bump(tally["guidance"], guidance_state(texts), iso_week(first_when))
         for event in file_events:
             event["session_title"] = title
+        for load in loads:
+            load["event"].update(copies.resolve(
+                load["event"]["name"], load["base"], load["when"]))
         if record:
             events.extend(file_events)
         if seen is not this_root:

@@ -156,6 +156,32 @@ def skill_runs(index: dict) -> dict:
     return {skill: _newest_first(runs) for skill, runs in out.items()}
 
 
+#: A `remove` entry's heading in _agent-guidance's docs/guidance-impact.md,
+#: as scripts/retire_skill.py `guidance_impact_entry` writes it.
+REMOVED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — ([a-z0-9][a-z0-9-]{0,63}) — remove\s*$",
+                                re.MULTILINE)
+GUIDANCE_REPO_URL = "https://github.com/Adam-S-Daniel/_agent-guidance"
+
+
+def removed_sections(guidance_dir: Path | None) -> list:
+    """The guidance sections removed so far (#557: Adam, 2026-11-02, every
+    removal tracked and reversible), newest first, from the `remove` entries
+    of _agent-guidance's docs/guidance-impact.md: {"id", "date",
+    "reverse_url"}, the last the section's removal pull requests, whose
+    Revert button restores it. [] without a checkout or that file."""
+    if guidance_dir is None:
+        return []
+    try:
+        text = (guidance_dir / "docs" / "guidance-impact.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    out = [{"id": section, "date": date,
+            "reverse_url": (f"{GUIDANCE_REPO_URL}/pulls?q=is%3Apr+head%3Aretire-guidance%2F"
+                            f"{section}")}
+           for date, section in REMOVED_HEADING_RE.findall(text)]
+    return sorted(out, key=lambda r: (r["date"], r["id"]), reverse=True)
+
+
 def guidance_runs(index: dict) -> dict:
     """{section: [run entries, newest first]}, each with the modes that ran."""
     groups: dict = {}
@@ -740,7 +766,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                              "reason": roster["judge"].get("reason")}},
         "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
                                           "min_cli_versions", "objective_margin")},
-        "skills": skills, "guidance": {"sections": sections},
+        "skills": skills,
+        "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "usage": usage_window}
 

@@ -142,6 +142,16 @@ test('chip: the guidance subject applies the shared rules too', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
+test('removed sections are listed with their date and revert link (#557)', () => {
+  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [],
+    guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };
+  const text = P.textOf(P.buildPage(doc, 'guidance', {}));
+  eq(text.includes(P.STRINGS.removedHeading), true);
+  eq(text.includes('bravo'), true);
+  eq(text.includes('2026-11-20'), true);
+  const none = P.textOf(P.buildPage({ ...doc, guidance: { sections: [] } }, 'guidance', {}));
+  eq(none.includes(P.STRINGS.removedHeading), false, 'no list without removals');
+});
 test('with a loop verdict, the chip follows the loop, not the page rule', () => {
   const strong = [skillRun('a', 0, 9, 0, 9)];
   const many = [0, 1, 2, 3, 4].map((d) => skillRun('a', d, 9, 0, 9));
