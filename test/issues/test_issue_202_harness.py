@@ -83,6 +83,14 @@ def tearDownModule() -> None:
     unittest.doModuleCleanups()
 
 
+
+def _but_git(harness: dict) -> dict:
+    """`harness` without `git_version`, which every summary carries (#535)
+    and which is the host's own `git --version`, pinned in
+    test_issue_535_git_provisioning.py."""
+    assert "git_version" in harness, harness
+    return {key: value for key, value in harness.items() if key != "git_version"}
+
 class TestShippedCoolingOff(unittest.TestCase):
 
     def test_the_shipped_policy_sets_zero_and_says_why(self):
@@ -543,7 +551,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
             with self.subTest(arm=arm):
                 summary = json.loads((run_dir / EVAL_DIR.name / arm / "summary.json")
                                      .read_text(encoding="utf-8"))
-                self.assertEqual(summary["harness"],
+                self.assertEqual(_but_git(summary["harness"]),
                                  {"name": "claude-code",
                                   "version": FAKE_VERSION_LINE,
                                   "permission_mode": "auto", "effort": None})
@@ -591,7 +599,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         summary = json.loads((self._run_dir("setup-fails") / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["error"]["type"], "setup_failed")
-        self.assertEqual(summary["harness"],
+        self.assertEqual(_but_git(summary["harness"]),
                          {"name": "claude-code", "version": FAKE_VERSION_LINE,
                           "permission_mode": "auto", "effort": None})
         self.assertEqual(summary["models_used"], [])
@@ -609,7 +617,7 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         self.assertIn("exit 9", proc.stderr)
         summary = json.loads((self._run_dir(skill) / EVAL_DIR.name / "without_skill" /
                               "summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(summary["harness"], {"name": "claude-code", "version": None,
+        self.assertEqual(_but_git(summary["harness"]), {"name": "claude-code", "version": None,
                                               "permission_mode": "auto", "effort": None})
         self.assertIsNone(summary["error"])
         self.assertEqual(summary["judge_models_used"], [])
@@ -686,7 +694,7 @@ class TestGuidanceArmsRecordVersions(unittest.TestCase):
     def test_a_scored_guidance_arm_records_both(self):
         result = self._run()
         summary = self._summary()
-        self.assertEqual(summary["harness"],
+        self.assertEqual(_but_git(summary["harness"]),
                          {"name": "claude-code", "version": "9.9.9 (Claude Code)",
                           "permission_mode": "auto", "effort": None})
         self.assertEqual(summary["models_used"], ["fake-model-a"])

@@ -3,6 +3,9 @@
 - **Status:** accepted (2026-10-07). Nothing is built yet.
 - **Amended 2026-11-02:** keep-or-remove runs test main's copy of a skill
   subject (see "Addendum: main's copy").
+- **Amended 2026-11-02:** arms that stand for the real setup run the fleet
+  hooks the context deployed (see "Addendum: fleet hooks are part of the
+  deployed context").
 - **Issue:** none; raised in review of the first scaffolded real-work fixture
   ([#329](https://github.com/Adam-S-Daniel/skills-evals/pull/329)).
 - **Decider:** Adam (2026-10-07), approving the proposal as described:
@@ -254,6 +257,37 @@ on the shared resolver `run_eval.main_copy` and the summary keys
   headroom. The run then refuses `budget_exceeded` (naming main's copy and
   its commit), and the cell becomes a fixture-broken item after two fires.
   Raising a budget is a reviewed PR.
+
+## Addendum: fleet hooks are part of the deployed context (Adam, 2026-11-02)
+
+**Addendum — fleet hooks are part of the deployed context (Adam, 2026-11-02).** An arm that stands for the real setup (in-place `with`/`without`; guidance `full`/`full-minus-section`, plus `section`/`none` when the fixture opts in) runs the fleet hook runner the context deployed. The runner is frozen from the context repository at `context.revision` (for a guidance fixture, from _agent-guidance at the guidance revision the run loads) and must equal what that revision shipped, or the run refuses with `fleet_hooks_unproven`. The hooks are installed the way ADR 0020's installer does it (config-based `hook.*` through a remote-scoped `includeIf`, never `core.hooksPath`), only inside the arm sandbox, which is proven by a harness-controlled marker, and on Git 2.54 or later. A fixture opts in with a key that is part of its fixture digest. The digest of the runner and hook set an arm received is recorded in its `context`, validated at ingest, and joins `pair_key` and `arm_context_digest`, so hooked and unhooked runs never pool, even for a context pinned after 2026-10-21 whose `fixture_digest` would otherwise not change. Isolation, bare and section-alone arms never run hooks unless the fixture opts its alone pair in. The harness's own git commands never run hooks.
+
+Adam approved this text, revised to add the pooling key from the round-8
+review, on 2026-11-02 in the project thread.
+
+### Build
+
+The design and the review findings behind it are
+[skills-evals#535](https://github.com/Adam-S-Daniel/skills-evals/issues/535).
+The build lands in stages, one pull request each, and no fixture opts in
+until the last:
+
+1. This addendum, Git 2.54 or later where arms run, `harness.git_version`
+   in every summary, and the opt-in key `fleet_hooks: true` (a literal
+   boolean in `fixture.yaml`, so part of `fixture_digest`), which the
+   planner holds and the harness refuses (`git_too_old_for_fleet_hooks`)
+   on an older Git. CI's runner already ships a newer Git, so `ci.yml`
+   only checks it (`scripts/dev_setup.sh --check-git`). The routine
+   container ships Ubuntu's Git 2.43 (adam-agentskills ADR 0020), and its
+   setup script is not in this repository: it needs the zlib, OpenSSL and
+   libcurl headers and then `bash scripts/dev_setup.sh --build-git
+   /usr/local`, which builds the pinned Git 2.56.0 (the release ADR 0020's
+   installer snippet builds) from kernel.org's tarball
+   after checking its sha256.
+2. The frozen hook set and its proof (`fleet_hooks_unproven`).
+3. Injection inside the arm sandbox.
+4. The pooling key.
+5. The seed audit and the first fixture opt-ins.
 
 ## Consequences
 
