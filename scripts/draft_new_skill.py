@@ -58,7 +58,9 @@ values only):
   hook-first --payload FILE --proposal-json FILE --results DIR
   measure   --staging DIR --registry adam-agentskills=DIR --ref SHA
             --payload FILE --trials N --results DIR
-            (exit 0 accepted, 1 rejected, 2 refused)
+            (exit 0 accepted, 1 rejected, 2 refused; a staging-shape
+            problem is refused once, leaving SHAPE_RETRY_MARKER in the
+            staging dir, and a rejected record on the retry)
   resolve   --event-name NAME --event-path PATH
   validate  --repo DIR --base REF --source REF --branch NAME
             [--expect-sha SHA] --registry adam-agentskills=DIR --out DIR
@@ -1070,12 +1072,18 @@ def skill_report(record: dict) -> str:
         *[f"- {reason}" for reason in record["reasons"]], ""])
 
 
+# Left in the staging dir by a staging-shape refusal, so the drafter's one
+# retry (prompt step 5) records a second shape problem instead of refusing
+# again. Never part of the branch: measure writes only $RUNNER/results.
+SHAPE_RETRY_MARKER = ".shape-refused"
+
+
 def staging_parts(staging: Path) -> tuple[dict, dict, str]:
     """(skill files, fixture files by name, plugin) from the staging dir, or
     Rejected with a fixed reason."""
     if staging.is_symlink() or not staging.is_dir():
         raise Rejected("staging: not a directory")
-    entries = {p.name for p in staging.iterdir()}
+    entries = {p.name for p in staging.iterdir()} - {SHAPE_RETRY_MARKER}
     if not {"skill", "fixtures", "plugin"} <= entries \
             <= {"skill", "fixtures", "plugin", "triage.json"}:
         raise Rejected("staging: not exactly skill/, fixtures/, plugin and triage.json")
@@ -1146,14 +1154,28 @@ def measure(staging: Path, registry_flag: str, ref: str, payload_path: Path,
         write_json(out / "summary.json", record)
         return 1
 
+    # A staging-shape problem (a stray file, a missing PURPOSE.md, a wrong
+    # fixture count) is the drafter's mistake, not the proposal's, and is
+    # caught before any run. A rejected record is final for the subject
+    # (eligibility), so recording it on the first try retired a proposal
+    # over one stray file without ever measuring it. The first try is a
+    # refusal the drafter fixes once (prompt step 5); the marker it leaves
+    # makes a second shape problem a rejected record, so retries stay
+    # bounded.
     try:
         skill, fixtures, plugin = staging_parts(staging)
+        problems = skill_problems(skill, subject) + fixtures_problems(fixtures, subject)
     except Rejected as exc:
-        return finish([str(exc)])
-    record["plugin"] = plugin
-    problems = skill_problems(skill, subject) + fixtures_problems(fixtures, subject)
+        skill, fixtures, plugin, problems = {}, {}, None, [str(exc)]
     if problems:
+        marker = staging / SHAPE_RETRY_MARKER
+        if staging.is_dir() and not staging.is_symlink() \
+                and not marker.is_symlink() and not marker.exists():
+            marker.write_text("\n".join(problems[:5]) + "\n", encoding="utf-8")
+            raise Refused("staging shape, fix it and measure once more: "
+                          + "; ".join(problems[:5]))
         return finish(problems)
+    record["plugin"] = plugin
     staged = list(skill.values()) + [d for f in fixtures.values() for d in f.values()]
     if quotes_an_example(staged, proposal["examples"]):
         return finish(["a staged file quotes a lesson example verbatim"])

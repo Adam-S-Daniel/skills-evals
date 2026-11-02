@@ -828,7 +828,10 @@ class Measure(Case):
                 self.assertEqual(record["decision"], "rejected")
                 dns.check_record(record, RUN_ID)
 
-    def test_bad_staging_is_a_rejected_record_before_any_run(self):
+    def test_bad_staging_is_refused_once_then_a_rejected_record(self):
+        # A shape mistake is the drafter's, so the first try is a refusal
+        # that writes no record (the subject stays eligible) and the retry
+        # records it as rejected; neither runs an arm.
         breaks = {
             "context block": lambda: self.write(
                 self.staging / "fixtures/alpha/fixture.yaml",
@@ -841,9 +844,8 @@ class Measure(Case):
                                                 SKILL_MD.replace(SUBJECT, "other")),
             "stray file": lambda: self.write(self.staging / "skill/notes.txt", "x\n"),
             "bad plugin": lambda: self.write(self.staging / "plugin", "cms-platform\n"),
-            "verbatim example": lambda: self.write(
-                self.staging / "skill/references/checklist.md",
-                proposal()["examples"][0] + "\n"),
+            "stray fixture file": lambda: self.write(
+                self.staging / "fixtures/alpha/notes.md", "x\n"),
         }
         for label, make in breaks.items():
             with self.subTest(label):
@@ -853,9 +855,37 @@ class Measure(Case):
                 make()
                 runner = FakeRunner(table())
                 code, _, err = self.measure(runner)
+                self.assertEqual(code, 2, err)
+                self.assertIn("staging shape", err)
+                self.assertEqual(runner.calls, [])
+                self.assertFalse(self.results.exists() and self.files(), self.results)
+                self.assertTrue((self.staging / dns.SHAPE_RETRY_MARKER).is_file())
+                code, _, err = self.measure(runner)
                 self.assertEqual(code, 1, err)
                 self.assertEqual(runner.calls, [])
                 self.assertEqual(self.record()["decision"], "rejected")
+
+    def test_a_fixed_shape_after_a_refusal_is_measured(self):
+        stray = self.write(self.staging / "fixtures/alpha/notes.md", "x\n")
+        runner = FakeRunner(table())
+        code, _, err = self.measure(runner)
+        self.assertEqual(code, 2, err)
+        stray.unlink()
+        code, _, err = self.measure(runner)
+        self.assertEqual(code, 0, err)
+        self.assertNotEqual(runner.calls, [])
+        self.assertEqual(self.record()["decision"], "accepted")
+        self.assertNotIn(dns.SHAPE_RETRY_MARKER, " ".join(self.files()))
+
+    def test_a_verbatim_example_is_a_rejected_record_at_once(self):
+        # Content, not shape: quoting a lesson example stays final at once.
+        self.write(self.staging / "skill/references/checklist.md",
+                   proposal()["examples"][0] + "\n")
+        runner = FakeRunner(table())
+        code, _, err = self.measure(runner)
+        self.assertEqual(code, 1, err)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.record()["decision"], "rejected")
 
     def setUp_staging(self):
         for rel, data in skill_files().items():
