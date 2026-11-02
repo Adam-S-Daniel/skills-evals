@@ -370,44 +370,6 @@
    "subject": "skill"
   },
   {
-   "fixture": "evals/skills-doctor/bucketed-account-store",
-   "kind": "broken",
-   "model": null,
-   "name": "skills-doctor",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-23T18:24:01Z",
-   "fixture": "evals/skills-doctor/bucketed-account-store",
-   "kind": "context-drift",
-   "model": null,
-   "name": "skills-doctor",
-   "repository": "Adam-S-Daniel/adam-agentskills",
-   "subject": "skill"
-  },
-  {
-   "fixture": "evals/github-actions-sha-pinning",
-   "kind": "broken",
-   "model": null,
-   "name": "github-actions-sha-pinning",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-24T12:13:42Z",
-   "fixture": "evals/github-actions-sha-pinning",
-   "kind": "context-drift",
-   "model": null,
-   "name": "github-actions-sha-pinning",
-   "repository": "Adam-S-Daniel/adamdaniel.ai",
-   "subject": "skill"
-  },
-  {
    "drift_since": "2026-10-11T14:22:36Z",
    "fixture": "evals/windows-elevation-from-wsl",
    "kind": "context-drift",
@@ -415,114 +377,53 @@
    "name": "windows-elevation-from-wsl",
    "repository": "Adam-S-Daniel/wsl-automation",
    "subject": "skill"
-  },
-  {
-   "fixture": "evals/platform-release-and-bump",
-   "kind": "broken",
-   "model": null,
-   "name": "platform-release-and-bump",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-08T14:56:43Z",
-   "fixture": "evals/platform-release-and-bump",
-   "kind": "context-drift",
-   "model": null,
-   "name": "platform-release-and-bump",
-   "repository": "Adam-S-Daniel/adamdaniel.ai",
-   "subject": "skill"
-  },
-  {
-   "fixture": "evals/github-actions-repo-settings/drift-diagnosis",
-   "kind": "broken",
-   "model": null,
-   "name": "github-actions-repo-settings",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-05T13:51:59Z",
-   "fixture": "evals/github-actions-repo-settings/drift-diagnosis",
-   "kind": "context-drift",
-   "model": null,
-   "name": "github-actions-repo-settings",
-   "repository": "Adam-S-Daniel/repo-settings",
-   "subject": "skill"
-  },
-  {
-   "fixture": "evals/skills-doctor/one-row-rejects-the-lock",
-   "kind": "broken",
-   "model": null,
-   "name": "skills-doctor",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-23T18:24:01Z",
-   "fixture": "evals/skills-doctor/one-row-rejects-the-lock",
-   "kind": "context-drift",
-   "model": null,
-   "name": "skills-doctor",
-   "repository": "Adam-S-Daniel/adam-agentskills",
-   "subject": "skill"
-  },
-  {
-   "fixture": "evals/skills-doctor/personal-copy-outranks-repo",
-   "kind": "broken",
-   "model": null,
-   "name": "skills-doctor",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-23T18:24:01Z",
-   "fixture": "evals/skills-doctor/personal-copy-outranks-repo",
-   "kind": "context-drift",
-   "model": null,
-   "name": "skills-doctor",
-   "repository": "Adam-S-Daniel/adam-agentskills",
-   "subject": "skill"
-  },
-  {
-   "fixture": "evals/skills-doctor/ssh-remote-is-durable",
-   "kind": "broken",
-   "model": null,
-   "name": "skills-doctor",
-   "reasons": [
-    "pin-deploys-older-copy"
-   ],
-   "subject": "skill"
-  },
-  {
-   "drift_since": "2026-10-23T18:24:01Z",
-   "fixture": "evals/skills-doctor/ssh-remote-is-durable",
-   "kind": "context-drift",
-   "model": null,
-   "name": "skills-doctor",
-   "repository": "Adam-S-Daniel/adam-agentskills",
-   "subject": "skill"
   }
  ],
- "broken_unknown": 0,
  "context_drift_unknown": 0,
  "coverage": {
-  "as_of": null,
+  "as_of": "2026-11-02T18:41:54Z",
   "covered": 25,
   "gap": 0,
   "skipped": 11,
   "total": 36
  },
- "generated_at": "2026-11-02T17:53:33Z",
+ "fires_without_results": {
+  "rejected": 0,
+  "since": "2026-10-31T04:39:50Z",
+  "sweeps": [
+   {
+    "end": "2026-10-31T13:05:58Z",
+    "fires": 3,
+    "start": "2026-10-31T13:03:22Z"
+   },
+   {
+    "end": "2026-11-01T06:06:37Z",
+    "fires": 6,
+    "start": "2026-11-01T05:43:29Z"
+   },
+   {
+    "end": "2026-11-01T15:55:21Z",
+    "fires": 1,
+    "start": "2026-11-01T15:55:21Z"
+   }
+  ],
+  "window_days": 14,
+  "without_results": 10
+ },
+ "generated_at": "2026-11-02T18:41:58Z",
  "guidance": {
+  "removed": [
+   {
+    "date": "2026-10-23",
+    "id": "network-allowlists",
+    "reverse_url": "https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fnetwork-allowlists"
+   },
+   {
+    "date": "2026-09-29",
+    "id": "sessions-get-cut-off",
+    "reverse_url": "https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fsessions-get-cut-off"
+   }
+  ],
   "sections": [
    {
     "alone_verdict": null,
@@ -7646,8 +7547,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "168f4d8b5d2fb7d37e6f4fb9df78810c7e4cead1",
-  "results_commit": "3c90e031cdb3e8cf033af4dc8f9a9febf6ea4d1c"
+  "repository_commit": "52b8a31430ff9a35484bd734d8d7424658f17f94",
+  "results_commit": "3d68f1ce8b5903194c8ebdca1375e4a00e734f3b"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
