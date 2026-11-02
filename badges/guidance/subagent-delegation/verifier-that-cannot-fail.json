@@ -1,0 +1,6 @@
+{
+  "color": "yellow",
+  "label": "guidance eval: subagent-delegation/verifier-that-cannot-fail",
+  "message": "with 2/2 vs without 2/2 \u00b7 2026-11-02",
+  "schemaVersion": 1
+}
